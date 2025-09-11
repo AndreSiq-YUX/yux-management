@@ -211,6 +211,23 @@ class ApiService {
     return this.delete(`/clients/${id}`);
   }
 
+  async getClientStats() {
+    return this.get('/clients/stats');
+  }
+
+  async exportClients(format: 'csv' | 'excel', filters?: any) {
+    const params = { format, ...filters };
+    return this.get('/clients/export', params);
+  }
+
+  async importClients(formData: FormData) {
+    return this.post('/clients/import', formData);
+  }
+
+  async downloadClientTemplate() {
+    return this.get('/clients/template');
+  }
+
   // Project methods
   async getProjects(params?: {
     page?: number;

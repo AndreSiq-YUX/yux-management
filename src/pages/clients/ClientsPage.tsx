@@ -1,37 +1,13 @@
-import { useState, useEffect } from 'react'
-import { apiService } from '@/services/api'
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  MoreHorizontal, 
-  Building2, 
-  Mail, 
-  Phone,
-  Globe,
-  Loader2
-} from 'lucide-react'
-import toast from 'react-hot-toast'
-
-interface Client {
-  id: string;
-  companyName: string;
-  contactName: string;
-  email: string;
-  phone?: string;
-  website?: string;
-  sector: string;
-  size: string;
-  leadSource: string;
-  lifetimeValue?: number;
-  createdAt: string;
-  projects?: Array<{
-    id: string;
-    name: string;
-    status: string;
-    budget: number;
-  }>;
-}
+import React, { useState, useEffect } from 'react';
+import { apiService } from '@/services/api';
+import { Search, Plus, Eye, Edit, Trash2, Filter, Download, ChevronDown, Upload } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Client, ClientFilters as ClientFiltersType, ClientStats as ClientStatsType } from '@/types/client';
+import { ClientFormModal } from '@/components/clients/ClientFormModal';
+import { ClientDetailsModal } from '@/components/clients/ClientDetailsModal';
+import { ClientFilters } from '@/components/clients/ClientFilters';
+import { ClientStats } from '@/components/clients/ClientStats';
+import { ClientImportModal } from '@/components/clients/ClientImportModal';
 
 export function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
@@ -39,15 +15,70 @@ export function ClientsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  
+  // Estados dos modais
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  
+  // Estados dos filtros
+  const [filters, setFilters] = useState<ClientFiltersType>({});
+  
+  // Estados das estatísticas
+  const [stats, setStats] = useState<ClientStatsType>({
+    totalClients: 0,
+    activeClients: 0,
+    totalRevenue: 0,
+    averageValue: 0,
+    newClientsThisMonth: 0,
+    conversionRate: 0
+  });
+  const [statsLoading, setStatsLoading] = useState(false);
+  
+  // Estados da exportação
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  
+  // Estados da importação
+  const [showImportModal, setShowImportModal] = useState(false);
 
-  const fetchClients = async (page = 1, search = '') => {
+  const fetchStats = async () => {
     try {
-      setLoading(true)
-      const response = await apiService.getClients({
+      setStatsLoading(true);
+      const response = await apiService.getClientStats();
+      
+      if (response.success && response.data) {
+        setStats(response.data as ClientStatsType);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  const fetchClients = async (page = 1, search = '', currentFilters = filters) => {
+    try {
+      setLoading(true);
+      
+      // Construir parâmetros da API incluindo filtros
+      const params: any = {
         page,
         limit: 10,
         search: search || undefined
-      })
+      };
+      
+      // Adicionar filtros aos parâmetros
+      if (currentFilters.sector) params.sector = currentFilters.sector;
+      if (currentFilters.sizes?.length) params.sizes = currentFilters.sizes;
+      if (currentFilters.leadSources?.length) params.leadSources = currentFilters.leadSources;
+      if (currentFilters.statuses?.length) params.statuses = currentFilters.statuses;
+      if (currentFilters.minValue) params.minValue = currentFilters.minValue;
+      if (currentFilters.maxValue) params.maxValue = currentFilters.maxValue;
+      if (currentFilters.startDate) params.startDate = currentFilters.startDate;
+      if (currentFilters.endDate) params.endDate = currentFilters.endDate;
+      
+      const response = await apiService.getClients(params);
       
       if (response.success && response.data) {
         setClients((response.data as any).clients || [])
@@ -63,12 +94,147 @@ export function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
+    fetchStats()
   }, [])
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showExportDropdown) {
+        setShowExportDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportDropdown]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     fetchClients(1, searchTerm)
   }
+
+  // Funções dos modais
+  const handleNewClient = () => {
+    setSelectedClient(null);
+    setShowFormModal(true);
+  };
+
+  const handleEditClient = (client: Client) => {
+    setSelectedClient(client);
+    setShowFormModal(true);
+  };
+
+  const handleViewClient = (client: Client) => {
+    setSelectedClient(client);
+    setShowDetailsModal(true);
+  };
+
+  const handleDeleteClient = async (clientId: string) => {
+    try {
+      const response = await apiService.deleteClient(clientId);
+      if (response.success) {
+        toast.success('Cliente excluído com sucesso!');
+        fetchClients(currentPage, searchTerm);
+      } else {
+        toast.error(response.error?.message || 'Erro ao excluir cliente');
+      }
+    } catch (error) {
+      toast.error('Erro ao excluir cliente');
+      console.error('Erro:', error);
+    }
+  };
+
+  const handleModalSuccess = () => {
+    fetchClients(currentPage, searchTerm);
+  };
+
+  const closeModals = () => {
+    setShowFormModal(false);
+    setShowDetailsModal(false);
+    setSelectedClient(null);
+  };
+
+  // Funções dos filtros
+  const handleFiltersChange = (newFilters: ClientFiltersType) => {
+    setFilters(newFilters);
+    setCurrentPage(1);
+    fetchClients(1, searchTerm, newFilters);
+  };
+
+  const handleClearFilters = () => {
+    setFilters({});
+    setCurrentPage(1);
+    fetchClients(1, searchTerm, {});
+  };
+
+  // Funções de exportação
+  const handleExportCSV = async () => {
+    try {
+      setExporting(true);
+      setShowExportDropdown(false);
+      const response = await apiService.exportClients('csv', filters);
+      
+      if (response.success && response.data) {
+        // Criar e baixar o arquivo CSV
+        const blob = new Blob([response.data], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `clientes_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        toast.success('Dados exportados com sucesso!');
+      }
+    } catch (error) {
+      toast.error('Erro ao exportar dados');
+      console.error('Erro:', error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      setShowExportDropdown(false);
+      const response = await apiService.exportClients('excel', filters);
+      
+      if (response.success && response.data) {
+        // Criar e baixar o arquivo Excel
+        const blob = new Blob([response.data], { 
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `clientes_${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        toast.success('Dados exportados com sucesso!');
+      }
+    } catch (error) {
+      toast.error('Erro ao exportar dados');
+      console.error('Erro:', error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Funções da importação
+  const handleImportSuccess = () => {
+    setShowImportModal(false);
+    fetchClients(1, searchTerm, filters);
+    fetchStats();
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -96,11 +262,26 @@ export function ClientsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
           <p className="text-gray-600">Gerencie seus clientes e relacionamentos</p>
         </div>
-        <button className="bg-yux-600 text-white px-4 py-2 rounded-md hover:bg-yux-700 flex items-center space-x-2">
-          <Plus className="h-4 w-4" />
-          <span>Novo Cliente</span>
-        </button>
+        <div className="flex space-x-3">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+            >
+              <Upload className="h-4 w-4" />
+              <span>Importar</span>
+            </button>
+            <button
+              onClick={handleNewClient}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Novo Cliente</span>
+            </button>
+          </div>
       </div>
+
+      {/* Estatísticas */}
+      <ClientStats stats={stats} loading={statsLoading} />
 
       {/* Search and Filters */}
       <div className="bg-white shadow rounded-lg p-6">
@@ -121,13 +302,41 @@ export function ClientsPage() {
           >
             Buscar
           </button>
-          <button
-            type="button"
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 flex items-center space-x-2"
-          >
-            <Filter className="h-4 w-4" />
-            <span>Filtros</span>
-          </button>
+          <ClientFilters
+            filters={filters}
+            onFiltersChange={handleFiltersChange}
+            onClearFilters={handleClearFilters}
+          />
+          <div className="relative">
+            <button
+              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              disabled={exporting}
+              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="h-4 w-4" />
+              <span>{exporting ? 'Exportando...' : 'Exportar'}</span>
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            
+            {showExportDropdown && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+                <div className="py-1">
+                  <button
+                    onClick={handleExportCSV}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    Exportar como CSV
+                  </button>
+                  <button
+                    onClick={handleExportExcel}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    Exportar como Excel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </form>
       </div>
 
@@ -244,9 +453,29 @@ export function ClientsPage() {
                         }
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button className="text-gray-400 hover:text-gray-600">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end space-x-2">
+                          <button 
+                            onClick={() => handleViewClient(client)}
+                            className="text-yux-600 hover:text-yux-900"
+                            title="Visualizar cliente"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleEditClient(client)}
+                            className="text-gray-600 hover:text-gray-900"
+                            title="Editar cliente"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteClient(client.id)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Excluir cliente"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -303,7 +532,30 @@ export function ClientsPage() {
             )}
           </>
         )}
+</div>
       </div>
+
+      {/* Modais */}
+      <ClientFormModal
+        isOpen={showFormModal}
+        onClose={closeModals}
+        onSuccess={handleModalSuccess}
+        client={selectedClient}
+      />
+
+      <ClientDetailsModal
+        isOpen={showDetailsModal}
+        onClose={closeModals}
+        onEdit={handleEditClient}
+        onDelete={handleDeleteClient}
+        client={selectedClient}
+      />
+
+      <ClientImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={handleImportSuccess}
+      />
     </div>
   )
 }
