@@ -152,7 +152,17 @@ export const useAuthStore = create<AuthStore>()(
 
 // Listen to auth changes
 supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT' || !session) {
-    useAuthStore.getState().logout()
+  if (event === 'SIGNED_OUT') {
+    // Atualiza somente o estado local para evitar loop com signOut()
+    useAuthStore.setState({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+    })
+  }
+  if (event === 'SIGNED_IN' && session?.user) {
+    // Mantemos sem efeitos colaterais pesados aqui para evitar loops.
+    // A sincronização completa pode ser feita via initialize() quando necessário.
   }
 })
