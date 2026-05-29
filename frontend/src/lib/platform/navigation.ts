@@ -14,6 +14,7 @@ export function buildNavigation(context: PlatformContext): NavigationItem[] {
       ? [
           { label: 'Dashboard', href: '/dashboard' },
           { label: 'Contratos', href: '/contracts' },
+          { label: 'Pacotes', href: '/packages' },
           { label: 'Modulos', href: '/modules' },
         ]
       : [{ label: 'Portal', href: '/portal' }]

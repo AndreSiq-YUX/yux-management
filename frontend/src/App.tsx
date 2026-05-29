@@ -21,6 +21,7 @@ import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
 import { ModulesPage } from '@/pages/platform/ModulesPage'
+import { PackagesPage } from '@/pages/platform/PackagesPage'
 
 function App() {
   const { isAuthenticated, user } = useAuthStore()
@@ -51,6 +52,7 @@ function App() {
           <>
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="contracts" element={<ContractsPage />} />
+            <Route path="packages" element={<PackagesPage />} />
             <Route path="modules" element={<ModulesPage />} />
             <Route path="clients" element={<ClientsPage />} />
             <Route path="projects" element={<ProjectsPage />} />
