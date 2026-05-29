@@ -75,19 +75,25 @@ export const useAuthStore = create<AuthStore>()(
       login: async (email: string, password: string) => {
         try {
           set({ isLoading: true })
-          
-          const demoUser = getDemoUser(email, password)
-          if (demoUser) {
-            set({
-              user: demoUser,
-              token: 'demo-token',
-              isAuthenticated: true,
-              isLoading: false,
-            })
-            return
-          }
 
-          const authData = await supabaseService.signIn(email, password)
+          let authData
+
+          try {
+            authData = await supabaseService.signIn(email, password)
+          } catch (error) {
+            const demoUser = getDemoUser(email, password)
+            if (demoUser) {
+              set({
+                user: demoUser,
+                token: 'demo-token',
+                isAuthenticated: true,
+                isLoading: false,
+              })
+              return
+            }
+
+            throw error
+          }
           
           if (authData.user) {
             const userData = await supabaseService.getCurrentUser()

@@ -35,7 +35,7 @@ export function LoginPage() {
       
       await login(data.email, data.password)
       toast.success('Login realizado com sucesso!')
-      navigate('/dashboard')
+      navigate('/')
       
     } catch (error: any) {
       const errorMessage = error.message || 'Erro ao fazer login. Verifique suas credenciais.'
