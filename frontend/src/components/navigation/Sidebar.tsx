@@ -1,0 +1,115 @@
+import { NavLink } from 'react-router-dom'
+import { 
+  BarChart3,
+  Bot,
+  Boxes,
+  Briefcase,
+  ClipboardList,
+  FileText,
+  FolderKanban,
+  LayoutDashboard, 
+  Users, 
+  Megaphone, 
+  UserPlus,
+  Settings,
+  ShieldCheck,
+  LogOut
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { buildNavigation } from '@/lib/platform/navigation'
+import { useAuthStore } from '@/stores/authStore'
+import { usePlatformContext } from '@/stores/platformStore'
+
+const iconByModule: Record<string, LucideIcon> = {
+  clients: Users,
+  crm: UserPlus,
+  projects: FolderKanban,
+  proposals: FileText,
+  whatsapp_ai: Bot,
+  campaigns: Megaphone,
+  bi_reports: BarChart3,
+  automations: Boxes,
+  support: ShieldCheck,
+  finance: Briefcase,
+  blueprints: ClipboardList,
+}
+
+export function Sidebar() {
+  const { user, logout } = useAuthStore()
+  const platformContext = usePlatformContext()
+  const navigation = buildNavigation(platformContext)
+
+  return (
+    <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg lg:block hidden">
+      <div className="flex h-full flex-col">
+        {/* Logo */}
+        <div className="flex h-16 shrink-0 items-center px-6 border-b border-gray-200">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-yux-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">YUX</span>
+            </div>
+            <span className="ml-3 text-lg font-semibold text-gray-900">
+              {platformContext.mode === 'internal' ? 'YUX OS' : 'Portal YUX'}
+            </span>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-4 py-6 space-y-1">
+          {navigation.map((item) => {
+            const Icon = item.moduleKey ? iconByModule[item.moduleKey] || LayoutDashboard : LayoutDashboard
+
+            return (
+            <NavLink
+              key={item.href}
+              to={item.href}
+              className={({ isActive }) =>
+                `group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  isActive
+                    ? 'bg-yux-50 text-yux-700 border-r-2 border-yux-600'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`
+              }
+            >
+              <Icon
+                className="mr-3 h-5 w-5 flex-shrink-0"
+                aria-hidden="true"
+              />
+              {item.label}
+            </NavLink>
+            )
+          })}
+        </nav>
+
+        {/* User section */}
+        <div className="border-t border-gray-200 p-4">
+          <div className="flex items-center mb-3">
+            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+              <span className="text-sm font-medium text-gray-700">
+                {user?.name?.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+              <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+            </div>
+          </div>
+          
+          <div className="space-y-1">
+            <button className="group flex w-full items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:text-gray-900">
+              <Settings className="mr-3 h-4 w-4" />
+              Configurações
+            </button>
+            <button 
+              onClick={logout}
+              className="group flex w-full items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:text-gray-900"
+            >
+              <LogOut className="mr-3 h-4 w-4" />
+              Sair
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
