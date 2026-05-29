@@ -59,11 +59,36 @@ describe('ModuleSurfacePage', () => {
       isLoading: false,
       activeContract,
       enabledModuleKeys: ['projects'],
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['finance.read'],
+      },
     })
 
     const html = renderPage('/portal/finance')
 
-    expect(html).toContain('Modulo nao habilitado neste contrato.')
+    expect(html).toContain('Modulo nao disponivel para este acesso.')
+    expect(html).not.toContain('Este modulo esta habilitado no contrato')
+  })
+
+  it('blocks portal module routes when the client role lacks permission', () => {
+    usePlatformStore.setState({
+      isLoading: false,
+      activeContract,
+      enabledModuleKeys: ['finance'],
+      role: {
+        key: 'client_member',
+        name: 'Client Member',
+        scope: 'client',
+        permissions: ['projects.read'],
+      },
+    })
+
+    const html = renderPage('/portal/finance')
+
+    expect(html).toContain('Modulo nao disponivel para este acesso.')
     expect(html).not.toContain('Este modulo esta habilitado no contrato')
   })
 

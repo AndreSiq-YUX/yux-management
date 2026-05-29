@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { formatLocalDateOnly } from '@/lib/platform/contracts'
 import type {
   BillingCycle,
   Blueprint,
@@ -111,6 +112,16 @@ function mapContractDetails(row: any): ContractDetails {
   }
 }
 
+function mapClientSummary(row: any) {
+  return {
+    id: row.id,
+    companyName: row.company_name,
+    contactName: row.contact_name,
+    email: row.email,
+    userId: row.user_id,
+  }
+}
+
 function mapBlueprint(row: any): Blueprint {
   return {
     id: row.id,
@@ -199,7 +210,7 @@ export class PlatformService {
   }
 
   async getActiveContractForClient(clientId: string): Promise<ContractDetails | null> {
-    const today = new Date().toISOString().split('T')[0]
+    const today = formatLocalDateOnly()
     const { data, error } = await supabase
       .from('contracts')
       .select('*, packages(*, package_modules(module_key)), contract_modules(*)')
@@ -216,22 +227,42 @@ export class PlatformService {
   }
 
   async getClientForUser(userId: string) {
-    const { data, error } = await supabase
+    const { data: directClient, error: directClientError } = await supabase
       .from('clients')
       .select('id, company_name, contact_name, email, user_id')
       .eq('user_id', userId)
       .maybeSingle()
 
-    if (error) throw error
-    return data
-      ? {
-          id: data.id,
-          companyName: data.company_name,
-          contactName: data.contact_name,
-          email: data.email,
-          userId: data.user_id,
-        }
-      : null
+    if (directClientError) throw directClientError
+    if (directClient) return mapClientSummary(directClient)
+
+    const { data: memberships, error: membershipsError } = await supabase
+      .from('memberships')
+      .select('organization_id')
+      .eq('user_id', userId)
+
+    if (membershipsError) throw membershipsError
+    if (!memberships?.length) return null
+
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .select('client_id')
+      .in('id', memberships.map(item => item.organization_id))
+      .not('client_id', 'is', null)
+      .limit(1)
+      .maybeSingle()
+
+    if (organizationError) throw organizationError
+    if (!organization?.client_id) return null
+
+    const { data: organizationClient, error: organizationClientError } = await supabase
+      .from('clients')
+      .select('id, company_name, contact_name, email, user_id')
+      .eq('id', organization.client_id)
+      .maybeSingle()
+
+    if (organizationClientError) throw organizationClientError
+    return organizationClient ? mapClientSummary(organizationClient) : null
   }
 
   async getPortalContractContextForUser(userId: string): Promise<PortalContractContext> {

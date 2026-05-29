@@ -1,4 +1,5 @@
 import { useLocation } from 'react-router-dom'
+import { canAccessModule } from '@/lib/platform/accessControl'
 import { getPlatformModule } from '@/lib/platform/moduleRegistry'
 import { usePlatformStore } from '@/stores/platformStore'
 
@@ -8,10 +9,11 @@ interface ModuleSurfacePageProps {
 
 export function ModuleSurfacePage({ moduleKey }: ModuleSurfacePageProps) {
   const location = useLocation()
-  const { activeContract, enabledModuleKeys, isLoading } = usePlatformStore(state => ({
+  const { activeContract, enabledModuleKeys, isLoading, role } = usePlatformStore(state => ({
     activeContract: state.activeContract,
     enabledModuleKeys: state.enabledModuleKeys,
     isLoading: state.isLoading,
+    role: state.role,
   }))
   const module = getPlatformModule(moduleKey)
   const isPortalPath = location.pathname.startsWith('/portal')
@@ -38,11 +40,11 @@ export function ModuleSurfacePage({ moduleKey }: ModuleSurfacePageProps) {
     )
   }
 
-  if (isPortalPath && !enabledModuleKeys.includes(moduleKey)) {
+  if (isPortalPath && (!module || !canAccessModule(module, role, enabledModuleKeys))) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold text-gray-900">{module?.name || 'Modulo'}</h1>
-        <p className="text-gray-600">Modulo nao habilitado neste contrato.</p>
+        <p className="text-gray-600">Modulo nao disponivel para este acesso.</p>
       </div>
     )
   }

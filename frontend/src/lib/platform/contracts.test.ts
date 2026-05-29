@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   deriveEnabledModuleKeys,
   findActiveContract,
+  formatLocalDateOnly,
   isContractActive,
 } from '@/lib/platform/contracts'
 import type {
@@ -75,6 +76,10 @@ describe('contract rules', () => {
     ]
 
     expect(deriveEnabledModuleKeys(contractModules)).toEqual(['crm', 'projects'])
+  })
+
+  it('formats contract query dates using the local calendar day', () => {
+    expect(formatLocalDateOnly(new Date(2026, 0, 1, 23, 30))).toBe('2026-01-01')
   })
 
   it('supports contract details in portal contract context', () => {
