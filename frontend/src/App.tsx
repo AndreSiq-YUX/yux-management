@@ -70,7 +70,15 @@ function App() {
 
         {/* Client portal route */}
         {user?.role === 'client' && (
-          <Route path="portal/*" element={<PortalDashboardPage />} />
+          <>
+            <Route path="portal" element={<PortalDashboardPage />} />
+            <Route path="portal/projects" element={<ModuleSurfacePage moduleKey="projects" />} />
+            <Route path="portal/whatsapp-ai" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
+            <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />
+            <Route path="portal/reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
+            <Route path="portal/support" element={<ModuleSurfacePage moduleKey="support" />} />
+            <Route path="portal/finance" element={<ModuleSurfacePage moduleKey="finance" />} />
+          </>
         )}
       </Route>
 
