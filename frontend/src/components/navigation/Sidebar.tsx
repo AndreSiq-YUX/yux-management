@@ -5,6 +5,7 @@ import {
   Boxes,
   Briefcase,
   ClipboardList,
+  FileCheck2,
   FileText,
   FolderKanban,
   LayoutDashboard, 
@@ -34,6 +35,10 @@ const iconByModule: Record<string, LucideIcon> = {
   blueprints: ClipboardList,
 }
 
+const iconByHref: Record<string, LucideIcon> = {
+  '/contracts': FileCheck2,
+}
+
 export function Sidebar() {
   const { user, logout } = useAuthStore()
   const platformContext = usePlatformContext()
@@ -57,7 +62,9 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 px-4 py-6 space-y-1">
           {navigation.map((item) => {
-            const Icon = item.moduleKey ? iconByModule[item.moduleKey] || LayoutDashboard : LayoutDashboard
+            const Icon = item.moduleKey
+              ? iconByModule[item.moduleKey] || LayoutDashboard
+              : iconByHref[item.href] || LayoutDashboard
 
             return (
             <NavLink

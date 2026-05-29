@@ -13,6 +13,7 @@ export function buildNavigation(context: PlatformContext): NavigationItem[] {
     context.mode === 'internal'
       ? [
           { label: 'Dashboard', href: '/dashboard' },
+          { label: 'Contratos', href: '/contracts' },
           { label: 'Modulos', href: '/modules' },
         ]
       : [{ label: 'Portal', href: '/portal' }]

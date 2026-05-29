@@ -18,6 +18,7 @@ import { LeadsPage } from '@/pages/leads/LeadsPage'
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
+import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
 import { ModulesPage } from '@/pages/platform/ModulesPage'
 
@@ -49,6 +50,7 @@ function App() {
         {user?.role !== 'client' && (
           <>
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="contracts" element={<ContractsPage />} />
             <Route path="modules" element={<ModulesPage />} />
             <Route path="clients" element={<ClientsPage />} />
             <Route path="projects" element={<ProjectsPage />} />
