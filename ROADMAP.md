@@ -119,6 +119,13 @@ Fase 1: CRM Base (Projetos & Leads) 🚀
 *   **Contato YUX:** André (Founder)
 ## Marco Atual: Fundacao Modular YUX OS
 
+## Proximo Marco: Contratos e Portal por Modulos
+
+1. CRUD interno de contratos.
+2. Controle de modulos ativos por contrato.
+3. Portal do cliente filtrado pelo contrato ativo.
+4. Validacao com usuario admin e usuario cliente.
+
 1. Schema de organizacoes, usuarios, permissoes, contratos, pacotes, modulos e blueprints.
 2. Navegacao interna/portal baseada em modulos ativos.
 3. CRM, projetos, tarefas, entregas, suporte e aprovacoes sobre a mesma fundacao.

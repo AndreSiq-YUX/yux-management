@@ -60,3 +60,10 @@ depois superficies operacionais e portal do cliente.
 - Registro TypeScript de modulos e regras puras de permissao/ativacao.
 - Navegacao interna e portal derivada de modulos ativos.
 - Superficies iniciais para administracao de modulos, blueprints e Portal YUX.
+
+## Primeira Fatia Funcional
+
+A primeira fatia funcional apos a fundacao e o controle de contratos, pacotes e
+modulos ativos. O portal do cliente deriva sua navegacao, cards e acesso direto
+as rotas de modulo do contrato ativo, evitando menus hardcoded e evitando
+exposicao de modulos nao contratados.
