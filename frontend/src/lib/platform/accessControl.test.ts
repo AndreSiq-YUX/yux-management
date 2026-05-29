@@ -61,10 +61,10 @@ describe('access control', () => {
     expect(hasEveryPermission(ownerRole, ['blueprints.write', 'automations.write'])).toBe(true)
   })
 
-  it('treats base modules as enabled even when they are not in the contract list', () => {
+  it('requires base modules to be explicitly enabled', () => {
     const module = getPlatformModule('projects')!
 
-    expect(isModuleEnabled(module, [])).toBe(true)
+    expect(isModuleEnabled(module, [])).toBe(false)
   })
 
   it('blocks optional modules that are not enabled', () => {

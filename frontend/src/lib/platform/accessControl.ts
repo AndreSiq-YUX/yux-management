@@ -12,7 +12,7 @@ export function hasEveryPermission(role: PlatformRole | null, permissions: Permi
 }
 
 export function isModuleEnabled(module: PlatformModule, enabledModuleKeys: string[]) {
-  return module.base || enabledModuleKeys.includes(module.key)
+  return enabledModuleKeys.includes(module.key)
 }
 
 export function canAccessModule(

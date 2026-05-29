@@ -12,7 +12,7 @@ const internalContext: PlatformContext = {
     scope: 'internal',
     permissions: ['platform.manage'],
   },
-  enabledModuleKeys: ['crm', 'projects', 'campaigns', 'blueprints'],
+  enabledModuleKeys: ['clients', 'crm', 'projects', 'campaigns', 'blueprints'],
 }
 
 describe('buildNavigation', () => {
@@ -50,5 +50,23 @@ describe('buildNavigation', () => {
     expect(labels).not.toContain('Clientes')
     expect(labels).not.toContain('Blueprints')
     expect(items.find(item => item.moduleKey === 'campaigns')?.href).toBe('/portal/campaigns')
+  })
+
+  it('does not show base portal modules when they are disabled by contract', () => {
+    const items = buildNavigation({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['projects.read', 'support.read'],
+      },
+      enabledModuleKeys: [],
+    })
+    const labels = items.map(item => item.label)
+
+    expect(labels).not.toContain('Projetos e Entregas')
+    expect(labels).not.toContain('Suporte')
   })
 })
