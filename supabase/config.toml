@@ -1,6 +1,6 @@
 # Supabase Configuration for YUX Client Management System
 
-project_id = "yux-client-management"
+project_id = "portal-yux"
 
 [api]
 enabled = true

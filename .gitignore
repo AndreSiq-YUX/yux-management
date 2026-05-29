@@ -104,6 +104,8 @@ Thumbs.db
 # Database
 *.sqlite
 *.db
+*.backup.gz
+controle.txt
 
 # Docker
 .dockerignore
