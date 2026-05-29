@@ -2,6 +2,10 @@ export type PlatformMode = 'internal' | 'portal'
 
 export type OrganizationKind = 'yux' | 'client'
 
+export type ContractStatus = 'draft' | 'active' | 'paused' | 'cancelled' | 'completed'
+
+export type BillingCycle = 'one_time' | 'monthly' | 'quarterly' | 'yearly'
+
 export interface Organization {
   id: string
   name: string
@@ -81,7 +85,11 @@ export interface Contract {
   id: string
   clientId: string
   packageId: string
-  status: 'draft' | 'active' | 'paused' | 'cancelled' | 'completed'
+  status: ContractStatus
+  name?: string
+  value?: number
+  billingCycle?: BillingCycle
+  notes?: string
   startsAt: string
   endsAt?: string
   createdAt: string
@@ -92,6 +100,16 @@ export interface ContractModule {
   contractId: string
   moduleKey: string
   enabled: boolean
+}
+
+export interface ContractDetails extends Contract {
+  package: PackageDefinition | null
+  modules: ContractModule[]
+}
+
+export interface PortalContractContext {
+  contract: ContractDetails | null
+  enabledModuleKeys: string[]
 }
 
 export interface Blueprint {

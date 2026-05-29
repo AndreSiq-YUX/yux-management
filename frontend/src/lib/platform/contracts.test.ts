@@ -4,7 +4,13 @@ import {
   findActiveContract,
   isContractActive,
 } from '@/lib/platform/contracts'
-import type { Contract, ContractModule } from '@/types/platform'
+import type {
+  Contract,
+  ContractDetails,
+  ContractModule,
+  PackageDefinition,
+  PortalContractContext,
+} from '@/types/platform'
 
 const baseContract: Contract = {
   id: 'contract-1',
@@ -69,5 +75,34 @@ describe('contract rules', () => {
     ]
 
     expect(deriveEnabledModuleKeys(contractModules)).toEqual(['crm', 'projects'])
+  })
+
+  it('supports contract details in portal contract context', () => {
+    const packageDefinition: PackageDefinition = {
+      id: 'package-1',
+      key: 'commercial-machine',
+      name: 'Maquina Comercial',
+      description: 'Pacote para operacao comercial',
+      moduleKeys: ['projects', 'campaigns'],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+
+    const details: ContractDetails = {
+      ...baseContract,
+      name: 'Contrato Maquina Comercial',
+      value: 4500,
+      billingCycle: 'monthly',
+      package: packageDefinition,
+      modules: [{ contractId: 'contract-1', moduleKey: 'projects', enabled: true }],
+    }
+
+    const context: PortalContractContext = {
+      contract: details,
+      enabledModuleKeys: ['projects'],
+    }
+
+    expect(context.contract?.package?.moduleKeys).toEqual(['projects', 'campaigns'])
+    expect(context.enabledModuleKeys).toEqual(['projects'])
   })
 })
