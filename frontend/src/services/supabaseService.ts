@@ -1,5 +1,15 @@
 import { supabase } from '@/lib/supabase'
-import { Project, ProjectPhase, ProjectTask } from '@/types/project'
+import {
+  ApprovalDecision,
+  ApprovalDecisionValue,
+  ApprovalRequest,
+  ApprovalTargetType,
+  Project,
+  ProjectDeliverable,
+  ProjectPhase,
+  ProjectTask,
+  ProjectTimelineEntry,
+} from '@/types/project'
 
 export class SupabaseService {
   private mapProject(row: any): Project {
@@ -58,6 +68,7 @@ export class SupabaseService {
       estimatedHours: row.estimated_hours !== null && row.estimated_hours !== undefined ? Number(row.estimated_hours) : undefined,
       actualHours: row.actual_hours !== null && row.actual_hours !== undefined ? Number(row.actual_hours) : undefined,
       orderIndex: Number(row.order_index || 0),
+      isClientVisible: row.is_client_visible ?? false,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
@@ -78,6 +89,71 @@ export class SupabaseService {
       orderIndex: Number(row.order_index || 0),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    }
+  }
+
+  private mapProjectDeliverable(row: any): ProjectDeliverable {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      phaseId: row.phase_id || undefined,
+      title: row.title,
+      description: row.description || undefined,
+      status: row.status,
+      dueDate: row.due_date || undefined,
+      deliveredAt: row.delivered_at || undefined,
+      externalUrl: row.external_url || undefined,
+      isClientVisible: row.is_client_visible ?? false,
+      createdBy: row.created_by || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }
+  }
+
+  private mapApprovalDecision(row: any): ApprovalDecision {
+    return {
+      id: row.id,
+      approvalRequestId: row.approval_request_id,
+      decision: row.decision,
+      comment: row.comment || undefined,
+      decidedBy: row.decided_by,
+      createdAt: row.created_at,
+    }
+  }
+
+  private mapApprovalRequest(row: any): ApprovalRequest {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      targetType: row.target_type,
+      targetId: row.target_id,
+      title: row.title,
+      instructions: row.instructions || undefined,
+      status: row.status,
+      isClientVisible: row.is_client_visible ?? true,
+      requestedBy: row.requested_by || undefined,
+      submittedAt: row.submitted_at,
+      decidedAt: row.decided_at || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      decisions: Array.isArray(row.approval_decisions)
+        ? row.approval_decisions.map((decision: any) => this.mapApprovalDecision(decision))
+        : [],
+    }
+  }
+
+  private mapProjectTimelineEntry(row: any): ProjectTimelineEntry {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      entryType: row.entry_type,
+      title: row.title,
+      body: row.body || undefined,
+      metadata: row.metadata || {},
+      origin: row.origin,
+      isClientVisible: row.is_client_visible ?? false,
+      createdBy: row.created_by || undefined,
+      createdAt: row.created_at,
     }
   }
 
@@ -1165,6 +1241,7 @@ export class SupabaseService {
     estimatedHours?: number;
     actualHours?: number;
     phaseId?: string;
+    isClientVisible?: boolean;
   }) {
     const updateData: any = {
       updated_at: new Date().toISOString()
@@ -1179,6 +1256,7 @@ export class SupabaseService {
     if (taskData.estimatedHours !== undefined) updateData.estimated_hours = taskData.estimatedHours
     if (taskData.actualHours !== undefined) updateData.actual_hours = taskData.actualHours
     if (taskData.phaseId !== undefined) updateData.phase_id = taskData.phaseId
+    if (taskData.isClientVisible !== undefined) updateData.is_client_visible = taskData.isClientVisible
 
     const { data, error } = await supabase
       .from('project_tasks')
@@ -1290,6 +1368,162 @@ export class SupabaseService {
 
     if (error) throw error
     return { success: true }
+  }
+
+  // Project delivery methods
+  async updateProjectTaskVisibility(projectId: string, taskId: string, isClientVisible: boolean) {
+    return this.updateProjectTask(projectId, taskId, { isClientVisible })
+  }
+
+  async getProjectDeliverables(projectId: string) {
+    const { data, error } = await supabase
+      .from('project_deliverables')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    const deliverables = (data || []).map(row => this.mapProjectDeliverable(row))
+    return { success: true, data: deliverables, deliverables }
+  }
+
+  async createProjectDeliverable(projectId: string, deliverable: {
+    title: string
+    description?: string
+    phaseId?: string
+    dueDate?: string
+    externalUrl?: string
+    isClientVisible: boolean
+  }) {
+    const { data, error } = await supabase
+      .from('project_deliverables')
+      .insert({
+        project_id: projectId,
+        phase_id: deliverable.phaseId || null,
+        title: deliverable.title,
+        description: deliverable.description || null,
+        due_date: deliverable.dueDate || null,
+        external_url: deliverable.externalUrl || null,
+        is_client_visible: deliverable.isClientVisible,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, data: this.mapProjectDeliverable(data) }
+  }
+
+  async updateProjectDeliverable(projectId: string, deliverableId: string, updates: Partial<{
+    title: string
+    description: string
+    phaseId: string
+    dueDate: string
+    externalUrl: string
+    status: ProjectDeliverable['status']
+    isClientVisible: boolean
+  }>) {
+    const row: Record<string, unknown> = {}
+    if (updates.title !== undefined) row.title = updates.title
+    if (updates.description !== undefined) row.description = updates.description || null
+    if (updates.phaseId !== undefined) row.phase_id = updates.phaseId || null
+    if (updates.dueDate !== undefined) row.due_date = updates.dueDate || null
+    if (updates.externalUrl !== undefined) row.external_url = updates.externalUrl || null
+    if (updates.status !== undefined) row.status = updates.status
+    if (updates.isClientVisible !== undefined) row.is_client_visible = updates.isClientVisible
+
+    const { data, error } = await supabase
+      .from('project_deliverables')
+      .update(row)
+      .eq('id', deliverableId)
+      .eq('project_id', projectId)
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, data: this.mapProjectDeliverable(data) }
+  }
+
+  async getProjectApprovalRequests(projectId: string) {
+    const { data, error } = await supabase
+      .from('approval_requests')
+      .select('*, approval_decisions(*)')
+      .eq('project_id', projectId)
+      .order('submitted_at', { ascending: false })
+
+    if (error) throw error
+    const approvals = (data || []).map(row => this.mapApprovalRequest(row))
+    return { success: true, data: approvals, approvals }
+  }
+
+  async createApprovalRequest(projectId: string, request: {
+    targetType: ApprovalTargetType
+    targetId: string
+    title: string
+    instructions?: string
+    isClientVisible?: boolean
+  }) {
+    const { data, error } = await supabase
+      .from('approval_requests')
+      .insert({
+        project_id: projectId,
+        target_type: request.targetType,
+        target_id: request.targetId,
+        title: request.title,
+        instructions: request.instructions || null,
+        is_client_visible: request.isClientVisible ?? true,
+      })
+      .select('*, approval_decisions(*)')
+      .single()
+
+    if (error) throw error
+    return { success: true, data: this.mapApprovalRequest(data) }
+  }
+
+  async submitApprovalDecision(approvalRequestId: string, decision: ApprovalDecisionValue, comment?: string) {
+    const { data, error } = await supabase
+      .from('approval_decisions')
+      .insert({
+        approval_request_id: approvalRequestId,
+        decision,
+        comment: comment?.trim() || null,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, data: this.mapApprovalDecision(data) }
+  }
+
+  async getProjectTimeline(projectId: string) {
+    const { data, error } = await supabase
+      .from('project_timeline_entries')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    const entries = (data || []).map(row => this.mapProjectTimelineEntry(row))
+    return { success: true, data: entries, entries }
+  }
+
+  async createProjectTimelineEntry(projectId: string, entry: {
+    title: string
+    body?: string
+    isClientVisible: boolean
+  }) {
+    const { data, error } = await supabase
+      .from('project_timeline_entries')
+      .insert({
+        project_id: projectId,
+        title: entry.title,
+        body: entry.body || null,
+        is_client_visible: entry.isClientVisible,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, data: this.mapProjectTimelineEntry(data) }
   }
 
   // Additional project methods

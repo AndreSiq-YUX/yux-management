@@ -9,6 +9,11 @@ export type ProjectType = typeof PROJECT_TYPES[number]
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 export type PhaseStatus = 'planning' | 'in_progress' | 'completed' | 'on_hold'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+export type DeliverableStatus = 'draft' | 'delivered' | 'in_review' | 'approved' | 'changes_requested' | 'rejected'
+export type ApprovalTargetType = 'deliverable' | 'document' | 'creative'
+export type ApprovalRequestStatus = 'pending' | 'approved' | 'changes_requested' | 'rejected' | 'cancelled'
+export type ApprovalDecisionValue = 'approved' | 'changes_requested' | 'rejected'
+export type TimelineEntryType = 'manual_update' | 'deliverable_created' | 'approval_requested' | 'approval_decided' | 'status_changed'
 
 export interface Project {
   id: string
@@ -78,8 +83,64 @@ export interface ProjectTask {
   estimatedHours?: number
   actualHours?: number
   orderIndex: number
+  isClientVisible: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface ProjectDeliverable {
+  id: string
+  projectId: string
+  phaseId?: string
+  title: string
+  description?: string
+  status: DeliverableStatus
+  dueDate?: string
+  deliveredAt?: string
+  externalUrl?: string
+  isClientVisible: boolean
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApprovalDecision {
+  id: string
+  approvalRequestId: string
+  decision: ApprovalDecisionValue
+  comment?: string
+  decidedBy: string
+  createdAt: string
+}
+
+export interface ApprovalRequest {
+  id: string
+  projectId: string
+  targetType: ApprovalTargetType
+  targetId: string
+  title: string
+  instructions?: string
+  status: ApprovalRequestStatus
+  isClientVisible: boolean
+  requestedBy?: string
+  submittedAt: string
+  decidedAt?: string
+  createdAt: string
+  updatedAt: string
+  decisions?: ApprovalDecision[]
+}
+
+export interface ProjectTimelineEntry {
+  id: string
+  projectId: string
+  entryType: TimelineEntryType
+  title: string
+  body?: string
+  metadata: Record<string, unknown>
+  origin: 'manual' | 'automatic'
+  isClientVisible: boolean
+  createdBy?: string
+  createdAt: string
 }
 
 export interface ProjectFormData {
