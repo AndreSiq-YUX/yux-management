@@ -90,4 +90,25 @@ describe('buildNavigation', () => {
     })
     expect(items.find(item => item.moduleKey === 'clients')).toBeUndefined()
   })
+
+  it('routes contracted proposals to the portal only when enabled', () => {
+    const context: PlatformContext = {
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['proposals.read'],
+      },
+      enabledModuleKeys: ['proposals'],
+    }
+
+    expect(buildNavigation(context).find(item => item.moduleKey === 'proposals')).toEqual({
+      label: 'Propostas',
+      href: '/portal/proposals',
+      moduleKey: 'proposals',
+    })
+    expect(buildNavigation({ ...context, enabledModuleKeys: [] }).find(item => item.moduleKey === 'proposals')).toBeUndefined()
+  })
 })

@@ -304,4 +304,22 @@ export const proposalService = {
     if (error) throw error
     return data
   },
+
+  async getPublicReview(token: string) {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-proposal-decision?token=${encodeURIComponent(token)}`)
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Link invalido.')
+    return data
+  },
+
+  async submitPublicDecision(token: string, decision: ProposalDecisionValue, comment?: string) {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-proposal-decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, decision, comment }),
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Nao foi possivel registrar a decisao.')
+    return data
+  },
 }

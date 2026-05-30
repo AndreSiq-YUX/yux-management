@@ -7,6 +7,7 @@ import { DashboardLayout } from '@/components/layouts/DashboardLayout'
 
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage'
+import { PublicProposalPage } from '@/pages/public/PublicProposalPage'
 
 // Dashboard pages
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
@@ -14,10 +15,12 @@ import { ClientsPage } from '@/pages/clients/ClientsPage'
 import { ProjectsPage } from '@/pages/projects/ProjectsPage'
 import { CampaignsPage } from '@/pages/campaigns/CampaignsPage'
 import { LeadsPage } from '@/pages/leads/LeadsPage'
+import { ProposalsPage } from '@/pages/proposals/ProposalsPage'
 
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
 import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
+import { PortalProposalsPage } from '@/pages/client-portal/PortalProposalsPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
@@ -34,6 +37,7 @@ function App() {
         <Route path="login" element={<LoginPage />} />
         <Route index element={<Navigate to="/auth/login" replace />} />
       </Route>
+      <Route path="/proposal/review/:token" element={<PublicProposalPage />} />
 
       {/* Protected routes */}
       <Route 
@@ -59,7 +63,7 @@ function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
             <Route path="leads" element={<LeadsPage />} />
-            <Route path="proposals" element={<ModuleSurfacePage moduleKey="proposals" />} />
+            <Route path="proposals" element={<ProposalsPage />} />
             <Route path="whatsapp-ai" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
             <Route path="reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="automations" element={<ModuleSurfacePage moduleKey="automations" />} />
@@ -74,6 +78,7 @@ function App() {
           <>
             <Route path="portal" element={<PortalDashboardPage />} />
             <Route path="portal/projects" element={<PortalProjectsPage />} />
+            <Route path="portal/proposals" element={<PortalProposalsPage />} />
             <Route path="portal/crm" element={<LeadsPage />} />
             <Route path="portal/whatsapp-ai" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
             <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />

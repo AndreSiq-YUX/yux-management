@@ -30,7 +30,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Propostas',
     base: false,
     internalRoute: '/proposals',
-    portalRoute: null,
+    portalRoute: '/portal/proposals',
     requiredPermissions: ['proposals.read'],
   },
   {
