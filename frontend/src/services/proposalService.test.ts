@@ -58,4 +58,36 @@ describe('proposal service mappings', () => {
     row.snapshot.selectedModuleKeys.push('projects')
     expect(version.snapshot.selectedModuleKeys).toEqual(['crm'])
   })
+
+  it('maps database-shaped immutable snapshots for portal rendering', () => {
+    const version = mapProposalVersion({
+      id: 'version',
+      proposal_id: 'proposal',
+      version_number: 1,
+      status: 'pending',
+      sent_at: '2026-05-30T12:00:00Z',
+      snapshot: {
+        id: 'proposal',
+        organization_id: 'org',
+        lead_id: 'lead',
+        package_id: 'package',
+        status: 'sent',
+        title: 'Proposta',
+        scope: 'Escopo',
+        billing_cycle: 'monthly',
+        selected_module_keys: ['crm'],
+        final_value: '4500',
+        items: [{ id: 'item', proposal_id: 'proposal', item_key: 'base', label: 'Pacote', quantity: '1', unit_value: '4500', total_value: '4500', order_index: 0 }],
+      },
+    })
+    expect(version.snapshot).toMatchObject({
+      organizationId: 'org',
+      leadId: 'lead',
+      packageId: 'package',
+      billingCycle: 'monthly',
+      selectedModuleKeys: ['crm'],
+      finalValue: 4500,
+      items: [{ itemKey: 'base', totalValue: 4500 }],
+    })
+  })
 })

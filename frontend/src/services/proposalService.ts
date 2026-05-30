@@ -57,12 +57,36 @@ export function mapProposal(row: any): ProposalDraft {
   }
 }
 
+export function mapProposalSnapshot(snapshot: any) {
+  if (snapshot.organizationId) return structuredClone(snapshot)
+  return {
+    id: snapshot.id,
+    organizationId: snapshot.organization_id,
+    leadId: snapshot.lead_id,
+    clientId: snapshot.client_id || undefined,
+    packageId: snapshot.package_id,
+    blueprintId: snapshot.blueprint_id || undefined,
+    assignedTo: snapshot.assigned_to || undefined,
+    status: snapshot.status,
+    title: snapshot.title,
+    scope: snapshot.scope || '',
+    whatsappMessage: snapshot.whatsapp_message || undefined,
+    emailSubject: snapshot.email_subject || undefined,
+    emailBody: snapshot.email_body || undefined,
+    billingCycle: snapshot.billing_cycle,
+    selectedModuleKeys: snapshot.selected_module_keys || [],
+    finalValue: numberValue(snapshot.final_value),
+    overrideReason: snapshot.override_reason || undefined,
+    items: (snapshot.items || []).map(mapProposalItem),
+  }
+}
+
 export function mapProposalVersion(row: any): ProposalVersion {
   return {
     id: row.id,
     proposalId: row.proposal_id,
     versionNumber: row.version_number,
-    snapshot: structuredClone(row.snapshot),
+    snapshot: mapProposalSnapshot(row.snapshot),
     status: row.status as ProposalVersionStatus,
     sentAt: row.sent_at,
     decidedAt: row.decided_at || undefined,
@@ -309,7 +333,7 @@ export const proposalService = {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-proposal-decision?token=${encodeURIComponent(token)}`)
     const data = await response.json()
     if (!response.ok) throw new Error(data.error || 'Link invalido.')
-    return data
+    return { ...data, snapshot: mapProposalSnapshot(data.snapshot) }
   },
 
   async submitPublicDecision(token: string, decision: ProposalDecisionValue, comment?: string) {
