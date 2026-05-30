@@ -69,4 +69,25 @@ describe('buildNavigation', () => {
     expect(labels).not.toContain('Projetos e Entregas')
     expect(labels).not.toContain('Suporte')
   })
+
+  it('routes contracted client CRM access to the portal workspace', () => {
+    const items = buildNavigation({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['crm.read', 'leads.read'],
+      },
+      enabledModuleKeys: ['crm'],
+    })
+
+    expect(items.find(item => item.moduleKey === 'crm')).toEqual({
+      label: 'CRM',
+      href: '/portal/crm',
+      moduleKey: 'crm',
+    })
+    expect(items.find(item => item.moduleKey === 'clients')).toBeUndefined()
+  })
 })

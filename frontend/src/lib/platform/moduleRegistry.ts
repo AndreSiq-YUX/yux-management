@@ -14,7 +14,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'CRM',
     base: false,
     internalRoute: '/leads',
-    portalRoute: null,
+    portalRoute: '/portal/crm',
     requiredPermissions: ['crm.read', 'leads.read'],
   },
   {

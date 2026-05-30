@@ -108,6 +108,7 @@ export interface AutomationExecution {
   status: AutomationExecutionStatus
   attemptCount: number
   lastError?: string
+  scheduledAt: string
   requestedAt: string
   completedAt?: string
 }

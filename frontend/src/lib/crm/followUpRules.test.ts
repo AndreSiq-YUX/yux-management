@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyEnrollmentCommand, sortPipelineStages } from './followUpRules'
+import { applyEnrollmentCommand, isPersistedOrganizationId, sortPipelineStages } from './followUpRules'
 
 describe('sortPipelineStages', () => {
   it('orders configurable stages by order index', () => {
@@ -8,6 +8,13 @@ describe('sortPipelineStages', () => {
       { id: 'new', orderIndex: 0 },
       { id: 'proposal', orderIndex: 2 },
     ]).map(stage => stage.id)).toEqual(['new', 'proposal', 'won'])
+  })
+})
+
+describe('isPersistedOrganizationId', () => {
+  it('rejects the local organization placeholder before Supabase hydration', () => {
+    expect(isPersistedOrganizationId('local-yux')).toBe(false)
+    expect(isPersistedOrganizationId('650e8400-e29b-41d4-a716-446655440001')).toBe(true)
   })
 })
 

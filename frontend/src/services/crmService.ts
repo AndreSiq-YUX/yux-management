@@ -10,7 +10,17 @@ import type {
   CrmTask,
 } from '@/types/crm'
 
-const mapStage = (row: any): CrmPipelineStage => ({
+type StageRow = { id: string; pipeline_id: string; key: string; name: string; color: string; order_index: number; is_won: boolean; is_lost: boolean; is_active: boolean }
+type PipelineRow = { id: string; organization_id: string; name: string; description?: string | null; is_default: boolean; is_active: boolean; crm_pipeline_stages?: StageRow[] }
+type LeadRow = { id: string; organization_id: string; pipeline_id: string; stage_id: string; name: string; email: string; phone?: string | null; company?: string | null; source: string; score?: number | null; value?: number | string | null; notes?: string | null; assigned_to?: string | null; next_follow_up_at?: string | null; created_at: string; updated_at: string }
+type InteractionRow = { id: string; organization_id: string; lead_id: string; type: CrmInteraction['type']; title: string; description: string; date: string }
+type TaskRow = { id: string; organization_id: string; lead_id: string; enrollment_id?: string | null; title: string; description?: string | null; status: CrmTask['status']; due_at: string; assigned_to?: string | null }
+type SequenceStepRow = { id: string; sequence_id: string; action_type: AutomationExecution['actionType']; delay_minutes: number; subject?: string | null; body: string; order_index: number; is_active: boolean }
+type SequenceRow = { id: string; organization_id: string; name: string; description?: string | null; is_active: boolean; crm_sequence_steps?: SequenceStepRow[] }
+type EnrollmentRow = { id: string; organization_id: string; sequence_id: string; lead_id: string; status: CrmSequenceEnrollment['status']; current_step_index: number; next_execution_at?: string | null; manual_note?: string | null }
+type ExecutionRow = { id: string; organization_id: string; lead_id: string; enrollment_id?: string | null; step_id?: string | null; action_type: AutomationExecution['actionType']; payload?: Record<string, unknown> | null; status: AutomationExecution['status']; attempt_count: number; last_error?: string | null; scheduled_at: string; requested_at: string; completed_at?: string | null }
+
+const mapStage = (row: StageRow): CrmPipelineStage => ({
   id: row.id,
   pipelineId: row.pipeline_id,
   key: row.key,
@@ -22,7 +32,7 @@ const mapStage = (row: any): CrmPipelineStage => ({
   isActive: row.is_active,
 })
 
-const mapPipeline = (row: any): CrmPipeline => ({
+const mapPipeline = (row: PipelineRow): CrmPipeline => ({
   id: row.id,
   organizationId: row.organization_id,
   name: row.name,
@@ -32,7 +42,7 @@ const mapPipeline = (row: any): CrmPipeline => ({
   stages: (row.crm_pipeline_stages || []).map(mapStage),
 })
 
-const mapLead = (row: any): CrmLead => ({
+const mapLead = (row: LeadRow): CrmLead => ({
   id: row.id,
   organizationId: row.organization_id,
   pipelineId: row.pipeline_id,
@@ -51,7 +61,7 @@ const mapLead = (row: any): CrmLead => ({
   updatedAt: row.updated_at,
 })
 
-const mapInteraction = (row: any): CrmInteraction => ({
+const mapInteraction = (row: InteractionRow): CrmInteraction => ({
   id: row.id,
   organizationId: row.organization_id,
   leadId: row.lead_id,
@@ -61,7 +71,7 @@ const mapInteraction = (row: any): CrmInteraction => ({
   date: row.date,
 })
 
-const mapTask = (row: any): CrmTask => ({
+const mapTask = (row: TaskRow): CrmTask => ({
   id: row.id,
   organizationId: row.organization_id,
   leadId: row.lead_id,
@@ -73,13 +83,13 @@ const mapTask = (row: any): CrmTask => ({
   assignedTo: row.assigned_to || undefined,
 })
 
-const mapSequence = (row: any): CrmSequence => ({
+const mapSequence = (row: SequenceRow): CrmSequence => ({
   id: row.id,
   organizationId: row.organization_id,
   name: row.name,
   description: row.description || undefined,
   isActive: row.is_active,
-  steps: (row.crm_sequence_steps || []).map((step: any) => ({
+  steps: (row.crm_sequence_steps || []).map(step => ({
     id: step.id,
     sequenceId: step.sequence_id,
     actionType: step.action_type,
@@ -91,7 +101,7 @@ const mapSequence = (row: any): CrmSequence => ({
   })),
 })
 
-const mapEnrollment = (row: any): CrmSequenceEnrollment => ({
+const mapEnrollment = (row: EnrollmentRow): CrmSequenceEnrollment => ({
   id: row.id,
   organizationId: row.organization_id,
   sequenceId: row.sequence_id,
@@ -102,7 +112,7 @@ const mapEnrollment = (row: any): CrmSequenceEnrollment => ({
   manualNote: row.manual_note || undefined,
 })
 
-const mapExecution = (row: any): AutomationExecution => ({
+const mapExecution = (row: ExecutionRow): AutomationExecution => ({
   id: row.id,
   organizationId: row.organization_id,
   leadId: row.lead_id,
@@ -113,6 +123,7 @@ const mapExecution = (row: any): AutomationExecution => ({
   status: row.status,
   attemptCount: row.attempt_count,
   lastError: row.last_error || undefined,
+  scheduledAt: row.scheduled_at,
   requestedAt: row.requested_at,
   completedAt: row.completed_at || undefined,
 })
@@ -217,6 +228,15 @@ export const crmService = {
   async enrollLead(organizationId: string, leadId: string, sequenceId: string) {
     const { data, error } = await supabase.from('crm_sequence_enrollments').insert({ organization_id: organizationId, lead_id: leadId, sequence_id: sequenceId, next_execution_at: new Date().toISOString() }).select().single()
     if (error) throw error
+    const { data: execution, error: executionError } = await supabase
+      .from('automation_executions')
+      .select('id')
+      .eq('enrollment_id', data.id)
+      .order('scheduled_at')
+      .limit(1)
+      .maybeSingle()
+    if (executionError) throw executionError
+    if (execution) await supabase.functions.invoke('dispatch-crm-automation', { body: { executionId: execution.id } })
     return mapEnrollment(data)
   },
 

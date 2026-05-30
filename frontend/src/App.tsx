@@ -74,6 +74,7 @@ function App() {
           <>
             <Route path="portal" element={<PortalDashboardPage />} />
             <Route path="portal/projects" element={<PortalProjectsPage />} />
+            <Route path="portal/crm" element={<LeadsPage />} />
             <Route path="portal/whatsapp-ai" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
             <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />
             <Route path="portal/reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
