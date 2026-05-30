@@ -33,3 +33,21 @@ export function getAdminClient() {
   const key = firstConfigured(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), Deno.env.get('SUPABASE_SECRET_KEY'), firstJsonValue(Deno.env.get('SUPABASE_SECRET_KEYS')))
   return createClient(url, key)
 }
+
+export async function recordConversionFailure(admin: ReturnType<typeof createClient>, proposalId: string, error: unknown) {
+  const { data: lastRun } = await admin
+    .from('proposal_conversion_runs')
+    .select('attempt_number')
+    .eq('proposal_id', proposalId)
+    .order('attempt_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  await admin.from('proposal_conversion_runs').insert({
+    proposal_id: proposalId,
+    attempt_number: (lastRun?.attempt_number || 0) + 1,
+    status: 'failed',
+    error: error instanceof Error ? error.message : 'Conversion failed',
+    completed_at: new Date().toISOString(),
+  })
+  await admin.from('proposals').update({ status: 'conversion_failed' }).eq('id', proposalId).eq('status', 'approved')
+}

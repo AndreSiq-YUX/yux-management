@@ -1,6 +1,6 @@
 import { validatePublicDecision } from '../_shared/proposalDecision.ts'
 import { hashToken } from '../_shared/proposalSend.ts'
-import { corsHeaders, getAdminClient, json } from '../_shared/edge.ts'
+import { corsHeaders, getAdminClient, json, recordConversionFailure } from '../_shared/edge.ts'
 
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -19,7 +19,12 @@ Deno.serve(async req => {
     let conversion: unknown
     if (input.decision === 'approved') {
       const result = await admin.rpc('convert_approved_proposal_service', { target_proposal_id: version.proposal_id })
-      conversion = result.error ? { pending: true } : result.data
+      if (result.error) {
+        await recordConversionFailure(admin, version.proposal_id, result.error)
+        conversion = { pending: true }
+      } else {
+        conversion = result.data
+      }
     }
     return json({ success: true, decision: input.decision, conversion })
   } catch {
