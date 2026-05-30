@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, CheckCircle, Circle, Calendar, User, AlertCircle } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle, Circle, Calendar, User, AlertCircle, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'react-hot-toast'
@@ -271,6 +272,17 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     }
   }
 
+  const toggleTaskVisibility = async (task: Task) => {
+    try {
+      await supabaseService.updateProjectTaskVisibility(project.id, task.id, !task.isClientVisible)
+      loadTasksAndPhases()
+      onUpdate?.()
+    } catch (error) {
+      console.error('Erro ao atualizar visibilidade da tarefa:', error)
+      toast.error('Erro ao atualizar visibilidade da tarefa')
+    }
+  }
+
   const getPhaseProgress = (phase: Phase) => {
     const phaseTasks = tasks.filter(task => task.phaseId === phase.id)
     if (phaseTasks.length === 0) return 0
@@ -398,6 +410,14 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
+                          <div className="flex items-center gap-2 pr-2 text-xs text-gray-500">
+                            <Eye className="h-4 w-4" />
+                            <Switch
+                              checked={task.isClientVisible}
+                              onCheckedChange={() => toggleTaskVisibility(task)}
+                              aria-label={`Exibir ${task.title} no portal`}
+                            />
+                          </div>
                           <Button
                             variant="ghost"
                             size="sm"

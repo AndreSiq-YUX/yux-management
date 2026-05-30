@@ -43,6 +43,7 @@ import toast from 'react-hot-toast'
 import { ProjectProgressCalculator } from './ProjectProgressCalculator'
 import { ProjectNotifications } from './ProjectNotifications'
 import { ProjectTaskManager } from './ProjectTaskManager'
+import { ProjectDeliveryManager } from './ProjectDeliveryManager'
 
 interface ProjectDetailsModalProps {
   isOpen: boolean
@@ -238,9 +239,10 @@ export function ProjectDetailsModal({
           </div>
         ) : (
             <Tabs defaultValue="overview" className="w-full">
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="overview">Visão Geral</TabsTrigger>
                 <TabsTrigger value="tasks">Tarefas & Fases</TabsTrigger>
+                <TabsTrigger value="delivery">Entregas</TabsTrigger>
                 <TabsTrigger value="progress">Progresso</TabsTrigger>
                 <TabsTrigger value="client">Cliente</TabsTrigger>
                 <TabsTrigger value="notifications">Notificações</TabsTrigger>
@@ -362,6 +364,10 @@ export function ProjectDetailsModal({
                     fetchProjectDetails()
                   }}
                 />
+              </TabsContent>
+
+              <TabsContent value="delivery" className="space-y-4">
+                <ProjectDeliveryManager project={project} />
               </TabsContent>
 
               <TabsContent value="progress" className="space-y-4">
