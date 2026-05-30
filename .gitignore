@@ -120,3 +120,6 @@ supabase/.output/
 # Local Git metadata backups
 .git-frontend-backup-*/
 frontend/vite-dev*.log
+
+# Local Git worktrees
+.worktrees/
