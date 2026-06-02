@@ -74,6 +74,16 @@ describe('omnichannel domain rules', () => {
     expect(matchesHandoffRule(anyRule, context)).toBe(true)
   })
 
+  it('does not match handoff rules without conditions', () => {
+    expect(matchesHandoffRule({
+      id: 'empty',
+      priority: 1,
+      combinator: 'all',
+      conditions: [],
+      outcome: { type: 'assist' },
+    }, baseContext)).toBe(false)
+  })
+
   it('selects the first matching outcome by ascending priority', () => {
     const rules: HandoffRule[] = [
       {
@@ -188,6 +198,11 @@ describe('omnichannel domain rules', () => {
     expect(calculateRetentionDeadline('2026-01-15T12:00:00.000Z', 3)).toBe('2026-04-15T12:00:00.000Z')
   })
 
+  it('clamps retention deadlines to the last day of the target month', () => {
+    expect(calculateRetentionDeadline('2026-01-31T12:00:00.000Z', 1)).toBe('2026-02-28T12:00:00.000Z')
+    expect(calculateRetentionDeadline('2024-01-31T12:00:00.000Z', 1)).toBe('2024-02-29T12:00:00.000Z')
+  })
+
   it('returns only published knowledge entries for AI', () => {
     expect(getKnowledgeEntriesForAi([
       { id: 'draft', state: 'draft', title: 'Draft' },
@@ -206,9 +221,22 @@ describe('omnichannel domain rules', () => {
     })
   })
 
+  it('sanitizes negative and non-finite AI usage and prices before estimating cost', () => {
+    expect(estimateAiCost(
+      { inputTokens: -500_000, outputTokens: Number.NaN },
+      { inputPerMillion: Number.POSITIVE_INFINITY, outputPerMillion: -8 },
+    )).toEqual({
+      inputCost: 0,
+      outputCost: 0,
+      totalCost: 0,
+    })
+  })
+
   it('matches allowed origins for the webchat widget', () => {
     expect(isAllowedWidgetOrigin('https://app.example.com', ['https://app.example.com'])).toBe(true)
     expect(isAllowedWidgetOrigin('https://sales.example.com', ['https://*.example.com'])).toBe(true)
+    expect(isAllowedWidgetOrigin('https://sales.example.com', ['https://*.example.com:8443'])).toBe(false)
+    expect(isAllowedWidgetOrigin('https://sales.example.com:8443', ['https://*.example.com:8443'])).toBe(true)
     expect(isAllowedWidgetOrigin('https://example.org', ['https://*.example.com'])).toBe(false)
     expect(isAllowedWidgetOrigin('not a url', ['*'])).toBe(false)
   })

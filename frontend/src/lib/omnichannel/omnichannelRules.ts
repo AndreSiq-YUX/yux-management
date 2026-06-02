@@ -30,6 +30,8 @@ export function decideResponseMode(mode: ResponseMode, context: OmnichannelRuleC
 }
 
 export function matchesHandoffRule(rule: HandoffRule, context: OmnichannelRuleContext) {
+  if (rule.conditions.length === 0) return false
+
   const matches = rule.conditions.map(condition => matchesHandoffCondition(condition, context))
   if (rule.combinator === 'any') return matches.some(Boolean)
   return matches.every(Boolean)
@@ -86,8 +88,15 @@ export function shouldSyncConversationToCrm(filters: CrmSyncFilters, context: Cr
 }
 
 export function calculateRetentionDeadline(createdAt: string, months = DEFAULT_RETENTION_MONTHS) {
-  const deadline = new Date(createdAt)
-  deadline.setUTCMonth(deadline.getUTCMonth() + months)
+  const createdDate = new Date(createdAt)
+  const targetYear = createdDate.getUTCFullYear()
+  const targetMonth = createdDate.getUTCMonth() + months
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
+  const deadline = new Date(createdDate)
+
+  deadline.setUTCDate(Math.min(createdDate.getUTCDate(), lastDayOfTargetMonth))
+  deadline.setUTCMonth(targetMonth)
+
   return deadline.toISOString()
 }
 
@@ -96,8 +105,8 @@ export function getKnowledgeEntriesForAi<T extends KnowledgeEntry>(entries: T[])
 }
 
 export function estimateAiCost(usage: AiTokenUsage, prices: AiTokenPrices): AiCostEstimate {
-  const inputCost = usage.inputTokens / 1_000_000 * prices.inputPerMillion
-  const outputCost = usage.outputTokens / 1_000_000 * prices.outputPerMillion
+  const inputCost = sanitizeCostValue(usage.inputTokens) / 1_000_000 * sanitizeCostValue(prices.inputPerMillion)
+  const outputCost = sanitizeCostValue(usage.outputTokens) / 1_000_000 * sanitizeCostValue(prices.outputPerMillion)
   return {
     inputCost,
     outputCost,
@@ -117,7 +126,9 @@ export function isAllowedWidgetOrigin(origin: string, allowedOrigins: string[]) 
 
     if (allowedOrigin.includes('://*.')) {
       const suffix = parsedAllowedOrigin.hostname.replace(/^wildcard\./, '')
-      return parsedOrigin.protocol === parsedAllowedOrigin.protocol && parsedOrigin.hostname.endsWith(`.${suffix}`)
+      return parsedOrigin.protocol === parsedAllowedOrigin.protocol
+        && parsedOrigin.hostname.endsWith(`.${suffix}`)
+        && parsedOrigin.port === parsedAllowedOrigin.port
     }
 
     return parsedOrigin.origin === parsedAllowedOrigin.origin
@@ -144,6 +155,10 @@ function matchesHandoffCondition(condition: HandoffCondition, context: Omnichann
 function matchesAnyKeyword(messageText: string | undefined, keywords: string[]) {
   const normalizedText = messageText?.toLocaleLowerCase() ?? ''
   return keywords.some(keyword => normalizedText.includes(keyword.toLocaleLowerCase()))
+}
+
+function sanitizeCostValue(value: number) {
+  return Number.isFinite(value) && value > 0 ? value : 0
 }
 
 function parseOrigin(origin: string) {
