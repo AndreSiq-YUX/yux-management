@@ -17,7 +17,7 @@
 - Create: `frontend/src/lib/omnichannel/omnichannelRules.ts`
 - Create: `frontend/src/lib/omnichannel/omnichannelRules.test.ts`
 
-- [ ] **Step 1: Write failing pure-rule tests**
+- [x] **Step 1: Write failing pure-rule tests**
 
 Cover:
 
@@ -34,7 +34,7 @@ Cover:
 - AI estimated cost from input and output token prices;
 - allowed-origin matching for the webchat widget.
 
-- [ ] **Step 2: Run the focused test and confirm failure**
+- [x] **Step 2: Run the focused test and confirm failure**
 
 ```bash
 cd frontend
@@ -43,7 +43,7 @@ npm test -- src/lib/omnichannel/omnichannelRules.test.ts
 
 Expected: fail because the omnichannel rule module does not exist.
 
-- [ ] **Step 3: Add domain types**
+- [x] **Step 3: Add domain types**
 
 Define:
 
@@ -57,7 +57,7 @@ Define:
 
 Keep domain properties in camelCase. Keep database conversion inside the service layer.
 
-- [ ] **Step 4: Implement the minimal pure rules**
+- [x] **Step 4: Implement the minimal pure rules**
 
 Add:
 
@@ -72,7 +72,7 @@ Add:
 - `estimateAiCost(usage, prices)`;
 - `isAllowedWidgetOrigin(origin, allowedOrigins)`.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 ```bash
 cd frontend
@@ -81,7 +81,7 @@ npm test -- src/lib/omnichannel/omnichannelRules.test.ts
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/types/omnichannel.ts frontend/src/lib/omnichannel
