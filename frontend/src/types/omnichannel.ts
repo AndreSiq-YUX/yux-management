@@ -8,6 +8,16 @@ export type HandoffCombinator = 'all' | 'any'
 export type HandoffOutcomeType = 'continue' | 'assist' | 'manual' | 'route'
 export type KnowledgePublicationState = 'draft' | 'published' | 'archived'
 export type ConversationSentiment = 'positive' | 'neutral' | 'negative'
+export type AssignmentStatus = 'active' | 'transferred' | 'closed'
+export type HandoffEventType = 'requested' | 'matched_rule' | 'assigned' | 'resolved' | 'cancelled'
+export type WebhookEventStatus = 'pending' | 'processed' | 'failed'
+export type OutboundRunStatus = 'pending' | 'queued' | 'sent' | 'failed' | 'cancelled'
+export type SchedulingRequestStatus = 'pending' | 'confirmed' | 'declined' | 'cancelled'
+export type AiRunStatus = 'pending' | 'completed' | 'failed'
+export type CrmSyncRunStatus = 'pending' | 'completed' | 'failed' | 'skipped'
+export type KnowledgeSourceType = 'document' | 'url' | 'faq' | 'manual'
+export type KnowledgePublicationStatus = 'published' | 'unpublished' | 'archived'
+export type WebchatSessionStatus = 'active' | 'ended' | 'expired'
 
 export interface ChannelConnection {
   id: string
@@ -43,6 +53,31 @@ export interface OmnichannelConversation {
   updatedAt: string
 }
 
+export interface OmnichannelContact {
+  id: string
+  organizationId: string
+  channel: OmnichannelChannel
+  externalContactId?: string
+  name?: string
+  email?: string
+  phone?: string
+  avatarUrl?: string
+  leadId?: string
+  clientId?: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelTag {
+  id: string
+  organizationId: string
+  name: string
+  color?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface OmnichannelMessage {
   id: string
   organizationId: string
@@ -66,6 +101,51 @@ export interface OmnichannelAttachment {
   sizeBytes: number
   storagePath: string
   createdAt: string
+}
+
+export interface OmnichannelAssignment {
+  id: string
+  organizationId: string
+  conversationId: string
+  queueId?: string
+  teamId?: string
+  userId?: string
+  assignedBy?: string
+  status: AssignmentStatus
+  startedAt: string
+  endedAt?: string
+}
+
+export interface OmnichannelTeam {
+  id: string
+  organizationId: string
+  name: string
+  description?: string
+  supervisorUserId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelTeamMember {
+  id: string
+  organizationId: string
+  teamId: string
+  userId: string
+  available: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelQueue {
+  id: string
+  organizationId: string
+  name: string
+  description?: string
+  teamId?: string
+  supervisorUserId?: string
+  responseMode?: ResponseMode
+  createdAt: string
+  updatedAt: string
 }
 
 export interface OmnichannelRuleContext {
@@ -125,6 +205,21 @@ export interface HandoffRuleEvaluation {
   outcome?: HandoffOutcome
 }
 
+export interface OmnichannelHandoffEvent {
+  id: string
+  organizationId: string
+  conversationId: string
+  type: HandoffEventType
+  ruleId?: string
+  outcome?: HandoffOutcome
+  fromUserId?: string
+  toUserId?: string
+  queueId?: string
+  teamId?: string
+  reason?: string
+  createdAt: string
+}
+
 export interface RoutingTeamMember {
   userId: string
   teamId: string
@@ -170,6 +265,83 @@ export interface CrmSyncDecision {
   reasons: CrmSyncRejectionReason[]
 }
 
+export interface OmnichannelWebhookEvent {
+  id: string
+  organizationId: string
+  connectionId: string
+  channel: OmnichannelChannel
+  externalEventId: string
+  eventType: string
+  idempotencyKey: string
+  payload: Record<string, unknown>
+  status: WebhookEventStatus
+  error?: string
+  receivedAt: string
+  processedAt?: string
+}
+
+export interface OmnichannelOutboundRun {
+  id: string
+  organizationId: string
+  conversationId: string
+  messageId?: string
+  channel: OmnichannelChannel
+  status: OutboundRunStatus
+  payload: Record<string, unknown>
+  error?: string
+  scheduledAt?: string
+  sentAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelSchedulingRequest {
+  id: string
+  organizationId: string
+  conversationId: string
+  contactId?: string
+  requestedBy?: string
+  status: SchedulingRequestStatus
+  requestedStartAt?: string
+  requestedEndAt?: string
+  confirmedStartAt?: string
+  confirmedEndAt?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelAiRun {
+  id: string
+  organizationId: string
+  conversationId: string
+  messageId?: string
+  status: AiRunStatus
+  responseMode: ResponseMode
+  model?: string
+  promptSummary?: string
+  outputText?: string
+  confidence?: number
+  usage?: AiTokenUsage
+  costEstimate?: AiCostEstimate
+  error?: string
+  createdAt: string
+  completedAt?: string
+}
+
+export interface OmnichannelCrmSyncRun {
+  id: string
+  organizationId: string
+  conversationId: string
+  leadId?: string
+  clientId?: string
+  status: CrmSyncRunStatus
+  decision: CrmSyncDecision
+  error?: string
+  createdAt: string
+  completedAt?: string
+}
+
 export interface RetentionSettings {
   conversationMonths?: number
   attachmentMonths?: number
@@ -184,6 +356,44 @@ export interface KnowledgeEntry {
   updatedAt?: string
 }
 
+export interface OmnichannelKnowledgeSource {
+  id: string
+  organizationId: string
+  type: KnowledgeSourceType
+  title: string
+  uri?: string
+  content?: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelKnowledgePublication {
+  id: string
+  organizationId: string
+  sourceId: string
+  state: KnowledgePublicationState
+  status: KnowledgePublicationStatus
+  title: string
+  body: string
+  tags: string[]
+  publishedAt?: string
+  archivedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelOrganizationSettings {
+  id: string
+  organizationId: string
+  defaultResponseMode: ResponseMode
+  retention: RetentionSettings
+  crmSyncFilters?: CrmSyncFilters
+  widget?: Omit<WidgetSettings, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>
+  createdAt: string
+  updatedAt: string
+}
+
 export interface WidgetSettings {
   id: string
   organizationId: string
@@ -191,6 +401,21 @@ export interface WidgetSettings {
   allowedOrigins: string[]
   defaultQueueId?: string
   createdAt: string
+  updatedAt: string
+}
+
+export interface OmnichannelWebchatSession {
+  id: string
+  organizationId: string
+  widgetId: string
+  conversationId?: string
+  contactId?: string
+  origin: string
+  status: WebchatSessionStatus
+  visitorId?: string
+  metadata?: Record<string, unknown>
+  startedAt: string
+  endedAt?: string
   updatedAt: string
 }
 
