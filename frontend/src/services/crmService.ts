@@ -15,12 +15,20 @@ import type {
 } from '@/types/crm'
 
 type StageRow = { id: string; pipeline_id: string; key: string; name: string; color: string; order_index: number; is_won: boolean; is_lost: boolean; is_active: boolean }
-type PipelineRow = { id: string; organization_id: string; name: string; description?: string | null; is_default: boolean; is_active: boolean; crm_pipeline_stages?: StageRow[] }
+type PipelineRow = { id: string; organization_id: string; crm_instance_id?: string | null; name: string; description?: string | null; is_default: boolean; is_active: boolean; crm_pipeline_stages?: StageRow[] }
 type LeadRow = {
   id: string
   organization_id: string
+  crm_instance_id?: string | null
   pipeline_id: string
   stage_id: string
+  team_id?: string | null
+  owner_member_id?: string | null
+  pipeline_version_id?: string | null
+  stage_version_id?: string | null
+  assignment_state?: CrmLead['assignmentState'] | null
+  assignment_mode?: CrmLead['assignmentMode'] | null
+  last_assignment_at?: string | null
   name: string
   email: string
   phone?: string | null
@@ -76,6 +84,7 @@ const mapStage = (row: StageRow): CrmPipelineStage => ({
 const mapPipeline = (row: PipelineRow): CrmPipeline => ({
   id: row.id,
   organizationId: row.organization_id,
+  crmInstanceId: row.crm_instance_id || undefined,
   name: row.name,
   description: row.description || undefined,
   isDefault: row.is_default,
@@ -86,8 +95,16 @@ const mapPipeline = (row: PipelineRow): CrmPipeline => ({
 const mapLead = (row: LeadRow): CrmLead => ({
   id: row.id,
   organizationId: row.organization_id,
+  crmInstanceId: row.crm_instance_id || undefined,
   pipelineId: row.pipeline_id,
   stageId: row.stage_id,
+  teamId: row.team_id || undefined,
+  ownerMemberId: row.owner_member_id || undefined,
+  pipelineVersionId: row.pipeline_version_id || undefined,
+  stageVersionId: row.stage_version_id || undefined,
+  assignmentState: row.assignment_state || undefined,
+  assignmentMode: row.assignment_mode || undefined,
+  lastAssignmentAt: row.last_assignment_at || undefined,
   name: row.name,
   email: row.email,
   phone: row.phone || undefined,
@@ -212,6 +229,56 @@ export const buildLeadActivityInsertPayload = (input: RecordLeadActivityInput) =
   date: input.date || new Date().toISOString(),
 })
 
+export interface CreateGovernedLeadInput extends Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt'> {
+  crmInstanceId: string
+  teamId?: string
+  ownerMemberId?: string
+}
+
+export interface AssignLeadInput {
+  teamId?: string
+  ownerMemberId?: string
+  assignmentMode: NonNullable<CrmLead['assignmentMode']>
+}
+
+export const buildGovernedLeadInsertPayload = (input: CreateGovernedLeadInput) => ({
+  organization_id: input.organizationId,
+  crm_instance_id: input.crmInstanceId,
+  pipeline_id: input.pipelineId,
+  stage_id: input.stageId,
+  team_id: input.teamId || null,
+  owner_member_id: input.ownerMemberId || null,
+  pipeline_version_id: input.pipelineVersionId || null,
+  stage_version_id: input.stageVersionId || null,
+  name: input.name,
+  email: input.email,
+  phone: input.phone || null,
+  company: input.company || null,
+  source: input.source,
+  source_kind: input.sourceKind || 'manual',
+  status: input.status || 'open',
+  score: input.score,
+  value: input.value ?? null,
+  notes: input.notes || null,
+  owner_id: input.ownerId || input.assignedTo || null,
+  assigned_to: input.assignedTo || null,
+  assignment_mode: input.assignmentMode || 'queue',
+  assignment_state: input.ownerMemberId ? 'assigned' : 'in_queue',
+  last_assignment_at: input.ownerMemberId ? new Date().toISOString() : null,
+  last_activity_at: input.lastActivityAt || new Date().toISOString(),
+  next_follow_up_at: input.nextFollowUpAt || null,
+  attribution_context: input.attributionContext || {},
+  stage: 'NEW',
+})
+
+export const buildLeadAssignmentPayload = (input: AssignLeadInput) => ({
+  team_id: input.teamId || null,
+  owner_member_id: input.ownerMemberId || null,
+  assignment_mode: input.assignmentMode,
+  assignment_state: input.ownerMemberId ? 'reassigned' : 'in_queue',
+  last_assignment_at: new Date().toISOString(),
+})
+
 export const buildLeadWonPayload = (input: MarkLeadWonInput) => ({
   ...(input.stageId ? { stage_id: input.stageId, stage: 'WON' } : { stage: 'WON' }),
   status: 'won',
@@ -288,6 +355,43 @@ export const crmService = {
       attribution_context: input.attributionContext || {},
       stage: 'NEW',
     }).select().single()
+    if (error) throw error
+    return mapLead(data)
+  },
+
+  async createGovernedLead(input: CreateGovernedLeadInput) {
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(buildGovernedLeadInsertPayload(input))
+      .select()
+      .single()
+    if (error) throw error
+    return mapLead(data)
+  },
+
+  async getLeadsForInstance(crmInstanceId: string, pipelineId?: string) {
+    let query = supabase
+      .from('leads')
+      .select('*')
+      .eq('crm_instance_id', crmInstanceId)
+      .order('updated_at', { ascending: false })
+
+    if (pipelineId) {
+      query = query.eq('pipeline_id', pipelineId)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapLead)
+  },
+
+  async assignLead(leadId: string, input: AssignLeadInput) {
+    const { data, error } = await supabase
+      .from('leads')
+      .update(buildLeadAssignmentPayload(input))
+      .eq('id', leadId)
+      .select()
+      .single()
     if (error) throw error
     return mapLead(data)
   },

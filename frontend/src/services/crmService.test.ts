@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildGovernedLeadInsertPayload,
+  buildLeadAssignmentPayload,
   buildLeadLostPayload,
   buildLeadScoreUpdatePayload,
   buildLeadTaskInsertPayload,
@@ -56,5 +58,46 @@ describe('crmService payload builders', () => {
       lost_at: '2026-06-03T12:00:00.000Z',
       won_at: null,
     })
+  })
+
+  it('creates a lead linked to crm instance, team, owner, and assignment mode', () => {
+    expect(buildGovernedLeadInsertPayload({
+      organizationId: 'org-1',
+      crmInstanceId: 'crm-1',
+      pipelineId: 'pipe-1',
+      stageId: 'stage-1',
+      teamId: 'team-1',
+      ownerMemberId: 'member-1',
+      assignmentMode: 'round_robin',
+      name: 'Maria',
+      email: 'maria@yux.test',
+      source: 'whatsapp',
+      score: 50,
+    })).toMatchObject({
+      organization_id: 'org-1',
+      crm_instance_id: 'crm-1',
+      pipeline_id: 'pipe-1',
+      stage_id: 'stage-1',
+      team_id: 'team-1',
+      owner_member_id: 'member-1',
+      assignment_mode: 'round_robin',
+      assignment_state: 'assigned',
+    })
+  })
+
+  it('creates reassignment payload with audit-friendly timestamp', () => {
+    const payload = buildLeadAssignmentPayload({
+      teamId: 'team-2',
+      ownerMemberId: 'member-2',
+      assignmentMode: 'manual',
+    })
+
+    expect(payload).toMatchObject({
+      team_id: 'team-2',
+      owner_member_id: 'member-2',
+      assignment_mode: 'manual',
+      assignment_state: 'reassigned',
+    })
+    expect(typeof payload.last_assignment_at).toBe('string')
   })
 })
