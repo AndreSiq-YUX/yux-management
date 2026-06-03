@@ -93,7 +93,7 @@ git commit -m "feat: add omnichannel domain rules"
 **Files:**
 - Create with Supabase CLI: migration returned by `supabase migration new omnichannel_ai_core`
 
-- [ ] **Step 1: Confirm current Supabase documentation and CLI commands**
+- [x] **Step 1: Confirm current Supabase documentation and CLI commands**
 
 Fetch `https://supabase.com/changelog.md`, scan relevant `breaking-change` entries, and verify current official documentation for RLS, Storage access control, Edge Function configuration, and secrets before implementing schema or deployment changes.
 
@@ -104,7 +104,7 @@ supabase db push --help
 supabase functions deploy --help
 ```
 
-- [ ] **Step 2: Generate the migration with the CLI**
+- [x] **Step 2: Generate the migration with the CLI**
 
 ```bash
 supabase migration new omnichannel_ai_core
@@ -112,7 +112,7 @@ supabase migration new omnichannel_ai_core
 
 Use the generated migration path. If the linked database history requires the repository's synthetic ordering, rename only the CLI-generated file to the next available timestamp after `20260601180000`.
 
-- [ ] **Step 3: Add operation tables**
+- [x] **Step 3: Add operation tables**
 
 Create:
 
@@ -129,7 +129,7 @@ Create:
 
 Use checks for enum-like text fields, non-negative sizes, unique external identities where appropriate, and uniqueness for `(connection_id, external_message_id)` when an external message ID exists.
 
-- [ ] **Step 4: Add automation and audit tables**
+- [x] **Step 4: Add automation and audit tables**
 
 Create:
 
@@ -143,7 +143,7 @@ Create:
 
 Keep handoff events immutable. Store sanitized payloads only. Never store raw channel credentials.
 
-- [ ] **Step 5: Add knowledge, settings, and widget tables**
+- [x] **Step 5: Add knowledge, settings, and widget tables**
 
 Create:
 
@@ -154,7 +154,7 @@ Create:
 - `webchat_widgets`: organization, name, hashed public token, active flag, allowed origins, branding JSON, consent text, initial-form JSON, timestamps.
 - `webchat_sessions`: widget, hashed short-lived session token, validated origin, optional contact, optional conversation, expiration, revocation, last-seen timestamp, timestamps.
 
-- [ ] **Step 6: Add indexes, triggers, storage bucket, and retention metadata**
+- [x] **Step 6: Add indexes, triggers, storage bucket, and retention metadata**
 
 Index:
 
@@ -167,7 +167,7 @@ Index:
 
 Reuse `public.update_updated_at_column()` for mutable rows. Create the private `omnichannel-attachments` Storage bucket and scoped policies. Store deadlines now; cleanup and anonymization jobs remain a later operational task.
 
-- [ ] **Step 7: Add private authorization helpers**
+- [x] **Step 7: Add private authorization helpers**
 
 Create functions under `private`, with fixed `search_path`, for:
 
@@ -179,7 +179,7 @@ Create functions under `private`, with fixed `search_path`, for:
 
 Revoke `PUBLIC` execution. Grant only the operations needed by `authenticated` and `service_role`.
 
-- [ ] **Step 8: Add RLS and explicit grants**
+- [x] **Step 8: Add RLS and explicit grants**
 
 Enable RLS on every new public table.
 
@@ -192,7 +192,7 @@ Policies:
 - `anon` receives no direct table grant;
 - public widget access goes through an Edge Function boundary only.
 
-- [ ] **Step 9: Seed permissions and route metadata**
+- [x] **Step 9: Seed permissions and route metadata**
 
 Insert permissions:
 
@@ -211,7 +211,7 @@ Grant:
 
 Update `platform_modules.key = 'whatsapp_ai'` to name `Central Omnichannel IA`, internal route `/omnichannel`, portal route `/portal/omnichannel`, and required permission `omnichannel.read`.
 
-- [ ] **Step 10: Add SQL probes before remote application**
+- [x] **Step 10: Add SQL probes before remote application**
 
 Validate with local SQL review and, once applied remotely, direct probes for:
 
@@ -223,7 +223,9 @@ Validate with local SQL review and, once applied remotely, direct probes for:
 - widget token revocation, session expiration, and origin checks;
 - protected error and cost metadata inaccessible to portal users.
 
-- [ ] **Step 11: Commit**
+Probe file: `supabase/probes/20260601190000_omnichannel_ai_core.sql`
+
+- [x] **Step 11: Commit**
 
 ```bash
 git add supabase/migrations
