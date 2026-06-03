@@ -616,7 +616,7 @@ git commit -m "feat: add internal omnichannel inbox"
 - Update: `frontend/src/App.tsx`
 - Update: `frontend/src/lib/platform/navigation.test.ts`
 
-- [ ] **Step 1: Write failing portal tests**
+- [x] **Step 1: Write failing portal tests**
 
 Cover:
 
@@ -628,14 +628,14 @@ Cover:
 - no cross-organization filter;
 - no protected webhook error, raw adapter metadata, internal-only note, or internal AI cost margin.
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
 ```bash
 cd frontend
 npm test -- src/lib/platform/navigation.test.ts src/components/omnichannel/PortalOmnichannelWorkspace.test.tsx
 ```
 
-- [ ] **Step 3: Implement portal page and workspace**
+- [x] **Step 3: Implement portal page and workspace**
 
 Reuse shared inbox primitives with a portal capability profile. Keep the client surface focused on:
 
@@ -646,11 +646,11 @@ Reuse shared inbox primitives with a portal capability profile. Keep the client 
 - sanitized metrics;
 - onboarding simulator access for portal configurators.
 
-- [ ] **Step 4: Wire the portal route**
+- [x] **Step 4: Wire the portal route**
 
 Replace the portal placeholder route with `<PortalOmnichannelPage />`.
 
-- [ ] **Step 5: Run focused tests and type checking**
+- [x] **Step 5: Run focused tests and type checking**
 
 ```bash
 cd frontend
@@ -660,7 +660,7 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src

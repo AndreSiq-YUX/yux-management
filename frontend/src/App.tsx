@@ -20,6 +20,7 @@ import { OmnichannelPage } from '@/pages/omnichannel/OmnichannelPage'
 
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
+import { PortalOmnichannelPage } from '@/pages/client-portal/PortalOmnichannelPage'
 import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
 import { PortalProposalsPage } from '@/pages/client-portal/PortalProposalsPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
@@ -82,7 +83,7 @@ function App() {
             <Route path="portal/projects" element={<PortalProjectsPage />} />
             <Route path="portal/proposals" element={<PortalProposalsPage />} />
             <Route path="portal/crm" element={<LeadsPage />} />
-            <Route path="portal/omnichannel" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
+            <Route path="portal/omnichannel" element={<PortalOmnichannelPage />} />
             <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/omnichannel" replace />} />
             <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />
             <Route path="portal/reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />

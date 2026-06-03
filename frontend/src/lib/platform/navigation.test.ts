@@ -146,4 +146,20 @@ describe('buildNavigation', () => {
       moduleKey: 'whatsapp_ai',
     })
   })
+
+  it('hides portal omnichannel when whatsapp_ai is disabled by contract', () => {
+    const items = buildNavigation({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['omnichannel.read', 'omnichannel.write'],
+      },
+      enabledModuleKeys: ['projects'],
+    })
+
+    expect(items.find(item => item.moduleKey === 'whatsapp_ai')).toBeUndefined()
+  })
 })
