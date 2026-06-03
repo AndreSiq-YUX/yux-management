@@ -48,3 +48,6 @@ verify_jwt = true
 
 [functions.request-scheduling]
 verify_jwt = true
+
+[functions.submit-webchat-event]
+verify_jwt = false

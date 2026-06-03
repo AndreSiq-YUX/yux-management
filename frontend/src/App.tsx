@@ -8,6 +8,7 @@ import { DashboardLayout } from '@/components/layouts/DashboardLayout'
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { PublicProposalPage } from '@/pages/public/PublicProposalPage'
+import { WebchatWidgetPage } from '@/pages/webchat/WebchatWidgetPage'
 
 // Dashboard pages
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
@@ -40,6 +41,7 @@ function App() {
         <Route index element={<Navigate to="/auth/login" replace />} />
       </Route>
       <Route path="/proposal/review/:token" element={<PublicProposalPage />} />
+      <Route path="/webchat/session/:sessionToken" element={<WebchatWidgetPage />} />
 
       {/* Protected routes */}
       <Route 

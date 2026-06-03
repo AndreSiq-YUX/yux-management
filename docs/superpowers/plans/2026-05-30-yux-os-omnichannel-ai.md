@@ -743,7 +743,7 @@ git commit -m "feat: configure omnichannel operations"
 - Update: `frontend/src/App.tsx`
 - Update: `supabase/config.toml`
 
-- [ ] **Step 1: Write failing widget tests**
+- [x] **Step 1: Write failing widget tests**
 
 Cover:
 
@@ -759,14 +759,14 @@ Cover:
 - human-transfer request;
 - inactive or revoked widget returning a neutral not-found state.
 
-- [ ] **Step 2: Run focused widget tests and confirm failure**
+- [x] **Step 2: Run focused widget tests and confirm failure**
 
 ```bash
 cd frontend
 npm test -- src/components/webchat/WebchatWidget.test.tsx
 ```
 
-- [ ] **Step 3: Implement `submit-webchat-event`**
+- [x] **Step 3: Implement `submit-webchat-event`**
 
 Configure `verify_jwt = false`. Accept actions:
 
@@ -790,7 +790,7 @@ For every action:
 - generate Storage signed-upload URLs only for safe generated object paths;
 - return sanitized data only.
 
-- [ ] **Step 4: Implement the host-page loader and widget page**
+- [x] **Step 4: Implement the host-page loader and widget page**
 
 Add `frontend/public/yux-webchat.js`. The generated snippet loads this script with the public widget token. The script calls `bootstrap_widget` from the host page, relies on the browser `Origin`, and injects an iframe only after receiving a short-lived session token.
 
@@ -806,7 +806,7 @@ Add public route `/webchat/session/:sessionToken`. Render:
 
 The iframe uses the short-lived session token. Never place the long-lived widget token in the iframe URL. If the repository ignore rules omit `frontend/public`, stage `frontend/public/yux-webchat.js` explicitly with `git add -f`.
 
-- [ ] **Step 5: Run focused tests and checks**
+- [x] **Step 5: Run focused tests and checks**
 
 ```bash
 cd frontend
@@ -818,7 +818,7 @@ deno check supabase/functions/submit-webchat-event/index.ts
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src supabase/functions supabase/config.toml
