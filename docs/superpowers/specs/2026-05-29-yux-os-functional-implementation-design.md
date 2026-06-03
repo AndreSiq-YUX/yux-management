@@ -132,6 +132,12 @@ Inclui:
 Resultado esperado: o portal deixa de ser uma pagina demonstrativa e passa a ser a
 porta de entrada real do relacionamento.
 
+Nota de implementacao 2026-06-03: o modulo de suporte foi materializado como
+chamados basicos por contrato, com `support_tickets`, `support_messages`, status
+operacional, prioridade, SLA simples, visao interna da YUX e visao filtrada do
+portal. Integracao direta com omnichannel, anexos, base de conhecimento e SLA
+avancado permanecem fora deste escopo.
+
 ### Fase 3: Projetos, Tarefas, Entregaveis e Aprovacoes
 
 Objetivo: cobrir o fluxo central de entrega da YUX.
