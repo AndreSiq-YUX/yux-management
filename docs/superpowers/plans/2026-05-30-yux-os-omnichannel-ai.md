@@ -860,7 +860,7 @@ supabase functions deploy request-scheduling
 supabase functions deploy submit-webchat-event --no-verify-jwt
 ```
 
-- [ ] **Step 4: Configure non-secret fallback behavior and document n8n secrets**
+- [x] **Step 4: Configure non-secret fallback behavior and document n8n secrets**
 
 The system must remain testable through simulators without n8n. Document the optional deployment secrets:
 
@@ -903,7 +903,7 @@ Skip this commit when no correction is needed.
 **Files:**
 - Create: `docs/omnichannel-ai-operations.md`
 
-- [ ] **Step 1: Document operational boundaries**
+- [x] **Step 1: Document operational boundaries**
 
 Describe:
 
@@ -919,7 +919,7 @@ Describe:
 - provider credentials intentionally excluded from frontend and repository;
 - real adapter onboarding checklist for a later provider-selection task.
 
-- [ ] **Step 2: Run frontend verification**
+- [x] **Step 2: Run frontend verification**
 
 ```bash
 cd frontend
@@ -945,7 +945,7 @@ deno check supabase/functions/submit-webchat-event/index.ts
 
 Expected: pass.
 
-- [ ] **Step 4: Run repository checks**
+- [x] **Step 4: Run repository checks**
 
 ```bash
 git diff --check
@@ -962,7 +962,7 @@ Open:
 
 Verify desktop and mobile layouts, no console errors, stable inbox columns, simulator flow, client isolation, widget consent and message flow, manual handoff, assisted suggestion approval, and outbound retry.
 
-- [ ] **Step 6: Commit documentation**
+- [x] **Step 6: Commit documentation**
 
 ```bash
 git add docs/omnichannel-ai-operations.md
