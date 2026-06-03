@@ -4,6 +4,8 @@ export type MessageDirection = 'inbound' | 'outbound'
 export type MessageAuthor = 'contact' | 'ai' | 'agent' | 'system'
 export type DeliveryStatus = 'queued' | 'processing' | 'sent' | 'delivered' | 'read' | 'failed'
 export type ResponseMode = 'automatic' | 'assisted' | 'manual'
+export type ProviderVerifyState = 'not_configured' | 'pending' | 'verified' | 'failed'
+export type ProviderTokenState = 'not_configured' | 'connected' | 'stale' | 'needs_reauth' | 'failed'
 export type HandoffCombinator = 'all' | 'any'
 export type HandoffOutcomeType = 'continue' | 'assist' | 'manual' | 'route'
 export type KnowledgePublicationState = 'draft' | 'published' | 'archived'
@@ -25,6 +27,12 @@ export interface ChannelConnection {
   channel: OmnichannelChannel
   provider: string
   externalAccountId: string
+  providerAccountId?: string
+  phoneNumberId?: string
+  providerVerifyState?: ProviderVerifyState
+  tokenState?: ProviderTokenState
+  lastProviderSyncAt?: string
+  protectedMetadataReferences?: Record<string, unknown>
   responseMode: ResponseMode
   createdAt: string
   updatedAt: string

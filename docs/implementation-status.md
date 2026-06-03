@@ -29,6 +29,15 @@ the target Supabase/Vercel environments.
 | Omnichannel AI base | Implemented as provider-neutral base | `/omnichannel`, `/portal/omnichannel`, `/webchat/session/:sessionToken` | `20260601190000_omnichannel_ai_core.sql`, `20260601200000_omnichannel_crm_sync.sql`, `20260601210000_omnichannel_webchat_widget_service.sql`, `omnichannelService`, omnichannel components, `frontend/public/yux-webchat.js` | Live WhatsApp/Instagram/email provider credentials are deferred. Webchat uses short-lived session tokens. |
 | Finance basic | Implemented in repo | `/finance`, `/portal/finance` | `20260601220000_basic_finance.sql`, `financeService`, `FinanceWorkspace`, `PortalFinanceWorkspace`, `financeRules` | Accounts receivable only. No payment gateway, fiscal issuance, bank reconciliation, or automated billing. Migration/probes still need target DB execution. |
 | Support basic | Implemented in repo | `/support`, `/portal/support` | `20260601230000_basic_support.sql`, `supportService`, `SupportWorkspace`, `PortalSupportWorkspace`, `supportRules` | Contract-based tickets and messages only. No omnichannel ticket conversion, attachments, FAQ/knowledge base, or advanced SLA calendar. Migration/probes still need target DB execution. |
+| CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/crm` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. |
+| Sector funnels and blueprints | Implemented in repo | `/blueprints` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, blueprint application rules | Provides reusable sector templates and contract application runs. |
+| Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
+| Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
+| Real WhatsApp provider path | Implemented in repo | `/omnichannel`, `/portal/omnichannel` | `20260601300000_whatsapp_provider_path.sql`, WhatsApp provider helper, receive/dispatch Edge Functions | Adds Meta WhatsApp webhook normalization, signature validation, token state and manual outbound path. |
+| Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
+| Flow Builder Lite | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Adds trigger/condition/action flows and execution history for commercial actions. |
+| Operational reports and MROI | Implemented in repo | `/reports`, `/portal/reports` | `20260601330000_operational_reports.sql`, `reportService`, report workspaces | Aggregates funnel, campaign, landing page, proposal, conversation, project and activity metrics with portal-safe output. |
+| Portal commercial view | Implemented in repo | `/portal` | `PortalDashboardPage`, navigation rules/tests | Portal dashboard now highlights enabled commercial modules only, including leads, conversations, landing pages, campaigns and reports. |
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, CI workflow, latest CI run for `709212f` | GitHub Actions passed on latest support commit. Vercel preview succeeded but routes are protected by Vercel Authentication. |
 
 ## Implemented Functional Scope
@@ -179,6 +188,28 @@ Not complete:
 - email or WhatsApp notifications;
 - remote migration/probe execution against target Supabase.
 
+### Commercial MVP Expansion
+
+Implemented:
+
+- CRM Cockpit commercial upgrade with stronger sales-pipeline primitives;
+- Sector Funnels and blueprint application for verticalized setup;
+- Landing Pages as tracked, approvable funnel assets;
+- Campaigns and Ads API-first core with protected provider mutation runs;
+- Real WhatsApp Provider Path for inbound Meta webhooks and manual outbound;
+- Configurable AI Assistant settings wired into AI processing metadata;
+- Flow Builder Lite with published trigger/condition/action execution;
+- Operational Reports with CPL, MROI, landing conversion, proposals, response
+  time, owner activity, and portal-safe reporting;
+- Portal Commercial View with module-gated commercial summary cards.
+
+Not complete:
+
+- production application of all commercial MVP migrations/probes;
+- production provider credentials/OAuth for Meta, Google, WhatsApp, and n8n;
+- authenticated browser QA against the target Supabase/Vercel environments;
+- CI/deploy verification after the commercial MVP commit.
+
 ## Current Validation Evidence
 
 Latest support commit validation:
@@ -204,6 +235,13 @@ steps still required before treating the app as live-ready:
 - apply the latest Supabase migrations in the target project, especially:
   - `20260601220000_basic_finance.sql`;
   - `20260601230000_basic_support.sql`;
+  - `20260601270000_sector_funnel_blueprints.sql`;
+  - `20260601280000_landing_pages.sql`;
+  - `20260601290000_campaigns_ads_api_core.sql`;
+  - `20260601300000_whatsapp_provider_path.sql`;
+  - `20260601310000_ai_assistant_settings.sql`;
+  - `20260601320000_flow_builder_lite.sql`;
+  - `20260601330000_operational_reports.sql`;
 - run the corresponding probes in `supabase/probes/`;
 - verify portal/internal flows with authenticated test users after migrations;
 - confirm current Supabase project activity/status before diagnosing remote SQL

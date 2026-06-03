@@ -8,6 +8,12 @@ interface ConversationDetailsProps {
 }
 
 const money = (value: number) => `R$ ${value.toFixed(4).replace('.', ',')}`
+const healthVariant = {
+  healthy: 'default',
+  warning: 'secondary',
+  blocked: 'destructive',
+  inactive: 'outline',
+} as const
 
 export function ConversationDetails({ conversation, messages, aiRuns }: ConversationDetailsProps) {
   if (!conversation) {
@@ -16,6 +22,8 @@ export function ConversationDetails({ conversation, messages, aiRuns }: Conversa
 
   const latestRun = aiRuns[0]
   const confidence = typeof latestRun?.metadata?.confidence === 'number' ? Math.round(latestRun.metadata.confidence * 100) : null
+  const latestOutbound = [...messages].reverse().find(message => message.direction === 'outbound')
+  const handoffState = conversation.status === 'waiting_human' || conversation.tags.includes('handoff') ? 'handoff ativo' : 'sem handoff'
 
   return (
     <section className="grid min-h-[680px] grid-rows-[auto_1fr] bg-white">
@@ -28,7 +36,10 @@ export function ConversationDetails({ conversation, messages, aiRuns }: Conversa
           <div className="flex flex-wrap gap-2">
             <Badge>{conversation.status}</Badge>
             <Badge variant="secondary">{conversation.responseMode}</Badge>
-            <Badge variant="outline">{conversation.channel}</Badge>
+            <Badge variant={conversation.channel === 'whatsapp' ? 'default' : 'outline'}>{conversation.channel}</Badge>
+            {conversation.connection?.health && (
+              <Badge variant={healthVariant[conversation.connection.health.state]}>{conversation.connection.health.label}</Badge>
+            )}
           </div>
         </div>
       </header>
@@ -60,10 +71,22 @@ export function ConversationDetails({ conversation, messages, aiRuns }: Conversa
               <div className="flex justify-between gap-3"><dt>Classificacao</dt><dd>{conversation.classification || 'n/a'}</dd></div>
               <div className="flex justify-between gap-3"><dt>Sentimento</dt><dd>{conversation.sentiment || 'n/a'}</dd></div>
               <div className="flex justify-between gap-3"><dt>CRM</dt><dd>CRM {conversation.leadId || conversation.contact?.leadId || 'sem lead'}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Handoff</dt><dd>{handoffState}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Envio manual</dt><dd>{latestOutbound?.deliveryStatus || 'sem envio'}</dd></div>
               <div className="flex justify-between gap-3"><dt>Fila</dt><dd>{conversation.queue?.name || 'sem fila'}</dd></div>
               <div className="flex justify-between gap-3"><dt>Equipe</dt><dd>{conversation.team?.name || 'sem equipe'}</dd></div>
               <div className="flex justify-between gap-3"><dt>Responsavel</dt><dd>{conversation.assignedUser?.name || 'sem responsavel'}</dd></div>
               <div className="flex justify-between gap-3"><dt>SLA</dt><dd>{conversation.slaDeadlineAt ? new Date(conversation.slaDeadlineAt).toLocaleString('pt-BR') : 'n/a'}</dd></div>
+            </dl>
+          </section>
+          <section>
+            <h2 className="text-sm font-semibold text-gray-900">Provider</h2>
+            <dl className="mt-2 space-y-1 text-gray-600">
+              <div className="flex justify-between gap-3"><dt>Conexao</dt><dd>{conversation.connection?.name || 'n/a'}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Telefone ID</dt><dd>{conversation.connection?.phoneNumberId || 'n/a'}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Token</dt><dd>{conversation.connection?.tokenState || 'n/a'}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Webhook</dt><dd>{conversation.connection?.providerVerifyState || 'n/a'}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Sync</dt><dd>{conversation.connection?.lastProviderSyncAt ? new Date(conversation.connection.lastProviderSyncAt).toLocaleString('pt-BR') : 'n/a'}</dd></div>
             </dl>
           </section>
           <section>

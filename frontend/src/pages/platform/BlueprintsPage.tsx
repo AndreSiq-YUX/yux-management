@@ -1,30 +1,65 @@
 import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
+import { BlueprintApplyPanel } from '@/components/platform/BlueprintApplyPanel'
 import { platformService } from '@/services/platformService'
-import type { Blueprint } from '@/types/platform'
+import { usePlatformStore } from '@/stores/platformStore'
+import type { Blueprint, ContractDetails } from '@/types/platform'
 
 export function BlueprintsPage() {
+  const organization = usePlatformStore(state => state.organization)
   const [blueprints, setBlueprints] = useState<Blueprint[]>([])
+  const [contracts, setContracts] = useState<ContractDetails[]>([])
+  const [selectedContracts, setSelectedContracts] = useState<Record<string, string>>({})
+  const [applyingBlueprintId, setApplyingBlueprintId] = useState<string>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function load() {
+  const load = async () => {
       setLoading(true)
       setError(null)
 
       try {
-        setBlueprints(await platformService.getBlueprints())
+        const [nextBlueprints, nextContracts] = await Promise.all([
+          platformService.getBlueprints(),
+          platformService.getContracts(),
+        ])
+        setBlueprints(nextBlueprints)
+        setContracts(nextContracts)
       } catch (error) {
         console.error('Error loading blueprints:', error)
         setBlueprints([])
+        setContracts([])
         setError('Blueprints ainda nao carregados do Supabase.')
       } finally {
         setLoading(false)
       }
-    }
+  }
 
+  useEffect(() => {
     load()
   }, [])
+
+  const applyBlueprint = async (blueprint: Blueprint) => {
+    const contractId = selectedContracts[blueprint.id]
+    const organizationId = organization?.id
+    if (!contractId || !organizationId) return
+
+    try {
+      setApplyingBlueprintId(blueprint.id)
+      await platformService.applyBlueprintToContract({
+        blueprintId: blueprint.id,
+        contractId,
+        organizationId,
+      })
+      toast.success('Blueprint aplicado ao contrato')
+      await load()
+    } catch (error) {
+      console.error('Error applying blueprint:', error)
+      toast.error('Erro ao aplicar blueprint')
+    } finally {
+      setApplyingBlueprintId(undefined)
+    }
+  }
 
   if (loading) {
     return <div className="p-6 text-sm text-gray-500">Carregando blueprints...</div>
@@ -48,16 +83,17 @@ export function BlueprintsPage() {
           Nenhum blueprint carregado.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 xl:grid-cols-2">
           {blueprints.map(blueprint => (
-            <div key={blueprint.id} className="rounded-lg border bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-gray-900">{blueprint.name}</h2>
-                <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600">{blueprint.sector}</span>
-              </div>
-              <p className="mt-2 text-sm text-gray-600">{blueprint.description}</p>
-              <p className="mt-3 text-xs text-gray-500">Modulos: {blueprint.moduleKeys.join(', ')}</p>
-            </div>
+            <BlueprintApplyPanel
+              key={blueprint.id}
+              blueprint={blueprint}
+              contracts={contracts}
+              selectedContractId={selectedContracts[blueprint.id]}
+              applying={applyingBlueprintId === blueprint.id}
+              onContractChange={contractId => setSelectedContracts(current => ({ ...current, [blueprint.id]: contractId }))}
+              onApply={() => applyBlueprint(blueprint)}
+            />
           ))}
         </div>
       )}

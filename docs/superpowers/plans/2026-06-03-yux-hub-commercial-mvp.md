@@ -383,7 +383,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601270000_sector_funnel_blueprints.sql`
 - Create: `supabase/probes/20260601270000_sector_funnel_blueprints.sql`
 
-- [ ] **Step 1: Write failing blueprint application tests**
+- [x] **Step 1: Write failing blueprint application tests**
 
 Test that a clinic blueprint resolves pipeline stages:
 
@@ -399,7 +399,7 @@ expect(buildPipelineFromBlueprint(clinicBlueprint).stages.map(stage => stage.nam
 ])
 ```
 
-- [ ] **Step 2: Add blueprint schema**
+- [x] **Step 2: Add blueprint schema**
 
 Add:
 
@@ -419,7 +419,7 @@ Seed first templates:
 - repair shops;
 - agencies.
 
-- [ ] **Step 3: Add application service**
+- [x] **Step 3: Add application service**
 
 `platformService.applyBlueprintToContract(input)` should create or link:
 
@@ -432,7 +432,7 @@ Seed first templates:
 
 The operation should be idempotent through `blueprint_application_runs`.
 
-- [ ] **Step 4: Build UI**
+- [x] **Step 4: Build UI**
 
 Blueprint page should show:
 
@@ -443,7 +443,7 @@ Blueprint page should show:
 - "Aplicar ao contrato" command;
 - application history and errors.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -474,7 +474,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601280000_landing_pages.sql`
 - Create: `supabase/probes/20260601280000_landing_pages.sql`
 
-- [ ] **Step 1: Write failing rules tests**
+- [x] **Step 1: Write failing rules tests**
 
 Test portal sanitization:
 
@@ -489,7 +489,7 @@ Test conversion rate:
 expect(calculateLandingPageMetrics({ visits: 1000, leads: 83 }).conversionRate).toBe(8.3)
 ```
 
-- [ ] **Step 2: Add landing page schema**
+- [x] **Step 2: Add landing page schema**
 
 Add:
 
@@ -506,7 +506,7 @@ optional `project_id`, optional `campaign_id`, `pipeline_id`,
 `initial_stage_id`, `preview_url`, `published_url`, `thumbnail_url`,
 `primary_cta_type`, `primary_cta_value`, and status.
 
-- [ ] **Step 3: Implement service**
+- [x] **Step 3: Implement service**
 
 Add:
 
@@ -521,7 +521,7 @@ approveLandingPage(input)
 recordLandingPageEvent(input)
 ```
 
-- [ ] **Step 4: Build internal UI**
+- [x] **Step 4: Build internal UI**
 
 Internal route `/landing-pages`:
 
@@ -531,7 +531,7 @@ Internal route `/landing-pages`:
 - form mapping editor;
 - approval/change-request controls.
 
-- [ ] **Step 5: Build portal UI**
+- [x] **Step 5: Build portal UI**
 
 Portal route `/portal/landing-pages`:
 
@@ -543,7 +543,7 @@ Portal route `/portal/landing-pages`:
 - request change;
 - approve publication.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -578,7 +578,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601290000_campaigns_ads_api_core.sql`
 - Create: `supabase/probes/20260601290000_campaigns_ads_api_core.sql`
 
-- [ ] **Step 1: Write failing campaign rules tests**
+- [x] **Step 1: Write failing campaign rules tests**
 
 Test budget mutation safety:
 
@@ -602,7 +602,7 @@ Test MROI:
 expect(calculateCampaignMroi({ spend: 1000, attributedRevenue: 4300 })).toBe(3.3)
 ```
 
-- [ ] **Step 2: Add campaign schema**
+- [x] **Step 2: Add campaign schema**
 
 Add:
 
@@ -635,7 +635,7 @@ Campaign lifecycle states must include:
 - `archived`;
 - `failed`.
 
-- [ ] **Step 3: Implement campaign service**
+- [x] **Step 3: Implement campaign service**
 
 Add mapping and methods:
 
@@ -655,7 +655,7 @@ updateCampaignBudget(input)
 
 Payload builders must be unit-tested before methods call Supabase.
 
-- [ ] **Step 4: Build internal campaign workspace**
+- [x] **Step 4: Build internal campaign workspace**
 
 Internal `/campaigns` must show:
 
@@ -668,7 +668,7 @@ Internal `/campaigns` must show:
 - mutation history;
 - alerts/recommendations.
 
-- [ ] **Step 5: Build portal campaign workspace**
+- [x] **Step 5: Build portal campaign workspace**
 
 Portal `/portal/campaigns` must show:
 
@@ -683,7 +683,7 @@ Portal `/portal/campaigns` must show:
 - recommendation cards;
 - request new campaign/change command.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -710,7 +710,7 @@ Expected: PASS.
 - Create: `supabase/functions/sync-ad-metrics/index.ts`
 - Create: `supabase/functions/sync-ad-metrics/deno.json`
 
-- [ ] **Step 1: Write failing shared provider tests**
+- [x] **Step 1: Write failing shared provider tests**
 
 Test provider mutation normalization:
 
@@ -736,7 +736,7 @@ deno test supabase/functions/_shared/adsProvider.test.ts
 
 Expected: FAIL because shared ads provider helpers do not exist.
 
-- [ ] **Step 2: Implement provider-agnostic contracts**
+- [x] **Step 2: Implement provider-agnostic contracts**
 
 Define:
 
@@ -746,7 +746,7 @@ Define:
 - normalized provider response shape;
 - sanitized error shape.
 
-- [ ] **Step 3: Implement Edge Functions**
+- [x] **Step 3: Implement Edge Functions**
 
 Functions must:
 
@@ -762,7 +762,7 @@ Functions must:
 If live credentials are not configured locally, tests should cover adapter
 contract and fallback states without hitting provider APIs.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -789,7 +789,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601300000_whatsapp_provider_path.sql`
 - Create: `supabase/probes/20260601300000_whatsapp_provider_path.sql`
 
-- [ ] **Step 1: Write failing WhatsApp provider tests**
+- [x] **Step 1: Write failing WhatsApp provider tests**
 
 Test inbound normalization:
 
@@ -807,7 +807,7 @@ assertEquals(buildWhatsAppTextPayload({
 }).type, 'text')
 ```
 
-- [ ] **Step 2: Add provider connection fields**
+- [x] **Step 2: Add provider connection fields**
 
 Extend channel/provider config with:
 
@@ -819,7 +819,7 @@ Extend channel/provider config with:
 - `needs_reauth`;
 - protected metadata references.
 
-- [ ] **Step 3: Implement inbound webhook path**
+- [x] **Step 3: Implement inbound webhook path**
 
 `receive-channel-event` should:
 
@@ -832,7 +832,7 @@ Extend channel/provider config with:
 - call CRM sync path;
 - record webhook event status.
 
-- [ ] **Step 4: Implement outbound manual send**
+- [x] **Step 4: Implement outbound manual send**
 
 `dispatch-outbound-message` should:
 
@@ -843,7 +843,7 @@ Extend channel/provider config with:
 - update message delivery status;
 - store outbound run.
 
-- [ ] **Step 5: Update UI**
+- [x] **Step 5: Update UI**
 
 Internal inbox should show:
 
@@ -856,7 +856,7 @@ Internal inbox should show:
 
 Keep simulator clearly labeled as simulator.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -885,7 +885,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601310000_ai_assistant_settings.sql`
 - Create: `supabase/probes/20260601310000_ai_assistant_settings.sql`
 
-- [ ] **Step 1: Write failing assistant rule tests**
+- [x] **Step 1: Write failing assistant rule tests**
 
 Test required fields:
 
@@ -903,7 +903,7 @@ expect(shouldHandoffToHuman({
 }, settings)).toBe(true)
 ```
 
-- [ ] **Step 2: Add assistant schema**
+- [x] **Step 2: Add assistant schema**
 
 Add:
 
@@ -916,7 +916,7 @@ Add:
 
 Scope by `organization_id`, optional `client_id`, optional `contract_id`.
 
-- [ ] **Step 3: Implement service and UI**
+- [x] **Step 3: Implement service and UI**
 
 UI should allow:
 
@@ -929,12 +929,12 @@ UI should allow:
 - safety rules;
 - summary/classification settings.
 
-- [ ] **Step 4: Wire into AI processing**
+- [x] **Step 4: Wire into AI processing**
 
 `process-ai-message` should load assistant settings and include sanitized
 settings metadata in `ai_message_runs`.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -965,7 +965,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601320000_flow_builder_lite.sql`
 - Create: `supabase/probes/20260601320000_flow_builder_lite.sql`
 
-- [ ] **Step 1: Write failing automation rule tests**
+- [x] **Step 1: Write failing automation rule tests**
 
 Test trigger eligibility:
 
@@ -981,7 +981,7 @@ expect(evaluateConditions([
 ], { source: 'instagram' })).toBe(true)
 ```
 
-- [ ] **Step 2: Add automation schema**
+- [x] **Step 2: Add automation schema**
 
 Add:
 
@@ -995,7 +995,7 @@ Add:
 
 Support active/inactive, draft/published, and failed states.
 
-- [ ] **Step 3: Implement service/UI**
+- [x] **Step 3: Implement service/UI**
 
 Internal `/automations` should show:
 
@@ -1008,7 +1008,7 @@ Internal `/automations` should show:
 - last error;
 - sector template badge.
 
-- [ ] **Step 4: Wire dispatcher**
+- [x] **Step 4: Wire dispatcher**
 
 `dispatch-crm-automation` should read published flows and execute supported
 actions:
@@ -1021,7 +1021,7 @@ actions:
 - update field;
 - register activity.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -1053,7 +1053,7 @@ Expected: PASS.
 - Create: `supabase/migrations/20260601330000_operational_reports.sql`
 - Create: `supabase/probes/20260601330000_operational_reports.sql`
 
-- [ ] **Step 1: Write failing report rule tests**
+- [x] **Step 1: Write failing report rule tests**
 
 Test CPL:
 
@@ -1073,7 +1073,7 @@ Test stage conversion:
 expect(calculateStageConversion({ entered: 100, advanced: 28 })).toBe(28)
 ```
 
-- [ ] **Step 2: Add report schema**
+- [x] **Step 2: Add report schema**
 
 Add:
 
@@ -1084,7 +1084,7 @@ Add:
 Reports should aggregate from leads, campaigns, landing pages, conversations,
 proposals, activities, and projects.
 
-- [ ] **Step 3: Implement service/UI**
+- [x] **Step 3: Implement service/UI**
 
 Internal `/reports` should show:
 
@@ -1099,7 +1099,7 @@ Internal `/reports` should show:
 
 Portal `/portal/reports` should show client-safe versions.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -1123,7 +1123,7 @@ Expected: PASS.
 - Test: `frontend/src/lib/platform/navigation.test.ts`
 - Test: relevant portal workspace tests from CRM, landing pages, campaigns, reports, omnichannel
 
-- [ ] **Step 1: Write failing portal navigation tests**
+- [x] **Step 1: Write failing portal navigation tests**
 
 Ensure contracted client sees:
 
@@ -1137,7 +1137,7 @@ expect(portalItems.map(item => item.label)).toEqual(expect.arrayContaining([
 ]))
 ```
 
-- [ ] **Step 2: Update portal dashboard**
+- [x] **Step 2: Update portal dashboard**
 
 Portal dashboard should show:
 
@@ -1151,7 +1151,7 @@ Portal dashboard should show:
 
 Use existing module access rules. Do not show modules not enabled in contract.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -1174,7 +1174,7 @@ Expected: PASS.
 - Modify: `docs/commercial-mvp-priorities.md` only if scope changed during execution.
 - Create: `docs/commercial-mvp-operations.md`
 
-- [ ] **Step 1: Update implementation status**
+- [x] **Step 1: Update implementation status**
 
 Add a section for each completed commercial MVP slice:
 
@@ -1188,7 +1188,7 @@ Add a section for each completed commercial MVP slice:
 - Operational Reports;
 - Portal Commercial View.
 
-- [ ] **Step 2: Add operations doc**
+- [x] **Step 2: Add operations doc**
 
 Document:
 
@@ -1200,7 +1200,7 @@ Document:
 - manual verification checklist;
 - rollback notes for provider mutations.
 
-- [ ] **Step 3: Run full validation**
+- [x] **Step 3: Run full validation**
 
 Run:
 
@@ -1222,7 +1222,7 @@ Expected:
 - shared Edge tests pass;
 - no whitespace errors.
 
-- [ ] **Step 4: Stage exact files and commit**
+- [x] **Step 4: Stage exact files and commit**
 
 Use exact staging. Do not stage unrelated local files:
 

@@ -5,6 +5,11 @@ import {
   sanitizeProtectedError,
   sanitizeWebhookMetadata,
 } from '../_shared/omnichannel.ts'
+import {
+  isWhatsAppCloudPayload,
+  normalizeWhatsAppInbound,
+  validateWhatsAppSignature,
+} from '../_shared/whatsappProvider.ts'
 
 type AdminClient = ReturnType<typeof getServiceRoleClient>
 
@@ -16,9 +21,23 @@ interface ProcessOptions {
 if (import.meta.main) {
   Deno.serve(async req => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+    if (req.method === 'GET') return verifyWhatsAppWebhook(req)
 
     try {
-      const body = await req.json()
+      const rawBody = await req.text()
+      const body = rawBody ? JSON.parse(rawBody) : {}
+      if (isWhatsAppCloudPayload(body)) {
+        const signatureValid = await validateWhatsAppSignature({
+          appSecret: Deno.env.get('WHATSAPP_WEBHOOK_APP_SECRET'),
+          rawBody,
+          signatureHeader: req.headers.get('x-hub-signature-256'),
+        })
+        if (!signatureValid) return json({ error: 'Invalid WhatsApp webhook signature' }, 401)
+
+        const result = await processWhatsAppProviderEvent(getServiceRoleClient(), body)
+        return json({ success: true, provider: 'meta-whatsapp', ...result })
+      }
+
       const adapterToken = req.headers.get('x-omnichannel-token') || body.adapterToken
       const result = await processChannelEvent(getServiceRoleClient(), body.event || body, { adapterToken })
       return json({ success: true, ...result })
@@ -27,6 +46,38 @@ if (import.meta.main) {
       return json({ error: protectedError.message }, 400)
     }
   })
+}
+
+function verifyWhatsAppWebhook(req: Request) {
+  const url = new URL(req.url)
+  const mode = url.searchParams.get('hub.mode')
+  const token = url.searchParams.get('hub.verify_token')
+  const challenge = url.searchParams.get('hub.challenge')
+  const expectedToken = Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN')
+
+  if (mode === 'subscribe' && expectedToken && token === expectedToken && challenge) {
+    return new Response(challenge, { status: 200, headers: { ...corsHeaders, 'Content-Type': 'text/plain' } })
+  }
+
+  return json({ error: 'Webhook verification failed' }, 403)
+}
+
+export async function processWhatsAppProviderEvent(admin: AdminClient, payload: unknown) {
+  const preliminaryEvent = normalizeWhatsAppInbound(payload)
+  const { data: connection, error } = await admin
+    .from('channel_connections')
+    .select('id')
+    .eq('channel', 'whatsapp')
+    .eq('phone_number_id', preliminaryEvent.phoneNumberId)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (error) throw error
+
+  const event = connection?.id
+    ? normalizeWhatsAppInbound(payload, { connectionId: connection.id })
+    : preliminaryEvent
+
+  return processChannelEvent(admin, event)
 }
 
 export async function processChannelEvent(admin: AdminClient, input: unknown, options: ProcessOptions = {}) {
@@ -75,7 +126,9 @@ export async function processChannelEvent(admin: AdminClient, input: unknown, op
     const conversation = await findOrCreateConversation(admin, connection, contact.id, event)
     const message = await appendInboundMessage(admin, conversation.id, connection.id, event)
 
-    await admin.from('channel_connections').update({ last_event_at: event.occurredAt }).eq('id', connection.id)
+    const connectionUpdate: Record<string, unknown> = { last_event_at: event.occurredAt }
+    if (event.channel === 'whatsapp') connectionUpdate.last_provider_sync_at = event.occurredAt
+    await admin.from('channel_connections').update(connectionUpdate).eq('id', connection.id)
     await admin.from('conversations').update({
       last_message_at: event.occurredAt,
       status: conversation.status === 'resolved' || conversation.status === 'archived' ? 'open' : conversation.status,

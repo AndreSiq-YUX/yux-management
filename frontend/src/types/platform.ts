@@ -125,8 +125,96 @@ export interface Blueprint {
   sector: string
   description: string
   moduleKeys: string[]
+  pipelineTemplate?: BlueprintPipelineTemplate
+  customFields?: BlueprintCustomField[]
+  messageTemplates?: BlueprintMessageTemplate[]
+  automationTemplates?: BlueprintAutomationTemplate[]
+  reportPresets?: BlueprintReportPreset[]
+  applicationRuns?: BlueprintApplicationRun[]
   createdAt: string
   updatedAt: string
+}
+
+export interface BlueprintPipelineTemplate {
+  id?: string
+  blueprintId?: string
+  key: string
+  name: string
+  description?: string
+  stages: BlueprintPipelineStage[]
+}
+
+export interface BlueprintPipelineStage {
+  id?: string
+  templateId?: string
+  key: string
+  name: string
+  color?: string
+  orderIndex: number
+  isWon?: boolean
+  isLost?: boolean
+}
+
+export interface BlueprintCustomField {
+  id?: string
+  blueprintId?: string
+  key: string
+  label: string
+  fieldType: 'text' | 'number' | 'date' | 'select' | 'boolean'
+  required?: boolean
+  options?: string[]
+}
+
+export interface BlueprintMessageTemplate {
+  id?: string
+  blueprintId?: string
+  key: string
+  name: string
+  channel: 'whatsapp' | 'email' | 'webchat'
+  body: string
+}
+
+export interface BlueprintAutomationTemplate {
+  id?: string
+  blueprintId?: string
+  key: string
+  name: string
+  triggerEvent: string
+  draftPayload: Record<string, unknown>
+}
+
+export interface BlueprintReportPreset {
+  id?: string
+  blueprintId?: string
+  key: string
+  name: string
+  metricKeys: string[]
+}
+
+export interface BlueprintApplicationRun {
+  id: string
+  blueprintId: string
+  contractId: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed'
+  summary: Record<string, unknown>
+  error?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BlueprintApplicationSummary {
+  moduleCount: number
+  stageCount: number
+  customFieldCount: number
+  messageTemplateCount: number
+  automationTemplateCount: number
+  reportPresetCount: number
+}
+
+export interface BlueprintApplicationInput {
+  blueprintId: string
+  contractId: string
+  organizationId: string
 }
 
 export interface PlatformContext {

@@ -14,6 +14,12 @@ interface ConversationListProps {
 
 const channels = ['whatsapp', 'instagram', 'email', 'webchat'] as const
 const statuses = ['open', 'waiting_ai', 'waiting_human', 'assigned', 'resolved', 'archived'] as const
+const healthVariant = {
+  healthy: 'default',
+  warning: 'secondary',
+  blocked: 'destructive',
+  inactive: 'outline',
+} as const
 
 export function ConversationList({
   conversations,
@@ -104,13 +110,19 @@ export function ConversationList({
           >
             <div className="flex items-start justify-between gap-2">
               <span className="text-sm font-medium text-gray-900">{conversation.contact?.displayName || conversation.subject || conversation.id}</span>
-              <Badge variant="secondary">{conversation.channel}</Badge>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <Badge variant={conversation.channel === 'whatsapp' ? 'default' : 'secondary'}>{conversation.channel}</Badge>
+                {conversation.connection?.health && (
+                  <Badge variant={healthVariant[conversation.connection.health.state]}>{conversation.connection.health.label}</Badge>
+                )}
+              </div>
             </div>
             <p className="mt-1 line-clamp-2 text-xs text-gray-600">{conversation.summary || 'Sem resumo operacional.'}</p>
             <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-gray-500">
               <span>{conversation.status}</span>
               {conversation.queue?.name && <span>{conversation.queue.name}</span>}
               {conversation.assignedUser?.name && <span>{conversation.assignedUser.name}</span>}
+              {(conversation.leadId || conversation.contact?.leadId) && <span>lead vinculado</span>}
             </div>
           </button>
         ))}

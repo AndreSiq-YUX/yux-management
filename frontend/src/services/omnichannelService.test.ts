@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildOmnichannelFilters,
+  deriveProviderHealth,
   mapAiRun,
   mapKnowledgePublication,
   mapOmnichannelConversation,
@@ -45,8 +46,14 @@ describe('omnichannel service mappings', () => {
         id: 'connection-1',
         channel: 'whatsapp',
         name: 'WhatsApp comercial',
-        adapter_key: 'n8n-whatsapp',
+        adapter_key: 'meta-whatsapp',
         is_active: true,
+        provider_account_id: 'waba-1',
+        phone_number_id: 'phone-number-1',
+        provider_verify_state: 'verified',
+        token_state: 'connected',
+        last_provider_sync_at: '2026-06-01T12:15:00Z',
+        protected_metadata_references: { accessTokenEnv: 'WHATSAPP_ACCESS_TOKEN' },
       },
       conversation_queues: { id: 'queue-1', name: 'Comercial' },
       omnichannel_teams: { id: 'team-1', name: 'Vendas' },
@@ -56,12 +63,36 @@ describe('omnichannel service mappings', () => {
       id: 'conversation-1',
       organizationId: 'org-1',
       contact: { displayName: 'Ana Cliente', email: 'ana@example.com' },
-      connection: { name: 'WhatsApp comercial', adapterKey: 'n8n-whatsapp' },
+      connection: {
+        name: 'WhatsApp comercial',
+        adapterKey: 'meta-whatsapp',
+        phoneNumberId: 'phone-number-1',
+        tokenState: 'connected',
+        health: { label: 'WhatsApp conectado' },
+      },
       queue: { name: 'Comercial' },
       team: { name: 'Vendas' },
       assignedUser: { name: 'Marina' },
       tags: ['vip', 'enterprise'],
     })
+  })
+
+  it('derives explicit WhatsApp provider health states', () => {
+    expect(deriveProviderHealth({
+      isActive: true,
+      channel: 'whatsapp',
+      phoneNumberId: 'phone-number-1',
+      providerVerifyState: 'verified',
+      tokenState: 'connected',
+    })).toEqual({ state: 'healthy', label: 'WhatsApp conectado' })
+
+    expect(deriveProviderHealth({
+      isActive: true,
+      channel: 'whatsapp',
+      phoneNumberId: 'phone-number-1',
+      providerVerifyState: 'verified',
+      tokenState: 'needs_reauth',
+    })).toEqual({ state: 'blocked', label: 'WhatsApp precisa reautenticar' })
   })
 
   it('maps message rows with attachment metadata', () => {

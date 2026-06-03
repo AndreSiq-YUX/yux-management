@@ -16,9 +16,10 @@ export function ChannelSimulator({ organizationId, onSimulateEvent }: ChannelSim
 
   return (
     <section className="border-t bg-white p-3">
+      <div className="mb-2 text-xs font-semibold uppercase text-gray-500">Simulador interno de eventos</div>
       <div className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
         <label className="space-y-1 text-xs">
-          <span>Simulador</span>
+          <span>Canal simulado</span>
           <select className="h-9 w-full rounded-md border px-2" value={channel} onChange={event => setChannel(event.target.value as OmnichannelChannel)}>
             {channels.map(item => <option key={item} value={item}>{item}</option>)}
           </select>

@@ -5,6 +5,8 @@ import type {
   MessageAuthor,
   MessageDirection,
   OmnichannelChannel,
+  ProviderTokenState,
+  ProviderVerifyState,
   ResponseMode,
 } from '@/types/omnichannel'
 
@@ -38,6 +40,16 @@ export interface OmnichannelConnectionSummary {
   name: string
   adapterKey?: string
   isActive: boolean
+  providerAccountId?: string
+  phoneNumberId?: string
+  providerVerifyState?: ProviderVerifyState
+  tokenState?: ProviderTokenState
+  lastProviderSyncAt?: string
+  protectedMetadataReferences?: JsonRecord
+  health?: {
+    state: 'healthy' | 'warning' | 'blocked' | 'inactive'
+    label: string
+  }
 }
 
 export interface OmnichannelConversationSummary {
@@ -169,6 +181,22 @@ const summaryByName = (row: Nullable<{ id?: string; name?: string | null }>) => 
   row?.id ? { id: row.id, name: row.name || '' } : undefined
 )
 
+export function deriveProviderHealth(input: {
+  isActive: boolean
+  channel: OmnichannelChannel
+  phoneNumberId?: string
+  providerVerifyState?: ProviderVerifyState
+  tokenState?: ProviderTokenState
+}): OmnichannelConnectionSummary['health'] {
+  if (!input.isActive) return { state: 'inactive', label: 'Provider inativo' }
+  if (input.channel !== 'whatsapp') return { state: 'healthy', label: 'Provider padrao' }
+  if (!input.phoneNumberId || input.tokenState === 'not_configured') return { state: 'warning', label: 'WhatsApp nao configurado' }
+  if (input.tokenState === 'needs_reauth') return { state: 'blocked', label: 'WhatsApp precisa reautenticar' }
+  if (input.tokenState === 'failed') return { state: 'blocked', label: 'WhatsApp com falha' }
+  if (input.tokenState === 'stale' || input.providerVerifyState !== 'verified') return { state: 'warning', label: 'WhatsApp requer revisao' }
+  return { state: 'healthy', label: 'WhatsApp conectado' }
+}
+
 export function buildOmnichannelFilters(filters: OmnichannelConversationFilters) {
   const output: Record<string, string | boolean> = {}
   if (filters.organizationId) output.organization_id = filters.organizationId
@@ -221,6 +249,19 @@ export function mapOmnichannelConversation(row: any): OmnichannelConversationSum
       name: row.channel_connections.name,
       adapterKey: optional(row.channel_connections.adapter_key),
       isActive: Boolean(row.channel_connections.is_active),
+      providerAccountId: optional(row.channel_connections.provider_account_id),
+      phoneNumberId: optional(row.channel_connections.phone_number_id),
+      providerVerifyState: optional(row.channel_connections.provider_verify_state),
+      tokenState: optional(row.channel_connections.token_state),
+      lastProviderSyncAt: optional(row.channel_connections.last_provider_sync_at),
+      protectedMetadataReferences: row.channel_connections.protected_metadata_references || {},
+      health: deriveProviderHealth({
+        isActive: Boolean(row.channel_connections.is_active),
+        channel: row.channel_connections.channel,
+        phoneNumberId: optional(row.channel_connections.phone_number_id),
+        providerVerifyState: optional(row.channel_connections.provider_verify_state),
+        tokenState: optional(row.channel_connections.token_state),
+      }),
     } : undefined,
     queue: summaryByName(row.conversation_queues),
     team: summaryByName(row.omnichannel_teams),
@@ -329,7 +370,7 @@ export function mapKnowledgePublication(row: any): OmnichannelKnowledgePublicati
 const conversationSelect = `
   *,
   omnichannel_contacts(id, display_name, email, phone, lead_id, client_id),
-  channel_connections(id, channel, name, adapter_key, is_active),
+  channel_connections(id, channel, name, adapter_key, is_active, provider_account_id, phone_number_id, provider_verify_state, token_state, last_provider_sync_at, protected_metadata_references),
   conversation_queues(id, name),
   omnichannel_teams(id, name),
   users(id, name),

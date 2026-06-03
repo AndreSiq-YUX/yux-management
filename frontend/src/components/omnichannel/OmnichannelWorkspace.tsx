@@ -71,6 +71,16 @@ export function OmnichannelWorkspace({
   const aiRuns = selectedConversationId ? (aiRunsByConversation[selectedConversationId] || loadedAiRuns[selectedConversationId] || []) : []
   const suggestionMessage = messages.find(message => message.authorType === 'ai' && message.deliveryStatus === 'queued')
   const failedMessage = messages.find(message => message.direction === 'outbound' && message.deliveryStatus === 'failed') || suggestionMessage
+  const providerHealthSummary = useMemo(() => {
+    const states = conversations
+      .filter(conversation => conversation.channel === 'whatsapp')
+      .map(conversation => conversation.connection?.health?.state)
+      .filter(Boolean)
+    if (!states.length) return 'WhatsApp sem conexoes ativas'
+    if (states.includes('blocked')) return 'WhatsApp requer acao'
+    if (states.includes('warning')) return 'WhatsApp requer revisao'
+    return 'WhatsApp conectado'
+  }, [conversations])
 
   const list = useMemo(() => conversations.filter(conversation => {
     if (filters.channel && conversation.channel !== filters.channel) return false
@@ -138,7 +148,10 @@ export function OmnichannelWorkspace({
           <h1 className="text-2xl font-bold text-gray-900">Central Omnichannel IA</h1>
           <p className="text-sm text-gray-600">Atendimento operacional, handoff e supervisao de IA.</p>
         </div>
-        {loading && <span className="text-sm text-gray-500">Carregando...</span>}
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-md border bg-white px-3 py-2 text-gray-700">{providerHealthSummary}</span>
+          {loading && <span className="text-gray-500">Carregando...</span>}
+        </div>
       </div>
       <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-white lg:grid-cols-[340px_1fr]">
         <ConversationList

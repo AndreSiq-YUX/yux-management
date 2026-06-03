@@ -67,11 +67,14 @@ export async function processAiMessage(admin: ReturnType<typeof getServiceRoleCl
   const settings = Array.isArray(conversation.omnichannel_settings)
     ? conversation.omnichannel_settings[0]
     : conversation.omnichannel_settings
+  const assistant = await loadAssistantSettings(admin, conversation)
+  const assistantMetadata = buildAssistantRunMetadata(assistant)
   const webhookPayload = {
     conversation,
     messages: (recentMessages || []).reverse(),
     knowledge: selectPublishedKnowledge(knowledge || []),
     settings,
+    assistant,
   }
 
   const { data: run, error: runError } = await admin.from('ai_message_runs').insert({
@@ -81,7 +84,7 @@ export async function processAiMessage(admin: ReturnType<typeof getServiceRoleCl
     logical_provider: settings?.ai_logical_provider || 'n8n',
     model: settings?.ai_model || 'provider-neutral',
     status: 'processing',
-    metadata: { source: 'process-ai-message' },
+    metadata: { source: 'process-ai-message', assistant: assistantMetadata },
   }).select().single()
   if (runError) throw runError
 
@@ -101,13 +104,19 @@ export async function processAiMessage(admin: ReturnType<typeof getServiceRoleCl
       inputTokenPricePerMillion: settings?.ai_token_prices?.inputPerMillion || 0,
       outputTokenPricePerMillion: settings?.ai_token_prices?.outputPerMillion || 0,
     })
-    metadata = sanitizeWebhookMetadata(body) as Record<string, unknown>
+    metadata = {
+      assistant: assistantMetadata,
+      provider: sanitizeWebhookMetadata(body),
+    }
   } else {
     const safeFallback = buildSafeAiFallback(webhookResult.error || 'AI webhook unavailable')
     text = safeFallback.text
     fallback = true
     protectedErrorText = safeFallback.protectedErrorText
-    metadata = { webhook: sanitizeWebhookMetadata(webhookResult) }
+    metadata = {
+      assistant: assistantMetadata,
+      webhook: sanitizeWebhookMetadata(webhookResult),
+    }
   }
 
   const { data: outbound, error: outboundError } = await admin.from('messages').insert({
@@ -140,4 +149,52 @@ export async function processAiMessage(admin: ReturnType<typeof getServiceRoleCl
   }).eq('id', run.id)
 
   return { runId: run.id, outboundMessageId: outbound.id, dispatch, fallbackUsed: fallback }
+}
+
+async function loadAssistantSettings(admin: ReturnType<typeof getServiceRoleClient>, conversation: Record<string, any>) {
+  const contact = Array.isArray(conversation.omnichannel_contacts)
+    ? conversation.omnichannel_contacts[0]
+    : conversation.omnichannel_contacts
+  const { data, error } = await admin
+    .from('ai_assistants')
+    .select(`
+      *,
+      ai_assistant_objectives(*),
+      ai_assistant_required_fields(*),
+      ai_assistant_handoff_rules(*),
+      ai_assistant_safety_rules(*),
+      ai_assistant_knowledge_links(*, knowledge_entries(id, title, status))
+    `)
+    .eq('organization_id', conversation.organization_id)
+    .eq('status', 'active')
+    .order('updated_at', { ascending: false })
+    .limit(10)
+  if (error) throw error
+
+  const assistants = data || []
+  return assistants.find((assistant: Record<string, unknown>) => (
+    assistant.client_id && assistant.client_id === contact?.client_id
+  )) || assistants.find((assistant: Record<string, unknown>) => !assistant.client_id && !assistant.contract_id) || null
+}
+
+function buildAssistantRunMetadata(assistant: Record<string, any> | null) {
+  if (!assistant) return { assistantConfigured: false }
+
+  return sanitizeWebhookMetadata({
+    assistantConfigured: true,
+    assistantId: assistant.id,
+    name: assistant.name,
+    tone: assistant.tone,
+    objectives: (assistant.ai_assistant_objectives || []).map((objective: Record<string, unknown>) => objective.label),
+    requiredFields: (assistant.ai_assistant_required_fields || []).map((field: Record<string, unknown>) => field.field_key),
+    handoffRules: (assistant.ai_assistant_handoff_rules || [])
+      .filter((rule: Record<string, unknown>) => rule.is_enabled)
+      .map((rule: Record<string, unknown>) => rule.name),
+    safetyRules: (assistant.ai_assistant_safety_rules || [])
+      .filter((rule: Record<string, unknown>) => rule.is_enabled)
+      .map((rule: Record<string, unknown>) => rule.name),
+    knowledgeLinks: (assistant.ai_assistant_knowledge_links || []).map((link: Record<string, any>) => link.knowledge_entries?.title),
+    summaryEnabled: assistant.summary_enabled,
+    classificationEnabled: assistant.classification_enabled,
+  }) as Record<string, unknown>
 }

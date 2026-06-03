@@ -8,6 +8,11 @@ export interface NavigationItem {
   moduleKey?: string
 }
 
+const portalLabelByModule: Record<string, string> = {
+  crm: 'Leads & Funil',
+  bi_reports: 'Relatorios',
+}
+
 export function buildNavigation(context: PlatformContext): NavigationItem[] {
   const baseItems: NavigationItem[] =
     context.mode === 'internal'
@@ -28,7 +33,7 @@ export function buildNavigation(context: PlatformContext): NavigationItem[] {
 
     return [
       {
-        label: module.name,
+        label: context.mode === 'portal' ? portalLabelByModule[module.key] || module.name : module.name,
         href,
         moduleKey: module.key,
       },

@@ -1,8 +1,17 @@
 import { supabase } from '@/lib/supabase'
+import { buildPipelineFromBlueprint, summarizeBlueprintApplication } from '@/lib/platform/blueprintApplicationRules'
 import { formatLocalDateOnly } from '@/lib/platform/contracts'
 import type {
   BillingCycle,
   Blueprint,
+  BlueprintApplicationInput,
+  BlueprintApplicationRun,
+  BlueprintAutomationTemplate,
+  BlueprintCustomField,
+  BlueprintMessageTemplate,
+  BlueprintPipelineStage,
+  BlueprintPipelineTemplate,
+  BlueprintReportPreset,
   Contract,
   ContractDetails,
   ContractModule,
@@ -123,6 +132,10 @@ function mapClientSummary(row: any) {
 }
 
 function mapBlueprint(row: any): Blueprint {
+  const pipelineTemplates = Array.isArray(row.blueprint_pipeline_templates)
+    ? row.blueprint_pipeline_templates.map(mapBlueprintPipelineTemplate)
+    : []
+
   return {
     id: row.id,
     key: row.key,
@@ -132,6 +145,105 @@ function mapBlueprint(row: any): Blueprint {
     moduleKeys: Array.isArray(row.blueprint_modules)
       ? row.blueprint_modules.map((item: any) => item.module_key)
       : [],
+    pipelineTemplate: pipelineTemplates[0],
+    customFields: Array.isArray(row.blueprint_custom_fields)
+      ? row.blueprint_custom_fields.map(mapBlueprintCustomField)
+      : [],
+    messageTemplates: Array.isArray(row.blueprint_message_templates)
+      ? row.blueprint_message_templates.map(mapBlueprintMessageTemplate)
+      : [],
+    automationTemplates: Array.isArray(row.blueprint_automation_templates)
+      ? row.blueprint_automation_templates.map(mapBlueprintAutomationTemplate)
+      : [],
+    reportPresets: Array.isArray(row.blueprint_report_presets)
+      ? row.blueprint_report_presets.map(mapBlueprintReportPreset)
+      : [],
+    applicationRuns: Array.isArray(row.blueprint_application_runs)
+      ? row.blueprint_application_runs.map(mapBlueprintApplicationRun)
+      : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapBlueprintPipelineStage(row: any): BlueprintPipelineStage {
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    key: row.key,
+    name: row.name,
+    color: row.color || undefined,
+    orderIndex: row.order_index,
+    isWon: row.is_won,
+    isLost: row.is_lost,
+  }
+}
+
+function mapBlueprintPipelineTemplate(row: any): BlueprintPipelineTemplate {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    key: row.key,
+    name: row.name,
+    description: row.description || undefined,
+    stages: Array.isArray(row.blueprint_pipeline_stages)
+      ? row.blueprint_pipeline_stages.map(mapBlueprintPipelineStage)
+      : [],
+  }
+}
+
+function mapBlueprintCustomField(row: any): BlueprintCustomField {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    key: row.key,
+    label: row.label,
+    fieldType: row.field_type,
+    required: row.required,
+    options: Array.isArray(row.options) ? row.options : [],
+  }
+}
+
+function mapBlueprintMessageTemplate(row: any): BlueprintMessageTemplate {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    key: row.key,
+    name: row.name,
+    channel: row.channel,
+    body: row.body,
+  }
+}
+
+function mapBlueprintAutomationTemplate(row: any): BlueprintAutomationTemplate {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    key: row.key,
+    name: row.name,
+    triggerEvent: row.trigger_event,
+    draftPayload: row.draft_payload || {},
+  }
+}
+
+function mapBlueprintReportPreset(row: any): BlueprintReportPreset {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    key: row.key,
+    name: row.name,
+    metricKeys: row.metric_keys || [],
+  }
+}
+
+function mapBlueprintApplicationRun(row: any): BlueprintApplicationRun {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    contractId: row.contract_id,
+    status: row.status,
+    summary: row.summary || {},
+    error: row.error || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -383,11 +495,154 @@ export class PlatformService {
   async getBlueprints() {
     const { data, error } = await supabase
       .from('blueprints')
-      .select('*, blueprint_modules(module_key)')
+      .select(`
+        *,
+        blueprint_modules(module_key),
+        blueprint_pipeline_templates(*, blueprint_pipeline_stages(*)),
+        blueprint_custom_fields(*),
+        blueprint_message_templates(*),
+        blueprint_automation_templates(*),
+        blueprint_report_presets(*),
+        blueprint_application_runs(*)
+      `)
       .order('name')
 
     if (error) throw error
     return (data || []).map(mapBlueprint)
+  }
+
+  async getBlueprintById(blueprintId: string) {
+    const { data, error } = await supabase
+      .from('blueprints')
+      .select(`
+        *,
+        blueprint_modules(module_key),
+        blueprint_pipeline_templates(*, blueprint_pipeline_stages(*)),
+        blueprint_custom_fields(*),
+        blueprint_message_templates(*),
+        blueprint_automation_templates(*),
+        blueprint_report_presets(*),
+        blueprint_application_runs(*)
+      `)
+      .eq('id', blueprintId)
+      .single()
+
+    if (error) throw error
+    return mapBlueprint(data)
+  }
+
+  async applyBlueprintToContract(input: BlueprintApplicationInput) {
+    const { data: existingRun, error: existingRunError } = await supabase
+      .from('blueprint_application_runs')
+      .select('*')
+      .eq('blueprint_id', input.blueprintId)
+      .eq('contract_id', input.contractId)
+      .maybeSingle()
+
+    if (existingRunError) throw existingRunError
+    if (existingRun?.status === 'succeeded') {
+      return mapBlueprintApplicationRun(existingRun)
+    }
+
+    const blueprint = await this.getBlueprintById(input.blueprintId)
+    const pipelineTemplate = buildPipelineFromBlueprint(blueprint)
+    const summary = summarizeBlueprintApplication(blueprint)
+    const now = new Date().toISOString()
+
+    const { data: run, error: runError } = await supabase
+      .from('blueprint_application_runs')
+      .upsert({
+        blueprint_id: input.blueprintId,
+        contract_id: input.contractId,
+        organization_id: input.organizationId,
+        status: 'running',
+        summary,
+        error: null,
+        started_at: now,
+        completed_at: null,
+      }, { onConflict: 'blueprint_id,contract_id' })
+      .select('*')
+      .single()
+
+    if (runError) throw runError
+
+    try {
+      if (blueprint.moduleKeys.length) {
+        const { error: moduleError } = await supabase
+          .from('contract_modules')
+          .upsert(blueprint.moduleKeys.map(moduleKey => ({
+            contract_id: input.contractId,
+            module_key: moduleKey,
+            enabled: true,
+            updated_at: now,
+          })), { onConflict: 'contract_id,module_key' })
+
+        if (moduleError) throw moduleError
+      }
+
+      const { data: pipeline, error: pipelineError } = await supabase
+        .from('crm_pipelines')
+        .upsert({
+          organization_id: input.organizationId,
+          name: pipelineTemplate.name,
+          description: pipelineTemplate.description || blueprint.description,
+          is_default: false,
+          is_active: true,
+        }, { onConflict: 'organization_id,name' })
+        .select('*')
+        .single()
+
+      if (pipelineError) throw pipelineError
+
+      const { error: stagesError } = await supabase
+        .from('crm_pipeline_stages')
+        .upsert(pipelineTemplate.stages.map(stage => ({
+          pipeline_id: pipeline.id,
+          key: stage.key,
+          name: stage.name,
+          color: stage.color || '#64748b',
+          order_index: stage.orderIndex,
+          is_won: Boolean(stage.isWon),
+          is_lost: Boolean(stage.isLost),
+          is_active: true,
+        })), { onConflict: 'pipeline_id,key' })
+
+      if (stagesError) throw stagesError
+
+      const completedSummary = {
+        ...summary,
+        pipelineId: pipeline.id,
+        linkedMessageTemplateKeys: blueprint.messageTemplates?.map(item => item.key) || [],
+        linkedAutomationTemplateKeys: blueprint.automationTemplates?.map(item => item.key) || [],
+        linkedReportPresetKeys: blueprint.reportPresets?.map(item => item.key) || [],
+      }
+
+      const { data: completedRun, error: completedRunError } = await supabase
+        .from('blueprint_application_runs')
+        .update({
+          status: 'succeeded',
+          pipeline_id: pipeline.id,
+          summary: completedSummary,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', run.id)
+        .select('*')
+        .single()
+
+      if (completedRunError) throw completedRunError
+      return mapBlueprintApplicationRun(completedRun)
+    } catch (error) {
+      await supabase
+        .from('blueprint_application_runs')
+        .update({
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Erro ao aplicar blueprint',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', run.id)
+
+      throw error
+    }
   }
 }
 

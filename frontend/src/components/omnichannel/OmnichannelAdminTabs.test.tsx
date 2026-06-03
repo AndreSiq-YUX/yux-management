@@ -11,6 +11,7 @@ function renderTabs(portal = false) {
     onSaveQueue: vi.fn(),
     onSaveRule: vi.fn(),
     onSaveSettings: vi.fn(),
+    onSaveAssistant: vi.fn(),
     onCreateKnowledgeDraft: vi.fn(),
     onSubmitKnowledgeReview: vi.fn(),
     onPublishKnowledge: vi.fn(),
@@ -36,6 +37,30 @@ function renderTabs(portal = false) {
           aiLogicalProvider: 'n8n',
           aiModel: 'logical-support',
           tokenPrices: 'input=1;output=2',
+        }}
+        assistant={{
+          id: 'assistant-1',
+          organizationId: 'org-1',
+          name: 'SDR Comercial',
+          tone: 'consultivo',
+          status: 'active',
+          summaryEnabled: true,
+          classificationEnabled: true,
+          objectives: [{ id: 'objective-1', label: 'Qualificar lead', objectiveType: 'lead_qualification' }],
+          requiredFields: [{ id: 'field-1', fieldKey: 'phone', label: 'Telefone' }],
+          handoffRules: [{ id: 'handoff-1', name: 'Reclamacao negativa', ruleType: 'sentiment_intent', conditions: {}, isEnabled: true }],
+          safetyRules: [{ id: 'safety-1', name: 'LGPD', ruleType: 'privacy', instructions: 'Nao expor dados.', severity: 'high', isEnabled: true }],
+          knowledgeLinks: [{ id: 'knowledge-1', title: 'FAQ publicada', status: 'published' }],
+          createdAt: '2026-06-03T12:00:00.000Z',
+          updatedAt: '2026-06-03T12:00:00.000Z',
+        }}
+        whatsappProvider={{
+          providerAccountId: 'waba-1',
+          phoneNumberId: 'phone-number-1',
+          providerVerifyState: 'verified',
+          tokenState: 'connected',
+          lastProviderSyncAt: '2026-06-01T12:15:00Z',
+          protectedReferences: ['accessTokenEnv'],
         }}
         knowledge={{
           drafts: [{ id: 'draft-1', title: 'FAQ preco', status: 'draft' }],
@@ -78,6 +103,15 @@ describe('OmnichannelAdminTabs', () => {
     expect(html).toContain('Prioridade 10')
     expect(html).toContain('purchase_intent')
     expect(html).toContain('Modo assisted')
+    expect(html).toContain('Provider WhatsApp')
+    expect(html).toContain('Assistente IA')
+    expect(html).toContain('SDR Comercial')
+    expect(html).toContain('Qualificar lead')
+    expect(html).toContain('Reclamacao negativa')
+    expect(html).toContain('FAQ publicada')
+    expect(html).toContain('Telefone ID phone-number-1')
+    expect(html).toContain('Token connected')
+    expect(html).toContain('Referencias protegidas accessTokenEnv')
     expect(html).toContain('Retencao 12 meses')
     expect(html).toContain('Anonymizacao ativa')
     expect(html).toContain('FAQ preco')
@@ -99,6 +133,7 @@ describe('OmnichannelAdminTabs', () => {
       container.querySelector<HTMLButtonElement>('button[title="Salvar fila"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Salvar regra"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Salvar configuracoes"]')!.click()
+      container.querySelector<HTMLButtonElement>('button[title="Salvar assistente IA"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Criar rascunho de conhecimento"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Enviar conhecimento para revisao"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Publicar conhecimento"]')!.click()
@@ -110,6 +145,7 @@ describe('OmnichannelAdminTabs', () => {
     expect(handlers.onSaveQueue).toHaveBeenCalledWith('queue-1')
     expect(handlers.onSaveRule).toHaveBeenCalledWith('rule-1')
     expect(handlers.onSaveSettings).toHaveBeenCalledWith('org-1')
+    expect(handlers.onSaveAssistant).toHaveBeenCalledWith('org-1')
     expect(handlers.onCreateKnowledgeDraft).toHaveBeenCalledWith('org-1')
     expect(handlers.onSubmitKnowledgeReview).toHaveBeenCalledWith('draft-1')
     expect(handlers.onPublishKnowledge).toHaveBeenCalledWith('draft-1')

@@ -7,6 +7,17 @@ function formatDateOnly(value: string) {
   return [day, month, year].filter(Boolean).join('/')
 }
 
+const summaryByModule: Record<string, { title: string; value: string; detail: string }> = {
+  crm: { title: 'Funil ativo', value: 'Leads & Funil', detail: 'Pipeline, oportunidades e proximas acoes.' },
+  whatsapp_ai: { title: 'Conversas recentes', value: 'Conversas IA', detail: 'Atendimentos, handoff e contexto comercial.' },
+  landing_pages: { title: 'Aprovacoes pendentes', value: 'Landing Pages', detail: 'Versoes, ajustes e publicacoes.' },
+  campaigns: { title: 'Campanhas ativas', value: 'CPL e MROI', detail: 'Spend, leads, CPL e recomendacoes.' },
+  proposals: { title: 'Propostas', value: 'Pendentes/aprovadas', detail: 'Aprovacoes e conversoes.' },
+  support: { title: 'Suporte', value: 'Tickets e SLA', detail: 'Status de chamados e prioridade.' },
+  finance: { title: 'Financeiro', value: 'Faturas e saldo', detail: 'Resumo financeiro contratado.' },
+  bi_reports: { title: 'Relatorios', value: 'ROI consolidado', detail: 'Indicadores comerciais seguros.' },
+}
+
 export function PortalDashboardPage() {
   const {
     activeContract,
@@ -50,6 +61,7 @@ export function PortalDashboardPage() {
   }
 
   const startsAt = formatDateOnly(activeContract.startsAt)
+  const commercialItems = items.filter(item => item.moduleKey && summaryByModule[item.moduleKey])
 
   return (
     <div className="space-y-6">
@@ -79,6 +91,23 @@ export function PortalDashboardPage() {
           </div>
         </dl>
       </div>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {commercialItems.map(item => {
+          const summary = summaryByModule[item.moduleKey!]
+          return (
+          <Link
+            key={`summary-${item.href}`}
+            to={item.href}
+            className="rounded-lg border bg-white p-4 transition-colors hover:border-yux-300 hover:bg-yux-50"
+          >
+            <p className="text-xs font-medium uppercase text-gray-500">{summary.title}</p>
+            <h2 className="mt-2 font-semibold text-gray-900">{summary.value}</h2>
+            <p className="mt-2 text-sm text-gray-600">{summary.detail}</p>
+          </Link>
+          )
+        })}
+      </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {items.map(item => (

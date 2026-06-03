@@ -38,7 +38,13 @@ const conversation: OmnichannelConversationSummary = {
     id: 'connection-1',
     channel: 'whatsapp',
     name: 'WhatsApp Comercial',
+    adapterKey: 'meta-whatsapp',
     isActive: true,
+    phoneNumberId: 'phone-number-1',
+    providerVerifyState: 'verified',
+    tokenState: 'connected',
+    lastProviderSyncAt: '2026-05-30T12:03:00.000Z',
+    health: { state: 'healthy', label: 'WhatsApp conectado' },
   },
   queue: { id: 'queue-1', name: 'Comercial' },
   team: { id: 'team-1', name: 'Vendas' },
@@ -167,6 +173,11 @@ describe('OmnichannelWorkspace', () => {
     expect(html).toContain('Quero falar com uma pessoa')
     expect(html).toContain('brief.pdf')
     expect(html).toContain('Lead pediu preco')
+    expect(html).toContain('WhatsApp conectado')
+    expect(html).toContain('Telefone ID')
+    expect(html).toContain('phone-number-1')
+    expect(html).toContain('Envio manual')
+    expect(html).toContain('Handoff')
     expect(html).toContain('lead_qualificado')
     expect(html).toContain('Confianca 82%')
     expect(html).toContain('Custo R$ 0,0340')

@@ -93,6 +93,15 @@ describe('buildNavigation', () => {
       enabledModuleKeys: ['crm', 'whatsapp_ai', 'landing_pages', 'campaigns', 'bi_reports'],
     })
     const portalRoutes = items.map(item => item.href)
+    const labels = items.map(item => item.label)
+
+    expect(labels).toEqual(expect.arrayContaining([
+      'Leads & Funil',
+      'Conversas IA',
+      'Landing Pages',
+      'Campanhas',
+      'Relatorios',
+    ]))
 
     expect(portalRoutes).toEqual(expect.arrayContaining([
       '/portal/crm',
@@ -140,7 +149,7 @@ describe('buildNavigation', () => {
     })
 
     expect(items.find(item => item.moduleKey === 'crm')).toEqual({
-      label: 'CRM & Funis',
+      label: 'Leads & Funil',
       href: '/portal/crm',
       moduleKey: 'crm',
     })

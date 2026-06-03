@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { getNextActiveSequenceStep } from '../_shared/crmAutomation.ts'
+import { dispatchOutboundMessage } from '../dispatch-outbound-message/index.ts'
+
+type SupabaseAny = any
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,14 +17,29 @@ Deno.serve(async req => {
     const authorization = req.headers.get('Authorization')
     if (!authorization) return response({ error: 'Missing authorization header' }, 401)
 
-    ;({ executionId } = await req.json())
-    if (!executionId) return response({ error: 'executionId is required' }, 400)
+    const body = await req.json()
+    ;({ executionId } = body)
 
     const url = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } })
-    const adminClient = createClient(url, serviceRoleKey)
+    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } }) as SupabaseAny
+    const adminClient = createClient(url, serviceRoleKey) as SupabaseAny
+
+    if (body.event) {
+      if (!body.event.organizationId) return response({ error: 'event.organizationId is required' }, 400)
+      const { data: visibleFlow, error: flowAccessError } = await userClient
+        .from('automation_flows')
+        .select('id')
+        .eq('organization_id', body.event.organizationId)
+        .limit(1)
+      if (flowAccessError) return response({ error: 'Automation access denied' }, 403)
+      if (!visibleFlow?.length) return response({ error: 'Automation access denied' }, 403)
+
+      return response({ success: true, flows: await dispatchFlowEvent(adminClient, body.event) })
+    }
+
+    if (!executionId) return response({ error: 'executionId is required' }, 400)
 
     const { data: visibleExecution, error: accessError } = await userClient
       .from('automation_executions')
@@ -75,7 +93,7 @@ Deno.serve(async req => {
     const message = error instanceof Error ? error.message : 'Unknown automation error'
     if (executionId) {
       try {
-        const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+        const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!) as SupabaseAny
         await adminClient.from('automation_executions').update({ status: 'failed', last_error: message }).eq('id', executionId)
       } catch {
         // The original failure remains the relevant response.
@@ -85,7 +103,7 @@ Deno.serve(async req => {
   }
 })
 
-async function enqueueNextStep(adminClient: ReturnType<typeof createClient>, execution: any) {
+async function enqueueNextStep(adminClient: SupabaseAny, execution: any) {
   if (!execution.enrollment_id || !execution.crm_sequence_steps) return
 
   const currentStep = execution.crm_sequence_steps
@@ -95,7 +113,7 @@ async function enqueueNextStep(adminClient: ReturnType<typeof createClient>, exe
     .eq('sequence_id', currentStep.sequence_id)
   if (stepsError) throw stepsError
 
-  const nextStep = getNextActiveSequenceStep(steps || [], currentStep.order_index)
+  const nextStep = getNextActiveSequenceStep((steps || []) as any[], currentStep.order_index) as any
   if (!nextStep) {
     const { error } = await adminClient
       .from('crm_sequence_enrollments')
@@ -129,4 +147,244 @@ function response(body: Record<string, unknown>, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+async function dispatchFlowEvent(adminClient: SupabaseAny, event: Record<string, any>) {
+  const { data: flows, error } = await adminClient
+    .from('automation_flows')
+    .select('*, automation_triggers(*), automation_conditions(*), automation_actions(*)')
+    .eq('organization_id', event.organizationId)
+    .eq('status', 'published')
+    .eq('is_enabled', true)
+  if (error) throw error
+
+  const eligible = (flows || []).filter((flow: Record<string, any>) => (
+    flow.automation_triggers?.some((trigger: Record<string, any>) => matchesTrigger(trigger, event))
+    && evaluateConditions(flow.automation_conditions || [], { ...event, ...(event.payload || {}) })
+  ))
+
+  const results = []
+  for (const flow of eligible) {
+    results.push(await executeFlow(adminClient, flow, event))
+  }
+  return results
+}
+
+async function executeFlow(adminClient: SupabaseAny, flow: Record<string, any>, event: Record<string, any>) {
+  const { data: run, error: runError } = await adminClient.from('automation_execution_runs').insert({
+    organization_id: flow.organization_id,
+    flow_id: flow.id,
+    event_type: event.type,
+    lead_id: event.leadId || null,
+    conversation_id: event.conversationId || null,
+    ticket_id: event.ticketId || null,
+    status: 'processing',
+    event_payload: sanitize(event),
+  }).select().single()
+  if (runError) throw runError
+
+  try {
+    const actions = [...(flow.automation_actions || [])].sort((left, right) => left.order_index - right.order_index)
+    const steps = []
+    for (const action of actions) {
+      steps.push(await executeActionStep(adminClient, run.id, action, event, flow.organization_id))
+    }
+    await adminClient.from('automation_execution_runs').update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    }).eq('id', run.id)
+    await adminClient.from('automation_flows').update({ last_error: null }).eq('id', flow.id)
+    return { flowId: flow.id, runId: run.id, status: 'completed', steps }
+  } catch (error) {
+    const message = protectedError(error)
+    await adminClient.from('automation_execution_runs').update({
+      status: 'failed',
+      last_error: message,
+      completed_at: new Date().toISOString(),
+    }).eq('id', run.id)
+    await adminClient.from('automation_flows').update({
+      status: 'failed',
+      last_error: message,
+    }).eq('id', flow.id)
+    return { flowId: flow.id, runId: run.id, status: 'failed', error: message }
+  }
+}
+
+async function executeActionStep(
+  adminClient: SupabaseAny,
+  runId: string,
+  action: Record<string, any>,
+  event: Record<string, any>,
+  organizationId: string,
+) {
+  const payload = action.payload || {}
+  const { data: step, error: stepError } = await adminClient.from('automation_execution_steps').insert({
+    run_id: runId,
+    action_id: action.id,
+    action_type: action.action_type,
+    status: 'processing',
+    sanitized_payload: sanitize(payload),
+  }).select().single()
+  if (stepError) throw stepError
+
+  try {
+    const result = await executeAction(adminClient, action.action_type, payload, event, organizationId)
+    await adminClient.from('automation_execution_steps').update({
+      status: 'completed',
+      sanitized_result: sanitize(result),
+      completed_at: new Date().toISOString(),
+    }).eq('id', step.id)
+    return { stepId: step.id, actionType: action.action_type, status: 'completed' }
+  } catch (error) {
+    const message = protectedError(error)
+    await adminClient.from('automation_execution_steps').update({
+      status: 'failed',
+      protected_error: message,
+      completed_at: new Date().toISOString(),
+    }).eq('id', step.id)
+    throw error
+  }
+}
+
+async function executeAction(
+  adminClient: SupabaseAny,
+  actionType: string,
+  payload: Record<string, any>,
+  event: Record<string, any>,
+  organizationId: string,
+) {
+  if (actionType === 'create_task') {
+    const leadId = required(event.leadId, 'leadId')
+    const { data, error } = await adminClient.from('crm_tasks').insert({
+      organization_id: organizationId,
+      lead_id: leadId,
+      title: payload.title || 'Follow-up comercial',
+      description: payload.description || null,
+      due_at: payload.dueAt || new Date().toISOString(),
+      assigned_to: payload.assignedTo || null,
+    }).select('id').single()
+    if (error) throw error
+    return { taskId: data.id }
+  }
+
+  if (actionType === 'change_stage') {
+    const { data, error } = await adminClient.from('leads').update({
+      stage_id: required(payload.stageId, 'stageId'),
+    }).eq('id', required(event.leadId, 'leadId')).select('id').single()
+    if (error) throw error
+    return { leadId: data.id }
+  }
+
+  if (actionType === 'assign_owner') {
+    const ownerId = required(payload.ownerId || payload.assignedTo, 'ownerId')
+    const { data, error } = await adminClient.from('leads').update({
+      owner_id: ownerId,
+      assigned_to: ownerId,
+    }).eq('id', required(event.leadId, 'leadId')).select('id').single()
+    if (error) throw error
+    return { leadId: data.id, ownerId }
+  }
+
+  if (actionType === 'send_whatsapp') {
+    const { data: message, error } = await adminClient.from('messages').insert({
+      conversation_id: required(event.conversationId || payload.conversationId, 'conversationId'),
+      direction: 'outbound',
+      author_type: 'system',
+      content_type: 'text',
+      body: required(payload.body || payload.messageBody, 'body'),
+      delivery_status: 'queued',
+      metadata: { source: 'automation_flow', runEvent: event.type },
+    }).select('id').single()
+    if (error) throw error
+    return dispatchOutboundMessage(adminClient as never, message.id)
+  }
+
+  if (actionType === 'create_ticket') {
+    const { data, error } = await adminClient.from('support_tickets').insert({
+      organization_id: organizationId,
+      client_id: required(payload.clientId, 'clientId'),
+      contract_id: required(payload.contractId, 'contractId'),
+      subject: payload.subject || 'Ticket criado por automacao',
+      category: payload.category || 'request',
+      priority: payload.priority || 'medium',
+      internal_notes: payload.internalNotes || null,
+    }).select('id').single()
+    if (error) throw error
+    return { ticketId: data.id }
+  }
+
+  if (actionType === 'update_field') {
+    const field = required(payload.field, 'field')
+    const allowed = new Set(['status', 'source_kind', 'score', 'notes', 'stage_id', 'owner_id', 'assigned_to'])
+    if (!allowed.has(field)) throw new Error(`Unsupported lead field: ${field}`)
+    const { data, error } = await adminClient.from('leads').update({
+      [field]: payload.value,
+    }).eq('id', required(event.leadId, 'leadId')).select('id').single()
+    if (error) throw error
+    return { leadId: data.id, field }
+  }
+
+  if (actionType === 'register_activity') {
+    const { data, error } = await adminClient.from('interactions').insert({
+      organization_id: organizationId,
+      lead_id: required(event.leadId, 'leadId'),
+      type: payload.type || 'note',
+      title: payload.title || 'Atividade automatica',
+      description: payload.description || `Evento ${event.type}`,
+      date: new Date().toISOString(),
+    }).select('id').single()
+    if (error) throw error
+    return { interactionId: data.id }
+  }
+
+  throw new Error(`Unsupported automation action: ${actionType}`)
+}
+
+function matchesTrigger(trigger: Record<string, any>, event: Record<string, any>) {
+  if (trigger.trigger_type !== event.type) return false
+  if (trigger.config?.stageId && trigger.config.stageId !== event.stageId) return false
+  if (trigger.config?.status && trigger.config.status !== event.status) return false
+  return true
+}
+
+function evaluateConditions(conditions: Array<Record<string, any>>, context: Record<string, any>) {
+  return conditions.every(condition => {
+    const current = valueAt(context, condition.field)
+    const expected = condition.value
+    if (condition.operator === 'exists') return current !== undefined && current !== null && current !== ''
+    if (condition.operator === 'equals') return normalized(current) === normalized(expected)
+    if (condition.operator === 'not_equals') return normalized(current) !== normalized(expected)
+    if (condition.operator === 'contains') return normalized(current).includes(normalized(expected))
+    if (condition.operator === 'greater_than') return Number(current) > Number(expected)
+    if (condition.operator === 'less_than') return Number(current) < Number(expected)
+    return false
+  })
+}
+
+function valueAt(source: Record<string, any>, path: string): any {
+  return path.split('.').reduce((current, key) => current && typeof current === 'object' ? current[key] : undefined, source)
+}
+
+function normalized(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function required(value: unknown, label: string) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required`)
+  return value.trim()
+}
+
+function sanitize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitize)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+    key,
+    key.toLowerCase().includes('token') || key.toLowerCase().includes('secret') ? '[redacted]' : sanitize(entry),
+  ]))
+}
+
+function protectedError(error: unknown) {
+  return (error instanceof Error ? error.message : String(error || 'Unknown automation error'))
+    .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [redacted]')
+    .replace(/\b(token|secret|password|credential)\s+[^,\s]+/gi, '$1 [redacted]')
 }

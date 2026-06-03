@@ -7,6 +7,7 @@ import {
   json,
 } from '../_shared/edge.ts'
 import { buildOutboundAdapterPayload, buildRetryAttempt, sanitizeWebhookMetadata } from '../_shared/omnichannel.ts'
+import { buildWhatsAppTextPayload, sendWhatsAppTextMessage } from '../_shared/whatsappProvider.ts'
 
 type AdminClient = ReturnType<typeof getServiceRoleClient>
 
@@ -92,6 +93,68 @@ export async function dispatchOutboundMessage(admin: AdminClient, messageId: str
     return { runId: run.id, status: 'delivered' }
   }
 
+  if (conversation.channel === 'whatsapp' && connection?.phone_number_id) {
+    const recipient = contact?.phone || contact?.external_identities?.whatsapp
+    if (!recipient) {
+      await admin.from('messages').update({ delivery_status: 'failed' }).eq('id', message.id)
+      await admin.from('outbound_message_runs').update({
+        status: 'failed',
+        protected_error_text: 'WhatsApp recipient phone is required',
+      }).eq('id', run.id)
+      return { runId: run.id, status: 'failed', provider: 'meta-whatsapp' }
+    }
+
+    const tokenState = connection.token_state || 'not_configured'
+    const accessToken = resolveWhatsAppAccessToken(connection)
+    const providerPayload = buildWhatsAppTextPayload({
+      to: recipient,
+      body: message.body || '',
+    })
+
+    await admin.from('outbound_message_runs').update({
+      adapter_key: connection.adapter_key || 'meta-whatsapp',
+      sanitized_request: sanitizeWebhookMetadata({
+        ...payload,
+        provider: 'meta-whatsapp',
+        phoneNumberId: connection.phone_number_id,
+        providerPayload,
+      }),
+    }).eq('id', run.id)
+
+    if (tokenState === 'needs_reauth') {
+      await admin.from('messages').update({ delivery_status: 'failed' }).eq('id', message.id)
+      await admin.from('outbound_message_runs').update({
+        status: 'failed',
+        protected_error_text: 'WhatsApp provider token needs reauth',
+      }).eq('id', run.id)
+      return { runId: run.id, status: 'failed', provider: 'meta-whatsapp', tokenState }
+    }
+
+    const providerResult = await sendWhatsAppTextMessage({
+      phoneNumberId: connection.phone_number_id,
+      accessToken,
+      to: recipient,
+      body: message.body || '',
+      graphVersion: Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v20.0',
+    })
+    const success = Boolean(providerResult.configured && providerResult.ok)
+    const queuedForConfig = !providerResult.configured
+    const status = success ? 'sent' : queuedForConfig ? 'queued' : 'failed'
+
+    await admin.from('messages').update({ delivery_status: status }).eq('id', message.id)
+    await admin.from('outbound_message_runs').update({
+      status,
+      sanitized_response: sanitizeWebhookMetadata(providerResult),
+      protected_error_text: success || queuedForConfig ? null : formatProtectedError(providerResult.error || `WhatsApp provider returned ${providerResult.status}`),
+    }).eq('id', run.id)
+
+    if (providerResult.configured && (providerResult.status === 401 || providerResult.status === 403)) {
+      await admin.from('channel_connections').update({ token_state: 'needs_reauth' }).eq('id', connection.id)
+    }
+
+    return { runId: run.id, status, provider: 'meta-whatsapp' }
+  }
+
   const webhookResult = await callN8nWebhookWithTimeout(
     Deno.env.get('N8N_OMNICHANNEL_OUTBOUND_WEBHOOK_URL'),
     payload as unknown as Record<string, unknown>,
@@ -106,4 +169,11 @@ export async function dispatchOutboundMessage(admin: AdminClient, messageId: str
   }).eq('id', run.id)
 
   return { runId: run.id, status: success ? 'sent' : 'failed' }
+}
+
+function resolveWhatsAppAccessToken(connection: Record<string, any>) {
+  const references = connection.protected_metadata_references || {}
+  const tokenEnv = typeof references.accessTokenEnv === 'string' ? references.accessTokenEnv : undefined
+  if (tokenEnv) return Deno.env.get(tokenEnv)
+  return Deno.env.get('WHATSAPP_ACCESS_TOKEN')
 }
