@@ -14,9 +14,10 @@ import { LeadKanbanBoard } from '@/components/crm/LeadKanbanBoard'
 import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
 import { LeadTimeline } from '@/components/crm/LeadTimeline'
 import { LeadCommercialPanel } from '@/components/proposals/LeadCommercialPanel'
+import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { crmService } from '@/services/crmService'
 import { usePlatformStore } from '@/stores/platformStore'
-import type { AutomationExecution, CrmInteraction, CrmLead, CrmPipeline, CrmSequence, CrmSequenceEnrollment, CrmTask } from '@/types/crm'
+import type { AutomationExecution, CrmGovernanceContext, CrmInteraction, CrmLead, CrmPipeline, CrmSequence, CrmSequenceEnrollment, CrmTask } from '@/types/crm'
 
 const initialLeadForm = { name: '', email: '', phone: '', company: '', source: 'Manual', score: 0, value: '' }
 
@@ -27,6 +28,8 @@ export function CrmWorkspace() {
   const [pipelines, setPipelines] = useState<CrmPipeline[]>([])
   const [pipelineId, setPipelineId] = useState<string>()
   const [leads, setLeads] = useState<CrmLead[]>([])
+  const [governance, setGovernance] = useState<CrmGovernanceContext | null>(null)
+  const [crmUnavailable, setCrmUnavailable] = useState(false)
   const [selectedLead, setSelectedLead] = useState<CrmLead>()
   const [createOpen, setCreateOpen] = useState(false)
   const [leadForm, setLeadForm] = useState(initialLeadForm)
@@ -47,15 +50,42 @@ export function CrmWorkspace() {
       setPipelines([])
       setPipelineId(undefined)
       setLeads([])
+      setGovernance(null)
+      setCrmUnavailable(false)
       setLoading(false)
       return
     }
     try {
       setLoading(true)
       setLoadError(null)
+      setCrmUnavailable(false)
+
+      let activeGovernance: CrmGovernanceContext | null = null
+
+      if (organization?.kind === 'client') {
+        const instance = await crmGovernanceService.getActiveInstanceForOrganization(organizationId)
+
+        if (!instance) {
+          setPipelines([])
+          setPipelineId(undefined)
+          setLeads([])
+          setGovernance(null)
+          setCrmUnavailable(true)
+          return
+        }
+
+        activeGovernance = await crmGovernanceService.getGovernanceContext(instance.id)
+        setGovernance(activeGovernance)
+      } else {
+        setGovernance(null)
+      }
+
       const nextPipelines = await crmService.getPipelines(organizationId)
-      setPipelines(nextPipelines)
-      setPipelineId(current => current || nextPipelines.find(item => item.isDefault)?.id || nextPipelines[0]?.id)
+      const scopedPipelines = activeGovernance
+        ? nextPipelines.filter(item => !item.crmInstanceId || item.crmInstanceId === activeGovernance?.instance.id)
+        : nextPipelines
+      setPipelines(scopedPipelines)
+      setPipelineId(current => current || scopedPipelines.find(item => item.isDefault)?.id || scopedPipelines[0]?.id)
     } catch (error) {
       console.error('Erro ao carregar pipelines:', error)
       setLoadError('Nao foi possivel carregar os pipelines do CRM.')
@@ -63,23 +93,25 @@ export function CrmWorkspace() {
     } finally {
       setLoading(false)
     }
-  }, [organization?.id])
+  }, [organization?.id, organization?.kind])
 
   const loadLeads = useCallback(async () => {
     const organizationId = organization?.id
-    if (!isPersistedOrganizationId(organizationId) || !pipelineId) {
+    if (!isPersistedOrganizationId(organizationId) || !pipelineId || crmUnavailable) {
       setLeads([])
       return
     }
     try {
       setLoadError(null)
-      setLeads(await crmService.getLeads(organizationId, pipelineId))
+      setLeads(governance?.instance.id
+        ? await crmService.getLeadsForInstance(governance.instance.id, pipelineId)
+        : await crmService.getLeads(organizationId, pipelineId))
     } catch (error) {
       console.error('Erro ao carregar leads:', error)
       setLoadError('Nao foi possivel carregar os leads deste pipeline.')
       toast.error('Erro ao carregar leads')
     }
-  }, [organization?.id, pipelineId])
+  }, [organization?.id, pipelineId, governance?.instance.id, crmUnavailable])
 
   useEffect(() => { loadPipelines() }, [loadPipelines])
   useEffect(() => { loadLeads() }, [loadLeads])
@@ -88,13 +120,23 @@ export function CrmWorkspace() {
     event.preventDefault()
     if (!organization?.id || !pipelineId || !stages[0]) return
     try {
-      await crmService.createLead({
+      const baseLead = {
         organizationId: organization.id, pipelineId, stageId: stages[0].id,
         name: leadForm.name.trim(), email: leadForm.email.trim(),
         phone: leadForm.phone.trim() || undefined, company: leadForm.company.trim() || undefined,
         source: leadForm.source.trim() || 'Manual', score: Number(leadForm.score),
         value: leadForm.value ? Number(leadForm.value) : undefined,
-      })
+      }
+
+      if (governance?.instance.id) {
+        await crmService.createGovernedLead({
+          ...baseLead,
+          crmInstanceId: governance.instance.id,
+          assignmentMode: governance.instance.defaultAssignmentMode,
+        })
+      } else {
+        await crmService.createLead(baseLead)
+      }
       setLeadForm(initialLeadForm); setCreateOpen(false); toast.success('Lead criado'); loadLeads()
     } catch (error) {
       console.error('Erro ao criar lead:', error); toast.error('Erro ao criar lead')
@@ -122,11 +164,20 @@ export function CrmWorkspace() {
   }
   if (loading) return <p className="text-sm text-gray-600">Carregando pipeline...</p>
   if (loadError) return <CrmNotice title="Erro ao carregar CRM" description={loadError} onRetry={loadPipelines} />
+  if (crmUnavailable) return <CrmNotice title="CRM nao contratado ou inativo" description="Este contrato nao possui uma instancia CRM ativa. Fale com a YUX para habilitar ou revisar a implantacao do modulo." />
   if (pipelines.length === 0) return <CrmNotice title="Nenhum pipeline configurado" description="A organizacao atual nao possui pipeline comercial ativo." />
+
+  const workspaceTitle = governance?.currentMember?.role === 'seller'
+    ? 'Meus leads'
+    : governance?.currentMember?.role === 'manager'
+      ? 'Leads da equipe'
+      : governance
+        ? 'Operacao CRM'
+        : 'CRM Cockpit'
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold text-gray-900">CRM Cockpit</h1><p className="text-gray-600">Pipeline comercial de {organization.name}</p></div>
+      <div><h1 className="text-2xl font-bold text-gray-900">{workspaceTitle}</h1><p className="text-gray-600">Pipeline comercial de {organization.name}</p></div>
       <div className="flex gap-2">
         <Select value={pipelineId} onValueChange={setPipelineId}><SelectTrigger className="w-52"><SelectValue placeholder="Pipeline" /></SelectTrigger><SelectContent>{pipelines.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
         <div className="flex rounded-md border bg-white p-1">

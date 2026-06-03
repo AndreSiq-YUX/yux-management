@@ -49,7 +49,7 @@ export function LeadDetailPanel({ lead, onMarkWon, onMarkLost }: LeadDetailPanel
         </div>
         <div>
           <p className="text-xs font-medium uppercase text-slate-500">Responsavel</p>
-          <p className="mt-1 text-sm text-slate-900">{lead.ownerId || lead.assignedTo || 'Nao atribuido'}</p>
+          <p className="mt-1 text-sm text-slate-900">{lead.ownerMemberId || lead.ownerId || lead.assignedTo || 'Nao atribuido'}</p>
         </div>
         <div>
           <p className="text-xs font-medium uppercase text-slate-500">Proximo follow-up</p>
@@ -58,6 +58,14 @@ export function LeadDetailPanel({ lead, onMarkWon, onMarkLost }: LeadDetailPanel
           </p>
         </div>
       </div>
+
+      {(lead.ownerMemberId || lead.teamId || lead.pipelineVersionId) && (
+        <div className="grid gap-2 rounded-md border bg-white p-3 text-xs text-slate-600 md:grid-cols-3">
+          <span>Responsavel CRM: {lead.ownerMemberId || 'Nao atribuido'}</span>
+          <span>Equipe: {lead.teamId || 'Sem equipe'}</span>
+          <span>Versao do funil: {lead.pipelineVersionId || 'Atual'}</span>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <Button title="Marcar lead como ganho" onClick={onMarkWon}>

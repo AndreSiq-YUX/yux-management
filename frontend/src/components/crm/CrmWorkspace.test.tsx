@@ -2,6 +2,7 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CrmWorkspace } from './CrmWorkspace'
+import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { crmService } from '@/services/crmService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { CrmLead, CrmPipeline } from '@/types/crm'
@@ -10,8 +11,10 @@ vi.mock('@/services/crmService', () => ({
   crmService: {
     getPipelines: vi.fn(),
     getLeads: vi.fn(),
+    getLeadsForInstance: vi.fn(),
     moveLead: vi.fn(),
     createLead: vi.fn(),
+    createGovernedLead: vi.fn(),
     getInteractions: vi.fn(),
     getTasks: vi.fn(),
     getSequences: vi.fn(),
@@ -25,6 +28,13 @@ vi.mock('@/services/crmService', () => ({
     enrollLead: vi.fn(),
     updateEnrollment: vi.fn(),
     retryExecution: vi.fn(),
+  },
+}))
+
+vi.mock('@/services/crmGovernanceService', () => ({
+  crmGovernanceService: {
+    getActiveInstanceForOrganization: vi.fn(),
+    getGovernanceContext: vi.fn(),
   },
 }))
 
@@ -151,6 +161,165 @@ describe('CrmWorkspace', () => {
     expect(html).toContain('CRM indisponivel neste contexto')
     expect(html).not.toContain('Carregando pipeline')
     expect(crmService.getPipelines).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+  })
+
+  it('shows contracted CRM unavailable state when no active crm instance exists', async () => {
+    usePlatformStore.setState({
+      organization: {
+        id: pipeline.organizationId,
+        name: 'Cliente ABC',
+        slug: 'cliente-abc',
+        kind: 'client',
+        createdAt: '2026-06-03T10:00:00.000Z',
+        updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      isLoading: false,
+      error: null,
+    })
+    vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(null)
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CrmWorkspace />)
+      await flush()
+      await flush()
+    })
+
+    expect(container.innerHTML).toContain('CRM nao contratado ou inativo')
+    expect(crmService.getPipelines).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+  })
+
+  it('shows seller-scoped lead view when current member is seller', async () => {
+    usePlatformStore.setState({
+      organization: {
+        id: pipeline.organizationId,
+        name: 'Cliente ABC',
+        slug: 'cliente-abc',
+        kind: 'client',
+        createdAt: '2026-06-03T10:00:00.000Z',
+        updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      isLoading: false,
+      error: null,
+    })
+    const instance = {
+      id: 'crm-1',
+      organizationId: pipeline.organizationId,
+      contractId: 'contract-1',
+      status: 'active' as const,
+      sellerSeatLimit: 2,
+      managerSeatLimit: 1,
+      adminSeatLimit: 1,
+      maxPipelineCount: 3,
+      maxCustomFieldCount: 20,
+      maxAutomationCount: 5,
+      allowClientPipelineCustomization: true,
+      allowClientFieldCustomization: true,
+      allowClientCategoryCustomization: true,
+      defaultAssignmentMode: 'queue' as const,
+      createdAt: '2026-06-03T10:00:00.000Z',
+      updatedAt: '2026-06-03T10:00:00.000Z',
+    }
+    vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(instance)
+    vi.mocked(crmGovernanceService.getGovernanceContext).mockResolvedValue({
+      instance,
+      currentMember: {
+        id: 'seller-1',
+        crmInstanceId: 'crm-1',
+        userId: 'user-1',
+        role: 'seller',
+        status: 'active',
+        createdAt: '2026-06-03T10:00:00.000Z',
+        updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      teams: [],
+      teamMemberships: [],
+    })
+    vi.mocked(crmService.getPipelines).mockResolvedValue([{ ...pipeline, crmInstanceId: 'crm-1' }])
+    vi.mocked(crmService.getLeadsForInstance).mockResolvedValue(leads)
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CrmWorkspace />)
+      await flush()
+      await flush()
+      await flush()
+    })
+
+    expect(container.innerHTML).toContain('Meus leads')
+    expect(crmService.getLeadsForInstance).toHaveBeenCalledWith('crm-1', pipeline.id)
+
+    act(() => root.unmount())
+  })
+
+  it('shows manager team controls when current member manages teams', async () => {
+    usePlatformStore.setState({
+      organization: {
+        id: pipeline.organizationId,
+        name: 'Cliente ABC',
+        slug: 'cliente-abc',
+        kind: 'client',
+        createdAt: '2026-06-03T10:00:00.000Z',
+        updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      isLoading: false,
+      error: null,
+    })
+    const instance = {
+      id: 'crm-1',
+      organizationId: pipeline.organizationId,
+      contractId: 'contract-1',
+      status: 'active' as const,
+      sellerSeatLimit: 2,
+      managerSeatLimit: 1,
+      adminSeatLimit: 1,
+      maxPipelineCount: 3,
+      maxCustomFieldCount: 20,
+      maxAutomationCount: 5,
+      allowClientPipelineCustomization: true,
+      allowClientFieldCustomization: true,
+      allowClientCategoryCustomization: true,
+      defaultAssignmentMode: 'queue' as const,
+      createdAt: '2026-06-03T10:00:00.000Z',
+      updatedAt: '2026-06-03T10:00:00.000Z',
+    }
+    vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(instance)
+    vi.mocked(crmGovernanceService.getGovernanceContext).mockResolvedValue({
+      instance,
+      currentMember: {
+        id: 'manager-1',
+        crmInstanceId: 'crm-1',
+        userId: 'user-2',
+        role: 'manager',
+        status: 'active',
+        createdAt: '2026-06-03T10:00:00.000Z',
+        updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      teams: [],
+      teamMemberships: [],
+    })
+    vi.mocked(crmService.getPipelines).mockResolvedValue([{ ...pipeline, crmInstanceId: 'crm-1' }])
+    vi.mocked(crmService.getLeadsForInstance).mockResolvedValue(leads)
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CrmWorkspace />)
+      await flush()
+      await flush()
+      await flush()
+    })
+
+    expect(container.innerHTML).toContain('Leads da equipe')
 
     act(() => root.unmount())
   })
