@@ -30,3 +30,9 @@ port = 54323
 [storage]
 enabled = true
 file_size_limit = "50MiB"
+
+[functions.receive-channel-event]
+verify_jwt = false
+
+[functions.simulate-channel-event]
+verify_jwt = true

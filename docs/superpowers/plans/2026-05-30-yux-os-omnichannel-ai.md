@@ -381,13 +381,13 @@ git commit -m "feat: add omnichannel edge contracts"
 - Create: `supabase/functions/simulate-channel-event/deno.json`
 - Create: `supabase/functions/simulate-channel-event/index.ts`
 
-- [ ] **Step 1: Generate the CRM-sync migration**
+- [x] **Step 1: Generate the CRM-sync migration**
 
 ```bash
 supabase migration new omnichannel_crm_sync
 ```
 
-- [ ] **Step 2: Add private transactional CRM synchronization**
+- [x] **Step 2: Add private transactional CRM synchronization**
 
 Create `private.sync_omnichannel_crm(...)` and a service-role-only wrapper. The function must:
 
@@ -399,7 +399,7 @@ Create `private.sync_omnichannel_crm(...)` and a service-role-only wrapper. The 
 - update source, summary, qualification score, tags, responsible user, next follow-up, scheduling request, and CRM interaction history without duplicating records;
 - return a sanitized synchronization result.
 
-- [ ] **Step 3: Implement `receive-channel-event`**
+- [x] **Step 3: Implement `receive-channel-event`**
 
 Configure as a custom-token public boundary. It must:
 
@@ -417,18 +417,18 @@ Configure as a custom-token public boundary. It must:
 - enqueue AI processing only when the selected mode allows it;
 - mark the webhook event completed or failed.
 
-- [ ] **Step 4: Implement authenticated `simulate-channel-event`**
+- [x] **Step 4: Implement authenticated `simulate-channel-event`**
 
 Allow internal supervisors and contracted portal configurators to submit realistic sanitized inbound payloads for each supported channel. Reuse the same normalized processing contract without requiring live credentials.
 
-- [ ] **Step 5: Add function configuration**
+- [x] **Step 5: Add function configuration**
 
 In `supabase/config.toml`, set:
 
 - `receive-channel-event`: `verify_jwt = false`;
 - `simulate-channel-event`: authenticated JWT verification.
 
-- [ ] **Step 6: Run SQL probes and Deno checks**
+- [x] **Step 6: Run SQL probes and Deno checks**
 
 Verify:
 
@@ -444,7 +444,9 @@ deno check supabase/functions/receive-channel-event/index.ts
 deno check supabase/functions/simulate-channel-event/index.ts
 ```
 
-- [ ] **Step 7: Commit**
+Probe file: `supabase/probes/20260601200000_omnichannel_crm_sync.sql`
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add supabase/migrations supabase/functions supabase/config.toml
