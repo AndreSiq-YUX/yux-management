@@ -1,135 +1,140 @@
-# CRM And Lead Management
+# CRM e Gestao de Leads
 
-Updated: 2026-06-03
+Atualizado em: 2026-06-03
 
-This document describes the CRM and lead-management module as implemented in
-this repository, including its user-facing scope, data model, integrations,
-security boundaries, and remaining operational dependencies.
+Este documento descreve o modulo de CRM e gestao de leads conforme implementado
+neste repositorio, incluindo escopo funcional, modelo de dados, integracoes,
+regras de seguranca, relacao com outros modulos e dependencias operacionais
+pendentes.
 
-## Executive Status
+## Status Executivo
 
-The CRM and lead-management scope planned for the current repository phase is
-implemented in code. The module is not automatically 100% operational in every
-environment until the target Supabase project has the required migrations,
-Data API grants, RLS policies, seed data, and authenticated users/memberships
-applied.
+O escopo de CRM e gestao de leads planejado para a fase atual esta implementado
+no codigo do repositorio. Isso nao significa que o modulo esteja automaticamente
+100% operacional em qualquer ambiente: o projeto Supabase alvo precisa ter as
+migracoes, grants da Data API, politicas RLS, dados iniciais e usuarios/
+memberships autenticados corretamente aplicados.
 
-Current state:
+Estado atual:
 
-- Internal CRM route: implemented at `/leads`.
-- Client portal CRM route: implemented at `/portal/crm`.
-- CRM Cockpit commercial upgrade: implemented.
-- Follow-up automation foundation: implemented.
-- Protected CRM automation dispatcher: implemented.
-- Provider-neutral automation boundary: implemented.
-- Live WhatsApp/email/n8n provider execution: supported by dispatcher boundary,
-  but production credentials/workflows remain operational configuration.
-- Browser issue reported on 2026-06-03: fixed in code by preventing infinite
-  loading when platform context falls back to a non-persisted organization.
-- Supabase `401` on `organizations`: addressed in repo with explicit Data API
-  grants migration, but the target Supabase project still needs that migration
-  applied and a valid authenticated session.
-- Remote Supabase check on 2026-06-03: project `portal-yux`
-  (`uuowkncimiydpbxqpkej`) is active and had migrations only through
-  `20260601210000_omnichannel_webchat_widget_service` before the Data API grants
-  fix was applied. Later commercial MVP migrations still need to be applied to
-  that target environment.
+- Rota interna do CRM: implementada em `/leads`.
+- Rota do CRM no portal do cliente: implementada em `/portal/crm`.
+- Upgrade comercial do CRM Cockpit: implementado.
+- Base de automacao de follow-up: implementada.
+- Dispatcher protegido de automacoes do CRM: implementado.
+- Fronteira provider-neutral para automacoes: implementada.
+- Execucao real por WhatsApp/email/n8n: suportada pela fronteira do dispatcher,
+  mas credenciais e workflows de producao continuam sendo configuracao
+  operacional.
+- Problema reportado no navegador em 2026-06-03: corrigido no codigo ao impedir
+  loading infinito quando o contexto da plataforma cai em uma organizacao local
+  nao persistida.
+- `401` do Supabase em `organizations`: tratado no repositorio com migracao de
+  grants explicitos para a Data API; o ambiente alvo ainda precisa ter a
+  migracao aplicada e uma sessao autenticada valida.
+- Verificacao remota do Supabase em 2026-06-03: o projeto `portal-yux`
+  (`uuowkncimiydpbxqpkej`) esta ativo e tinha migracoes somente ate
+  `20260601210000_omnichannel_webchat_widget_service` antes da correcao de
+  grants da Data API. As migracoes posteriores do MVP comercial ainda precisam
+  ser aplicadas nesse ambiente alvo.
 
-## Routes And Surfaces
+## Rotas e Superficies
 
-### Internal CRM
+### CRM Interno
 
-Route: `/leads`
+Rota: `/leads`
 
-Primary component:
+Componentes principais:
 
 - `frontend/src/pages/leads/LeadsPage.tsx`
 - `frontend/src/components/crm/CrmWorkspace.tsx`
 
-The internal CRM is the YUX commercial cockpit for pipeline operation. It uses
-the current platform organization context and only queries persisted
-organization IDs.
+O CRM interno e o cockpit comercial da YUX para operacao de pipeline. Ele usa o
+contexto atual de organizacao da plataforma e so consulta organizacoes com IDs
+persistidos no banco.
 
-### Client Portal CRM
+### CRM no Portal do Cliente
 
-Route: `/portal/crm`
+Rota: `/portal/crm`
 
-The portal route currently reuses the shared CRM workspace and is gated by the
-portal navigation/contract context. A client only sees CRM when the active
-contract enables the `crm` module and RLS allows access to that client
-organization.
+A rota do portal atualmente reutiliza o workspace compartilhado do CRM e e
+controlada pelo contexto de navegacao/contrato do portal. Um cliente so ve CRM
+quando o contrato ativo habilita o modulo `crm` e quando as politicas RLS
+permitem acesso a organizacao desse cliente.
 
-The portal-safe CRM scope is intentionally narrower than internal operation:
-it is designed for contracted pipeline visibility and client-safe stage/lead
-continuation, not unrestricted YUX internal administration.
+O escopo seguro para portal e intencionalmente mais restrito que a operacao
+interna: ele foi pensado para visibilidade contratada de pipeline e continuidade
+segura de estagios/leads pelo cliente, nao para administracao interna irrestrita
+da YUX.
 
-## Implemented User-Facing Features
+## Funcionalidades Implementadas
 
-### Pipeline Cockpit
+### Cockpit de Pipeline
 
-Implemented:
+Implementado:
 
-- Loads CRM pipelines by organization.
-- Selects the default active pipeline when available.
-- Shows ordered pipeline stages.
-- Supports Kanban view.
-- Supports list/table view.
-- Allows lead movement across stages.
-- Preserves legacy lead `stage` values while using configurable `stage_id`.
-- Supports won/lost stage semantics through stage metadata.
+- Carrega pipelines do CRM por organizacao.
+- Seleciona o pipeline ativo padrao quando disponivel.
+- Exibe estagios ordenados do pipeline.
+- Suporta visualizacao Kanban.
+- Suporta visualizacao em lista/tabela.
+- Permite mover leads entre estagios.
+- Preserva valores legados de `stage` do lead enquanto usa `stage_id`
+  configuravel.
+- Suporta semantica de ganho/perda por metadados do estagio.
 
-### Metrics Strip
+### Faixa de Metricas
 
-Implemented:
+Implementado:
 
-- New leads.
-- Stale leads.
-- Conversion rate.
-- Open pipeline value.
+- Novos leads.
+- Leads parados.
+- Taxa de conversao.
+- Valor de pipeline aberto.
 
-Rules are implemented in:
+As regras ficam em:
 
 - `frontend/src/lib/crm/pipelineRules.ts`
 - `frontend/src/lib/crm/pipelineRules.test.ts`
 
-### Lead Creation
+### Criacao de Leads
 
-Implemented:
+Implementado:
 
-- Manual lead creation from the CRM UI.
-- Captures name, email, phone, company, source, score, and estimated value.
-- Assigns the new lead to the first ordered stage of the selected pipeline.
-- Persists attribution context and source kind defaults.
+- Criacao manual de lead pela UI do CRM.
+- Captura nome, email, telefone, empresa, origem, score e valor estimado.
+- Atribui o novo lead ao primeiro estagio ordenado do pipeline selecionado.
+- Persiste contexto de atribuicao e padroes de tipo de origem.
 
-### Lead Cards And List Rows
+### Cards e Linhas de Leads
 
-Implemented:
+Implementado:
 
-- Lead name.
-- Company/email context.
-- Source/source kind.
+- Nome do lead.
+- Contexto de empresa/email.
+- Origem e tipo de origem.
 - Score.
-- Value.
-- Stage selection.
-- Stage movement action.
+- Valor.
+- Selecao de estagio.
+- Acao de movimentacao de estagio.
 
-### Lead Detail Operations
+### Operacoes no Detalhe do Lead
 
-Implemented in the lead modal:
+Implementado no modal do lead:
 
-- Lead summary.
-- Mark as won.
-- Mark as lost.
-- Interaction timeline.
-- Add note/activity.
-- Task panel.
-- Create follow-up task.
-- Complete follow-up task.
-- Automation execution list.
-- Retry failed execution.
-- Commercial/proposal panel integration.
+- Resumo do lead.
+- Marcar como ganho.
+- Marcar como perdido.
+- Linha do tempo de interacoes.
+- Adicionar nota/atividade.
+- Painel de tarefas.
+- Criar tarefa de follow-up.
+- Concluir tarefa de follow-up.
+- Lista de execucoes de automacao.
+- Tentar novamente execucao com falha.
+- Integracao com painel comercial/propostas.
 
-Related components:
+Componentes relacionados:
 
 - `LeadDetailPanel`
 - `LeadKanbanBoard`
@@ -137,30 +142,30 @@ Related components:
 - `LeadTimeline`
 - `LeadCommercialPanel`
 
-### Follow-Up Sequences
+### Sequencias de Follow-Up
 
-Implemented:
+Implementado:
 
-- CRM sequences.
-- Sequence steps.
-- Lead enrollments.
-- Pause automation.
-- Resume automation.
-- Manual takeover.
-- Reschedule next execution.
-- Execution status tracking.
-- Retry command for failed execution.
+- Sequencias de CRM.
+- Etapas de sequencia.
+- Inscricoes de leads em sequencias.
+- Pausar automacao.
+- Retomar automacao.
+- Assumir atendimento manualmente.
+- Reagendar proxima execucao.
+- Rastrear status de execucao.
+- Retentar execucao com falha.
 
-Domain rules:
+Regras de dominio:
 
 - `frontend/src/lib/crm/followUpRules.ts`
 - `frontend/src/lib/crm/followUpRules.test.ts`
 
-## Data Model
+## Modelo de Dados
 
-### Core CRM Tables
+### Tabelas Centrais do CRM
 
-Implemented by `supabase/migrations/20260601110000_multitenant_crm_automation.sql`:
+Implementadas por `supabase/migrations/20260601110000_multitenant_crm_automation.sql`:
 
 - `crm_pipelines`
 - `crm_pipeline_stages`
@@ -170,21 +175,21 @@ Implemented by `supabase/migrations/20260601110000_multitenant_crm_automation.sq
 - `crm_tasks`
 - `automation_executions`
 
-Existing tables extended:
+Tabelas existentes estendidas:
 
 - `leads`
 - `interactions`
 
-### CRM Cockpit Upgrade Tables
+### Tabelas do Upgrade do CRM Cockpit
 
-Implemented by `supabase/migrations/20260601260000_crm_cockpit_upgrade.sql`:
+Implementadas por `supabase/migrations/20260601260000_crm_cockpit_upgrade.sql`:
 
 - `pipeline_templates`
 - `pipeline_template_stages`
 - `lead_custom_field_values`
 - `lead_tasks`
 
-Lead fields added or normalized:
+Campos adicionados ou normalizados em leads:
 
 - `organization_id`
 - `pipeline_id`
@@ -200,52 +205,52 @@ Lead fields added or normalized:
 - `source_kind`
 - `attribution_context`
 
-### Data API Exposure Fix
+### Correcao de Exposicao da Data API
 
-Implemented by `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`:
+Implementada por `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`:
 
-- explicit `GRANT` for authenticated access to base platform tables required
-  by the platform shell;
-- explicit `GRANT` for authenticated access to CRM tables required by the CRM
-  service;
-- RLS remains the authorization boundary.
+- `GRANT` explicito para acesso autenticado as tabelas base exigidas pelo shell
+  da plataforma;
+- `GRANT` explicito para acesso autenticado as tabelas exigidas pelo service do
+  CRM;
+- RLS continua sendo a fronteira de autorizacao por linha.
 
 Probe:
 
 - `supabase/probes/20260603215128_expose_platform_base_tables_to_data_api.sql`
 
-Remote application:
+Aplicacao remota:
 
-- Applied to `portal-yux` (`uuowkncimiydpbxqpkej`) on 2026-06-03 via Supabase
-  connector as remote migration
+- Aplicada ao projeto `portal-yux` (`uuowkncimiydpbxqpkej`) em 2026-06-03 via
+  conector Supabase como migracao remota
   `20260603215652_expose_platform_base_tables_to_data_api`.
 
-## Security And Access Model
+## Seguranca e Modelo de Acesso
 
-RLS is enabled for CRM tables. The core helper functions live under the private
-schema:
+RLS esta habilitado nas tabelas do CRM. As funcoes auxiliares principais ficam
+no schema privado:
 
 - `private.can_access_crm_organization(UUID)`
 - `private.can_access_crm_pipeline(UUID)`
 - `private.can_access_crm_lead(UUID)`
 
-Access model:
+Modelo de acesso:
 
-- internal YUX users can manage CRM records;
-- client users can access CRM only for their organization when an active
-  contract enables the `crm` module;
-- cross-client access is blocked by RLS;
-- portal access is contract/module-derived;
-- Data API grants expose table operations to the REST layer but do not bypass
-  RLS.
+- usuarios internos da YUX podem gerenciar registros de CRM;
+- usuarios clientes acessam CRM somente da propria organizacao quando um
+  contrato ativo habilita o modulo `crm`;
+- acesso entre clientes diferentes e bloqueado por RLS;
+- acesso no portal deriva de contrato/modulo habilitado;
+- grants da Data API expoem operacoes de tabela para a camada REST, mas nao
+  contornam RLS.
 
-## Service Layer
+## Camada de Servico
 
-Primary service:
+Service principal:
 
 - `frontend/src/services/crmService.ts`
 
-Implemented operations:
+Operacoes implementadas:
 
 - `getPipelines`
 - `getPipelinesForOrganization`
@@ -271,150 +276,156 @@ Implemented operations:
 - `getExecutions`
 - `retryExecution`
 
-## Relationships With Other Modules
+## Relacao com Outros Modulos
 
-### Platform, Contracts, And Portal
+### Plataforma, Contratos e Portal
 
-CRM depends on platform context:
+O CRM depende do contexto da plataforma:
 
-- organizations;
+- organizacoes;
 - memberships;
 - roles;
-- active contracts;
-- enabled modules.
+- contratos ativos;
+- modulos habilitados.
 
-The portal only exposes CRM when the active contract enables `crm`.
+O portal so expoe CRM quando o contrato ativo habilita `crm`.
 
-### Commercial Proposals
+### Propostas Comerciais
 
-CRM integrates with proposals through `LeadCommercialPanel` and proposal
-conversion flows. Leads can become commercial opportunities and connect to
-proposal generation/review/conversion.
+O CRM se integra a propostas por meio do `LeadCommercialPanel` e dos fluxos de
+conversao de proposta. Leads podem se tornar oportunidades comerciais e se
+conectar a geracao, revisao e conversao de propostas.
 
 ### Omnichannel AI
 
-Omnichannel keeps CRM sync boundaries through:
+O Omnichannel mantem fronteiras de sincronizacao com o CRM por meio de:
 
 - `crm_sync_runs`;
-- conversation/contact lead references;
-- handoff and lead context;
-- future provider workflows for contact-to-lead enrichment.
+- referencias de leads em conversas/contatos;
+- contexto de handoff e lead;
+- workflows futuros de provider para enriquecimento contato-para-lead.
 
-The current implementation is provider-neutral by default, with real WhatsApp
-provider support implemented separately in the omnichannel provider path.
+A implementacao atual e provider-neutral por padrao, com suporte real ao
+provider WhatsApp implementado separadamente no caminho de provider do
+omnichannel.
 
 ### Landing Pages
 
-Landing pages can route captured submissions into CRM through mapped fields and
-lead attribution context. CRM can consume source/source-kind and attribution
-metadata for reporting.
+Landing pages podem rotear envios capturados para o CRM por meio de campos
+mapeados e contexto de atribuicao do lead. O CRM consome origem/tipo de origem
+e metadados de atribuicao para relatorios.
 
-### Campaigns
+### Campanhas
 
-Campaigns connect to leads through paid source attribution, campaign metrics,
-and MROI reporting. CRM lead source fields support campaign attribution.
+Campanhas se conectam a leads por atribuicao de origem paga, metricas de
+campanha e relatorios de MROI. Os campos de origem do lead suportam atribuicao
+de campanha.
 
 ### Flow Builder Lite
 
-Flow Builder can trigger commercial actions that relate to leads, campaigns,
-landing pages, proposals, and CRM events. Execution history is available for
-operational traceability.
+O Flow Builder pode disparar acoes comerciais relacionadas a leads, campanhas,
+landing pages, propostas e eventos de CRM. O historico de execucao fica
+disponivel para rastreabilidade operacional.
 
-### Operational Reports
+### Relatorios Operacionais
 
-Reports aggregate CRM data into:
+Relatorios agregam dados do CRM em:
 
-- leads by source;
-- stage conversions;
-- stalled opportunities;
-- proposal approval rate;
-- response time;
-- owner activity;
-- MROI/campaign outcomes.
+- leads por origem;
+- conversoes por estagio;
+- oportunidades paradas;
+- taxa de aprovacao de propostas;
+- tempo de resposta;
+- atividade por responsavel;
+- resultados de MROI/campanhas.
 
-Portal reports sanitize internal-only activity.
+Relatorios do portal removem atividade exclusivamente interna.
 
-### Finance And Projects
+### Financeiro e Projetos
 
-Won leads can feed proposal, contract, project, and finance workflows. The
-current code has the CRM/proposal relationship implemented; full automated
-lead-to-billing orchestration is still an operational/product extension.
+Leads ganhos podem alimentar fluxos de proposta, contrato, projeto e financeiro.
+O relacionamento CRM/propostas ja esta implementado no codigo atual; a
+orquestracao totalmente automatizada de lead para faturamento ainda e uma
+extensao operacional/produto.
 
-## Error Handling And Current Browser Fix
+## Tratamento de Erros e Correcao Atual no Navegador
 
-The reported browser symptom was:
+Sintoma reportado no navegador:
 
-- CRM stayed on a loading message;
-- console showed `401 Unauthorized` on
+- CRM permanecia em mensagem de carregamento;
+- console mostrava `401 Unauthorized` em
   `/rest/v1/organizations?select=*&order=name.asc`.
 
-Root cause in code:
+Causa raiz no codigo:
 
-- platform initialization can fall back to a local non-persisted organization
-  when remote context fails;
-- CRM previously initialized `loading=true`;
-- when the organization ID was not a persisted UUID, CRM returned early without
-  setting `loading=false`.
+- a inicializacao da plataforma pode cair em uma organizacao local nao
+  persistida quando o contexto remoto falha;
+- o CRM antes inicializava `loading=true`;
+- quando o ID da organizacao nao era um UUID persistido, o CRM retornava antes
+  de definir `loading=false`.
 
-Fix implemented:
+Correcao implementada:
 
-- CRM no longer starts with permanent loading;
-- non-persisted or missing organization context renders an explicit operational
-  notice;
-- pipeline/load errors render an explicit retryable CRM error;
-- a regression test covers the fallback organization case.
+- o CRM nao inicia mais com loading permanente;
+- contexto ausente ou organizacao nao persistida renderiza um aviso operacional
+  explicito;
+- erros de pipeline/carregamento renderizam um erro de CRM com acao de tentar
+  novamente;
+- um teste de regressao cobre o caso de organizacao fallback.
 
-Important operational note:
+Observacao operacional importante:
 
-- if the console still shows `401` after deploying this fix, the environment
-  still has an auth/Data API issue. Apply the new Data API grants migration,
-  ensure the user has a valid Supabase session, and confirm memberships/RLS
-  policies for the current user.
+- se o console ainda mostrar `401` depois do deploy dessa correcao, o ambiente
+  ainda tem um problema de auth/Data API. Aplique a nova migracao de grants da
+  Data API, garanta que o usuario tenha uma sessao Supabase valida e confirme
+  memberships/politicas RLS para o usuario atual.
 
-## Validation Evidence
+## Evidencias de Validacao
 
-Focused CRM validation after the loading fix:
+Validacao focada do CRM depois da correcao de loading:
 
 ```bash
 cd frontend
 npm test -- src/components/crm/CrmWorkspace.test.tsx src/lib/crm/pipelineRules.test.ts src/lib/crm/followUpRules.test.ts
 ```
 
-Result:
+Resultado:
 
-- 3 test files passed;
-- 10 tests passed.
+- 3 arquivos de teste passaram;
+- 10 testes passaram.
 
-Previous commercial MVP validation included:
+A validacao anterior do MVP comercial tambem incluiu:
 
-- full frontend test suite;
+- suite completa de testes do frontend;
 - type-check;
-- production build;
-- shared Supabase Edge Function tests;
-- Vercel deployment success.
+- build de producao;
+- testes compartilhados de Supabase Edge Functions;
+- deploy Vercel com sucesso.
 
-## Is CRM 100% Implemented?
+## O CRM Esta 100% Implementado?
 
-Repository implementation: yes, for the CRM/follow-up/commercial cockpit scope
-planned in the current phase.
+Implementacao no repositorio: sim, para o escopo de CRM, follow-up e cockpit
+comercial planejado para a fase atual.
 
-Operational production readiness: not fully guaranteed until the target
-environment is verified.
+Prontidao operacional em producao: ainda nao e totalmente garantida ate que o
+ambiente alvo seja verificado.
 
-Still required or not fully automated:
+Ainda necessario ou nao totalmente automatizado:
 
-- apply all commercial MVP migrations after `20260601210000` to the target
-  Supabase project;
-- run the CRM probes against the target Supabase project;
-- verify an internal YUX user can read `organizations`, pipelines, and leads;
-- verify a client portal user only sees CRM when its active contract enables
-  `crm`;
-- configure real outbound providers/n8n workflows for sequence execution;
-- run authenticated browser QA on `/leads` and `/portal/crm`;
-- decide whether portal CRM should remain the shared operational workspace or
-  receive a more restricted client-only CRM view.
+- aplicar no Supabase alvo todas as migracoes do MVP comercial posteriores a
+  `20260601210000`;
+- rodar os probes do CRM contra o Supabase alvo;
+- verificar que um usuario interno da YUX consegue ler `organizations`,
+  pipelines e leads;
+- verificar que um usuario do portal do cliente so ve CRM quando o contrato
+  ativo habilita `crm`;
+- configurar providers reais/workflows n8n para execucao de sequencias;
+- rodar QA autenticado no navegador em `/leads` e `/portal/crm`;
+- decidir se o CRM do portal deve continuar usando o workspace operacional
+  compartilhado ou se deve receber uma visao ainda mais restrita, exclusiva para
+  cliente.
 
-## Relevant Files
+## Arquivos Relevantes
 
 Frontend:
 
@@ -440,7 +451,7 @@ Supabase:
 - `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`
 - `supabase/functions/dispatch-crm-automation/index.ts`
 
-Tests:
+Testes:
 
 - `frontend/src/components/crm/CrmWorkspace.test.tsx`
 - `frontend/src/lib/crm/followUpRules.test.ts`
