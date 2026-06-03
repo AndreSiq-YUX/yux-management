@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { buildPipelineFromBlueprint, summarizeBlueprintApplication } from '@/lib/platform/blueprintApplicationRules'
 import { formatLocalDateOnly } from '@/lib/platform/contracts'
+import { crmGovernanceService } from '@/services/crmGovernanceService'
 import type {
   BillingCycle,
   Blueprint,
@@ -567,6 +568,8 @@ export class PlatformService {
     if (runError) throw runError
 
     try {
+      let crmInstanceId: string | undefined
+
       if (blueprint.moduleKeys.length) {
         const { error: moduleError } = await supabase
           .from('contract_modules')
@@ -580,10 +583,26 @@ export class PlatformService {
         if (moduleError) throw moduleError
       }
 
+      if (blueprint.moduleKeys.includes('crm')) {
+        const crmInstance = await crmGovernanceService.createInstance({
+          organizationId: input.organizationId,
+          contractId: input.contractId,
+          sectorKey: blueprint.sector,
+          blueprintId: blueprint.id,
+          blueprintApplicationRunId: run.id,
+          sellerSeatLimit: 3,
+          managerSeatLimit: 1,
+          adminSeatLimit: 1,
+          defaultAssignmentMode: 'queue',
+        })
+        crmInstanceId = crmInstance.id
+      }
+
       const { data: pipeline, error: pipelineError } = await supabase
         .from('crm_pipelines')
         .upsert({
           organization_id: input.organizationId,
+          ...(crmInstanceId ? { crm_instance_id: crmInstanceId } : {}),
           name: pipelineTemplate.name,
           description: pipelineTemplate.description || blueprint.description,
           is_default: false,
