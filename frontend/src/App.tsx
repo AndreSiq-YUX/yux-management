@@ -34,6 +34,7 @@ import { PortalFinancePage } from '@/pages/client-portal/PortalFinancePage'
 import { PortalLandingPagesPage } from '@/pages/client-portal/PortalLandingPagesPage'
 import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
+import { PortalCrmSettingsPage } from '@/pages/client-portal/PortalCrmSettingsPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
@@ -98,6 +99,7 @@ function App() {
             <Route path="portal/projects" element={<PortalProjectsPage />} />
             <Route path="portal/proposals" element={<PortalProposalsPage />} />
             <Route path="portal/crm" element={<LeadsPage />} />
+            <Route path="portal/crm/settings" element={<PortalCrmSettingsPage />} />
             <Route path="portal/omnichannel" element={<PortalOmnichannelPage />} />
             <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/omnichannel" replace />} />
             <Route path="portal/landing-pages" element={<PortalLandingPagesPage />} />
