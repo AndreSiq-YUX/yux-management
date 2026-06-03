@@ -16,6 +16,7 @@ import { ProjectsPage } from '@/pages/projects/ProjectsPage'
 import { CampaignsPage } from '@/pages/campaigns/CampaignsPage'
 import { LeadsPage } from '@/pages/leads/LeadsPage'
 import { ProposalsPage } from '@/pages/proposals/ProposalsPage'
+import { OmnichannelPage } from '@/pages/omnichannel/OmnichannelPage'
 
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
@@ -64,7 +65,8 @@ function App() {
             <Route path="campaigns" element={<CampaignsPage />} />
             <Route path="leads" element={<LeadsPage />} />
             <Route path="proposals" element={<ProposalsPage />} />
-            <Route path="whatsapp-ai" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
+            <Route path="omnichannel" element={<OmnichannelPage />} />
+            <Route path="whatsapp-ai" element={<Navigate to="/omnichannel" replace />} />
             <Route path="reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="automations" element={<ModuleSurfacePage moduleKey="automations" />} />
             <Route path="support" element={<ModuleSurfacePage moduleKey="support" />} />
@@ -80,7 +82,8 @@ function App() {
             <Route path="portal/projects" element={<PortalProjectsPage />} />
             <Route path="portal/proposals" element={<PortalProposalsPage />} />
             <Route path="portal/crm" element={<LeadsPage />} />
-            <Route path="portal/whatsapp-ai" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
+            <Route path="portal/omnichannel" element={<ModuleSurfacePage moduleKey="whatsapp_ai" />} />
+            <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/omnichannel" replace />} />
             <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />
             <Route path="portal/reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="portal/support" element={<ModuleSurfacePage moduleKey="support" />} />

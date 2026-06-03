@@ -552,7 +552,7 @@ git commit -m "feat: process ai replies and dispatch messages"
 - Update: `frontend/src/lib/platform/navigation.test.ts`
 - Update: `frontend/src/types/platform.ts`
 
-- [ ] **Step 1: Write failing navigation and workspace tests**
+- [x] **Step 1: Write failing navigation and workspace tests**
 
 Cover:
 
@@ -563,18 +563,18 @@ Cover:
 - agent reply, assisted-response approval, assign, reassign, handoff, resolve, reopen, retry, and mode-change commands;
 - simulator channel selector and event submission.
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
 ```bash
 cd frontend
 npm test -- src/lib/platform/navigation.test.ts src/components/omnichannel/OmnichannelWorkspace.test.tsx
 ```
 
-- [ ] **Step 3: Update platform metadata**
+- [x] **Step 3: Update platform metadata**
 
 Add omnichannel permission keys to `PermissionKey`. Preserve the module key `whatsapp_ai`, rename the label, and route it to `/omnichannel` internally and `/portal/omnichannel` in the portal.
 
-- [ ] **Step 4: Implement the internal workspace**
+- [x] **Step 4: Implement the internal workspace**
 
 Build a dense operational layout:
 
@@ -586,11 +586,11 @@ Build a dense operational layout:
 
 Avoid nested cards. Keep list dimensions stable and responsive.
 
-- [ ] **Step 5: Wire the internal route**
+- [x] **Step 5: Wire the internal route**
 
 Replace the internal placeholder route with `<OmnichannelPage />`.
 
-- [ ] **Step 6: Run focused tests and type checking**
+- [x] **Step 6: Run focused tests and type checking**
 
 ```bash
 cd frontend
@@ -600,7 +600,7 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src

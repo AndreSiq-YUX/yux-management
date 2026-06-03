@@ -111,4 +111,39 @@ describe('buildNavigation', () => {
     })
     expect(buildNavigation({ ...context, enabledModuleKeys: [] }).find(item => item.moduleKey === 'proposals')).toBeUndefined()
   })
+
+  it('keeps whatsapp_ai as the commercial key while routing the omnichannel workspace', () => {
+    const internalItems = buildNavigation({
+      ...internalContext,
+      role: {
+        key: 'yux_manager',
+        name: 'YUX Manager',
+        scope: 'internal',
+        permissions: ['omnichannel.read'],
+      },
+      enabledModuleKeys: ['whatsapp_ai'],
+    })
+    const portalItems = buildNavigation({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['omnichannel.read'],
+      },
+      enabledModuleKeys: ['whatsapp_ai'],
+    })
+
+    expect(internalItems.find(item => item.moduleKey === 'whatsapp_ai')).toEqual({
+      label: 'Central Omnichannel IA',
+      href: '/omnichannel',
+      moduleKey: 'whatsapp_ai',
+    })
+    expect(portalItems.find(item => item.moduleKey === 'whatsapp_ai')).toEqual({
+      label: 'Central Omnichannel IA',
+      href: '/portal/omnichannel',
+      moduleKey: 'whatsapp_ai',
+    })
+  })
 })

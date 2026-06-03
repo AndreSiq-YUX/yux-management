@@ -35,11 +35,11 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   },
   {
     key: 'whatsapp_ai',
-    name: 'WhatsApp IA',
+    name: 'Central Omnichannel IA',
     base: false,
-    internalRoute: '/whatsapp-ai',
-    portalRoute: '/portal/whatsapp-ai',
-    requiredPermissions: ['support.read'],
+    internalRoute: '/omnichannel',
+    portalRoute: '/portal/omnichannel',
+    requiredPermissions: ['omnichannel.read'],
   },
   {
     key: 'campaigns',
