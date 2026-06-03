@@ -1,4 +1,6 @@
 import { CrmMembersPanel } from '@/components/crm-governance/CrmMembersPanel'
+import { CrmConfigurationDraftPanel } from '@/components/crm-governance/CrmConfigurationDraftPanel'
+import { CrmPublicationWizard } from '@/components/crm-governance/CrmPublicationWizard'
 import { CrmSeatUsagePanel } from '@/components/crm-governance/CrmSeatUsagePanel'
 import { CrmTeamsPanel } from '@/components/crm-governance/CrmTeamsPanel'
 
@@ -14,6 +16,8 @@ export function PortalCrmSettingsPage() {
       <CrmSeatUsagePanel />
       <CrmMembersPanel />
       <CrmTeamsPanel />
+      <CrmConfigurationDraftPanel />
+      <CrmPublicationWizard impactedOpenLeadCount={0} selectedStrategy="keep_existing" />
     </div>
   )
 }
