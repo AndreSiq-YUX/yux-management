@@ -680,7 +680,7 @@ git commit -m "feat: add portal omnichannel inbox"
 - Update: `frontend/src/components/omnichannel/OmnichannelWorkspace.tsx`
 - Update: `frontend/src/components/omnichannel/PortalOmnichannelWorkspace.tsx`
 
-- [ ] **Step 1: Write failing administration tests**
+- [x] **Step 1: Write failing administration tests**
 
 Cover:
 
@@ -693,14 +693,14 @@ Cover:
 - internal metrics including AI cost and latency;
 - portal metrics excluding internal-only values.
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
 ```bash
 cd frontend
 npm test -- src/components/omnichannel/OmnichannelAdminTabs.test.tsx
 ```
 
-- [ ] **Step 3: Implement compact administration tabs**
+- [x] **Step 3: Implement compact administration tabs**
 
 Add tabs:
 
@@ -714,7 +714,7 @@ Add tabs:
 
 Use tables, compact panels, switches, select inputs, and explicit save actions. Do not expose provider credentials.
 
-- [ ] **Step 4: Run focused tests and type checking**
+- [x] **Step 4: Run focused tests and type checking**
 
 ```bash
 cd frontend
@@ -724,7 +724,7 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/components/omnichannel

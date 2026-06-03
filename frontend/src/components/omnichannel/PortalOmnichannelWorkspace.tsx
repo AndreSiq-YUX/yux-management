@@ -3,6 +3,7 @@ import { GitBranch, RefreshCw, RotateCcw, Send, UserCheck, UserRoundPlus, XCircl
 import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { OmnichannelAdminTabs } from './OmnichannelAdminTabs'
 import { omnichannelService } from '@/services/omnichannelService'
 import type {
   OmnichannelConversationFilters,
@@ -269,6 +270,7 @@ export function PortalOmnichannelWorkspace({
           )}
         </main>
       </div>
+      {canConfigure && <OmnichannelAdminTabs organizationId={organizationId} profile="portal" />}
     </div>
   )
 }

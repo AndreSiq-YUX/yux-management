@@ -4,6 +4,7 @@ import { ChannelSimulator } from './ChannelSimulator'
 import { ConversationComposer } from './ConversationComposer'
 import { ConversationDetails } from './ConversationDetails'
 import { ConversationList } from './ConversationList'
+import { OmnichannelAdminTabs } from './OmnichannelAdminTabs'
 import { omnichannelService } from '@/services/omnichannelService'
 import type {
   OmnichannelAiRunView,
@@ -174,6 +175,7 @@ export function OmnichannelWorkspace({
           />
         </main>
       </div>
+      <OmnichannelAdminTabs organizationId={organizationId} profile="internal" />
     </div>
   )
 }
