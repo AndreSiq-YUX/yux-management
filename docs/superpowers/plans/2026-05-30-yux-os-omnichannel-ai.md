@@ -238,7 +238,7 @@ git commit -m "feat: add omnichannel schema and permissions"
 - Create: `frontend/src/services/omnichannelService.ts`
 - Create: `frontend/src/services/omnichannelService.test.ts`
 
-- [ ] **Step 1: Write failing mapping tests**
+- [x] **Step 1: Write failing mapping tests**
 
 Cover:
 
@@ -249,7 +249,7 @@ Cover:
 - filter builders excluding empty values;
 - knowledge publication snapshots detached from later draft edits.
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
 ```bash
 cd frontend
@@ -258,7 +258,7 @@ npm test -- src/services/omnichannelService.test.ts
 
 Expected: fail because the service does not exist.
 
-- [ ] **Step 3: Implement mappers and reads**
+- [x] **Step 3: Implement mappers and reads**
 
 Following `crmService.ts` and `proposalService.ts`, add reads for:
 
@@ -272,7 +272,7 @@ Following `crmService.ts` and `proposalService.ts`, add reads for:
 - sanitized portal metrics;
 - webhook event and outbound retry logs for internal supervisors.
 
-- [ ] **Step 4: Implement authenticated mutations**
+- [x] **Step 4: Implement authenticated mutations**
 
 Add:
 
@@ -287,7 +287,7 @@ Add:
 
 Use `supabase.functions.invoke()` for Edge Function commands. Do not expose service keys or raw adapter tokens.
 
-- [ ] **Step 5: Run focused tests and type checking**
+- [x] **Step 5: Run focused tests and type checking**
 
 ```bash
 cd frontend
@@ -297,7 +297,7 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/services/omnichannelService.ts frontend/src/services/omnichannelService.test.ts
