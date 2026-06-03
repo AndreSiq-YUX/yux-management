@@ -6,10 +6,78 @@ export type CrmTaskStatus = 'pending' | 'completed' | 'cancelled'
 export type AutomationExecutionStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export type CrmLeadStatus = 'open' | 'won' | 'lost'
 export type CrmLeadAttentionState = 'on_track' | 'due_today' | 'overdue' | 'stale' | 'won' | 'lost'
+export type CrmInstanceStatus = 'draft' | 'active' | 'paused' | 'archived'
+export type CrmInstanceRole = 'seller' | 'manager' | 'client_admin' | 'yux_admin'
+export type CrmAssignmentMode = 'manual' | 'queue' | 'round_robin' | 'pull_next'
+export type CrmAssignmentState = 'unassigned' | 'assigned' | 'in_queue' | 'reassigned'
+export type CrmPublicationStatus = 'draft' | 'reviewing' | 'published' | 'failed'
+export type CrmMigrationStrategy = 'keep_existing' | 'migrate_all' | 'migrate_open' | 'mapped_stages'
+
+export interface CrmInstance {
+  id: string
+  organizationId: string
+  contractId: string
+  status: CrmInstanceStatus
+  sectorKey?: string
+  blueprintId?: string
+  blueprintApplicationRunId?: string
+  sellerSeatLimit: number
+  managerSeatLimit: number
+  adminSeatLimit: number
+  maxPipelineCount: number
+  maxCustomFieldCount: number
+  maxAutomationCount: number
+  allowClientPipelineCustomization: boolean
+  allowClientFieldCustomization: boolean
+  allowClientCategoryCustomization: boolean
+  defaultAssignmentMode: CrmAssignmentMode
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CrmInstanceMember {
+  id: string
+  crmInstanceId: string
+  userId: string
+  role: CrmInstanceRole
+  displayName?: string
+  email?: string
+  status: 'active' | 'invited' | 'disabled'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CrmTeam {
+  id: string
+  crmInstanceId: string
+  name: string
+  description?: string
+  assignmentMode: CrmAssignmentMode
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CrmTeamMember {
+  id: string
+  teamId: string
+  memberId: string
+  role: 'seller' | 'manager'
+  createdAt: string
+}
+
+export interface CrmGovernanceContext {
+  instance: CrmInstance
+  currentMember?: CrmInstanceMember
+  members?: CrmInstanceMember[]
+  teams: CrmTeam[]
+  teamMemberships: CrmTeamMember[]
+}
 
 export interface CrmPipeline {
   id: string
   organizationId: string
+  crmInstanceId?: string
   name: string
   description?: string
   isDefault: boolean
@@ -32,8 +100,16 @@ export interface CrmPipelineStage {
 export interface CrmLead {
   id: string
   organizationId: string
+  crmInstanceId?: string
   pipelineId: string
   stageId: string
+  teamId?: string
+  ownerMemberId?: string
+  pipelineVersionId?: string
+  stageVersionId?: string
+  assignmentState?: CrmAssignmentState
+  assignmentMode?: CrmAssignmentMode
+  lastAssignmentAt?: string
   name: string
   email: string
   phone?: string
