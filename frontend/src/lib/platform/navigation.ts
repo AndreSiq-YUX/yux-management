@@ -21,6 +21,7 @@ export function buildNavigation(context: PlatformContext): NavigationItem[] {
           { label: 'Contratos', href: '/contracts' },
           { label: 'Pacotes', href: '/packages' },
           { label: 'Modulos', href: '/modules' },
+          { label: 'Governanca CRM', href: '/crm-governance' },
         ]
       : [{ label: 'Portal', href: '/portal' }]
 

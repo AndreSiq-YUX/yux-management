@@ -22,6 +22,7 @@ describe('buildNavigation', () => {
 
     expect(items[0]).toEqual({ label: 'Dashboard', href: '/dashboard' })
     expect(labels).toContain('Clientes')
+    expect(labels).toContain('Governanca CRM')
     expect(labels).toContain('CRM & Funis')
     expect(labels).toContain('Projetos e Entregas')
     expect(labels).toContain('Campanhas')

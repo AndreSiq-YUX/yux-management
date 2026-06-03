@@ -36,6 +36,7 @@ import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
+import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
 import { ModulesPage } from '@/pages/platform/ModulesPage'
 import { PackagesPage } from '@/pages/platform/PackagesPage'
@@ -73,6 +74,7 @@ function App() {
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="packages" element={<PackagesPage />} />
             <Route path="modules" element={<ModulesPage />} />
+            <Route path="crm-governance" element={<CrmGovernancePage />} />
             <Route path="clients" element={<ClientsPage />} />
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
