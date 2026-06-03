@@ -1,12 +1,17 @@
 import {
   buildCrmSyncPayload,
+  buildPendingSchedulingRequest,
+  buildRetryAttempt,
+  buildSafeAiFallback,
   buildIdempotencyKey,
   buildOutboundAdapterPayload,
   calculateAiRunCost,
+  planAiResponse,
   hashToken,
   parseInboundEvent,
   sanitizeProtectedError,
   sanitizeWebhookMetadata,
+  selectPublishedKnowledge,
   validateWebchatEvent,
 } from './omnichannel.ts'
 
@@ -130,5 +135,60 @@ Deno.test('builds CRM sync payloads with sanitized metadata', () => {
     summary: 'Lead quer proposta',
     tags: ['enterprise'],
     metadata: { access_token: '[redacted]', source: 'whatsapp' },
+  })
+})
+
+Deno.test('plans AI processing by response mode', () => {
+  assertEquals(planAiResponse({ responseMode: 'automatic', inboundMessageId: 'inbound-1' }), {
+    shouldGenerate: true,
+    shouldDispatch: true,
+    suggestionOnly: false,
+    inboundMessageId: 'inbound-1',
+  })
+  assertEquals(planAiResponse({ responseMode: 'assisted', inboundMessageId: 'inbound-1' }), {
+    shouldGenerate: true,
+    shouldDispatch: false,
+    suggestionOnly: true,
+    inboundMessageId: 'inbound-1',
+  })
+  assertEquals(planAiResponse({ responseMode: 'manual', inboundMessageId: 'inbound-1' }), {
+    shouldGenerate: false,
+    shouldDispatch: false,
+    suggestionOnly: false,
+    inboundMessageId: 'inbound-1',
+  })
+})
+
+Deno.test('selects published knowledge snapshots only', () => {
+  assertEquals(selectPublishedKnowledge([
+    { status: 'draft', body: 'Draft atual' },
+    { status: 'published', body_snapshot: 'Publicado 1' },
+    { status: 'published', bodySnapshot: 'Publicado 2' },
+  ]), ['Publicado 1', 'Publicado 2'])
+})
+
+Deno.test('builds safe AI fallback metadata for n8n failures', () => {
+  assertEquals(buildSafeAiFallback(new Error('Bearer abc token failed')).fallbackUsed, true)
+  assert(!JSON.stringify(buildSafeAiFallback(new Error('Bearer abc token failed'))).includes('abc'), 'fallback leaked token')
+})
+
+Deno.test('increments outbound retry attempts without duplicating messages', () => {
+  assertEquals(buildRetryAttempt([{ attempt_number: 1 }, { attemptNumber: 3 }]), {
+    attemptNumber: 4,
+    shouldCreateMessage: false,
+  })
+})
+
+Deno.test('preserves pending scheduling requests when n8n is not configured', () => {
+  assertEquals(buildPendingSchedulingRequest({
+    conversationId: 'conversation-1',
+    contactId: 'contact-1',
+    requestedSlot: { start: '2026-06-04T12:00:00Z' },
+  }), {
+    conversationId: 'conversation-1',
+    contactId: 'contact-1',
+    requestedSlot: { start: '2026-06-04T12:00:00Z' },
+    status: 'pending',
+    n8nMetadata: { configured: false },
   })
 })

@@ -253,3 +253,53 @@ export function buildCrmSyncPayload(input: {
 export function buildN8nWebhookPayload<T extends Record<string, unknown>>(payload: T) {
   return sanitizeWebhookMetadata(payload) as T
 }
+
+export function planAiResponse(input: { responseMode: 'automatic' | 'assisted' | 'manual'; inboundMessageId?: string }) {
+  return {
+    shouldGenerate: input.responseMode !== 'manual',
+    shouldDispatch: input.responseMode === 'automatic',
+    suggestionOnly: input.responseMode === 'assisted',
+    inboundMessageId: input.inboundMessageId,
+  }
+}
+
+export function selectPublishedKnowledge(entries: Array<Record<string, unknown>>) {
+  return entries
+    .filter(entry => entry.status === 'published')
+    .map(entry => optionalString(entry.body_snapshot) || optionalString(entry.bodySnapshot))
+    .filter((body): body is string => Boolean(body))
+}
+
+export function buildSafeAiFallback(error: unknown) {
+  return {
+    fallbackUsed: true,
+    text: 'Nao consegui gerar uma resposta confiavel agora. Um atendente humano vai assumir a conversa.',
+    protectedErrorText: sanitizeProtectedError(error).message,
+  }
+}
+
+export function buildRetryAttempt(attempts: Array<Record<string, unknown>>) {
+  const attemptNumber = attempts.reduce((max, attempt) => {
+    const value = numberValue(attempt.attempt_number || attempt.attemptNumber)
+    return Math.max(max, value)
+  }, 0) + 1
+
+  return {
+    attemptNumber,
+    shouldCreateMessage: false,
+  }
+}
+
+export function buildPendingSchedulingRequest(input: {
+  conversationId: string
+  contactId: string
+  requestedSlot: Record<string, unknown>
+}) {
+  return {
+    conversationId: input.conversationId,
+    contactId: input.contactId,
+    requestedSlot: input.requestedSlot,
+    status: 'pending',
+    n8nMetadata: { configured: false },
+  }
+}

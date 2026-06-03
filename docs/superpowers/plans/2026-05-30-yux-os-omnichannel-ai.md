@@ -465,7 +465,7 @@ git commit -m "feat: ingest omnichannel events and sync crm"
 - Create: `supabase/functions/request-scheduling/deno.json`
 - Create: `supabase/functions/request-scheduling/index.ts`
 
-- [ ] **Step 1: Write failing helper tests**
+- [x] **Step 1: Write failing helper tests**
 
 Extend `supabase/functions/_shared/omnichannel.test.ts` for:
 
@@ -477,13 +477,13 @@ Extend `supabase/functions/_shared/omnichannel.test.ts` for:
 - retry incrementing attempt numbers without duplicating messages.
 - scheduling requests calling n8n only when configured and preserving a pending provider-neutral record otherwise.
 
-- [ ] **Step 2: Run focused test and confirm failure**
+- [x] **Step 2: Run focused test and confirm failure**
 
 ```bash
 deno test supabase/functions/_shared/omnichannel.test.ts
 ```
 
-- [ ] **Step 3: Implement `process-ai-message`**
+- [x] **Step 3: Implement `process-ai-message`**
 
 Require authenticated operational access or a service-role invocation. It must:
 
@@ -496,7 +496,7 @@ Require authenticated operational access or a service-role invocation. It must:
 - leave manual mode unchanged;
 - evaluate post-generation handoff conditions such as low confidence.
 
-- [ ] **Step 4: Implement `dispatch-outbound-message`**
+- [x] **Step 4: Implement `dispatch-outbound-message`**
 
 Require authenticated access or service role. It must:
 
@@ -508,15 +508,15 @@ Require authenticated access or service role. It must:
 - update delivery status idempotently;
 - allow individual agent messages and transactional automation only, never bulk campaigns.
 
-- [ ] **Step 5: Implement `retry-outbound-message`**
+- [x] **Step 5: Implement `retry-outbound-message`**
 
 Require authenticated write access. Retry only failed outbound messages and reuse the dispatcher contract.
 
-- [ ] **Step 6: Implement `request-scheduling`**
+- [x] **Step 6: Implement `request-scheduling`**
 
 Require authenticated write access. Create a provider-neutral `scheduling_requests` row, call `N8N_OMNICHANNEL_SCHEDULING_WEBHOOK_URL` with timeout when configured, store only sanitized n8n metadata, and preserve a pending request for later dispatch when the integration is absent.
 
-- [ ] **Step 7: Add function configuration and checks**
+- [x] **Step 7: Add function configuration and checks**
 
 Add authenticated function entries to `supabase/config.toml`.
 
@@ -530,7 +530,7 @@ deno check supabase/functions/request-scheduling/index.ts
 
 Expected: pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add supabase/functions supabase/config.toml

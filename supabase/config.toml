@@ -36,3 +36,15 @@ verify_jwt = false
 
 [functions.simulate-channel-event]
 verify_jwt = true
+
+[functions.process-ai-message]
+verify_jwt = true
+
+[functions.dispatch-outbound-message]
+verify_jwt = true
+
+[functions.retry-outbound-message]
+verify_jwt = true
+
+[functions.request-scheduling]
+verify_jwt = true
