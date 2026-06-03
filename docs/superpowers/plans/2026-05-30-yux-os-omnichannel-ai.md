@@ -311,7 +311,7 @@ git commit -m "feat: add typed omnichannel service"
 - Create: `supabase/functions/_shared/omnichannel.test.ts`
 - Update: `supabase/functions/_shared/edge.ts`
 
-- [ ] **Step 1: Write failing Deno tests**
+- [x] **Step 1: Write failing Deno tests**
 
 Cover:
 
@@ -324,7 +324,7 @@ Cover:
 - AI-run cost calculation;
 - CRM sync payload construction.
 
-- [ ] **Step 2: Run focused Deno tests and confirm failure**
+- [x] **Step 2: Run focused Deno tests and confirm failure**
 
 ```bash
 deno test supabase/functions/_shared/omnichannel.test.ts
@@ -332,7 +332,7 @@ deno test supabase/functions/_shared/omnichannel.test.ts
 
 Expected: fail because the shared module does not exist.
 
-- [ ] **Step 3: Implement provider-neutral contracts**
+- [x] **Step 3: Implement provider-neutral contracts**
 
 Add:
 
@@ -347,7 +347,7 @@ Add:
 
 Keep provider-specific credentials and signatures outside this repository until real adapters are selected.
 
-- [ ] **Step 4: Extend shared Edge helpers**
+- [x] **Step 4: Extend shared Edge helpers**
 
 Add shared helpers for:
 
@@ -357,7 +357,7 @@ Add shared helpers for:
 - timeout-wrapped n8n webhook calls;
 - safe protected-error formatting.
 
-- [ ] **Step 5: Run focused Deno tests**
+- [x] **Step 5: Run focused Deno tests**
 
 ```bash
 deno test supabase/functions/_shared/omnichannel.test.ts
@@ -365,7 +365,7 @@ deno test supabase/functions/_shared/omnichannel.test.ts
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/functions/_shared
