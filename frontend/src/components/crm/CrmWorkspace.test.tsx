@@ -1,6 +1,6 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CrmWorkspace } from './CrmWorkspace'
 import { crmService } from '@/services/crmService'
 import { usePlatformStore } from '@/stores/platformStore'
@@ -80,9 +80,8 @@ const leads: CrmLead[] = [
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe('CrmWorkspace', () => {
-  it('renders the commercial cockpit with metrics and pipeline leads', async () => {
-    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
-    vi.mocked(crmService.getLeads).mockResolvedValue(leads)
+  beforeEach(() => {
+    vi.clearAllMocks()
     usePlatformStore.setState({
       organization: {
         id: pipeline.organizationId,
@@ -92,7 +91,14 @@ describe('CrmWorkspace', () => {
         createdAt: '2026-06-03T10:00:00.000Z',
         updatedAt: '2026-06-03T10:00:00.000Z',
       },
+      isLoading: false,
+      error: null,
     })
+  })
+
+  it('renders the commercial cockpit with metrics and pipeline leads', async () => {
+    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
+    vi.mocked(crmService.getLeads).mockResolvedValue(leads)
 
     const container = document.createElement('div')
     const root = createRoot(container)
@@ -113,6 +119,38 @@ describe('CrmWorkspace', () => {
     expect(html).toContain('Ana Lead')
     expect(html).toContain('Bruno Lead')
     expect(html).toContain('Novo lead')
+
+    act(() => root.unmount())
+  })
+
+  it('does not keep loading forever when platform falls back to a local organization', async () => {
+    usePlatformStore.setState({
+      organization: {
+        id: 'local-yux',
+        name: 'YUX local',
+        slug: 'yux',
+        kind: 'yux',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        updatedAt: '1970-01-01T00:00:00.000Z',
+      },
+      isLoading: false,
+      error: 'Erro ao carregar contexto da plataforma; usando contexto local.',
+    })
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CrmWorkspace />)
+      await flush()
+      await flush()
+    })
+
+    const html = container.innerHTML
+
+    expect(html).toContain('CRM indisponivel neste contexto')
+    expect(html).not.toContain('Carregando pipeline')
+    expect(crmService.getPipelines).not.toHaveBeenCalled()
 
     act(() => root.unmount())
   })

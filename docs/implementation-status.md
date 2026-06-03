@@ -14,7 +14,9 @@ the target Supabase/Vercel environments.
   module-specific services for newer slices.
 - Current development branch target: `origin/codex/phase-8-hardening`.
 - Latest published implementation commit at this status snapshot:
-  `709212f feat: add basic support module`.
+  `cba9f98 docs: mark commercial mvp release complete`.
+- CRM-specific reference:
+  `docs/crm-lead-management.md`.
 
 ## Summary Table
 
@@ -24,12 +26,12 @@ the target Supabase/Vercel environments.
 | Contracts, packages, modules, portal context | Implemented | `/contracts`, `/packages`, `/modules`, `/portal` | `20260601000000_contracts_modules_portal.sql`, `20260601010000_contract_rls_policies.sql`, `ContractsPage`, `PackagesPage`, `ModulesPage`, `PortalDashboardPage` | Portal access derives from active contract and enabled modules. |
 | Portal RLS hardening | Implemented in repo | Portal routes | `20260601020000_harden_portal_rls.sql`, `20260601030000_secure_baseline_functions.sql`, `20260601040000_move_auth_trigger_private.sql` | Requires remote migration application/probes in target DB. |
 | Projects, tasks, deliverables, approvals | Implemented | `/projects`, `/portal/projects` | `20260601070000_project_delivery_approvals.sql` through `20260601100000_backfill_deliverable_approval_status.sql`, `ProjectsPage`, `PortalProjectsPage`, project components, `approvalRules` | Includes client-visible timeline and approval decisions. |
-| CRM and follow-up automation foundation | Implemented | `/leads`, `/portal/crm` | `20260601105000_ensure_interactions_for_crm.sql` through `20260601140000_enable_client_crm_portal.sql`, `crmService`, `followUpRules` | Provider-neutral; real outbound provider execution remains outside this slice. |
+| CRM and follow-up automation foundation | Implemented in repo | `/leads`, `/portal/crm` | `20260601105000_ensure_interactions_for_crm.sql` through `20260601140000_enable_client_crm_portal.sql`, `crmService`, `followUpRules`, `docs/crm-lead-management.md` | Provider-neutral; target Supabase must have migrations, grants, valid session, memberships and RLS applied. |
 | Commercial proposals and conversion | Implemented | `/proposals`, `/portal/proposals`, `/proposal/review/:token` | `20260601150000_commercial_proposals_conversion.sql` through `20260601180000_enable_client_proposal_permissions.sql`, `proposalService`, `ProposalEditor`, `PublicProposalPage`, `PortalProposalsPage` | AI draft generation is provider-neutral with fallback behavior; production provider credentials are not part of this status. |
 | Omnichannel AI base | Implemented as provider-neutral base | `/omnichannel`, `/portal/omnichannel`, `/webchat/session/:sessionToken` | `20260601190000_omnichannel_ai_core.sql`, `20260601200000_omnichannel_crm_sync.sql`, `20260601210000_omnichannel_webchat_widget_service.sql`, `omnichannelService`, omnichannel components, `frontend/public/yux-webchat.js` | Live WhatsApp/Instagram/email provider credentials are deferred. Webchat uses short-lived session tokens. |
 | Finance basic | Implemented in repo | `/finance`, `/portal/finance` | `20260601220000_basic_finance.sql`, `financeService`, `FinanceWorkspace`, `PortalFinanceWorkspace`, `financeRules` | Accounts receivable only. No payment gateway, fiscal issuance, bank reconciliation, or automated billing. Migration/probes still need target DB execution. |
 | Support basic | Implemented in repo | `/support`, `/portal/support` | `20260601230000_basic_support.sql`, `supportService`, `SupportWorkspace`, `PortalSupportWorkspace`, `supportRules` | Contract-based tickets and messages only. No omnichannel ticket conversion, attachments, FAQ/knowledge base, or advanced SLA calendar. Migration/probes still need target DB execution. |
-| CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/crm` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. |
+| CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/crm` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades, `20260603215128_expose_platform_base_tables_to_data_api.sql` | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. Loading fallback fixed after `organizations` 401 report. |
 | Sector funnels and blueprints | Implemented in repo | `/blueprints` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, blueprint application rules | Provides reusable sector templates and contract application runs. |
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
@@ -206,6 +208,11 @@ Implemented:
 Not complete:
 
 - production application of all commercial MVP migrations/probes;
+- production application of `20260603215128_expose_platform_base_tables_to_data_api.sql`
+  if the target Supabase Data API rejects base platform table reads; this grant
+  fix was applied to `portal-yux` as remote migration `20260603215652`, but the
+  target project still needs the later commercial MVP migrations after
+  `20260601210000`;
 - production provider credentials/OAuth for Meta, Google, WhatsApp, and n8n;
 - authenticated browser QA against the target Supabase/Vercel environments;
 - CI/deploy verification after the commercial MVP commit.

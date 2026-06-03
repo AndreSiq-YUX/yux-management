@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { LayoutGrid, List, Pause, Play, Plus, RefreshCw, UserRoundCheck } from 'lucide-react'
+import { AlertCircle, LayoutGrid, List, Pause, Play, Plus, RefreshCw, UserRoundCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -22,6 +22,8 @@ const initialLeadForm = { name: '', email: '', phone: '', company: '', source: '
 
 export function CrmWorkspace() {
   const organization = usePlatformStore(state => state.organization)
+  const platformLoading = usePlatformStore(state => state.isLoading)
+  const platformError = usePlatformStore(state => state.error)
   const [pipelines, setPipelines] = useState<CrmPipeline[]>([])
   const [pipelineId, setPipelineId] = useState<string>()
   const [leads, setLeads] = useState<CrmLead[]>([])
@@ -29,7 +31,8 @@ export function CrmWorkspace() {
   const [createOpen, setCreateOpen] = useState(false)
   const [leadForm, setLeadForm] = useState(initialLeadForm)
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const pipeline = pipelines.find(item => item.id === pipelineId)
   const stages = useMemo(() => sortPipelineStages(pipeline?.stages || []), [pipeline])
   const stageById = useMemo(() => new Map(stages.map(stage => [stage.id, stage])), [stages])
@@ -40,14 +43,22 @@ export function CrmWorkspace() {
 
   const loadPipelines = useCallback(async () => {
     const organizationId = organization?.id
-    if (!isPersistedOrganizationId(organizationId)) return
+    if (!isPersistedOrganizationId(organizationId)) {
+      setPipelines([])
+      setPipelineId(undefined)
+      setLeads([])
+      setLoading(false)
+      return
+    }
     try {
       setLoading(true)
+      setLoadError(null)
       const nextPipelines = await crmService.getPipelines(organizationId)
       setPipelines(nextPipelines)
       setPipelineId(current => current || nextPipelines.find(item => item.isDefault)?.id || nextPipelines[0]?.id)
     } catch (error) {
       console.error('Erro ao carregar pipelines:', error)
+      setLoadError('Nao foi possivel carregar os pipelines do CRM.')
       toast.error('Erro ao carregar CRM')
     } finally {
       setLoading(false)
@@ -56,11 +67,16 @@ export function CrmWorkspace() {
 
   const loadLeads = useCallback(async () => {
     const organizationId = organization?.id
-    if (!isPersistedOrganizationId(organizationId) || !pipelineId) return
+    if (!isPersistedOrganizationId(organizationId) || !pipelineId) {
+      setLeads([])
+      return
+    }
     try {
+      setLoadError(null)
       setLeads(await crmService.getLeads(organizationId, pipelineId))
     } catch (error) {
       console.error('Erro ao carregar leads:', error)
+      setLoadError('Nao foi possivel carregar os leads deste pipeline.')
       toast.error('Erro ao carregar leads')
     }
   }, [organization?.id, pipelineId])
@@ -95,8 +111,18 @@ export function CrmWorkspace() {
     }
   }
 
-  if (!organization) return <p className="text-sm text-gray-600">Carregando contexto do CRM...</p>
+  if (platformLoading) return <p className="text-sm text-gray-600">Carregando contexto do CRM...</p>
+  if (!organization || !isPersistedOrganizationId(organization.id)) {
+    return (
+      <CrmNotice
+        title="CRM indisponivel neste contexto"
+        description={platformError || 'Nao foi possivel carregar uma organizacao real para o CRM. Verifique a sessao do usuario, as permissoes de organizations na Data API e se as migracoes do Supabase foram aplicadas.'}
+      />
+    )
+  }
   if (loading) return <p className="text-sm text-gray-600">Carregando pipeline...</p>
+  if (loadError) return <CrmNotice title="Erro ao carregar CRM" description={loadError} onRetry={loadPipelines} />
+  if (pipelines.length === 0) return <CrmNotice title="Nenhum pipeline configurado" description="A organizacao atual nao possui pipeline comercial ativo." />
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -127,6 +153,25 @@ export function CrmWorkspace() {
     </form></DialogContent></Dialog>
     <LeadOperationsModal organizationId={organization.id} lead={selectedLead} onClose={() => setSelectedLead(undefined)} />
   </div>
+}
+
+function CrmNotice({ title, description, onRetry }: { title: string; description: string; onRetry?: () => void }) {
+  return (
+    <div className="flex max-w-2xl items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+      <div className="space-y-3">
+        <div>
+          <p className="font-semibold">{title}</p>
+          <p className="mt-1 text-amber-800">{description}</p>
+        </div>
+        {onRetry && (
+          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+            <RefreshCw className="mr-2 h-4 w-4" />Tentar novamente
+          </Button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
