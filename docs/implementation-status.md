@@ -27,6 +27,7 @@ the target Supabase/Vercel environments.
 | Portal RLS hardening | Implemented in repo | Portal routes | `20260601020000_harden_portal_rls.sql`, `20260601030000_secure_baseline_functions.sql`, `20260601040000_move_auth_trigger_private.sql` | Requires remote migration application/probes in target DB. |
 | Projects, tasks, deliverables, approvals | Implemented | `/projects`, `/portal/projects` | `20260601070000_project_delivery_approvals.sql` through `20260601100000_backfill_deliverable_approval_status.sql`, `ProjectsPage`, `PortalProjectsPage`, project components, `approvalRules` | Includes client-visible timeline and approval decisions. |
 | CRM and follow-up automation foundation | Implemented in repo | `/leads`, `/portal/crm` | `20260601105000_ensure_interactions_for_crm.sql` through `20260601140000_enable_client_crm_portal.sql`, `crmService`, `followUpRules`, `docs/crm-lead-management.md` | Provider-neutral; target Supabase must have migrations, grants, valid session, memberships and RLS applied. |
+| CRM governed by contract | Implemented in repo | `/crm-governance`, `/portal/crm`, `/portal/crm/settings` | `20260603230000_crm_governance_by_contract.sql`, `crmGovernanceService`, `governanceRules`, CRM governance UI, scoped CRM workspace | Local Supabase reset/probe could not run because Docker was unavailable in this Windows session. Target Supabase still needs migration and probe execution. |
 | Commercial proposals and conversion | Implemented | `/proposals`, `/portal/proposals`, `/proposal/review/:token` | `20260601150000_commercial_proposals_conversion.sql` through `20260601180000_enable_client_proposal_permissions.sql`, `proposalService`, `ProposalEditor`, `PublicProposalPage`, `PortalProposalsPage` | AI draft generation is provider-neutral with fallback behavior; production provider credentials are not part of this status. |
 | Omnichannel AI base | Implemented as provider-neutral base | `/omnichannel`, `/portal/omnichannel`, `/webchat/session/:sessionToken` | `20260601190000_omnichannel_ai_core.sql`, `20260601200000_omnichannel_crm_sync.sql`, `20260601210000_omnichannel_webchat_widget_service.sql`, `omnichannelService`, omnichannel components, `frontend/public/yux-webchat.js` | Live WhatsApp/Instagram/email provider credentials are deferred. Webchat uses short-lived session tokens. |
 | Finance basic | Implemented in repo | `/finance`, `/portal/finance` | `20260601220000_basic_finance.sql`, `financeService`, `FinanceWorkspace`, `PortalFinanceWorkspace`, `financeRules` | Accounts receivable only. No payment gateway, fiscal issuance, bank reconciliation, or automated billing. Migration/probes still need target DB execution. |
@@ -107,6 +108,34 @@ Not complete:
 
 - complete live provider integrations;
 - full outbound automation execution UI for every workflow type.
+
+### CRM Governed By Contract
+
+Implemented:
+
+- CRM instance per active CRM contract;
+- contracted limits for sellers, managers and client admins;
+- CRM members with seller, manager, client admin and YUX admin roles;
+- commercial teams and team memberships;
+- versionable pipeline/stage/custom-field/category/loss-reason structures;
+- configuration drafts, publications, migration runs and audit events;
+- RLS helpers for instance access, member role, team access and lead visibility;
+- explicit Data API grants for the new governance tables;
+- domain rules for seat limits, lead visibility and publication migration;
+- typed `crmGovernanceService`;
+- internal YUX governance surface at `/crm-governance`;
+- client settings surface at `/portal/crm/settings`;
+- CRM workspace state for clients without active CRM instance;
+- seller and manager workspace titles.
+
+Not complete:
+
+- target Supabase application of `20260603230000_crm_governance_by_contract.sql`;
+- target probe execution for `supabase/probes/20260603230000_crm_governance_by_contract.sql`;
+- full CRUD forms for every governance entity;
+- real user invitation lifecycle through Supabase Auth;
+- advanced sales dashboard by seller/team;
+- AI scoring and full CRM redesign beyond this governance foundation.
 
 ### Commercial Proposals And Conversion
 
@@ -233,6 +262,8 @@ Known validation limitation:
 
 - Unauthenticated HTTP smoke on preview routes returned `401` because Vercel
   Authentication protects the preview deployment.
+- Local Supabase reset for CRM governance could not run in this session because
+  Docker Desktop was unavailable or not connected to the Windows Docker daemon.
 
 ## Pending Operational Work
 

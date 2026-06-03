@@ -19,6 +19,11 @@ Estado atual:
 
 - Rota interna do CRM: implementada em `/leads`.
 - Rota do CRM no portal do cliente: implementada em `/portal/crm`.
+- Rota de configuracoes do CRM no portal: implementada em `/portal/crm/settings`.
+- Rota interna de governanca CRM YUX: implementada em `/crm-governance`.
+- Governanca por contrato: implementada no repositorio com instancia CRM,
+  assentos, equipes, papeis, versoes de configuracao, publicacao, migracao e
+  auditoria.
 - Upgrade comercial do CRM Cockpit: implementado.
 - Base de automacao de follow-up: implementada.
 - Dispatcher protegido de automacoes do CRM: implementado.
@@ -67,7 +72,80 @@ interna: ele foi pensado para visibilidade contratada de pipeline e continuidade
 segura de estagios/leads pelo cliente, nao para administracao interna irrestrita
 da YUX.
 
+### Configuracoes do CRM no Portal
+
+Rota: `/portal/crm/settings`
+
+Implementado:
+
+- painel de assentos contratados;
+- painel de convites e papeis;
+- painel de equipes comerciais;
+- rascunho de configuracao;
+- assistente de publicacao de versao com estrategia de migracao.
+
+Esta superficie e destinada ao admin do cliente dentro dos limites configurados
+pela YUX. A ligacao operacional completa com convite de usuarios reais e
+edicao interativa de todos os campos depende da aplicacao da migration de
+governanca e da evolucao dos forms de administracao.
+
+### Governanca CRM YUX
+
+Rota: `/crm-governance`
+
+Implementado:
+
+- visao interna de instancias por contrato;
+- comunicacao dos limites de vendedores, gerentes e admins;
+- comunicacao do blueprint setorial como ponto de partida da implantacao.
+
+Esta tela e a base administrativa para a YUX configurar a instancia CRM
+contratada por cliente. Ela deve evoluir para formularios completos de status,
+limites, blueprint, setor e permissoes por contrato.
+
 ## Funcionalidades Implementadas
+
+### Governanca por Contrato
+
+Implementado:
+
+- nova entidade `crm_instances`, vinculada a organizacao e contrato;
+- `crm_instance_members` com papeis `seller`, `manager`, `client_admin` e
+  `yux_admin`;
+- limites contratados de vendedores, gerentes e admins;
+- `crm_teams` e `crm_team_members`;
+- tipos de distribuicao `manual`, `queue`, `round_robin` e `pull_next`;
+- campos de governanca em `leads`: `crm_instance_id`, `team_id`,
+  `owner_member_id`, versoes de pipeline/etapa, estado/modo de atribuicao e
+  ultimo horario de atribuicao;
+- regras puras testadas para assentos, visibilidade, publicacao e migracao;
+- workspace do CRM com estado `CRM nao contratado ou inativo` para cliente sem
+  instancia ativa;
+- visao `Meus leads` para vendedor e `Leads da equipe` para gerente.
+
+Regra de produto:
+
+- Sem contrato ativo com modulo `crm` e instancia CRM ativa, o portal nao deve
+  operar CRM para o cliente.
+- Admin YUX define limites, blueprint, setor e permissoes comerciais.
+- Admin cliente opera dentro dos limites contratados.
+- Vendedor ve o proprio fluxo.
+- Gerente ve sua equipe e pode receber controles de redistribuicao.
+
+### Papeis e Visibilidade
+
+Modelo implementado no dominio e preparado no RLS:
+
+- Admin YUX: configura limites, blueprint, status e auditoria.
+- Admin cliente: gerencia usuarios, equipes e configuracoes dentro dos limites
+  contratados.
+- Gerente: ve leads das equipes sob sua gestao.
+- Vendedor: ve seus proprios leads.
+
+As regras de dominio ficam em:
+
+- `frontend/src/lib/crm/governanceRules.ts`
+- `frontend/src/lib/crm/governanceRules.test.ts`
 
 ### Cockpit de Pipeline
 
@@ -205,6 +283,29 @@ Campos adicionados ou normalizados em leads:
 - `source_kind`
 - `attribution_context`
 
+### Tabelas de Governanca CRM por Contrato
+
+Implementadas por `supabase/migrations/20260603230000_crm_governance_by_contract.sql`:
+
+- `crm_instances`
+- `crm_instance_members`
+- `crm_teams`
+- `crm_team_members`
+- `crm_pipeline_versions`
+- `crm_stage_versions`
+- `crm_custom_field_definitions`
+- `crm_categories`
+- `crm_tags`
+- `crm_loss_reasons`
+- `crm_configuration_drafts`
+- `crm_configuration_publications`
+- `crm_configuration_migration_runs`
+- `crm_audit_events`
+
+Probe:
+
+- `supabase/probes/20260603230000_crm_governance_by_contract.sql`
+
 ### Correcao de Exposicao da Data API
 
 Implementada por `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`:
@@ -243,6 +344,28 @@ Modelo de acesso:
 - acesso no portal deriva de contrato/modulo habilitado;
 - grants da Data API expoem operacoes de tabela para a camada REST, mas nao
   contornam RLS.
+
+Helpers adicionais de governanca:
+
+- `private.can_access_crm_instance(UUID)`
+- `private.crm_member_role(UUID)`
+- `private.current_crm_member_id(UUID)`
+- `private.can_manage_crm_instance(UUID)`
+- `private.can_manage_crm_members(UUID)`
+- `private.can_access_crm_team(UUID)`
+- `private.can_access_crm_lead_v2(UUID)`
+- `private.can_update_crm_lead_v2(UUID)`
+- `private.can_publish_crm_configuration(UUID)`
+
+## Relacoes com Outros Modulos
+
+- Campanhas criam ou atualizam leads com origem e atribuicao.
+- Omnichannel sincroniza conversas, handoff e contato para leads governados.
+- Propostas usam o lead como origem comercial.
+- Projetos podem nascer de propostas ganhas.
+- Financeiro usa vendas/propostas aprovadas para contexto de receita.
+- Suporte pode abrir chamados relacionados a clientes, contratos e operacao.
+- Relatorios leem funil, equipe, vendedor, campanha e status contratual.
 
 ## Camada de Servico
 
