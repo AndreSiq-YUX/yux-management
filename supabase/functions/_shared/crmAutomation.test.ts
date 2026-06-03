@@ -1,18 +1,16 @@
-import { describe, expect, it } from 'vitest'
-import { getNextActiveSequenceStep } from './crmAutomation'
+import { assertEquals } from 'jsr:@std/assert@1'
+import { getNextActiveSequenceStep } from './crmAutomation.ts'
 
-describe('getNextActiveSequenceStep', () => {
-  it('returns the next active step after the completed step', () => {
-    expect(getNextActiveSequenceStep([
-      { id: 'third', order_index: 2, is_active: true },
-      { id: 'disabled', order_index: 1, is_active: false },
-      { id: 'first', order_index: 0, is_active: true },
-    ], 0)).toEqual({ id: 'third', order_index: 2, is_active: true })
-  })
+Deno.test('getNextActiveSequenceStep returns the next active step after the completed step', () => {
+  assertEquals(getNextActiveSequenceStep([
+    { id: 'third', order_index: 2, is_active: true },
+    { id: 'disabled', order_index: 1, is_active: false },
+    { id: 'first', order_index: 0, is_active: true },
+  ], 0), { id: 'third', order_index: 2, is_active: true })
+})
 
-  it('returns undefined when the sequence is complete', () => {
-    expect(getNextActiveSequenceStep([
-      { id: 'first', order_index: 0, is_active: true },
-    ], 0)).toBeUndefined()
-  })
+Deno.test('getNextActiveSequenceStep returns undefined when the sequence is complete', () => {
+  assertEquals(getNextActiveSequenceStep([
+    { id: 'first', order_index: 0, is_active: true },
+  ], 0), undefined)
 })

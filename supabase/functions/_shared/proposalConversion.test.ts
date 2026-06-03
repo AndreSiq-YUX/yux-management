@@ -1,9 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { selectConversionPreset } from './proposalConversion'
+import { assertEquals } from 'jsr:@std/assert@1'
+import { selectConversionPreset } from './proposalConversion.ts'
 
-describe('proposal conversion preset selection', () => {
-  it('prefers blueprint phases and falls back to package phases', () => {
-    expect(selectConversionPreset(['blueprint'], ['package'])).toEqual(['blueprint'])
-    expect(selectConversionPreset([], ['package'])).toEqual(['package'])
-  })
+Deno.test('selectConversionPreset prefers blueprint phases and falls back to package phases', () => {
+  assertEquals(selectConversionPreset(['blueprint'], ['package']), ['blueprint'])
+  assertEquals(selectConversionPreset([], ['package']), ['package'])
 })

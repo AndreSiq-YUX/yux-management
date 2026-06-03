@@ -930,7 +930,7 @@ npm run build
 
 Expected: pass.
 
-- [ ] **Step 3: Run Edge verification**
+- [x] **Step 3: Run Edge verification**
 
 ```bash
 deno test supabase/functions/_shared

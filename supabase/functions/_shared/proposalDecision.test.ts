@@ -1,14 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { validatePublicDecision } from './proposalDecision'
+import { assertEquals } from 'jsr:@std/assert@1'
+import { validatePublicDecision } from './proposalDecision.ts'
 
-describe('public proposal decisions', () => {
-  it('requires a comment only for adjustment requests', () => {
-    expect(validatePublicDecision('adjustments_requested', '  ')).toBe('Descreva os ajustes solicitados.')
-    expect(validatePublicDecision('rejected', '')).toBeUndefined()
-    expect(validatePublicDecision('approved', '')).toBeUndefined()
-  })
+Deno.test('validatePublicDecision requires a comment only for adjustment requests', () => {
+  assertEquals(validatePublicDecision('adjustments_requested', '  '), 'Descreva os ajustes solicitados.')
+  assertEquals(validatePublicDecision('rejected', ''), undefined)
+  assertEquals(validatePublicDecision('approved', ''), undefined)
+})
 
-  it('rejects unsupported decisions', () => {
-    expect(validatePublicDecision('later', '')).toBe('Decisao invalida.')
-  })
+Deno.test('validatePublicDecision rejects unsupported decisions', () => {
+  assertEquals(validatePublicDecision('later', ''), 'Decisao invalida.')
 })

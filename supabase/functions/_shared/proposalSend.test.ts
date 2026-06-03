@@ -1,12 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { createPublicToken, hashToken } from './proposalSend'
+import { assertEquals, assertMatch, assertNotEquals } from 'jsr:@std/assert@1'
+import { createPublicToken, hashToken } from './proposalSend.ts'
 
-describe('proposal public token', () => {
-  it('creates a random token and stores a stable sha-256 hash', async () => {
-    const first = createPublicToken()
-    const second = createPublicToken()
-    expect(first).not.toBe(second)
-    expect(await hashToken(first)).toMatch(/^[a-f0-9]{64}$/)
-    expect(await hashToken(first)).toBe(await hashToken(first))
-  })
+Deno.test('proposal public token creates a random token and stores a stable sha-256 hash', async () => {
+  const first = createPublicToken()
+  const second = createPublicToken()
+  assertNotEquals(first, second)
+  assertMatch(await hashToken(first), /^[a-f0-9]{64}$/)
+  assertEquals(await hashToken(first), await hashToken(first))
 })
