@@ -1,15 +1,18 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { CircleDollarSign, Mail, MessageCircle, Pause, Play, Plus, RefreshCw, UserRoundCheck } from 'lucide-react'
+import { LayoutGrid, List, Pause, Play, Plus, RefreshCw, UserRoundCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { isPersistedOrganizationId, sortPipelineStages } from '@/lib/crm/followUpRules'
+import { isPersistedOrganizationId } from '@/lib/crm/followUpRules'
+import { calculatePipelineSummary, sortPipelineStages } from '@/lib/crm/pipelineRules'
+import { LeadDetailPanel } from '@/components/crm/LeadDetailPanel'
+import { LeadKanbanBoard } from '@/components/crm/LeadKanbanBoard'
+import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
+import { LeadTimeline } from '@/components/crm/LeadTimeline'
 import { LeadCommercialPanel } from '@/components/proposals/LeadCommercialPanel'
 import { crmService } from '@/services/crmService'
 import { usePlatformStore } from '@/stores/platformStore'
@@ -25,9 +28,15 @@ export function CrmWorkspace() {
   const [selectedLead, setSelectedLead] = useState<CrmLead>()
   const [createOpen, setCreateOpen] = useState(false)
   const [leadForm, setLeadForm] = useState(initialLeadForm)
+  const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban')
   const [loading, setLoading] = useState(true)
   const pipeline = pipelines.find(item => item.id === pipelineId)
   const stages = useMemo(() => sortPipelineStages(pipeline?.stages || []), [pipeline])
+  const stageById = useMemo(() => new Map(stages.map(stage => [stage.id, stage])), [stages])
+  const summary = useMemo(() => calculatePipelineSummary(leads.map(lead => ({
+    ...lead,
+    stageKey: stageById.get(lead.stageId)?.key,
+  }))), [leads, stageById])
 
   const loadPipelines = useCallback(async () => {
     const organizationId = organization?.id
@@ -91,22 +100,25 @@ export function CrmWorkspace() {
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-bold text-gray-900">CRM</h1><p className="text-gray-600">Pipeline comercial de {organization.name}</p></div>
+      <div><h1 className="text-2xl font-bold text-gray-900">CRM Cockpit</h1><p className="text-gray-600">Pipeline comercial de {organization.name}</p></div>
       <div className="flex gap-2">
         <Select value={pipelineId} onValueChange={setPipelineId}><SelectTrigger className="w-52"><SelectValue placeholder="Pipeline" /></SelectTrigger><SelectContent>{pipelines.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+        <div className="flex rounded-md border bg-white p-1">
+          <Button title="Ver Kanban" variant={viewMode === 'kanban' ? 'secondary' : 'ghost'} size="sm" onClick={() => setViewMode('kanban')}><LayoutGrid className="h-4 w-4" /></Button>
+          <Button title="Ver lista" variant={viewMode === 'list' ? 'secondary' : 'ghost'} size="sm" onClick={() => setViewMode('list')}><List className="h-4 w-4" /></Button>
+        </div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo lead</Button>
       </div>
     </div>
-    <div className="grid gap-3 overflow-x-auto pb-3" style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(230px, 1fr))` }}>
-      {stages.map(stage => <section key={stage.id} className="min-h-[420px] rounded-md border bg-gray-50">
-        <header className="flex items-center justify-between border-b bg-white p-3"><span className="flex items-center gap-2 text-sm font-semibold"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: stage.color }} />{stage.name}</span><Badge variant="secondary">{leads.filter(lead => lead.stageId === stage.id).length}</Badge></header>
-        <div className="space-y-2 p-2">{leads.filter(lead => lead.stageId === stage.id).map(lead => <Card key={lead.id} className="hover:border-yux-300"><CardContent className="space-y-2 p-3">
-          <div><button type="button" className="text-left text-sm font-medium hover:text-yux-700" onClick={() => setSelectedLead(lead)}>{lead.name}</button><p className="text-xs text-gray-500">{lead.company || lead.email}</p></div>
-          <div className="flex items-center justify-between text-xs text-gray-500"><span>Score {lead.score}</span>{lead.value !== undefined && <span>R$ {lead.value.toLocaleString('pt-BR')}</span>}</div>
-          <Select value={lead.stageId} onValueChange={value => moveLead(lead, value)}><SelectTrigger onClick={event => event.stopPropagation()} className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{stages.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
-        </CardContent></Card>)}</div>
-      </section>)}
+    <div className="grid gap-3 md:grid-cols-4">
+      <Metric label="Novos leads" value={summary.newLeads.toString()} />
+      <Metric label="Leads parados" value={summary.staleLeads.toString()} />
+      <Metric label="Conversao" value={`${summary.conversionRate}%`} />
+      <Metric label="Pipeline aberto" value={summary.openPipelineValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
     </div>
+    {viewMode === 'kanban'
+      ? <LeadKanbanBoard stages={stages} leads={leads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />
+      : <LeadList stages={stages} leads={leads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />}
     <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>Novo lead</DialogTitle></DialogHeader><form className="space-y-3" onSubmit={createLead}>
       <Input placeholder="Nome" required value={leadForm.name} onChange={event => setLeadForm({ ...leadForm, name: event.target.value })} /><Input placeholder="Email" required type="email" value={leadForm.email} onChange={event => setLeadForm({ ...leadForm, email: event.target.value })} />
       <div className="grid grid-cols-2 gap-3"><Input placeholder="Telefone" value={leadForm.phone} onChange={event => setLeadForm({ ...leadForm, phone: event.target.value })} /><Input placeholder="Empresa" value={leadForm.company} onChange={event => setLeadForm({ ...leadForm, company: event.target.value })} /></div>
@@ -117,6 +129,56 @@ export function CrmWorkspace() {
   </div>
 }
 
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-white p-4">
+      <p className="text-xs font-medium uppercase text-gray-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-gray-950">{value}</p>
+    </div>
+  )
+}
+
+function LeadList({
+  stages,
+  leads,
+  onSelectLead,
+  onMoveLead,
+}: {
+  stages: CrmPipeline['stages']
+  leads: CrmLead[]
+  onSelectLead: (lead: CrmLead) => void
+  onMoveLead: (lead: CrmLead, stageId: string) => void
+}) {
+  const stageNameById = new Map((stages || []).map(stage => [stage.id, stage.name]))
+
+  return (
+    <div className="overflow-hidden rounded-md border bg-white">
+      <div className="grid grid-cols-[1.4fr_1fr_120px_160px_220px] border-b bg-slate-50 px-4 py-2 text-xs font-medium uppercase text-slate-500">
+        <span>Lead</span>
+        <span>Origem</span>
+        <span>Score</span>
+        <span>Valor</span>
+        <span>Etapa</span>
+      </div>
+      {leads.map(lead => (
+        <div key={lead.id} className="grid grid-cols-[1.4fr_1fr_120px_160px_220px] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0">
+          <button type="button" className="text-left font-medium text-slate-950 hover:text-yux-700" onClick={() => onSelectLead(lead)}>
+            {lead.name}
+            <span className="block text-xs font-normal text-slate-500">{lead.company || lead.email}</span>
+          </button>
+          <span>{lead.sourceKind || lead.source}</span>
+          <span>{lead.score}</span>
+          <span>{lead.value !== undefined ? lead.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Sem valor'}</span>
+          <Select value={lead.stageId} onValueChange={value => onMoveLead(lead, value)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={stageNameById.get(lead.stageId) || 'Etapa'} /></SelectTrigger>
+            <SelectContent>{(stages || []).map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId: string; lead?: CrmLead; onClose: () => void }) {
   const [interactions, setInteractions] = useState<CrmInteraction[]>([]), [tasks, setTasks] = useState<CrmTask[]>([]), [sequences, setSequences] = useState<CrmSequence[]>([]), [enrollments, setEnrollments] = useState<CrmSequenceEnrollment[]>([]), [executions, setExecutions] = useState<AutomationExecution[]>([])
   const [note, setNote] = useState(''), [taskTitle, setTaskTitle] = useState(''), [dueAt, setDueAt] = useState(''), [sequenceId, setSequenceId] = useState<string>(), [rescheduleAt, setRescheduleAt] = useState('')
@@ -124,19 +186,18 @@ function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId
   useEffect(() => { refresh() }, [refresh])
   const addNote = async () => { if (!lead || !note.trim()) return; await crmService.createInteraction(organizationId, lead.id, { type: 'note', title: 'Atualizacao comercial', description: note.trim() }); setNote(''); refresh() }
   const addTask = async () => { if (!lead || !taskTitle.trim() || !dueAt) return; await crmService.createTask(organizationId, lead.id, taskTitle.trim(), new Date(dueAt).toISOString()); setTaskTitle(''); setDueAt(''); refresh() }
+  const completeTask = async (taskId: string) => { await crmService.completeLeadTask(taskId); toast.success('Tarefa concluida'); refresh() }
+  const markWon = async () => { if (!lead) return; await crmService.markLeadWon({ leadId: lead.id, value: lead.value }); toast.success('Lead marcado como ganho'); refresh() }
+  const markLost = async () => { if (!lead) return; await crmService.markLeadLost({ leadId: lead.id, lostReason: 'Marcado manualmente no cockpit.' }); toast.success('Lead marcado como perdido'); refresh() }
   const enroll = async () => { if (!lead || !sequenceId) return; await crmService.enrollLead(organizationId, lead.id, sequenceId); toast.success('Sequencia iniciada'); refresh() }
   const setStatus = async (item: CrmSequenceEnrollment, status: CrmSequenceEnrollment['status']) => { await crmService.updateEnrollment(item.id, { status, manualNote: status === 'manual' ? 'Atendimento assumido manualmente.' : undefined }); refresh() }
   const reschedule = async (item: CrmSequenceEnrollment) => { if (!rescheduleAt) return; await crmService.updateEnrollment(item.id, { status: 'active', nextExecutionAt: new Date(rescheduleAt).toISOString() }); setRescheduleAt(''); toast.success('Follow-up reagendado'); refresh() }
   return <Dialog open={Boolean(lead)} onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>{lead?.name}</DialogTitle></DialogHeader>{lead && <Tabs defaultValue="follow-up">
     <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="follow-up">Follow-up</TabsTrigger><TabsTrigger value="history">Historico</TabsTrigger><TabsTrigger value="tasks">Tarefas</TabsTrigger><TabsTrigger value="automations">Execucoes</TabsTrigger><TabsTrigger value="commercial">Comercial</TabsTrigger></TabsList>
-    <TabsContent value="follow-up" className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Info icon={Mail} label="Email" value={lead.email} /><Info icon={MessageCircle} label="Telefone" value={lead.phone || 'Nao informado'} /><Info icon={CircleDollarSign} label="Valor estimado" value={lead.value ? `R$ ${lead.value.toLocaleString('pt-BR')}` : 'Nao informado'} /></div><div className="flex gap-2"><Select value={sequenceId} onValueChange={setSequenceId}><SelectTrigger><SelectValue placeholder="Escolha uma sequencia" /></SelectTrigger><SelectContent>{sequences.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!sequenceId} onClick={enroll}>Iniciar sequencia</Button></div>{sequences.length === 0 && <p className="text-sm text-gray-500">Nenhuma sequencia configurada.</p>}{enrollments.map(item => <div key={item.id} className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm">{item.status}{item.nextExecutionAt ? ` - proximo envio ${new Date(item.nextExecutionAt).toLocaleString('pt-BR')}` : ''}</span><div className="flex gap-2"><Button size="sm" variant="outline" title="Pausar automacao" onClick={() => setStatus(item, 'paused')}><Pause className="h-3 w-3" /></Button><Button size="sm" variant="outline" title="Retomar automacao" onClick={() => setStatus(item, 'active')}><Play className="h-3 w-3" /></Button><Button size="sm" variant="outline" onClick={() => setStatus(item, 'manual')}><UserRoundCheck className="mr-1 h-3 w-3" />Assumir</Button></div></div><div className="flex gap-2"><Input type="datetime-local" value={rescheduleAt} onChange={event => setRescheduleAt(event.target.value)} /><Button size="sm" variant="outline" disabled={!rescheduleAt} onClick={() => reschedule(item)}>Reagendar</Button></div></div>)}</TabsContent>
-    <TabsContent value="history" className="space-y-3"><div className="flex gap-2"><Textarea placeholder="Registrar atualizacao" value={note} onChange={event => setNote(event.target.value)} /><Button onClick={addNote}>Registrar</Button></div>{interactions.map(item => <div key={item.id} className="border-l-2 pl-3"><p className="text-sm font-medium">{item.title}</p><p className="text-sm text-gray-600">{item.description}</p></div>)}</TabsContent>
-    <TabsContent value="tasks" className="space-y-3"><div className="grid gap-2 md:grid-cols-[1fr_220px_auto]"><Input placeholder="Proxima acao" value={taskTitle} onChange={event => setTaskTitle(event.target.value)} /><Input type="datetime-local" value={dueAt} onChange={event => setDueAt(event.target.value)} /><Button onClick={addTask}><Plus className="mr-1 h-4 w-4" />Criar</Button></div>{tasks.map(item => <div key={item.id} className="flex justify-between rounded-md border p-3 text-sm"><span>{item.title}</span><span>{new Date(item.dueAt).toLocaleString('pt-BR')}</span></div>)}</TabsContent>
+    <TabsContent value="follow-up" className="space-y-4"><LeadDetailPanel lead={lead} onMarkWon={markWon} onMarkLost={markLost} /><div className="flex gap-2"><Select value={sequenceId} onValueChange={setSequenceId}><SelectTrigger><SelectValue placeholder="Escolha uma sequencia" /></SelectTrigger><SelectContent>{sequences.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!sequenceId} onClick={enroll}>Iniciar sequencia</Button></div>{sequences.length === 0 && <p className="text-sm text-gray-500">Nenhuma sequencia configurada.</p>}{enrollments.map(item => <div key={item.id} className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm">{item.status}{item.nextExecutionAt ? ` - proximo envio ${new Date(item.nextExecutionAt).toLocaleString('pt-BR')}` : ''}</span><div className="flex gap-2"><Button size="sm" variant="outline" title="Pausar automacao" onClick={() => setStatus(item, 'paused')}><Pause className="h-3 w-3" /></Button><Button size="sm" variant="outline" title="Retomar automacao" onClick={() => setStatus(item, 'active')}><Play className="h-3 w-3" /></Button><Button size="sm" variant="outline" onClick={() => setStatus(item, 'manual')}><UserRoundCheck className="mr-1 h-3 w-3" />Assumir</Button></div></div><div className="flex gap-2"><Input type="datetime-local" value={rescheduleAt} onChange={event => setRescheduleAt(event.target.value)} /><Button size="sm" variant="outline" disabled={!rescheduleAt} onClick={() => reschedule(item)}>Reagendar</Button></div></div>)}</TabsContent>
+    <TabsContent value="history" className="space-y-3"><div className="flex gap-2"><Textarea placeholder="Registrar atualizacao" value={note} onChange={event => setNote(event.target.value)} /><Button onClick={addNote}>Registrar</Button></div><LeadTimeline interactions={interactions} /></TabsContent>
+    <TabsContent value="tasks" className="space-y-3"><LeadTaskPanel tasks={tasks} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} /></TabsContent>
     <TabsContent value="automations" className="space-y-3">{executions.length === 0 && <p className="text-sm text-gray-500">Nenhuma execucao registrada.</p>}{executions.map(item => <div key={item.id} className="flex justify-between gap-3 rounded-md border p-3 text-sm"><div><p>{item.actionType} - {item.status}</p><p className="text-xs text-gray-500">Agendado para {new Date(item.scheduledAt).toLocaleString('pt-BR')}</p>{item.lastError && <p className="mt-1 text-xs text-red-600">{item.lastError}</p>}</div>{item.status === 'failed' && <Button size="sm" variant="outline" onClick={() => crmService.retryExecution(item.id).then(refresh)}><RefreshCw className="mr-1 h-3 w-3" />Tentar novamente</Button>}</div>)}</TabsContent>
     <TabsContent value="commercial"><LeadCommercialPanel lead={lead} /></TabsContent>
   </Tabs>}</DialogContent></Dialog>
-}
-
-function Info({ icon: Icon, label, value }: { icon: typeof Mail; label: string; value: string }) {
-  return <div className="rounded-md border p-3"><Icon className="h-4 w-4 text-gray-500" /><p className="mt-2 text-xs text-gray-500">{label}</p><p className="text-sm font-medium">{value}</p></div>
 }

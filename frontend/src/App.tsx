@@ -74,6 +74,7 @@ function App() {
             <Route path="proposals" element={<ProposalsPage />} />
             <Route path="omnichannel" element={<OmnichannelPage />} />
             <Route path="whatsapp-ai" element={<Navigate to="/omnichannel" replace />} />
+            <Route path="landing-pages" element={<ModuleSurfacePage moduleKey="landing_pages" />} />
             <Route path="reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="automations" element={<ModuleSurfacePage moduleKey="automations" />} />
             <Route path="support" element={<SupportPage />} />
@@ -91,6 +92,7 @@ function App() {
             <Route path="portal/crm" element={<LeadsPage />} />
             <Route path="portal/omnichannel" element={<PortalOmnichannelPage />} />
             <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/omnichannel" replace />} />
+            <Route path="portal/landing-pages" element={<ModuleSurfacePage moduleKey="landing_pages" />} />
             <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />
             <Route path="portal/reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="portal/support" element={<PortalSupportPage />} />

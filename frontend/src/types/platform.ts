@@ -23,6 +23,8 @@ export type PermissionKey =
   | 'crm.write'
   | 'leads.read'
   | 'leads.write'
+  | 'landing_pages.read'
+  | 'landing_pages.write'
   | 'projects.read'
   | 'projects.write'
   | 'deliveries.read'

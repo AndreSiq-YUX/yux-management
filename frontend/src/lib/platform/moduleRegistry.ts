@@ -11,7 +11,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   },
   {
     key: 'crm',
-    name: 'CRM',
+    name: 'CRM & Funis',
     base: false,
     internalRoute: '/leads',
     portalRoute: '/portal/crm',
@@ -35,15 +35,23 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   },
   {
     key: 'whatsapp_ai',
-    name: 'Central Omnichannel IA',
+    name: 'Conversas IA',
     base: false,
     internalRoute: '/omnichannel',
     portalRoute: '/portal/omnichannel',
     requiredPermissions: ['omnichannel.read'],
   },
   {
+    key: 'landing_pages',
+    name: 'Landing Pages',
+    base: false,
+    internalRoute: '/landing-pages',
+    portalRoute: '/portal/landing-pages',
+    requiredPermissions: ['landing_pages.read'],
+  },
+  {
     key: 'campaigns',
-    name: 'Campanhas e Ads',
+    name: 'Campanhas',
     base: false,
     internalRoute: '/campaigns',
     portalRoute: '/portal/campaigns',
@@ -51,7 +59,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   },
   {
     key: 'bi_reports',
-    name: 'BI e Relatorios',
+    name: 'Relatorios & ROI',
     base: false,
     internalRoute: '/reports',
     portalRoute: '/portal/reports',

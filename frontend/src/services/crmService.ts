@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type {
   AutomationExecution,
+  CreateLeadTaskInput,
   CrmInteraction,
   CrmLead,
   CrmPipeline,
@@ -8,13 +9,53 @@ import type {
   CrmSequence,
   CrmSequenceEnrollment,
   CrmTask,
+  MarkLeadLostInput,
+  MarkLeadWonInput,
+  RecordLeadActivityInput,
 } from '@/types/crm'
 
 type StageRow = { id: string; pipeline_id: string; key: string; name: string; color: string; order_index: number; is_won: boolean; is_lost: boolean; is_active: boolean }
 type PipelineRow = { id: string; organization_id: string; name: string; description?: string | null; is_default: boolean; is_active: boolean; crm_pipeline_stages?: StageRow[] }
-type LeadRow = { id: string; organization_id: string; pipeline_id: string; stage_id: string; name: string; email: string; phone?: string | null; company?: string | null; source: string; score?: number | null; value?: number | string | null; notes?: string | null; assigned_to?: string | null; next_follow_up_at?: string | null; created_at: string; updated_at: string }
+type LeadRow = {
+  id: string
+  organization_id: string
+  pipeline_id: string
+  stage_id: string
+  name: string
+  email: string
+  phone?: string | null
+  company?: string | null
+  source: string
+  source_kind?: CrmLead['sourceKind'] | null
+  status?: CrmLead['status'] | null
+  score?: number | null
+  value?: number | string | null
+  notes?: string | null
+  owner_id?: string | null
+  assigned_to?: string | null
+  lost_reason?: string | null
+  won_at?: string | null
+  lost_at?: string | null
+  last_activity_at?: string | null
+  next_follow_up_at?: string | null
+  attribution_context?: CrmLead['attributionContext'] | null
+  created_at: string
+  updated_at: string
+}
 type InteractionRow = { id: string; organization_id: string; lead_id: string; type: CrmInteraction['type']; title: string; description: string; date: string }
-type TaskRow = { id: string; organization_id: string; lead_id: string; enrollment_id?: string | null; title: string; description?: string | null; status: CrmTask['status']; due_at: string; assigned_to?: string | null }
+type TaskRow = {
+  id: string
+  organization_id: string
+  lead_id: string
+  enrollment_id?: string | null
+  title: string
+  description?: string | null
+  status: CrmTask['status']
+  priority?: CrmTask['priority'] | null
+  due_at: string
+  completed_at?: string | null
+  assigned_to?: string | null
+}
 type SequenceStepRow = { id: string; sequence_id: string; action_type: AutomationExecution['actionType']; delay_minutes: number; subject?: string | null; body: string; order_index: number; is_active: boolean }
 type SequenceRow = { id: string; organization_id: string; name: string; description?: string | null; is_active: boolean; crm_sequence_steps?: SequenceStepRow[] }
 type EnrollmentRow = { id: string; organization_id: string; sequence_id: string; lead_id: string; status: CrmSequenceEnrollment['status']; current_step_index: number; next_execution_at?: string | null; manual_note?: string | null }
@@ -52,11 +93,19 @@ const mapLead = (row: LeadRow): CrmLead => ({
   phone: row.phone || undefined,
   company: row.company || undefined,
   source: row.source,
+  sourceKind: row.source_kind || undefined,
+  status: row.status || 'open',
   score: row.score || 0,
   value: row.value !== null && row.value !== undefined ? Number(row.value) : undefined,
   notes: row.notes || undefined,
+  ownerId: row.owner_id || undefined,
   assignedTo: row.assigned_to || undefined,
+  lostReason: row.lost_reason || undefined,
+  wonAt: row.won_at || undefined,
+  lostAt: row.lost_at || undefined,
+  lastActivityAt: row.last_activity_at || undefined,
   nextFollowUpAt: row.next_follow_up_at || undefined,
+  attributionContext: row.attribution_context || undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 })
@@ -79,7 +128,9 @@ const mapTask = (row: TaskRow): CrmTask => ({
   title: row.title,
   description: row.description || undefined,
   status: row.status,
+  priority: row.priority || undefined,
   dueAt: row.due_at,
+  completedAt: row.completed_at || undefined,
   assignedTo: row.assigned_to || undefined,
 })
 
@@ -128,6 +179,56 @@ const mapExecution = (row: ExecutionRow): AutomationExecution => ({
   completedAt: row.completed_at || undefined,
 })
 
+const toLegacyStage = (stage: Pick<CrmPipelineStage, 'key' | 'isWon' | 'isLost'>) => {
+  if (stage.isWon) return 'WON'
+  if (stage.isLost) return 'LOST'
+  const key = stage.key.toLowerCase()
+  if (key === 'qualified') return 'QUALIFIED'
+  if (key === 'proposal') return 'PROPOSAL'
+  if (key === 'negotiation') return 'NEGOTIATION'
+  return 'NEW'
+}
+
+export const buildLeadScoreUpdatePayload = (score: number) => ({
+  score: Math.max(0, Math.min(100, Math.round(score))),
+})
+
+export const buildLeadTaskInsertPayload = (input: CreateLeadTaskInput) => ({
+  organization_id: input.organizationId,
+  lead_id: input.leadId,
+  title: input.title.trim(),
+  description: input.description?.trim() || null,
+  due_at: input.dueAt,
+  assigned_to: input.assignedTo || null,
+  priority: input.priority || 'medium',
+})
+
+export const buildLeadActivityInsertPayload = (input: RecordLeadActivityInput) => ({
+  organization_id: input.organizationId,
+  lead_id: input.leadId,
+  type: input.type,
+  title: input.title.trim(),
+  description: input.description.trim(),
+  date: input.date || new Date().toISOString(),
+})
+
+export const buildLeadWonPayload = (input: MarkLeadWonInput) => ({
+  ...(input.stageId ? { stage_id: input.stageId, stage: 'WON' } : { stage: 'WON' }),
+  status: 'won',
+  ...(input.value !== undefined ? { value: input.value } : {}),
+  won_at: new Date().toISOString(),
+  lost_at: null,
+  lost_reason: null,
+})
+
+export const buildLeadLostPayload = (input: MarkLeadLostInput) => ({
+  ...(input.stageId ? { stage_id: input.stageId, stage: 'LOST' } : { stage: 'LOST' }),
+  status: 'lost',
+  lost_reason: input.lostReason.trim(),
+  lost_at: new Date().toISOString(),
+  won_at: null,
+})
+
 export const crmService = {
   async getPipelines(organizationId: string) {
     const { data, error } = await supabase
@@ -140,11 +241,25 @@ export const crmService = {
     return (data || []).map(mapPipeline)
   },
 
+  async getPipelinesForOrganization(organizationId: string) {
+    return crmService.getPipelines(organizationId)
+  },
+
   async getLeads(organizationId: string, pipelineId: string) {
     const { data, error } = await supabase
       .from('leads')
       .select('*')
       .eq('organization_id', organizationId)
+      .eq('pipeline_id', pipelineId)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    return (data || []).map(mapLead)
+  },
+
+  async getLeadsForPipeline(pipelineId: string) {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('*')
       .eq('pipeline_id', pipelineId)
       .order('updated_at', { ascending: false })
     if (error) throw error
@@ -161,11 +276,16 @@ export const crmService = {
       phone: input.phone || null,
       company: input.company || null,
       source: input.source,
+      source_kind: input.sourceKind || 'manual',
+      status: input.status || 'open',
       score: input.score,
       value: input.value ?? null,
       notes: input.notes || null,
+      owner_id: input.ownerId || input.assignedTo || null,
       assigned_to: input.assignedTo || null,
+      last_activity_at: input.lastActivityAt || new Date().toISOString(),
       next_follow_up_at: input.nextFollowUpAt || null,
+      attribution_context: input.attributionContext || {},
       stage: 'NEW',
     }).select().single()
     if (error) throw error
@@ -173,10 +293,38 @@ export const crmService = {
   },
 
   async moveLead(leadId: string, stage: CrmPipelineStage) {
-    const legacyStage = stage.key.toUpperCase()
+    const legacyStage = toLegacyStage(stage)
     const { data, error } = await supabase
       .from('leads')
-      .update({ stage_id: stage.id, stage: legacyStage })
+      .update({
+        stage_id: stage.id,
+        stage: legacyStage,
+        status: stage.isWon ? 'won' : stage.isLost ? 'lost' : 'open',
+        won_at: stage.isWon ? new Date().toISOString() : null,
+        lost_at: stage.isLost ? new Date().toISOString() : null,
+        last_activity_at: new Date().toISOString(),
+      })
+      .eq('id', leadId)
+      .select()
+      .single()
+    if (error) throw error
+    return mapLead(data)
+  },
+
+  async moveLeadToStage(leadId: string, stageId: string) {
+    const { data: stage, error: stageError } = await supabase
+      .from('crm_pipeline_stages')
+      .select('*')
+      .eq('id', stageId)
+      .single()
+    if (stageError) throw stageError
+    return crmService.moveLead(leadId, mapStage(stage))
+  },
+
+  async updateLeadScore(leadId: string, score: number) {
+    const { data, error } = await supabase
+      .from('leads')
+      .update(buildLeadScoreUpdatePayload(score))
       .eq('id', leadId)
       .select()
       .single()
@@ -191,26 +339,68 @@ export const crmService = {
   },
 
   async createInteraction(organizationId: string, leadId: string, input: Pick<CrmInteraction, 'type' | 'title' | 'description'>) {
-    const { data, error } = await supabase.from('interactions').insert({
-      organization_id: organizationId,
-      lead_id: leadId,
-      ...input,
-      date: new Date().toISOString(),
-    }).select().single()
+    return crmService.recordLeadActivity({ organizationId, leadId, ...input })
+  },
+
+  async recordLeadActivity(input: RecordLeadActivityInput) {
+    const payload = buildLeadActivityInsertPayload(input)
+    const { data, error } = await supabase.from('interactions').insert(payload).select().single()
     if (error) throw error
+    const { error: leadError } = await supabase
+      .from('leads')
+      .update({ last_activity_at: payload.date })
+      .eq('id', input.leadId)
+    if (leadError) throw leadError
     return mapInteraction(data)
   },
 
   async getTasks(leadId: string) {
-    const { data, error } = await supabase.from('crm_tasks').select('*').eq('lead_id', leadId).order('due_at')
+    const { data, error } = await supabase.from('lead_tasks').select('*').eq('lead_id', leadId).order('due_at')
     if (error) throw error
     return (data || []).map(mapTask)
   },
 
   async createTask(organizationId: string, leadId: string, title: string, dueAt: string) {
-    const { data, error } = await supabase.from('crm_tasks').insert({ organization_id: organizationId, lead_id: leadId, title, due_at: dueAt }).select().single()
+    return crmService.createLeadTask({ organizationId, leadId, title, dueAt })
+  },
+
+  async createLeadTask(input: CreateLeadTaskInput) {
+    const { data, error } = await supabase.from('lead_tasks').insert(buildLeadTaskInsertPayload(input)).select().single()
     if (error) throw error
     return mapTask(data)
+  },
+
+  async completeLeadTask(taskId: string) {
+    const { data, error } = await supabase
+      .from('lead_tasks')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', taskId)
+      .select()
+      .single()
+    if (error) throw error
+    return mapTask(data)
+  },
+
+  async markLeadWon(input: MarkLeadWonInput) {
+    const { data, error } = await supabase
+      .from('leads')
+      .update(buildLeadWonPayload(input))
+      .eq('id', input.leadId)
+      .select()
+      .single()
+    if (error) throw error
+    return mapLead(data)
+  },
+
+  async markLeadLost(input: MarkLeadLostInput) {
+    const { data, error } = await supabase
+      .from('leads')
+      .update(buildLeadLostPayload(input))
+      .eq('id', input.leadId)
+      .select()
+      .single()
+    if (error) throw error
+    return mapLead(data)
   },
 
   async getSequences(organizationId: string) {

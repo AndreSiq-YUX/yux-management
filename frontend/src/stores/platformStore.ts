@@ -32,6 +32,7 @@ const internalModuleKeys = [
   'projects',
   'proposals',
   'whatsapp_ai',
+  'landing_pages',
   'campaigns',
   'bi_reports',
   'automations',

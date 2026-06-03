@@ -22,11 +22,39 @@ describe('buildNavigation', () => {
 
     expect(items[0]).toEqual({ label: 'Dashboard', href: '/dashboard' })
     expect(labels).toContain('Clientes')
-    expect(labels).toContain('CRM')
+    expect(labels).toContain('CRM & Funis')
     expect(labels).toContain('Projetos e Entregas')
-    expect(labels).toContain('Campanhas e Ads')
+    expect(labels).toContain('Campanhas')
     expect(labels).toContain('Blueprints')
     expect(items.find(item => item.moduleKey === 'crm')?.href).toBe('/leads')
+  })
+
+  it('builds the commercial MVP route set for internal users', () => {
+    const items = buildNavigation({
+      ...internalContext,
+      role: {
+        key: 'yux_admin',
+        name: 'YUX Admin',
+        scope: 'internal',
+        permissions: ['platform.manage'],
+      },
+      enabledModuleKeys: ['crm', 'whatsapp_ai', 'landing_pages', 'campaigns', 'automations', 'bi_reports'],
+    })
+    const keyedItems = Object.fromEntries(items.filter(item => item.moduleKey).map(item => [item.moduleKey, item]))
+
+    expect(Object.keys(keyedItems)).toEqual(expect.arrayContaining([
+      'crm',
+      'whatsapp_ai',
+      'landing_pages',
+      'campaigns',
+      'automations',
+      'bi_reports',
+    ]))
+    expect(keyedItems.crm).toMatchObject({ label: 'CRM & Funis', href: '/leads' })
+    expect(keyedItems.whatsapp_ai).toMatchObject({ label: 'Conversas IA', href: '/omnichannel' })
+    expect(keyedItems.landing_pages).toMatchObject({ label: 'Landing Pages', href: '/landing-pages' })
+    expect(keyedItems.campaigns).toMatchObject({ label: 'Campanhas', href: '/campaigns' })
+    expect(keyedItems.bi_reports).toMatchObject({ label: 'Relatorios & ROI', href: '/reports' })
   })
 
   it('builds portal navigation without internal-only modules', () => {
@@ -37,7 +65,7 @@ describe('buildNavigation', () => {
         key: 'client_admin',
         name: 'Client Admin',
         scope: 'client',
-        permissions: ['projects.read', 'campaigns.read', 'support.read'],
+      permissions: ['projects.read', 'campaigns.read', 'support.read'],
       },
       enabledModuleKeys: ['projects', 'campaigns', 'support', 'blueprints'],
     })
@@ -45,11 +73,39 @@ describe('buildNavigation', () => {
 
     expect(items[0]).toEqual({ label: 'Portal', href: '/portal' })
     expect(labels).toContain('Projetos e Entregas')
-    expect(labels).toContain('Campanhas e Ads')
+    expect(labels).toContain('Campanhas')
     expect(labels).toContain('Suporte')
     expect(labels).not.toContain('Clientes')
     expect(labels).not.toContain('Blueprints')
     expect(items.find(item => item.moduleKey === 'campaigns')?.href).toBe('/portal/campaigns')
+  })
+
+  it('builds contracted commercial MVP portal routes', () => {
+    const items = buildNavigation({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['crm.read', 'leads.read', 'omnichannel.read', 'landing_pages.read', 'campaigns.read', 'reports.read'],
+      },
+      enabledModuleKeys: ['crm', 'whatsapp_ai', 'landing_pages', 'campaigns', 'bi_reports'],
+    })
+    const portalRoutes = items.map(item => item.href)
+
+    expect(portalRoutes).toEqual(expect.arrayContaining([
+      '/portal/crm',
+      '/portal/omnichannel',
+      '/portal/landing-pages',
+      '/portal/campaigns',
+      '/portal/reports',
+    ]))
+    expect(items.find(item => item.moduleKey === 'landing_pages')).toEqual({
+      label: 'Landing Pages',
+      href: '/portal/landing-pages',
+      moduleKey: 'landing_pages',
+    })
   })
 
   it('does not show base portal modules when they are disabled by contract', () => {
@@ -84,7 +140,7 @@ describe('buildNavigation', () => {
     })
 
     expect(items.find(item => item.moduleKey === 'crm')).toEqual({
-      label: 'CRM',
+      label: 'CRM & Funis',
       href: '/portal/crm',
       moduleKey: 'crm',
     })
@@ -136,12 +192,12 @@ describe('buildNavigation', () => {
     })
 
     expect(internalItems.find(item => item.moduleKey === 'whatsapp_ai')).toEqual({
-      label: 'Central Omnichannel IA',
+      label: 'Conversas IA',
       href: '/omnichannel',
       moduleKey: 'whatsapp_ai',
     })
     expect(portalItems.find(item => item.moduleKey === 'whatsapp_ai')).toEqual({
-      label: 'Central Omnichannel IA',
+      label: 'Conversas IA',
       href: '/portal/omnichannel',
       moduleKey: 'whatsapp_ai',
     })

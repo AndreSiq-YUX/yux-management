@@ -27,6 +27,7 @@ const iconByModule: Record<string, LucideIcon> = {
   projects: FolderKanban,
   proposals: FileText,
   whatsapp_ai: Bot,
+  landing_pages: FileText,
   campaigns: Megaphone,
   bi_reports: BarChart3,
   automations: Boxes,

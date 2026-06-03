@@ -1,7 +1,11 @@
+import type { AttributionContext, LeadSourceKind } from './commercial'
+
 export type CrmActionType = 'whatsapp' | 'email' | 'internal_task'
 export type CrmEnrollmentStatus = 'active' | 'paused' | 'manual' | 'completed' | 'cancelled'
 export type CrmTaskStatus = 'pending' | 'completed' | 'cancelled'
 export type AutomationExecutionStatus = 'pending' | 'processing' | 'completed' | 'failed'
+export type CrmLeadStatus = 'open' | 'won' | 'lost'
+export type CrmLeadAttentionState = 'on_track' | 'due_today' | 'overdue' | 'stale' | 'won' | 'lost'
 
 export interface CrmPipeline {
   id: string
@@ -35,13 +39,29 @@ export interface CrmLead {
   phone?: string
   company?: string
   source: string
+  sourceKind?: LeadSourceKind
+  status?: CrmLeadStatus
   score: number
   value?: number
   notes?: string
+  ownerId?: string
   assignedTo?: string
+  lostReason?: string
+  wonAt?: string
+  lostAt?: string
+  lastActivityAt?: string
   nextFollowUpAt?: string
+  attributionContext?: AttributionContext
   createdAt: string
   updatedAt: string
+}
+
+export interface CrmPipelineSummary {
+  newLeads: number
+  staleLeads: number
+  tasksDue: number
+  openPipelineValue: number
+  conversionRate: number
 }
 
 export interface CrmInteraction {
@@ -62,8 +82,41 @@ export interface CrmTask {
   title: string
   description?: string
   status: CrmTaskStatus
+  priority?: 'low' | 'medium' | 'high' | 'urgent'
+  dueAt: string
+  completedAt?: string
+  assignedTo?: string
+}
+
+export interface CreateLeadTaskInput {
+  organizationId: string
+  leadId: string
+  title: string
+  description?: string
   dueAt: string
   assignedTo?: string
+  priority?: 'low' | 'medium' | 'high' | 'urgent'
+}
+
+export interface RecordLeadActivityInput {
+  organizationId: string
+  leadId: string
+  type: CrmInteraction['type']
+  title: string
+  description: string
+  date?: string
+}
+
+export interface MarkLeadWonInput {
+  leadId: string
+  stageId?: string
+  value?: number
+}
+
+export interface MarkLeadLostInput {
+  leadId: string
+  stageId?: string
+  lostReason: string
 }
 
 export interface CrmSequence {

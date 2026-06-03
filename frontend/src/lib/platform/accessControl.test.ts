@@ -96,6 +96,7 @@ describe('module registry', () => {
     expect(keys).toContain('projects')
     expect(keys).toContain('proposals')
     expect(keys).toContain('whatsapp_ai')
+    expect(keys).toContain('landing_pages')
     expect(keys).toContain('campaigns')
     expect(keys).toContain('bi_reports')
     expect(keys).toContain('automations')
@@ -106,5 +107,11 @@ describe('module registry', () => {
 
   it('can find a module by key', () => {
     expect(getPlatformModule('projects')?.name).toBe('Projetos e Entregas')
+    expect(getPlatformModule('landing_pages')).toMatchObject({
+      name: 'Landing Pages',
+      internalRoute: '/landing-pages',
+      portalRoute: '/portal/landing-pages',
+      requiredPermissions: ['landing_pages.read'],
+    })
   })
 })
