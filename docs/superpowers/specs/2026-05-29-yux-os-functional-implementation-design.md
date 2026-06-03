@@ -185,6 +185,12 @@ Inclui:
 Resultado esperado: a YUX sabe o que deve cobrar e o cliente consegue consultar
 o financeiro basico.
 
+Nota de implementacao 2026-06-03: esta fase foi materializada como financeiro
+basico de contas a receber, com faturas, itens de cobranca, status de pagamento,
+visao interna e visao do portal vinculadas a contratos. Billing automatizado,
+gateway de pagamento, emissao fiscal e conciliacao bancaria permanecem fora
+deste escopo.
+
 ### Fase 6: Blueprints Aplicaveis
 
 Objetivo: transformar blueprints de registros estaticos em modelos aplicaveis.

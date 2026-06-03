@@ -18,12 +18,14 @@ import { CampaignsPage } from '@/pages/campaigns/CampaignsPage'
 import { LeadsPage } from '@/pages/leads/LeadsPage'
 import { ProposalsPage } from '@/pages/proposals/ProposalsPage'
 import { OmnichannelPage } from '@/pages/omnichannel/OmnichannelPage'
+import { FinancePage } from '@/pages/finance/FinancePage'
 
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
 import { PortalOmnichannelPage } from '@/pages/client-portal/PortalOmnichannelPage'
 import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
 import { PortalProposalsPage } from '@/pages/client-portal/PortalProposalsPage'
+import { PortalFinancePage } from '@/pages/client-portal/PortalFinancePage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
@@ -73,7 +75,7 @@ function App() {
             <Route path="reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="automations" element={<ModuleSurfacePage moduleKey="automations" />} />
             <Route path="support" element={<ModuleSurfacePage moduleKey="support" />} />
-            <Route path="finance" element={<ModuleSurfacePage moduleKey="finance" />} />
+            <Route path="finance" element={<FinancePage />} />
             <Route path="blueprints" element={<BlueprintsPage />} />
           </>
         )}
@@ -90,7 +92,7 @@ function App() {
             <Route path="portal/campaigns" element={<ModuleSurfacePage moduleKey="campaigns" />} />
             <Route path="portal/reports" element={<ModuleSurfacePage moduleKey="bi_reports" />} />
             <Route path="portal/support" element={<ModuleSurfacePage moduleKey="support" />} />
-            <Route path="portal/finance" element={<ModuleSurfacePage moduleKey="finance" />} />
+            <Route path="portal/finance" element={<PortalFinancePage />} />
           </>
         )}
       </Route>
