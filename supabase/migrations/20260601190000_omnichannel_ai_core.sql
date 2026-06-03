@@ -919,6 +919,30 @@ CREATE POLICY "Omnichannel attachment deleters" ON storage.objects
     AND private.can_access_omnichannel_storage_object(name, 'write')
   );
 
+REVOKE ALL ON public.omnichannel_teams FROM anon;
+REVOKE ALL ON public.omnichannel_team_members FROM anon;
+REVOKE ALL ON public.conversation_queues FROM anon;
+REVOKE ALL ON public.channel_connections FROM anon;
+REVOKE ALL ON public.omnichannel_contacts FROM anon;
+REVOKE ALL ON public.conversations FROM anon;
+REVOKE ALL ON public.messages FROM anon;
+REVOKE ALL ON public.message_attachments FROM anon;
+REVOKE ALL ON public.conversation_tags FROM anon;
+REVOKE ALL ON public.conversation_assignments FROM anon;
+REVOKE ALL ON public.handoff_rules FROM anon;
+REVOKE ALL ON public.handoff_events FROM anon;
+REVOKE ALL ON public.channel_webhook_events FROM anon;
+REVOKE ALL ON public.outbound_message_runs FROM anon;
+REVOKE ALL ON public.scheduling_requests FROM anon;
+REVOKE ALL ON public.ai_message_runs FROM anon;
+REVOKE ALL ON public.crm_sync_runs FROM anon;
+REVOKE ALL ON public.knowledge_sources FROM anon;
+REVOKE ALL ON public.knowledge_entries FROM anon;
+REVOKE ALL ON public.knowledge_publications FROM anon;
+REVOKE ALL ON public.omnichannel_settings FROM anon;
+REVOKE ALL ON public.webchat_widgets FROM anon;
+REVOKE ALL ON public.webchat_sessions FROM anon;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.omnichannel_teams TO authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.omnichannel_team_members TO authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_queues TO authenticated, service_role;
@@ -1036,7 +1060,10 @@ BEGIN
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'webchat_widgets'
-      AND column_name LIKE '%token%'
+      AND (
+        column_name LIKE '%token_hash%'
+        OR column_name IN ('public_token', 'widget_token', 'token_hash')
+      )
   ) THEN
     RAISE EXCEPTION 'Public webchat_widgets columns must not store public token hashes';
   END IF;

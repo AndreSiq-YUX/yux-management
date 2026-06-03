@@ -830,7 +830,7 @@ git commit -m "feat: add embeddable webchat widget"
 **Files:**
 - Update only if needed: generated migrations and `supabase/config.toml`
 
-- [ ] **Step 1: Verify local migration and function state**
+- [x] **Step 1: Verify local migration and function state**
 
 ```bash
 git status --short
@@ -838,7 +838,7 @@ supabase migration list
 supabase functions list
 ```
 
-- [ ] **Step 2: Apply migrations to the linked Supabase project**
+- [x] **Step 2: Apply migrations to the linked Supabase project**
 
 Read the database password from `controle.txt` without echoing it. Apply:
 
@@ -846,7 +846,7 @@ Read the database password from `controle.txt` without echoing it. Apply:
 supabase db push
 ```
 
-- [ ] **Step 3: Deploy Edge Functions**
+- [x] **Step 3: Deploy Edge Functions**
 
 Deploy:
 
@@ -889,7 +889,7 @@ Verify:
 - outbound retry increments attempt count;
 - protected internal metadata remains inaccessible to portal users.
 
-- [ ] **Step 6: Commit remote-only corrections if necessary**
+- [x] **Step 6: Commit remote-only corrections if necessary**
 
 ```bash
 git add supabase

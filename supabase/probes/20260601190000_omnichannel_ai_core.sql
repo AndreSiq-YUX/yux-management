@@ -40,7 +40,10 @@ SELECT column_name
 FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name = 'webchat_widgets'
-  AND column_name LIKE '%token%';
+  AND (
+    column_name LIKE '%token_hash%'
+    OR column_name IN ('public_token', 'widget_token', 'token_hash')
+  );
 
 -- 4. The private attachment bucket must remain private.
 SELECT id, public

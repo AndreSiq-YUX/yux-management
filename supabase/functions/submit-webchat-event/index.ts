@@ -43,19 +43,14 @@ export async function handleWebchatEvent(admin: AdminClient, input: Record<strin
 
 async function bootstrapWidget(admin: AdminClient, publicToken: string, origin: string) {
   const publicTokenHash = await hashToken(publicToken)
-  const tokenQuery = admin.schema('private').from('webchat_widget_tokens').select('widget_id').eq('public_token_hash', publicTokenHash).maybeSingle()
-  const { data: tokenRow, error: tokenError } = await tokenQuery
-  if (tokenError) throw tokenError
-  if (!tokenRow) return { notFound: true }
-
   const { data: widget, error: widgetError } = await admin
-    .from('webchat_widgets')
-    .select('*')
-    .eq('id', tokenRow.widget_id)
-    .eq('is_active', true)
+    .rpc('resolve_webchat_widget_service', {
+      candidate_token_hash: publicTokenHash,
+      request_origin: origin,
+    })
     .maybeSingle()
   if (widgetError) throw widgetError
-  if (!widget || !isAllowedOrigin(origin, widget.allowed_origins || [])) return { notFound: true }
+  if (!widget) return { notFound: true }
 
   const sessionToken = crypto.randomUUID()
   const sessionTokenHash = await hashToken(sessionToken)
@@ -210,9 +205,4 @@ function sanitizeWidget(widget: any) {
     consentText: widget.consent_text || '',
     initialForm: Array.isArray(widget.initial_form) ? widget.initial_form : widget.initial_form?.fields || [],
   }
-}
-
-function isAllowedOrigin(origin: string, allowedOrigins: string[]) {
-  if (!allowedOrigins.length) return true
-  return allowedOrigins.includes(origin)
 }
