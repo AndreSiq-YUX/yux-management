@@ -35,6 +35,10 @@ Estado atual:
   com recomendacao de pacote, criacao de proposta pelo lead, eventos de
   proposta, objeções, follow-up de proposta, checklist de fechamento, runs de
   conversao idempotentes e checklist de onboarding.
+- Fase 4 do CRM ideal, atribuicao, campanhas e MROI: implementada no
+  repositorio com fontes normalizadas, eventos de atribuicao, rollups,
+  snapshots de campanha, receita atribuida, alertas, dashboard de fontes,
+  relatorios internos e saida portal-safe.
 - Upgrade comercial do CRM Cockpit: implementado.
 - Base de automacao de follow-up: implementada.
 - Dispatcher protegido de automacoes do CRM: implementado.
@@ -351,6 +355,71 @@ Limite operacional:
 - a conversao operacional final depende da Edge Function
   `convert-approved-proposal` e das migrations de propostas, contratos,
   projetos e financeiro aplicadas no ambiente.
+
+### Fase 4 - Atribuicao, Campanhas e MROI
+
+Implementado em 2026-06-04:
+
+- tipos de dominio em `frontend/src/types/crmAttribution.ts`;
+- regras puras em `frontend/src/lib/crm/attributionRules.ts`;
+- testes de dominio em `frontend/src/lib/crm/attributionRules.test.ts`;
+- service `frontend/src/services/crmAttributionService.ts`;
+- testes de payload, mapeamento, sanitizacao portal e CSV em
+  `frontend/src/services/crmAttributionService.test.ts`;
+- componentes `LeadSourcesDashboard`, `SourceFunnelChart` e `MroiAlertPanel`;
+- aba Fontes do CRM substituida por dashboard com leads, oportunidades,
+  vendas, CPL, receita atribuida e MROI por origem;
+- relatorios internos preparados para mostrar CRM attribution quando houver
+  rollups consolidados;
+- relatorios do portal renderizam a versao portal-safe, sem custo operacional
+  interno;
+- exportacao CSV interna e portal-safe via `crm_report_exports`.
+
+Migration planejada/implementada no repositorio:
+
+- `supabase/migrations/20260604040000_crm_attribution_mroi.sql`
+
+Probe:
+
+- `supabase/probes/20260604040000_crm_attribution_mroi.sql`
+
+Tabelas adicionadas:
+
+- `lead_sources`
+- `lead_attribution_events`
+- `lead_source_rollups`
+- `campaign_crm_performance_snapshots`
+- `crm_revenue_attribution`
+- `crm_mroi_alerts`
+- `crm_report_exports`
+
+Campos adicionados:
+
+- `leads.primary_source_id`
+- `leads.source_confidence`
+- `campaigns.crm_performance_status`
+- `landing_pages.crm_source_id`
+- `proposals.source_lead_id`
+- `invoices.source_lead_id`, quando a tabela de financeiro existe.
+
+Regras de produto implementadas:
+
+- origem primaria do lead e normalizada a partir de UTM, campanha, landing page,
+  WhatsApp ou origem manual;
+- eventos de atribuicao registram primeiro toque, criacao do lead, clique,
+  envio de landing page, WhatsApp, proposta aprovada e fatura paga;
+- CPL usa custo visivel ao cliente quando o painel e portal-safe;
+- MROI interno considera custo de midia e custo operacional;
+- portal remove campos de custo interno antes de renderizar/exportar;
+- alertas explicaveis sinalizam lead caro, conversao baixa, MROI negativo e
+  fonte com alta conversao.
+
+Limite operacional:
+
+- a migration e o probe ainda precisam ser executados no Supabase alvo;
+- a validacao local do Supabase depende do Docker Desktop/daemon disponivel;
+- rollups e snapshots dependem de rotinas operacionais ou processos de
+  sincronizacao para manter os agregados atualizados continuamente.
 
 ### Criacao de Leads
 

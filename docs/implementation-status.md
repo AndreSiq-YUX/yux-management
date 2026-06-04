@@ -36,6 +36,7 @@ the target Supabase/Vercel environments.
 | CRM ideal phase 1 commercial cockpit | Implemented in repo | `/leads`, `/portal/crm` | `20260604010000_crm_commercial_cockpit.sql`, `crmCockpitService`, `cockpitRules`, `CockpitTabs`, `TodayWorkQueue`, `Lead360Panel`, `LeadCsvImportPanel` | Adds tabs, filters, Today queue, calendar, sources, CSV preview, tags/import/action schema. Supabase migration/probe still need target execution. |
 | CRM ideal phase 2 WhatsApp AI | Implemented in repo | `/leads`, `/portal/crm`, `/omnichannel` | `20260604020000_crm_whatsapp_ai.sql`, `crmConversationService`, `conversationRules`, `LeadConversationPanel`, `LeadAiInsightPanel`, `LeadResponseComposer`, `process-ai-message` | Links leads to conversations, stores CRM AI insights, tracks SLA/handoff, supports response suggestions. Supabase migration/probe still need target execution. |
 | CRM ideal phase 3 proposals closing | Implemented in repo | `/leads`, `/portal/crm`, `/proposals` | `20260604030000_crm_proposals_closing.sql`, `crmClosingService`, `closingRules`, `LeadProposalLauncher`, `ProposalRecommendationPanel`, `ClosingChecklistPanel`, `ProposalEventTimeline` | Adds CRM-facing lead-to-proposal-to-contract orchestration, event timeline, follow-ups, objections, conversion run idempotency and onboarding checklist. Supabase migration/probe still need target execution. |
+| CRM ideal phase 4 attribution and MROI | Implemented in repo | `/leads`, `/reports`, `/portal/reports` | `20260604040000_crm_attribution_mroi.sql`, `crmAttributionService`, `attributionRules`, `LeadSourcesDashboard`, `SourceFunnelChart`, `MroiAlertPanel` | Adds normalized sources, attribution events, source rollups, campaign snapshots, attributed revenue, MROI alerts, CSV exports and portal-safe attribution reporting. Supabase migration/probe still need target execution. |
 | Sector funnels and blueprints | Implemented in repo | `/blueprints` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, blueprint application rules | Provides reusable sector templates and contract application runs. |
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
@@ -222,6 +223,37 @@ Not complete:
 - target probe execution for `supabase/probes/20260604030000_crm_proposals_closing.sql`;
 - authenticated QA for proposal conversion against the target environment;
 - deeper finance automation beyond source proposal references.
+
+### CRM Ideal Phase 4 Attribution And MROI
+
+Implemented:
+
+- domain types for lead sources, attribution events, source rollups, campaign
+  CRM snapshots, revenue attribution, MROI alerts and CSV exports;
+- pure rules for UTM normalization, primary source derivation, CPL, conversion,
+  MROI, portal sanitization and explainable alerts;
+- Supabase migration/probe for `lead_sources`, `lead_attribution_events`,
+  `lead_source_rollups`, `campaign_crm_performance_snapshots`,
+  `crm_revenue_attribution`, `crm_mroi_alerts` and `crm_report_exports`;
+- extensions for `leads.primary_source_id`, `leads.source_confidence`,
+  `campaigns.crm_performance_status`, `landing_pages.crm_source_id`,
+  `proposals.source_lead_id` and optional `invoices.source_lead_id`;
+- `crmAttributionService` for recording attribution, dashboard reads, source
+  funnel, campaign MROI, portal-safe MROI, alerts and CSV exports;
+- CRM Fontes tab now renders `LeadSourcesDashboard` with funnel chart, MROI
+  alerts, source table and fallback data derived from loaded leads;
+- internal reports render CRM attribution when source rollups are available;
+- portal reports render sanitized attribution without internal media/operational
+  cost fields.
+
+Not complete:
+
+- target Supabase application of `20260604040000_crm_attribution_mroi.sql`;
+- target probe execution for `supabase/probes/20260604040000_crm_attribution_mroi.sql`;
+- local Supabase reset/probe in this Windows session because Docker Desktop was
+  unavailable;
+- scheduled aggregation jobs for continuously refreshing rollups/snapshots;
+- production QA with real campaign, landing page, proposal and finance data.
 
 ### Commercial Proposals And Conversion
 
