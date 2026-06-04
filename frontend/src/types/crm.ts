@@ -117,6 +117,20 @@ export interface CrmLead {
   source: string
   sourceKind?: LeadSourceKind
   status?: CrmLeadStatus
+  whatsappPhone?: string
+  city?: string
+  state?: string
+  segment?: string
+  interest?: string
+  temperature?: 'hot' | 'warm' | 'cold' | 'unqualified'
+  urgency?: 'high' | 'medium' | 'low'
+  consentLgpd?: boolean
+  whatsappOptIn?: boolean
+  emailOptIn?: boolean
+  competitor?: string
+  objections?: string[]
+  currentStageEnteredAt?: string
+  tagIds?: string[]
   score: number
   value?: number
   notes?: string
