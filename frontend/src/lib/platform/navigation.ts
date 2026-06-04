@@ -47,6 +47,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
       { label: 'Contratos', href: '/contracts' },
       { label: 'Pacotes', href: '/packages' },
       { label: 'Modulos', href: '/modules' },
+      { label: 'Governanca por Modulo', href: '/admin/modules-governance' },
       { label: 'Blueprints', href: '/blueprints', moduleKey: 'blueprints' },
       { label: 'Governanca CRM', href: '/crm-governance' },
     ],

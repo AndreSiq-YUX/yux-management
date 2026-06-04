@@ -23,6 +23,7 @@ describe('buildNavigation', () => {
     expect(items[0]).toEqual({ label: 'Dashboard', href: '/dashboard' })
     expect(labels).toContain('Clientes')
     expect(labels).toContain('Governanca CRM')
+    expect(labels).toContain('Governanca por Modulo')
     expect(labels).toContain('CRM & Funis')
     expect(labels).toContain('Projetos e Entregas')
     expect(labels).toContain('Campanhas')
@@ -277,6 +278,7 @@ describe('buildNavigationGroups', () => {
       { label: 'Contratos', href: '/contracts' },
       { label: 'Pacotes', href: '/packages' },
       { label: 'Modulos', href: '/modules' },
+      { label: 'Governanca por Modulo', href: '/admin/modules-governance' },
       { label: 'Blueprints', href: '/blueprints', moduleKey: 'blueprints' },
       { label: 'Governanca CRM', href: '/crm-governance' },
     ])
