@@ -34,6 +34,7 @@ the target Supabase/Vercel environments.
 | Support basic | Implemented in repo | `/support`, `/portal/support` | `20260601230000_basic_support.sql`, `supportService`, `SupportWorkspace`, `PortalSupportWorkspace`, `supportRules` | Contract-based tickets and messages only. No omnichannel ticket conversion, attachments, FAQ/knowledge base, or advanced SLA calendar. Migration/probes still need target DB execution. |
 | CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/crm` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades, `20260603215128_expose_platform_base_tables_to_data_api.sql` | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. Loading fallback fixed after `organizations` 401 report. |
 | CRM ideal phase 1 commercial cockpit | Implemented in repo | `/leads`, `/portal/crm` | `20260604010000_crm_commercial_cockpit.sql`, `crmCockpitService`, `cockpitRules`, `CockpitTabs`, `TodayWorkQueue`, `Lead360Panel`, `LeadCsvImportPanel` | Adds tabs, filters, Today queue, calendar, sources, CSV preview, tags/import/action schema. Supabase migration/probe still need target execution. |
+| CRM ideal phase 2 WhatsApp AI | Implemented in repo | `/leads`, `/portal/crm`, `/omnichannel` | `20260604020000_crm_whatsapp_ai.sql`, `crmConversationService`, `conversationRules`, `LeadConversationPanel`, `LeadAiInsightPanel`, `LeadResponseComposer`, `process-ai-message` | Links leads to conversations, stores CRM AI insights, tracks SLA/handoff, supports response suggestions. Supabase migration/probe still need target execution. |
 | Sector funnels and blueprints | Implemented in repo | `/blueprints` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, blueprint application rules | Provides reusable sector templates and contract application runs. |
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
@@ -165,6 +166,32 @@ Not complete:
 - drag-and-drop enhancements beyond the existing Kanban move behavior;
 - fully persisted CSV execution UI with file upload storage;
 - AI-based next best action, which belongs to CRM ideal phase 2.
+
+### CRM Ideal Phase 2 WhatsApp AI
+
+Implemented:
+
+- domain types for CRM AI, lead-conversation links, insights, field
+  suggestions, response suggestions, SLA events, handoff locks, quick replies
+  and message templates;
+- pure rules for phone normalization, lead-conversation match scoring,
+  conversation-to-lead creation decision, human handoff automation pause, SLA
+  breach detection, template opt-in blocking and confirmed AI field patches;
+- Supabase migration/probe for `lead_conversation_links`, `lead_ai_insights`,
+  `lead_ai_field_suggestions`, `lead_response_suggestions`, `lead_sla_events`,
+  `lead_handoff_locks`, `crm_quick_replies` and `crm_message_templates`;
+- `crmConversationService` for matching, linking, creating leads from
+  conversations, insights, response suggestions and handoff locks;
+- Lead 360 panels for conversations, AI insight, response composer and SLA;
+- `process-ai-message` persistence of CRM AI insight metadata when the
+  conversation is linked to a governed CRM lead.
+
+Not complete:
+
+- target Supabase application of `20260604020000_crm_whatsapp_ai.sql`;
+- target probe execution for `supabase/probes/20260604020000_crm_whatsapp_ai.sql`;
+- production provider credentials/workflows for Meta WhatsApp and n8n;
+- operational QA with authenticated users after the migration is applied.
 
 ### Commercial Proposals And Conversion
 
@@ -311,6 +338,8 @@ steps still required before treating the app as live-ready:
   - `20260601310000_ai_assistant_settings.sql`;
   - `20260601320000_flow_builder_lite.sql`;
   - `20260601330000_operational_reports.sql`;
+  - `20260604010000_crm_commercial_cockpit.sql`;
+  - `20260604020000_crm_whatsapp_ai.sql`;
 - run the corresponding probes in `supabase/probes/`;
 - verify portal/internal flows with authenticated test users after migrations;
 - confirm current Supabase project activity/status before diagnosing remote SQL

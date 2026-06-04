@@ -8,6 +8,7 @@ import {
 } from '../_shared/edge.ts'
 import {
   buildSafeAiFallback,
+  buildCrmAiInsightPayload,
   calculateAiRunCost,
   planAiResponse,
   sanitizeWebhookMetadata,
@@ -148,7 +149,66 @@ export async function processAiMessage(admin: ReturnType<typeof getServiceRoleCl
     metadata,
   }).eq('id', run.id)
 
-  return { runId: run.id, outboundMessageId: outbound.id, dispatch, fallbackUsed: fallback }
+  const crmInsight = await persistCrmAiInsight(admin, conversation, run.id, text, metadata)
+
+  return { runId: run.id, outboundMessageId: outbound.id, dispatch, fallbackUsed: fallback, crmInsightId: crmInsight?.id || null }
+}
+
+async function persistCrmAiInsight(
+  admin: ReturnType<typeof getServiceRoleClient>,
+  conversation: Record<string, any>,
+  aiRunId: string,
+  outputText: string,
+  metadata: Record<string, unknown>,
+) {
+  const contact = Array.isArray(conversation.omnichannel_contacts)
+    ? conversation.omnichannel_contacts[0]
+    : conversation.omnichannel_contacts
+  const leadId = conversation.lead_id || contact?.lead_id
+
+  if (!leadId) return null
+
+  const { data: lead, error: leadError } = await admin
+    .from('leads')
+    .select('id, organization_id, crm_instance_id')
+    .eq('id', leadId)
+    .maybeSingle()
+
+  if (leadError || !lead?.crm_instance_id) return null
+
+  const payload = buildCrmAiInsightPayload({
+    organizationId: conversation.organization_id,
+    crmInstanceId: lead.crm_instance_id,
+    leadId: lead.id,
+    conversationId: conversation.id,
+    aiRunId,
+    outputText,
+    metadata,
+  })
+
+  const { data: insight, error: insightError } = await admin
+    .from('lead_ai_insights')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (insightError) {
+    console.warn('CRM AI insight persistence failed:', insightError.message)
+    return null
+  }
+
+  await admin
+    .from('leads')
+    .update({
+      ai_summary: payload.summary,
+      intent: payload.intent,
+      sentiment: payload.sentiment,
+      urgency_detected_at: payload.urgency === 'high' ? new Date().toISOString() : null,
+      last_conversation_at: new Date().toISOString(),
+    })
+    .eq('id', lead.id)
+
+  return insight
 }
 
 async function loadAssistantSettings(admin: ReturnType<typeof getServiceRoleClient>, conversation: Record<string, any>) {

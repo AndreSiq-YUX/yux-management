@@ -1,5 +1,6 @@
 import {
   buildCrmSyncPayload,
+  buildCrmAiInsightPayload,
   buildPendingSchedulingRequest,
   buildRetryAttempt,
   buildSafeAiFallback,
@@ -135,6 +136,59 @@ Deno.test('builds CRM sync payloads with sanitized metadata', () => {
     summary: 'Lead quer proposta',
     tags: ['enterprise'],
     metadata: { access_token: '[redacted]', source: 'whatsapp' },
+  })
+})
+
+Deno.test('builds CRM AI insight payloads from provider metadata', () => {
+  const payload = buildCrmAiInsightPayload({
+    organizationId: 'org-1',
+    crmInstanceId: 'crm-1',
+    leadId: 'lead-1',
+    conversationId: 'conversation-1',
+    aiRunId: 'run-1',
+    outputText: 'Resposta sugerida para o lead.',
+    metadata: {
+      provider: {
+        summary: 'Lead pediu horarios',
+        intent: 'agendamento',
+        sentiment: 'positive',
+        urgency: 'high',
+        objections: ['preco'],
+        risks: ['sem_resposta'],
+        nextBestAction: 'Enviar horarios',
+        confidence: '0.91',
+        access_token: 'secret',
+      },
+    },
+  })
+
+  assertEquals(payload, {
+    organization_id: 'org-1',
+    crm_instance_id: 'crm-1',
+    lead_id: 'lead-1',
+    conversation_id: 'conversation-1',
+    ai_run_id: 'run-1',
+    summary: 'Lead pediu horarios',
+    intent: 'agendamento',
+    sentiment: 'positive',
+    urgency: 'high',
+    objections: ['preco'],
+    risks: ['sem_resposta'],
+    next_best_action: 'Enviar horarios',
+    confidence: 0.91,
+    metadata: {
+      provider: {
+        summary: 'Lead pediu horarios',
+        intent: 'agendamento',
+        sentiment: 'positive',
+        urgency: 'high',
+        objections: ['preco'],
+        risks: ['sem_resposta'],
+        nextBestAction: 'Enviar horarios',
+        confidence: '0.91',
+        access_token: '[redacted]',
+      },
+    },
   })
 })
 

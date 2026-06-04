@@ -250,6 +250,56 @@ export function buildCrmSyncPayload(input: {
   }
 }
 
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.map(entry => optionalString(entry)).filter((entry): entry is string => Boolean(entry))
+}
+
+function boundedConfidence(value: unknown) {
+  const parsed = Number(value || 0)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.min(1, parsed))
+}
+
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T) {
+  const parsed = optionalString(value) as T | undefined
+  return parsed && allowed.includes(parsed) ? parsed : fallback
+}
+
+export function buildCrmAiInsightPayload(input: {
+  organizationId: string
+  crmInstanceId: string
+  leadId: string
+  conversationId: string
+  aiRunId: string
+  outputText: string
+  metadata?: Record<string, unknown>
+}) {
+  const sanitizedMetadata = sanitizeWebhookMetadata(input.metadata || {}) as Record<string, unknown>
+  const provider = assertRecord(sanitizedMetadata.provider || {}, 'crm insight provider')
+  const outputText = stringValue(input.outputText, 'outputText')
+  const summary = optionalString(provider.summary) || outputText.slice(0, 500)
+  const sentiment = enumValue(provider.sentiment, ['positive', 'neutral', 'negative', 'unknown'] as const, 'unknown')
+  const urgency = enumValue(provider.urgency, ['high', 'medium', 'low', 'none'] as const, 'none')
+
+  return {
+    organization_id: stringValue(input.organizationId, 'organizationId'),
+    crm_instance_id: stringValue(input.crmInstanceId, 'crmInstanceId'),
+    lead_id: stringValue(input.leadId, 'leadId'),
+    conversation_id: stringValue(input.conversationId, 'conversationId'),
+    ai_run_id: stringValue(input.aiRunId, 'aiRunId'),
+    summary,
+    intent: optionalString(provider.intent) || optionalString(provider.classification) || null,
+    sentiment,
+    urgency,
+    objections: stringArray(provider.objections),
+    risks: stringArray(provider.risks),
+    next_best_action: optionalString(provider.nextBestAction) || optionalString(provider.next_best_action) || null,
+    confidence: boundedConfidence(provider.confidence),
+    metadata: sanitizedMetadata,
+  }
+}
+
 export function buildN8nWebhookPayload<T extends Record<string, unknown>>(payload: T) {
   return sanitizeWebhookMetadata(payload) as T
 }

@@ -28,6 +28,9 @@ Estado atual:
   com abas Kanban, Lista, Hoje, Calendario e Fontes; filtros avancados; lead 360;
   importacao CSV com preview; regras de tags, duplicidade, motivos de perda,
   proximas acoes e tempo parado.
+- Fase 2 do CRM ideal, WhatsApp/omnichannel + IA: implementada no repositorio
+  com vinculo lead-conversa, insights de IA, sugestoes de campos, sugestoes de
+  resposta, SLA de conversa e handoff humano.
 - Upgrade comercial do CRM Cockpit: implementado.
 - Base de automacao de follow-up: implementada.
 - Dispatcher protegido de automacoes do CRM: implementado.
@@ -211,6 +214,69 @@ As regras ficam em:
 - `frontend/src/lib/crm/pipelineRules.ts`
 - `frontend/src/lib/crm/pipelineRules.test.ts`
 
+### Fase 2 - WhatsApp, Omnichannel e IA no CRM
+
+Implementado em 2026-06-04:
+
+- tipos de dominio em `frontend/src/types/crmAi.ts`;
+- regras puras em `frontend/src/lib/crm/conversationRules.ts`;
+- testes de dominio em `frontend/src/lib/crm/conversationRules.test.ts`;
+- service `frontend/src/services/crmConversationService.ts`;
+- testes de payload/mapeamento em
+  `frontend/src/services/crmConversationService.test.ts`;
+- componentes `LeadConversationPanel`, `LeadAiInsightPanel`,
+  `LeadResponseComposer` e `ConversationSlaBadge`;
+- integracao dos paineis no `Lead360Panel`;
+- fila Hoje com priorizacao opcional por SLA vencido e conversa aberta;
+- modal do CRM carregando conversas/insights de forma tolerante quando a
+  migration ainda nao foi aplicada no ambiente alvo;
+- `process-ai-message` gravando `lead_ai_insights` quando a conversa possui
+  `lead_id` e o lead pertence a uma instancia CRM governada.
+
+Migration planejada/implementada no repositorio:
+
+- `supabase/migrations/20260604020000_crm_whatsapp_ai.sql`
+
+Probe:
+
+- `supabase/probes/20260604020000_crm_whatsapp_ai.sql`
+
+Tabelas adicionadas:
+
+- `lead_conversation_links`
+- `lead_ai_insights`
+- `lead_ai_field_suggestions`
+- `lead_response_suggestions`
+- `lead_sla_events`
+- `lead_handoff_locks`
+- `crm_quick_replies`
+- `crm_message_templates`
+
+Campos adicionados em `leads`:
+
+- `ai_summary`
+- `intent`
+- `sentiment`
+- `urgency_detected_at`
+- `last_conversation_at`
+
+Regras de produto implementadas:
+
+- uma conversa so pode ser vinculada com seguranca quando organizacao e
+  instancia CRM sao compativeis;
+- match por telefone normalizado permite vinculo automatico seguro;
+- opt-out/ausencia de opt-in bloqueia envio de templates WhatsApp;
+- handoff humano pausa automacao;
+- SLA vencido aparece como alerta operacional;
+- sugestoes de campo da IA so viram patch quando confirmadas.
+
+Limite operacional:
+
+- a migration e o probe ainda precisam ser executados no Supabase alvo;
+- a validacao local do Supabase depende do Docker Desktop/daemon disponivel;
+- providers reais, credenciais Meta/n8n e politicas operacionais de envio
+  continuam sendo configuracao de ambiente.
+
 ### Criacao de Leads
 
 Implementado:
@@ -373,6 +439,28 @@ Campos adicionados em `leads`:
 - `objections`
 - `current_stage_entered_at`
 
+### Tabelas de WhatsApp/IA do CRM
+
+Implementadas por `supabase/migrations/20260604020000_crm_whatsapp_ai.sql`:
+
+- `lead_conversation_links`
+- `lead_ai_insights`
+- `lead_ai_field_suggestions`
+- `lead_response_suggestions`
+- `lead_sla_events`
+- `lead_handoff_locks`
+- `crm_quick_replies`
+- `crm_message_templates`
+
+Campos adicionados ou reforcados:
+
+- `conversations.lead_id`
+- `leads.ai_summary`
+- `leads.intent`
+- `leads.sentiment`
+- `leads.urgency_detected_at`
+- `leads.last_conversation_at`
+
 ### Correcao de Exposicao da Data API
 
 Implementada por `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`:
@@ -493,6 +581,9 @@ O Omnichannel mantem fronteiras de sincronizacao com o CRM por meio de:
 - `crm_sync_runs`;
 - referencias de leads em conversas/contatos;
 - contexto de handoff e lead;
+- `lead_conversation_links`;
+- `lead_ai_insights`;
+- sugestoes de resposta assistida e templates CRM;
 - workflows futuros de provider para enriquecimento contato-para-lead.
 
 A implementacao atual e provider-neutral por padrao, com suporte real ao
@@ -604,6 +695,8 @@ Ainda necessario ou nao totalmente automatizado:
 
 - aplicar no Supabase alvo todas as migracoes do MVP comercial posteriores a
   `20260601210000`;
+- aplicar no Supabase alvo as migrations `20260604010000_crm_commercial_cockpit.sql`
+  e `20260604020000_crm_whatsapp_ai.sql`;
 - rodar os probes do CRM contra o Supabase alvo;
 - verificar que um usuario interno da YUX consegue ler `organizations`,
   pipelines e leads;
@@ -625,9 +718,16 @@ Frontend:
 - `frontend/src/components/crm/LeadDetailPanel.tsx`
 - `frontend/src/components/crm/LeadTimeline.tsx`
 - `frontend/src/components/crm/LeadTaskPanel.tsx`
+- `frontend/src/components/crm/LeadConversationPanel.tsx`
+- `frontend/src/components/crm/LeadAiInsightPanel.tsx`
+- `frontend/src/components/crm/LeadResponseComposer.tsx`
+- `frontend/src/components/crm/ConversationSlaBadge.tsx`
 - `frontend/src/components/proposals/LeadCommercialPanel.tsx`
 - `frontend/src/services/crmService.ts`
+- `frontend/src/services/crmConversationService.ts`
 - `frontend/src/types/crm.ts`
+- `frontend/src/types/crmAi.ts`
+- `frontend/src/lib/crm/conversationRules.ts`
 - `frontend/src/lib/crm/followUpRules.ts`
 - `frontend/src/lib/crm/pipelineRules.ts`
 
@@ -639,7 +739,10 @@ Supabase:
 - `supabase/migrations/20260601140000_enable_client_crm_portal.sql`
 - `supabase/migrations/20260601260000_crm_cockpit_upgrade.sql`
 - `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`
+- `supabase/migrations/20260604010000_crm_commercial_cockpit.sql`
+- `supabase/migrations/20260604020000_crm_whatsapp_ai.sql`
 - `supabase/functions/dispatch-crm-automation/index.ts`
+- `supabase/functions/process-ai-message/index.ts`
 
 Testes:
 
