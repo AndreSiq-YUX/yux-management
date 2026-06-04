@@ -47,6 +47,11 @@ type LeadRow = {
   last_activity_at?: string | null
   next_follow_up_at?: string | null
   attribution_context?: CrmLead['attributionContext'] | null
+  ai_summary?: string | null
+  intent?: string | null
+  sentiment?: CrmLead['sentiment'] | null
+  urgency_detected_at?: string | null
+  last_conversation_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -123,6 +128,11 @@ const mapLead = (row: LeadRow): CrmLead => ({
   lastActivityAt: row.last_activity_at || undefined,
   nextFollowUpAt: row.next_follow_up_at || undefined,
   attributionContext: row.attribution_context || undefined,
+  aiSummary: row.ai_summary || undefined,
+  intent: row.intent || undefined,
+  sentiment: row.sentiment || undefined,
+  urgencyDetectedAt: row.urgency_detected_at || undefined,
+  lastConversationAt: row.last_conversation_at || undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 })

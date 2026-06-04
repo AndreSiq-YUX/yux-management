@@ -131,6 +131,11 @@ export interface CrmLead {
   objections?: string[]
   currentStageEnteredAt?: string
   tagIds?: string[]
+  aiSummary?: string
+  intent?: string
+  sentiment?: 'positive' | 'neutral' | 'negative' | 'unknown'
+  urgencyDetectedAt?: string
+  lastConversationAt?: string
   score: number
   value?: number
   notes?: string
