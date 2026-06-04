@@ -3,22 +3,27 @@ import { isLeadStalled, rankTodayLead } from '@/lib/crm/cockpitRules'
 import { isSlaBreached } from '@/lib/crm/conversationRules'
 import type { CrmCockpitLead } from '@/types/crmCockpit'
 import type { LeadSlaEvent } from '@/types/crmAi'
+import type { ProposalFollowUpTask } from '@/types/crmClosing'
 
 interface TodayWorkQueueProps {
   leads: CrmCockpitLead[]
   slaEvents?: LeadSlaEvent[]
+  proposalFollowUps?: ProposalFollowUpTask[]
   onSelectLead: (lead: CrmCockpitLead) => void
   now?: Date
 }
 
-export function TodayWorkQueue({ leads, slaEvents = [], onSelectLead, now = new Date() }: TodayWorkQueueProps) {
+export function TodayWorkQueue({ leads, slaEvents = [], proposalFollowUps = [], onSelectLead, now = new Date() }: TodayWorkQueueProps) {
   const breachedLeadIds = new Set(slaEvents.filter(event => isSlaBreached(event, now)).map(event => event.leadId))
+  const proposalFollowUpLeadIds = new Set(proposalFollowUps.filter(task => task.status === 'pending' && new Date(task.dueAt).getTime() <= now.getTime()).map(task => task.leadId))
   const ranked = [...leads]
     .filter(lead => (lead.status || 'open') === 'open')
     .sort((a, b) => (
       rankTodayLead(b, now) + (breachedLeadIds.has(b.id) ? 150 : 0)
+      + (proposalFollowUpLeadIds.has(b.id) ? 120 : 0)
     ) - (
       rankTodayLead(a, now) + (breachedLeadIds.has(a.id) ? 150 : 0)
+      + (proposalFollowUpLeadIds.has(a.id) ? 120 : 0)
     ))
     .slice(0, 12)
 
@@ -42,7 +47,7 @@ export function TodayWorkQueue({ leads, slaEvents = [], onSelectLead, now = new 
             </span>
             <Status icon={Flame} label={lead.temperature === 'hot' ? 'Lead quente' : lead.temperature || 'Sem temperatura'} />
             <Status icon={Timer} label={breachedLeadIds.has(lead.id) ? 'SLA vencido' : isLeadStalled(lead, 3, now) ? 'Negocio travado' : 'Em andamento'} />
-            <Status icon={MessageCircle} label={lead.lastConversationAt ? 'Conversa aberta' : lead.nextFollowUpAt ? 'Follow-up' : 'Sem agenda'} />
+            <Status icon={MessageCircle} label={proposalFollowUpLeadIds.has(lead.id) ? 'Follow-up proposta' : lead.lastConversationAt ? 'Conversa aberta' : lead.nextFollowUpAt ? 'Follow-up' : 'Sem agenda'} />
           </button>
         ))}
         {ranked.length === 0 && (

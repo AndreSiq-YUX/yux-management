@@ -1,24 +1,58 @@
 import { useEffect, useState } from 'react'
-import { FilePlus2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import toast from 'react-hot-toast'
+import { ClosingChecklistPanel } from '@/components/crm/ClosingChecklistPanel'
+import { LeadProposalLauncher } from '@/components/crm/LeadProposalLauncher'
+import { ProposalEventTimeline } from '@/components/crm/ProposalEventTimeline'
+import { ProposalRecommendationPanel } from '@/components/crm/ProposalRecommendationPanel'
+import { crmClosingService } from '@/services/crmClosingService'
 import { proposalService } from '@/services/proposalService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { CrmLead } from '@/types/crm'
+import type { CrmProposalConversionRun, LeadProposalRecommendation, ProposalClosingChecklist, ProposalFollowUpTask, ProposalObjection, ProposalViewEvent } from '@/types/crmClosing'
 import type { ProposalDraft } from '@/types/proposal'
 
 export function LeadCommercialPanel({ lead }: { lead: CrmLead }) {
   const packages = usePlatformStore(state => state.packages)
   const [packageId, setPackageId] = useState('')
   const [proposals, setProposals] = useState<ProposalDraft[]>([])
-  useEffect(() => { proposalService.getByLead(lead.id).then(setProposals) }, [lead.id])
+  const [recommendations, setRecommendations] = useState<LeadProposalRecommendation[]>([])
+  const [events, setEvents] = useState<ProposalViewEvent[]>([])
+  const [followUps, setFollowUps] = useState<ProposalFollowUpTask[]>([])
+  const [objections, setObjections] = useState<ProposalObjection[]>([])
+  const [checklists, setChecklists] = useState<ProposalClosingChecklist[]>([])
+  const [conversionRuns, setConversionRuns] = useState<CrmProposalConversionRun[]>([])
+  const refresh = async () => {
+    try {
+      const context = await crmClosingService.getLeadProposalContext(lead.id)
+      setProposals(context.proposals)
+      setRecommendations(context.recommendations)
+      setEvents(context.events)
+      setFollowUps(context.followUps)
+      setObjections(context.objections)
+      setChecklists(context.checklists)
+      setConversionRuns(context.conversionRuns)
+    } catch (error) {
+      console.warn('CRM closing context unavailable:', error)
+      proposalService.getByLead(lead.id).then(setProposals)
+    }
+  }
+  useEffect(() => { refresh() }, [lead.id])
   const create = async () => {
     if (!packageId) return
-    const proposal = await proposalService.createDraft({ organizationId: lead.organizationId, leadId: lead.id, packageId, title: `Proposta - ${lead.name}` })
+    const proposal = await crmClosingService.createProposalFromLead({ lead, packages, packageId })
+    toast.success('Proposta criada')
     window.location.assign(`/proposals?proposal=${proposal.id}`)
   }
+  const convert = async (proposalId: string) => {
+    await crmClosingService.runProposalConversion(proposalId)
+    toast.success('Conversao executada')
+    refresh()
+  }
   return <div className="space-y-3">
-    <div className="flex gap-2"><Select value={packageId} onValueChange={setPackageId}><SelectTrigger><SelectValue placeholder="Pacote comercial" /></SelectTrigger><SelectContent>{packages.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!packageId} onClick={create}><FilePlus2 className="mr-1 h-4 w-4" />Criar proposta</Button></div>
+    <LeadProposalLauncher lead={lead} packages={packages} packageId={packageId} onPackageChange={setPackageId} onCreate={create} />
+    <ProposalRecommendationPanel recommendations={recommendations} packages={packages} />
+    <ClosingChecklistPanel proposals={proposals} checklists={checklists} conversionRuns={conversionRuns} onConvert={convert} />
+    <ProposalEventTimeline events={events} followUps={followUps} objections={objections} />
     {proposals.length === 0 && <p className="text-sm text-gray-500">Nenhuma proposta vinculada.</p>}
     {proposals.map(item => <div key={item.id} className="rounded-md border p-3 text-sm"><p className="font-medium">{item.title}</p><p className="text-gray-500">{item.status} - R$ {item.finalValue.toLocaleString('pt-BR')}</p></div>)}
   </div>
