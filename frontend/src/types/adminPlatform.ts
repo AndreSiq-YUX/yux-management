@@ -54,6 +54,24 @@ export interface PlatformProviderConnection {
   updatedAt?: string
 }
 
+export type EmailProviderConnectionStatus = 'connected' | 'stale' | 'needs_setup' | 'failed'
+
+export interface EmailProviderConnection {
+  id: string
+  organizationId: string
+  provider: 'smtp2go'
+  status: EmailProviderConnectionStatus
+  tokenReference?: string | null
+  defaultFromEmail?: string | null
+  defaultFromName?: string | null
+  dailySendLimit: number
+  lastVerifiedAt?: string | null
+  protectedError?: string | null
+  metadata: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface ClientProviderSetting {
   id: string
   organizationId: string

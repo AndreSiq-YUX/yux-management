@@ -10,6 +10,7 @@ import { AutomationDashboard } from './AutomationDashboard'
 import { AutomationDryRunToggle } from './AutomationDryRunToggle'
 import { AutomationExecutionsWorkspace } from './AutomationExecutionsWorkspace'
 import { AutomationGuidedBuilder } from './AutomationGuidedBuilder'
+import { AutomationNodeEditor } from './AutomationNodeEditor'
 import { AutomationOnboarding } from './AutomationOnboarding'
 import { AutomationRealtime } from './AutomationRealtime'
 import { AutomationSimulationPanel } from './AutomationSimulationPanel'
@@ -22,6 +23,7 @@ import { SequencesWorkspace } from './SequencesWorkspace'
 import { getSectorTemplate } from '@/lib/automations/sectorTemplateCatalog'
 import type { AutomationAction, AutomationFlow, AutomationFlowInput } from '@/types/automation'
 import type { AutomationSequence, AutomationSequenceChannel, AutomationSequenceStatus, AutomationSequenceStepKind } from '@/types/automationSequence'
+
 import type { ReactNode } from 'react'
 
 interface AutomationWorkspaceProps {
@@ -29,7 +31,7 @@ interface AutomationWorkspaceProps {
   sequences?: AutomationSequence[]
   sequencesLoading?: boolean
   onCreateFlow?: (input: Omit<AutomationFlowInput, 'organizationId'>) => void
-  onUpdateFlow?: (flowId: string, input: Partial<Pick<AutomationFlowInput, 'name' | 'description' | 'sectorTemplateKey' | 'dailyRunLimit' | 'requiresHumanApproval' | 'riskLevel'>>) => void
+  onUpdateFlow?: (flowId: string, input: Partial<Pick<AutomationFlowInput, 'name' | 'description' | 'sectorTemplateKey' | 'dailyRunLimit' | 'requiresHumanApproval' | 'riskLevel' | 'builderMode' | 'graph'>>) => void
   onDeleteFlow?: (flowId: string) => void
   onDuplicateFlow?: (flowId: string) => void
   onToggleFlow?: (flowId: string, isEnabled: boolean) => void
@@ -69,7 +71,7 @@ export function AutomationWorkspace({
   sequences,
   sequencesLoading,
   onCreateFlow,
-  onUpdateFlow: _onUpdateFlow,
+  onUpdateFlow,
   onDeleteFlow,
   onDuplicateFlow,
   onToggleFlow,
@@ -344,20 +346,60 @@ export function AutomationWorkspace({
           {activeSection === 'Dashboard' && <AutomationDashboard flows={flows} />}
           {activeSection === 'Automacoes' && (
             <div className="space-y-4">
-              <AutomationGuidedBuilder
-                flow={selected}
-                disabled={actionsDisabled}
-                onAddTrigger={(triggerType, config) => selected && onAddTrigger?.(selected.id, triggerType, config)}
-                onUpdateTrigger={(triggerId, triggerType, config) => selected && onUpdateTrigger?.(selected.id, triggerId, triggerType, config)}
-                onDeleteTrigger={triggerId => selected && onDeleteTrigger?.(selected.id, triggerId)}
-                onAddCondition={(field, operator, value) => selected && onAddCondition?.(selected.id, field, operator, value)}
-                onUpdateCondition={(conditionId, field, operator, value) => selected && onUpdateCondition?.(selected.id, conditionId, field, operator, value)}
-                onDeleteCondition={conditionId => selected && onDeleteCondition?.(selected.id, conditionId)}
-                onAddAction={(actionType, payload) => selected && onAddAction?.(selected.id, actionType, payload)}
-                onUpdateAction={(actionId, actionType, payload) => selected && onUpdateAction?.(selected.id, actionId, actionType, payload)}
-                onDeleteAction={actionId => selected && onDeleteAction?.(selected.id, actionId)}
-                onReorderActions={actions => selected && onReorderActions?.(selected.id, actions)}
-              />
+              {selected && (
+                <div className="flex flex-wrap items-center justify-between border-b pb-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Modo de Edição:</span>
+                    <div className="flex rounded border bg-slate-50 p-0.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={selected.builderMode !== 'node' ? 'secondary' : 'ghost'}
+                        className="h-7 px-3 text-xs"
+                        onClick={() => onUpdateFlow?.(selected.id, { builderMode: 'guided' })}
+                      >
+                        Formulário Guiado
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={selected.builderMode === 'node' ? 'secondary' : 'ghost'}
+                        className="h-7 px-3 text-xs"
+                        onClick={() => onUpdateFlow?.(selected.id, { builderMode: 'node' })}
+                      >
+                        Editor de Nós Visual
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selected && selected.builderMode === 'node' ? (
+                <AutomationNodeEditor
+                  flow={selected}
+                  onSaveGraph={async (graph) => {
+                    if (onUpdateFlow) {
+                      await onUpdateFlow(selected.id, { graph })
+                    }
+                  }}
+                />
+              ) : (
+                <AutomationGuidedBuilder
+                  flow={selected}
+                  disabled={actionsDisabled}
+                  onAddTrigger={(triggerType, config) => selected && onAddTrigger?.(selected.id, triggerType, config)}
+                  onUpdateTrigger={(triggerId, triggerType, config) => selected && onUpdateTrigger?.(selected.id, triggerId, triggerType, config)}
+                  onDeleteTrigger={triggerId => selected && onDeleteTrigger?.(selected.id, triggerId)}
+                  onAddCondition={(field, operator, value) => selected && onAddCondition?.(selected.id, field, operator, value)}
+                  onUpdateCondition={(conditionId, field, operator, value) => selected && onUpdateCondition?.(selected.id, conditionId, field, operator, value)}
+                  onDeleteCondition={conditionId => selected && onDeleteCondition?.(selected.id, conditionId)}
+                  onAddAction={(actionType, payload) => selected && onAddAction?.(selected.id, actionType, payload)}
+                  onUpdateAction={(actionId, actionType, payload) => selected && onUpdateAction?.(selected.id, actionId, actionType, payload)}
+                  onDeleteAction={actionId => selected && onDeleteAction?.(selected.id, actionId)}
+                  onReorderActions={actions => selected && onReorderActions?.(selected.id, actions)}
+                />
+              )}
+
               <AutomationTechnicalBuilder flow={selected} />
               <AutomationSimulationPanel
                 flow={selected}

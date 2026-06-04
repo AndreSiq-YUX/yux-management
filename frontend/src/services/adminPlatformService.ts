@@ -3,6 +3,8 @@ import { summarizeAdminHub } from '@/lib/platform/adminRules'
 import type {
   ClientModuleLimit,
   ClientModuleLimitSource,
+  EmailProviderConnection,
+  EmailProviderConnectionStatus,
   PlatformAdminAuditEvent,
   PlatformLimitStatus,
   PlatformProviderConnection,
@@ -42,6 +44,30 @@ export interface PlatformAdminAuditEventInput {
   note?: string | null
 }
 
+export interface PlatformProviderConnectionInput {
+  id?: string
+  providerType: PlatformProviderType
+  providerKey: string
+  displayName: string
+  environment?: string
+  status?: PlatformProviderStatus
+  publicConfig?: Record<string, unknown>
+  secretReference?: string | null
+  isDefault?: boolean
+  fallbackProviderId?: string | null
+}
+
+export interface EmailProviderConnectionInput {
+  id?: string
+  organizationId: string
+  status?: EmailProviderConnectionStatus
+  tokenReference?: string | null
+  defaultFromEmail?: string | null
+  defaultFromName?: string | null
+  dailySendLimit?: number
+  metadata?: Record<string, unknown>
+}
+
 export function mapProviderConnectionRow(row: any): PlatformProviderConnection {
   return {
     id: row.id,
@@ -56,6 +82,24 @@ export function mapProviderConnectionRow(row: any): PlatformProviderConnection {
     lastError: row.last_error || null,
     isDefault: Boolean(row.is_default),
     fallbackProviderId: row.fallback_provider_id || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapEmailProviderConnectionRow(row: any): EmailProviderConnection {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    provider: row.provider,
+    status: row.status as EmailProviderConnectionStatus,
+    tokenReference: row.token_reference || null,
+    defaultFromEmail: row.default_from_email || null,
+    defaultFromName: row.default_from_name || null,
+    dailySendLimit: numberValue(row.daily_send_limit),
+    lastVerifiedAt: row.last_verified_at || null,
+    protectedError: row.protected_error || null,
+    metadata: objectValue(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -142,6 +186,35 @@ export function buildAuditEventPayload(input: PlatformAdminAuditEventInput) {
   }
 }
 
+export function buildProviderConnectionPayload(input: PlatformProviderConnectionInput) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    provider_type: input.providerType,
+    provider_key: input.providerKey.trim(),
+    display_name: input.displayName.trim(),
+    environment: input.environment?.trim() || 'production',
+    status: input.status || 'not_configured',
+    public_config: input.publicConfig || {},
+    secret_reference: input.secretReference?.trim() || null,
+    is_default: Boolean(input.isDefault),
+    fallback_provider_id: input.fallbackProviderId || null,
+  }
+}
+
+export function buildEmailProviderConnectionPayload(input: EmailProviderConnectionInput) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    organization_id: input.organizationId,
+    provider: 'smtp2go',
+    status: input.status || 'needs_setup',
+    token_reference: input.tokenReference?.trim() || null,
+    default_from_email: input.defaultFromEmail?.trim() || null,
+    default_from_name: input.defaultFromName?.trim() || null,
+    daily_send_limit: input.dailySendLimit ?? 500,
+    metadata: input.metadata || {},
+  }
+}
+
 export class AdminPlatformService {
   async getProviderConnections(): Promise<PlatformProviderConnection[]> {
     const { data, error } = await supabase
@@ -151,6 +224,38 @@ export class AdminPlatformService {
 
     if (error) throw error
     return (data || []).map(mapProviderConnectionRow)
+  }
+
+  async upsertProviderConnection(input: PlatformProviderConnectionInput): Promise<PlatformProviderConnection> {
+    const { data, error } = await supabase
+      .from('platform_provider_connections')
+      .upsert(buildProviderConnectionPayload(input), { onConflict: 'provider_type,provider_key,environment' })
+      .select()
+      .single()
+
+    if (error) throw error
+    return mapProviderConnectionRow(data)
+  }
+
+  async getEmailProviderConnections(): Promise<EmailProviderConnection[]> {
+    const { data, error } = await supabase
+      .from('email_provider_connections')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return (data || []).map(mapEmailProviderConnectionRow)
+  }
+
+  async upsertEmailProviderConnection(input: EmailProviderConnectionInput): Promise<EmailProviderConnection> {
+    const { data, error } = await supabase
+      .from('email_provider_connections')
+      .upsert(buildEmailProviderConnectionPayload(input), { onConflict: 'organization_id,provider' })
+      .select()
+      .single()
+
+    if (error) throw error
+    return mapEmailProviderConnectionRow(data)
   }
 
   async getClientModuleLimits(organizationId?: string): Promise<ClientModuleLimit[]> {
@@ -273,6 +378,84 @@ export class AdminPlatformService {
       sentToday: (usage.data || []).reduce((sum: number, row: any) => sum + numberValue(row.sent_count), 0),
       failedToday: (usage.data || []).reduce((sum: number, row: any) => sum + numberValue(row.failed_count), 0),
       suppressedCount: suppressions.count || 0,
+    }
+  }
+
+  async getGlobalUploadLimit(): Promise<number> {
+    const { data, error } = await supabase
+      .from('system_config')
+      .select('value')
+      .eq('key', 'global_max_upload_size_mb')
+      .maybeSingle()
+
+    if (error || !data || !data.value) return 10
+    return Number((data.value as any).limit || 10)
+  }
+
+  async updateGlobalUploadLimit(limit: number): Promise<void> {
+    const { error } = await supabase
+      .from('system_config')
+      .upsert({
+        key: 'global_max_upload_size_mb',
+        value: { limit },
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'key' })
+
+    if (error) throw error
+  }
+
+  async getOrganizationsWithLimits(): Promise<Array<{ id: string; name: string; slug: string; limit: number | null }>> {
+    const { data: orgs, error: orgsError } = await supabase
+      .from('organizations')
+      .select('id, name, slug')
+      .eq('kind', 'client')
+      .order('name')
+    if (orgsError) throw orgsError
+
+    const { data: settings, error: settingsError } = await supabase
+      .from('omnichannel_settings')
+      .select('organization_id, max_upload_size_mb')
+    if (settingsError) throw settingsError
+
+    const settingsMap = new Map(settings?.map(s => [s.organization_id, s.max_upload_size_mb]))
+
+    return (orgs || []).map(org => ({
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      limit: settingsMap.get(org.id) ?? null
+    }))
+  }
+
+  async updateClientUploadLimit(organizationId: string, limit: number): Promise<void> {
+    const { data: existing, error: findError } = await supabase
+      .from('omnichannel_settings')
+      .select('organization_id')
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+    if (findError) throw findError
+
+    if (existing) {
+      const { error } = await supabase
+        .from('omnichannel_settings')
+        .update({ max_upload_size_mb: limit, updated_at: new Date().toISOString() })
+        .eq('organization_id', organizationId)
+      if (error) throw error
+    } else {
+      const { error } = await supabase
+        .from('omnichannel_settings')
+        .insert({
+          organization_id: organizationId,
+          max_upload_size_mb: limit,
+          default_response_mode: 'assisted',
+          retention_months: 12,
+          attachment_retention_months: 12,
+          anonymize_on_retention: false,
+          crm_sync_filters: {},
+          business_hours: {},
+          ai_token_prices: {}
+        })
+      if (error) throw error
     }
   }
 }

@@ -2,38 +2,57 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Mail, Send, ServerCog, ShieldAlert, Users } from 'lucide-react'
 import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
+import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
+import { Smtp2GoConnectionEditor } from '@/components/platform/admin/Smtp2GoConnectionEditor'
+import { smtp2GoProviderDefaults } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
-import type { Smtp2GoAdminSummary } from '@/types/adminPlatform'
+import { platformService } from '@/services/platformService'
+import type { EmailProviderConnection, PlatformProviderConnection, Smtp2GoAdminSummary } from '@/types/adminPlatform'
+import type { Organization } from '@/types/platform'
 
 export function AdminEmailPage() {
   const [summary, setSummary] = useState<Smtp2GoAdminSummary | null>(null)
+  const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
+  const [organizations, setOrganizations] = useState<Organization[]>([])
+  const [emailConnections, setEmailConnections] = useState<EmailProviderConnection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  async function loadEmailAdministration(active = true) {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const [summaryResult, providerResult, organizationResult, connectionResult] = await Promise.all([
+        adminPlatformService.getSmtp2GoSummary(),
+        adminPlatformService.getProviderConnections(),
+        platformService.getOrganizations(),
+        adminPlatformService.getEmailProviderConnections(),
+      ])
+
+      if (active) {
+        setSummary(summaryResult)
+        setProviders(providerResult)
+        setOrganizations(organizationResult)
+        setEmailConnections(connectionResult)
+      }
+    } catch (error) {
+      console.error('Error loading SMTP2GO administration:', error)
+      if (active) setError('Nao foi possivel carregar a administracao de Email/SMTP2GO.')
+    } finally {
+      if (active) setLoading(false)
+    }
+  }
+
   useEffect(() => {
     let active = true
-
-    async function loadSummary() {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const result = await adminPlatformService.getSmtp2GoSummary()
-        if (active) setSummary(result)
-      } catch (error) {
-        console.error('Error loading SMTP2GO administration:', error)
-        if (active) setError('Nao foi possivel carregar a administracao de Email/SMTP2GO.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
-    loadSummary()
-
+    loadEmailAdministration()
     return () => {
       active = false
     }
   }, [])
+
+  const smtpProvider = providers.find(provider => provider.providerKey === 'smtp2go')
 
   return (
     <div className="space-y-6">
@@ -53,8 +72,9 @@ export function AdminEmailPage() {
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        As credenciais master e configuracoes sensiveis do SMTP2GO ainda nao sao editaveis por esta tela. Esta pagina mostra apenas
-        indicadores operacionais da infraestrutura compartilhada.
+        O valor real das chaves deve ficar em secrets server-side. Configure nesta tela as referencias
+        <span className="ml-1 font-mono">SMTP2GO_API_KEY</span> e <span className="ml-1 font-mono">SMTP2GO_WEBHOOK_SECRET</span>,
+        remetentes e limites por cliente.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando administracao de Email/SMTP2GO...</p>}
@@ -97,6 +117,29 @@ export function AdminEmailPage() {
           icon={ShieldAlert}
         />
       </div>
+
+      {!loading && !error && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ProviderConnectionEditor
+            title="SMTP2GO global"
+            description="Define a infraestrutura compartilhada de email e as referencias de secrets usadas pelas Edge Functions."
+            provider={smtpProvider}
+            defaults={smtp2GoProviderDefaults}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadEmailAdministration()
+            }}
+          />
+          <Smtp2GoConnectionEditor
+            organizations={organizations}
+            connections={emailConnections}
+            onSave={async input => {
+              await adminPlatformService.upsertEmailProviderConnection(input)
+              await loadEmailAdministration()
+            }}
+          />
+        </div>
+      )}
 
       {!loading && !error && (
         <div className="rounded-lg border bg-white p-4">

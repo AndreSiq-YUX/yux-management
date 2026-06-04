@@ -149,6 +149,70 @@ function response(body: Record<string, unknown>, status = 200) {
   })
 }
 
+function graphMatchesEvent(flow: Record<string, any>, event: Record<string, any>): boolean {
+  if (flow.builder_mode !== 'node' || !flow.graph || !Array.isArray(flow.graph.nodes)) return false
+  const triggerNodes = flow.graph.nodes.filter((n: any) => n.type === 'trigger')
+  return triggerNodes.some((node: any) => {
+    const triggerType = node.data?.triggerType
+    const config = node.data?.config || {}
+    if (triggerType !== event.type) return false
+    if (config.stageId && config.stageId !== event.stageId) return false
+    if (config.status && config.status !== event.status) return false
+    return true
+  })
+}
+
+async function executeGraphNode(
+  adminClient: SupabaseAny,
+  runId: string,
+  flow: Record<string, any>,
+  nodeId: string,
+  event: Record<string, any>,
+  visited: Set<string>,
+): Promise<void> {
+  if (visited.has(nodeId)) return
+  visited.add(nodeId)
+
+  const graph = flow.graph
+  if (!graph || !Array.isArray(graph.nodes)) return
+  const nodesMap = new Map(graph.nodes.map((n: any) => [n.id, n]))
+  const node = nodesMap.get(nodeId)
+  if (!node) return
+
+  if (node.type === 'action') {
+    const actionType = node.data?.actionType
+    const payload = node.data?.payload || {}
+    const dummyAction = {
+      id: node.id,
+      action_type: actionType,
+      payload,
+      isNodeMode: true,
+    }
+    await executeActionStep(adminClient, runId, dummyAction, event, flow.organization_id)
+  }
+
+  let outgoingEdges = Array.isArray(graph.edges) ? graph.edges.filter((e: any) => e.source === nodeId) : []
+
+  if (node.type === 'condition') {
+    const field = node.data?.field
+    const operator = node.data?.operator
+    const value = node.data?.value
+
+    const passed = evaluateConditions(
+      [{ field, operator, value }],
+      { ...event, ...(event.payload || {}) },
+    )
+
+    const targetHandle = passed ? 'true' : 'false'
+    outgoingEdges = outgoingEdges.filter((e: any) => e.sourceHandle === targetHandle)
+  }
+
+  const promises = outgoingEdges.map((edge: any) =>
+    executeGraphNode(adminClient, runId, flow, edge.target, event, new Set(visited)),
+  )
+  await Promise.all(promises)
+}
+
 async function dispatchFlowEvent(adminClient: SupabaseAny, event: Record<string, any>) {
   const { data: flows, error } = await adminClient
     .from('automation_flows')
@@ -158,10 +222,14 @@ async function dispatchFlowEvent(adminClient: SupabaseAny, event: Record<string,
     .eq('is_enabled', true)
   if (error) throw error
 
-  const eligible = (flows || []).filter((flow: Record<string, any>) => (
-    flow.automation_triggers?.some((trigger: Record<string, any>) => matchesTrigger(trigger, event))
-    && evaluateConditions(flow.automation_conditions || [], { ...event, ...(event.payload || {}) })
-  ))
+  const eligible = (flows || []).filter((flow: Record<string, any>) => {
+    if (flow.builder_mode === 'node') {
+      return graphMatchesEvent(flow, event)
+    } else {
+      return flow.automation_triggers?.some((trigger: Record<string, any>) => matchesTrigger(trigger, event))
+        && evaluateConditions(flow.automation_conditions || [], { ...event, ...(event.payload || {}) })
+    }
+  })
 
   const results = []
   for (const flow of eligible) {
@@ -184,10 +252,27 @@ async function executeFlow(adminClient: SupabaseAny, flow: Record<string, any>, 
   if (runError) throw runError
 
   try {
-    const actions = [...(flow.automation_actions || [])].sort((left, right) => left.order_index - right.order_index)
     const steps = []
-    for (const action of actions) {
-      steps.push(await executeActionStep(adminClient, run.id, action, event, flow.organization_id))
+    if (flow.builder_mode === 'node' && flow.graph) {
+      const matchingTriggers = flow.graph.nodes.filter((n: any) => {
+        if (n.type !== 'trigger') return false
+        const triggerType = n.data?.triggerType
+        const config = n.data?.config || {}
+        if (triggerType !== event.type) return false
+        if (config.stageId && config.stageId !== event.stageId) return false
+        if (config.status && config.status !== event.status) return false
+        return true
+      })
+
+      const promises = matchingTriggers.map((trigger: any) =>
+        executeGraphNode(adminClient, run.id, flow, trigger.id, event, new Set<string>()),
+      )
+      await Promise.all(promises)
+    } else {
+      const actions = [...(flow.automation_actions || [])].sort((left, right) => left.order_index - right.order_index)
+      for (const action of actions) {
+        steps.push(await executeActionStep(adminClient, run.id, action, event, flow.organization_id))
+      }
     }
     await adminClient.from('automation_execution_runs').update({
       status: 'completed',
@@ -218,9 +303,10 @@ async function executeActionStep(
   organizationId: string,
 ) {
   const payload = action.payload || {}
+  const isNodeMode = action.isNodeMode || false
   const { data: step, error: stepError } = await adminClient.from('automation_execution_steps').insert({
     run_id: runId,
-    action_id: action.id,
+    action_id: isNodeMode ? null : action.id,
     action_type: action.action_type,
     status: 'processing',
     sanitized_payload: sanitize(payload),
@@ -228,7 +314,7 @@ async function executeActionStep(
   if (stepError) throw stepError
 
   try {
-    const result = await executeAction(adminClient, action.action_type, payload, event, organizationId)
+    const result = await executeAction(adminClient, action.action_type, payload, event, organizationId, runId, action.id)
     await adminClient.from('automation_execution_steps').update({
       status: 'completed',
       sanitized_result: sanitize(result),
@@ -252,6 +338,8 @@ async function executeAction(
   payload: Record<string, any>,
   event: Record<string, any>,
   organizationId: string,
+  runId?: string,
+  actionId?: string,
 ) {
   if (actionType === 'create_task') {
     const leadId = required(event.leadId, 'leadId')
@@ -286,18 +374,54 @@ async function executeAction(
   }
 
   if (actionType === 'send_whatsapp') {
+    const contentType = payload.attachments && payload.attachments.length > 0 ? 'file' : 'text'
     const { data: message, error } = await adminClient.from('messages').insert({
       conversation_id: required(event.conversationId || payload.conversationId, 'conversationId'),
       direction: 'outbound',
       author_type: 'system',
-      content_type: 'text',
-      body: required(payload.body || payload.messageBody, 'body'),
+      content_type: contentType,
+      body: payload.body || payload.messageBody || '',
       delivery_status: 'queued',
       metadata: { source: 'automation_flow', runEvent: event.type },
     }).select('id').single()
     if (error) throw error
+
+    if (payload.attachments && Array.isArray(payload.attachments)) {
+      for (const attachment of payload.attachments) {
+        await adminClient.from('message_attachments').insert({
+          message_id: message.id,
+          storage_path: attachment.fileUrl || attachment.storagePath || '',
+          filename: attachment.name || attachment.filename || 'Arquivo',
+          mime_type: attachment.fileType || attachment.mimeType || 'application/pdf',
+          byte_size: attachment.byteSize || attachment.size || 0,
+        })
+      }
+    }
+
     return dispatchOutboundMessage(adminClient as never, message.id)
   }
+
+  if (actionType === 'send_email') {
+    const recipientEmail = required(event.payload?.email || event.email || payload.recipientEmail, 'recipientEmail')
+    const { data, error } = await adminClient.from('email_send_requests').insert({
+      organization_id: organizationId,
+      email_kind: payload.emailKind || 'operational',
+      module_key: 'automations',
+      recipient_email: recipientEmail,
+      recipient_opt_in: true,
+      subject: required(payload.subject, 'subject'),
+      body_html: payload.body || null,
+      idempotency_key: `automations_run_${runId}_action_${actionId || crypto.randomUUID()}`,
+      metadata: {
+        source: 'automation_flow',
+        runId,
+        attachments: payload.attachments || [],
+      },
+    }).select('id').single()
+    if (error) throw error
+    return { sendRequestId: data.id }
+  }
+
 
   if (actionType === 'create_ticket') {
     const { data, error } = await adminClient.from('support_tickets').insert({

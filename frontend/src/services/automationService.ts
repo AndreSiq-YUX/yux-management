@@ -4,7 +4,9 @@ import type {
   AutomationFlow,
   AutomationFlowInput,
   AutomationTrigger,
+  OrganizationMaterial,
 } from '@/types/automation'
+import type { AutomationBuilderMode } from '@/types/intelligentAutomation'
 
 export const buildFlowPayload = (input: AutomationFlowInput) => ({
   organization_id: input.organizationId,
@@ -18,6 +20,7 @@ export const buildFlowPayload = (input: AutomationFlowInput) => ({
   daily_run_limit: input.dailyRunLimit ?? 500,
   requires_human_approval: input.requiresHumanApproval ?? false,
   risk_level: input.riskLevel || 'low',
+  graph: input.graph || null,
 })
 
 export const buildTriggerPayload = (flowId: string, input: Pick<AutomationTrigger, 'triggerType' | 'config'>) => ({
@@ -82,6 +85,7 @@ export function mapAutomationFlow(row: any): AutomationFlow {
       startedAt: run.started_at || undefined,
       completedAt: run.completed_at || undefined,
     })),
+    graph: row.graph || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -164,7 +168,7 @@ export const automationService = {
     return mapAutomationFlow(data)
   },
 
-  async updateFlow(flowId: string, input: Partial<Pick<AutomationFlowInput, 'name' | 'description' | 'sectorTemplateKey' | 'dailyRunLimit' | 'requiresHumanApproval' | 'riskLevel'>>) {
+  async updateFlow(flowId: string, input: Partial<Pick<AutomationFlowInput, 'name' | 'description' | 'sectorTemplateKey' | 'dailyRunLimit' | 'requiresHumanApproval' | 'riskLevel' | 'builderMode' | 'graph'>>) {
     const patch: Record<string, unknown> = {}
     if (input.name !== undefined) patch.name = input.name.trim()
     if (input.description !== undefined) patch.description = input.description || null
@@ -172,6 +176,8 @@ export const automationService = {
     if (input.dailyRunLimit !== undefined) patch.daily_run_limit = input.dailyRunLimit
     if (input.requiresHumanApproval !== undefined) patch.requires_human_approval = input.requiresHumanApproval
     if (input.riskLevel !== undefined) patch.risk_level = input.riskLevel
+    if (input.builderMode !== undefined) patch.builder_mode = input.builderMode
+    if (input.graph !== undefined) patch.graph = input.graph
     const data = await requireData<any>(
       supabase.from('automation_flows').update(patch).eq('id', flowId).select(flowSelect).single(),
     )
@@ -302,4 +308,94 @@ export const automationService = {
     )
     return mapAutomationFlow(data)
   },
+
+  async getMaterials(organizationId: string): Promise<OrganizationMaterial[]> {
+    const { data, error } = await supabase
+      .from('organization_materials')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('name', { ascending: true })
+    if (error) throw error
+    return data || []
+  },
+
+  async uploadMaterial(organizationId: string, file: File): Promise<OrganizationMaterial> {
+    const filePath = `${organizationId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+    
+    // 1. Upload to storage bucket
+    const { error: uploadError } = await supabase.storage
+      .from('materials')
+      .upload(filePath, file)
+    
+    if (uploadError) throw uploadError
+
+    // 2. Get public url
+    const { data: { publicUrl } } = supabase.storage
+      .from('materials')
+      .getPublicUrl(filePath)
+
+    // 3. Register in database
+    const data = await requireData<any>(
+      supabase.from('organization_materials').insert({
+        organization_id: organizationId,
+        name: file.name,
+        file_url: publicUrl,
+        file_type: file.type,
+        byte_size: file.size,
+      }).select().single()
+    )
+    
+    return data
+  },
+
+  async deleteMaterial(materialId: string): Promise<void> {
+    // 1. Get material info
+    const { data: material, error: getError } = await supabase
+      .from('organization_materials')
+      .select('*')
+      .eq('id', materialId)
+      .single()
+
+    if (getError || !material) throw new Error('Material not found')
+
+    // 2. Extract path from url
+    const urlParts = material.file_url.split('/storage/v1/object/public/materials/')
+    if (urlParts.length === 2) {
+      const filePath = urlParts[1]
+      await supabase.storage.from('materials').remove([filePath])
+    }
+
+    // 3. Delete from database
+    const { error: deleteError } = await supabase
+      .from('organization_materials')
+      .delete()
+      .eq('id', materialId)
+
+    if (deleteError) throw deleteError
+  },
+
+  async getUploadLimit(organizationId: string): Promise<number> {
+    let globalLimit = 10
+    try {
+      const { data: globalData } = await supabase
+        .from('system_config')
+        .select('value')
+        .eq('key', 'global_max_upload_size_mb')
+        .maybeSingle()
+      if (globalData?.value && typeof globalData.value === 'object') {
+        globalLimit = Number((globalData.value as any).limit || 10)
+      }
+    } catch (err) {
+      console.warn('Failed to fetch global upload limit, falling back to 10', err)
+    }
+
+    const { data, error } = await supabase
+      .from('omnichannel_settings')
+      .select('max_upload_size_mb')
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+
+    if (error || !data) return globalLimit
+    return Number(data.max_upload_size_mb || globalLimit)
+  }
 }

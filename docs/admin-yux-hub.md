@@ -35,6 +35,15 @@ Areas relacionadas:
 - `/modules`: registro modular;
 - `/admin/modules-governance`: visao por modulo.
 
+As telas `/packages` e `/modules` agora possuem operacao administrativa:
+
+- `/modules` permite criar ou atualizar modulos, rotas internas, rotas do
+  portal, permissoes exigidas e se o modulo e base ou opcional;
+- `/packages` permite criar ou atualizar pacotes comerciais e vincular os
+  modulos que entram na oferta;
+- contratos continuam sendo o ponto onde pacote e modulos se tornam
+  disponibilidade real para cada cliente.
+
 ## Limites
 
 Limites sao registrados por cliente, contrato e modulo em
@@ -52,11 +61,14 @@ primeira versao e de leitura; edicao profunda entra em evolucoes futuras.
 
 ## Integracoes
 
-A area `/admin/integrations` mostra provedores globais da plataforma. Ela lista
-tipo, ambiente, status, ultima verificacao, erro e referencia segura mascarada.
+A area `/admin/integrations` configura provedores globais da plataforma. Ela
+lista e edita tipo, ambiente, status, fallback externo, configuracao publica,
+ultima verificacao, erro e referencia segura.
 
-Credenciais reais nao devem aparecer no frontend. O frontend exibe apenas
-`secret_reference`, mascarada, e metadados operacionais.
+Credenciais reais nao devem aparecer no frontend nem no banco. O frontend salva
+apenas `secret_reference` e metadados operacionais. O valor real da credencial
+deve existir como secret server-side no runtime das Edge Functions, Vercel ou
+ambiente equivalente.
 
 Tipos previstos:
 
@@ -83,21 +95,42 @@ Ela resume:
 - falhas no dia;
 - suppressions.
 
-Esta tela ainda nao edita credenciais, dominios ou subcontas. Ela mostra o
-estado operacional inicial para CRM, Automacoes, Suporte, Financeiro,
-notificacoes e futuros envios comerciais.
+Configuracao disponivel:
+
+- provedor global SMTP2GO em `platform_provider_connections`;
+- referencia segura da API key, normalmente `SMTP2GO_API_KEY`;
+- referencia do webhook secret, normalmente `SMTP2GO_WEBHOOK_SECRET`, dentro da
+  configuracao publica do provedor global;
+- conexao SMTP2GO por cliente em `email_provider_connections`;
+- remetente padrao por cliente;
+- limite diario de envios por cliente;
+- metadados seguros para dominio, subconta ou observacoes operacionais.
+
+O valor real de `SMTP2GO_API_KEY` e `SMTP2GO_WEBHOOK_SECRET` deve ser cadastrado
+como secret server-side. A Edge Function `send-email` le `SMTP2GO_API_KEY` ou a
+secret apontada por `token_reference`. A Edge Function `smtp2go-webhook` valida
+`SMTP2GO_WEBHOOK_SECRET`.
 
 ## IA/LLM
 
 A area `/admin/ai` controla a governanca operacional de IA.
 
-Ela lista provedores globais com `provider_type = llm` e organiza:
+Ela lista e edita provedores globais com `provider_type = llm` e organiza:
 
 - modelos globais;
 - uso por modulo;
 - overrides por cliente;
 - custos e falhas;
 - aviso de credenciais server-side.
+
+Modelo operacional atual:
+
+- OpenRouter e o provedor principal de roteamento LLM;
+- OpenRouter usa `OPENROUTER_API_KEY` como referencia segura;
+- a configuracao publica define `primaryModel`, `fallbackModels` e
+  `providerRouting.allowFallbacks`;
+- OpenAI direto e o fallback externo aprovado quando o OpenRouter inteiro falha;
+- OpenAI direto usa `OPENAI_API_KEY` como referencia segura.
 
 Credenciais, API keys e segredos continuam fora do frontend.
 
@@ -132,21 +165,25 @@ Eventos administrativos ficam em `platform_admin_audit_events`.
 - Sidebar agrupada por categoria.
 - Logo interno atualizado para YUX Hub.
 - Painel central `/admin`.
-- Rota `/admin/integrations`.
-- Rota `/admin/email`.
-- Rota `/admin/ai`.
+- Rota `/admin/integrations` com edicao segura de provedores globais.
+- Rota `/admin/email` com indicadores SMTP2GO, provedor global e configuracao
+  SMTP2GO por cliente.
+- Rota `/admin/ai` com OpenRouter principal e OpenAI direto como fallback
+  externo.
 - Rota `/admin/modules-governance`.
 - Rota `/admin/health`.
 - Schema de limites, provedores, uso e auditoria.
 - Servico frontend `adminPlatformService`.
+- Mutacoes administrativas para provedores, conexoes SMTP2GO, pacotes e
+  modulos.
+- Seed de provedores globais OpenRouter, OpenAI direto e SMTP2GO.
 - Painel de limites no contrato.
 - Documentacao operacional inicial.
 
 ## Pendente Para Evolucao
 
-- CRUD completo de provedores e credenciais.
-- Edicao de limites por modulo com auditoria completa.
 - Testes de conexao de provedores via edge functions.
+- Edicao de limites por modulo com auditoria completa.
 - Provisionamento automatico de subcontas SMTP2GO.
 - Regras de custo e orcamento de IA por cliente.
 - Alertas ativos e notificacoes administrativas.

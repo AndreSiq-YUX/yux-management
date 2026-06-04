@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   adminPlatformService,
   buildClientModuleLimitPayload,
+  buildEmailProviderConnectionPayload,
+  buildProviderConnectionPayload,
 } from './adminPlatformService'
 
 const fromMock = vi.fn()
@@ -148,6 +150,95 @@ describe('adminPlatformService', () => {
     }))
   })
 
+  it('builds provider connection payloads without raw secret values', () => {
+    expect(buildProviderConnectionPayload({
+      providerType: 'llm',
+      providerKey: ' openrouter ',
+      displayName: ' OpenRouter ',
+      publicConfig: { primaryModel: 'openai/gpt-4.1-mini' },
+      secretReference: ' OPENROUTER_API_KEY ',
+      isDefault: true,
+    })).toEqual({
+      provider_type: 'llm',
+      provider_key: 'openrouter',
+      display_name: 'OpenRouter',
+      environment: 'production',
+      status: 'not_configured',
+      public_config: { primaryModel: 'openai/gpt-4.1-mini' },
+      secret_reference: 'OPENROUTER_API_KEY',
+      is_default: true,
+      fallback_provider_id: null,
+    })
+  })
+
+  it('upserts provider connections by provider type key and environment', async () => {
+    const upsertMock = vi.fn(() => ({
+      select: () => ({
+        single: async () => ({
+          data: {
+            id: 'provider-2',
+            provider_type: 'llm',
+            provider_key: 'openrouter',
+            display_name: 'OpenRouter',
+            environment: 'production',
+            status: 'not_configured',
+            public_config: { primaryModel: 'openai/gpt-4.1-mini' },
+            secret_reference: 'OPENROUTER_API_KEY',
+            last_checked_at: null,
+            last_error: null,
+            is_default: true,
+            fallback_provider_id: null,
+            created_at: '2026-06-04T12:00:00Z',
+            updated_at: '2026-06-04T12:00:00Z',
+          },
+          error: null,
+        }),
+      }),
+    }))
+
+    fromMock.mockReturnValueOnce({ upsert: upsertMock })
+
+    await expect(adminPlatformService.upsertProviderConnection({
+      providerType: 'llm',
+      providerKey: 'openrouter',
+      displayName: 'OpenRouter',
+      publicConfig: { primaryModel: 'openai/gpt-4.1-mini' },
+      secretReference: 'OPENROUTER_API_KEY',
+      isDefault: true,
+    })).resolves.toEqual(expect.objectContaining({
+      id: 'provider-2',
+      providerType: 'llm',
+      providerKey: 'openrouter',
+      secretReference: 'OPENROUTER_API_KEY',
+    }))
+
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      provider_type: 'llm',
+      provider_key: 'openrouter',
+    }), { onConflict: 'provider_type,provider_key,environment' })
+  })
+
+  it('builds SMTP2GO organization connection payloads', () => {
+    expect(buildEmailProviderConnectionPayload({
+      organizationId: 'org-1',
+      status: 'connected',
+      tokenReference: ' SMTP2GO_API_KEY ',
+      defaultFromEmail: ' contato@yux.com.br ',
+      defaultFromName: ' YUX Hub ',
+      dailySendLimit: 900,
+      metadata: { domain: 'yux.com.br' },
+    })).toEqual({
+      organization_id: 'org-1',
+      provider: 'smtp2go',
+      status: 'connected',
+      token_reference: 'SMTP2GO_API_KEY',
+      default_from_email: 'contato@yux.com.br',
+      default_from_name: 'YUX Hub',
+      daily_send_limit: 900,
+      metadata: { domain: 'yux.com.br' },
+    })
+  })
+
   it('summarizes SMTP2GO administration counters for today', async () => {
     vi.setSystemTime(new Date('2026-06-04T14:30:00Z'))
 
@@ -187,5 +278,93 @@ describe('adminPlatformService', () => {
     expect(usageEqMock).toHaveBeenCalledWith('period_date', '2026-06-04')
 
     vi.useRealTimers()
+  })
+
+  it('gets global upload limit from system_config', async () => {
+    fromMock.mockReturnValueOnce({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: async () => ({
+            data: { value: { limit: 15 } },
+            error: null,
+          }),
+        })),
+      })),
+    })
+
+    const limit = await adminPlatformService.getGlobalUploadLimit()
+    expect(limit).toBe(15)
+    expect(fromMock).toHaveBeenCalledWith('system_config')
+  })
+
+  it('updates global upload limit in system_config', async () => {
+    const upsertMock = vi.fn(async () => ({ error: null }))
+    fromMock.mockReturnValueOnce({ upsert: upsertMock })
+
+    await adminPlatformService.updateGlobalUploadLimit(20)
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'global_max_upload_size_mb',
+        value: { limit: 20 },
+      }),
+      { onConflict: 'key' }
+    )
+  })
+
+  it('gets organizations list mapped with their custom upload limits', async () => {
+    // 1. mock organizations query
+    fromMock.mockReturnValueOnce({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          order: async () => ({
+            data: [
+              { id: 'org-1', name: 'Client 1', slug: 'client-1' },
+              { id: 'org-2', name: 'Client 2', slug: 'client-2' },
+            ],
+            error: null,
+          }),
+        })),
+      })),
+    })
+
+    // 2. mock omnichannel settings query
+    fromMock.mockReturnValueOnce({
+      select: vi.fn(async () => ({
+        data: [
+          { organization_id: 'org-1', max_upload_size_mb: 25 },
+        ],
+        error: null,
+      })),
+    })
+
+    const result = await adminPlatformService.getOrganizationsWithLimits()
+    expect(result).toEqual([
+      { id: 'org-1', name: 'Client 1', slug: 'client-1', limit: 25 },
+      { id: 'org-2', name: 'Client 2', slug: 'client-2', limit: null },
+    ])
+  })
+
+  it('updates or inserts custom client upload limit in omnichannel_settings', async () => {
+    // Test case: settings exist (update path)
+    fromMock.mockReturnValueOnce({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: async () => ({
+            data: { organization_id: 'org-1' },
+            error: null,
+          }),
+        })),
+      })),
+    })
+
+    const updateMock = vi.fn(() => ({
+      eq: async () => ({ error: null }),
+    }))
+    fromMock.mockReturnValueOnce({ update: updateMock })
+
+    await adminPlatformService.updateClientUploadLimit('org-1', 12)
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ max_upload_size_mb: 12 })
+    )
   })
 })

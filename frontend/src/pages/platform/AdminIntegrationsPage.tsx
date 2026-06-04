@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
+import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
+import {
+  openAiDirectFallbackDefaults,
+  openRouterDefaults,
+  smtp2GoProviderDefaults,
+} from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
 
@@ -8,24 +14,23 @@ export function AdminIntegrationsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  async function loadProviders(active = true) {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const result = await adminPlatformService.getProviderConnections()
+      if (active) setProviders(result)
+    } catch (error) {
+      console.error('Error loading platform provider connections:', error)
+      if (active) setError('Nao foi possivel carregar as integracoes globais.')
+    } finally {
+      if (active) setLoading(false)
+    }
+  }
+
   useEffect(() => {
     let active = true
-
-    async function loadProviders() {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const result = await adminPlatformService.getProviderConnections()
-        if (active) setProviders(result)
-      } catch (error) {
-        console.error('Error loading platform provider connections:', error)
-        if (active) setError('Nao foi possivel carregar as integracoes globais.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
     loadProviders()
 
     return () => {
@@ -33,13 +38,24 @@ export function AdminIntegrationsPage() {
     }
   }, [])
 
+  const openRouterProvider = providers.find(provider => provider.providerKey === 'openrouter')
+  const openAiProvider = providers.find(provider => provider.providerKey === 'openai_direct')
+  const smtpProvider = providers.find(provider => provider.providerKey === 'smtp2go')
+  const fallbackProviders = providers.filter(provider => provider.providerType === 'llm' && provider.providerKey !== 'openrouter')
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Integracoes globais</h1>
         <p className="text-gray-600">
-          Monitoramento operacional dos provedores compartilhados do YUX Hub.
+          Configure provedores compartilhados do YUX Hub para IA, email, automacoes e demais servicos.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        Esta area salva referencias seguras e configuracoes publicas. Cadastre os valores reais em secrets do ambiente:
+        <span className="ml-1 font-mono">OPENROUTER_API_KEY</span>, <span className="font-mono">OPENAI_API_KEY</span>,
+        <span className="ml-1 font-mono">SMTP2GO_API_KEY</span> e <span className="font-mono">SMTP2GO_WEBHOOK_SECRET</span>.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando integracoes globais...</p>}
@@ -50,9 +66,44 @@ export function AdminIntegrationsPage() {
         </div>
       )}
 
-      {!loading && !error && providers.length === 0 && (
-        <div className="rounded-lg border border-dashed bg-white p-6 text-sm text-gray-500">
-          Nenhum provedor global configurado.
+      {!loading && !error && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ProviderConnectionEditor
+            title="OpenRouter principal"
+            description="Modelo principal, lista de fallback dentro do OpenRouter e fallback externo para OpenAI direto."
+            provider={openRouterProvider}
+            defaults={{
+              ...openRouterDefaults,
+              fallbackProviderId: openRouterProvider?.fallbackProviderId || openAiProvider?.id || null,
+            }}
+            fallbackProviders={fallbackProviders}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadProviders()
+            }}
+          />
+          <ProviderConnectionEditor
+            title="OpenAI direto"
+            description="Fallback externo quando o OpenRouter inteiro estiver fora, sem substituir o roteador principal."
+            provider={openAiProvider}
+            defaults={openAiDirectFallbackDefaults}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadProviders()
+            }}
+          />
+          <div className="xl:col-span-2">
+            <ProviderConnectionEditor
+              title="SMTP2GO global"
+              description="Infraestrutura compartilhada para emails transacionais, operacionais e de automacoes."
+              provider={smtpProvider}
+              defaults={smtp2GoProviderDefaults}
+              onSave={async input => {
+                await adminPlatformService.upsertProviderConnection(input)
+                await loadProviders()
+              }}
+            />
+          </div>
         </div>
       )}
 

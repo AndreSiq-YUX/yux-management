@@ -301,6 +301,91 @@ export class PlatformService {
     return (data || []).map(mapPackage)
   }
 
+  async upsertModule(input: {
+    key: string
+    name: string
+    base: boolean
+    internalRoute?: string | null
+    portalRoute?: string | null
+    requiredPermissions?: string[]
+  }) {
+    const { data, error } = await supabase
+      .from('platform_modules')
+      .upsert({
+        key: input.key.trim(),
+        name: input.name.trim(),
+        base: input.base,
+        internal_route: input.internalRoute?.trim() || null,
+        portal_route: input.portalRoute?.trim() || null,
+        required_permissions: input.requiredPermissions || [],
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' })
+      .select()
+      .single()
+
+    if (error) throw error
+    return mapModule(data)
+  }
+
+  async upsertPackage(input: {
+    id?: string
+    key: string
+    name: string
+    description: string
+    moduleKeys: string[]
+  }) {
+    const { data, error } = await supabase
+      .from('packages')
+      .upsert({
+        ...(input.id ? { id: input.id } : {}),
+        key: input.key.trim(),
+        name: input.name.trim(),
+        description: input.description.trim(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' })
+      .select('*, package_modules(module_key)')
+      .single()
+
+    if (error) throw error
+
+    await this.setPackageModules(data.id, input.moduleKeys)
+    return this.getPackageById(data.id)
+  }
+
+  async getPackageById(packageId: string) {
+    const { data, error } = await supabase
+      .from('packages')
+      .select('*, package_modules(module_key)')
+      .eq('id', packageId)
+      .single()
+
+    if (error) throw error
+    return mapPackage(data)
+  }
+
+  async setPackageModules(packageId: string, moduleKeys: string[]) {
+    const uniqueModuleKeys = Array.from(new Set(moduleKeys))
+    const { error: deleteError } = await supabase
+      .from('package_modules')
+      .delete()
+      .eq('package_id', packageId)
+
+    if (deleteError) throw deleteError
+
+    if (uniqueModuleKeys.length === 0) return []
+
+    const { data, error } = await supabase
+      .from('package_modules')
+      .insert(uniqueModuleKeys.map(moduleKey => ({
+        package_id: packageId,
+        module_key: moduleKey,
+      })))
+      .select()
+
+    if (error) throw error
+    return data || []
+  }
+
   async getContracts() {
     const { data, error } = await supabase
       .from('contracts')

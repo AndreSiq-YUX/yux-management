@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Bot, Boxes, Building2, FileCheck2, Mail, PlugZap } from 'lucide-react'
+import { Activity, Bot, Boxes, Building2, FileCheck2, HardDrive, Mail, PlugZap } from 'lucide-react'
 import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
 import { AdminQuickActions } from '@/components/platform/admin/AdminQuickActions'
 import { adminPlatformService } from '@/services/adminPlatformService'
@@ -29,6 +29,12 @@ const quickActions = [
     description: 'Controlar provedores, modelos, custos e uso por modulo.',
     href: '/admin/ai',
     icon: Bot,
+  },
+  {
+    label: 'Limites de Upload',
+    description: 'Configurar tamanho maximo de anexo global e por cliente.',
+    href: '/admin/limits',
+    icon: HardDrive,
   },
 ]
 

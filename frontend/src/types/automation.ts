@@ -77,6 +77,10 @@ export interface AutomationFlow {
   conditions: AutomationCondition[]
   actions: AutomationAction[]
   executionRuns: AutomationExecutionRun[]
+  graph?: {
+    nodes: any[]
+    edges: any[]
+  }
   createdAt: string
   updatedAt: string
 }
@@ -107,4 +111,20 @@ export interface AutomationFlowInput {
   dailyRunLimit?: number
   requiresHumanApproval?: boolean
   riskLevel?: AutomationRiskLevel
+  graph?: {
+    nodes: any[]
+    edges: any[]
+  }
 }
+
+export interface OrganizationMaterial {
+  id: string
+  organizationId: string
+  name: string
+  fileUrl: string
+  fileType: string
+  byteSize: number
+  createdAt: string
+  updatedAt: string
+}
+

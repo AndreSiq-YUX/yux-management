@@ -42,6 +42,7 @@ import { AdminEmailPage } from '@/pages/platform/AdminEmailPage'
 import { AdminHealthPage } from '@/pages/platform/AdminHealthPage'
 import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
 import { AdminModuleGovernancePage } from '@/pages/platform/AdminModuleGovernancePage'
+import { AdminLimitsPage } from '@/pages/platform/AdminLimitsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
@@ -84,6 +85,7 @@ function App() {
             <Route path="admin/ai" element={<AdminAiPage />} />
             <Route path="admin/health" element={<AdminHealthPage />} />
             <Route path="admin/modules-governance" element={<AdminModuleGovernancePage />} />
+            <Route path="admin/limits" element={<AdminLimitsPage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="packages" element={<PackagesPage />} />
             <Route path="modules" element={<ModulesPage />} />

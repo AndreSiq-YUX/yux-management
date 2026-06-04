@@ -16,7 +16,7 @@ import { getSectorTemplate, sectorTemplateCatalog } from '@/lib/automations/sect
 import type { AutomationFlowInput } from '@/types/automation'
 
 const sectorTemplates = [
-  { key: '', label: 'Do zero' },
+  { key: 'none', label: 'Do zero' },
   ...sectorTemplateCatalog.map(t => ({ key: t.key, label: t.label })),
 ]
 
@@ -30,21 +30,21 @@ interface AutomationCreateDialogProps {
 export function AutomationCreateDialog({ open, onOpenChange, onSubmit, disabled }: AutomationCreateDialogProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [sectorTemplateKey, setSectorTemplateKey] = useState('')
+  const [sectorTemplateKey, setSectorTemplateKey] = useState('none')
 
   const canSubmit = name.trim().length > 0
-  const selectedTemplate = getSectorTemplate(sectorTemplateKey)
+  const selectedTemplate = sectorTemplateKey !== 'none' ? getSectorTemplate(sectorTemplateKey) : null
 
   const handleSubmit = () => {
     if (!canSubmit) return
     onSubmit({
       name: name.trim(),
       description: description.trim() || undefined,
-      sectorTemplateKey: sectorTemplateKey || undefined,
+      sectorTemplateKey: sectorTemplateKey !== 'none' ? sectorTemplateKey : undefined,
     })
     setName('')
     setDescription('')
-    setSectorTemplateKey('')
+    setSectorTemplateKey('none')
   }
 
   return (

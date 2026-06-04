@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Bot, BrainCircuit, Building2, DollarSign, Layers3, ServerCog, ShieldCheck } from 'lucide-react'
 import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
+import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import { isProviderFailing } from '@/lib/platform/adminRules'
+import { openAiDirectFallbackDefaults, openRouterDefaults } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
 
@@ -39,26 +41,25 @@ export function AdminAiPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  async function loadProviders(active = true) {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const result = await adminPlatformService.getProviderConnections()
+      if (active) {
+        setProviders(result.filter(provider => provider.providerType === 'llm'))
+      }
+    } catch (error) {
+      console.error('Error loading LLM administration:', error)
+      if (active) setError('Nao foi possivel carregar a administracao de IA/LLM.')
+    } finally {
+      if (active) setLoading(false)
+    }
+  }
+
   useEffect(() => {
     let active = true
-
-    async function loadProviders() {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const result = await adminPlatformService.getProviderConnections()
-        if (active) {
-          setProviders(result.filter(provider => provider.providerType === 'llm'))
-        }
-      } catch (error) {
-        console.error('Error loading LLM administration:', error)
-        if (active) setError('Nao foi possivel carregar a administracao de IA/LLM.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
     loadProviders()
 
     return () => {
@@ -66,6 +67,9 @@ export function AdminAiPage() {
     }
   }, [])
 
+  const openRouterProvider = providers.find(provider => provider.providerKey === 'openrouter')
+  const openAiProvider = providers.find(provider => provider.providerKey === 'openai_direct')
+  const fallbackProviders = providers.filter(provider => provider.providerKey !== 'openrouter')
   const activeProviders = providers.filter(provider => provider.status === 'active').length
   const defaultProviders = providers.filter(provider => provider.isDefault).length
   const failingProviders = providers.filter(provider => isProviderFailing(provider.status)).length
@@ -88,8 +92,8 @@ export function AdminAiPage() {
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        Credenciais, API keys e segredos de provedores LLM devem permanecer em configuracao server-side. Esta tela nao edita nem
-        revela credenciais.
+        OpenRouter e OpenAI direto usam secrets server-side. Configure aqui os modelos, fallback e nomes de secrets; cadastre os
+        valores reais como <span className="font-mono">OPENROUTER_API_KEY</span> e <span className="font-mono">OPENAI_API_KEY</span>.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando administracao de IA/LLM...</p>}
@@ -126,6 +130,35 @@ export function AdminAiPage() {
           icon={AlertTriangle}
         />
       </div>
+
+      {!loading && !error && (
+        <section className="grid gap-4 xl:grid-cols-2">
+          <ProviderConnectionEditor
+            title="OpenRouter principal"
+            description="Define modelo principal, fallbackModels do OpenRouter e provedor externo caso o roteador falhe."
+            provider={openRouterProvider}
+            defaults={{
+              ...openRouterDefaults,
+              fallbackProviderId: openRouterProvider?.fallbackProviderId || openAiProvider?.id || null,
+            }}
+            fallbackProviders={fallbackProviders}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadProviders()
+            }}
+          />
+          <ProviderConnectionEditor
+            title="OpenAI direto"
+            description="Fallback externo aprovado para indisponibilidade total do OpenRouter."
+            provider={openAiProvider}
+            defaults={openAiDirectFallbackDefaults}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadProviders()
+            }}
+          />
+        </section>
+      )}
 
       {!loading && !error && (
         <section className="space-y-3">

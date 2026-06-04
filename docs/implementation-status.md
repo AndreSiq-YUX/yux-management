@@ -45,6 +45,7 @@ the target Supabase/Vercel environments.
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
 | Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
 | Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `AutomationDashboard`, `AutomationGuidedBuilder`, `AutomationSimulationPanel`, `AutomationVersionPanel`, `AutomationDryRunToggle`, `AiActionPreview`, `CrmIntegrationPreview`, `AutomationAuditTrail`, `AutomationRealtime`, `ConfirmDialog`, `AutomationOnboarding`, `Tooltip`, `automationValidation`, `SequencesWorkspace` timeline, SMTP2GO Edge Functions | Full automation workspace with visual builder (When/If/Then), drag-and-drop action reordering, real-time validation, confirmation dialogs, first-time onboarding, timeline visualization, tooltips, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, real-time and dry-run mode. Supabase reset still blocked locally by Docker availability. |
+| Visual Node Editor & Materials Library | Implemented in repo | `/automations`, `/admin/limits` | `20260604220000_automation_graph_and_materials.sql`, `AutomationNodeEditor`, `NodeConfigSidebar`, `MaterialLibraryDialog`, `AdminLimitsPage`, `automationService`, `adminPlatformService` | Visual node-based automation flow editor (React Flow), branched flow traversal (parallel execution), dynamic file attachments (email/WhatsApp) integrated with multitenant Materials Library storage, and administrative interface to configure global and client limits. |
 | Operational reports and MROI | Implemented in repo | `/reports`, `/portal/reports` | `20260601330000_operational_reports.sql`, `reportService`, report workspaces | Aggregates funnel, campaign, landing page, proposal, conversation, project and activity metrics with portal-safe output. |
 | Portal commercial view | Implemented in repo | `/portal` | `PortalDashboardPage`, navigation rules/tests | Portal dashboard now highlights enabled commercial modules only, including leads, conversations, landing pages, campaigns and reports. |
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, CI workflow, latest CI run for `709212f` | GitHub Actions passed on latest support commit. Vercel preview succeeded but routes are protected by Vercel Authentication. |
@@ -324,12 +325,16 @@ Implemented:
 - **P0: Confirmation dialogs** for destructive operations (delete, publish) with destructive variant;
 - **P1: First-time onboarding** with 3-step guided tour explaining When/If/Then paradigm;
 - **P1: Timeline visualization** for sequences showing steps chronologically with delay indicators;
-- **P1: Tooltips** on builder step headers for better field explanation.
+- **P1: Tooltips** on builder step headers for better field explanation;
+- **Visual Node Editor:** canvas built with `@xyflow/react` allowing layout customization, nodes addition, triggers, conditions, and actions matching backend logic;
+- **Parallel Branch Execution:** Edge Function engine updated to traversal visual nodes graph concurrently (`Promise.all`);
+- **Materials Library:** multitenant file storage bucket and registry with public download/restricted upload RLS policies, allowing files upload or select to attach to WhatsApp/Email steps;
+- **Upload Size Governance:** dynamic resolution of max file upload limit from global configuration (`system_config`) or client specific custom setting (`omnichannel_settings`);
+- **Admin limits dashboard:** `/admin/limits` hub view allowing YUX Admins to edit global max size and overrides per organization.
 
 Not complete:
 
 - target Supabase application of automation migrations (already listed in pending operational work);
-- email settings configuration UI (SMTP2GO backend ready, frontend placeholder);
 - flow import/export beyond sector templates;
 - advanced version diff comparison (current implementation shows version list only).
 
@@ -457,13 +462,13 @@ Not complete:
 - production provider credentials/OAuth for Meta, Google, WhatsApp, and n8n;
 - authenticated browser QA against the target Supabase/Vercel environments;
 - CI/deploy verification after the commercial MVP commit;
-- email settings configuration UI (SMTP2GO backend ready, frontend placeholder).
+- live provider health checks for OpenRouter/OpenAI/SMTP2GO.
 
 ## Current Validation Evidence
 
-Latest automations P0/P1 validation:
+Latest automations, Node Editor & Upload Limits validation:
 
-- `npm test`: 60 test files, 240 tests passed.
+- `npm test`: 62 test files, 261 tests passed.
 - `npm run type-check`: passed with zero errors.
 - `npx eslint` on modified automations files: passed with zero errors.
 
@@ -508,6 +513,7 @@ steps still required before treating the app as live-ready:
   - `20260604060000_automation_sequences.sql`;
   - `20260604070000_smtp2go_email_hub.sql`;
   - `20260604080000_automation_sector_templates.sql`;
+  - `20260604220000_automation_graph_and_materials.sql`;
 - run the corresponding probes in `supabase/probes/`;
 - verify portal/internal flows with authenticated test users after migrations;
 - confirm current Supabase project activity/status before diagnosing remote SQL
