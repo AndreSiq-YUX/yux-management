@@ -819,7 +819,7 @@ git commit -m "feat: add smtp2go email delivery foundation"
 - Create: `supabase/functions/smtp2go-webhook/index.ts`
 - Create: `supabase/functions/smtp2go-webhook/deno.json`
 
-- [ ] **Step 1: Add send-email function**
+- [x] **Step 1: Add send-email function**
 
 Create `supabase/functions/send-email/index.ts`:
 
@@ -884,7 +884,7 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 ```
 
-- [ ] **Step 2: Add webhook function**
+- [x] **Step 2: Add webhook function**
 
 Create `supabase/functions/smtp2go-webhook/index.ts`:
 
@@ -935,7 +935,7 @@ async function applyStatus(admin: any, requestId: string, eventType: string, eve
 }
 ```
 
-- [ ] **Step 3: Add function configs**
+- [x] **Step 3: Add function configs**
 
 Create both `deno.json` files:
 
@@ -947,7 +947,7 @@ Create both `deno.json` files:
 }
 ```
 
-- [ ] **Step 4: Validate**
+- [x] **Step 4: Validate**
 
 Run:
 
@@ -957,7 +957,12 @@ deno test supabase/functions/send-email supabase/functions/smtp2go-webhook
 
 Expected: if Deno is available, no syntax errors. If Deno is unavailable, record the blocker.
 
-- [ ] **Step 5: Commit**
+Execution note: `deno test supabase/functions/send-email
+supabase/functions/smtp2go-webhook` returned "No test modules found"; `deno check
+supabase/functions/send-email/index.ts supabase/functions/smtp2go-webhook/index.ts`
+passed.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/send-email supabase/functions/smtp2go-webhook
