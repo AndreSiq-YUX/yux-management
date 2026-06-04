@@ -6,6 +6,7 @@ import { AutomationGuidedBuilder } from './AutomationGuidedBuilder'
 import { AutomationSimulationPanel } from './AutomationSimulationPanel'
 import { AutomationTechnicalBuilder } from './AutomationTechnicalBuilder'
 import { EmailSettingsPanel } from './EmailSettingsPanel'
+import { SequencesWorkspace } from './SequencesWorkspace'
 import type { AutomationFlow } from '@/types/automation'
 import type { ReactNode } from 'react'
 
@@ -88,6 +89,7 @@ export function AutomationWorkspace({
             <AutomationGuidedBuilder />
             <AutomationTechnicalBuilder flow={selected} />
             <AutomationSimulationPanel flow={selected} />
+            <SequencesWorkspace />
             <EmailSettingsPanel />
             {selected ? <FlowDetails flow={selected} /> : (
               <section className="flex min-h-[320px] items-center justify-center rounded-md border bg-slate-50 text-sm text-gray-500">Nenhum fluxo configurado.</section>

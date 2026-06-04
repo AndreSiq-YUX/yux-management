@@ -1075,7 +1075,7 @@ git commit -m "feat: add intelligent automation product shell"
 - Create: `supabase/migrations/20260604060000_automation_sequences.sql`
 - Create: `supabase/migrations/20260604080000_automation_sector_templates.sql`
 
-- [ ] **Step 1: Add sequence rule test**
+- [x] **Step 1: Add sequence rule test**
 
 Create `frontend/src/lib/automations/sequenceRules.test.ts`:
 
@@ -1098,7 +1098,7 @@ describe('sequenceRules', () => {
 })
 ```
 
-- [ ] **Step 2: Add sequence types and rules**
+- [x] **Step 2: Add sequence types and rules**
 
 Create `frontend/src/types/automationSequence.ts`:
 
@@ -1134,7 +1134,7 @@ export function calculateSequenceConversionRate(input: { enrolled: number; conve
 }
 ```
 
-- [ ] **Step 3: Add sequence migration**
+- [x] **Step 3: Add sequence migration**
 
 Create `supabase/migrations/20260604060000_automation_sequences.sql` with:
 
@@ -1155,7 +1155,7 @@ ALTER TABLE public.crm_sequence_steps
 NOTIFY pgrst, 'reload schema';
 ```
 
-- [ ] **Step 4: Validate**
+- [x] **Step 4: Validate**
 
 Run:
 
@@ -1166,7 +1166,12 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+Execution note: added sequence rules, service helpers, sequences workspace,
+sequence schema extension, sector template catalog and probes.
+`npm test -- src/lib/automations/sequenceRules.test.ts
+src/services/automationSequenceService.test.ts` and `npm run type-check` passed.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/types/automationSequence.ts frontend/src/lib/automations/sequenceRules.ts frontend/src/lib/automations/sequenceRules.test.ts supabase/migrations/20260604060000_automation_sequences.sql
