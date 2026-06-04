@@ -31,6 +31,10 @@ Estado atual:
 - Fase 2 do CRM ideal, WhatsApp/omnichannel + IA: implementada no repositorio
   com vinculo lead-conversa, insights de IA, sugestoes de campos, sugestoes de
   resposta, SLA de conversa e handoff humano.
+- Fase 3 do CRM ideal, propostas e fechamento: implementada no repositorio
+  com recomendacao de pacote, criacao de proposta pelo lead, eventos de
+  proposta, objeções, follow-up de proposta, checklist de fechamento, runs de
+  conversao idempotentes e checklist de onboarding.
 - Upgrade comercial do CRM Cockpit: implementado.
 - Base de automacao de follow-up: implementada.
 - Dispatcher protegido de automacoes do CRM: implementado.
@@ -277,6 +281,77 @@ Limite operacional:
 - providers reais, credenciais Meta/n8n e politicas operacionais de envio
   continuam sendo configuracao de ambiente.
 
+### Fase 3 - Propostas, Fechamento e Onboarding
+
+Implementado em 2026-06-04:
+
+- tipos de dominio em `frontend/src/types/crmClosing.ts`;
+- regras puras em `frontend/src/lib/crm/closingRules.ts`;
+- testes de dominio em `frontend/src/lib/crm/closingRules.test.ts`;
+- service `frontend/src/services/crmClosingService.ts`;
+- testes de payload/mapeamento em
+  `frontend/src/services/crmClosingService.test.ts`;
+- componentes `LeadProposalLauncher`, `ProposalRecommendationPanel`,
+  `ClosingChecklistPanel` e `ProposalEventTimeline`;
+- integracao dos novos componentes em `LeadCommercialPanel` sem remover a
+  funcionalidade existente de propostas;
+- fila Hoje preparada para priorizar follow-ups pendentes de proposta quando
+  esses dados forem fornecidos;
+- extensao de `proposalService` para carregar/salvar `crm_instance_id` e
+  `recommended_package_id`;
+- orquestracao de conversao que reutiliza a Edge Function existente de proposta
+  aprovada e etiqueta o run resultante com contexto CRM/idempotency.
+
+Migration planejada/implementada no repositorio:
+
+- `supabase/migrations/20260604030000_crm_proposals_closing.sql`
+
+Probe:
+
+- `supabase/probes/20260604030000_crm_proposals_closing.sql`
+
+Tabelas adicionadas:
+
+- `lead_proposal_recommendations`
+- `proposal_view_events`
+- `proposal_follow_up_tasks`
+- `proposal_objections`
+- `proposal_closing_checklists`
+- `client_onboarding_checklists`
+- `client_onboarding_tasks`
+
+Tabela existente estendida:
+
+- `proposal_conversion_runs`, com contexto CRM, `lead_id`,
+  `idempotency_key`, `invoice_id` opcional e novos estados operacionais.
+
+Campos adicionados:
+
+- `proposals.crm_instance_id`
+- `proposals.recommended_package_id`
+- `contracts.source_proposal_id`
+- `projects.source_lead_id`
+- `invoices.source_proposal_id`, quando a tabela de financeiro existe.
+
+Regras de produto implementadas:
+
+- vendedor so cria proposta se tiver acesso ao lead;
+- gerente pode criar proposta para lead da sua equipe;
+- lead perdido nao gera nova proposta;
+- recomendacao de pacote considera origem, segmento, interesse e valor;
+- conversao de proposta aprovada e idempotente e bloqueia duplicidade;
+- falha de conversao e retryable;
+- propostas de alto valor ou com modulo financeiro exigem aprovacao de
+  fechamento.
+
+Limite operacional:
+
+- a migration e o probe ainda precisam ser executados no Supabase alvo;
+- a validacao local do Supabase depende do Docker Desktop/daemon disponivel;
+- a conversao operacional final depende da Edge Function
+  `convert-approved-proposal` e das migrations de propostas, contratos,
+  projetos e financeiro aplicadas no ambiente.
+
 ### Criacao de Leads
 
 Implementado:
@@ -461,6 +536,30 @@ Campos adicionados ou reforcados:
 - `leads.urgency_detected_at`
 - `leads.last_conversation_at`
 
+### Tabelas de Fechamento e Onboarding
+
+Implementadas por `supabase/migrations/20260604030000_crm_proposals_closing.sql`:
+
+- `lead_proposal_recommendations`
+- `proposal_view_events`
+- `proposal_follow_up_tasks`
+- `proposal_objections`
+- `proposal_closing_checklists`
+- `client_onboarding_checklists`
+- `client_onboarding_tasks`
+
+Tabela existente estendida:
+
+- `proposal_conversion_runs`
+
+Campos adicionados:
+
+- `proposals.crm_instance_id`
+- `proposals.recommended_package_id`
+- `contracts.source_proposal_id`
+- `projects.source_lead_id`
+- `invoices.source_proposal_id`, quando `invoices` existe.
+
 ### Correcao de Exposicao da Data API
 
 Implementada por `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`:
@@ -573,6 +672,11 @@ O portal so expoe CRM quando o contrato ativo habilita `crm`.
 O CRM se integra a propostas por meio do `LeadCommercialPanel` e dos fluxos de
 conversao de proposta. Leads podem se tornar oportunidades comerciais e se
 conectar a geracao, revisao e conversao de propostas.
+
+Na Fase 3, essa integracao foi aprofundada com recomendacao de pacote,
+criacao de proposta a partir do lead, eventos de visualizacao/decisao,
+objeções comerciais, follow-ups de proposta, checklist de fechamento e
+checklist de onboarding pos-conversao.
 
 ### Omnichannel AI
 
@@ -697,6 +801,8 @@ Ainda necessario ou nao totalmente automatizado:
   `20260601210000`;
 - aplicar no Supabase alvo as migrations `20260604010000_crm_commercial_cockpit.sql`
   e `20260604020000_crm_whatsapp_ai.sql`;
+- aplicar no Supabase alvo a migration
+  `20260604030000_crm_proposals_closing.sql`;
 - rodar os probes do CRM contra o Supabase alvo;
 - verificar que um usuario interno da YUX consegue ler `organizations`,
   pipelines e leads;
@@ -722,12 +828,19 @@ Frontend:
 - `frontend/src/components/crm/LeadAiInsightPanel.tsx`
 - `frontend/src/components/crm/LeadResponseComposer.tsx`
 - `frontend/src/components/crm/ConversationSlaBadge.tsx`
+- `frontend/src/components/crm/LeadProposalLauncher.tsx`
+- `frontend/src/components/crm/ProposalRecommendationPanel.tsx`
+- `frontend/src/components/crm/ClosingChecklistPanel.tsx`
+- `frontend/src/components/crm/ProposalEventTimeline.tsx`
 - `frontend/src/components/proposals/LeadCommercialPanel.tsx`
 - `frontend/src/services/crmService.ts`
 - `frontend/src/services/crmConversationService.ts`
+- `frontend/src/services/crmClosingService.ts`
 - `frontend/src/types/crm.ts`
 - `frontend/src/types/crmAi.ts`
+- `frontend/src/types/crmClosing.ts`
 - `frontend/src/lib/crm/conversationRules.ts`
+- `frontend/src/lib/crm/closingRules.ts`
 - `frontend/src/lib/crm/followUpRules.ts`
 - `frontend/src/lib/crm/pipelineRules.ts`
 
@@ -741,6 +854,7 @@ Supabase:
 - `supabase/migrations/20260603215128_expose_platform_base_tables_to_data_api.sql`
 - `supabase/migrations/20260604010000_crm_commercial_cockpit.sql`
 - `supabase/migrations/20260604020000_crm_whatsapp_ai.sql`
+- `supabase/migrations/20260604030000_crm_proposals_closing.sql`
 - `supabase/functions/dispatch-crm-automation/index.ts`
 - `supabase/functions/process-ai-message/index.ts`
 

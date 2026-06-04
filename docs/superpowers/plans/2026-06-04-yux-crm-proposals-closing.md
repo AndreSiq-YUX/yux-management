@@ -29,54 +29,54 @@
 
 ### Task 1: Closing Rules
 
-- [ ] Define types for recommendations, view events, follow-up tasks, objections, closing checklists, conversion runs and onboarding checklists.
-- [ ] Implement rules: `recommendPackageForLead`, `canCreateProposalFromLead`, `buildProposalFromLeadDraft`, `requiresClosingApproval`, `buildConversionPlan`, `isConversionRetryable`.
-- [ ] Tests cover seller permission, missing lead access, module recommendation, approved proposal conversion, duplicate conversion prevention and retryable failure.
-- [ ] Run `npm test -- src/lib/crm/closingRules.test.ts`.
-- [ ] Run `npm run type-check`.
-- [ ] Commit: `git add frontend/src/types/crmClosing.ts frontend/src/lib/crm/closingRules.ts frontend/src/lib/crm/closingRules.test.ts && git commit -m "feat: add crm closing rules"`.
+- [x] Define types for recommendations, view events, follow-up tasks, objections, closing checklists, conversion runs and onboarding checklists.
+- [x] Implement rules: `recommendPackageForLead`, `canCreateProposalFromLead`, `buildProposalFromLeadDraft`, `requiresClosingApproval`, `buildConversionPlan`, `isConversionRetryable`.
+- [x] Tests cover seller permission, missing lead access, module recommendation, approved proposal conversion, duplicate conversion prevention and retryable failure.
+- [x] Run `npm test -- src/lib/crm/closingRules.test.ts`.
+- [x] Run `npm run type-check`.
+- [x] Commit: `git add frontend/src/types/crmClosing.ts frontend/src/lib/crm/closingRules.ts frontend/src/lib/crm/closingRules.test.ts && git commit -m "feat: add crm closing rules"`.
 
 ### Task 2: Schema And Probe
 
-- [ ] Create migration `supabase/migrations/20260604030000_crm_proposals_closing.sql`.
-- [ ] Add tables: `lead_proposal_recommendations`, `proposal_view_events`, `proposal_follow_up_tasks`, `proposal_objections`, `proposal_closing_checklists`, `proposal_conversion_runs`, `client_onboarding_checklists`, `client_onboarding_tasks`.
-- [ ] Extend `proposals` with `lead_id`, `crm_instance_id`, `recommended_package_id`.
-- [ ] Extend `contracts` with `source_proposal_id`.
-- [ ] Extend `projects` with `source_lead_id`.
-- [ ] Extend `invoices` with `source_proposal_id` when finance table exists.
-- [ ] Add RLS and authenticated grants.
-- [ ] Create probe checking tables, added columns, policies and grants.
-- [ ] Run Supabase reset/probe when Docker is available.
-- [ ] Commit: `git add supabase/migrations/20260604030000_crm_proposals_closing.sql supabase/probes/20260604030000_crm_proposals_closing.sql && git commit -m "feat: add crm closing schema"`.
+- [x] Create migration `supabase/migrations/20260604030000_crm_proposals_closing.sql`.
+- [x] Add tables: `lead_proposal_recommendations`, `proposal_view_events`, `proposal_follow_up_tasks`, `proposal_objections`, `proposal_closing_checklists`, `proposal_conversion_runs`, `client_onboarding_checklists`, `client_onboarding_tasks`.
+- [x] Extend `proposals` with `lead_id`, `crm_instance_id`, `recommended_package_id`.
+- [x] Extend `contracts` with `source_proposal_id`.
+- [x] Extend `projects` with `source_lead_id`.
+- [x] Extend `invoices` with `source_proposal_id` when finance table exists.
+- [x] Add RLS and authenticated grants.
+- [x] Create probe checking tables, added columns, policies and grants.
+- [x] Attempt Supabase reset/probe; blocked locally because Docker Desktop/daemon is unavailable.
+- [x] Commit: `git add supabase/migrations/20260604030000_crm_proposals_closing.sql supabase/probes/20260604030000_crm_proposals_closing.sql && git commit -m "feat: add crm closing schema"`.
 
 ### Task 3: Closing Service
 
-- [ ] Implement `crmClosingService` methods: `getLeadProposalContext`, `createProposalFromLead`, `recordProposalViewEvent`, `recordProposalObjection`, `scheduleProposalFollowUp`, `createClosingChecklist`, `runProposalConversion`, `retryProposalConversion`.
-- [ ] Service must call existing proposal/platform/project/finance services through clear methods and store conversion runs.
-- [ ] Add tests for payloads, idempotency keys and conversion run mapping.
-- [ ] Run `npm test -- src/services/crmClosingService.test.ts`.
-- [ ] Run `npm run type-check`.
-- [ ] Commit: `git add frontend/src/services/crmClosingService.ts frontend/src/services/crmClosingService.test.ts && git commit -m "feat: add crm closing service"`.
+- [x] Implement `crmClosingService` methods: `getLeadProposalContext`, `createProposalFromLead`, `recordProposalViewEvent`, `recordProposalObjection`, `scheduleProposalFollowUp`, `createClosingChecklist`, `runProposalConversion`, `retryProposalConversion`.
+- [x] Service must call existing proposal/platform/project/finance services through clear methods and store conversion runs.
+- [x] Add tests for payloads, idempotency keys and conversion run mapping.
+- [x] Run `npm test -- src/services/crmClosingService.test.ts`.
+- [x] Run `npm run type-check`.
+- [x] Commit: `git add frontend/src/services/crmClosingService.ts frontend/src/services/crmClosingService.test.ts && git commit -m "feat: add crm closing service"`.
 
 ### Task 4: CRM Closing UI
 
-- [ ] Add `LeadProposalLauncher.tsx` with create-proposal CTA and inherited lead data preview.
-- [ ] Add `ProposalRecommendationPanel.tsx` showing package and module suggestions.
-- [ ] Add `ClosingChecklistPanel.tsx` with contract, modules, project, finance and onboarding steps.
-- [ ] Add `ProposalEventTimeline.tsx` showing sent, viewed, adjusted, accepted, rejected and converted events.
-- [ ] Modify `LeadCommercialPanel.tsx` to use the new components without removing existing proposal functionality.
-- [ ] Add follow-up items to `TodayWorkQueue.tsx`.
-- [ ] Run `npm test -- src/components/proposals src/components/crm`.
-- [ ] Run `npm run type-check`.
-- [ ] Commit: `git add frontend/src/components/crm frontend/src/components/proposals/LeadCommercialPanel.tsx && git commit -m "feat: add crm proposal closing ui"`.
+- [x] Add `LeadProposalLauncher.tsx` with create-proposal CTA and inherited lead data preview.
+- [x] Add `ProposalRecommendationPanel.tsx` showing package and module suggestions.
+- [x] Add `ClosingChecklistPanel.tsx` with contract, modules, project, finance and onboarding steps.
+- [x] Add `ProposalEventTimeline.tsx` showing sent, viewed, adjusted, accepted, rejected and converted events.
+- [x] Modify `LeadCommercialPanel.tsx` to use the new components without removing existing proposal functionality.
+- [x] Add follow-up items to `TodayWorkQueue.tsx`.
+- [x] Run `npm test -- src/components/proposals src/components/crm`.
+- [x] Run `npm run type-check`.
+- [x] Commit: `git add frontend/src/components/crm frontend/src/components/proposals/LeadCommercialPanel.tsx && git commit -m "feat: add crm proposal closing ui"`.
 
 ### Task 5: Validation And Docs
 
-- [ ] Update `docs/crm-lead-management.md` with closing flow.
-- [ ] Update `docs/implementation-status.md`.
-- [ ] Run `npm test`, `npm run type-check`, `npm run build`.
-- [ ] Run Supabase probe when Docker is available.
-- [ ] Commit docs: `git add docs/crm-lead-management.md docs/implementation-status.md && git commit -m "docs: mark crm closing phase implemented"`.
+- [x] Update `docs/crm-lead-management.md` with closing flow.
+- [x] Update `docs/implementation-status.md`.
+- [x] Run `npm test`, `npm run type-check`, `npm run build`.
+- [x] Attempt Supabase probe; blocked locally because Docker Desktop/daemon is unavailable.
+- [x] Commit docs: `git add docs/crm-lead-management.md docs/implementation-status.md && git commit -m "docs: mark crm closing phase implemented"`.
 
 ## Success Criteria
 

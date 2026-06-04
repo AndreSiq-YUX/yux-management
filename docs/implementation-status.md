@@ -35,6 +35,7 @@ the target Supabase/Vercel environments.
 | CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/crm` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades, `20260603215128_expose_platform_base_tables_to_data_api.sql` | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. Loading fallback fixed after `organizations` 401 report. |
 | CRM ideal phase 1 commercial cockpit | Implemented in repo | `/leads`, `/portal/crm` | `20260604010000_crm_commercial_cockpit.sql`, `crmCockpitService`, `cockpitRules`, `CockpitTabs`, `TodayWorkQueue`, `Lead360Panel`, `LeadCsvImportPanel` | Adds tabs, filters, Today queue, calendar, sources, CSV preview, tags/import/action schema. Supabase migration/probe still need target execution. |
 | CRM ideal phase 2 WhatsApp AI | Implemented in repo | `/leads`, `/portal/crm`, `/omnichannel` | `20260604020000_crm_whatsapp_ai.sql`, `crmConversationService`, `conversationRules`, `LeadConversationPanel`, `LeadAiInsightPanel`, `LeadResponseComposer`, `process-ai-message` | Links leads to conversations, stores CRM AI insights, tracks SLA/handoff, supports response suggestions. Supabase migration/probe still need target execution. |
+| CRM ideal phase 3 proposals closing | Implemented in repo | `/leads`, `/portal/crm`, `/proposals` | `20260604030000_crm_proposals_closing.sql`, `crmClosingService`, `closingRules`, `LeadProposalLauncher`, `ProposalRecommendationPanel`, `ClosingChecklistPanel`, `ProposalEventTimeline` | Adds CRM-facing lead-to-proposal-to-contract orchestration, event timeline, follow-ups, objections, conversion run idempotency and onboarding checklist. Supabase migration/probe still need target execution. |
 | Sector funnels and blueprints | Implemented in repo | `/blueprints` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, blueprint application rules | Provides reusable sector templates and contract application runs. |
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
@@ -193,6 +194,35 @@ Not complete:
 - production provider credentials/workflows for Meta WhatsApp and n8n;
 - operational QA with authenticated users after the migration is applied.
 
+### CRM Ideal Phase 3 Proposals Closing
+
+Implemented:
+
+- domain types for proposal recommendations, proposal events, follow-up tasks,
+  objections, closing checklists, CRM conversion runs and onboarding checklists;
+- pure rules for package recommendation, proposal creation permission,
+  proposal draft from lead, closing approval requirement, conversion plan and
+  retryable failure detection;
+- Supabase migration/probe for `lead_proposal_recommendations`,
+  `proposal_view_events`, `proposal_follow_up_tasks`, `proposal_objections`,
+  `proposal_closing_checklists`, `client_onboarding_checklists` and
+  `client_onboarding_tasks`;
+- extension of `proposal_conversion_runs`, `proposals`, `contracts`,
+  `projects` and optional `invoices` with CRM closing references;
+- `crmClosingService` for lead proposal context, proposal creation, events,
+  objections, follow-ups, closing checklist and conversion retry;
+- CRM UI panels for launching proposals, package recommendations, closing
+  checklist and proposal timeline;
+- `LeadCommercialPanel` now uses the new CRM closing panels while preserving
+  existing proposal listing.
+
+Not complete:
+
+- target Supabase application of `20260604030000_crm_proposals_closing.sql`;
+- target probe execution for `supabase/probes/20260604030000_crm_proposals_closing.sql`;
+- authenticated QA for proposal conversion against the target environment;
+- deeper finance automation beyond source proposal references.
+
 ### Commercial Proposals And Conversion
 
 Implemented:
@@ -340,6 +370,7 @@ steps still required before treating the app as live-ready:
   - `20260601330000_operational_reports.sql`;
   - `20260604010000_crm_commercial_cockpit.sql`;
   - `20260604020000_crm_whatsapp_ai.sql`;
+  - `20260604030000_crm_proposals_closing.sql`;
 - run the corresponding probes in `supabase/probes/`;
 - verify portal/internal flows with authenticated test users after migrations;
 - confirm current Supabase project activity/status before diagnosing remote SQL
