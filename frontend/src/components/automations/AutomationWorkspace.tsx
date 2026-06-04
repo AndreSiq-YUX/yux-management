@@ -1,4 +1,5 @@
-import { GitBranch, Play, Plus, Power, Workflow } from 'lucide-react'
+import { AlertCircle, GitBranch, Layers3, Play, Plus, Power, Workflow } from 'lucide-react'
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AutomationExecutionsWorkspace } from './AutomationExecutionsWorkspace'
@@ -15,17 +16,26 @@ interface AutomationWorkspaceProps {
   onCreateFlow?: () => void
   onToggleFlow?: (flowId: string, isEnabled: boolean) => void
   onPublishFlow?: (flowId: string) => void
+  loadError?: string | null
+  backendUnavailable?: boolean
+  onRetry?: () => void
 }
 
 const sections = ['Automacoes', 'Sequencias', 'Templates', 'Execucoes', 'Configuracoes'] as const
+type AutomationSection = typeof sections[number]
 
 export function AutomationWorkspace({
   flows,
   onCreateFlow,
   onToggleFlow,
   onPublishFlow,
+  loadError,
+  backendUnavailable,
+  onRetry,
 }: AutomationWorkspaceProps) {
+  const [activeSection, setActiveSection] = useState<AutomationSection>('Automacoes')
   const selected = flows[0]
+  const actionsDisabled = Boolean(loadError || backendUnavailable)
 
   return (
     <div className="space-y-4">
@@ -34,7 +44,7 @@ export function AutomationWorkspace({
           <h1 className="text-2xl font-bold text-gray-900">Automacoes Inteligentes</h1>
           <p className="text-sm text-gray-600">Fluxos, sequencias, templates, execucoes e emails do YUX Hub.</p>
         </div>
-        <Button type="button" title="Criar fluxo" onClick={() => onCreateFlow?.()}>
+        <Button type="button" title="Criar fluxo" disabled={actionsDisabled} onClick={() => onCreateFlow?.()}>
           <Plus className="mr-2 h-4 w-4" />
           Novo fluxo
         </Button>
@@ -42,11 +52,26 @@ export function AutomationWorkspace({
 
       <nav className="flex flex-wrap gap-2 rounded-md border bg-white p-2" aria-label="Areas de automacao">
         {sections.map(section => (
-          <Button key={section} type="button" size="sm" variant={section === 'Automacoes' ? 'secondary' : 'ghost'}>
+          <Button
+            key={section}
+            type="button"
+            size="sm"
+            variant={section === activeSection ? 'secondary' : 'ghost'}
+            aria-pressed={section === activeSection}
+            onClick={() => setActiveSection(section)}
+          >
             {section}
           </Button>
         ))}
       </nav>
+
+      {loadError && (
+        <AutomationNotice
+          backendUnavailable={backendUnavailable}
+          description={loadError}
+          onRetry={onRetry}
+        />
+      )}
 
       <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-white lg:grid-cols-[340px_1fr]">
         <aside className="border-r">
@@ -70,11 +95,11 @@ export function AutomationWorkspace({
                   {flow.lastError && <span className="text-red-600">{flow.lastError}</span>}
                 </div>
                 <div className="flex gap-1">
-                  <Button type="button" size="sm" variant="outline" title="Alternar fluxo" onClick={() => onToggleFlow?.(flow.id, !flow.isEnabled)}>
+                  <Button type="button" size="sm" variant="outline" title="Alternar fluxo" disabled={actionsDisabled} onClick={() => onToggleFlow?.(flow.id, !flow.isEnabled)}>
                     <Power className="mr-1 h-3 w-3" />
                     {flow.isEnabled ? 'Desativar' : 'Ativar'}
                   </Button>
-                  <Button type="button" size="sm" variant="outline" title="Publicar fluxo" onClick={() => onPublishFlow?.(flow.id)}>
+                  <Button type="button" size="sm" variant="outline" title="Publicar fluxo" disabled={actionsDisabled} onClick={() => onPublishFlow?.(flow.id)}>
                     <Play className="mr-1 h-3 w-3" />
                     Publicar
                   </Button>
@@ -85,19 +110,71 @@ export function AutomationWorkspace({
         </aside>
 
         <main className="min-w-0 overflow-y-auto p-4">
-          <div className="space-y-4">
-            <AutomationGuidedBuilder />
-            <AutomationTechnicalBuilder flow={selected} />
-            <AutomationSimulationPanel flow={selected} />
-            <SequencesWorkspace />
-            <EmailSettingsPanel />
-            {selected ? <FlowDetails flow={selected} /> : (
-              <section className="flex min-h-[320px] items-center justify-center rounded-md border bg-slate-50 text-sm text-gray-500">Nenhum fluxo configurado.</section>
-            )}
-          </div>
+          {activeSection === 'Automacoes' && (
+            <div className="space-y-4">
+              <AutomationGuidedBuilder />
+              <AutomationTechnicalBuilder flow={selected} />
+              <AutomationSimulationPanel flow={selected} />
+              {selected ? <FlowDetails flow={selected} /> : (
+                <section className="flex min-h-[320px] items-center justify-center rounded-md border bg-slate-50 text-sm text-gray-500">Nenhum fluxo configurado.</section>
+              )}
+            </div>
+          )}
+          {activeSection === 'Sequencias' && <SequencesWorkspace />}
+          {activeSection === 'Templates' && <AutomationTemplatesPanel />}
+          {activeSection === 'Execucoes' && <AutomationExecutionsWorkspace runs={selected?.executionRuns || []} />}
+          {activeSection === 'Configuracoes' && <EmailSettingsPanel />}
         </main>
       </div>
     </div>
+  )
+}
+
+function AutomationNotice({
+  backendUnavailable,
+  description,
+  onRetry,
+}: {
+  backendUnavailable?: boolean
+  description: string
+  onRetry?: () => void
+}) {
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="mt-0.5 h-4 w-4 text-amber-700" />
+        <div>
+          <h2 className="text-sm font-semibold text-amber-950">
+            {backendUnavailable ? 'Backend de automacoes pendente' : 'Automacoes indisponiveis neste contexto'}
+          </h2>
+          <p className="text-sm text-amber-800">{description}</p>
+        </div>
+      </div>
+      {onRetry && (
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+          Tentar novamente
+        </Button>
+      )}
+    </section>
+  )
+}
+
+function AutomationTemplatesPanel() {
+  return (
+    <section className="rounded-md border bg-white p-4">
+      <div className="flex items-start gap-2">
+        <Layers3 className="mt-0.5 h-4 w-4 text-slate-600" />
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">Templates</h2>
+          <p className="text-sm text-slate-600">Modelos setoriais para clinicas, imobiliarias, revendas, oficinas e agencias.</p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 text-sm md:grid-cols-5">
+        {['clinic', 'real_estate', 'dealer', 'workshop', 'agency'].map(template => (
+          <div key={template} className="rounded-md border bg-slate-50 p-3">{template}</div>
+        ))}
+      </div>
+    </section>
   )
 }
 

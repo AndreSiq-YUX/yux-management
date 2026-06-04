@@ -101,6 +101,18 @@ const requireData = async <T>(request: PromiseLike<{ data: T | null; error: any 
   return data as T
 }
 
+export function isAutomationBackendUnavailableError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: string; status?: number; message?: string; details?: string; hint?: string }
+  const text = `${candidate.message || ''} ${candidate.details || ''} ${candidate.hint || ''}`.toLowerCase()
+  return candidate.status === 404
+    || candidate.code === 'PGRST205'
+    || candidate.code === 'PGRST202'
+    || text.includes('schema cache')
+    || text.includes('could not find the table')
+    || text.includes('relation "public.automation_flows" does not exist')
+}
+
 export const automationService = {
   async getFlows(filters?: { organizationId?: string }) {
     let query = supabase.from('automation_flows').select(flowSelect).order('updated_at', { ascending: false })

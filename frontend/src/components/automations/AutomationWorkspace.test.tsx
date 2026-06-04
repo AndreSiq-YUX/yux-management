@@ -40,6 +40,55 @@ describe('AutomationWorkspace', () => {
     act(() => root.unmount())
   })
 
+  it('switches between automation sections', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<AutomationWorkspace flows={[]} />)
+    })
+
+    act(() => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Configuracoes'))!.click()
+    })
+    expect(container.innerHTML).toContain('Configuracoes de email')
+
+    act(() => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Templates'))!.click()
+    })
+    expect(container.innerHTML).toContain('Modelos setoriais')
+
+    act(() => root.unmount())
+  })
+
+  it('renders backend unavailable notice and disables write actions', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const onCreateFlow = vi.fn()
+
+    act(() => {
+      root.render(
+        <AutomationWorkspace
+          flows={[flow]}
+          loadError="A base de automacoes ainda nao esta disponivel no Supabase alvo."
+          backendUnavailable
+          onCreateFlow={onCreateFlow}
+        />,
+      )
+    })
+
+    expect(container.innerHTML).toContain('Backend de automacoes pendente')
+    const createButton = container.querySelector<HTMLButtonElement>('button[title="Criar fluxo"]')!
+    expect(createButton.disabled).toBe(true)
+
+    act(() => {
+      createButton.click()
+    })
+
+    expect(onCreateFlow).not.toHaveBeenCalled()
+    act(() => root.unmount())
+  })
+
   it('renders flows, blocks, execution history, errors and template badges', () => {
     const container = document.createElement('div')
     const root = createRoot(container)

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildFlowPayload, buildFlowVersionPayload, buildTriggerPayload, mapAutomationFlow } from './automationService'
+import {
+  buildFlowPayload,
+  buildFlowVersionPayload,
+  buildTriggerPayload,
+  isAutomationBackendUnavailableError,
+  mapAutomationFlow,
+} from './automationService'
 
 describe('automationService helpers', () => {
   it('builds flow payloads with draft and enabled defaults', () => {
@@ -47,6 +53,14 @@ describe('automationService helpers', () => {
       status: 'published',
       published_at: expect.any(String),
     })
+  })
+
+  it('detects unavailable automation backend errors', () => {
+    expect(isAutomationBackendUnavailableError({
+      code: 'PGRST205',
+      message: "Could not find the table 'public.automation_flows' in the schema cache",
+    })).toBe(true)
+    expect(isAutomationBackendUnavailableError({ status: 500, message: 'network failed' })).toBe(false)
   })
 
   it('maps flows with blocks and execution history', () => {
