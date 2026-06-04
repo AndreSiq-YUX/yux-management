@@ -367,7 +367,7 @@ git commit -m "feat: add intelligent automation rules"
 - Modify: `frontend/src/services/automationService.ts`
 - Modify: `frontend/src/services/automationService.test.ts`
 
-- [ ] **Step 1: Create migration through Supabase CLI**
+- [x] **Step 1: Create migration through Supabase CLI**
 
 Run:
 
@@ -381,7 +381,7 @@ Rename the generated file to:
 supabase/migrations/20260604050000_intelligent_automations_foundation.sql
 ```
 
-- [ ] **Step 2: Add schema extensions**
+- [x] **Step 2: Add schema extensions**
 
 Add to `supabase/migrations/20260604050000_intelligent_automations_foundation.sql`:
 
@@ -455,7 +455,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_simulation_runs TO aut
 NOTIFY pgrst, 'reload schema';
 ```
 
-- [ ] **Step 3: Add probe**
+- [x] **Step 3: Add probe**
 
 Create `supabase/probes/20260604050000_intelligent_automations_foundation.sql`:
 
@@ -483,7 +483,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 4: Add service payload test**
+- [x] **Step 4: Add service payload test**
 
 In `frontend/src/services/automationService.test.ts`, add:
 
@@ -506,7 +506,7 @@ it('builds published flow version snapshots', () => {
 })
 ```
 
-- [ ] **Step 5: Add service builder**
+- [x] **Step 5: Add service builder**
 
 In `frontend/src/services/automationService.ts`, add:
 
@@ -525,7 +525,7 @@ export const buildFlowVersionPayload = (input: {
 })
 ```
 
-- [ ] **Step 6: Validate**
+- [x] **Step 6: Validate**
 
 Run:
 
@@ -537,7 +537,11 @@ supabase db reset --debug
 
 Expected frontend: pass. If Docker is unavailable, record the Supabase reset blocker exactly in the final notes.
 
-- [ ] **Step 7: Commit**
+Execution note: `npm test -- src/services/automationService.test.ts` and
+`npm run type-check` passed. `supabase db reset --debug` was blocked by Docker:
+`open //./pipe/docker_engine: O sistema não pode encontrar o arquivo especificado.`
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/services/automationService.ts frontend/src/services/automationService.test.ts supabase/migrations/20260604050000_intelligent_automations_foundation.sql supabase/probes/20260604050000_intelligent_automations_foundation.sql
