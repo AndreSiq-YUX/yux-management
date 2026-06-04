@@ -1,6 +1,6 @@
 # CRM e Gestao de Leads
 
-Atualizado em: 2026-06-03
+Atualizado em: 2026-06-04
 
 Este documento descreve o modulo de CRM e gestao de leads conforme implementado
 neste repositorio, incluindo escopo funcional, modelo de dados, integracoes,
@@ -24,6 +24,10 @@ Estado atual:
 - Governanca por contrato: implementada no repositorio com instancia CRM,
   assentos, equipes, papeis, versoes de configuracao, publicacao, migracao e
   auditoria.
+- Fase 1 do CRM ideal, cockpit comercial usavel: implementada no repositorio
+  com abas Kanban, Lista, Hoje, Calendario e Fontes; filtros avancados; lead 360;
+  importacao CSV com preview; regras de tags, duplicidade, motivos de perda,
+  proximas acoes e tempo parado.
 - Upgrade comercial do CRM Cockpit: implementado.
 - Base de automacao de follow-up: implementada.
 - Dispatcher protegido de automacoes do CRM: implementado.
@@ -156,6 +160,8 @@ Implementado:
 - Exibe estagios ordenados do pipeline.
 - Suporta visualizacao Kanban.
 - Suporta visualizacao em lista/tabela.
+- Suporta abas de cockpit: Kanban, Lista, Hoje, Calendario e Fontes.
+- Suporta filtros por busca, etapa, origem, temperatura e negocios travados.
 - Permite mover leads entre estagios.
 - Preserva valores legados de `stage` do lead enquanto usa `stage_id`
   configuravel.
@@ -169,6 +175,36 @@ Implementado:
 - Leads parados.
 - Taxa de conversao.
 - Valor de pipeline aberto.
+
+### Fase 1 - CRM Comercial Usavel
+
+Implementado em 2026-06-04:
+
+- tipos de dominio em `frontend/src/types/crmCockpit.ts`;
+- regras puras em `frontend/src/lib/crm/cockpitRules.ts`;
+- testes de dominio em `frontend/src/lib/crm/cockpitRules.test.ts`;
+- service `frontend/src/services/crmCockpitService.ts`;
+- componentes `CockpitTabs`, `LeadAdvancedFilters`, `TodayWorkQueue`,
+  `Lead360Panel` e `LeadCsvImportPanel`;
+- abas Kanban, Lista, Hoje, Calendario e Fontes no `CrmWorkspace`;
+- preview de importacao CSV com contagem de linhas validas e invalidas;
+- ranking de oportunidades de hoje por follow-up, temperatura, urgencia e
+  tempo parado;
+- resumo de fontes de leads para preparar atribuicao/MROI;
+- painel 360 do lead com dados, proximas acoes, tarefas e timeline.
+
+Migration planejada/implementada no repositorio:
+
+- `supabase/migrations/20260604010000_crm_commercial_cockpit.sql`
+
+Probe:
+
+- `supabase/probes/20260604010000_crm_commercial_cockpit.sql`
+
+Limite operacional:
+
+- a migration e o probe ainda precisam ser executados no Supabase alvo;
+- a validacao local do Supabase depende do Docker Desktop/daemon disponivel.
 
 As regras ficam em:
 
@@ -305,6 +341,37 @@ Implementadas por `supabase/migrations/20260603230000_crm_governance_by_contract
 Probe:
 
 - `supabase/probes/20260603230000_crm_governance_by_contract.sql`
+
+### Tabelas do Cockpit Comercial Usavel
+
+Implementadas por `supabase/migrations/20260604010000_crm_commercial_cockpit.sql`:
+
+- `lead_stage_history`
+- `lead_tags`
+- `lead_tag_assignments`
+- `lead_loss_reasons`
+- `lead_duplicates`
+- `lead_saved_views`
+- `lead_imports`
+- `lead_import_rows`
+- `lead_next_actions`
+- `crm_activity_calendar_entries`
+
+Campos adicionados em `leads`:
+
+- `whatsapp_phone`
+- `city`
+- `state`
+- `segment`
+- `interest`
+- `temperature`
+- `urgency`
+- `consent_lgpd`
+- `whatsapp_opt_in`
+- `email_opt_in`
+- `competitor`
+- `objections`
+- `current_stage_entered_at`
 
 ### Correcao de Exposicao da Data API
 

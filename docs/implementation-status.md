@@ -1,6 +1,6 @@
 # YUX OS Implementation Status
 
-Updated: 2026-06-03
+Updated: 2026-06-04
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -33,6 +33,7 @@ the target Supabase/Vercel environments.
 | Finance basic | Implemented in repo | `/finance`, `/portal/finance` | `20260601220000_basic_finance.sql`, `financeService`, `FinanceWorkspace`, `PortalFinanceWorkspace`, `financeRules` | Accounts receivable only. No payment gateway, fiscal issuance, bank reconciliation, or automated billing. Migration/probes still need target DB execution. |
 | Support basic | Implemented in repo | `/support`, `/portal/support` | `20260601230000_basic_support.sql`, `supportService`, `SupportWorkspace`, `PortalSupportWorkspace`, `supportRules` | Contract-based tickets and messages only. No omnichannel ticket conversion, attachments, FAQ/knowledge base, or advanced SLA calendar. Migration/probes still need target DB execution. |
 | CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/crm` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades, `20260603215128_expose_platform_base_tables_to_data_api.sql` | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. Loading fallback fixed after `organizations` 401 report. |
+| CRM ideal phase 1 commercial cockpit | Implemented in repo | `/leads`, `/portal/crm` | `20260604010000_crm_commercial_cockpit.sql`, `crmCockpitService`, `cockpitRules`, `CockpitTabs`, `TodayWorkQueue`, `Lead360Panel`, `LeadCsvImportPanel` | Adds tabs, filters, Today queue, calendar, sources, CSV preview, tags/import/action schema. Supabase migration/probe still need target execution. |
 | Sector funnels and blueprints | Implemented in repo | `/blueprints` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, blueprint application rules | Provides reusable sector templates and contract application runs. |
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
@@ -136,6 +137,34 @@ Not complete:
 - real user invitation lifecycle through Supabase Auth;
 - advanced sales dashboard by seller/team;
 - AI scoring and full CRM redesign beyond this governance foundation.
+
+### CRM Ideal Phase 1 Commercial Cockpit
+
+Implemented:
+
+- CRM cockpit tabs: Kanban, Lista, Hoje, Calendario and Fontes;
+- advanced lead filters for search, stage, source, temperature and stalled
+  opportunities;
+- Today work queue ranked by follow-up, temperature, urgency and stage age;
+- lead 360 panel with profile, next actions, tasks and timeline;
+- CSV import preview with valid/invalid row counts;
+- source summary inside the CRM workspace;
+- domain rules for stage age, stalled leads, next-day ranking, loss reason
+  requirement, duplicate detection, CSV preview and saved-view filtering;
+- `crmCockpitService` for snapshots, saved views, imports, stage history, tags
+  and next actions;
+- Supabase migration/probe for `lead_stage_history`, `lead_tags`,
+  `lead_tag_assignments`, `lead_loss_reasons`, `lead_duplicates`,
+  `lead_saved_views`, `lead_imports`, `lead_import_rows`, `lead_next_actions`
+  and `crm_activity_calendar_entries`.
+
+Not complete:
+
+- target Supabase application of `20260604010000_crm_commercial_cockpit.sql`;
+- target probe execution for `supabase/probes/20260604010000_crm_commercial_cockpit.sql`;
+- drag-and-drop enhancements beyond the existing Kanban move behavior;
+- fully persisted CSV execution UI with file upload storage;
+- AI-based next best action, which belongs to CRM ideal phase 2.
 
 ### Commercial Proposals And Conversion
 
@@ -264,6 +293,8 @@ Known validation limitation:
   Authentication protects the preview deployment.
 - Local Supabase reset for CRM governance could not run in this session because
   Docker Desktop was unavailable or not connected to the Windows Docker daemon.
+- Local Supabase reset for CRM ideal phase 1 could not run for the same Docker
+  daemon limitation.
 
 ## Pending Operational Work
 
