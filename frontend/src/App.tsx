@@ -39,6 +39,7 @@ import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { AdminHubPage } from '@/pages/platform/AdminHubPage'
 import { AdminAiPage } from '@/pages/platform/AdminAiPage'
 import { AdminEmailPage } from '@/pages/platform/AdminEmailPage'
+import { AdminHealthPage } from '@/pages/platform/AdminHealthPage'
 import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
 import { AdminModuleGovernancePage } from '@/pages/platform/AdminModuleGovernancePage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
@@ -81,6 +82,7 @@ function App() {
             <Route path="admin/integrations" element={<AdminIntegrationsPage />} />
             <Route path="admin/email" element={<AdminEmailPage />} />
             <Route path="admin/ai" element={<AdminAiPage />} />
+            <Route path="admin/health" element={<AdminHealthPage />} />
             <Route path="admin/modules-governance" element={<AdminModuleGovernancePage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="packages" element={<PackagesPage />} />
