@@ -559,7 +559,7 @@ git commit -m "feat: add intelligent automation foundation"
 - Create: `supabase/migrations/20260604070000_smtp2go_email_hub.sql`
 - Create: `supabase/probes/20260604070000_smtp2go_email_hub.sql`
 
-- [ ] **Step 1: Write failing email rule tests**
+- [x] **Step 1: Write failing email rule tests**
 
 Create `frontend/src/lib/email/emailDeliveryRules.test.ts`:
 
@@ -614,7 +614,7 @@ describe('emailDeliveryRules', () => {
 })
 ```
 
-- [ ] **Step 2: Create email types**
+- [x] **Step 2: Create email types**
 
 Create `frontend/src/types/emailDelivery.ts`:
 
@@ -638,7 +638,7 @@ export interface EmailSendEligibility {
 }
 ```
 
-- [ ] **Step 3: Implement rules**
+- [x] **Step 3: Implement rules**
 
 Create `frontend/src/lib/email/emailDeliveryRules.ts`:
 
@@ -666,7 +666,7 @@ export function sanitizeEmailForPortal<T extends Record<string, unknown>>(input:
 }
 ```
 
-- [ ] **Step 4: Add SMTP2GO schema**
+- [x] **Step 4: Add SMTP2GO schema**
 
 Create migration `supabase/migrations/20260604070000_smtp2go_email_hub.sql` with:
 
@@ -766,7 +766,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_usage_counters TO authentic
 NOTIFY pgrst, 'reload schema';
 ```
 
-- [ ] **Step 5: Add probe**
+- [x] **Step 5: Add probe**
 
 Create `supabase/probes/20260604070000_smtp2go_email_hub.sql`:
 
@@ -788,7 +788,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 6: Validate**
+- [x] **Step 6: Validate**
 
 Run:
 
@@ -799,7 +799,10 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+Execution note: `npm test -- src/lib/email/emailDeliveryRules.test.ts` and
+`npm run type-check` passed.
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/types/emailDelivery.ts frontend/src/lib/email/emailDeliveryRules.ts frontend/src/lib/email/emailDeliveryRules.test.ts supabase/migrations/20260604070000_smtp2go_email_hub.sql supabase/probes/20260604070000_smtp2go_email_hub.sql
