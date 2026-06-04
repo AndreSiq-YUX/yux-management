@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { AutomationSequence, AutomationSequenceChannel, AutomationSequenceStatus } from '@/types/automationSequence'
+import type { AutomationSequence, AutomationSequenceChannel, AutomationSequenceStatus, AutomationSequenceStepKind } from '@/types/automationSequence'
 
 export const buildSequencePayload = (input: {
   organizationId: string
@@ -73,5 +73,85 @@ export const automationSequenceService = {
       supabase.from('crm_sequences').insert(buildSequencePayload(input)).select(sequenceSelect).single(),
     )
     return mapAutomationSequence(data)
+  },
+
+  async updateSequence(sequenceId: string, input: Partial<Parameters<typeof buildSequencePayload>[0]>) {
+    const patch: Record<string, unknown> = {}
+    if (input.name !== undefined) patch.name = input.name.trim()
+    if (input.description !== undefined) patch.description = input.description || null
+    if (input.channel !== undefined) patch.channel = input.channel
+    if (input.sectorTemplateKey !== undefined) patch.sector_template_key = input.sectorTemplateKey || null
+    if (input.conversionGoal !== undefined) patch.conversion_goal = input.conversionGoal || null
+
+    const data = await requireData<any>(
+      supabase.from('crm_sequences').update(patch).eq('id', sequenceId).select(sequenceSelect).single(),
+    )
+    return mapAutomationSequence(data)
+  },
+
+  async deleteSequence(sequenceId: string) {
+    const { error } = await supabase.from('crm_sequences').delete().eq('id', sequenceId)
+    if (error) throw error
+  },
+
+  async setSequenceStatus(sequenceId: string, status: AutomationSequenceStatus) {
+    const data = await requireData<any>(
+      supabase.from('crm_sequences').update({ status }).eq('id', sequenceId).select(sequenceSelect).single(),
+    )
+    return mapAutomationSequence(data)
+  },
+
+  async addStep(sequenceId: string, input: {
+    stepKind: AutomationSequenceStepKind
+    channel?: 'email' | 'whatsapp'
+    delayMinutes?: number
+    subject?: string
+    body?: string
+    templateId?: string
+    requiresHumanApproval?: boolean
+  }) {
+    const data = await requireData<any>(
+      supabase.from('crm_sequence_steps').insert({
+        sequence_id: sequenceId,
+        step_kind: input.stepKind,
+        channel: input.channel || null,
+        delay_minutes: input.delayMinutes ?? 0,
+        subject: input.subject || null,
+        body: input.body || null,
+        template_id: input.templateId || null,
+        requires_human_approval: input.requiresHumanApproval ?? false,
+        is_active: true,
+      }).select().single(),
+    )
+    return data
+  },
+
+  async updateStep(stepId: string, input: Partial<{
+    stepKind: AutomationSequenceStepKind
+    channel?: 'email' | 'whatsapp'
+    delayMinutes: number
+    subject?: string
+    body?: string
+    requiresHumanApproval: boolean
+    isActive: boolean
+  }>) {
+    const patch: Record<string, unknown> = {}
+    if (input.stepKind !== undefined) patch.step_kind = input.stepKind
+    if (input.channel !== undefined) patch.channel = input.channel
+    if (input.delayMinutes !== undefined) patch.delay_minutes = input.delayMinutes
+    if (input.subject !== undefined) patch.subject = input.subject || null
+    if (input.body !== undefined) patch.body = input.body || null
+    if (input.requiresHumanApproval !== undefined) patch.requires_human_approval = input.requiresHumanApproval
+    if (input.isActive !== undefined) patch.is_active = input.isActive
+
+    const data = await requireData<any>(
+      supabase.from('crm_sequence_steps').update(patch).eq('id', stepId).select().single(),
+    )
+    return data
+  },
+
+  async deleteStep(stepId: string) {
+    const { error } = await supabase.from('crm_sequence_steps').delete().eq('id', stepId)
+    if (error) throw error
   },
 }

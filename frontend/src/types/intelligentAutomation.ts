@@ -11,7 +11,7 @@ export type AutomationModule =
 
 export type AutomationKind = 'flow' | 'sequence'
 export type AutomationBuilderMode = 'guided' | 'technical'
-export type AutomationRiskLevel = 'low' | 'medium' | 'high'
+export type AutomationRiskLevel = 'low' | 'medium' | 'high' | 'test'
 export type AutomationPublishStatus = 'draft' | 'active' | 'paused' | 'error' | 'archived'
 
 export interface AutomationCatalogTrigger {

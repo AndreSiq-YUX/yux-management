@@ -1,6 +1,6 @@
 # YUX OS Implementation Status
 
-Updated: 2026-06-04
+Updated: 2026-06-04 (automations P0/P1 UX improvements: drag-and-drop, validation, confirmations, onboarding, timeline)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -42,8 +42,8 @@ the target Supabase/Vercel environments.
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
 | Real WhatsApp provider path | Implemented in repo | `/omnichannel`, `/portal/omnichannel` | `20260601300000_whatsapp_provider_path.sql`, WhatsApp provider helper, receive/dispatch Edge Functions | Adds Meta WhatsApp webhook normalization, signature validation, token state and manual outbound path. |
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
-| Flow Builder Lite | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Adds trigger/condition/action flows and execution history for commercial actions. |
-| Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, SMTP2GO Edge Functions | Replaces the previous external automation phase with native YUX automations and SMTP2GO as shared email infrastructure for all modules. Supabase reset still blocked locally by Docker availability. |
+| Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
+| Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `AutomationDashboard`, `AutomationGuidedBuilder`, `AutomationSimulationPanel`, `AutomationVersionPanel`, `AutomationDryRunToggle`, `AiActionPreview`, `CrmIntegrationPreview`, `AutomationAuditTrail`, `AutomationRealtime`, `ConfirmDialog`, `AutomationOnboarding`, `Tooltip`, `automationValidation`, `SequencesWorkspace` timeline, SMTP2GO Edge Functions | Full automation workspace with visual builder (When/If/Then), drag-and-drop action reordering, real-time validation, confirmation dialogs, first-time onboarding, timeline visualization, tooltips, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, real-time and dry-run mode. Supabase reset still blocked locally by Docker availability. |
 | Operational reports and MROI | Implemented in repo | `/reports`, `/portal/reports` | `20260601330000_operational_reports.sql`, `reportService`, report workspaces | Aggregates funnel, campaign, landing page, proposal, conversation, project and activity metrics with portal-safe output. |
 | Portal commercial view | Implemented in repo | `/portal` | `PortalDashboardPage`, navigation rules/tests | Portal dashboard now highlights enabled commercial modules only, including leads, conversations, landing pages, campaigns and reports. |
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, CI workflow, latest CI run for `709212f` | GitHub Actions passed on latest support commit. Vercel preview succeeded but routes are protected by Vercel Authentication. |
@@ -256,6 +256,51 @@ Not complete:
 - scheduled aggregation jobs for continuously refreshing rollups/snapshots;
 - production QA with real campaign, landing page, proposal and finance data.
 
+### Intelligent Automations Workspace
+
+Implemented:
+
+- full CRUD for automation flows, triggers, conditions and actions;
+- visual builder with When/If/Then paradigm and interactive editors;
+- trigger picker grouped by module (9 modules, 15 triggers);
+- condition builder with field/operator/value and 6 operators;
+- action builder with 13 action types and type-specific payload forms;
+- flow selection in sidebar with search, status filter and status counts;
+- flow duplicate and delete operations;
+- flow publish with automatic version creation;
+- automation dashboard with metrics cards (active flows, executions, success rate, last error);
+- dashboard charts: pie chart for status distribution, bar chart for top 5 flows;
+- simulation panel with event picker, JSON payload editor and local dry-run;
+- simulation result display with trigger match, condition results, planned actions;
+- simulation persistence in `automation_simulation_runs`;
+- sector template catalog (clinic, real_estate, dealer, workshop, agency);
+- template preview in creation dialog with block counts;
+- create flow from template with auto-populated triggers/conditions/actions;
+- flow versioning panel with history, active version badge and rollback;
+- bulk operations with checkbox selection, bulk enable/disable/delete;
+- CRM integration preview for change_stage, assign_owner, create_task;
+- AI action preview for ai_classify_lead, ai_generate_message, ai_generate_proposal;
+- audit trail with creation date, last update, published version, sector template;
+- real-time execution updates via Supabase Realtime;
+- dry-run mode toggle per flow using risk_level 'test';
+- execution timeline with expandable details, duration, retry button;
+- risk assessment display (low/medium/high/test);
+- domain rules for simulation, trigger matching, condition evaluation;
+- typed `automationService` with full CRUD and version/simulation methods;
+- **P0: Drag-and-drop action reordering** in the builder with native HTML5 drag events;
+- **P0: Real-time validation** with errors/warnings for triggers, conditions, actions and full flows;
+- **P0: Confirmation dialogs** for destructive operations (delete, publish) with destructive variant;
+- **P1: First-time onboarding** with 3-step guided tour explaining When/If/Then paradigm;
+- **P1: Timeline visualization** for sequences showing steps chronologically with delay indicators;
+- **P1: Tooltips** on builder step headers for better field explanation.
+
+Not complete:
+
+- target Supabase application of automation migrations (already listed in pending operational work);
+- email settings configuration UI (SMTP2GO backend ready, frontend placeholder);
+- flow import/export beyond sector templates;
+- advanced version diff comparison (current implementation shows version list only).
+
 ### Commercial Proposals And Conversion
 
 Implemented:
@@ -348,7 +393,23 @@ Implemented:
 - Campaigns and Ads API-first core with protected provider mutation runs;
 - Real WhatsApp Provider Path for inbound Meta webhooks and manual outbound;
 - Configurable AI Assistant settings wired into AI processing metadata;
-- Flow Builder Lite with published trigger/condition/action execution;
+- Full Automation Workspace with visual builder (When/If/Then), CRUD for triggers/conditions/actions, flow selection, search/filter, duplicate/delete, publish with versioning;
+- Automation Dashboard with metrics (active flows, executions, success rate) and charts (status distribution, top 5 flows);
+- Automation Simulation with event picker, JSON payload editor, local dry-run evaluation and result persistence;
+- Sector Templates (clinic, real_estate, dealer, workshop, agency) with pre-filled triggers/conditions/actions;
+- Flow Versioning with history panel, rollback to previous published versions;
+- Bulk Operations with checkbox selection, bulk enable/disable/delete;
+- CRM Integration Preview for change_stage, assign_owner, create_task actions;
+- AI Action Preview for ai_classify_lead, ai_generate_message, ai_generate_proposal;
+- Audit Trail showing creation date, last update, published version, sector template;
+- Real-time execution updates via Supabase Realtime;
+- Dry-run mode toggle per flow (test mode without executing actions);
+- Drag-and-drop action reordering in the builder for intuitive flow design;
+- Real-time validation with errors/warnings for triggers, conditions, actions and full flows;
+- Confirmation dialogs for destructive operations (delete, publish) to prevent accidents;
+- First-time onboarding with 3-step guided tour explaining When/If/Then paradigm;
+- Timeline visualization for sequences showing steps chronologically with delay indicators;
+- Tooltips on builder step headers for better field explanation;
 - Operational Reports with CPL, MROI, landing conversion, proposals, response
   time, owner activity, and portal-safe reporting;
 - Portal Commercial View with module-gated commercial summary cards.
@@ -363,11 +424,18 @@ Not complete:
   `20260601210000`;
 - production provider credentials/OAuth for Meta, Google, WhatsApp, and n8n;
 - authenticated browser QA against the target Supabase/Vercel environments;
-- CI/deploy verification after the commercial MVP commit.
+- CI/deploy verification after the commercial MVP commit;
+- email settings configuration UI (SMTP2GO backend ready, frontend placeholder).
 
 ## Current Validation Evidence
 
-Latest support commit validation:
+Latest automations P0/P1 validation:
+
+- `npm test`: 60 test files, 240 tests passed.
+- `npm run type-check`: passed with zero errors.
+- `npx eslint` on modified automations files: passed with zero errors.
+
+Previous support commit validation:
 
 - `npm test`: 20 test files, 101 tests passed.
 - `npm run type-check`: passed.
@@ -404,6 +472,10 @@ steps still required before treating the app as live-ready:
   - `20260604010000_crm_commercial_cockpit.sql`;
   - `20260604020000_crm_whatsapp_ai.sql`;
   - `20260604030000_crm_proposals_closing.sql`;
+  - `20260604050000_intelligent_automations_foundation.sql`;
+  - `20260604060000_automation_sequences.sql`;
+  - `20260604070000_smtp2go_email_hub.sql`;
+  - `20260604080000_automation_sector_templates.sql`;
 - run the corresponding probes in `supabase/probes/`;
 - verify portal/internal flows with authenticated test users after migrations;
 - confirm current Supabase project activity/status before diagnosing remote SQL
@@ -430,8 +502,8 @@ Short version:
 - add Landing Pages as tracked, approvable funnel assets;
 - add Campaigns And Ads with API-first Meta/Google creation and management;
 - add configurable AI assistant settings;
-- add a Flow Builder Lite;
-- add simple operational reports.
+- add simple operational reports;
+- complete email settings configuration UI.
 
 Finance and support should stay basic unless a real client forces deeper
 requirements.

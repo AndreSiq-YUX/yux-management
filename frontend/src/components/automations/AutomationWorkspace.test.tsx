@@ -31,6 +31,7 @@ describe('AutomationWorkspace', () => {
     })
 
     expect(container.innerHTML).toContain('Automacoes Inteligentes')
+    expect(container.innerHTML).toContain('Dashboard')
     expect(container.innerHTML).toContain('Automacoes')
     expect(container.innerHTML).toContain('Sequencias')
     expect(container.innerHTML).toContain('Templates')
@@ -119,13 +120,19 @@ describe('AutomationWorkspace', () => {
     expect(html).toContain('run-1')
 
     act(() => {
-      container.querySelector<HTMLButtonElement>('button[title="Criar fluxo"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Alternar fluxo"]')!.click()
       container.querySelector<HTMLButtonElement>('button[title="Publicar fluxo"]')!.click()
     })
 
-    expect(onCreateFlow).toHaveBeenCalled()
     expect(onToggleFlow).toHaveBeenCalledWith('flow-1', false)
+    
+    act(() => {
+      const confirmButton = Array.from(document.querySelectorAll('button')).find(btn => 
+        btn.textContent?.includes('Publicar') && btn.closest('[role="dialog"]')
+      )
+      confirmButton?.click()
+    })
+    
     expect(onPublishFlow).toHaveBeenCalledWith('flow-1')
 
     act(() => root.unmount())

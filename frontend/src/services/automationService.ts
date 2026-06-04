@@ -164,9 +164,142 @@ export const automationService = {
     return mapAutomationFlow(data)
   },
 
+  async updateFlow(flowId: string, input: Partial<Pick<AutomationFlowInput, 'name' | 'description' | 'sectorTemplateKey' | 'dailyRunLimit' | 'requiresHumanApproval' | 'riskLevel'>>) {
+    const patch: Record<string, unknown> = {}
+    if (input.name !== undefined) patch.name = input.name.trim()
+    if (input.description !== undefined) patch.description = input.description || null
+    if (input.sectorTemplateKey !== undefined) patch.sector_template_key = input.sectorTemplateKey || null
+    if (input.dailyRunLimit !== undefined) patch.daily_run_limit = input.dailyRunLimit
+    if (input.requiresHumanApproval !== undefined) patch.requires_human_approval = input.requiresHumanApproval
+    if (input.riskLevel !== undefined) patch.risk_level = input.riskLevel
+    const data = await requireData<any>(
+      supabase.from('automation_flows').update(patch).eq('id', flowId).select(flowSelect).single(),
+    )
+    return mapAutomationFlow(data)
+  },
+
+  async deleteFlow(flowId: string) {
+    const { error } = await supabase.from('automation_flows').delete().eq('id', flowId)
+    if (error) throw error
+  },
+
+  async updateTrigger(triggerId: string, input: Pick<AutomationTrigger, 'triggerType' | 'config'>) {
+    const data = await requireData<any>(
+      supabase.from('automation_triggers').update({
+        trigger_type: input.triggerType,
+        config: input.config || {},
+      }).eq('id', triggerId).select().single(),
+    )
+    return data
+  },
+
+  async deleteTrigger(triggerId: string) {
+    const { error } = await supabase.from('automation_triggers').delete().eq('id', triggerId)
+    if (error) throw error
+  },
+
+  async updateCondition(conditionId: string, input: { field: string; operator: string; value?: unknown }) {
+    const data = await requireData<any>(
+      supabase.from('automation_conditions').update({
+        field: input.field,
+        operator: input.operator,
+        value: input.value ?? null,
+      }).eq('id', conditionId).select().single(),
+    )
+    return data
+  },
+
+  async deleteCondition(conditionId: string) {
+    const { error } = await supabase.from('automation_conditions').delete().eq('id', conditionId)
+    if (error) throw error
+  },
+
+  async updateAction(actionId: string, input: { actionType?: string; orderIndex?: number; payload?: Record<string, unknown> }) {
+    const patch: Record<string, unknown> = {}
+    if (input.actionType !== undefined) patch.action_type = input.actionType
+    if (input.orderIndex !== undefined) patch.order_index = input.orderIndex
+    if (input.payload !== undefined) patch.payload = input.payload
+    const data = await requireData<any>(
+      supabase.from('automation_actions').update(patch).eq('id', actionId).select().single(),
+    )
+    return data
+  },
+
+  async deleteAction(actionId: string) {
+    const { error } = await supabase.from('automation_actions').delete().eq('id', actionId)
+    if (error) throw error
+  },
+
   async dispatchEvent(event: AutomationEvent) {
     const { data, error } = await supabase.functions.invoke('dispatch-crm-automation', { body: { event } })
     if (error) throw error
     return data
+  },
+
+  async saveSimulationRun(input: {
+    organizationId: string
+    flowId: string
+    eventType: string
+    samplePayload: Record<string, unknown>
+    matched: boolean
+    conditionResults: unknown[]
+    plannedActions: unknown[]
+    blockedReasons: string[]
+  }) {
+    const data = await requireData<any>(
+      supabase.from('automation_simulation_runs').insert({
+        organization_id: input.organizationId,
+        flow_id: input.flowId,
+        event_type: input.eventType,
+        sample_payload: input.samplePayload,
+        matched: input.matched,
+        condition_results: input.conditionResults,
+        planned_actions: input.plannedActions,
+        blocked_reasons: input.blockedReasons,
+      }).select().single(),
+    )
+    return data
+  },
+
+  async getFlowVersions(flowId: string) {
+    const data = await requireData<any[]>(
+      supabase
+        .from('automation_flow_versions')
+        .select('*')
+        .eq('flow_id', flowId)
+        .order('version_number', { ascending: false }),
+    )
+    return data || []
+  },
+
+  async createFlowVersion(input: {
+    flowId: string
+    versionNumber: number
+    snapshot: Record<string, unknown>
+    status?: 'draft' | 'published' | 'archived'
+  }) {
+    const data = await requireData<any>(
+      supabase
+        .from('automation_flow_versions')
+        .insert(buildFlowVersionPayload(input))
+        .select()
+        .single(),
+    )
+    return data
+  },
+
+  async setActiveVersion(flowId: string, versionId: string, versionNumber: number) {
+    const data = await requireData<any>(
+      supabase
+        .from('automation_flows')
+        .update({
+          active_version_id: versionId,
+          published_version: versionNumber,
+        })
+        .eq('id', flowId)
+        .select(flowSelect)
+        .single(),
+    )
+    return mapAutomationFlow(data)
   },
 }
