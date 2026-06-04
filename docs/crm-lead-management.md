@@ -430,6 +430,24 @@ Implementado:
 - Atribui o novo lead ao primeiro estagio ordenado do pipeline selecionado.
 - Persiste contexto de atribuicao e padroes de tipo de origem.
 
+### Automacoes Inteligentes Nativas
+
+Planejado:
+
+- o CRM passa a depender de automacoes nativas do YUX Hub;
+- fluxos e sequencias podem reagir a eventos de CRM, WhatsApp, landing pages,
+  propostas, campanhas, financeiro, suporte e projetos;
+- emails de automacao devem usar a camada SMTP2GO compartilhada com subcontas
+  por cliente, limites, opt-out, suppressions e webhooks;
+- a area `/automations` deve evoluir de Flow Builder Lite para Automacoes
+  Inteligentes, com abas de Automacoes, Sequencias, Templates, Execucoes e
+  Configuracoes.
+
+Specs e plano:
+
+- `docs/superpowers/specs/2026-06-04-yux-intelligent-automations-smtp2go-design.md`
+- `docs/superpowers/plans/2026-06-04-yux-intelligent-automations-smtp2go.md`
+
 ### Cards e Linhas de Leads
 
 Implementado:
