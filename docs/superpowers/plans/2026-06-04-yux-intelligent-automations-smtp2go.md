@@ -982,7 +982,7 @@ git commit -m "feat: add smtp2go email functions"
 - Modify: `frontend/src/components/automations/AutomationWorkspace.tsx`
 - Test: `frontend/src/components/automations/AutomationWorkspace.test.tsx`
 
-- [ ] **Step 1: Add UI test**
+- [x] **Step 1: Add UI test**
 
 In `frontend/src/components/automations/AutomationWorkspace.test.tsx`, add:
 
@@ -1001,7 +1001,7 @@ it('renders intelligent automation navigation areas', () => {
 })
 ```
 
-- [ ] **Step 2: Update workspace title and navigation**
+- [x] **Step 2: Update workspace title and navigation**
 
 Modify `AutomationWorkspace.tsx` header and add tab buttons:
 
@@ -1017,7 +1017,7 @@ const sections = ['Automacoes', 'Sequencias', 'Templates', 'Execucoes', 'Configu
 </div>
 ```
 
-- [ ] **Step 3: Add guided builder component**
+- [x] **Step 3: Add guided builder component**
 
 Create `frontend/src/components/automations/AutomationGuidedBuilder.tsx`:
 
@@ -1040,7 +1040,7 @@ function Step({ title, value }: { title: string; value: string }) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -1051,7 +1051,11 @@ npm run type-check
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+Execution note: added guided, technical, executions, simulation and email
+settings panels. `npm test -- src/components/automations/AutomationWorkspace.test.tsx`
+and `npm run type-check` passed.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/components/automations
