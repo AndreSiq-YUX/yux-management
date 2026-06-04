@@ -147,4 +147,45 @@ describe('adminPlatformService', () => {
       metadata: {},
     }))
   })
+
+  it('summarizes SMTP2GO administration counters for today', async () => {
+    vi.setSystemTime(new Date('2026-06-04T14:30:00Z'))
+
+    const usageEqMock = vi.fn(async (column: string, value: string) => ({
+      data: [
+        { sent_count: 12, failed_count: 1 },
+        { sent_count: '8', failed_count: '2' },
+      ],
+      error: null,
+      column,
+      value,
+    }))
+    const countTable = (count: number) => ({
+      select: vi.fn(async () => ({ data: null, error: null, count })),
+    })
+
+    fromMock
+      .mockReturnValueOnce(countTable(2))
+      .mockReturnValueOnce(countTable(5))
+      .mockReturnValueOnce({
+        select: vi.fn(() => ({ eq: usageEqMock })),
+      })
+      .mockReturnValueOnce(countTable(7))
+
+    await expect(adminPlatformService.getSmtp2GoSummary()).resolves.toEqual({
+      connectionCount: 2,
+      subaccountCount: 5,
+      sentToday: 20,
+      failedToday: 3,
+      suppressedCount: 7,
+    })
+
+    expect(fromMock).toHaveBeenNthCalledWith(1, 'email_provider_connections')
+    expect(fromMock).toHaveBeenNthCalledWith(2, 'smtp2go_subaccounts')
+    expect(fromMock).toHaveBeenNthCalledWith(3, 'email_usage_counters')
+    expect(fromMock).toHaveBeenNthCalledWith(4, 'email_suppression_entries')
+    expect(usageEqMock).toHaveBeenCalledWith('period_date', '2026-06-04')
+
+    vi.useRealTimers()
+  })
 })

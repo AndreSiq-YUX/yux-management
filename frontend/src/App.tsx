@@ -37,6 +37,7 @@ import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
 import { PortalCrmSettingsPage } from '@/pages/client-portal/PortalCrmSettingsPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { AdminHubPage } from '@/pages/platform/AdminHubPage'
+import { AdminEmailPage } from '@/pages/platform/AdminEmailPage'
 import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
@@ -76,6 +77,7 @@ function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="admin" element={<AdminHubPage />} />
             <Route path="admin/integrations" element={<AdminIntegrationsPage />} />
+            <Route path="admin/email" element={<AdminEmailPage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="packages" element={<PackagesPage />} />
             <Route path="modules" element={<ModulesPage />} />

@@ -118,3 +118,11 @@ export interface AdminHubSummary {
   failingProviderCount: number
   nearLimitCount: number
 }
+
+export interface Smtp2GoAdminSummary {
+  connectionCount: number
+  subaccountCount: number
+  sentToday: number
+  failedToday: number
+  suppressedCount: number
+}

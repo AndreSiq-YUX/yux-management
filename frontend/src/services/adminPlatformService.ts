@@ -9,6 +9,7 @@ import type {
   PlatformProviderStatus,
   PlatformProviderType,
   PlatformUsageCounter,
+  Smtp2GoAdminSummary,
 } from '@/types/adminPlatform'
 
 const numberValue = (value: number | string | null | undefined) => Number(value || 0)
@@ -250,6 +251,29 @@ export class AdminPlatformService {
       providers: providers.data || [],
       usage: usage.data || [],
     })
+  }
+
+  async getSmtp2GoSummary(): Promise<Smtp2GoAdminSummary> {
+    const today = new Date().toISOString().slice(0, 10)
+    const [connections, subaccounts, usage, suppressions] = await Promise.all([
+      supabase.from('email_provider_connections').select('id', { count: 'exact', head: true }),
+      supabase.from('smtp2go_subaccounts').select('id', { count: 'exact', head: true }),
+      supabase.from('email_usage_counters').select('sent_count, failed_count').eq('period_date', today),
+      supabase.from('email_suppression_entries').select('id', { count: 'exact', head: true }),
+    ])
+
+    if (connections.error) throw connections.error
+    if (subaccounts.error) throw subaccounts.error
+    if (usage.error) throw usage.error
+    if (suppressions.error) throw suppressions.error
+
+    return {
+      connectionCount: connections.count || 0,
+      subaccountCount: subaccounts.count || 0,
+      sentToday: (usage.data || []).reduce((sum: number, row: any) => sum + numberValue(row.sent_count), 0),
+      failedToday: (usage.data || []).reduce((sum: number, row: any) => sum + numberValue(row.failed_count), 0),
+      suppressedCount: suppressions.count || 0,
+    }
   }
 }
 
