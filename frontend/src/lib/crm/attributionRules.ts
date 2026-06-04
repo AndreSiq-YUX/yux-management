@@ -150,6 +150,72 @@ export function sanitizePortalAttribution(dashboard: CrmAttributionDashboard): P
   }
 }
 
+export function buildAttributionDashboard(input: {
+  organizationId: string
+  crmInstanceId?: string
+  periodStart: string
+  periodEnd: string
+  rollups: LeadSourceRollup[]
+  alerts?: CrmMroiAlert[]
+}): CrmAttributionDashboard {
+  const hydrated = input.rollups.map(rollup => {
+    const {
+      cpl: _cpl,
+      opportunityRate: _opportunityRate,
+      conversionRate: _conversionRate,
+      mroi: _mroi,
+      ...rawRollup
+    } = rollup
+    return hydrateRollupMetrics(rawRollup)
+  })
+  const leads = hydrated.reduce((sum, item) => sum + item.leads, 0)
+  const opportunities = hydrated.reduce((sum, item) => sum + item.opportunities, 0)
+  const sales = hydrated.reduce((sum, item) => sum + item.sales, 0)
+  const clientVisibleCost = hydrated.reduce((sum, item) => sum + item.clientVisibleCost, 0)
+  const attributedRevenue = hydrated.reduce((sum, item) => sum + item.attributedRevenue, 0)
+  const syntheticRollup = hydrateRollupMetrics({
+    organizationId: input.organizationId,
+    crmInstanceId: input.crmInstanceId,
+    sourceId: 'total',
+    sourceKey: 'total',
+    sourceName: 'Total',
+    sourceKind: 'manual',
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+    leads,
+    opportunities,
+    sales,
+    mediaCost: hydrated.reduce((sum, item) => sum + item.mediaCost, 0),
+    operationalCost: hydrated.reduce((sum, item) => sum + item.operationalCost, 0),
+    clientVisibleCost,
+    attributedRevenue,
+  })
+
+  return {
+    organizationId: input.organizationId,
+    crmInstanceId: input.crmInstanceId,
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+    totals: {
+      leads,
+      opportunities,
+      sales,
+      clientVisibleCost,
+      attributedRevenue,
+      cpl: syntheticRollup.cpl,
+      conversionRate: syntheticRollup.conversionRate,
+      mroi: syntheticRollup.mroi,
+    },
+    sources: hydrated,
+    alerts: input.alerts?.length ? input.alerts : buildMroiAlerts({
+      rollups: hydrated,
+      highCplThreshold: 250,
+      lowConversionThreshold: 5,
+      highConversionThreshold: 25,
+    }),
+  }
+}
+
 export function buildMroiAlerts(input: {
   rollups: LeadSourceRollup[]
   highCplThreshold: number

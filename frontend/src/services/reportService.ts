@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { calculateCpl, calculateMroi, calculateStageConversion, sanitizeReportForPortal } from '@/lib/reports/reportRules'
+import { buildAttributionDashboard, mapLeadSourceRollup, mapMroiAlert } from '@/services/crmAttributionService'
 import type {
   CampaignReportMetric,
   LandingPageReportMetric,
@@ -21,6 +22,8 @@ export function buildOperationalReport(input: {
   conversations?: Row[]
   interactions?: Row[]
   projects?: Row[]
+  attributionRollups?: Row[]
+  attributionAlerts?: Row[]
 }): OperationalReport {
   const leads = input.leads || []
   const campaigns = input.campaigns || []
@@ -29,6 +32,8 @@ export function buildOperationalReport(input: {
   const conversations = input.conversations || []
   const interactions = input.interactions || []
   const projects = input.projects || []
+  const attributionRollups = input.attributionRollups || []
+  const attributionAlerts = input.attributionAlerts || []
 
   const leadsBySource = Object.entries(leads.reduce<Record<string, number>>((acc, lead) => {
     const source = lead.source_kind || lead.source || 'manual'
@@ -81,7 +86,7 @@ export function buildOperationalReport(input: {
     return acc
   }, {})).map(([owner, activities]) => ({ owner, activities } satisfies OwnerActivityMetric))
 
-  return {
+  const report: OperationalReport = {
     organizationId: input.organizationId,
     generatedAt: new Date().toISOString(),
     leadsBySource,
@@ -94,6 +99,18 @@ export function buildOperationalReport(input: {
     ownerActivity,
     projectDelivery: [{ label: 'Projetos ativos', value: projects.filter(project => project.status !== 'completed' && project.status !== 'cancelled').length }],
   }
+
+  if (attributionRollups.length > 0) {
+    report.crmAttribution = buildAttributionDashboard({
+      organizationId: input.organizationId,
+      periodStart: String(attributionRollups[0].period_start),
+      periodEnd: String(attributionRollups[0].period_end),
+      rollups: attributionRollups.map(mapLeadSourceRollup),
+      alerts: attributionAlerts.map(mapMroiAlert),
+    })
+  }
+
+  return report
 }
 
 export function mapReportSnapshot(row: Row) {
@@ -121,9 +138,19 @@ async function readTable(table: string, organizationId: string) {
   return data || []
 }
 
+async function readAttributionRollups(organizationId: string) {
+  const { data, error } = await supabase
+    .from('lead_source_rollups')
+    .select('*, lead_sources(*)')
+    .eq('organization_id', organizationId)
+    .order('period_end', { ascending: false })
+  if (error) return []
+  return data || []
+}
+
 export const reportService = {
   async getOperationalReport(organizationId: string): Promise<OperationalReport> {
-    const [leads, campaigns, landingPages, proposals, conversations, interactions, projects] = await Promise.all([
+    const [leads, campaigns, landingPages, proposals, conversations, interactions, projects, attributionRollups, attributionAlerts] = await Promise.all([
       readTable('leads', organizationId),
       readTable('campaigns', organizationId),
       readTable('landing_pages', organizationId),
@@ -131,8 +158,10 @@ export const reportService = {
       readTable('conversations', organizationId),
       readTable('interactions', organizationId),
       readTable('projects', organizationId),
+      readAttributionRollups(organizationId),
+      readTable('crm_mroi_alerts', organizationId),
     ])
-    return buildOperationalReport({ organizationId, leads, campaigns, landingPages, proposals, conversations, interactions, projects })
+    return buildOperationalReport({ organizationId, leads, campaigns, landingPages, proposals, conversations, interactions, projects, attributionRollups, attributionAlerts })
   },
 
   async getPortalReport(organizationId: string): Promise<PortalOperationalReport> {

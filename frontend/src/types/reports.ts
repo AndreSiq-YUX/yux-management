@@ -1,3 +1,5 @@
+import type { CrmAttributionDashboard } from './crmAttribution'
+
 export interface ReportMetric {
   label: string
   value: number
@@ -56,6 +58,7 @@ export interface OperationalReport {
   proposalMetrics: ProposalReportMetric
   ownerActivity: OwnerActivityMetric[]
   projectDelivery: ReportMetric[]
+  crmAttribution?: CrmAttributionDashboard
 }
 
 export type PortalOperationalReport = Omit<OperationalReport, 'ownerActivity'> & {

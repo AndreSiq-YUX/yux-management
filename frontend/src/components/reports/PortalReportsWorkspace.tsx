@@ -1,5 +1,7 @@
 import { ReportSections } from './ReportsWorkspace'
+import { LeadSourcesDashboard } from '@/components/crm/LeadSourcesDashboard'
 import { sanitizeReportForPortal } from '@/lib/reports/reportRules'
+import { sanitizePortalAttribution } from '@/lib/crm/attributionRules'
 import type { OperationalReport, PortalOperationalReport } from '@/types/reports'
 
 export function PortalReportsWorkspace({ report }: { report: OperationalReport | PortalOperationalReport }) {
@@ -15,6 +17,7 @@ export function PortalReportsWorkspace({ report }: { report: OperationalReport |
         <div className="rounded-md border bg-white p-3"><p className="text-xs text-gray-500">CPL medio</p><p className="text-xl font-semibold">R$ {averageCpl(safeReport).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p></div>
         <div className="rounded-md border bg-white p-3"><p className="text-xs text-gray-500">Propostas aprovadas</p><p className="text-xl font-semibold">{safeReport.proposalMetrics.approvalRate}%</p></div>
       </div>
+      {safeReport.crmAttribution && <LeadSourcesDashboard dashboard={sanitizePortalAttribution(safeReport.crmAttribution)} portalSafe />}
       <ReportSections report={{ ...safeReport, ownerActivity: [] }} />
     </div>
   )

@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { isPersistedOrganizationId } from '@/lib/crm/followUpRules'
+import { buildAttributionDashboard } from '@/lib/crm/attributionRules'
 import { applyCockpitFilters } from '@/lib/crm/cockpitRules'
 import { calculatePipelineSummary, sortPipelineStages } from '@/lib/crm/pipelineRules'
 import { CockpitTabs, type CockpitTab } from '@/components/crm/CockpitTabs'
 import { LeadAdvancedFilters } from '@/components/crm/LeadAdvancedFilters'
 import { LeadCsvImportPanel } from '@/components/crm/LeadCsvImportPanel'
 import { Lead360Panel } from '@/components/crm/Lead360Panel'
+import { LeadSourcesDashboard } from '@/components/crm/LeadSourcesDashboard'
 import { LeadDetailPanel } from '@/components/crm/LeadDetailPanel'
 import { LeadKanbanBoard } from '@/components/crm/LeadKanbanBoard'
 import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
@@ -28,6 +30,7 @@ import type { AutomationExecution, CrmGovernanceContext, CrmInteraction, CrmLead
 import type { LeadConversationView } from '@/components/crm/LeadConversationPanel'
 import type { CrmCockpitFilterState, CrmCockpitLead } from '@/types/crmCockpit'
 import type { CrmMessageTemplate, CrmQuickReply, LeadAiFieldSuggestion, LeadAiInsight, LeadResponseSuggestion, LeadSlaEvent } from '@/types/crmAi'
+import type { LeadSourceRollup } from '@/types/crmAttribution'
 
 const initialLeadForm = { name: '', email: '', phone: '', company: '', source: 'Manual', score: 0, value: '' }
 
@@ -57,6 +60,12 @@ export function CrmWorkspace() {
     ...lead,
     stageKey: stageById.get(lead.stageId)?.key,
   }))), [filteredLeads, stageById])
+  const sourceDashboard = useMemo(() => buildLeadSourcesDashboardFromLeads({
+    organizationId: organization?.id || '',
+    crmInstanceId: governance?.instance.id,
+    leads: filteredLeads,
+    stageById,
+  }), [organization?.id, governance?.instance.id, filteredLeads, stageById])
 
   const loadPipelines = useCallback(async () => {
     const organizationId = organization?.id
@@ -210,7 +219,7 @@ export function CrmWorkspace() {
     {activeTab === 'list' && <LeadList stages={stages} leads={filteredLeads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />}
     {activeTab === 'today' && <TodayWorkQueue leads={filteredLeads} onSelectLead={setSelectedLead} />}
     {activeTab === 'calendar' && <CalendarView leads={filteredLeads} onSelectLead={setSelectedLead} />}
-    {activeTab === 'sources' && <SourceSummary leads={filteredLeads} />}
+    {activeTab === 'sources' && <LeadSourcesDashboard dashboard={sourceDashboard} />}
     <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>Novo lead</DialogTitle></DialogHeader><form className="space-y-3" onSubmit={createLead}>
       <Input placeholder="Nome" required value={leadForm.name} onChange={event => setLeadForm({ ...leadForm, name: event.target.value })} /><Input placeholder="Email" required type="email" value={leadForm.email} onChange={event => setLeadForm({ ...leadForm, email: event.target.value })} />
       <div className="grid grid-cols-2 gap-3"><Input placeholder="Telefone" value={leadForm.phone} onChange={event => setLeadForm({ ...leadForm, phone: event.target.value })} /><Input placeholder="Empresa" value={leadForm.company} onChange={event => setLeadForm({ ...leadForm, company: event.target.value })} /></div>
@@ -317,36 +326,6 @@ function CalendarView({ leads, onSelectLead }: { leads: CrmLead[]; onSelectLead:
   )
 }
 
-function SourceSummary({ leads }: { leads: CrmLead[] }) {
-  const rows = Array.from(leads.reduce((map, lead) => {
-    const key = lead.source || 'Sem origem'
-    const current = map.get(key) || { source: key, leads: 0, value: 0, won: 0 }
-    current.leads += 1
-    current.value += lead.value || 0
-    if (lead.status === 'won') current.won += 1
-    map.set(key, current)
-    return map
-  }, new Map<string, { source: string; leads: number; value: number; won: number }>()).values())
-
-  return (
-    <div className="rounded-md border bg-white">
-      <div className="border-b px-4 py-3">
-        <h2 className="font-semibold text-gray-900">Fontes de leads</h2>
-        <p className="text-sm text-gray-500">Resumo operacional por origem para preparar atribuicao e MROI.</p>
-      </div>
-      {rows.map(row => (
-        <div key={row.source} className="grid grid-cols-[1fr_120px_120px_180px] border-b px-4 py-3 text-sm last:border-b-0">
-          <span className="font-medium text-gray-950">{row.source}</span>
-          <span>{row.leads} leads</span>
-          <span>{row.won} ganhos</span>
-          <span>{row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-        </div>
-      ))}
-      {rows.length === 0 && <p className="px-4 py-6 text-sm text-gray-500">Nenhum lead para consolidar.</p>}
-    </div>
-  )
-}
-
 function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId: string; lead?: CrmLead; onClose: () => void }) {
   const [interactions, setInteractions] = useState<CrmInteraction[]>([]), [tasks, setTasks] = useState<CrmTask[]>([]), [sequences, setSequences] = useState<CrmSequence[]>([]), [enrollments, setEnrollments] = useState<CrmSequenceEnrollment[]>([]), [executions, setExecutions] = useState<AutomationExecution[]>([])
   const [crmConversations, setCrmConversations] = useState<LeadConversationView[]>([]), [aiInsights, setAiInsights] = useState<LeadAiInsight[]>([]), [fieldSuggestions, setFieldSuggestions] = useState<LeadAiFieldSuggestion[]>([]), [responseSuggestions, setResponseSuggestions] = useState<LeadResponseSuggestion[]>([]), [slaEvents, setSlaEvents] = useState<LeadSlaEvent[]>([]), [quickReplies, setQuickReplies] = useState<CrmQuickReply[]>([]), [templates, setTemplates] = useState<CrmMessageTemplate[]>([])
@@ -387,4 +366,66 @@ function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId
     <TabsContent value="automations" className="space-y-3">{executions.length === 0 && <p className="text-sm text-gray-500">Nenhuma execucao registrada.</p>}{executions.map(item => <div key={item.id} className="flex justify-between gap-3 rounded-md border p-3 text-sm"><div><p>{item.actionType} - {item.status}</p><p className="text-xs text-gray-500">Agendado para {new Date(item.scheduledAt).toLocaleString('pt-BR')}</p>{item.lastError && <p className="mt-1 text-xs text-red-600">{item.lastError}</p>}</div>{item.status === 'failed' && <Button size="sm" variant="outline" onClick={() => crmService.retryExecution(item.id).then(refresh)}><RefreshCw className="mr-1 h-3 w-3" />Tentar novamente</Button>}</div>)}</TabsContent>
     <TabsContent value="commercial"><LeadCommercialPanel lead={lead} /></TabsContent>
   </Tabs>}</DialogContent></Dialog>
+}
+
+function buildLeadSourcesDashboardFromLeads(input: {
+  organizationId: string
+  crmInstanceId?: string
+  leads: CrmLead[]
+  stageById: Map<string, NonNullable<CrmPipeline['stages']>[number]>
+}) {
+  const now = new Date()
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+  const periodEnd = now.toISOString().slice(0, 10)
+  const grouped = input.leads.reduce((map, lead) => {
+    const sourceName = lead.source || 'Manual'
+    const sourceKey = sourceName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'manual'
+    const stage = input.stageById.get(lead.stageId)
+    const current = map.get(sourceKey) || {
+      organizationId: input.organizationId,
+      crmInstanceId: input.crmInstanceId,
+      sourceId: lead.attributionContext?.campaignId || sourceKey,
+      sourceKey,
+      sourceName,
+      sourceKind: normalizeAttributionSourceKind(lead.sourceKind),
+      periodStart,
+      periodEnd,
+      leads: 0,
+      opportunities: 0,
+      sales: 0,
+      mediaCost: 0,
+      operationalCost: 0,
+      clientVisibleCost: 0,
+      attributedRevenue: 0,
+      cpl: 0,
+      opportunityRate: 0,
+      conversionRate: 0,
+      mroi: 0,
+      campaignId: lead.attributionContext?.campaignId,
+      landingPageId: lead.attributionContext?.landingPageId,
+    } satisfies LeadSourceRollup
+
+    current.leads += 1
+    if ((lead.value || 0) > 0 || (stage?.orderIndex ?? 0) > 0) current.opportunities += 1
+    if (lead.status === 'won' || stage?.isWon) {
+      current.sales += 1
+      current.attributedRevenue += lead.value || 0
+    }
+    map.set(sourceKey, current)
+    return map
+  }, new Map<string, LeadSourceRollup>())
+
+  return buildAttributionDashboard({
+    organizationId: input.organizationId,
+    crmInstanceId: input.crmInstanceId,
+    periodStart,
+    periodEnd,
+    rollups: Array.from(grouped.values()),
+  })
+}
+
+function normalizeAttributionSourceKind(kind: CrmLead['sourceKind']): LeadSourceRollup['sourceKind'] {
+  if (kind === 'whatsapp_cta') return 'whatsapp'
+  if (kind === 'paid_campaign' || kind === 'landing_page' || kind === 'organic' || kind === 'referral' || kind === 'manual') return kind
+  return 'manual'
 }

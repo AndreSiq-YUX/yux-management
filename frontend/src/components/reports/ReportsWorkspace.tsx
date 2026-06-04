@@ -1,4 +1,5 @@
 import type { OperationalReport } from '@/types/reports'
+import { LeadSourcesDashboard } from '@/components/crm/LeadSourcesDashboard'
 
 const money = (value: number) => `R$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
 
@@ -15,6 +16,7 @@ export function ReportsWorkspace({ report }: { report: OperationalReport }) {
         <Metric title="Propostas aprovadas" value={`${report.proposalMetrics.approvalRate}%`} />
         <Metric title={report.projectDelivery[0]?.label || 'Projetos'} value={String(report.projectDelivery[0]?.value || 0)} />
       </div>
+      {report.crmAttribution && <LeadSourcesDashboard dashboard={report.crmAttribution} />}
       <ReportSections report={report} showOwnerActivity />
     </div>
   )
