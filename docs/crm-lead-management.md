@@ -432,16 +432,30 @@ Implementado:
 
 ### Automacoes Inteligentes Nativas
 
-Planejado:
+Implementado em 2026-06-04:
 
-- o CRM passa a depender de automacoes nativas do YUX Hub;
-- fluxos e sequencias podem reagir a eventos de CRM, WhatsApp, landing pages,
-  propostas, campanhas, financeiro, suporte e projetos;
-- emails de automacao devem usar a camada SMTP2GO compartilhada com subcontas
-  por cliente, limites, opt-out, suppressions e webhooks;
-- a area `/automations` deve evoluir de Flow Builder Lite para Automacoes
-  Inteligentes, com abas de Automacoes, Sequencias, Templates, Execucoes e
-  Configuracoes.
+- catalogo de eventos para CRM, WhatsApp/omnichannel, landing pages,
+  propostas, projetos, financeiro, campanhas, relatorios e suporte;
+- regras puras para publicar automacoes, estimar risco, exigir opt-in em email
+  de marketing e sanitizar payloads de execucao;
+- metadados de automacao em `automation_flows`, versoes publicadas e execucoes
+  de simulacao;
+- sequencias comerciais com canal `email`, `whatsapp` ou `mixed`, meta de
+  conversao, passos multicanal e painel inicial em `/automations`;
+- catalogo de templates setoriais para clinicas, imobiliarias, revendas,
+  oficinas e agencias;
+- hub SMTP2GO com conexoes por organizacao, subcontas, limites, suppressions,
+  contadores de uso, fila de envio, eventos e webhooks;
+- Edge Functions `send-email` e `smtp2go-webhook` mantendo a API key SMTP2GO no
+  servidor.
+
+Ainda depende de operacao/ambiente:
+
+- aplicar as migrations novas no Supabase alvo;
+- configurar variaveis `SMTP2GO_API_KEY` ou referencias por cliente;
+- criar/subvincular subcontas reais no SMTP2GO;
+- ativar webhooks SMTP2GO apontando para a Edge Function;
+- executar QA autenticado em `/automations` depois do deploy.
 
 Specs e plano:
 

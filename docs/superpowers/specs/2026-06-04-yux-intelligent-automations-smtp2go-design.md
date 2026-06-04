@@ -1,5 +1,22 @@
 # YUX Intelligent Automations + SMTP2GO Design
 
+## Status De Implementacao
+
+Implementado no repositorio em 2026-06-04:
+
+- fundacao nativa de automacoes com catalogo de eventos, risco, validacao de
+  publicacao, versoes e simulacoes;
+- sequencias comerciais multicanal e catalogo de templates setoriais;
+- hub SMTP2GO compartilhado com conexoes, subcontas, limites, suppressions,
+  eventos e contadores de uso;
+- Edge Functions `send-email` e `smtp2go-webhook`;
+- tela `/automations` evoluida para Automacoes Inteligentes com areas de
+  Automacoes, Sequencias, Templates, Execucoes e Configuracoes.
+
+Validacao local: testes focados, type-check, `deno check`, suite frontend,
+build frontend e tentativa de `supabase db reset --debug`. O reset Supabase
+permanece bloqueado neste ambiente porque o Docker Desktop nao esta acessivel.
+
 ## Objetivo
 
 Transformar a base atual de Flow Builder Lite, sequencias comerciais e historico

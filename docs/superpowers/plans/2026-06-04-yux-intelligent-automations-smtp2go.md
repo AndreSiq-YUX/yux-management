@@ -1188,7 +1188,7 @@ git commit -m "feat: add automation sequences foundation"
 - Modify: `docs/superpowers/specs/2026-06-04-yux-intelligent-automations-smtp2go-design.md`
 - Modify: `docs/superpowers/plans/2026-06-04-yux-intelligent-automations-smtp2go.md`
 
-- [ ] **Step 1: Update implementation status**
+- [x] **Step 1: Update implementation status**
 
 Add a status row to `docs/implementation-status.md`:
 
@@ -1196,7 +1196,7 @@ Add a status row to `docs/implementation-status.md`:
 | Intelligent automations and SMTP2GO email hub | Planned | `/automations` | `docs/superpowers/specs/2026-06-04-yux-intelligent-automations-smtp2go-design.md`, `docs/superpowers/plans/2026-06-04-yux-intelligent-automations-smtp2go.md` | Replaces the previous external automation phase with native YUX automations and SMTP2GO as shared email infrastructure. |
 ```
 
-- [ ] **Step 2: Update CRM lead management docs**
+- [x] **Step 2: Update CRM lead management docs**
 
 Add a short section:
 
@@ -1209,7 +1209,7 @@ campanhas, financeiro, suporte e projetos. Emails de automacao devem usar a
 camada SMTP2GO compartilhada com subcontas por cliente, limites e opt-out.
 ```
 
-- [ ] **Step 3: Run full validation**
+- [x] **Step 3: Run full validation**
 
 Run:
 
@@ -1221,7 +1221,11 @@ npm run build
 
 Expected: all pass. Known acceptable warnings: stale Browserslist/caniuse-lite and large chunks.
 
-- [ ] **Step 4: Run Supabase validation**
+Execution note: `npm test` passed with 60 files and 237 tests, `npm run
+type-check` passed, and `npm run build` passed with expected Browserslist/chunk
+warnings.
+
+- [x] **Step 4: Run Supabase validation**
 
 Run:
 
@@ -1231,7 +1235,10 @@ supabase db reset --debug
 
 Expected: migrations apply and probes can be run. If Docker is unavailable, record the exact Docker error as validation blocker.
 
-- [ ] **Step 5: Commit**
+Execution note: `supabase db reset --debug` was blocked by Docker:
+`open //./pipe/docker_engine: O sistema não pode encontrar o arquivo especificado.`
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/implementation-status.md docs/crm-lead-management.md docs/superpowers/specs/2026-06-04-yux-intelligent-automations-smtp2go-design.md docs/superpowers/plans/2026-06-04-yux-intelligent-automations-smtp2go.md
