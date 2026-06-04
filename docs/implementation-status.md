@@ -1,6 +1,6 @@
-# YUX OS Implementation Status
+# YUX Hub Implementation Status
 
-Updated: 2026-06-04 (automations P0/P1 UX improvements: drag-and-drop, validation, confirmations, onboarding, timeline)
+Updated: 2026-06-04 (Admin YUX Hub foundation: grouped sidebar, admin dashboard, integrations, SMTP2GO, IA/LLM, module governance, health)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -23,6 +23,7 @@ the target Supabase/Vercel environments.
 | Area | Status | Main Routes | Main Repo Evidence | Operational Notes |
 | --- | --- | --- | --- | --- |
 | Platform foundation | Implemented | `/dashboard`, platform shell | `20260531000000_yux_os_clean_baseline.sql`, `platformService`, module registry, platform store | Remote Supabase state must be checked before assuming all migrations are applied. |
+| Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | `20260604203319_yux_hub_admin_platform.sql`, `adminPlatformService`, grouped navigation, Admin Hub pages, `docs/admin-yux-hub.md` | Target Supabase still needs the admin platform migration applied before live data loads through the Data API. |
 | Contracts, packages, modules, portal context | Implemented | `/contracts`, `/packages`, `/modules`, `/portal` | `20260601000000_contracts_modules_portal.sql`, `20260601010000_contract_rls_policies.sql`, `ContractsPage`, `PackagesPage`, `ModulesPage`, `PortalDashboardPage` | Portal access derives from active contract and enabled modules. |
 | Portal RLS hardening | Implemented in repo | Portal routes | `20260601020000_harden_portal_rls.sql`, `20260601030000_secure_baseline_functions.sql`, `20260601040000_move_auth_trigger_private.sql` | Requires remote migration application/probes in target DB. |
 | Projects, tasks, deliverables, approvals | Implemented | `/projects`, `/portal/projects` | `20260601070000_project_delivery_approvals.sql` through `20260601100000_backfill_deliverable_approval_status.sql`, `ProjectsPage`, `PortalProjectsPage`, project components, `approvalRules` | Includes client-visible timeline and approval decisions. |
@@ -49,6 +50,37 @@ the target Supabase/Vercel environments.
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, CI workflow, latest CI run for `709212f` | GitHub Actions passed on latest support commit. Vercel preview succeeded but routes are protected by Vercel Authentication. |
 
 ## Implemented Functional Scope
+
+### Admin YUX Hub
+
+Implemented:
+
+- sidebar interna agrupada por Operacao, Comercial, Gestao YUX Hub,
+  Infraestrutura e Financeiro;
+- logo interno atualizado para YUX Hub;
+- painel central `/admin` com resumo administrativo e atalhos;
+- schema administrativo para limites por modulo, provedores globais,
+  integracoes por cliente, uso e auditoria;
+- `adminPlatformService` com mappers, resumo do Admin Hub, SMTP2GO, limites,
+  provedores, uso e auditoria;
+- pagina `/admin/integrations` para provedores globais;
+- pagina `/admin/email` para indicadores SMTP2GO;
+- pagina `/admin/ai` para governanca IA/LLM;
+- pagina `/admin/modules-governance` para CRM, Automacoes, Financeiro, Suporte,
+  Email e IA;
+- pagina `/admin/health` para provedores com falha, limites em atencao,
+  auditoria recente e clientes impactados;
+- painel de limites por modulo dentro de contratos;
+- documentacao operacional em `docs/admin-yux-hub.md`.
+
+Not complete:
+
+- target Supabase application of `20260604203319_yux_hub_admin_platform.sql`;
+- CRUD completo de provedores, credenciais e limites;
+- testes de conexao de provedores via edge functions;
+- provisionamento automatico de subcontas SMTP2GO;
+- politicas comerciais completas de custo/credito de IA por cliente;
+- alertas ativos e notificacoes administrativas.
 
 ### Platform Foundation
 
