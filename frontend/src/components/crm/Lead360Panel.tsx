@@ -1,8 +1,12 @@
 import { Badge } from '@/components/ui/badge'
 import { LeadDetailPanel } from '@/components/crm/LeadDetailPanel'
+import { LeadAiInsightPanel } from '@/components/crm/LeadAiInsightPanel'
+import { LeadConversationPanel, type LeadConversationView } from '@/components/crm/LeadConversationPanel'
+import { LeadResponseComposer } from '@/components/crm/LeadResponseComposer'
 import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
 import { LeadTimeline } from '@/components/crm/LeadTimeline'
 import type { CrmInteraction, CrmLead, CrmTask } from '@/types/crm'
+import type { CrmMessageTemplate, CrmQuickReply, LeadAiFieldSuggestion, LeadAiInsight, LeadResponseSuggestion, LeadSlaEvent } from '@/types/crmAi'
 import type { CrmNextAction } from '@/types/crmCockpit'
 
 interface Lead360PanelProps {
@@ -10,6 +14,14 @@ interface Lead360PanelProps {
   interactions: CrmInteraction[]
   tasks: CrmTask[]
   nextActions?: CrmNextAction[]
+  conversations?: LeadConversationView[]
+  aiInsights?: LeadAiInsight[]
+  fieldSuggestions?: LeadAiFieldSuggestion[]
+  responseSuggestions?: LeadResponseSuggestion[]
+  slaEvents?: LeadSlaEvent[]
+  quickReplies?: CrmQuickReply[]
+  templates?: CrmMessageTemplate[]
+  onSendSuggestion?: (suggestionId: string) => void
   taskTitle: string
   dueAt: string
   onTaskTitleChange: (value: string) => void
@@ -25,6 +37,14 @@ export function Lead360Panel({
   interactions,
   tasks,
   nextActions = [],
+  conversations = [],
+  aiInsights = [],
+  fieldSuggestions = [],
+  responseSuggestions = [],
+  slaEvents = [],
+  quickReplies = [],
+  templates = [],
+  onSendSuggestion,
   taskTitle,
   dueAt,
   onTaskTitleChange,
@@ -42,6 +62,11 @@ export function Lead360Panel({
         <Info label="Temperatura" value={lead.temperature || 'Nao definida'} />
         <Info label="Urgencia" value={lead.urgency || 'Nao definida'} />
       </section>
+      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <LeadConversationPanel conversations={conversations} slaEvents={slaEvents} />
+        <LeadAiInsightPanel lead={lead} insights={aiInsights} fieldSuggestions={fieldSuggestions} />
+      </section>
+      <LeadResponseComposer lead={lead} suggestions={responseSuggestions} quickReplies={quickReplies} templates={templates} onSendSuggestion={onSendSuggestion} />
       <section className="rounded-md border bg-white p-3">
         <div className="flex items-center justify-between gap-3">
           <h3 className="font-medium text-gray-900">Proximas acoes</h3>

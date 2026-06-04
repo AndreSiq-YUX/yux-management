@@ -1,17 +1,25 @@
 import { AlertTriangle, Flame, MessageCircle, Timer } from 'lucide-react'
 import { isLeadStalled, rankTodayLead } from '@/lib/crm/cockpitRules'
+import { isSlaBreached } from '@/lib/crm/conversationRules'
 import type { CrmCockpitLead } from '@/types/crmCockpit'
+import type { LeadSlaEvent } from '@/types/crmAi'
 
 interface TodayWorkQueueProps {
   leads: CrmCockpitLead[]
+  slaEvents?: LeadSlaEvent[]
   onSelectLead: (lead: CrmCockpitLead) => void
   now?: Date
 }
 
-export function TodayWorkQueue({ leads, onSelectLead, now = new Date() }: TodayWorkQueueProps) {
+export function TodayWorkQueue({ leads, slaEvents = [], onSelectLead, now = new Date() }: TodayWorkQueueProps) {
+  const breachedLeadIds = new Set(slaEvents.filter(event => isSlaBreached(event, now)).map(event => event.leadId))
   const ranked = [...leads]
     .filter(lead => (lead.status || 'open') === 'open')
-    .sort((a, b) => rankTodayLead(b, now) - rankTodayLead(a, now))
+    .sort((a, b) => (
+      rankTodayLead(b, now) + (breachedLeadIds.has(b.id) ? 150 : 0)
+    ) - (
+      rankTodayLead(a, now) + (breachedLeadIds.has(a.id) ? 150 : 0)
+    ))
     .slice(0, 12)
 
   return (
@@ -33,8 +41,8 @@ export function TodayWorkQueue({ leads, onSelectLead, now = new Date() }: TodayW
               <span className="text-xs text-gray-500">{lead.company || lead.email}</span>
             </span>
             <Status icon={Flame} label={lead.temperature === 'hot' ? 'Lead quente' : lead.temperature || 'Sem temperatura'} />
-            <Status icon={Timer} label={isLeadStalled(lead, 3, now) ? 'Negocio travado' : 'Em andamento'} />
-            <Status icon={MessageCircle} label={lead.nextFollowUpAt ? 'Follow-up' : 'Sem agenda'} />
+            <Status icon={Timer} label={breachedLeadIds.has(lead.id) ? 'SLA vencido' : isLeadStalled(lead, 3, now) ? 'Negocio travado' : 'Em andamento'} />
+            <Status icon={MessageCircle} label={lead.lastConversationAt ? 'Conversa aberta' : lead.nextFollowUpAt ? 'Follow-up' : 'Sem agenda'} />
           </button>
         ))}
         {ranked.length === 0 && (
