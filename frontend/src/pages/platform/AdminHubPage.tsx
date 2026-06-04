@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react'
 import { Activity, Bot, Boxes, Building2, FileCheck2, Mail, PlugZap } from 'lucide-react'
 import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
 import { AdminQuickActions } from '@/components/platform/admin/AdminQuickActions'
+import { adminPlatformService } from '@/services/adminPlatformService'
+import type { AdminHubSummary } from '@/types/adminPlatform'
 
 const quickActions = [
   {
@@ -30,6 +33,39 @@ const quickActions = [
 ]
 
 export function AdminHubPage() {
+  const [summary, setSummary] = useState<AdminHubSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadSummary() {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const result = await adminPlatformService.getAdminHubSummary()
+        if (active) setSummary(result)
+      } catch (error) {
+        console.error('Error loading Admin YUX Hub:', error)
+        if (active) setError('Nao foi possivel carregar o Admin YUX Hub.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadSummary()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const healthValue = summary
+    ? `${summary.failingProviderCount}/${summary.nearLimitCount}`
+    : '-'
+
   return (
     <div className="space-y-6">
       <div>
@@ -39,29 +75,37 @@ export function AdminHubPage() {
         </p>
       </div>
 
+      {loading && <p className="text-sm text-gray-600">Carregando administracao do YUX Hub...</p>}
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          {error}
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <AdminMetricCard
           label="Clientes"
-          value="-"
-          detail="Carregando via servico administrativo"
+          value={summary?.clientCount ?? '-'}
+          detail="Clientes cadastrados na plataforma"
           icon={Building2}
         />
         <AdminMetricCard
           label="Contratos ativos"
-          value="-"
+          value={summary?.activeContractCount ?? '-'}
           detail="Base comercial da plataforma"
           icon={FileCheck2}
         />
         <AdminMetricCard
           label="Modulos ativos"
-          value="-"
-          detail="CRM, Automacoes, Suporte e mais"
+          value={summary?.activeModuleCount ?? '-'}
+          detail="Modulos habilitados em contratos"
           icon={Boxes}
         />
         <AdminMetricCard
-          label="Saude"
-          value="-"
-          detail="Integracoes, IA, email e webhooks"
+          label="Saude operacional"
+          value={healthValue}
+          detail="Provedores com falha / limites proximos"
           icon={Activity}
         />
       </div>
