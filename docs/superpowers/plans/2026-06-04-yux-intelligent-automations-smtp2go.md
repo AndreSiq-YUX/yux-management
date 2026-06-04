@@ -135,7 +135,7 @@ git commit -m "docs: remove mautic automation phase"
 - Test: `frontend/src/lib/automations/intelligentAutomationRules.test.ts`
 - Modify: `frontend/src/types/automation.ts`
 
-- [ ] **Step 1: Write failing domain tests**
+- [x] **Step 1: Write failing domain tests**
 
 Create `frontend/src/lib/automations/intelligentAutomationRules.test.ts`:
 
@@ -186,7 +186,7 @@ describe('intelligentAutomationRules', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -196,7 +196,11 @@ npm test -- src/lib/automations/intelligentAutomationRules.test.ts
 
 Expected: FAIL because `intelligentAutomationRules.ts` does not exist.
 
-- [ ] **Step 3: Add types**
+Execution note: the focused failing run was skipped because the test, domain
+types and implementation were applied in the same checkpoint. Final focused
+test and type-check passed.
+
+- [x] **Step 3: Add types**
 
 Create `frontend/src/types/intelligentAutomation.ts`:
 
@@ -242,7 +246,7 @@ export interface IntelligentAutomationAction {
 }
 ```
 
-- [ ] **Step 4: Add trigger catalog**
+- [x] **Step 4: Add trigger catalog**
 
 Create `frontend/src/lib/automations/automationCatalog.ts`:
 
@@ -263,7 +267,7 @@ export const automationTriggerCatalog: AutomationCatalogTrigger[] = [
 ]
 ```
 
-- [ ] **Step 5: Implement rules**
+- [x] **Step 5: Implement rules**
 
 Create `frontend/src/lib/automations/intelligentAutomationRules.ts`:
 
@@ -335,7 +339,7 @@ export function sanitizeAutomationRunPayload(value: unknown): unknown {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -346,7 +350,7 @@ npm run type-check
 
 Expected: tests and type-check pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/types/intelligentAutomation.ts frontend/src/lib/automations/automationCatalog.ts frontend/src/lib/automations/intelligentAutomationRules.ts frontend/src/lib/automations/intelligentAutomationRules.test.ts
