@@ -430,6 +430,38 @@ Implementado:
 - Atribui o novo lead ao primeiro estagio ordenado do pipeline selecionado.
 - Persiste contexto de atribuicao e padroes de tipo de origem.
 
+### Automacoes Inteligentes Nativas
+
+Implementado em 2026-06-04:
+
+- catalogo de eventos para CRM, WhatsApp/omnichannel, landing pages,
+  propostas, projetos, financeiro, campanhas, relatorios e suporte;
+- regras puras para publicar automacoes, estimar risco, exigir opt-in em email
+  de marketing e sanitizar payloads de execucao;
+- metadados de automacao em `automation_flows`, versoes publicadas e execucoes
+  de simulacao;
+- sequencias comerciais com canal `email`, `whatsapp` ou `mixed`, meta de
+  conversao, passos multicanal e painel inicial em `/automations`;
+- catalogo de templates setoriais para clinicas, imobiliarias, revendas,
+  oficinas e agencias;
+- hub SMTP2GO com conexoes por organizacao, subcontas, limites, suppressions,
+  contadores de uso, fila de envio, eventos e webhooks;
+- Edge Functions `send-email` e `smtp2go-webhook` mantendo a API key SMTP2GO no
+  servidor.
+
+Ainda depende de operacao/ambiente:
+
+- aplicar as migrations novas no Supabase alvo;
+- configurar variaveis `SMTP2GO_API_KEY` ou referencias por cliente;
+- criar/subvincular subcontas reais no SMTP2GO;
+- ativar webhooks SMTP2GO apontando para a Edge Function;
+- executar QA autenticado em `/automations` depois do deploy.
+
+Specs e plano:
+
+- `docs/superpowers/specs/2026-06-04-yux-intelligent-automations-smtp2go-design.md`
+- `docs/superpowers/plans/2026-06-04-yux-intelligent-automations-smtp2go.md`
+
 ### Cards e Linhas de Leads
 
 Implementado:

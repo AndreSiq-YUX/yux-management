@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildFlowPayload, buildTriggerPayload, mapAutomationFlow } from './automationService'
+import { buildFlowPayload, buildFlowVersionPayload, buildTriggerPayload, mapAutomationFlow } from './automationService'
 
 describe('automationService helpers', () => {
   it('builds flow payloads with draft and enabled defaults', () => {
@@ -15,6 +15,11 @@ describe('automationService helpers', () => {
       sector_template_key: 'clinic',
       status: 'draft',
       is_enabled: true,
+      automation_kind: 'flow',
+      builder_mode: 'guided',
+      daily_run_limit: 500,
+      requires_human_approval: false,
+      risk_level: 'low',
     }))
   })
 
@@ -29,6 +34,21 @@ describe('automationService helpers', () => {
     })
   })
 
+  it('builds published flow version snapshots', () => {
+    expect(buildFlowVersionPayload({
+      flowId: 'flow-1',
+      versionNumber: 1,
+      snapshot: { triggers: [], conditions: [], actions: [] },
+      status: 'published',
+    })).toEqual({
+      flow_id: 'flow-1',
+      version_number: 1,
+      snapshot: { triggers: [], conditions: [], actions: [] },
+      status: 'published',
+      published_at: expect.any(String),
+    })
+  })
+
   it('maps flows with blocks and execution history', () => {
     expect(mapAutomationFlow({
       id: 'flow-1',
@@ -37,6 +57,13 @@ describe('automationService helpers', () => {
       description: 'Fluxo comercial',
       status: 'published',
       is_enabled: true,
+      automation_kind: 'flow',
+      builder_mode: 'technical',
+      published_version: 2,
+      active_version_id: 'version-2',
+      daily_run_limit: 250,
+      requires_human_approval: true,
+      risk_level: 'medium',
       sector_template_key: 'clinic',
       last_error: 'provider failed',
       created_at: '2026-06-03T12:00:00.000Z',
@@ -48,6 +75,12 @@ describe('automationService helpers', () => {
     })).toMatchObject({
       id: 'flow-1',
       status: 'published',
+      builderMode: 'technical',
+      publishedVersion: 2,
+      activeVersionId: 'version-2',
+      dailyRunLimit: 250,
+      requiresHumanApproval: true,
+      riskLevel: 'medium',
       triggers: [{ triggerType: 'lead.stage_changed' }],
       conditions: [{ field: 'source' }],
       actions: [{ actionType: 'create_task' }],

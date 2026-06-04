@@ -13,12 +13,30 @@ export const buildFlowPayload = (input: AutomationFlowInput) => ({
   sector_template_key: input.sectorTemplateKey || null,
   status: input.status || 'draft',
   is_enabled: input.isEnabled ?? true,
+  automation_kind: input.automationKind || 'flow',
+  builder_mode: input.builderMode || 'guided',
+  daily_run_limit: input.dailyRunLimit ?? 500,
+  requires_human_approval: input.requiresHumanApproval ?? false,
+  risk_level: input.riskLevel || 'low',
 })
 
 export const buildTriggerPayload = (flowId: string, input: Pick<AutomationTrigger, 'triggerType' | 'config'>) => ({
   flow_id: flowId,
   trigger_type: input.triggerType,
   config: input.config || {},
+})
+
+export const buildFlowVersionPayload = (input: {
+  flowId: string
+  versionNumber: number
+  snapshot: Record<string, unknown>
+  status?: 'draft' | 'published' | 'archived'
+}) => ({
+  flow_id: input.flowId,
+  version_number: input.versionNumber,
+  snapshot: input.snapshot,
+  status: input.status || 'draft',
+  published_at: input.status === 'published' ? new Date().toISOString() : null,
 })
 
 export function mapAutomationFlow(row: any): AutomationFlow {
@@ -29,6 +47,13 @@ export function mapAutomationFlow(row: any): AutomationFlow {
     description: row.description || undefined,
     status: row.status,
     isEnabled: Boolean(row.is_enabled),
+    automationKind: row.automation_kind || 'flow',
+    builderMode: row.builder_mode || 'guided',
+    publishedVersion: Number(row.published_version || 0),
+    activeVersionId: row.active_version_id || undefined,
+    dailyRunLimit: Number(row.daily_run_limit ?? 500),
+    requiresHumanApproval: Boolean(row.requires_human_approval),
+    riskLevel: row.risk_level || 'low',
     sectorTemplateKey: row.sector_template_key || undefined,
     lastError: row.last_error || undefined,
     triggers: (row.automation_triggers || []).map((trigger: any) => ({

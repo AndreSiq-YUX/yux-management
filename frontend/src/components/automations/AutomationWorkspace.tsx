@@ -1,6 +1,12 @@
-import { GitBranch, History, Play, Plus, Power, Workflow } from 'lucide-react'
+import { GitBranch, Play, Plus, Power, Workflow } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { AutomationExecutionsWorkspace } from './AutomationExecutionsWorkspace'
+import { AutomationGuidedBuilder } from './AutomationGuidedBuilder'
+import { AutomationSimulationPanel } from './AutomationSimulationPanel'
+import { AutomationTechnicalBuilder } from './AutomationTechnicalBuilder'
+import { EmailSettingsPanel } from './EmailSettingsPanel'
+import { SequencesWorkspace } from './SequencesWorkspace'
 import type { AutomationFlow } from '@/types/automation'
 import type { ReactNode } from 'react'
 
@@ -10,6 +16,8 @@ interface AutomationWorkspaceProps {
   onToggleFlow?: (flowId: string, isEnabled: boolean) => void
   onPublishFlow?: (flowId: string) => void
 }
+
+const sections = ['Automacoes', 'Sequencias', 'Templates', 'Execucoes', 'Configuracoes'] as const
 
 export function AutomationWorkspace({
   flows,
@@ -23,14 +31,22 @@ export function AutomationWorkspace({
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Flow Builder Lite</h1>
-          <p className="text-sm text-gray-600">Automacoes comerciais com trigger, condicoes, acoes e historico.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Automacoes Inteligentes</h1>
+          <p className="text-sm text-gray-600">Fluxos, sequencias, templates, execucoes e emails do YUX Hub.</p>
         </div>
         <Button type="button" title="Criar fluxo" onClick={() => onCreateFlow?.()}>
           <Plus className="mr-2 h-4 w-4" />
           Novo fluxo
         </Button>
       </header>
+
+      <nav className="flex flex-wrap gap-2 rounded-md border bg-white p-2" aria-label="Areas de automacao">
+        {sections.map(section => (
+          <Button key={section} type="button" size="sm" variant={section === 'Automacoes' ? 'secondary' : 'ghost'}>
+            {section}
+          </Button>
+        ))}
+      </nav>
 
       <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-white lg:grid-cols-[340px_1fr]">
         <aside className="border-r">
@@ -69,9 +85,16 @@ export function AutomationWorkspace({
         </aside>
 
         <main className="min-w-0 overflow-y-auto p-4">
-          {selected ? <FlowDetails flow={selected} /> : (
-            <section className="flex min-h-[640px] items-center justify-center text-sm text-gray-500">Nenhum fluxo configurado.</section>
-          )}
+          <div className="space-y-4">
+            <AutomationGuidedBuilder />
+            <AutomationTechnicalBuilder flow={selected} />
+            <AutomationSimulationPanel flow={selected} />
+            <SequencesWorkspace />
+            <EmailSettingsPanel />
+            {selected ? <FlowDetails flow={selected} /> : (
+              <section className="flex min-h-[320px] items-center justify-center rounded-md border bg-slate-50 text-sm text-gray-500">Nenhum fluxo configurado.</section>
+            )}
+          </div>
         </main>
       </div>
     </div>
@@ -100,21 +123,7 @@ function FlowDetails({ flow }: { flow: AutomationFlow }) {
         <BlockList title="Acoes" icon={<Play className="h-4 w-4" />} items={flow.actions.sort((left, right) => left.orderIndex - right.orderIndex).map(action => `${action.orderIndex}. ${action.actionType} ${formatPayload(action.payload)}`)} />
       </div>
 
-      <section className="rounded-md border bg-white">
-        <header className="flex items-center gap-2 border-b px-3 py-2 text-sm font-semibold text-gray-900">
-          <History className="h-4 w-4" />
-          Historico de execucao
-        </header>
-        <div className="divide-y">
-          {flow.executionRuns.length ? flow.executionRuns.map(run => (
-            <article key={run.id} className="grid gap-2 p-3 text-sm md:grid-cols-[160px_120px_1fr]">
-              <span>{run.id}</span>
-              <Badge variant={run.status === 'failed' ? 'destructive' : 'secondary'}>{run.status}</Badge>
-              <span className={run.lastError ? 'text-red-600' : 'text-gray-600'}>{run.lastError || run.eventType || run.startedAt || 'sem detalhe'}</span>
-            </article>
-          )) : <p className="p-3 text-sm text-gray-500">Sem execucoes registradas.</p>}
-        </div>
-      </section>
+      <AutomationExecutionsWorkspace runs={flow.executionRuns} />
     </div>
   )
 }

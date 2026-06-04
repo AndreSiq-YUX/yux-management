@@ -12,9 +12,9 @@ the target Supabase/Vercel environments.
 - Data/runtime: Supabase Auth, Postgres migrations, RLS, Edge Functions.
 - Active frontend data layer: `frontend/src/services/supabaseService.ts` plus
   module-specific services for newer slices.
-- Current development branch target: `origin/codex/phase-8-hardening`.
-- Latest published implementation commit at this status snapshot:
-  `cba9f98 docs: mark commercial mvp release complete`.
+- Current development branch target: `codex/yux-intelligent-automations-plan`.
+- Latest implementation commit before this status update:
+  `08bc8bc feat: add automation sequences foundation`.
 - CRM-specific reference:
   `docs/crm-lead-management.md`.
 
@@ -43,6 +43,7 @@ the target Supabase/Vercel environments.
 | Real WhatsApp provider path | Implemented in repo | `/omnichannel`, `/portal/omnichannel` | `20260601300000_whatsapp_provider_path.sql`, WhatsApp provider helper, receive/dispatch Edge Functions | Adds Meta WhatsApp webhook normalization, signature validation, token state and manual outbound path. |
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
 | Flow Builder Lite | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Adds trigger/condition/action flows and execution history for commercial actions. |
+| Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, SMTP2GO Edge Functions | Replaces the previous external automation phase with native YUX automations and SMTP2GO as shared email infrastructure for all modules. Supabase reset still blocked locally by Docker availability. |
 | Operational reports and MROI | Implemented in repo | `/reports`, `/portal/reports` | `20260601330000_operational_reports.sql`, `reportService`, report workspaces | Aggregates funnel, campaign, landing page, proposal, conversation, project and activity metrics with portal-safe output. |
 | Portal commercial view | Implemented in repo | `/portal` | `PortalDashboardPage`, navigation rules/tests | Portal dashboard now highlights enabled commercial modules only, including leads, conversations, landing pages, campaigns and reports. |
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, CI workflow, latest CI run for `709212f` | GitHub Actions passed on latest support commit. Vercel preview succeeded but routes are protected by Vercel Authentication. |

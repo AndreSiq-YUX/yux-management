@@ -22,6 +22,24 @@ const flow: AutomationFlow = {
 }
 
 describe('AutomationWorkspace', () => {
+  it('renders intelligent automation navigation areas', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<AutomationWorkspace flows={[]} />)
+    })
+
+    expect(container.innerHTML).toContain('Automacoes Inteligentes')
+    expect(container.innerHTML).toContain('Automacoes')
+    expect(container.innerHTML).toContain('Sequencias')
+    expect(container.innerHTML).toContain('Templates')
+    expect(container.innerHTML).toContain('Execucoes')
+    expect(container.innerHTML).toContain('Configuracoes')
+
+    act(() => root.unmount())
+  })
+
   it('renders flows, blocks, execution history, errors and template badges', () => {
     const container = document.createElement('div')
     const root = createRoot(container)

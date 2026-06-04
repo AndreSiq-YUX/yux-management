@@ -1,3 +1,5 @@
+import type { AutomationBuilderMode, AutomationKind, AutomationRiskLevel } from './intelligentAutomation'
+
 export type AutomationFlowStatus = 'draft' | 'published' | 'paused' | 'archived' | 'failed'
 export type AutomationRunStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'skipped'
 export type AutomationTriggerType =
@@ -14,9 +16,15 @@ export type AutomationActionType =
   | 'change_stage'
   | 'assign_owner'
   | 'send_whatsapp'
+  | 'send_email'
   | 'create_ticket'
   | 'update_field'
   | 'register_activity'
+  | 'webhook'
+  | 'call_api'
+  | 'ai_classify_lead'
+  | 'ai_generate_message'
+  | 'ai_generate_proposal'
   | string
 
 export interface AutomationTrigger {
@@ -56,6 +64,13 @@ export interface AutomationFlow {
   description?: string
   status: AutomationFlowStatus
   isEnabled: boolean
+  automationKind?: AutomationKind
+  builderMode?: AutomationBuilderMode
+  publishedVersion?: number
+  activeVersionId?: string
+  dailyRunLimit?: number
+  requiresHumanApproval?: boolean
+  riskLevel?: AutomationRiskLevel
   sectorTemplateKey?: string
   lastError?: string
   triggers: AutomationTrigger[]
@@ -87,4 +102,9 @@ export interface AutomationFlowInput {
   sectorTemplateKey?: string
   status?: AutomationFlowStatus
   isEnabled?: boolean
+  automationKind?: AutomationKind
+  builderMode?: AutomationBuilderMode
+  dailyRunLimit?: number
+  requiresHumanApproval?: boolean
+  riskLevel?: AutomationRiskLevel
 }
