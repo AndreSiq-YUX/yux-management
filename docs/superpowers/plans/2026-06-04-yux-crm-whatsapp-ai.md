@@ -32,54 +32,54 @@
 
 ### Task 1: Conversation And AI Rules
 
-- [ ] Add types for `LeadConversationLink`, `LeadAiInsight`, `LeadAiFieldSuggestion`, `LeadResponseSuggestion`, `LeadSlaEvent`, `LeadHandoffLock`, `CrmQuickReply`, `CrmMessageTemplate`.
-- [ ] Implement pure rules: `normalizePhoneForLeadMatch`, `scoreConversationLeadMatch`, `shouldCreateLeadFromConversation`, `shouldPauseAutomationForHuman`, `isSlaBreached`, `canSendTemplate`, `buildAiFieldPatch`.
-- [ ] Tests must cover duplicate match by phone, unsafe cross-instance match, SLA breach, opt-out send block, handoff automation pause and AI field patch confirmation.
-- [ ] Run `npm test -- src/lib/crm/conversationRules.test.ts`.
-- [ ] Run `npm run type-check`.
-- [ ] Commit: `git add frontend/src/types/crmAi.ts frontend/src/lib/crm/conversationRules.ts frontend/src/lib/crm/conversationRules.test.ts && git commit -m "feat: add crm conversation ai rules"`.
+- [x] Add types for `LeadConversationLink`, `LeadAiInsight`, `LeadAiFieldSuggestion`, `LeadResponseSuggestion`, `LeadSlaEvent`, `LeadHandoffLock`, `CrmQuickReply`, `CrmMessageTemplate`.
+- [x] Implement pure rules: `normalizePhoneForLeadMatch`, `scoreConversationLeadMatch`, `shouldCreateLeadFromConversation`, `shouldPauseAutomationForHuman`, `isSlaBreached`, `canSendTemplate`, `buildAiFieldPatch`.
+- [x] Tests must cover duplicate match by phone, unsafe cross-instance match, SLA breach, opt-out send block, handoff automation pause and AI field patch confirmation.
+- [x] Run `npm test -- src/lib/crm/conversationRules.test.ts`.
+- [x] Run `npm run type-check`.
+- [x] Commit: `git add frontend/src/types/crmAi.ts frontend/src/lib/crm/conversationRules.ts frontend/src/lib/crm/conversationRules.test.ts && git commit -m "feat: add crm conversation ai rules"`.
 
 ### Task 2: Schema And Probe
 
-- [ ] Create migration `supabase/migrations/20260604020000_crm_whatsapp_ai.sql`.
-- [ ] Add tables: `lead_conversation_links`, `lead_ai_insights`, `lead_ai_field_suggestions`, `lead_response_suggestions`, `lead_sla_events`, `lead_handoff_locks`, `crm_quick_replies`, `crm_message_templates`.
-- [ ] Extend `leads` with `ai_summary`, `intent`, `sentiment`, `urgency_detected_at`, `last_conversation_at`.
-- [ ] Add optional `lead_id` to `conversations` if not already present, with FK to `leads`.
-- [ ] Add RLS scoped by `crm_instance_id` and existing omnichannel access helpers.
-- [ ] Grant authenticated Data API access for new tables.
-- [ ] Create probe checking tables, grants, RLS and `conversations.lead_id`.
-- [ ] Run Supabase reset/probe when Docker is available.
-- [ ] Commit: `git add supabase/migrations/20260604020000_crm_whatsapp_ai.sql supabase/probes/20260604020000_crm_whatsapp_ai.sql && git commit -m "feat: add crm whatsapp ai schema"`.
+- [x] Create migration `supabase/migrations/20260604020000_crm_whatsapp_ai.sql`.
+- [x] Add tables: `lead_conversation_links`, `lead_ai_insights`, `lead_ai_field_suggestions`, `lead_response_suggestions`, `lead_sla_events`, `lead_handoff_locks`, `crm_quick_replies`, `crm_message_templates`.
+- [x] Extend `leads` with `ai_summary`, `intent`, `sentiment`, `urgency_detected_at`, `last_conversation_at`.
+- [x] Add optional `lead_id` to `conversations` if not already present, with FK to `leads`.
+- [x] Add RLS scoped by `crm_instance_id` and existing omnichannel access helpers.
+- [x] Grant authenticated Data API access for new tables.
+- [x] Create probe checking tables, grants, RLS and `conversations.lead_id`.
+- [x] Attempt Supabase reset/probe; blocked locally because Docker Desktop/daemon is unavailable.
+- [x] Commit: `git add supabase/migrations/20260604020000_crm_whatsapp_ai.sql supabase/probes/20260604020000_crm_whatsapp_ai.sql && git commit -m "feat: add crm whatsapp ai schema"`.
 
 ### Task 3: CRM Conversation Service
 
-- [ ] Implement `crmConversationService` with `findLeadMatchesForConversation`, `linkConversationToLead`, `createLeadFromConversation`, `getLeadConversations`, `getLeadAiInsights`, `confirmAiFieldSuggestion`, `createResponseSuggestion`, `sendSuggestedReply`, `startHumanHandoff`, `releaseHumanHandoff`.
-- [ ] Add service tests for payloads and mapping.
-- [ ] Preserve provider-neutral behavior: service records intent and calls existing omnichannel send functions only through safe service boundaries.
-- [ ] Run `npm test -- src/services/crmConversationService.test.ts`.
-- [ ] Run `npm run type-check`.
-- [ ] Commit: `git add frontend/src/services/crmConversationService.ts frontend/src/services/crmConversationService.test.ts && git commit -m "feat: add crm conversation service"`.
+- [x] Implement `crmConversationService` with `findLeadMatchesForConversation`, `linkConversationToLead`, `createLeadFromConversation`, `getLeadConversations`, `getLeadAiInsights`, `confirmAiFieldSuggestion`, `createResponseSuggestion`, `sendSuggestedReply`, `startHumanHandoff`, `releaseHumanHandoff`.
+- [x] Add service tests for payloads and mapping.
+- [x] Preserve provider-neutral behavior: service records intent and calls existing omnichannel send functions only through safe service boundaries.
+- [x] Run `npm test -- src/services/crmConversationService.test.ts`.
+- [x] Run `npm run type-check`.
+- [x] Commit: `git add frontend/src/services/crmConversationService.ts frontend/src/services/crmConversationService.test.ts && git commit -m "feat: add crm conversation service"`.
 
 ### Task 4: CRM UI Integration
 
-- [ ] Add `LeadConversationPanel.tsx` with conversation list and selected thread preview.
-- [ ] Add `LeadAiInsightPanel.tsx` with summary, intent, urgency, sentiment, objections and risk.
-- [ ] Add `LeadResponseComposer.tsx` with suggested response, quick replies, templates and opt-out warning.
-- [ ] Add `ConversationSlaBadge.tsx` for first-response and last-response state.
-- [ ] Integrate these panels into `Lead360Panel.tsx`.
-- [ ] Add unresolved conversations and SLA breaches to `TodayWorkQueue.tsx`.
-- [ ] Add tests using `createRoot` for panels and workspace states.
-- [ ] Run `npm test -- src/components/crm`.
-- [ ] Run `npm run type-check`.
-- [ ] Commit: `git add frontend/src/components/crm && git commit -m "feat: add crm whatsapp ai panels"`.
+- [x] Add `LeadConversationPanel.tsx` with conversation list and selected thread preview.
+- [x] Add `LeadAiInsightPanel.tsx` with summary, intent, urgency, sentiment, objections and risk.
+- [x] Add `LeadResponseComposer.tsx` with suggested response, quick replies, templates and opt-out warning.
+- [x] Add `ConversationSlaBadge.tsx` for first-response and last-response state.
+- [x] Integrate these panels into `Lead360Panel.tsx`.
+- [x] Add unresolved conversations and SLA breaches to `TodayWorkQueue.tsx`.
+- [x] Add tests using `createRoot` for panels and workspace states.
+- [x] Run `npm test -- src/components/crm`.
+- [x] Run `npm run type-check`.
+- [x] Commit: `git add frontend/src/components/crm && git commit -m "feat: add crm whatsapp ai panels"`.
 
 ### Task 5: AI Processing And Documentation
 
-- [ ] Update `supabase/functions/process-ai-message/index.ts` to store CRM AI insight metadata when a conversation is linked to a lead.
-- [ ] Add shared helper tests for the AI metadata payload if the function uses `_shared`.
-- [ ] Update `docs/crm-lead-management.md` and `docs/implementation-status.md`.
-- [ ] Run `npm test`, `npm run type-check`, `npm run build`, and relevant `deno test supabase/functions/_shared`.
-- [ ] Commit: `git add supabase/functions/process-ai-message docs/crm-lead-management.md docs/implementation-status.md && git commit -m "feat: connect crm ai insights to omnichannel"`.
+- [x] Update `supabase/functions/process-ai-message/index.ts` to store CRM AI insight metadata when a conversation is linked to a lead.
+- [x] Add shared helper tests for the AI metadata payload if the function uses `_shared`.
+- [x] Update `docs/crm-lead-management.md` and `docs/implementation-status.md`.
+- [x] Run `npm test`, `npm run type-check`, `npm run build`, and relevant `deno test supabase/functions/_shared`.
+- [x] Commit: `git add supabase/functions/process-ai-message docs/crm-lead-management.md docs/implementation-status.md && git commit -m "feat: connect crm ai insights to omnichannel"`.
 
 ## Success Criteria
 
