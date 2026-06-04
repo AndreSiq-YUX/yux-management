@@ -35,8 +35,10 @@ export function mapProposal(row: any): ProposalDraft {
     id: row.id,
     organizationId: row.organization_id,
     leadId: row.lead_id,
+    crmInstanceId: row.crm_instance_id || undefined,
     clientId: row.client_id || undefined,
     packageId: row.package_id,
+    recommendedPackageId: row.recommended_package_id || undefined,
     blueprintId: row.blueprint_id || undefined,
     assignedTo: row.assigned_to || undefined,
     status: row.status as ProposalStatus,
@@ -238,11 +240,13 @@ export const proposalService = {
     return (data || []).map(mapPriceRule)
   },
 
-  async createDraft(input: { organizationId: string; leadId: string; packageId: string; blueprintId?: string; title: string; billingCycle?: BillingCycle; selectedModuleKeys?: string[] }) {
+  async createDraft(input: { organizationId: string; leadId: string; packageId: string; crmInstanceId?: string; recommendedPackageId?: string; blueprintId?: string; title: string; billingCycle?: BillingCycle; selectedModuleKeys?: string[] }) {
     const { data, error } = await supabase.from('proposals').insert({
       organization_id: input.organizationId,
       lead_id: input.leadId,
+      crm_instance_id: input.crmInstanceId || null,
       package_id: input.packageId,
+      recommended_package_id: input.recommendedPackageId || null,
       blueprint_id: input.blueprintId || null,
       title: input.title,
       billing_cycle: input.billingCycle || 'monthly',

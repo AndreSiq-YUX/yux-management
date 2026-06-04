@@ -78,8 +78,10 @@ export interface ProposalDraft {
   id: string
   organizationId: string
   leadId: string
+  crmInstanceId?: string
   clientId?: string
   packageId: string
+  recommendedPackageId?: string
   blueprintId?: string
   assignedTo?: string
   status: ProposalStatus
