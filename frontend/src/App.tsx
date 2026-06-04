@@ -36,6 +36,7 @@ import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
 import { PortalCrmSettingsPage } from '@/pages/client-portal/PortalCrmSettingsPage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
+import { AdminHubPage } from '@/pages/platform/AdminHubPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
@@ -72,6 +73,7 @@ function App() {
         {user?.role !== 'client' && (
           <>
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="admin" element={<AdminHubPage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="packages" element={<PackagesPage />} />
             <Route path="modules" element={<ModulesPage />} />
