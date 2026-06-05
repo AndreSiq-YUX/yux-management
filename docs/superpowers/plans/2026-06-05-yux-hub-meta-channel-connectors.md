@@ -283,7 +283,7 @@ git commit -m "feat: add meta channel rules"
 - Create: `supabase/migrations/<generated>_meta_channel_connectors.sql`
 - Create: `supabase/probes/<generated>_meta_channel_connectors.sql`
 
-- [ ] **Step 1: Create migration with Supabase CLI**
+- [x] **Step 1: Create migration with Supabase CLI**
 
 Run:
 
@@ -293,7 +293,7 @@ supabase migration new meta_channel_connectors
 
 Use the generated path.
 
-- [ ] **Step 2: Add schema extensions and tables**
+- [x] **Step 2: Add schema extensions and tables**
 
 Add this SQL to the generated migration:
 
@@ -395,7 +395,7 @@ CREATE INDEX IF NOT EXISTS idx_channel_health_checks_connection
   ON public.channel_health_checks(connection_id, created_at DESC);
 ```
 
-- [ ] **Step 3: Add RLS policies and grants**
+- [x] **Step 3: Add RLS policies and grants**
 
 Append:
 
@@ -441,7 +441,7 @@ GRANT SELECT, INSERT ON public.channel_health_checks TO authenticated, service_r
 NOTIFY pgrst, 'reload schema';
 ```
 
-- [ ] **Step 4: Add SQL probe**
+- [x] **Step 4: Add SQL probe**
 
 Create `supabase/probes/<same_timestamp>_meta_channel_connectors.sql`:
 
@@ -493,7 +493,7 @@ END
 $$;
 ```
 
-- [ ] **Step 5: Run local validation and commit**
+- [x] **Step 5: Run local validation and commit**
 
 Run:
 
@@ -502,6 +502,8 @@ supabase migration list --local
 ```
 
 Expected: the generated migration appears locally.
+
+Execution note: `supabase migration list --local` was attempted on 2026-06-05, but the local Postgres instance was not running and Docker was not available in this environment. The migration remains scheduled for remote application and probe execution in Task 11.
 
 Commit:
 
