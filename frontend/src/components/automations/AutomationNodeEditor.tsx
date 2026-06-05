@@ -4,6 +4,8 @@ import {
   Handle,
   Position,
   ReactFlow,
+  type Edge,
+  type Node,
   useEdgesState,
   useNodesState,
   addEdge,
@@ -18,6 +20,13 @@ import { Button } from '@/components/ui/button'
 import { NodeConfigSidebar } from './NodeConfigSidebar'
 import { automationTriggerCatalog } from '@/lib/automations/automationCatalog'
 import type { AutomationFlow } from '@/types/automation'
+
+type AutomationGraphNodeData = Record<string, unknown>
+type AutomationGraphNode = Node<AutomationGraphNodeData, 'trigger' | 'condition' | 'action'>
+type AutomationGraphEdge = Edge
+
+const stringValue = (value: unknown) => typeof value === 'string' ? value : ''
+const recordValue = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
 interface AutomationNodeEditorProps {
   flow: AutomationFlow
@@ -36,24 +45,27 @@ const actionTypes = [
 ]
 
 // Custom Node: Trigger
-function TriggerNode({ data }: { data: any }) {
-  const triggerLabel = automationTriggerCatalog.find(t => t.key === data.triggerType)?.label || data.triggerType || 'Definir evento...'
+function TriggerNode({ data }: { data: AutomationGraphNodeData }) {
+  const triggerType = stringValue(data.triggerType)
+  const triggerLabel = automationTriggerCatalog.find(t => t.key === triggerType)?.label || triggerType || 'Definir evento...'
   return (
     <div className="rounded-md border-2 border-blue-400 bg-blue-50 px-3 py-2.5 shadow-md w-48 text-center text-xs relative">
       <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-blue-500 text-white font-semibold text-[8px] py-0 px-1 border-0">
         GATILHO
       </Badge>
       <p className="font-semibold text-slate-800 truncate mt-1">{triggerLabel}</p>
-      {data.triggerType && <p className="text-[8px] text-slate-500 truncate">{data.triggerType}</p>}
+      {triggerType && <p className="text-[8px] text-slate-500 truncate">{triggerType}</p>}
       <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-blue-500 border border-white" />
     </div>
   )
 }
 
 // Custom Node: Condition / Decision (Bifurcated)
-function ConditionNode({ data }: { data: any }) {
-  const opLabel = data.operator === 'exists' ? 'está preenchido' : data.operator === 'equals' ? 'é igual a' : data.operator || ''
-  const ruleText = data.field ? `${data.field} ${opLabel} ${data.value !== undefined ? String(data.value) : ''}` : 'Configurar regras...'
+function ConditionNode({ data }: { data: AutomationGraphNodeData }) {
+  const operator = stringValue(data.operator)
+  const field = stringValue(data.field)
+  const opLabel = operator === 'exists' ? 'está preenchido' : operator === 'equals' ? 'é igual a' : operator
+  const ruleText = field ? `${field} ${opLabel} ${data.value !== undefined ? String(data.value) : ''}` : 'Configurar regras...'
   
   return (
     <div className="rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-2 shadow-md w-48 text-center text-xs relative">
@@ -75,9 +87,11 @@ function ConditionNode({ data }: { data: any }) {
 }
 
 // Custom Node: Action
-function ActionNode({ data }: { data: any }) {
-  const label = actionTypes.find(a => a.value === data.actionType)?.label || data.actionType || 'Definir ação...'
-  const attachments = data.payload?.attachments || []
+function ActionNode({ data }: { data: AutomationGraphNodeData }) {
+  const actionType = stringValue(data.actionType)
+  const payload = recordValue(data.payload)
+  const label = actionTypes.find(a => a.value === actionType)?.label || actionType || 'Definir ação...'
+  const attachments = Array.isArray(payload.attachments) ? payload.attachments : []
 
   return (
     <div className="rounded-md border-2 border-emerald-400 bg-emerald-50 px-3 py-2 shadow-md w-48 text-center text-xs relative">
@@ -106,8 +120,8 @@ const nodeTypes = {
 
 // Convert traditional database rows into a linear React Flow nodes/edges
 function convertLinearFlowToGraph(flow: AutomationFlow) {
-  const nodes: any[] = []
-  const edges: any[] = []
+  const nodes: AutomationGraphNode[] = []
+  const edges: AutomationGraphEdge[] = []
   let currentY = 50
 
   // 1. Trigger
@@ -179,17 +193,17 @@ function convertLinearFlowToGraph(flow: AutomationFlow) {
 }
 
 export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditorProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [selectedNode, setSelectedNode] = useState<any | null>(null)
+  const [nodes, setNodes, onNodesChange] = useNodesState<AutomationGraphNode>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<AutomationGraphEdge>([])
+  const [selectedNode, setSelectedNode] = useState<AutomationGraphNode | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Initialize nodes and edges
   useEffect(() => {
     if (flow.graph && flow.graph.nodes && flow.graph.nodes.length > 0) {
-      setNodes(flow.graph.nodes)
-      setEdges(flow.graph.edges || [])
+      setNodes(flow.graph.nodes as AutomationGraphNode[])
+      setEdges((flow.graph.edges || []) as AutomationGraphEdge[])
     } else {
       const graph = convertLinearFlowToGraph(flow)
       setNodes(graph.nodes)
@@ -202,12 +216,12 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
     [setEdges]
   )
 
-  const onNodeClick = useCallback((_e: any, node: any) => {
+  const onNodeClick = useCallback((_e: any, node: AutomationGraphNode) => {
     setSelectedNode(node)
     setSidebarOpen(true)
   }, [])
 
-  const handleUpdateNodeData = (nodeId: string, updatedData: any) => {
+  const handleUpdateNodeData = (nodeId: string, updatedData: AutomationGraphNodeData) => {
     setNodes(nds =>
       nds.map(node => {
         if (node.id === nodeId) {
@@ -220,12 +234,12 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
 
   const handleAddNode = (type: 'trigger' | 'condition' | 'action') => {
     const id = `${type}-${Date.now()}`
-    let initialData = {}
+    let initialData: AutomationGraphNodeData = {}
     if (type === 'trigger') initialData = { triggerType: '', config: {} }
     if (type === 'condition') initialData = { field: 'source', operator: 'equals', value: '' }
     if (type === 'action') initialData = { actionType: 'send_whatsapp', payload: { body: '' } }
 
-    const newNode = {
+    const newNode: AutomationGraphNode = {
       id,
       type,
       position: { x: 100 + Math.random() * 200, y: 150 + Math.random() * 200 },
@@ -347,7 +361,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
           <div className="flex gap-1.5">
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant="outline"
               onClick={() => handleAddNode('trigger')}
               className="text-[10px] border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50"
@@ -356,7 +370,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
             </Button>
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant="outline"
               onClick={() => handleAddNode('condition')}
               className="text-[10px] border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50"
@@ -365,7 +379,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
             </Button>
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant="outline"
               onClick={() => handleAddNode('action')}
               className="text-[10px] border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50"
@@ -376,7 +390,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
           <div className="border-t pt-2 mt-1">
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant="destructive"
               onClick={handleDeleteSelected}
               className="text-[10px] w-full"

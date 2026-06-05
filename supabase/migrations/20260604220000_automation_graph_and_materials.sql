@@ -31,12 +31,15 @@ CREATE TABLE IF NOT EXISTS public.organization_materials (
 ALTER TABLE public.organization_materials ENABLE ROW LEVEL SECURITY;
 
 -- Triggers for updated_at column
+DROP TRIGGER IF EXISTS update_organization_materials_updated_at ON public.organization_materials;
 CREATE TRIGGER update_organization_materials_updated_at BEFORE UPDATE ON public.organization_materials FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Row Level Security policies
+DROP POLICY IF EXISTS "Omnichannel users read organization materials" ON public.organization_materials;
 CREATE POLICY "Omnichannel users read organization materials" ON public.organization_materials
   FOR SELECT TO authenticated USING (private.can_access_omnichannel_organization(organization_id, 'read'));
 
+DROP POLICY IF EXISTS "Omnichannel configurators manage organization materials" ON public.organization_materials;
 CREATE POLICY "Omnichannel configurators manage organization materials" ON public.organization_materials
   FOR ALL TO authenticated USING (private.can_access_omnichannel_organization(organization_id, 'configure'))
   WITH CHECK (private.can_access_omnichannel_organization(organization_id, 'configure'));
@@ -69,24 +72,28 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = NOW();
 
 -- Storage policies
+DROP POLICY IF EXISTS "Materials readers" ON storage.objects;
 CREATE POLICY "Materials readers" ON storage.objects
   FOR SELECT TO authenticated USING (
     bucket_id = 'materials'
     AND private.can_access_omnichannel_storage_object(name, 'read')
   );
 
+DROP POLICY IF EXISTS "Materials uploaders" ON storage.objects;
 CREATE POLICY "Materials uploaders" ON storage.objects
   FOR INSERT TO authenticated WITH CHECK (
     bucket_id = 'materials'
     AND private.can_access_omnichannel_storage_object(name, 'write')
   );
 
+DROP POLICY IF EXISTS "Materials editors" ON storage.objects;
 CREATE POLICY "Materials editors" ON storage.objects
   FOR UPDATE TO authenticated USING (
     bucket_id = 'materials'
     AND private.can_access_omnichannel_storage_object(name, 'write')
   );
 
+DROP POLICY IF EXISTS "Materials deleters" ON storage.objects;
 CREATE POLICY "Materials deleters" ON storage.objects
   FOR DELETE TO authenticated USING (
     bucket_id = 'materials'

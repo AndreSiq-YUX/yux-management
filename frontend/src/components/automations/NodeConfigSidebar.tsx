@@ -1,5 +1,6 @@
 import { FileText, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -407,7 +408,7 @@ export function NodeConfigSidebar({ open, onOpenChange, node, onUpdate, organiza
           </Label>
           <Button
             type="button"
-            size="xs"
+            size="sm"
             variant="outline"
             onClick={() => setLibraryOpen(true)}
             className="h-7 text-[10px]"

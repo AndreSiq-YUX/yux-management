@@ -10,7 +10,7 @@ export type AutomationModule =
   | 'support'
 
 export type AutomationKind = 'flow' | 'sequence'
-export type AutomationBuilderMode = 'guided' | 'technical'
+export type AutomationBuilderMode = 'guided' | 'technical' | 'node'
 export type AutomationRiskLevel = 'low' | 'medium' | 'high' | 'test'
 export type AutomationPublishStatus = 'draft' | 'active' | 'paused' | 'error' | 'archived'
 
