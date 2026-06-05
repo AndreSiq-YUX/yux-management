@@ -60,3 +60,12 @@ verify_jwt = true
 
 [functions.list-meta-channel-assets]
 verify_jwt = true
+
+[functions.disconnect-meta-channel]
+verify_jwt = true
+
+[functions.refresh-meta-channel-health]
+verify_jwt = true
+
+[functions.send-meta-channel-test]
+verify_jwt = true

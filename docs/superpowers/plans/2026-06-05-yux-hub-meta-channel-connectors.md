@@ -947,7 +947,7 @@ git commit -m "feat: add meta channel oauth functions"
 - Create: `supabase/functions/send-meta-channel-test/index.ts`
 - Create: `supabase/functions/send-meta-channel-test/deno.json`
 
-- [ ] **Step 1: Implement disconnect function**
+- [x] **Step 1: Implement disconnect function**
 
 Create `supabase/functions/disconnect-meta-channel/index.ts`:
 
@@ -992,7 +992,7 @@ if (import.meta.main) {
 }
 ```
 
-- [ ] **Step 2: Implement health function**
+- [x] **Step 2: Implement health function**
 
 Create `supabase/functions/refresh-meta-channel-health/index.ts`:
 
@@ -1044,7 +1044,7 @@ if (import.meta.main) {
 }
 ```
 
-- [ ] **Step 3: Implement test function**
+- [x] **Step 3: Implement test function**
 
 Create `supabase/functions/send-meta-channel-test/index.ts`:
 
@@ -1078,7 +1078,7 @@ if (import.meta.main) {
 }
 ```
 
-- [ ] **Step 4: Add deno.json and config**
+- [x] **Step 4: Add deno.json and config**
 
 For each function directory create:
 
@@ -1103,7 +1103,7 @@ verify_jwt = true
 verify_jwt = true
 ```
 
-- [ ] **Step 5: Run checks and commit**
+- [x] **Step 5: Run checks and commit**
 
 Run:
 
