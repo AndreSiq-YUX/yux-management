@@ -39,6 +39,7 @@ import { PortalCrmSettingsPage } from '@/pages/client-portal/PortalCrmSettingsPa
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { AdminHubPage } from '@/pages/platform/AdminHubPage'
 import { AdminAiPage } from '@/pages/platform/AdminAiPage'
+import { AdminChannelsPage } from '@/pages/platform/AdminChannelsPage'
 import { AdminEmailPage } from '@/pages/platform/AdminEmailPage'
 import { AdminHealthPage } from '@/pages/platform/AdminHealthPage'
 import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
@@ -82,6 +83,7 @@ function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="admin" element={<AdminHubPage />} />
             <Route path="admin/integrations" element={<AdminIntegrationsPage />} />
+            <Route path="admin/channels" element={<AdminChannelsPage />} />
             <Route path="admin/email" element={<AdminEmailPage />} />
             <Route path="admin/ai" element={<AdminAiPage />} />
             <Route path="admin/health" element={<AdminHealthPage />} />

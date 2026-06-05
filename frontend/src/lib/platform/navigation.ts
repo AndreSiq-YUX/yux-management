@@ -56,6 +56,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
     label: 'Infraestrutura',
     items: [
       { label: 'Integracoes', href: '/admin/integrations' },
+      { label: 'Canais conectados', href: '/admin/channels' },
       { label: 'IA', href: '/admin/ai' },
       { label: 'Email', href: '/admin/email' },
       { label: 'Saude', href: '/admin/health' },

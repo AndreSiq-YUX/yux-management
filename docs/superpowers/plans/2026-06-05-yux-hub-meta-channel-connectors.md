@@ -1734,7 +1734,7 @@ git commit -m "feat: add portal connected channels"
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/src/lib/platform/navigation.ts`
 
-- [ ] **Step 1: Write failing admin table test**
+- [x] **Step 1: Write failing admin table test**
 
 Create `frontend/src/components/platform/admin/AdminChannelsTable.test.tsx`:
 
@@ -1767,7 +1767,7 @@ describe('AdminChannelsTable', () => {
 })
 ```
 
-- [ ] **Step 2: Add admin service method**
+- [x] **Step 2: Add admin service method**
 
 Modify `frontend/src/services/adminPlatformService.ts`:
 
@@ -1807,7 +1807,7 @@ async getAdminChannelConnections(): Promise<AdminChannelConnectionRow[]> {
 }
 ```
 
-- [ ] **Step 3: Create admin table**
+- [x] **Step 3: Create admin table**
 
 Create `frontend/src/components/platform/admin/AdminChannelsTable.tsx`:
 
@@ -1853,7 +1853,7 @@ export function AdminChannelsTable({ rows }: { rows: AdminChannelConnectionRow[]
 }
 ```
 
-- [ ] **Step 4: Create page and route**
+- [x] **Step 4: Create page and route**
 
 Create `frontend/src/pages/platform/AdminChannelsPage.tsx`:
 
@@ -1903,7 +1903,7 @@ import { AdminChannelsPage } from '@/pages/platform/AdminChannelsPage'
 
 Add sidebar item under Infraestrutura or Gestao YUX Hub: `Canais conectados` -> `/admin/channels`.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 

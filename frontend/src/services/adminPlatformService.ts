@@ -68,6 +68,18 @@ export interface EmailProviderConnectionInput {
   metadata?: Record<string, unknown>
 }
 
+export interface AdminChannelConnectionRow {
+  id: string
+  organizationName: string
+  channel: string
+  displayName: string
+  providerAccountId?: string
+  healthStatus: string
+  tokenState?: string
+  providerVerifyState?: string
+  lastEventAt?: string
+}
+
 export function mapProviderConnectionRow(row: any): PlatformProviderConnection {
   return {
     id: row.id,
@@ -153,6 +165,20 @@ export function mapAuditEventRow(row: any): PlatformAdminAuditEvent {
     safeAfter: objectValue(row.safe_after),
     note: row.note || null,
     createdAt: row.created_at,
+  }
+}
+
+export function mapAdminChannelConnectionRow(row: any): AdminChannelConnectionRow {
+  return {
+    id: row.id,
+    organizationName: row.organizations?.name || row.organization_id,
+    channel: row.channel,
+    displayName: row.provider_display_name || row.name,
+    providerAccountId: row.provider_account_id || undefined,
+    healthStatus: row.health_status || 'not_configured',
+    tokenState: row.token_state || undefined,
+    providerVerifyState: row.provider_verify_state || undefined,
+    lastEventAt: row.last_event_at || undefined,
   }
 }
 
@@ -321,6 +347,30 @@ export class AdminPlatformService {
 
     if (error) throw error
     return (data || []).map(mapAuditEventRow)
+  }
+
+  async getAdminChannelConnections(): Promise<AdminChannelConnectionRow[]> {
+    const { data, error } = await supabase
+      .from('channel_connections')
+      .select([
+        'id',
+        'organization_id',
+        'channel',
+        'name',
+        'provider_account_id',
+        'provider_display_name',
+        'health_status',
+        'token_state',
+        'provider_verify_state',
+        'last_event_at',
+        'updated_at',
+        'organizations(name)',
+      ].join(', '))
+      .in('channel', ['whatsapp', 'instagram', 'messenger'])
+      .order('updated_at', { ascending: false })
+
+    if (error) throw error
+    return (data || []).map(mapAdminChannelConnectionRow)
   }
 
   async recordAuditEvent(input: PlatformAdminAuditEventInput): Promise<PlatformAdminAuditEvent> {
