@@ -15,6 +15,15 @@ ALTER TABLE public.conversations
   CHECK (channel IN ('whatsapp', 'instagram', 'messenger', 'email', 'webchat'));
 
 ALTER TABLE public.channel_connections
+  ADD COLUMN IF NOT EXISTS provider_account_id TEXT,
+  ADD COLUMN IF NOT EXISTS phone_number_id TEXT,
+  ADD COLUMN IF NOT EXISTS provider_verify_state TEXT NOT NULL DEFAULT 'not_configured',
+  ADD COLUMN IF NOT EXISTS token_state TEXT NOT NULL DEFAULT 'not_configured',
+  ADD COLUMN IF NOT EXISTS last_provider_sync_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS protected_metadata_references JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS provider_webhook_secret_reference TEXT;
+
+ALTER TABLE public.channel_connections
   ADD COLUMN IF NOT EXISTS provider_asset_id TEXT,
   ADD COLUMN IF NOT EXISTS provider_business_id TEXT,
   ADD COLUMN IF NOT EXISTS provider_display_name TEXT,
@@ -31,6 +40,30 @@ ALTER TABLE public.channel_connections
 
 DO $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'channel_connections_provider_verify_state_check'
+  ) THEN
+    ALTER TABLE public.channel_connections
+      ADD CONSTRAINT channel_connections_provider_verify_state_check
+      CHECK (provider_verify_state IN ('not_configured', 'pending', 'verified', 'failed'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'channel_connections_token_state_check'
+  ) THEN
+    ALTER TABLE public.channel_connections
+      ADD CONSTRAINT channel_connections_token_state_check
+      CHECK (token_state IN ('not_configured', 'connected', 'stale', 'needs_reauth', 'failed'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'channel_connections_protected_metadata_references_check'
+  ) THEN
+    ALTER TABLE public.channel_connections
+      ADD CONSTRAINT channel_connections_protected_metadata_references_check
+      CHECK (jsonb_typeof(protected_metadata_references) = 'object');
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'channel_connections_health_status_check'
   ) THEN

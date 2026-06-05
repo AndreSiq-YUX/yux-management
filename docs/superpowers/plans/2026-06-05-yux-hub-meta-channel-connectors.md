@@ -2001,7 +2001,7 @@ git commit -m "docs: document meta channel connectors"
 **Files:**
 - No new files unless verification reveals a scoped fix.
 
-- [ ] **Step 1: Run focused frontend tests**
+- [x] **Step 1: Run focused frontend tests**
 
 Run:
 
@@ -2012,7 +2012,7 @@ npm test -- src/lib/meta/metaChannelRules.test.ts src/services/metaChannelServic
 
 Expected: pass.
 
-- [ ] **Step 2: Run Edge Function checks**
+- [x] **Step 2: Run Edge Function checks**
 
 Run:
 
@@ -2030,7 +2030,7 @@ deno check supabase/functions/dispatch-outbound-message/index.ts
 
 Expected: pass.
 
-- [ ] **Step 3: Run repo-level checks**
+- [x] **Step 3: Run repo-level checks**
 
 Run:
 
@@ -2042,13 +2042,17 @@ npm run build
 
 Expected: pass when unrelated automations type errors are resolved. If existing automations errors still block repo-level checks, record exact files and keep the Meta connector focused test evidence.
 
-- [ ] **Step 4: Apply migration remotely**
+Execution note: focused Meta connector tests and Deno checks passed on 2026-06-05. Repo-level `npm run type-check` and `npm run build` are still blocked by existing Automations errors in `AutomationNodeEditor.tsx`, `AutomationWorkspace.tsx` and `NodeConfigSidebar.tsx`.
+
+- [x] **Step 4: Apply migration remotely**
 
 Use Supabase MCP or CLI against the target `portal-yux` project. Apply the generated `meta_channel_connectors` migration only after local review.
 
 Expected migration history contains a remote row named `meta_channel_connectors`.
 
-- [ ] **Step 5: Deploy functions**
+Execution note: remote Supabase project `uuowkncimiydpbxqpkej` recorded migration `20260605113540 meta_channel_connectors`. The local migration was adjusted during verification to include provider columns when `whatsapp_provider_path` has not yet run remotely.
+
+- [x] **Step 5: Deploy functions**
 
 Run or execute equivalent deploy process:
 
@@ -2065,7 +2069,9 @@ supabase functions deploy dispatch-outbound-message
 
 Expected: all functions deploy successfully.
 
-- [ ] **Step 6: Start local server and smoke routes**
+Execution note: all listed functions deployed to `uuowkncimiydpbxqpkej`; Supabase reports the new Meta functions as `ACTIVE`, with `receive-channel-event` deployed as `verify_jwt = false`.
+
+- [x] **Step 6: Start local server and smoke routes**
 
 Run:
 
@@ -2083,7 +2089,9 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5173/admin/channels
 
 Expected: HTTP 200 for both routes.
 
-- [ ] **Step 7: Browser verification**
+Execution note: an existing local Vite server was already listening on `127.0.0.1:5173`; HTTP smoke returned `200` for `/portal/omnichannel/channels`, `/admin/channels` and `/omnichannel`.
+
+- [x] **Step 7: Browser verification**
 
 Open:
 
@@ -2100,7 +2108,9 @@ Verify:
 - disabled actions are clear;
 - no token values are rendered.
 
-- [ ] **Step 8: Commit verification fixes only if needed**
+Execution note: browser automation was unavailable in this environment and Playwright was not installed in the project. Verification fell back to HTTP route smoke plus focused rendering tests for the portal workspace and admin table.
+
+- [x] **Step 8: Commit verification fixes only if needed**
 
 If verification reveals a scoped issue:
 
