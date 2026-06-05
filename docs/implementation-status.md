@@ -1,6 +1,6 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-06-04 (Admin YUX Hub foundation: grouped sidebar, admin dashboard, integrations, SMTP2GO, IA/LLM, module governance, health)
+Updated: 2026-06-05 (Meta channel connectors: WhatsApp Embedded Signup foundation, Instagram Direct, Messenger, portal and Admin channel surfaces)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -23,7 +23,7 @@ the target Supabase/Vercel environments.
 | Area | Status | Main Routes | Main Repo Evidence | Operational Notes |
 | --- | --- | --- | --- | --- |
 | Platform foundation | Implemented | `/dashboard`, platform shell | `20260531000000_yux_os_clean_baseline.sql`, `platformService`, module registry, platform store | Remote Supabase state must be checked before assuming all migrations are applied. |
-| Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | `20260604203319_yux_hub_admin_platform.sql`, `adminPlatformService`, grouped navigation, Admin Hub pages, `docs/admin-yux-hub.md` | Target Supabase still needs the admin platform migration applied before live data loads through the Data API. |
+| Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/channels`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | `20260604203319_yux_hub_admin_platform.sql`, `adminPlatformService`, grouped navigation, Admin Hub pages, `docs/admin-yux-hub.md` | Target Supabase still needs the admin platform migration applied before live data loads through the Data API. |
 | Contracts, packages, modules, portal context | Implemented | `/contracts`, `/packages`, `/modules`, `/portal` | `20260601000000_contracts_modules_portal.sql`, `20260601010000_contract_rls_policies.sql`, `ContractsPage`, `PackagesPage`, `ModulesPage`, `PortalDashboardPage` | Portal access derives from active contract and enabled modules. |
 | Portal RLS hardening | Implemented in repo | Portal routes | `20260601020000_harden_portal_rls.sql`, `20260601030000_secure_baseline_functions.sql`, `20260601040000_move_auth_trigger_private.sql` | Requires remote migration application/probes in target DB. |
 | Projects, tasks, deliverables, approvals | Implemented | `/projects`, `/portal/projects` | `20260601070000_project_delivery_approvals.sql` through `20260601100000_backfill_deliverable_approval_status.sql`, `ProjectsPage`, `PortalProjectsPage`, project components, `approvalRules` | Includes client-visible timeline and approval decisions. |
@@ -42,6 +42,7 @@ the target Supabase/Vercel environments.
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/campaigns` | `20260601290000_campaigns_ads_api_core.sql`, ads provider Edge Functions, campaign service/workspaces | API-first campaign draft/provider mutation path with protected provider state. |
 | Real WhatsApp provider path | Implemented in repo | `/omnichannel`, `/portal/omnichannel` | `20260601300000_whatsapp_provider_path.sql`, WhatsApp provider helper, receive/dispatch Edge Functions | Adds Meta WhatsApp webhook normalization, signature validation, token state and manual outbound path. |
+| Meta channel connectors | Implemented in repo | `/portal/omnichannel/channels`, `/admin/channels` | `20260605110828_meta_channel_connectors.sql`, Meta Edge Functions, `metaChannelService`, connected-channel workspaces | Requires Meta App configuration, App Review permissions, runtime secrets and authenticated production QA. |
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
 | Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
 | Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `AutomationDashboard`, `AutomationGuidedBuilder`, `AutomationSimulationPanel`, `AutomationVersionPanel`, `AutomationDryRunToggle`, `AiActionPreview`, `CrmIntegrationPreview`, `AutomationAuditTrail`, `AutomationRealtime`, `ConfirmDialog`, `AutomationOnboarding`, `Tooltip`, `automationValidation`, `SequencesWorkspace` timeline, SMTP2GO Edge Functions | Full automation workspace with visual builder (When/If/Then), drag-and-drop action reordering, real-time validation, confirmation dialogs, first-time onboarding, timeline visualization, tooltips, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, real-time and dry-run mode. Supabase reset still blocked locally by Docker availability. |
@@ -49,6 +50,14 @@ the target Supabase/Vercel environments.
 | Operational reports and MROI | Implemented in repo | `/reports`, `/portal/reports` | `20260601330000_operational_reports.sql`, `reportService`, report workspaces | Aggregates funnel, campaign, landing page, proposal, conversation, project and activity metrics with portal-safe output. |
 | Portal commercial view | Implemented in repo | `/portal` | `PortalDashboardPage`, navigation rules/tests | Portal dashboard now highlights enabled commercial modules only, including leads, conversations, landing pages, campaigns and reports. |
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, CI workflow, latest CI run for `709212f` | GitHub Actions passed on latest support commit. Vercel preview succeeded but routes are protected by Vercel Authentication. |
+
+## Pending Operational Work
+
+- configure Meta App IDs, Embedded Signup config, App Review permissions and
+  runtime secrets;
+- deploy Meta channel Edge Functions;
+- validate WhatsApp Embedded Signup, Instagram Direct and Messenger with
+  development-mode test assets before production.
 
 ## Implemented Functional Scope
 
@@ -65,6 +74,7 @@ Implemented:
 - `adminPlatformService` com mappers, resumo do Admin Hub, SMTP2GO, limites,
   provedores, uso e auditoria;
 - pagina `/admin/integrations` para provedores globais;
+- pagina `/admin/channels` para governanca global de canais Meta por cliente;
 - pagina `/admin/email` para indicadores SMTP2GO;
 - pagina `/admin/ai` para governanca IA/LLM;
 - pagina `/admin/modules-governance` para CRM, Automacoes, Financeiro, Suporte,

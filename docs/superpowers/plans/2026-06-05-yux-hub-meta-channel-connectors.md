@@ -1930,7 +1930,7 @@ git commit -m "feat: add admin connected channels"
 - Modify: `docs/admin-yux-hub.md`
 - Modify: `docs/implementation-status.md`
 
-- [ ] **Step 1: Update omnichannel operations**
+- [x] **Step 1: Update omnichannel operations**
 
 Add a section to `docs/omnichannel-ai-operations.md`:
 
@@ -1954,7 +1954,7 @@ Secrets stay server-side. Portal and Admin screens show only safe references,
 health states and sanitized audit events.
 ```
 
-- [ ] **Step 2: Update Admin YUX Hub documentation**
+- [x] **Step 2: Update Admin YUX Hub documentation**
 
 Add to `docs/admin-yux-hub.md`:
 
@@ -1969,7 +1969,7 @@ Clientes conectam canais no portal. A YUX pode pausar, revisar, desconectar e
 acompanhar reautenticacao sem acessar tokens reais.
 ```
 
-- [ ] **Step 3: Update implementation status**
+- [x] **Step 3: Update implementation status**
 
 Add an implementation table row to `docs/implementation-status.md`:
 
@@ -1985,7 +1985,7 @@ Add pending operational work:
 - validate WhatsApp Embedded Signup, Instagram Direct and Messenger with development-mode test assets before production.
 ```
 
-- [ ] **Step 4: Commit docs**
+- [x] **Step 4: Commit docs**
 
 Run:
 

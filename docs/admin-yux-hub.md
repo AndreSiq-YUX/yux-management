@@ -82,6 +82,15 @@ Tipos previstos:
 - database;
 - internal service.
 
+## Canais Conectados
+
+`/admin/channels` centraliza a governanca de canais Meta por cliente. O Admin
+YUX ve cliente, canal, ativo conectado, status, token state, webhook state e
+ultimo evento.
+
+Clientes conectam canais no portal em `/portal/omnichannel/channels`. A YUX
+pode acompanhar saude, reautenticacao e desconexao sem acessar tokens reais.
+
 ## SMTP2GO
 
 A area `/admin/email` trata SMTP2GO como infraestrutura compartilhada de email do

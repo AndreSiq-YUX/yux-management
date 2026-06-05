@@ -39,6 +39,24 @@ The system remains testable without n8n. When these secrets are absent, provider
 
 Do not commit secret values. Real WhatsApp, Instagram, email, and scheduling credentials must stay in n8n or the selected adapter layer, never in the frontend.
 
+## Meta Channel Connectors
+
+YUX Hub uses the official Meta app owned by YUX for customer channel onboarding.
+Customers connect their own assets through WhatsApp Embedded Signup and Meta
+Login. The customer remains the owner of WABAs, WhatsApp numbers, Instagram
+accounts and Facebook pages.
+
+Operational channels:
+
+- WhatsApp: official Cloud API adapter `meta-whatsapp`.
+- Instagram Direct: official Meta messaging adapter `meta-instagram`.
+- Facebook Messenger: official Meta messaging adapter `meta-messenger`.
+- n8n fallback: `N8N_OMNICHANNEL_OUTBOUND_WEBHOOK_URL` for explicitly
+  intermediated routes.
+
+Secrets stay server-side. Portal and Admin screens show only safe references,
+health states and sanitized audit events.
+
 ## Tokens And Webchat
 
 Adapter inbound tokens and widget public tokens are stored only as hashes. `webchat_widgets` stores public configuration and token rotation metadata; token hashes live behind service-role-only boundaries.
