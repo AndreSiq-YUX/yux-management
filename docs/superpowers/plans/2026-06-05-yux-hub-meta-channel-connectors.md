@@ -520,7 +520,7 @@ git commit -m "feat: add meta channel connector schema"
 - Create: `supabase/functions/_shared/metaChannel.ts`
 - Test: `supabase/functions/_shared/metaChannel.test.ts`
 
-- [ ] **Step 1: Write failing Deno tests**
+- [x] **Step 1: Write failing Deno tests**
 
 Create `supabase/functions/_shared/metaChannel.test.ts`:
 
@@ -582,7 +582,7 @@ Deno.test('normalizeMessengerInbound maps page messaging event', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [x] **Step 2: Run tests and confirm failure**
 
 Run:
 
@@ -592,7 +592,7 @@ deno test supabase/functions/_shared/metaChannel.test.ts
 
 Expected: FAIL because `metaChannel.ts` does not exist.
 
-- [ ] **Step 3: Implement shared helpers**
+- [x] **Step 3: Implement shared helpers**
 
 Create `supabase/functions/_shared/metaChannel.ts`:
 
@@ -674,7 +674,7 @@ export function normalizeMessengerInbound(payload: unknown) {
 }
 ```
 
-- [ ] **Step 4: Run Deno tests and commit**
+- [x] **Step 4: Run Deno tests and commit**
 
 Run:
 

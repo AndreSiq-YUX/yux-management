@@ -1,4 +1,4 @@
-export type OmnichannelChannel = 'whatsapp' | 'instagram' | 'email' | 'webchat'
+export type OmnichannelChannel = 'whatsapp' | 'instagram' | 'messenger' | 'email' | 'webchat'
 export type InboundEventType = 'message.created' | 'message.updated' | 'message.deleted' | 'conversation.updated'
 
 export interface IdempotencyInput {
@@ -55,7 +55,7 @@ export interface OutboundAdapterPayload {
   metadata: Record<string, unknown>
 }
 
-const channels = new Set<OmnichannelChannel>(['whatsapp', 'instagram', 'email', 'webchat'])
+const channels = new Set<OmnichannelChannel>(['whatsapp', 'instagram', 'messenger', 'email', 'webchat'])
 const redactedValue = '[redacted]'
 
 function assertRecord(value: unknown, label: string): Record<string, unknown> {
