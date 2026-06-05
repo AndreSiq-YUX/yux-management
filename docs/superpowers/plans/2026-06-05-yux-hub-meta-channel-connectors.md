@@ -703,7 +703,7 @@ git commit -m "feat: add shared meta channel helpers"
 - Create: `supabase/functions/list-meta-channel-assets/index.ts`
 - Create: `supabase/functions/list-meta-channel-assets/deno.json`
 
-- [ ] **Step 1: Implement start function**
+- [x] **Step 1: Implement start function**
 
 Create `supabase/functions/start-meta-channel-connect/index.ts`:
 
@@ -763,7 +763,7 @@ Create `supabase/functions/start-meta-channel-connect/deno.json`:
 }
 ```
 
-- [ ] **Step 2: Implement complete function**
+- [x] **Step 2: Implement complete function**
 
 Create `supabase/functions/complete-meta-channel-connect/index.ts`:
 
@@ -873,7 +873,7 @@ if (import.meta.main) {
 
 Create `supabase/functions/complete-meta-channel-connect/deno.json` with the same imports as the start function.
 
-- [ ] **Step 3: Implement list assets function**
+- [x] **Step 3: Implement list assets function**
 
 Create `supabase/functions/list-meta-channel-assets/index.ts`:
 
@@ -901,7 +901,7 @@ if (import.meta.main) {
 
 Create `supabase/functions/list-meta-channel-assets/deno.json` with the same imports.
 
-- [ ] **Step 4: Add function config**
+- [x] **Step 4: Add function config**
 
 Update `supabase/config.toml`:
 
@@ -916,7 +916,7 @@ verify_jwt = true
 verify_jwt = true
 ```
 
-- [ ] **Step 5: Run checks and commit**
+- [x] **Step 5: Run checks and commit**
 
 Run:
 

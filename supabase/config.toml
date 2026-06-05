@@ -51,3 +51,12 @@ verify_jwt = true
 
 [functions.submit-webchat-event]
 verify_jwt = false
+
+[functions.start-meta-channel-connect]
+verify_jwt = true
+
+[functions.complete-meta-channel-connect]
+verify_jwt = true
+
+[functions.list-meta-channel-assets]
+verify_jwt = true
