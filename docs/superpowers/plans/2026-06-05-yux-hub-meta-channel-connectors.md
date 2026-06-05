@@ -1131,7 +1131,7 @@ git commit -m "feat: add meta channel lifecycle functions"
 - Modify: `supabase/functions/dispatch-outbound-message/index.ts`
 - Test: `supabase/functions/_shared/metaChannel.test.ts`
 
-- [ ] **Step 1: Add Instagram inbound test**
+- [x] **Step 1: Add Instagram inbound test**
 
 Extend `supabase/functions/_shared/metaChannel.test.ts`:
 
@@ -1156,7 +1156,7 @@ Deno.test('normalizeInstagramInbound maps instagram messaging event', () => {
 })
 ```
 
-- [ ] **Step 2: Implement Instagram normalizer**
+- [x] **Step 2: Implement Instagram normalizer**
 
 Add to `supabase/functions/_shared/metaChannel.ts`:
 
@@ -1196,7 +1196,7 @@ export function normalizeInstagramInbound(payload: unknown) {
 }
 ```
 
-- [ ] **Step 3: Route Instagram and Messenger webhooks**
+- [x] **Step 3: Route Instagram and Messenger webhooks**
 
 Modify `supabase/functions/receive-channel-event/index.ts` imports:
 
@@ -1221,7 +1221,7 @@ if (body.object === 'page') {
 }
 ```
 
-- [ ] **Step 4: Preserve official adapter plus n8n fallback outbound**
+- [x] **Step 4: Preserve official adapter plus n8n fallback outbound**
 
 Modify `supabase/functions/dispatch-outbound-message/index.ts` after the WhatsApp branch:
 
@@ -1241,7 +1241,7 @@ Modify `supabase/functions/dispatch-outbound-message/index.ts` after the WhatsAp
 
 The existing n8n branch remains after this block and handles `fallback_mode = 'n8n'`.
 
-- [ ] **Step 5: Run Deno tests/checks and commit**
+- [x] **Step 5: Run Deno tests/checks and commit**
 
 Run:
 

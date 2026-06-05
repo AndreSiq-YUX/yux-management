@@ -155,6 +155,18 @@ export async function dispatchOutboundMessage(admin: AdminClient, messageId: str
     return { runId: run.id, status, provider: 'meta-whatsapp' }
   }
 
+  if ((conversation.channel === 'instagram' || conversation.channel === 'messenger') && connection?.fallback_mode !== 'n8n') {
+    await admin.from('messages').update({ delivery_status: 'queued' }).eq('id', message.id)
+    await admin.from('outbound_message_runs').update({
+      status: 'queued',
+      sanitized_response: {
+        provider: connection?.adapter_key,
+        note: 'Official Meta outbound adapter will process this channel after App Review permissions are active.',
+      },
+    }).eq('id', run.id)
+    return { runId: run.id, status: 'queued', provider: connection?.adapter_key }
+  }
+
   const webhookResult = await callN8nWebhookWithTimeout(
     Deno.env.get('N8N_OMNICHANNEL_OUTBOUND_WEBHOOK_URL'),
     payload as unknown as Record<string, unknown>,

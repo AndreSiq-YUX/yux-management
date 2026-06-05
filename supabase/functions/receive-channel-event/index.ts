@@ -10,6 +10,10 @@ import {
   normalizeWhatsAppInbound,
   validateWhatsAppSignature,
 } from '../_shared/whatsappProvider.ts'
+import {
+  normalizeInstagramInbound,
+  normalizeMessengerInbound,
+} from '../_shared/metaChannel.ts'
 
 type AdminClient = ReturnType<typeof getServiceRoleClient>
 
@@ -36,6 +40,16 @@ if (import.meta.main) {
 
         const result = await processWhatsAppProviderEvent(getServiceRoleClient(), body)
         return json({ success: true, provider: 'meta-whatsapp', ...result })
+      }
+
+      if (body.object === 'instagram') {
+        const result = await processMetaProviderEvent(getServiceRoleClient(), 'instagram', body)
+        return json({ success: true, provider: 'meta-instagram', ...result })
+      }
+
+      if (body.object === 'page') {
+        const result = await processMetaProviderEvent(getServiceRoleClient(), 'messenger', body)
+        return json({ success: true, provider: 'meta-messenger', ...result })
       }
 
       const adapterToken = req.headers.get('x-omnichannel-token') || body.adapterToken
@@ -75,6 +89,29 @@ export async function processWhatsAppProviderEvent(admin: AdminClient, payload: 
 
   const event = connection?.id
     ? normalizeWhatsAppInbound(payload, { connectionId: connection.id })
+    : preliminaryEvent
+
+  return processChannelEvent(admin, event)
+}
+
+export async function processMetaProviderEvent(admin: AdminClient, channel: 'instagram' | 'messenger', payload: unknown) {
+  const preliminaryEvent = channel === 'instagram'
+    ? normalizeInstagramInbound(payload)
+    : normalizeMessengerInbound(payload)
+
+  const { data: connection, error } = await admin
+    .from('channel_connections')
+    .select('id')
+    .eq('channel', channel)
+    .eq('is_active', true)
+    .or(`provider_asset_id.eq.${preliminaryEvent.connectionId},provider_account_id.eq.${preliminaryEvent.connectionId}`)
+    .maybeSingle()
+  if (error) throw error
+
+  const event = connection?.id
+    ? channel === 'instagram'
+      ? normalizeInstagramInbound(payload, { connectionId: connection.id })
+      : normalizeMessengerInbound(payload, { connectionId: connection.id })
     : preliminaryEvent
 
   return processChannelEvent(admin, event)
@@ -127,7 +164,9 @@ export async function processChannelEvent(admin: AdminClient, input: unknown, op
     const message = await appendInboundMessage(admin, conversation.id, connection.id, event)
 
     const connectionUpdate: Record<string, unknown> = { last_event_at: event.occurredAt }
-    if (event.channel === 'whatsapp') connectionUpdate.last_provider_sync_at = event.occurredAt
+    if (event.channel === 'whatsapp' || event.channel === 'instagram' || event.channel === 'messenger') {
+      connectionUpdate.last_provider_sync_at = event.occurredAt
+    }
     await admin.from('channel_connections').update(connectionUpdate).eq('id', connection.id)
     await admin.from('conversations').update({
       last_message_at: event.occurredAt,

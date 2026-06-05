@@ -40,7 +40,7 @@ export function deriveTokenStateFromGraphStatus(status: number) {
   return 'connected'
 }
 
-export function normalizeMessengerInbound(payload: unknown) {
+export function normalizeMessengerInbound(payload: unknown, options: { connectionId?: string } = {}) {
   const root = record(payload)
   const entry = array(root.entry)[0]
   const messaging = array(entry?.messaging)[0]
@@ -48,7 +48,7 @@ export function normalizeMessengerInbound(payload: unknown) {
   const sender = record(messaging?.sender)
   const recipient = record(messaging?.recipient)
   const externalMessageId = stringValue(message.mid) || `${Date.now()}`
-  const connectionId = stringValue(recipient.id) || stringValue(entry?.id) || 'messenger'
+  const connectionId = options.connectionId || stringValue(recipient.id) || stringValue(entry?.id) || 'messenger'
 
   return {
     connectionId,
@@ -68,6 +68,40 @@ export function normalizeMessengerInbound(payload: unknown) {
       contentType: 'text',
       attachments: [],
       metadata: sanitizeWebhookMetadata({ provider: 'meta', pageId: recipient.id }) as JsonRecord,
+    },
+    occurredAt: new Date(Number(messaging?.timestamp || Date.now())).toISOString(),
+    sanitizedPayload: sanitizeWebhookMetadata(payload) as JsonRecord,
+  }
+}
+
+export function normalizeInstagramInbound(payload: unknown, options: { connectionId?: string } = {}) {
+  const root = record(payload)
+  const entry = array(root.entry)[0]
+  const messaging = array(entry?.messaging)[0]
+  const message = record(messaging?.message)
+  const sender = record(messaging?.sender)
+  const recipient = record(messaging?.recipient)
+  const externalMessageId = stringValue(message.mid) || `${Date.now()}`
+  const connectionId = options.connectionId || stringValue(recipient.id) || stringValue(entry?.id) || 'instagram'
+
+  return {
+    connectionId,
+    channel: 'instagram' as const,
+    externalMessageId,
+    externalEventId: externalMessageId,
+    eventType: 'message.created' as const,
+    idempotencyKey: buildIdempotencyKey({ connectionId, externalEventId: externalMessageId, eventType: 'message.created' }),
+    contact: {
+      externalId: stringValue(sender.id) || 'unknown',
+      displayName: undefined,
+      metadata: sanitizeWebhookMetadata({ provider: 'meta', instagramAccountId: recipient.id }) as JsonRecord,
+    },
+    message: {
+      externalMessageId,
+      body: stringValue(message.text) || '[instagram]',
+      contentType: 'text',
+      attachments: [],
+      metadata: sanitizeWebhookMetadata({ provider: 'meta', instagramAccountId: recipient.id }) as JsonRecord,
     },
     occurredAt: new Date(Number(messaging?.timestamp || Date.now())).toISOString(),
     sanitizedPayload: sanitizeWebhookMetadata(payload) as JsonRecord,

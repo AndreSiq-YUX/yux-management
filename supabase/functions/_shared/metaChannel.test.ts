@@ -2,6 +2,7 @@ import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   buildGraphUrl,
   deriveTokenStateFromGraphStatus,
+  normalizeInstagramInbound,
   normalizeMessengerInbound,
   sanitizeMetaGraphPayload,
   validateMetaChannel,
@@ -52,4 +53,21 @@ Deno.test('normalizeMessengerInbound maps page messaging event', () => {
   assertEquals(event.channel, 'messenger')
   assertEquals(event.externalMessageId, 'mid-1')
   assertEquals(event.contact.externalId, 'psid-1')
+})
+
+Deno.test('normalizeInstagramInbound maps instagram messaging event', () => {
+  const event = normalizeInstagramInbound({
+    object: 'instagram',
+    entry: [{
+      id: 'ig-1',
+      messaging: [{
+        sender: { id: 'ig-user-1' },
+        recipient: { id: 'ig-1' },
+        timestamp: 1710000000000,
+        message: { mid: 'ig-mid-1', text: 'Ola' },
+      }],
+    }],
+  })
+  assertEquals(event.channel, 'instagram')
+  assertEquals(event.externalMessageId, 'ig-mid-1')
 })
