@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildStartMetaConnectPayload, mapMetaChannelConnection } from './metaChannelService'
+import {
+  buildMetaConnectUrl,
+  buildStartMetaConnectPayload,
+  getMissingMetaConnectConfig,
+  mapMetaChannelConnection,
+} from './metaChannelService'
 
 describe('metaChannelService', () => {
   it('maps channel connection rows to connected channel view', () => {
@@ -37,5 +42,35 @@ describe('metaChannelService', () => {
       organizationId: 'org-1',
       channel: 'instagram',
     })
+  })
+
+  it('builds a WhatsApp Embedded Signup OAuth URL', () => {
+    const url = buildMetaConnectUrl({
+      channel: 'whatsapp',
+      state: 'state-1',
+      appId: 'app-1',
+      graphVersion: 'v20.0',
+      embeddedSignupConfigId: 'config-1',
+      redirectUri: 'https://app.yux.com.br/meta/callback',
+      expiresAt: '2026-06-05T12:15:00Z',
+    })
+
+    expect(url).toContain('https://www.facebook.com/v20.0/dialog/oauth')
+    expect(url).toContain('client_id=app-1')
+    expect(decodeURIComponent(url || '')).toContain('whatsapp_embedded_signup')
+    expect(decodeURIComponent(url || '')).toContain('whatsapp_business_messaging')
+  })
+
+  it('reports missing Meta configuration before redirecting', () => {
+    expect(getMissingMetaConnectConfig({
+      channel: 'whatsapp',
+      state: 'state-1',
+      graphVersion: 'v20.0',
+      expiresAt: '2026-06-05T12:15:00Z',
+    })).toEqual([
+      'META_APP_ID',
+      'META_OAUTH_REDIRECT_URI',
+      'META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID',
+    ])
   })
 })

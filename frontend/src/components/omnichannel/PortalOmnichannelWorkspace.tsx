@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GitBranch, RefreshCw, RotateCcw, Send, UserCheck, UserRoundPlus, XCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -141,9 +142,17 @@ export function PortalOmnichannelWorkspace({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Central Omnichannel IA</h1>
-        <p className="text-sm text-gray-600">Atendimento contratado, filas e handoff operacional.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Central Omnichannel IA</h1>
+          <p className="text-sm text-gray-600">Atendimento contratado, filas e handoff operacional.</p>
+        </div>
+        <Link
+          to="/portal/omnichannel/channels"
+          className="inline-flex h-9 items-center rounded-md bg-yux-600 px-3 text-sm font-medium text-white hover:bg-yux-700"
+        >
+          Conectar canais
+        </Link>
       </div>
 
       <section className="grid gap-3 md:grid-cols-4">

@@ -67,8 +67,13 @@ export function PortalConnectedChannelsPage() {
 
   async function handleConnect(channel: MetaChannel) {
     try {
-      await metaChannelService.startConnect({ organizationId: resolvedOrganizationId, channel })
-      toast.success('Fluxo de conexao iniciado')
+      const session = await metaChannelService.startConnect({ organizationId: resolvedOrganizationId, channel })
+      if (!session.authUrl) {
+        toast.error(`Configuracao Meta incompleta: ${session.missingConfig.join(', ')}`)
+        return
+      }
+      toast.success('Abrindo autorizacao da Meta')
+      window.location.assign(session.authUrl)
       await loadChannels()
     } catch (error) {
       console.error('Erro ao iniciar conexao Meta:', error)

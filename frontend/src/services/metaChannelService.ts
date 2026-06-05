@@ -33,6 +33,21 @@ export interface ConnectedChannelView {
   publicMetadata: JsonRecord
 }
 
+export interface StartMetaChannelConnectResponse {
+  channel: MetaChannel
+  state: string
+  appId?: string | null
+  graphVersion?: string | null
+  embeddedSignupConfigId?: string | null
+  redirectUri?: string | null
+  expiresAt: string
+}
+
+export interface StartMetaChannelConnectSession extends StartMetaChannelConnectResponse {
+  authUrl?: string
+  missingConfig: string[]
+}
+
 const optional = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined
 
 const metaChannelSelect = [
@@ -109,9 +124,52 @@ export function buildStartMetaConnectPayload(input: { organizationId: string; ch
   return { organizationId: input.organizationId, channel: input.channel }
 }
 
+const scopesByChannel: Record<MetaChannel, string[]> = {
+  whatsapp: ['whatsapp_business_management', 'whatsapp_business_messaging'],
+  instagram: ['pages_show_list', 'pages_manage_metadata', 'pages_messaging', 'instagram_basic', 'instagram_manage_messages'],
+  messenger: ['pages_show_list', 'pages_manage_metadata', 'pages_messaging'],
+}
+
+export function getMissingMetaConnectConfig(response: StartMetaChannelConnectResponse) {
+  return [
+    !optional(response.appId) ? 'META_APP_ID' : '',
+    !optional(response.redirectUri) ? 'META_OAUTH_REDIRECT_URI' : '',
+    response.channel === 'whatsapp' && !optional(response.embeddedSignupConfigId)
+      ? 'META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID'
+      : '',
+  ].filter(Boolean)
+}
+
+export function buildMetaConnectUrl(response: StartMetaChannelConnectResponse) {
+  const appId = optional(response.appId)
+  const redirectUri = optional(response.redirectUri)
+  if (!appId || !redirectUri) return undefined
+
+  const graphVersion = optional(response.graphVersion) || 'v20.0'
+  const url = new URL(`https://www.facebook.com/${graphVersion}/dialog/oauth`)
+  url.searchParams.set('client_id', appId)
+  url.searchParams.set('redirect_uri', redirectUri)
+  url.searchParams.set('state', response.state)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('scope', scopesByChannel[response.channel].join(','))
+
+  if (response.channel === 'whatsapp') {
+    const configId = optional(response.embeddedSignupConfigId)
+    if (!configId) return undefined
+    url.searchParams.set('extras', JSON.stringify({
+      feature: 'whatsapp_embedded_signup',
+      sessionInfoVersion: '3',
+      setup: { config_id: configId },
+    }))
+  }
+
+  return url.toString()
+}
+
 async function requireFunctionData<T>(request: PromiseLike<{ data: T | null; error: any }>) {
   const { data, error } = await request
   if (error) throw error
+  if (!data) throw new Error('Function returned no data')
   return data
 }
 
@@ -128,9 +186,14 @@ export const metaChannelService = {
   },
 
   async startConnect(input: { organizationId: string; channel: MetaChannel }) {
-    return requireFunctionData(supabase.functions.invoke('start-meta-channel-connect', {
+    const data = await requireFunctionData<StartMetaChannelConnectResponse>(supabase.functions.invoke('start-meta-channel-connect', {
       body: buildStartMetaConnectPayload(input),
     }))
+    return {
+      ...data,
+      authUrl: buildMetaConnectUrl(data),
+      missingConfig: getMissingMetaConnectConfig(data),
+    } satisfies StartMetaChannelConnectSession
   },
 
   async completeConnect(input: {

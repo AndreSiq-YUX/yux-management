@@ -3,6 +3,8 @@ import type { ConnectedChannelView } from '@/services/metaChannelService'
 
 interface ConnectedChannelCardProps {
   channel: ConnectedChannelView
+  connectLabel: string
+  description: string
   onConnect: () => void
   onDisconnect: () => void
   onRefreshHealth: () => void
@@ -11,6 +13,8 @@ interface ConnectedChannelCardProps {
 
 export function ConnectedChannelCard({
   channel,
+  connectLabel,
+  description,
   onConnect,
   onDisconnect,
   onRefreshHealth,
@@ -27,6 +31,7 @@ export function ConnectedChannelCard({
           <p className="mt-1 truncate text-sm text-gray-600">
             {channel.displayName || channel.name || 'Nenhuma conta conectada'}
           </p>
+          <p className="mt-2 text-sm text-gray-600">{description}</p>
           {channel.username && <p className="mt-1 text-xs text-gray-500">@{channel.username}</p>}
         </div>
         <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">{statusLabel}</span>
@@ -54,7 +59,7 @@ export function ConnectedChannelCard({
           className="inline-flex h-9 items-center gap-2 rounded-md bg-yux-600 px-3 text-sm font-medium text-white hover:bg-yux-700"
         >
           <Cable className="h-4 w-4" aria-hidden="true" />
-          {connected ? `Reconectar ${channel.label}` : `Conectar ${channel.label}`}
+          {connected ? `Reconectar ${channel.label}` : connectLabel}
         </button>
         <button
           type="button"

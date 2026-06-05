@@ -1,6 +1,7 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import type { ComponentProps } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { PortalOmnichannelWorkspace } from './PortalOmnichannelWorkspace'
 import type { OmnichannelMessageView, PortalOmnichannelConversationSummary } from '@/services/omnichannelService'
@@ -62,26 +63,28 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof PortalOmnichan
 
   act(() => {
     root.render(
-      <PortalOmnichannelWorkspace
-        organizationId="client-org-1"
-        conversations={[conversation]}
-        messagesByConversation={{ 'conversation-portal-1': messages }}
-        metrics={{
-          totalConversations: 14,
-          openConversations: 6,
-          resolvedConversations: 8,
-          slaOnTimeRate: 0.91,
-          handoffCount: 3,
-          byChannel: { webchat: 10, whatsapp: 4 },
-          protectedErrorText: 'internal failure',
-          internalAiCostMargin: 120,
-        }}
-        queues={[{ id: 'queue-1', name: 'Suporte' }]}
-        users={[{ id: 'user-1', name: 'Bia YUX' }]}
-        canConfigure
-        {...handlers}
-        {...overrides}
-      />,
+      <MemoryRouter>
+        <PortalOmnichannelWorkspace
+          organizationId="client-org-1"
+          conversations={[conversation]}
+          messagesByConversation={{ 'conversation-portal-1': messages }}
+          metrics={{
+            totalConversations: 14,
+            openConversations: 6,
+            resolvedConversations: 8,
+            slaOnTimeRate: 0.91,
+            handoffCount: 3,
+            byChannel: { webchat: 10, whatsapp: 4 },
+            protectedErrorText: 'internal failure',
+            internalAiCostMargin: 120,
+          }}
+          queues={[{ id: 'queue-1', name: 'Suporte' }]}
+          users={[{ id: 'user-1', name: 'Bia YUX' }]}
+          canConfigure
+          {...handlers}
+          {...overrides}
+        />
+      </MemoryRouter>,
     )
   })
 
@@ -94,6 +97,7 @@ describe('PortalOmnichannelWorkspace', () => {
     const html = container.innerHTML
 
     expect(html).toContain('Central Omnichannel IA')
+    expect(html).toContain('Conectar canais')
     expect(html).toContain('Cliente Portal')
     expect(html).not.toContain('Organizacao')
 
