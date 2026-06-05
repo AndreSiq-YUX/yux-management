@@ -3,11 +3,32 @@ import { createRoot } from 'react-dom/client'
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { OmnichannelWorkspace } from './OmnichannelWorkspace'
+import { omnichannelService } from '@/services/omnichannelService'
 import type { OmnichannelAiRunView, OmnichannelConversationSummary, OmnichannelMessageView } from '@/services/omnichannelService'
+
+const organizationId = '650e8400-e29b-41d4-a716-446655440001'
+
+vi.mock('@/services/omnichannelService', () => ({
+  omnichannelService: {
+    getInternalInbox: vi.fn(),
+    getQueues: vi.fn(),
+    getTeams: vi.fn(),
+    getMessages: vi.fn(),
+    sendHumanReply: vi.fn(),
+    approveAssistedSuggestion: vi.fn(),
+    assignConversation: vi.fn(),
+    reassignConversation: vi.fn(),
+    handoffConversation: vi.fn(),
+    resolveConversation: vi.fn(),
+    reopenConversation: vi.fn(),
+    retryOutboundMessage: vi.fn(),
+    simulateChannelEvent: vi.fn(),
+  },
+}))
 
 const conversation: OmnichannelConversationSummary = {
   id: 'conversation-1',
-  organizationId: 'org-1',
+  organizationId,
   contactId: 'contact-1',
   connectionId: 'connection-1',
   channel: 'whatsapp',
@@ -95,7 +116,7 @@ const messages: OmnichannelMessageView[] = [
 const aiRuns: OmnichannelAiRunView[] = [
   {
     id: 'run-1',
-    organizationId: 'org-1',
+    organizationId,
     conversationId: 'conversation-1',
     outboundMessageId: 'message-2',
     logicalProvider: 'n8n',
@@ -131,7 +152,7 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof OmnichannelWor
   act(() => {
     root.render(
       <OmnichannelWorkspace
-        organizationId="org-1"
+        organizationId={organizationId}
         conversations={[conversation]}
         messagesByConversation={{ 'conversation-1': messages }}
         aiRunsByConversation={{ 'conversation-1': aiRuns }}
@@ -148,6 +169,27 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof OmnichannelWor
 }
 
 describe('OmnichannelWorkspace', () => {
+  it('does not query Supabase with the local organization placeholder', () => {
+    vi.clearAllMocks()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<OmnichannelWorkspace organizationId="local-yux" />)
+    })
+
+    const html = container.textContent || ''
+
+    expect(html).toContain('Nao foi possivel carregar uma organizacao real')
+    expect(omnichannelService.getInternalInbox).not.toHaveBeenCalled()
+    expect(omnichannelService.getQueues).not.toHaveBeenCalled()
+    expect(omnichannelService.getTeams).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('renders operational filters for the internal inbox', () => {
     const { container, root } = renderWorkspace()
     const html = container.innerHTML
@@ -218,7 +260,7 @@ describe('OmnichannelWorkspace', () => {
     expect(handlers.onModeChange).toHaveBeenCalledWith('conversation-1', 'manual')
     expect(handlers.onSimulateEvent).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'whatsapp',
-      organizationId: 'org-1',
+      organizationId,
     }))
 
     act(() => root.unmount())

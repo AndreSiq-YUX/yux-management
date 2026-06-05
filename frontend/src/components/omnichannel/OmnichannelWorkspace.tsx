@@ -5,6 +5,7 @@ import { ConversationComposer } from './ConversationComposer'
 import { ConversationDetails } from './ConversationDetails'
 import { ConversationList } from './ConversationList'
 import { OmnichannelAdminTabs } from './OmnichannelAdminTabs'
+import { isPersistedOrganizationId } from '@/lib/crm/followUpRules'
 import { omnichannelService } from '@/services/omnichannelService'
 import type {
   OmnichannelAiRunView,
@@ -55,6 +56,7 @@ export function OmnichannelWorkspace({
   onModeChange,
   onSimulateEvent,
 }: OmnichannelWorkspaceProps) {
+  const hasPersistedOrganization = isPersistedOrganizationId(organizationId)
   const [filters, setFilters] = useState<OmnichannelConversationFilters>({ organizationId })
   const [loadedConversations, setLoadedConversations] = useState<OmnichannelConversationSummary[]>([])
   const [loadedMessages, setLoadedMessages] = useState<Record<string, OmnichannelMessageView[]>>({})
@@ -95,6 +97,14 @@ export function OmnichannelWorkspace({
 
   const loadInbox = useCallback(async () => {
     if (controlledConversations) return
+    if (!hasPersistedOrganization) {
+      setLoadedConversations([])
+      setQueues([])
+      setTeams([])
+      setSelectedId(undefined)
+      setLoading(false)
+      return
+    }
     try {
       setLoading(true)
       const nextConversations = await omnichannelService.getInternalInbox({ organizationId })
@@ -112,7 +122,7 @@ export function OmnichannelWorkspace({
     } finally {
       setLoading(false)
     }
-  }, [controlledConversations, organizationId])
+  }, [controlledConversations, hasPersistedOrganization, organizationId])
 
   useEffect(() => { loadInbox() }, [loadInbox])
 
@@ -153,6 +163,11 @@ export function OmnichannelWorkspace({
           {loading && <span className="text-gray-500">Carregando...</span>}
         </div>
       </div>
+      {!hasPersistedOrganization && (
+        <section className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Nao foi possivel carregar uma organizacao real para o Omnichannel. Verifique a sessao do usuario e o acesso a organizations antes de consultar conversas, filas e equipes.
+        </section>
+      )}
       <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-white lg:grid-cols-[340px_1fr]">
         <ConversationList
           conversations={list}
@@ -182,13 +197,15 @@ export function OmnichannelWorkspace({
               onModeChange={onModeChange || ((conversationId, mode) => invokeOrToast('Modo atualizado', () => omnichannelService.handoffConversation({ conversationId, trigger: `mode:${mode}`, outcome: { mode } })))}
             />
           )}
-          <ChannelSimulator
-            organizationId={organizationId}
-            onSimulateEvent={onSimulateEvent || (event => invokeOrToast('Evento simulado', () => omnichannelService.simulateChannelEvent(event)))}
-          />
+          {hasPersistedOrganization && (
+            <ChannelSimulator
+              organizationId={organizationId}
+              onSimulateEvent={onSimulateEvent || (event => invokeOrToast('Evento simulado', () => omnichannelService.simulateChannelEvent(event)))}
+            />
+          )}
         </main>
       </div>
-      <OmnichannelAdminTabs organizationId={organizationId} profile="internal" />
+      {hasPersistedOrganization && <OmnichannelAdminTabs organizationId={organizationId} profile="internal" />}
     </div>
   )
 }
