@@ -23,6 +23,7 @@ import { LandingPagesPage } from '@/pages/landing-pages/LandingPagesPage'
 import { SupportPage } from '@/pages/support/SupportPage'
 import { AutomationsPage } from '@/pages/automations/AutomationsPage'
 import { ReportsPage } from '@/pages/reports/ReportsPage'
+import { MarketingStudioPage } from '@/pages/marketing-studio/MarketingStudioPage'
 
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
@@ -33,6 +34,7 @@ import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
 import { PortalProposalsPage } from '@/pages/client-portal/PortalProposalsPage'
 import { PortalFinancePage } from '@/pages/client-portal/PortalFinancePage'
 import { PortalLandingPagesPage } from '@/pages/client-portal/PortalLandingPagesPage'
+import { PortalMarketingStudioPage } from '@/pages/client-portal/PortalMarketingStudioPage'
 import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
 import { PortalCrmSettingsPage } from '@/pages/client-portal/PortalCrmSettingsPage'
@@ -101,6 +103,7 @@ function App() {
             <Route path="omnichannel" element={<OmnichannelPage />} />
             <Route path="whatsapp-ai" element={<Navigate to="/omnichannel" replace />} />
             <Route path="landing-pages" element={<LandingPagesPage />} />
+            <Route path="marketing-studio" element={<MarketingStudioPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="automations" element={<AutomationsPage />} />
             <Route path="support" element={<SupportPage />} />
@@ -121,6 +124,7 @@ function App() {
             <Route path="portal/omnichannel/channels" element={<PortalConnectedChannelsPage />} />
             <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/omnichannel" replace />} />
             <Route path="portal/landing-pages" element={<PortalLandingPagesPage />} />
+            <Route path="portal/marketing-studio" element={<PortalMarketingStudioPage />} />
             <Route path="portal/campaigns" element={<PortalCampaignsPage />} />
             <Route path="portal/reports" element={<PortalReportsPage />} />
             <Route path="portal/support" element={<PortalSupportPage />} />
