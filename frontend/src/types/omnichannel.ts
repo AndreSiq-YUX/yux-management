@@ -1,4 +1,4 @@
-export type OmnichannelChannel = 'whatsapp' | 'instagram' | 'email' | 'webchat'
+export type OmnichannelChannel = 'whatsapp' | 'instagram' | 'messenger' | 'email' | 'webchat'
 export type ConversationStatus = 'open' | 'waiting_ai' | 'waiting_human' | 'assigned' | 'resolved' | 'archived'
 export type MessageDirection = 'inbound' | 'outbound'
 export type MessageAuthor = 'contact' | 'ai' | 'agent' | 'system'
@@ -6,6 +6,17 @@ export type DeliveryStatus = 'queued' | 'processing' | 'sent' | 'delivered' | 'r
 export type ResponseMode = 'automatic' | 'assisted' | 'manual'
 export type ProviderVerifyState = 'not_configured' | 'pending' | 'verified' | 'failed'
 export type ProviderTokenState = 'not_configured' | 'connected' | 'stale' | 'needs_reauth' | 'failed'
+export type ConnectedChannelState =
+  | 'not_configured'
+  | 'pending'
+  | 'connected'
+  | 'stale'
+  | 'needs_reauth'
+  | 'failed'
+  | 'disabled'
+  | 'disconnected'
+export type MetaChannel = 'whatsapp' | 'instagram' | 'messenger'
+export type MetaChannelFallbackMode = 'official' | 'n8n'
 export type HandoffCombinator = 'all' | 'any'
 export type HandoffOutcomeType = 'continue' | 'assist' | 'manual' | 'route'
 export type KnowledgePublicationState = 'draft' | 'published' | 'archived'
@@ -36,6 +47,17 @@ export interface ChannelConnection {
   responseMode: ResponseMode
   createdAt: string
   updatedAt: string
+}
+
+export interface MetaChannelPublicMetadata {
+  businessId?: string
+  wabaId?: string
+  phoneNumberId?: string
+  pageId?: string
+  instagramAccountId?: string
+  displayName?: string
+  username?: string
+  scopes?: string[]
 }
 
 export interface ChannelEventIdempotencyInput {

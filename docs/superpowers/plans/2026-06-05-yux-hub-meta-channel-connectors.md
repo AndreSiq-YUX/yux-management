@@ -84,7 +84,7 @@ Before implementation, verify the current Meta docs for Embedded Signup, Meta Lo
 - Create: `frontend/src/lib/meta/metaChannelRules.ts`
 - Test: `frontend/src/lib/meta/metaChannelRules.test.ts`
 
-- [ ] **Step 1: Write failing tests for connected-channel states**
+- [x] **Step 1: Write failing tests for connected-channel states**
 
 Create `frontend/src/lib/meta/metaChannelRules.test.ts`:
 
@@ -148,7 +148,7 @@ describe('metaChannelRules', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [x] **Step 2: Run tests and confirm failure**
 
 Run:
 
@@ -159,7 +159,7 @@ npm test -- src/lib/meta/metaChannelRules.test.ts
 
 Expected: FAIL because `frontend/src/lib/meta/metaChannelRules.ts` does not exist.
 
-- [ ] **Step 3: Extend omnichannel channel types**
+- [x] **Step 3: Extend omnichannel channel types**
 
 Update `frontend/src/types/omnichannel.ts`:
 
@@ -190,7 +190,7 @@ export interface MetaChannelPublicMetadata {
 }
 ```
 
-- [ ] **Step 4: Implement pure channel rules**
+- [x] **Step 4: Implement pure channel rules**
 
 Create `frontend/src/lib/meta/metaChannelRules.ts`:
 
@@ -256,7 +256,7 @@ export function shouldUseN8nFallback(input: { adapterKey?: string | null; fallba
 }
 ```
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 
