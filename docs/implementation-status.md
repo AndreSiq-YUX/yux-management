@@ -1,6 +1,6 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-06-05 (Meta channel connectors: WhatsApp Embedded Signup foundation, Instagram Direct, Messenger, portal and Admin channel surfaces)
+Updated: 2026-06-05 (Marketing Studio foundation in repo; remote Supabase application blocked by reauthentication)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -44,6 +44,7 @@ the target Supabase/Vercel environments.
 | Real WhatsApp provider path | Implemented in repo | `/omnichannel`, `/portal/omnichannel` | `20260601300000_whatsapp_provider_path.sql`, WhatsApp provider helper, receive/dispatch Edge Functions | Adds Meta WhatsApp webhook normalization, signature validation, token state and manual outbound path. |
 | Meta channel connectors | Implemented in repo | `/portal/omnichannel/channels`, `/admin/channels` | `20260605110828_meta_channel_connectors.sql`, Meta Edge Functions, `metaChannelService`, connected-channel workspaces | Requires Meta App configuration, App Review permissions, runtime secrets and authenticated production QA. |
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
+| Marketing Studio foundation | Implemented in repo | `/marketing-studio`, `/portal/marketing-studio` | `20260605220328_marketing_studio_foundation.sql`, `marketingStudioService`, `MarketingStudioWorkspace`, `PortalMarketingStudioWorkspace`, Marketing Studio domain rules | Adds module shell, navigation, settings, agent templates, ideas, content/version/review workflow, editorial calendar, AI credits and usage ledger. Target Supabase application/probe is blocked until Supabase app/DB credentials are reauthenticated. |
 | Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
 | Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `AutomationDashboard`, `AutomationGuidedBuilder`, `AutomationSimulationPanel`, `AutomationVersionPanel`, `AutomationDryRunToggle`, `AiActionPreview`, `CrmIntegrationPreview`, `AutomationAuditTrail`, `AutomationRealtime`, `ConfirmDialog`, `AutomationOnboarding`, `Tooltip`, `automationValidation`, `SequencesWorkspace` timeline, SMTP2GO Edge Functions | Full automation workspace with visual builder (When/If/Then), drag-and-drop action reordering, real-time validation, confirmation dialogs, first-time onboarding, timeline visualization, tooltips, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, real-time and dry-run mode. Supabase reset still blocked locally by Docker availability. |
 | Visual Node Editor & Materials Library | Implemented in repo | `/automations`, `/admin/limits` | `20260604220000_automation_graph_and_materials.sql`, `AutomationNodeEditor`, `NodeConfigSidebar`, `MaterialLibraryDialog`, `AdminLimitsPage`, `automationService`, `adminPlatformService` | Visual node-based automation flow editor (React Flow), branched flow traversal (parallel execution), dynamic file attachments (email/WhatsApp) integrated with multitenant Materials Library storage, and administrative interface to configure global and client limits. |
@@ -58,6 +59,9 @@ the target Supabase/Vercel environments.
 - deploy Meta channel Edge Functions;
 - validate WhatsApp Embedded Signup, Instagram Direct and Messenger with
   development-mode test assets before production.
+- reauthenticate the Supabase app or update the local Postgres password, then
+  apply `20260605220328_marketing_studio_foundation.sql` and run
+  `supabase/probes/20260605220328_marketing_studio_foundation.sql` remotely.
 
 ## Implemented Functional Scope
 
