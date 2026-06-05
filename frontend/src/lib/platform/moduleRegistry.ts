@@ -58,6 +58,14 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     requiredPermissions: ['campaigns.read'],
   },
   {
+    key: 'marketing_studio',
+    name: 'Marketing Studio',
+    base: false,
+    internalRoute: '/marketing-studio',
+    portalRoute: '/portal/marketing-studio',
+    requiredPermissions: ['marketing_studio.read'],
+  },
+  {
     key: 'bi_reports',
     name: 'Relatorios & ROI',
     base: false,

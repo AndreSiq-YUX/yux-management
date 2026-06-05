@@ -38,6 +38,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
       { label: 'Landing Pages', href: '/landing-pages', moduleKey: 'landing_pages' },
       { label: 'Relatorios & ROI', href: '/reports', moduleKey: 'bi_reports' },
       { label: 'Conversas IA', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
+      { label: 'Marketing Studio', href: '/marketing-studio', moduleKey: 'marketing_studio' },
     ],
   },
   {

@@ -231,6 +231,41 @@ describe('buildNavigation', () => {
 
     expect(items.find(item => item.moduleKey === 'whatsapp_ai')).toBeUndefined()
   })
+
+  it('routes Marketing Studio internally and in the contracted portal', () => {
+    const internalItems = buildNavigation({
+      ...internalContext,
+      role: {
+        key: 'yux_manager',
+        name: 'YUX Manager',
+        scope: 'internal',
+        permissions: ['marketing_studio.read'],
+      },
+      enabledModuleKeys: ['marketing_studio'],
+    })
+    const portalItems = buildNavigation({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['marketing_studio.read'],
+      },
+      enabledModuleKeys: ['marketing_studio'],
+    })
+
+    expect(internalItems.find(item => item.moduleKey === 'marketing_studio')).toEqual({
+      label: 'Marketing Studio',
+      href: '/marketing-studio',
+      moduleKey: 'marketing_studio',
+    })
+    expect(portalItems.find(item => item.moduleKey === 'marketing_studio')).toEqual({
+      label: 'Marketing Studio',
+      href: '/portal/marketing-studio',
+      moduleKey: 'marketing_studio',
+    })
+  })
 })
 
 describe('buildNavigationGroups', () => {
