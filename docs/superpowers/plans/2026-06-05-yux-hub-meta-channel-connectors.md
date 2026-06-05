@@ -1268,7 +1268,7 @@ git commit -m "feat: extend meta inbound and outbound adapters"
 - Create: `frontend/src/services/metaChannelService.ts`
 - Test: `frontend/src/services/metaChannelService.test.ts`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create `frontend/src/services/metaChannelService.test.ts`:
 
@@ -1316,7 +1316,7 @@ describe('metaChannelService', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [x] **Step 2: Run tests and confirm failure**
 
 Run:
 
@@ -1327,7 +1327,7 @@ npm test -- src/services/metaChannelService.test.ts
 
 Expected: FAIL because `metaChannelService.ts` does not exist.
 
-- [ ] **Step 3: Implement service**
+- [x] **Step 3: Implement service**
 
 Create `frontend/src/services/metaChannelService.ts`:
 
@@ -1440,7 +1440,7 @@ export const metaChannelService = {
 }
 ```
 
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 4: Run tests and commit**
 
 Run:
 
