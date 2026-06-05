@@ -96,10 +96,13 @@ function buildPortalNavigationGroup(context: PlatformContext): NavigationGroup {
       },
     ]
   })
+  const omnichannelItems = moduleItems.some(item => item.moduleKey === 'whatsapp_ai')
+    ? [{ label: 'Canais conectados', href: '/portal/omnichannel/channels' }]
+    : []
 
   return {
     label: 'Portal',
-    items: [{ label: 'Portal', href: '/portal' }, ...moduleItems],
+    items: [{ label: 'Portal', href: '/portal' }, ...moduleItems, ...omnichannelItems],
   }
 }
 

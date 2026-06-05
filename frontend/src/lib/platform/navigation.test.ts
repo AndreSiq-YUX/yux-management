@@ -100,6 +100,7 @@ describe('buildNavigation', () => {
     expect(labels).toEqual(expect.arrayContaining([
       'Leads & Funil',
       'Conversas IA',
+      'Canais conectados',
       'Landing Pages',
       'Campanhas',
       'Relatorios',
@@ -108,6 +109,7 @@ describe('buildNavigation', () => {
     expect(portalRoutes).toEqual(expect.arrayContaining([
       '/portal/crm',
       '/portal/omnichannel',
+      '/portal/omnichannel/channels',
       '/portal/landing-pages',
       '/portal/campaigns',
       '/portal/reports',

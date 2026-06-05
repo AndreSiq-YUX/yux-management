@@ -1471,7 +1471,7 @@ git commit -m "feat: add meta channel frontend service"
 - Modify: `frontend/src/lib/platform/navigation.ts`
 - Modify: `frontend/src/lib/platform/navigation.test.ts`
 
-- [ ] **Step 1: Write failing UI test**
+- [x] **Step 1: Write failing UI test**
 
 Create `frontend/src/components/omnichannel/ConnectedChannelsWorkspace.test.tsx`:
 
@@ -1513,7 +1513,7 @@ describe('ConnectedChannelsWorkspace', () => {
 })
 ```
 
-- [ ] **Step 2: Run test and confirm failure**
+- [x] **Step 2: Run test and confirm failure**
 
 Run:
 
@@ -1524,7 +1524,7 @@ npm test -- src/components/omnichannel/ConnectedChannelsWorkspace.test.tsx
 
 Expected: FAIL because the workspace does not exist.
 
-- [ ] **Step 3: Create card component**
+- [x] **Step 3: Create card component**
 
 Create `frontend/src/components/omnichannel/ConnectedChannelCard.tsx`:
 
@@ -1580,7 +1580,7 @@ export function ConnectedChannelCard({
 }
 ```
 
-- [ ] **Step 4: Create workspace**
+- [x] **Step 4: Create workspace**
 
 Create `frontend/src/components/omnichannel/ConnectedChannelsWorkspace.tsx`:
 
@@ -1646,7 +1646,7 @@ export function ConnectedChannelsWorkspace({
 }
 ```
 
-- [ ] **Step 5: Add portal page and route**
+- [x] **Step 5: Add portal page and route**
 
 Create `frontend/src/pages/client-portal/PortalConnectedChannelsPage.tsx`:
 
@@ -1704,7 +1704,7 @@ Add route:
 
 Update navigation to include a portal child or visible link named `Canais conectados`.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 Run:
 
