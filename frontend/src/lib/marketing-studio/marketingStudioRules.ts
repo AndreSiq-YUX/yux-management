@@ -1,8 +1,12 @@
 import type {
   MarketingAgentType,
+  MarketingCalendarItem,
   MarketingContentItem,
+  MarketingContentReview,
   MarketingContentStatus,
+  MarketingContentVersion,
   MarketingOperationMode,
+  MarketingReviewStatus,
   MarketingStudioSettings,
   MarketingToolKey,
   MarketingUsageAction,
@@ -85,4 +89,44 @@ export function selectAllowedAgentTools(input: { agentType: MarketingAgentType; 
 export function sanitizeMarketingContentForPortal(content: MarketingContentItem): PortalMarketingContentItem {
   const { internalNotes: _internalNotes, ...portalContent } = content
   return portalContent
+}
+
+export function getNextVersionNumber(versions: Pick<MarketingContentVersion, 'versionNumber'>[]) {
+  if (!versions.length) return 1
+  return Math.max(...versions.map(version => version.versionNumber)) + 1
+}
+
+export function canSubmitContentForReview(content: MarketingContentItem) {
+  return Boolean(content.title.trim() && content.body?.trim() && ['draft', 'changes_requested'].includes(content.status))
+}
+
+export function statusAfterReviewDecision(status: MarketingReviewStatus): MarketingContentStatus {
+  if (status === 'approved') return 'approved'
+  if (status === 'changes_requested') return 'changes_requested'
+  if (status === 'rejected') return 'rejected'
+  return 'in_review'
+}
+
+export function canScheduleContent(input: {
+  content: MarketingContentItem
+  startsAt: string
+  existingCalendarItems?: Pick<MarketingCalendarItem, 'contentItemId' | 'startsAt' | 'status'>[]
+}) {
+  if (!['approved', 'scheduled'].includes(input.content.status)) return false
+  const startTime = new Date(input.startsAt).getTime()
+  if (!Number.isFinite(startTime) || startTime <= Date.now()) return false
+  return !(input.existingCalendarItems || []).some(item =>
+    item.contentItemId === input.content.id &&
+    item.status !== 'cancelled' &&
+    item.startsAt === input.startsAt
+  )
+}
+
+export function summarizeReviewQueue(reviews: MarketingContentReview[]) {
+  return {
+    pending: reviews.filter(review => review.status === 'pending').length,
+    approved: reviews.filter(review => review.status === 'approved').length,
+    changesRequested: reviews.filter(review => review.status === 'changes_requested').length,
+    rejected: reviews.filter(review => review.status === 'rejected').length,
+  }
 }

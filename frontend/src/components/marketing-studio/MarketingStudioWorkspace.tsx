@@ -1,17 +1,50 @@
-import { RefreshCw } from 'lucide-react'
-import type { MarketingContentItem, MarketingStudioSettings } from '@/types/marketingStudio'
+import { CalendarDays, Check, Clock, FileText, RefreshCw, RotateCcw, X } from 'lucide-react'
+import type { ReactNode } from 'react'
+import type {
+  MarketingCalendarItem,
+  MarketingContentItem,
+  MarketingContentReview,
+  MarketingContentVersion,
+  MarketingStudioSettings,
+} from '@/types/marketingStudio'
 
 interface MarketingStudioWorkspaceProps {
   contents: MarketingContentItem[]
   settings: MarketingStudioSettings | null
   onRefresh: () => void
+  calendarItems?: MarketingCalendarItem[]
+  reviews?: MarketingContentReview[]
+  versionsByContent?: Record<string, MarketingContentVersion[]>
+  onCreateContent?: () => void
+  onSubmitForReview?: (contentId: string) => void
+  onApproveReview?: (reviewId: string) => void
+  onRequestChanges?: (reviewId: string) => void
+  onRejectReview?: (reviewId: string) => void
+  onScheduleContent?: (contentId: string) => void
 }
 
 const tabs = ['Visao geral', 'Conteudo', 'Calendario', 'Aprovacoes', 'Ideias', 'Agentes', 'Creditos']
 
-export function MarketingStudioWorkspace({ contents, settings, onRefresh }: MarketingStudioWorkspaceProps) {
+export function MarketingStudioWorkspace({
+  contents,
+  settings,
+  onRefresh,
+  calendarItems = [],
+  reviews = [],
+  versionsByContent = {},
+  onCreateContent,
+  onSubmitForReview,
+  onApproveReview,
+  onRequestChanges,
+  onRejectReview,
+  onScheduleContent,
+}: MarketingStudioWorkspaceProps) {
   const pendingApprovals = contents.filter(content => content.status === 'in_review').length
   const scheduled = contents.filter(content => content.status === 'scheduled').length
+  const pendingReviews = reviews.filter(review => review.status === 'pending')
+  const nextCalendarItems = calendarItems
+    .filter(item => item.status !== 'cancelled')
+    .slice(0, 6)
 
   return (
     <div className="space-y-6">
@@ -20,15 +53,26 @@ export function MarketingStudioWorkspace({ contents, settings, onRefresh }: Mark
           <h1 className="text-2xl font-semibold text-slate-950">Marketing Studio</h1>
           <p className="text-sm text-slate-600">Operacao multicliente de conteudo, calendario, aprovacoes e creditos.</p>
         </div>
-        <button
-          type="button"
-          title="Atualizar Marketing Studio"
-          onClick={onRefresh}
-          className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Atualizar
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            title="Criar conteudo organico"
+            onClick={onCreateContent}
+            className="inline-flex items-center gap-2 rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700"
+          >
+            <FileText className="h-4 w-4" />
+            Novo conteudo
+          </button>
+          <button
+            type="button"
+            title="Atualizar Marketing Studio"
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
@@ -46,9 +90,12 @@ export function MarketingStudioWorkspace({ contents, settings, onRefresh }: Mark
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
         <section>
-          <h2 className="text-base font-semibold text-slate-950">Conteudo em producao</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-950">Conteudo organico</h2>
+            <span className="text-xs text-slate-500">posts, blog, newsletter e roteiros</span>
+          </div>
           <div className="mt-3 divide-y rounded-md border border-slate-200 bg-white">
             {contents.length === 0 ? (
               <p className="p-3 text-sm text-slate-500">Nenhum conteudo cadastrado.</p>
@@ -62,12 +109,79 @@ export function MarketingStudioWorkspace({ contents, settings, onRefresh }: Mark
                     </div>
                     <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700">{content.status}</span>
                   </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span>Versoes {versionsByContent[content.id]?.length || 0}</span>
+                    {content.cta && <span>CTA: {content.cta}</span>}
+                    {content.scheduledAt && <span>Agendado: {formatDate(content.scheduledAt)}</span>}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <ActionButton title="Enviar para revisao" onClick={() => onSubmitForReview?.(content.id)}>
+                      <Clock className="h-3.5 w-3.5" />
+                      Revisao
+                    </ActionButton>
+                    <ActionButton title="Agendar conteudo" onClick={() => onScheduleContent?.(content.id)}>
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      Agendar
+                    </ActionButton>
+                  </div>
                   {content.internalNotes && (
                     <p className="mt-2 text-xs text-slate-500">{content.internalNotes}</p>
                   )}
                 </article>
               ))
             )}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-base font-semibold text-slate-950">Fila de aprovacao</h2>
+          <div className="mt-3 divide-y rounded-md border border-slate-200 bg-white">
+            {pendingReviews.length === 0 ? (
+              <p className="p-3 text-sm text-slate-500">Nenhuma revisao pendente.</p>
+            ) : pendingReviews.map(review => {
+              const content = contents.find(item => item.id === review.contentItemId)
+              return (
+                <article key={review.id} className="space-y-2 p-3 text-sm">
+                  <div>
+                    <p className="font-medium text-slate-950">{content?.title || 'Conteudo sem titulo'}</p>
+                    <p className="text-xs text-slate-500">{review.comments || 'Aguardando decisao'}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <ActionButton title="Aprovar revisao" onClick={() => onApproveReview?.(review.id)}>
+                      <Check className="h-3.5 w-3.5" />
+                      Aprovar
+                    </ActionButton>
+                    <ActionButton title="Pedir ajustes" onClick={() => onRequestChanges?.(review.id)}>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Ajustes
+                    </ActionButton>
+                    <ActionButton title="Reprovar revisao" onClick={() => onRejectReview?.(review.id)}>
+                      <X className="h-3.5 w-3.5" />
+                      Reprovar
+                    </ActionButton>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+        <section>
+          <h2 className="text-base font-semibold text-slate-950">Calendario editorial</h2>
+          <div className="mt-3 divide-y rounded-md border border-slate-200 bg-white">
+            {nextCalendarItems.length === 0 ? (
+              <p className="p-3 text-sm text-slate-500">Nenhum item no calendario.</p>
+            ) : nextCalendarItems.map(item => (
+              <article key={item.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                <div>
+                  <p className="font-medium text-slate-950">{item.title}</p>
+                  <p className="text-xs text-slate-500">{item.channel} / {formatDate(item.startsAt)}</p>
+                </div>
+                <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700">{item.status}</span>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -91,4 +205,21 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="text-sm font-medium text-slate-700">{label} {value}</p>
     </div>
   )
+}
+
+function ActionButton({ children, onClick, title }: { children: ReactNode; onClick?: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+    >
+      {children}
+    </button>
+  )
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
 }

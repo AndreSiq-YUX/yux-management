@@ -1,12 +1,31 @@
-import type { MarketingStudioSettings, PortalMarketingContentItem } from '@/types/marketingStudio'
+import { Check, MessageSquare, RotateCcw, X } from 'lucide-react'
+import type { ReactNode } from 'react'
+import type {
+  MarketingCalendarItem,
+  MarketingContentReview,
+  MarketingStudioSettings,
+  PortalMarketingContentItem,
+  PortalMarketingReviewDecision,
+} from '@/types/marketingStudio'
 
 interface PortalMarketingStudioWorkspaceProps {
   contents: PortalMarketingContentItem[]
   settings: MarketingStudioSettings | null
+  calendarItems?: MarketingCalendarItem[]
+  reviews?: MarketingContentReview[]
+  onReviewDecision?: (decision: PortalMarketingReviewDecision) => void
 }
 
-export function PortalMarketingStudioWorkspace({ contents, settings }: PortalMarketingStudioWorkspaceProps) {
+export function PortalMarketingStudioWorkspace({
+  contents,
+  settings,
+  calendarItems = [],
+  reviews = [],
+  onReviewDecision,
+}: PortalMarketingStudioWorkspaceProps) {
   const pending = contents.filter(content => content.status === 'in_review').length
+  const reviewableContents = contents.filter(content => content.status === 'in_review')
+  const nextCalendarItems = calendarItems.filter(item => item.status !== 'cancelled').slice(0, 5)
 
   return (
     <div className="space-y-6">
@@ -24,7 +43,13 @@ export function PortalMarketingStudioWorkspace({ contents, settings }: PortalMar
       <div className="grid gap-3 md:grid-cols-3">
         <section className="rounded-md border border-slate-200 bg-white p-3">
           <h2 className="text-sm font-semibold text-slate-950">Calendario</h2>
-          <p className="mt-1 text-sm text-slate-600">Proximas publicacoes e ajustes pendentes.</p>
+          <div className="mt-2 space-y-2 text-sm text-slate-600">
+            {nextCalendarItems.length === 0 ? (
+              <p>Proximas publicacoes e ajustes pendentes.</p>
+            ) : nextCalendarItems.map(item => (
+              <p key={item.id}>{formatDate(item.startsAt)} - {item.title}</p>
+            ))}
+          </div>
         </section>
         <section className="rounded-md border border-slate-200 bg-white p-3">
           <h2 className="text-sm font-semibold text-slate-950">Campanhas e criativos</h2>
@@ -35,6 +60,44 @@ export function PortalMarketingStudioWorkspace({ contents, settings }: PortalMar
           <p className="mt-1 text-sm text-slate-600">Resumo de resultados do periodo.</p>
         </section>
       </div>
+
+      <section>
+        <h2 className="text-base font-semibold text-slate-950">Aprovacoes</h2>
+        <div className="mt-3 divide-y rounded-md border border-slate-200 bg-white">
+          {reviewableContents.length === 0 ? (
+            <p className="p-3 text-sm text-slate-500">Nenhum conteudo aguardando aprovacao.</p>
+          ) : reviewableContents.map(content => {
+            const latestReview = reviews.find(review => review.contentItemId === content.id)
+            return (
+              <article key={content.id} className="space-y-3 p-3">
+                <div>
+                  <h3 className="text-sm font-medium text-slate-950">{content.title}</h3>
+                  <p className="text-xs text-slate-500">{latestReview?.comments || 'Revise o conteudo e registre sua decisao.'}</p>
+                </div>
+                {content.body && <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">{content.body}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <PortalAction title="Aprovar conteudo" onClick={() => onReviewDecision?.({ contentItemId: content.id, status: 'approved' })}>
+                    <Check className="h-3.5 w-3.5" />
+                    Aprovar
+                  </PortalAction>
+                  <PortalAction title="Pedir ajustes" onClick={() => onReviewDecision?.({ contentItemId: content.id, status: 'changes_requested', comments: 'Cliente solicitou ajustes.' })}>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Ajustes
+                  </PortalAction>
+                  <PortalAction title="Reprovar conteudo" onClick={() => onReviewDecision?.({ contentItemId: content.id, status: 'rejected' })}>
+                    <X className="h-3.5 w-3.5" />
+                    Reprovar
+                  </PortalAction>
+                  <PortalAction title="Comentar conteudo" onClick={() => onReviewDecision?.({ contentItemId: content.id, status: 'changes_requested', comments: 'Cliente deixou comentario.' })}>
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Comentar
+                  </PortalAction>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
 
       <section>
         <h2 className="text-base font-semibold text-slate-950">Conteudos</h2>
@@ -66,4 +129,21 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="text-sm font-medium text-slate-700">{label} {value}</p>
     </div>
   )
+}
+
+function PortalAction({ children, onClick, title }: { children: ReactNode; onClick?: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+    >
+      {children}
+    </button>
+  )
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
 }

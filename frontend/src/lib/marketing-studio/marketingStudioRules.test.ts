@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   canTransitionContentStatus,
   calculateCreditsForAction,
+  canScheduleContent,
+  canSubmitContentForReview,
+  getNextVersionNumber,
   requiresHumanApproval,
   sanitizeMarketingContentForPortal,
   selectAllowedAgentTools,
   shouldBlockCreditDebit,
+  statusAfterReviewDecision,
+  summarizeReviewQueue,
 } from './marketingStudioRules'
 import type { MarketingContentItem, MarketingStudioSettings } from '@/types/marketingStudio'
 
@@ -103,5 +108,55 @@ describe('marketingStudioRules', () => {
       createdAt: '2026-06-05T12:00:00.000Z',
       updatedAt: '2026-06-05T12:00:00.000Z',
     })
+  })
+
+  it('calculates next version number from existing content versions', () => {
+    expect(getNextVersionNumber([])).toBe(1)
+    expect(getNextVersionNumber([{ versionNumber: 1 }, { versionNumber: 3 }])).toBe(4)
+  })
+
+  it('allows review submission only for drafted content with body', () => {
+    expect(canSubmitContentForReview(content)).toBe(true)
+    expect(canSubmitContentForReview({ ...content, body: '' })).toBe(false)
+    expect(canSubmitContentForReview({ ...content, status: 'published' })).toBe(false)
+  })
+
+  it('maps review decisions to editorial status', () => {
+    expect(statusAfterReviewDecision('approved')).toBe('approved')
+    expect(statusAfterReviewDecision('changes_requested')).toBe('changes_requested')
+    expect(statusAfterReviewDecision('rejected')).toBe('rejected')
+    expect(statusAfterReviewDecision('pending')).toBe('in_review')
+  })
+
+  it('blocks scheduling unless content is approved and the slot is free', () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString()
+    expect(canScheduleContent({ content: { ...content, status: 'approved' }, startsAt: future })).toBe(true)
+    expect(canScheduleContent({ content, startsAt: future })).toBe(false)
+    expect(canScheduleContent({
+      content: { ...content, status: 'approved' },
+      startsAt: future,
+      existingCalendarItems: [{ contentItemId: content.id, startsAt: future, status: 'planned' }],
+    })).toBe(false)
+  })
+
+  it('summarizes review queue status counts', () => {
+    expect(summarizeReviewQueue([
+      {
+        id: 'review-1',
+        contentItemId: 'content-1',
+        status: 'pending',
+        checklist: {},
+        createdAt: '2026-06-05T12:00:00.000Z',
+        updatedAt: '2026-06-05T12:00:00.000Z',
+      },
+      {
+        id: 'review-2',
+        contentItemId: 'content-2',
+        status: 'changes_requested',
+        checklist: {},
+        createdAt: '2026-06-05T12:00:00.000Z',
+        updatedAt: '2026-06-05T12:00:00.000Z',
+      },
+    ])).toEqual({ pending: 1, approved: 0, changesRequested: 1, rejected: 0 })
   })
 })

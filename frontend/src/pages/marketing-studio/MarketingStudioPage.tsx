@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { MarketingStudioWorkspace } from '@/components/marketing-studio/MarketingStudioWorkspace'
+import { statusAfterReviewDecision } from '@/lib/marketing-studio/marketingStudioRules'
 import { marketingStudioService } from '@/services/marketingStudioService'
 import { platformService } from '@/services/platformService'
-import type { MarketingContentItem, MarketingStudioSettings } from '@/types/marketingStudio'
+import type {
+  MarketingCalendarItem,
+  MarketingContentItem,
+  MarketingContentReview,
+  MarketingContentVersion,
+  MarketingStudioSettings,
+} from '@/types/marketingStudio'
 
 export function MarketingStudioPage() {
   const [contents, setContents] = useState<MarketingContentItem[]>([])
+  const [calendarItems, setCalendarItems] = useState<MarketingCalendarItem[]>([])
+  const [reviews, setReviews] = useState<MarketingContentReview[]>([])
+  const [versionsByContent, setVersionsByContent] = useState<Record<string, MarketingContentVersion[]>>({})
   const [settings, setSettings] = useState<MarketingStudioSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -15,13 +25,26 @@ export function MarketingStudioPage() {
     try {
       const contracts = await platformService.getContracts()
       const defaultContract = contracts[0]
-      const loadedContents = await marketingStudioService.getContents()
+      const [loadedContents, loadedCalendar] = await Promise.all([
+        marketingStudioService.getContents(defaultContract ? { contractId: defaultContract.id } : undefined),
+        defaultContract ? marketingStudioService.getCalendarItems({ contractId: defaultContract.id }) : Promise.resolve([]),
+      ])
+      const loadedReviews = defaultContract ? await marketingStudioService.getReviews({ contractId: defaultContract.id }) : []
+      const versionPairs = await Promise.all(
+        loadedContents.map(async content => [content.id, await marketingStudioService.getContentVersions(content.id)] as const)
+      )
       setContents(loadedContents)
+      setCalendarItems(loadedCalendar)
+      setReviews(loadedReviews)
+      setVersionsByContent(Object.fromEntries(versionPairs))
       setSettings(defaultContract ? await marketingStudioService.getSettings(defaultContract.id) : null)
     } catch (error) {
       console.error('Erro ao carregar Marketing Studio:', error)
       toast.error('Erro ao carregar Marketing Studio')
       setContents([])
+      setCalendarItems([])
+      setReviews([])
+      setVersionsByContent({})
       setSettings(null)
     } finally {
       setLoading(false)
@@ -34,5 +57,67 @@ export function MarketingStudioPage() {
 
   if (loading) return <p className="text-sm text-slate-600">Carregando Marketing Studio...</p>
 
-  return <MarketingStudioWorkspace contents={contents} settings={settings} onRefresh={load} />
+  const handleSubmitForReview = async (contentId: string) => {
+    try {
+      await marketingStudioService.createReview({ contentItemId: contentId, comments: 'Revisao editorial solicitada.' })
+      await marketingStudioService.updateContentStatus(contentId, 'in_review')
+      toast.success('Conteudo enviado para revisao')
+      load()
+    } catch (error) {
+      console.error('Erro ao enviar conteudo para revisao:', error)
+      toast.error('Nao foi possivel enviar para revisao')
+    }
+  }
+
+  const handleReviewDecision = async (reviewId: string, status: 'approved' | 'changes_requested' | 'rejected') => {
+    try {
+      const review = await marketingStudioService.updateReviewDecision(reviewId, { status })
+      await marketingStudioService.updateContentStatus(review.contentItemId, statusAfterReviewDecision(status))
+      toast.success('Revisao atualizada')
+      load()
+    } catch (error) {
+      console.error('Erro ao atualizar revisao:', error)
+      toast.error('Nao foi possivel atualizar a revisao')
+    }
+  }
+
+  const handleScheduleContent = async (contentId: string) => {
+    const content = contents.find(item => item.id === contentId)
+    if (!content) return
+    const startsAt = new Date(Date.now() + 86_400_000).toISOString()
+    try {
+      await marketingStudioService.createCalendarItem({
+        organizationId: content.organizationId,
+        clientId: content.clientId,
+        contractId: content.contractId,
+        contentItemId: content.id,
+        title: content.title,
+        channel: content.channel,
+        startsAt,
+        status: 'scheduled',
+      })
+      await marketingStudioService.updateContentStatus(content.id, 'scheduled')
+      toast.success('Conteudo agendado')
+      load()
+    } catch (error) {
+      console.error('Erro ao agendar conteudo:', error)
+      toast.error('Nao foi possivel agendar')
+    }
+  }
+
+  return (
+    <MarketingStudioWorkspace
+      contents={contents}
+      settings={settings}
+      onRefresh={load}
+      calendarItems={calendarItems}
+      reviews={reviews}
+      versionsByContent={versionsByContent}
+      onSubmitForReview={handleSubmitForReview}
+      onApproveReview={reviewId => handleReviewDecision(reviewId, 'approved')}
+      onRequestChanges={reviewId => handleReviewDecision(reviewId, 'changes_requested')}
+      onRejectReview={reviewId => handleReviewDecision(reviewId, 'rejected')}
+      onScheduleContent={handleScheduleContent}
+    />
+  )
 }

@@ -171,6 +171,58 @@ export type PortalMarketingContentItem = Omit<MarketingContentItem, 'internalNot
   internalNotes?: never
 }
 
+export interface MarketingContentVersion {
+  id: string
+  contentItemId: string
+  versionNumber: number
+  title: string
+  body?: string
+  changeSummary?: string
+  createdBy?: string
+  createdByAgentId?: string
+  createdAt: string
+}
+
+export type MarketingReviewStatus = 'pending' | 'approved' | 'changes_requested' | 'rejected'
+
+export interface MarketingContentReview {
+  id: string
+  contentItemId: string
+  reviewerId?: string
+  status: MarketingReviewStatus
+  qualityScore?: number
+  comments?: string
+  checklist: Record<string, unknown>
+  decidedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type MarketingCalendarStatus = 'planned' | 'ready' | 'scheduled' | 'published' | 'missed' | 'cancelled'
+
+export interface MarketingCalendarItem {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  contentItemId?: string
+  title: string
+  channel: MarketingChannel
+  status: MarketingCalendarStatus
+  startsAt: string
+  endsAt?: string
+  responsibleUserId?: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PortalMarketingReviewDecision {
+  contentItemId: string
+  status: Extract<MarketingReviewStatus, 'approved' | 'changes_requested' | 'rejected'>
+  comments?: string
+}
+
 export interface MarketingUsageLedgerEntry {
   id: string
   organizationId: string

@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildContentInsertPayload,
+  buildCalendarItemPayload,
+  buildContentReviewPayload,
+  buildContentVersionPayload,
   buildIdeaInsertPayload,
   buildUsageLedgerPayload,
+  mapMarketingCalendarItem,
   mapMarketingContent,
+  mapMarketingContentReview,
+  mapMarketingContentVersion,
   mapMarketingSettings,
 } from './marketingStudioService'
 
@@ -127,6 +133,113 @@ describe('marketingStudioService mapping helpers', () => {
       raw_cost_estimate: 0,
       credits_charged: 5,
       status: 'pending',
+    })
+  })
+
+  it('maps content versions and builds version payloads', () => {
+    expect(mapMarketingContentVersion({
+      id: 'version-1',
+      content_item_id: 'content-1',
+      version_number: 2,
+      title: 'Post v2',
+      body: 'Body',
+      change_summary: 'Ajuste de CTA',
+      created_by: null,
+      created_by_agent_id: 'agent-1',
+      created_at: '2026-06-05T12:00:00.000Z',
+    })).toMatchObject({
+      id: 'version-1',
+      contentItemId: 'content-1',
+      versionNumber: 2,
+      changeSummary: 'Ajuste de CTA',
+      createdByAgentId: 'agent-1',
+    })
+
+    expect(buildContentVersionPayload({
+      contentItemId: 'content-1',
+      versionNumber: 3,
+      title: '  Post v3  ',
+      body: ' Body ',
+      changeSummary: ' CTA ',
+    })).toMatchObject({
+      content_item_id: 'content-1',
+      version_number: 3,
+      title: 'Post v3',
+      body: 'Body',
+      change_summary: 'CTA',
+    })
+  })
+
+  it('maps reviews and builds review payloads', () => {
+    expect(mapMarketingContentReview({
+      id: 'review-1',
+      content_item_id: 'content-1',
+      reviewer_id: 'user-1',
+      status: 'changes_requested',
+      quality_score: 72,
+      comments: 'Ajustar promessa',
+      checklist: { cta: true },
+      decided_at: null,
+      created_at: '2026-06-05T12:00:00.000Z',
+      updated_at: '2026-06-05T12:30:00.000Z',
+    })).toMatchObject({
+      id: 'review-1',
+      contentItemId: 'content-1',
+      reviewerId: 'user-1',
+      status: 'changes_requested',
+      qualityScore: 72,
+      checklist: { cta: true },
+    })
+
+    expect(buildContentReviewPayload({
+      contentItemId: 'content-1',
+      comments: ' Aprovar com ajuste ',
+      checklist: { tone: true },
+    })).toMatchObject({
+      content_item_id: 'content-1',
+      status: 'pending',
+      comments: 'Aprovar com ajuste',
+      checklist: { tone: true },
+    })
+  })
+
+  it('maps calendar items and builds calendar payloads', () => {
+    expect(mapMarketingCalendarItem({
+      id: 'calendar-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      content_item_id: 'content-1',
+      title: 'Post LinkedIn',
+      channel: 'linkedin',
+      status: 'planned',
+      starts_at: '2026-06-08T12:00:00.000Z',
+      ends_at: null,
+      responsible_user_id: null,
+      metadata: { slot: 'manha' },
+      created_at: '2026-06-05T12:00:00.000Z',
+      updated_at: '2026-06-05T12:00:00.000Z',
+    })).toMatchObject({
+      id: 'calendar-1',
+      contentItemId: 'content-1',
+      startsAt: '2026-06-08T12:00:00.000Z',
+      metadata: { slot: 'manha' },
+    })
+
+    expect(buildCalendarItemPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      contentItemId: 'content-1',
+      title: '  Post LinkedIn  ',
+      channel: 'linkedin',
+      startsAt: '2026-06-08T12:00:00.000Z',
+    })).toMatchObject({
+      organization_id: 'org-1',
+      content_item_id: 'content-1',
+      title: 'Post LinkedIn',
+      channel: 'linkedin',
+      status: 'planned',
     })
   })
 })

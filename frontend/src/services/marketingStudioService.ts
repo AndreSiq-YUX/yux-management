@@ -2,9 +2,13 @@ import { supabase } from '@/lib/supabase'
 import { sanitizeMarketingContentForPortal } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
   MarketingApprovalPolicy,
+  MarketingCalendarItem,
   MarketingChannel,
   MarketingContentItem,
+  MarketingContentReview,
+  MarketingContentVersion,
   MarketingIdea,
+  MarketingReviewStatus,
   MarketingStudioSettings,
   MarketingUsageLedgerEntry,
   PortalMarketingContentItem,
@@ -66,6 +70,54 @@ export function mapMarketingContent(row: any): MarketingContentItem {
   }
 }
 
+export function mapMarketingContentVersion(row: any): MarketingContentVersion {
+  return {
+    id: row.id,
+    contentItemId: row.content_item_id,
+    versionNumber: Number(row.version_number || 0),
+    title: row.title,
+    body: row.body || undefined,
+    changeSummary: row.change_summary || undefined,
+    createdBy: row.created_by || undefined,
+    createdByAgentId: row.created_by_agent_id || undefined,
+    createdAt: row.created_at,
+  }
+}
+
+export function mapMarketingContentReview(row: any): MarketingContentReview {
+  return {
+    id: row.id,
+    contentItemId: row.content_item_id,
+    reviewerId: row.reviewer_id || undefined,
+    status: row.status,
+    qualityScore: row.quality_score == null ? undefined : Number(row.quality_score),
+    comments: row.comments || undefined,
+    checklist: row.checklist || {},
+    decidedAt: row.decided_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingCalendarItem(row: any): MarketingCalendarItem {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    contentItemId: row.content_item_id || undefined,
+    title: row.title,
+    channel: row.channel,
+    status: row.status,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at || undefined,
+    responsibleUserId: row.responsible_user_id || undefined,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
 export function buildIdeaInsertPayload(input: {
   organizationId: string
   clientId: string
@@ -122,6 +174,74 @@ export function buildContentInsertPayload(input: {
   }
 }
 
+export function buildContentVersionPayload(input: {
+  contentItemId: string
+  versionNumber: number
+  title: string
+  body?: string
+  changeSummary?: string
+  createdBy?: string
+  createdByAgentId?: string
+}) {
+  return {
+    content_item_id: input.contentItemId,
+    version_number: input.versionNumber,
+    title: input.title.trim(),
+    body: input.body?.trim() || null,
+    change_summary: input.changeSummary?.trim() || null,
+    created_by: input.createdBy || null,
+    created_by_agent_id: input.createdByAgentId || null,
+  }
+}
+
+export function buildContentReviewPayload(input: {
+  contentItemId: string
+  reviewerId?: string
+  status?: MarketingReviewStatus
+  qualityScore?: number
+  comments?: string
+  checklist?: Record<string, unknown>
+  decidedAt?: string
+}) {
+  return {
+    content_item_id: input.contentItemId,
+    reviewer_id: input.reviewerId || null,
+    status: input.status || 'pending',
+    quality_score: input.qualityScore ?? null,
+    comments: input.comments?.trim() || null,
+    checklist: input.checklist || {},
+    decided_at: input.decidedAt || null,
+  }
+}
+
+export function buildCalendarItemPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  title: string
+  channel: MarketingCalendarItem['channel']
+  startsAt: string
+  contentItemId?: string
+  endsAt?: string
+  responsibleUserId?: string
+  status?: MarketingCalendarItem['status']
+  metadata?: Record<string, unknown>
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    content_item_id: input.contentItemId || null,
+    title: input.title.trim(),
+    channel: input.channel,
+    status: input.status || 'planned',
+    starts_at: input.startsAt,
+    ends_at: input.endsAt || null,
+    responsible_user_id: input.responsibleUserId || null,
+    metadata: input.metadata || {},
+  }
+}
+
 export function buildUsageLedgerPayload(input: {
   organizationId: string
   clientId: string
@@ -154,6 +274,9 @@ export function buildUsageLedgerPayload(input: {
 }
 
 const CONTENT_SELECT = '*'
+const VERSION_SELECT = '*'
+const REVIEW_SELECT = '*'
+const CALENDAR_SELECT = '*'
 
 export const marketingStudioService = {
   async getSettings(contractId: string) {
@@ -179,6 +302,39 @@ export const marketingStudioService = {
   async getPortalContents(contractId: string): Promise<PortalMarketingContentItem[]> {
     const contents = await marketingStudioService.getContents({ contractId })
     return contents.map(sanitizeMarketingContentForPortal)
+  },
+
+  async getContentVersions(contentItemId: string) {
+    const { data, error } = await supabase
+      .from('content_versions')
+      .select(VERSION_SELECT)
+      .eq('content_item_id', contentItemId)
+      .order('version_number', { ascending: false })
+    if (error) throw error
+    return (data || []).map(mapMarketingContentVersion)
+  },
+
+  async getReviews(filters?: { contentItemId?: string; contractId?: string }) {
+    let query = supabase.from('content_reviews').select(REVIEW_SELECT).order('created_at', { ascending: false })
+    if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
+    if (filters?.contractId) {
+      const contentIds = (await marketingStudioService.getContents({ contractId: filters.contractId })).map(content => content.id)
+      if (!contentIds.length) return []
+      query = query.in('content_item_id', contentIds)
+    }
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingContentReview)
+  },
+
+  async getCalendarItems(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
+    let query = supabase.from('editorial_calendar_items').select(CALENDAR_SELECT).order('starts_at', { ascending: true })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingCalendarItem)
   },
 
   async createIdea(input: Parameters<typeof buildIdeaInsertPayload>[0]) {
@@ -210,6 +366,58 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingContent(data)
+  },
+
+  async createContentVersion(input: Parameters<typeof buildContentVersionPayload>[0]) {
+    const { data, error } = await supabase
+      .from('content_versions')
+      .insert(buildContentVersionPayload(input))
+      .select(VERSION_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingContentVersion(data)
+  },
+
+  async createReview(input: Parameters<typeof buildContentReviewPayload>[0]) {
+    const { data, error } = await supabase
+      .from('content_reviews')
+      .insert(buildContentReviewPayload(input))
+      .select(REVIEW_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingContentReview(data)
+  },
+
+  async updateReviewDecision(id: string, input: {
+    status: Exclude<MarketingReviewStatus, 'pending'>
+    comments?: string
+    qualityScore?: number
+    checklist?: Record<string, unknown>
+  }) {
+    const { data, error } = await supabase
+      .from('content_reviews')
+      .update({
+        status: input.status,
+        comments: input.comments?.trim() || null,
+        quality_score: input.qualityScore ?? null,
+        checklist: input.checklist || {},
+        decided_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select(REVIEW_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingContentReview(data)
+  },
+
+  async createCalendarItem(input: Parameters<typeof buildCalendarItemPayload>[0]) {
+    const { data, error } = await supabase
+      .from('editorial_calendar_items')
+      .insert(buildCalendarItemPayload(input))
+      .select(CALENDAR_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingCalendarItem(data)
   },
 
   async recordUsage(input: Parameters<typeof buildUsageLedgerPayload>[0]) {

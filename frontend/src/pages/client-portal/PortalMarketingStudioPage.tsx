@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { PortalMarketingStudioWorkspace } from '@/components/marketing-studio/PortalMarketingStudioWorkspace'
+import { statusAfterReviewDecision } from '@/lib/marketing-studio/marketingStudioRules'
 import { marketingStudioService } from '@/services/marketingStudioService'
 import { usePlatformStore } from '@/stores/platformStore'
-import type { MarketingStudioSettings, PortalMarketingContentItem } from '@/types/marketingStudio'
+import type {
+  MarketingCalendarItem,
+  MarketingContentReview,
+  MarketingStudioSettings,
+  PortalMarketingContentItem,
+  PortalMarketingReviewDecision,
+} from '@/types/marketingStudio'
 
 export function PortalMarketingStudioPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
   const [contents, setContents] = useState<PortalMarketingContentItem[]>([])
+  const [calendarItems, setCalendarItems] = useState<MarketingCalendarItem[]>([])
+  const [reviews, setReviews] = useState<MarketingContentReview[]>([])
   const [settings, setSettings] = useState<MarketingStudioSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -19,16 +28,22 @@ export function PortalMarketingStudioPage() {
 
     setLoading(true)
     try {
-      const [loadedContents, loadedSettings] = await Promise.all([
+      const [loadedContents, loadedSettings, loadedCalendar, loadedReviews] = await Promise.all([
         marketingStudioService.getPortalContents(activeContract.id),
         marketingStudioService.getSettings(activeContract.id),
+        marketingStudioService.getCalendarItems({ contractId: activeContract.id }),
+        marketingStudioService.getReviews({ contractId: activeContract.id }),
       ])
       setContents(loadedContents)
       setSettings(loadedSettings)
+      setCalendarItems(loadedCalendar)
+      setReviews(loadedReviews)
     } catch (error) {
       console.error('Erro ao carregar Marketing Studio do portal:', error)
       toast.error('Erro ao carregar Marketing Studio')
       setContents([])
+      setCalendarItems([])
+      setReviews([])
       setSettings(null)
     } finally {
       setLoading(false)
@@ -50,5 +65,38 @@ export function PortalMarketingStudioPage() {
 
   if (loading) return <p className="text-sm text-slate-600">Carregando Marketing Studio...</p>
 
-  return <PortalMarketingStudioWorkspace contents={contents} settings={settings} />
+  const handleReviewDecision = async (decision: PortalMarketingReviewDecision) => {
+    const review = reviews.find(item => item.contentItemId === decision.contentItemId && item.status === 'pending')
+    try {
+      if (review) {
+        await marketingStudioService.updateReviewDecision(review.id, {
+          status: decision.status,
+          comments: decision.comments,
+        })
+      } else {
+        await marketingStudioService.createReview({
+          contentItemId: decision.contentItemId,
+          status: decision.status,
+          comments: decision.comments,
+          decidedAt: new Date().toISOString(),
+        })
+      }
+      await marketingStudioService.updateContentStatus(decision.contentItemId, statusAfterReviewDecision(decision.status))
+      toast.success('Decisao registrada')
+      load()
+    } catch (error) {
+      console.error('Erro ao registrar decisao do Marketing Studio:', error)
+      toast.error('Nao foi possivel registrar a decisao')
+    }
+  }
+
+  return (
+    <PortalMarketingStudioWorkspace
+      contents={contents}
+      settings={settings}
+      calendarItems={calendarItems}
+      reviews={reviews}
+      onReviewDecision={handleReviewDecision}
+    />
+  )
 }
