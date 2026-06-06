@@ -104,6 +104,93 @@ export interface MarketingStudioSettings {
   updatedAt: string
 }
 
+export interface MarketingBrandProfile {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  toneOfVoice: string
+  persona: string
+  brandVoiceSummary: string
+  vocabularyDo: string[]
+  vocabularyDont: string[]
+  forbiddenTopics: string[]
+  priorityTopics: string[]
+  visualGuidelines?: string
+  complianceNotes?: string
+  status: 'draft' | 'active' | 'archived'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingProductService {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  name: string
+  category?: string
+  description: string
+  valueProposition?: string
+  targetAudience?: string
+  proofPoints: string[]
+  objections: string[]
+  cta?: string
+  status: 'active' | 'paused' | 'archived'
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export type MarketingKnowledgeDocumentType = 'brand' | 'product' | 'service' | 'faq' | 'case' | 'campaign' | 'policy' | 'other'
+export type MarketingKnowledgeDocumentStatus = 'draft' | 'indexing' | 'indexed' | 'published' | 'archived'
+
+export interface MarketingKnowledgeDocument {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  sourceId?: string
+  title: string
+  documentType: MarketingKnowledgeDocumentType
+  status: MarketingKnowledgeDocumentStatus
+  storagePath?: string
+  sourceUrl?: string
+  summary?: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingKnowledgeChunk {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  documentId?: string
+  entryId?: string
+  chunkIndex: number
+  title?: string
+  body: string
+  tokenCount: number
+  embeddingModel?: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingKnowledgeMatch {
+  chunkId: string
+  documentId?: string
+  title?: string
+  body: string
+  rank: number
+}
+
+export type PortalMarketingBrandProfile = Omit<MarketingBrandProfile, 'complianceNotes'> & {
+  complianceNotes?: never
+}
+
 export interface MarketingAgent {
   id: string
   organizationId: string

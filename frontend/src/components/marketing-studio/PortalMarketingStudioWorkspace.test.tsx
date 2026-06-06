@@ -2,7 +2,16 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { PortalMarketingStudioWorkspace } from './PortalMarketingStudioWorkspace'
-import type { MarketingCalendarItem, MarketingContentReview, MarketingStudioSettings, PortalMarketingContentItem } from '@/types/marketingStudio'
+import type {
+  MarketingCalendarItem,
+  MarketingContentReview,
+  MarketingKnowledgeDocument,
+  MarketingKnowledgeMatch,
+  MarketingProductService,
+  MarketingStudioSettings,
+  PortalMarketingBrandProfile,
+  PortalMarketingContentItem,
+} from '@/types/marketingStudio'
 
 const settings: MarketingStudioSettings = {
   id: 'settings-1',
@@ -69,6 +78,59 @@ const calendarItems: MarketingCalendarItem[] = [
   },
 ]
 
+const brandProfile: PortalMarketingBrandProfile = {
+  id: 'brand-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  toneOfVoice: 'consultivo',
+  persona: 'especialista',
+  brandVoiceSummary: 'Marca consultiva e direta para PMEs.',
+  vocabularyDo: [],
+  vocabularyDont: [],
+  forbiddenTopics: [],
+  priorityTopics: [],
+  status: 'active',
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}
+
+const productsServices: MarketingProductService[] = [{
+  id: 'product-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  name: 'CRM YUX',
+  description: 'CRM comercial',
+  proofPoints: [],
+  objections: [],
+  status: 'active',
+  metadata: {},
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}]
+
+const knowledgeDocuments: MarketingKnowledgeDocument[] = [{
+  id: 'doc-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  title: 'Guia',
+  documentType: 'brand',
+  status: 'published',
+  metadata: {},
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}]
+
+const knowledgeMatches: MarketingKnowledgeMatch[] = [{
+  chunkId: 'chunk-1',
+  documentId: 'doc-1',
+  title: 'Guia',
+  body: 'A marca fala com clareza.',
+  rank: 1,
+}]
+
 describe('PortalMarketingStudioWorkspace', () => {
   it('renders client-safe marketing data without internal technical details', () => {
     const container = document.createElement('div')
@@ -82,6 +144,10 @@ describe('PortalMarketingStudioWorkspace', () => {
           settings={settings}
           reviews={reviews}
           calendarItems={calendarItems}
+          brandProfile={brandProfile}
+          productsServices={productsServices}
+          knowledgeDocuments={knowledgeDocuments}
+          knowledgeMatches={knowledgeMatches}
           onReviewDecision={onReviewDecision}
         />
       )
@@ -98,7 +164,13 @@ describe('PortalMarketingStudioWorkspace', () => {
     expect(html).toContain('Revise antes de aprovar')
     expect(html).toContain('Campanhas e criativos')
     expect(html).toContain('Relatorios')
+    expect(html).toContain('Marca e conhecimento')
+    expect(html).toContain('Marca consultiva e direta')
+    expect(html).toContain('1 ofertas estruturadas')
+    expect(html).toContain('1 documentos publicados')
+    expect(html).toContain('A marca fala com clareza')
     expect(html).not.toContain('internalNotes')
+    expect(html).not.toContain('complianceNotes')
     expect(html).not.toContain('Custo interno')
     expect(html).not.toContain('inputTokens')
     expect(html).not.toContain('protected_error')

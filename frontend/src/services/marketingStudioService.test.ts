@@ -2,14 +2,23 @@ import { describe, expect, it } from 'vitest'
 import {
   buildContentInsertPayload,
   buildCalendarItemPayload,
+  buildBrandProfilePayload,
   buildContentReviewPayload,
   buildContentVersionPayload,
   buildIdeaInsertPayload,
+  buildKnowledgeChunkPayload,
+  buildKnowledgeDocumentPayload,
+  buildProductServicePayload,
   buildUsageLedgerPayload,
+  mapMarketingBrandProfile,
   mapMarketingCalendarItem,
   mapMarketingContent,
   mapMarketingContentReview,
   mapMarketingContentVersion,
+  mapMarketingKnowledgeChunk,
+  mapMarketingKnowledgeDocument,
+  mapMarketingKnowledgeMatch,
+  mapMarketingProductService,
   mapMarketingSettings,
 } from './marketingStudioService'
 
@@ -241,5 +250,145 @@ describe('marketingStudioService mapping helpers', () => {
       channel: 'linkedin',
       status: 'planned',
     })
+  })
+
+  it('maps brand profiles and builds profile payloads', () => {
+    expect(mapMarketingBrandProfile({
+      id: 'brand-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      tone_of_voice: 'consultivo',
+      persona: 'especialista',
+      brand_voice_summary: 'Voz clara',
+      vocabulary_do: ['clareza'],
+      vocabulary_dont: ['garantido'],
+      forbidden_topics: ['promessa'],
+      priority_topics: ['ia'],
+      visual_guidelines: 'minimalista',
+      compliance_notes: 'sem promessas',
+      status: 'active',
+      created_at: '2026-06-05T12:00:00.000Z',
+      updated_at: '2026-06-05T12:00:00.000Z',
+    })).toMatchObject({
+      id: 'brand-1',
+      toneOfVoice: 'consultivo',
+      vocabularyDo: ['clareza'],
+      complianceNotes: 'sem promessas',
+    })
+
+    expect(buildBrandProfilePayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      toneOfVoice: ' consultivo ',
+      persona: ' especialista ',
+      brandVoiceSummary: ' resumo ',
+      status: 'active',
+    })).toMatchObject({
+      organization_id: 'org-1',
+      tone_of_voice: 'consultivo',
+      persona: 'especialista',
+      brand_voice_summary: 'resumo',
+      status: 'active',
+    })
+  })
+
+  it('maps products and builds product payloads', () => {
+    expect(mapMarketingProductService({
+      id: 'product-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      name: 'CRM',
+      category: 'software',
+      description: 'CRM comercial',
+      value_proposition: 'Organizar vendas',
+      target_audience: 'PMEs',
+      proof_points: ['pipeline'],
+      objections: ['tempo'],
+      cta: 'Agendar',
+      status: 'active',
+      metadata: { tier: 'growth' },
+      created_at: '2026-06-05T12:00:00.000Z',
+      updated_at: '2026-06-05T12:00:00.000Z',
+    })).toMatchObject({
+      id: 'product-1',
+      name: 'CRM',
+      proofPoints: ['pipeline'],
+      metadata: { tier: 'growth' },
+    })
+
+    expect(buildProductServicePayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      name: ' CRM ',
+      proofPoints: ['pipeline'],
+    })).toMatchObject({
+      name: 'CRM',
+      proof_points: ['pipeline'],
+      status: 'active',
+    })
+  })
+
+  it('maps knowledge documents, chunks and search matches', () => {
+    expect(mapMarketingKnowledgeDocument({
+      id: 'doc-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      source_id: null,
+      title: 'Guia da marca',
+      document_type: 'brand',
+      status: 'published',
+      storage_path: null,
+      source_url: 'https://example.com',
+      summary: 'Resumo',
+      metadata: {},
+      created_at: '2026-06-05T12:00:00.000Z',
+      updated_at: '2026-06-05T12:00:00.000Z',
+    })).toMatchObject({ id: 'doc-1', documentType: 'brand', status: 'published' })
+
+    expect(buildKnowledgeDocumentPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      title: ' Guia ',
+      documentType: 'brand',
+    })).toMatchObject({ title: 'Guia', document_type: 'brand', status: 'draft' })
+
+    expect(mapMarketingKnowledgeChunk({
+      id: 'chunk-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      document_id: 'doc-1',
+      entry_id: null,
+      chunk_index: 2,
+      title: 'Parte',
+      body: 'Texto',
+      token_count: 10,
+      embedding_model: null,
+      metadata: {},
+      created_at: '2026-06-05T12:00:00.000Z',
+      updated_at: '2026-06-05T12:00:00.000Z',
+    })).toMatchObject({ id: 'chunk-1', documentId: 'doc-1', chunkIndex: 2 })
+
+    expect(buildKnowledgeChunkPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      documentId: 'doc-1',
+      body: ' Texto ',
+    })).toMatchObject({ document_id: 'doc-1', body: 'Texto', chunk_index: 0 })
+
+    expect(mapMarketingKnowledgeMatch({
+      chunk_id: 'chunk-1',
+      document_id: 'doc-1',
+      title: 'Guia',
+      body: 'Texto',
+      rank: 0.8,
+    })).toEqual({ chunkId: 'chunk-1', documentId: 'doc-1', title: 'Guia', body: 'Texto', rank: 0.8 })
   })
 })

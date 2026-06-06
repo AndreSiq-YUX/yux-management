@@ -1,16 +1,21 @@
 import type {
   MarketingAgentType,
   MarketingCalendarItem,
+  MarketingBrandProfile,
   MarketingContentItem,
   MarketingContentReview,
   MarketingContentStatus,
   MarketingContentVersion,
+  MarketingKnowledgeChunk,
+  MarketingKnowledgeMatch,
   MarketingOperationMode,
+  MarketingProductService,
   MarketingReviewStatus,
   MarketingStudioSettings,
   MarketingToolKey,
   MarketingUsageAction,
   PortalMarketingContentItem,
+  PortalMarketingBrandProfile,
 } from '@/types/marketingStudio'
 
 const transitionMap: Record<MarketingContentStatus, MarketingContentStatus[]> = {
@@ -129,4 +134,87 @@ export function summarizeReviewQueue(reviews: MarketingContentReview[]) {
     changesRequested: reviews.filter(review => review.status === 'changes_requested').length,
     rejected: reviews.filter(review => review.status === 'rejected').length,
   }
+}
+
+export function isBrandProfileReady(profile: Pick<MarketingBrandProfile, 'toneOfVoice' | 'persona' | 'brandVoiceSummary' | 'status'>) {
+  return profile.status === 'active'
+    && profile.toneOfVoice.trim().length >= 3
+    && profile.persona.trim().length >= 3
+    && profile.brandVoiceSummary.trim().length >= 20
+}
+
+export function sanitizeBrandProfileForPortal(profile: MarketingBrandProfile): PortalMarketingBrandProfile {
+  const { complianceNotes: _complianceNotes, ...portalProfile } = profile
+  return portalProfile
+}
+
+export function buildSimpleKnowledgeChunks(input: { title: string; body: string; maxChars?: number }) {
+  const maxChars = Math.max(input.maxChars || 800, 200)
+  const paragraphs = input.body
+    .split(/\n{2,}/)
+    .map(part => part.trim())
+    .filter(Boolean)
+  const chunks: Array<{ title: string; body: string; chunkIndex: number; tokenCount: number }> = []
+  let buffer = ''
+
+  for (const paragraph of paragraphs.length ? paragraphs : [input.body.trim()]) {
+    if (buffer && `${buffer}\n\n${paragraph}`.length > maxChars) {
+      chunks.push(toChunk(input.title, buffer, chunks.length))
+      buffer = paragraph
+    } else {
+      buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph
+    }
+  }
+
+  if (buffer.trim()) chunks.push(toChunk(input.title, buffer, chunks.length))
+  return chunks
+}
+
+export function rankKnowledgeMatches(input: { query: string; chunks: MarketingKnowledgeChunk[] }): MarketingKnowledgeMatch[] {
+  const terms = normalizeTerms(input.query)
+  return input.chunks
+    .map(chunk => {
+      const haystack = `${chunk.title || ''} ${chunk.body}`.toLowerCase()
+      const rank = terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0)
+      return {
+        chunkId: chunk.id,
+        documentId: chunk.documentId,
+        title: chunk.title,
+        body: chunk.body,
+        rank,
+      }
+    })
+    .filter(match => !terms.length || match.rank > 0)
+    .sort((a, b) => b.rank - a.rank || a.title?.localeCompare(b.title || '') || 0)
+}
+
+export function summarizeKnowledgeCoverage(input: {
+  brandProfile?: MarketingBrandProfile | null
+  products: MarketingProductService[]
+  documents: Array<{ status: string }>
+  chunks: MarketingKnowledgeChunk[]
+}) {
+  return {
+    brandReady: input.brandProfile ? isBrandProfileReady(input.brandProfile) : false,
+    activeProducts: input.products.filter(product => product.status === 'active').length,
+    publishedDocuments: input.documents.filter(document => ['indexed', 'published'].includes(document.status)).length,
+    chunks: input.chunks.length,
+  }
+}
+
+function toChunk(title: string, body: string, chunkIndex: number) {
+  return {
+    title,
+    body,
+    chunkIndex,
+    tokenCount: Math.ceil(body.length / 4),
+  }
+}
+
+function normalizeTerms(query: string) {
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .map(term => term.trim())
+    .filter(term => term.length >= 3)
 }

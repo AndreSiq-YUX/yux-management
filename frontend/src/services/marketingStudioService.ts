@@ -2,12 +2,17 @@ import { supabase } from '@/lib/supabase'
 import { sanitizeMarketingContentForPortal } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
   MarketingApprovalPolicy,
+  MarketingBrandProfile,
   MarketingCalendarItem,
   MarketingChannel,
   MarketingContentItem,
   MarketingContentReview,
   MarketingContentVersion,
   MarketingIdea,
+  MarketingKnowledgeChunk,
+  MarketingKnowledgeDocument,
+  MarketingKnowledgeMatch,
+  MarketingProductService,
   MarketingReviewStatus,
   MarketingStudioSettings,
   MarketingUsageLedgerEntry,
@@ -115,6 +120,96 @@ export function mapMarketingCalendarItem(row: any): MarketingCalendarItem {
     metadata: row.metadata || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingBrandProfile(row: any): MarketingBrandProfile {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    toneOfVoice: row.tone_of_voice || '',
+    persona: row.persona || '',
+    brandVoiceSummary: row.brand_voice_summary || '',
+    vocabularyDo: row.vocabulary_do || [],
+    vocabularyDont: row.vocabulary_dont || [],
+    forbiddenTopics: row.forbidden_topics || [],
+    priorityTopics: row.priority_topics || [],
+    visualGuidelines: row.visual_guidelines || undefined,
+    complianceNotes: row.compliance_notes || undefined,
+    status: row.status || 'draft',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingProductService(row: any): MarketingProductService {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    name: row.name,
+    category: row.category || undefined,
+    description: row.description || '',
+    valueProposition: row.value_proposition || undefined,
+    targetAudience: row.target_audience || undefined,
+    proofPoints: row.proof_points || [],
+    objections: row.objections || [],
+    cta: row.cta || undefined,
+    status: row.status || 'active',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingKnowledgeDocument(row: any): MarketingKnowledgeDocument {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    sourceId: row.source_id || undefined,
+    title: row.title,
+    documentType: row.document_type,
+    status: row.status,
+    storagePath: row.storage_path || undefined,
+    sourceUrl: row.source_url || undefined,
+    summary: row.summary || undefined,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingKnowledgeChunk(row: any): MarketingKnowledgeChunk {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    documentId: row.document_id || undefined,
+    entryId: row.entry_id || undefined,
+    chunkIndex: Number(row.chunk_index || 0),
+    title: row.title || undefined,
+    body: row.body,
+    tokenCount: Number(row.token_count || 0),
+    embeddingModel: row.embedding_model || undefined,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingKnowledgeMatch(row: any): MarketingKnowledgeMatch {
+  return {
+    chunkId: row.chunk_id,
+    documentId: row.document_id || undefined,
+    title: row.title || undefined,
+    body: row.body,
+    rank: Number(row.rank || 0),
   }
 }
 
@@ -273,10 +368,134 @@ export function buildUsageLedgerPayload(input: {
   }
 }
 
+export function buildBrandProfilePayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  toneOfVoice: string
+  persona: string
+  brandVoiceSummary: string
+  vocabularyDo?: string[]
+  vocabularyDont?: string[]
+  forbiddenTopics?: string[]
+  priorityTopics?: string[]
+  visualGuidelines?: string
+  complianceNotes?: string
+  status?: MarketingBrandProfile['status']
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    tone_of_voice: input.toneOfVoice.trim(),
+    persona: input.persona.trim(),
+    brand_voice_summary: input.brandVoiceSummary.trim(),
+    vocabulary_do: input.vocabularyDo || [],
+    vocabulary_dont: input.vocabularyDont || [],
+    forbidden_topics: input.forbiddenTopics || [],
+    priority_topics: input.priorityTopics || [],
+    visual_guidelines: input.visualGuidelines?.trim() || null,
+    compliance_notes: input.complianceNotes?.trim() || null,
+    status: input.status || 'draft',
+  }
+}
+
+export function buildProductServicePayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  name: string
+  category?: string
+  description?: string
+  valueProposition?: string
+  targetAudience?: string
+  proofPoints?: string[]
+  objections?: string[]
+  cta?: string
+  status?: MarketingProductService['status']
+  metadata?: Record<string, unknown>
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    name: input.name.trim(),
+    category: input.category?.trim() || null,
+    description: input.description?.trim() || '',
+    value_proposition: input.valueProposition?.trim() || null,
+    target_audience: input.targetAudience?.trim() || null,
+    proof_points: input.proofPoints || [],
+    objections: input.objections || [],
+    cta: input.cta?.trim() || null,
+    status: input.status || 'active',
+    metadata: input.metadata || {},
+  }
+}
+
+export function buildKnowledgeDocumentPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  title: string
+  documentType: MarketingKnowledgeDocument['documentType']
+  sourceId?: string
+  status?: MarketingKnowledgeDocument['status']
+  storagePath?: string
+  sourceUrl?: string
+  summary?: string
+  metadata?: Record<string, unknown>
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    source_id: input.sourceId || null,
+    title: input.title.trim(),
+    document_type: input.documentType,
+    status: input.status || 'draft',
+    storage_path: input.storagePath || null,
+    source_url: input.sourceUrl || null,
+    summary: input.summary?.trim() || null,
+    metadata: input.metadata || {},
+  }
+}
+
+export function buildKnowledgeChunkPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  body: string
+  chunkIndex?: number
+  title?: string
+  documentId?: string
+  entryId?: string
+  tokenCount?: number
+  embeddingModel?: string
+  metadata?: Record<string, unknown>
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    document_id: input.documentId || null,
+    entry_id: input.entryId || null,
+    chunk_index: input.chunkIndex || 0,
+    title: input.title?.trim() || null,
+    body: input.body.trim(),
+    token_count: input.tokenCount || 0,
+    embedding_model: input.embeddingModel || null,
+    metadata: input.metadata || {},
+  }
+}
+
 const CONTENT_SELECT = '*'
 const VERSION_SELECT = '*'
 const REVIEW_SELECT = '*'
 const CALENDAR_SELECT = '*'
+const BRAND_SELECT = '*'
+const PRODUCT_SELECT = '*'
+const DOCUMENT_SELECT = '*'
+const CHUNK_SELECT = '*'
 
 export const marketingStudioService = {
   async getSettings(contractId: string) {
@@ -335,6 +554,55 @@ export const marketingStudioService = {
     const { data, error } = await query
     if (error) throw error
     return (data || []).map(mapMarketingCalendarItem)
+  },
+
+  async getBrandProfile(contractId: string) {
+    const { data, error } = await supabase
+      .from('marketing_brand_profiles')
+      .select(BRAND_SELECT)
+      .eq('contract_id', contractId)
+      .maybeSingle()
+    if (error) throw error
+    return data ? mapMarketingBrandProfile(data) : null
+  },
+
+  async getProductsServices(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
+    let query = supabase.from('marketing_products_services').select(PRODUCT_SELECT).order('updated_at', { ascending: false })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingProductService)
+  },
+
+  async getKnowledgeDocuments(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
+    let query = supabase.from('marketing_knowledge_documents').select(DOCUMENT_SELECT).order('updated_at', { ascending: false })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingKnowledgeDocument)
+  },
+
+  async getKnowledgeChunks(filters?: { documentId?: string; contractId?: string }) {
+    let query = supabase.from('marketing_knowledge_chunks').select(CHUNK_SELECT).order('chunk_index', { ascending: true })
+    if (filters?.documentId) query = query.eq('document_id', filters.documentId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingKnowledgeChunk)
+  },
+
+  async searchKnowledge(contractId: string, query: string, matchCount = 5) {
+    const { data, error } = await supabase.rpc('match_marketing_knowledge', {
+      target_contract_id: contractId,
+      search_query: query,
+      match_count: matchCount,
+    })
+    if (error) throw error
+    return (data || []).map(mapMarketingKnowledgeMatch)
   },
 
   async createIdea(input: Parameters<typeof buildIdeaInsertPayload>[0]) {
@@ -418,6 +686,46 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingCalendarItem(data)
+  },
+
+  async upsertBrandProfile(input: Parameters<typeof buildBrandProfilePayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_brand_profiles')
+      .upsert(buildBrandProfilePayload(input), { onConflict: 'contract_id' })
+      .select(BRAND_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingBrandProfile(data)
+  },
+
+  async createProductService(input: Parameters<typeof buildProductServicePayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_products_services')
+      .insert(buildProductServicePayload(input))
+      .select(PRODUCT_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingProductService(data)
+  },
+
+  async createKnowledgeDocument(input: Parameters<typeof buildKnowledgeDocumentPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_knowledge_documents')
+      .insert(buildKnowledgeDocumentPayload(input))
+      .select(DOCUMENT_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingKnowledgeDocument(data)
+  },
+
+  async createKnowledgeChunk(input: Parameters<typeof buildKnowledgeChunkPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_knowledge_chunks')
+      .insert(buildKnowledgeChunkPayload(input))
+      .select(CHUNK_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingKnowledgeChunk(data)
   },
 
   async recordUsage(input: Parameters<typeof buildUsageLedgerPayload>[0]) {

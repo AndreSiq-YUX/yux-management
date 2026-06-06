@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildSimpleKnowledgeChunks,
   canTransitionContentStatus,
   calculateCreditsForAction,
   canScheduleContent,
   canSubmitContentForReview,
   getNextVersionNumber,
+  isBrandProfileReady,
+  rankKnowledgeMatches,
   requiresHumanApproval,
+  sanitizeBrandProfileForPortal,
   sanitizeMarketingContentForPortal,
   selectAllowedAgentTools,
   shouldBlockCreditDebit,
   statusAfterReviewDecision,
+  summarizeKnowledgeCoverage,
   summarizeReviewQueue,
 } from './marketingStudioRules'
-import type { MarketingContentItem, MarketingStudioSettings } from '@/types/marketingStudio'
+import type { MarketingBrandProfile, MarketingContentItem, MarketingKnowledgeChunk, MarketingStudioSettings } from '@/types/marketingStudio'
 
 const settings: MarketingStudioSettings = {
   id: 'settings-1',
@@ -48,6 +53,25 @@ const content: MarketingContentItem = {
   cta: 'Fale com a YUX',
   createdByAgentId: 'agent-1',
   internalNotes: 'Margem e custo interno',
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}
+
+const brandProfile: MarketingBrandProfile = {
+  id: 'brand-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  toneOfVoice: 'consultivo',
+  persona: 'especialista pragmatica',
+  brandVoiceSummary: 'Comunicacao clara, direta e consultiva para PMEs.',
+  vocabularyDo: ['clareza'],
+  vocabularyDont: ['garantido'],
+  forbiddenTopics: ['promessa garantida'],
+  priorityTopics: ['ia aplicada'],
+  visualGuidelines: 'minimalista',
+  complianceNotes: 'Nao prometer resultado financeiro',
+  status: 'active',
   createdAt: '2026-06-05T12:00:00.000Z',
   updatedAt: '2026-06-05T12:00:00.000Z',
 }
@@ -158,5 +182,82 @@ describe('marketingStudioRules', () => {
         updatedAt: '2026-06-05T12:00:00.000Z',
       },
     ])).toEqual({ pending: 1, approved: 0, changesRequested: 1, rejected: 0 })
+  })
+
+  it('marks brand profile ready only when active and descriptive', () => {
+    expect(isBrandProfileReady(brandProfile)).toBe(true)
+    expect(isBrandProfileReady({ ...brandProfile, status: 'draft' })).toBe(false)
+    expect(isBrandProfileReady({ ...brandProfile, brandVoiceSummary: 'curto' })).toBe(false)
+  })
+
+  it('removes compliance notes from portal brand profile', () => {
+    expect(sanitizeBrandProfileForPortal(brandProfile)).not.toHaveProperty('complianceNotes')
+  })
+
+  it('builds simple knowledge chunks from paragraphs', () => {
+    const longParagraph = 'Primeiro paragrafo com contexto de marca para alimentar o RAG simples. '.repeat(4)
+    const secondParagraph = 'Segundo paragrafo com servicos, provas, objeções e CTAs para orientar redatores. '.repeat(4)
+    expect(buildSimpleKnowledgeChunks({
+      title: 'Marca',
+      body: `${longParagraph}\n\n${secondParagraph}`,
+      maxChars: 30,
+    })).toEqual([
+      expect.objectContaining({ title: 'Marca', chunkIndex: 0 }),
+      expect.objectContaining({ title: 'Marca', chunkIndex: 1 }),
+    ])
+  })
+
+  it('ranks knowledge chunks with text fallback', () => {
+    const chunks: MarketingKnowledgeChunk[] = [
+      {
+        id: 'chunk-1',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        chunkIndex: 0,
+        title: 'CRM',
+        body: 'Conteudo sobre CRM e funil comercial',
+        tokenCount: 10,
+        metadata: {},
+        createdAt: '2026-06-05T12:00:00.000Z',
+        updatedAt: '2026-06-05T12:00:00.000Z',
+      },
+      {
+        id: 'chunk-2',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        chunkIndex: 1,
+        title: 'Financeiro',
+        body: 'Conteudo sobre cobranca',
+        tokenCount: 8,
+        metadata: {},
+        createdAt: '2026-06-05T12:00:00.000Z',
+        updatedAt: '2026-06-05T12:00:00.000Z',
+      },
+    ]
+    expect(rankKnowledgeMatches({ query: 'crm funil', chunks })[0].chunkId).toBe('chunk-1')
+  })
+
+  it('summarizes marketing knowledge coverage', () => {
+    expect(summarizeKnowledgeCoverage({
+      brandProfile,
+      products: [{
+        id: 'product-1',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        name: 'CRM',
+        description: '',
+        proofPoints: [],
+        objections: [],
+        status: 'active',
+        metadata: {},
+        createdAt: '',
+        updatedAt: '',
+      }],
+      documents: [{ status: 'published' }, { status: 'draft' }],
+      chunks: [],
+    })).toEqual({ brandReady: true, activeProducts: 1, publishedDocuments: 1, chunks: 0 })
   })
 })

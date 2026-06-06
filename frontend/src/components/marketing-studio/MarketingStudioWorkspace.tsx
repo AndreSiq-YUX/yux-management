@@ -1,10 +1,15 @@
-import { CalendarDays, Check, Clock, FileText, RefreshCw, RotateCcw, X } from 'lucide-react'
+import { BookOpen, CalendarDays, Check, Clock, FileText, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type {
+  MarketingBrandProfile,
   MarketingCalendarItem,
   MarketingContentItem,
   MarketingContentReview,
   MarketingContentVersion,
+  MarketingKnowledgeChunk,
+  MarketingKnowledgeDocument,
+  MarketingKnowledgeMatch,
+  MarketingProductService,
   MarketingStudioSettings,
 } from '@/types/marketingStudio'
 
@@ -15,15 +20,21 @@ interface MarketingStudioWorkspaceProps {
   calendarItems?: MarketingCalendarItem[]
   reviews?: MarketingContentReview[]
   versionsByContent?: Record<string, MarketingContentVersion[]>
+  brandProfile?: MarketingBrandProfile | null
+  productsServices?: MarketingProductService[]
+  knowledgeDocuments?: MarketingKnowledgeDocument[]
+  knowledgeChunks?: MarketingKnowledgeChunk[]
+  knowledgeMatches?: MarketingKnowledgeMatch[]
   onCreateContent?: () => void
   onSubmitForReview?: (contentId: string) => void
   onApproveReview?: (reviewId: string) => void
   onRequestChanges?: (reviewId: string) => void
   onRejectReview?: (reviewId: string) => void
   onScheduleContent?: (contentId: string) => void
+  onSearchKnowledge?: (query: string) => void
 }
 
-const tabs = ['Visao geral', 'Conteudo', 'Calendario', 'Aprovacoes', 'Ideias', 'Agentes', 'Creditos']
+const tabs = ['Visao geral', 'Conteudo', 'Calendario', 'Aprovacoes', 'Ideias', 'Base de conhecimento', 'Agentes', 'Creditos']
 
 export function MarketingStudioWorkspace({
   contents,
@@ -32,12 +43,18 @@ export function MarketingStudioWorkspace({
   calendarItems = [],
   reviews = [],
   versionsByContent = {},
+  brandProfile = null,
+  productsServices = [],
+  knowledgeDocuments = [],
+  knowledgeChunks = [],
+  knowledgeMatches = [],
   onCreateContent,
   onSubmitForReview,
   onApproveReview,
   onRequestChanges,
   onRejectReview,
   onScheduleContent,
+  onSearchKnowledge,
 }: MarketingStudioWorkspaceProps) {
   const pendingApprovals = contents.filter(content => content.status === 'in_review').length
   const scheduled = contents.filter(content => content.status === 'scheduled').length
@@ -75,11 +92,12 @@ export function MarketingStudioWorkspace({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <Metric label="Conteudos" value={contents.length} />
         <Metric label="Aprovacoes" value={pendingApprovals} />
         <Metric label="Agendados" value={scheduled} />
         <Metric label="Creditos" value={settings?.currentCreditBalance ?? 0} />
+        <Metric label="Conhecimento" value={knowledgeChunks.length} />
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
@@ -195,6 +213,52 @@ export function MarketingStudioWorkspace({
           </div>
         </section>
       </div>
+
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">Base de conhecimento e tom de voz</h2>
+          <ActionButton title="Buscar conhecimento" onClick={() => onSearchKnowledge?.('marca produto servico')}>
+            <Search className="h-3.5 w-3.5" />
+            Buscar RAG
+          </ActionButton>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <BookOpen className="h-4 w-4" />
+              Voz da marca
+            </div>
+            <p className="text-slate-700">{brandProfile?.brandVoiceSummary || settings?.toneOfVoice || 'Perfil de marca ainda nao configurado.'}</p>
+            <p className="mt-2 text-xs text-slate-500">Tom: {brandProfile?.toneOfVoice || settings?.toneOfVoice || 'nao definido'}</p>
+            <p className="text-xs text-slate-500">Persona: {brandProfile?.persona || settings?.persona || 'nao definida'}</p>
+            {brandProfile?.complianceNotes && <p className="mt-2 text-xs text-slate-500">Compliance: {brandProfile.complianceNotes}</p>}
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Produtos e servicos</h3>
+            {productsServices.length === 0 ? (
+              <p className="text-slate-500">Nenhuma oferta estruturada.</p>
+            ) : productsServices.slice(0, 4).map(product => (
+              <div key={product.id} className="mb-2">
+                <p className="font-medium text-slate-900">{product.name}</p>
+                <p className="text-xs text-slate-500">{product.valueProposition || product.description}</p>
+              </div>
+            ))}
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">RAG simples</h3>
+            <p className="text-slate-700">{knowledgeDocuments.length} documentos / {knowledgeChunks.length} chunks</p>
+            <div className="mt-2 space-y-2">
+              {(knowledgeMatches.length ? knowledgeMatches : knowledgeChunks.slice(0, 2)).map(item => (
+                <p key={'chunkId' in item ? item.chunkId : item.id} className="line-clamp-2 text-xs text-slate-500">
+                  {'rank' in item ? item.title : item.title} - {item.body}
+                </p>
+              ))}
+            </div>
+          </article>
+        </div>
+      </section>
     </div>
   )
 }

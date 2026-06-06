@@ -3,8 +3,12 @@ import type { ReactNode } from 'react'
 import type {
   MarketingCalendarItem,
   MarketingContentReview,
+  MarketingKnowledgeDocument,
+  MarketingKnowledgeMatch,
+  MarketingProductService,
   MarketingStudioSettings,
   PortalMarketingContentItem,
+  PortalMarketingBrandProfile,
   PortalMarketingReviewDecision,
 } from '@/types/marketingStudio'
 
@@ -13,6 +17,10 @@ interface PortalMarketingStudioWorkspaceProps {
   settings: MarketingStudioSettings | null
   calendarItems?: MarketingCalendarItem[]
   reviews?: MarketingContentReview[]
+  brandProfile?: PortalMarketingBrandProfile | null
+  productsServices?: MarketingProductService[]
+  knowledgeDocuments?: MarketingKnowledgeDocument[]
+  knowledgeMatches?: MarketingKnowledgeMatch[]
   onReviewDecision?: (decision: PortalMarketingReviewDecision) => void
 }
 
@@ -21,6 +29,10 @@ export function PortalMarketingStudioWorkspace({
   settings,
   calendarItems = [],
   reviews = [],
+  brandProfile = null,
+  productsServices = [],
+  knowledgeDocuments = [],
+  knowledgeMatches = [],
   onReviewDecision,
 }: PortalMarketingStudioWorkspaceProps) {
   const pending = contents.filter(content => content.status === 'in_review').length
@@ -60,6 +72,35 @@ export function PortalMarketingStudioWorkspace({
           <p className="mt-1 text-sm text-slate-600">Resumo de resultados do periodo.</p>
         </section>
       </div>
+
+      <section>
+        <h2 className="text-base font-semibold text-slate-950">Marca e conhecimento</h2>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <article className="rounded-md border border-slate-200 bg-white p-3">
+            <h3 className="text-sm font-semibold text-slate-950">Tom de voz</h3>
+            <p className="mt-1 text-sm text-slate-600">{brandProfile?.brandVoiceSummary || settings?.toneOfVoice || 'Preferencias de marca em configuracao.'}</p>
+            <p className="mt-2 text-xs text-slate-500">{brandProfile?.toneOfVoice || settings?.toneOfVoice || 'tom nao definido'}</p>
+          </article>
+          <article className="rounded-md border border-slate-200 bg-white p-3">
+            <h3 className="text-sm font-semibold text-slate-950">Produtos e servicos</h3>
+            <p className="mt-1 text-sm text-slate-600">{productsServices.length} ofertas estruturadas para orientar conteudos.</p>
+          </article>
+          <article className="rounded-md border border-slate-200 bg-white p-3">
+            <h3 className="text-sm font-semibold text-slate-950">Base publicada</h3>
+            <p className="mt-1 text-sm text-slate-600">{knowledgeDocuments.filter(document => document.status === 'published').length} documentos publicados.</p>
+          </article>
+        </div>
+        {knowledgeMatches.length > 0 && (
+          <div className="mt-3 divide-y rounded-md border border-slate-200 bg-white">
+            {knowledgeMatches.slice(0, 3).map(match => (
+              <article key={match.chunkId} className="p-3">
+                <h3 className="text-sm font-medium text-slate-950">{match.title || 'Trecho da base'}</h3>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{match.body}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section>
         <h2 className="text-base font-semibold text-slate-950">Aprovacoes</h2>
