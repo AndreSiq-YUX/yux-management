@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, type LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 export interface PortalJourneyMetric {
   label: string
@@ -22,6 +23,7 @@ interface PortalJourneyPageProps {
   primaryAction?: PortalJourneyAction
   secondaryActions?: PortalJourneyAction[]
   note?: string
+  children?: ReactNode
 }
 
 export function PortalJourneyPage({
@@ -34,6 +36,7 @@ export function PortalJourneyPage({
   primaryAction,
   secondaryActions = [],
   note,
+  children,
 }: PortalJourneyPageProps) {
   return (
     <div className="space-y-6">
@@ -81,6 +84,8 @@ export function PortalJourneyPage({
           ))}
         </div>
       </section>
+
+      {children}
 
       {secondaryActions.length > 0 && (
         <section className="rounded-lg border bg-white p-5">
