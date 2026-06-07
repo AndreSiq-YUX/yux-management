@@ -868,7 +868,7 @@ Expected:
 3 tests pass.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -889,7 +889,7 @@ git commit -m "feat: add encrypted provider secret store"
 - Create: `supabase/functions/list-marketing-provider-assets/index.ts`
 - Add: matching `deno.json` files for the three new functions
 
-- [ ] **Step 1: Write providerOAuth tests**
+- [x] **Step 1: Write providerOAuth tests**
 
 Create `supabase/functions/_shared/providerOAuth.test.ts`:
 
@@ -936,7 +936,7 @@ Deno.test('returns exact scopes by provider', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -950,7 +950,7 @@ Expected:
 FAIL because providerOAuth.ts does not exist.
 ```
 
-- [ ] **Step 3: Implement providerOAuth.ts**
+- [x] **Step 3: Implement providerOAuth.ts**
 
 Create `supabase/functions/_shared/providerOAuth.ts`:
 
@@ -1006,7 +1006,7 @@ export function normalizeOAuthFailureStatus(status: number, payload: Record<stri
 }
 ```
 
-- [ ] **Step 4: Implement start function**
+- [x] **Step 4: Implement start function**
 
 Create `supabase/functions/start-marketing-provider-connect/index.ts`:
 
@@ -1094,7 +1094,7 @@ function requireRedirectUri(provider: MarketingOAuthProvider) {
 }
 ```
 
-- [ ] **Step 5: Implement complete/list functions**
+- [x] **Step 5: Implement complete/list functions**
 
 Create `complete-marketing-provider-connect` to:
 
@@ -1119,7 +1119,7 @@ Create `list-marketing-provider-assets` to:
 6. Return only id, provider, externalId, name, parentExternalId, status and sanitized metadata.
 ```
 
-- [ ] **Step 6: Run Edge tests**
+- [x] **Step 6: Run Edge tests**
 
 Run:
 

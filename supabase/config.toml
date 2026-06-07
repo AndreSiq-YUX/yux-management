@@ -69,3 +69,12 @@ verify_jwt = true
 
 [functions.send-meta-channel-test]
 verify_jwt = true
+
+[functions.start-marketing-provider-connect]
+verify_jwt = true
+
+[functions.complete-marketing-provider-connect]
+verify_jwt = true
+
+[functions.list-marketing-provider-assets]
+verify_jwt = true
