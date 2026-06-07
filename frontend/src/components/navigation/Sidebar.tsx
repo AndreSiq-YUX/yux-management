@@ -2,21 +2,26 @@ import { NavLink } from 'react-router-dom'
 import { 
   Activity,
   BarChart3,
+  BookOpen,
   Bot,
   Boxes,
   Briefcase,
+  Building2,
+  CheckCircle2,
   ClipboardList,
   FileCheck2,
   FileText,
   FolderKanban,
   LayoutDashboard, 
   Mail,
+  MessageCircle,
   Users, 
   Megaphone, 
   UserPlus,
   Settings,
   ShieldCheck,
-  LogOut
+  LogOut,
+  UserCog
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { buildNavigationGroups } from '@/lib/platform/navigation'
@@ -44,10 +49,23 @@ const iconByHref: Record<string, LucideIcon> = {
   '/admin/email': Mail,
   '/admin/ai': Bot,
   '/admin/health': Activity,
+  '/admin/limits': Briefcase,
   '/contracts': FileCheck2,
   '/packages': Boxes,
   '/modules': LayoutDashboard,
   '/crm-governance': ShieldCheck,
+  '/portal': LayoutDashboard,
+  '/portal/empresa/perfil': Building2,
+  '/portal/empresa/usuarios': Users,
+  '/portal/empresa/conhecimento': BookOpen,
+  '/portal/empresa/marca': FileText,
+  '/portal/empresa/integracoes': Settings,
+  '/portal/comercial/contas': Building2,
+  '/portal/comercial/tarefas': CheckCircle2,
+  '/portal/atendimento/agente-ia': Bot,
+  '/portal/atendimento/filas-handoff': MessageCircle,
+  '/portal/projetos/aprovacoes': CheckCircle2,
+  '/portal/configuracoes/conta': UserCog,
 }
 
 export function Sidebar() {
@@ -72,14 +90,12 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-4 py-5">
-          <div className={platformContext.mode === 'internal' ? 'space-y-5' : 'space-y-1'}>
+          <div className="space-y-5">
             {navigationGroups.map((group) => (
               <div key={group.label}>
-                {platformContext.mode === 'internal' && (
-                  <p className="mb-2 truncate px-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    {group.label}
-                  </p>
-                )}
+                <p className="mb-2 truncate px-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  {group.label}
+                </p>
                 <div className="space-y-1">
                   {group.items.map((item) => {
                     const Icon = item.moduleKey
