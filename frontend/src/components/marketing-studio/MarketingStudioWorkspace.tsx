@@ -1,6 +1,9 @@
-import { BookOpen, CalendarDays, Check, Clock, FileText, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
+import { BookOpen, Bot, CalendarDays, Check, Clock, FileText, GitBranch, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type {
+  MarketingAgent,
+  MarketingAgentRun,
+  MarketingAgentToolPolicy,
   MarketingBrandProfile,
   MarketingCalendarItem,
   MarketingContentItem,
@@ -11,6 +14,10 @@ import type {
   MarketingKnowledgeMatch,
   MarketingProductService,
   MarketingStudioSettings,
+  MarketingToolRun,
+  MarketingWorkflow,
+  MarketingWorkflowRun,
+  ModelRoutingRule,
 } from '@/types/marketingStudio'
 
 interface MarketingStudioWorkspaceProps {
@@ -25,6 +32,13 @@ interface MarketingStudioWorkspaceProps {
   knowledgeDocuments?: MarketingKnowledgeDocument[]
   knowledgeChunks?: MarketingKnowledgeChunk[]
   knowledgeMatches?: MarketingKnowledgeMatch[]
+  agents?: MarketingAgent[]
+  workflows?: MarketingWorkflow[]
+  workflowRuns?: MarketingWorkflowRun[]
+  agentRuns?: MarketingAgentRun[]
+  toolRuns?: MarketingToolRun[]
+  modelRoutes?: ModelRoutingRule[]
+  toolPolicies?: MarketingAgentToolPolicy[]
   onCreateContent?: () => void
   onSubmitForReview?: (contentId: string) => void
   onApproveReview?: (reviewId: string) => void
@@ -48,6 +62,13 @@ export function MarketingStudioWorkspace({
   knowledgeDocuments = [],
   knowledgeChunks = [],
   knowledgeMatches = [],
+  agents = [],
+  workflows = [],
+  workflowRuns = [],
+  agentRuns = [],
+  toolRuns = [],
+  modelRoutes = [],
+  toolPolicies = [],
   onCreateContent,
   onSubmitForReview,
   onApproveReview,
@@ -92,12 +113,13 @@ export function MarketingStudioWorkspace({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-6">
         <Metric label="Conteudos" value={contents.length} />
         <Metric label="Aprovacoes" value={pendingApprovals} />
         <Metric label="Agendados" value={scheduled} />
         <Metric label="Creditos" value={settings?.currentCreditBalance ?? 0} />
         <Metric label="Conhecimento" value={knowledgeChunks.length} />
+        <Metric label="Agentes" value={agents.length} />
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
@@ -255,6 +277,67 @@ export function MarketingStudioWorkspace({
                   {'rank' in item ? item.title : item.title} - {item.body}
                 </p>
               ))}
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">Agentes e fluxos</h2>
+          <span className="text-xs text-slate-500">LangGraph runtime / harness provider-neutral</span>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]">
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <Bot className="h-4 w-4" />
+              Agentes configuraveis
+            </div>
+            {agents.length === 0 ? (
+              <p className="text-slate-500">Nenhum agente configurado para o contrato.</p>
+            ) : agents.slice(0, 5).map(agent => (
+              <div key={agent.id} className="mb-3 rounded-md bg-slate-50 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-slate-950">{agent.name}</p>
+                  <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{agent.status}</span>
+                </div>
+                <p className="text-xs text-slate-500">{agent.agentType} / prompt v{agent.promptVersion}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{agent.basePrompt || 'Prompt do agente ainda nao definido.'}</p>
+                <p className="mt-1 text-xs text-slate-500">Ferramentas: {agent.allowedTools.join(', ') || 'nenhuma'}</p>
+              </div>
+            ))}
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <GitBranch className="h-4 w-4" />
+              Workflows e execucoes
+            </div>
+            <p className="text-slate-700">{workflows.length} workflows / {workflowRuns.length} execucoes recentes</p>
+            <div className="mt-2 space-y-2">
+              {workflowRuns.slice(0, 4).map(run => (
+                <div key={run.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="text-xs font-medium text-slate-900">{run.status} / {run.runType}</p>
+                  <p className="text-xs text-slate-500">Creditos {run.creditDebit} / custo {run.rawCostEstimate}</p>
+                  {run.errorMessage && <p className="line-clamp-1 text-xs text-red-600">{run.errorMessage}</p>}
+                </div>
+              ))}
+              {workflowRuns.length === 0 && <p className="text-xs text-slate-500">Nenhuma execucao registrada.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Harness, modelos e ferramentas</h3>
+            <p className="text-slate-700">{agentRuns.length} agent runs / {toolRuns.length} tool runs</p>
+            <p className="mt-1 text-xs text-slate-500">{modelRoutes.length} regras de modelo / {toolPolicies.length} policies de ferramentas</p>
+            <div className="mt-2 space-y-2">
+              {modelRoutes.slice(0, 3).map(route => (
+                <div key={route.id} className="rounded-md bg-slate-50 p-2 text-xs">
+                  <p className="font-medium text-slate-900">{route.agentType || route.agentId} / {route.routingTier}</p>
+                  <p className="text-slate-500">{route.provider} / {route.modelName}</p>
+                </div>
+              ))}
+              {modelRoutes.length === 0 && <p className="text-xs text-slate-500">Roteamento sera aplicado pelo fallback do harness.</p>}
             </div>
           </article>
         </div>

@@ -206,6 +206,208 @@ export interface MarketingAgent {
   requiresHumanApproval: boolean
   maxCostPerRun?: number
   maxRunsPerDay?: number
+  basePrompt?: string
+  promptConfig: Record<string, unknown>
+  contextPolicy: Record<string, unknown>
+  qualityGates: Record<string, unknown>
+  modelParameters: Record<string, unknown>
+  promptVersion: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingAgentTemplate {
+  id: string
+  agentType: MarketingAgentType
+  name: string
+  description: string
+  defaultTools: MarketingToolKey[]
+  requiresHumanApproval: boolean
+  defaultModel?: string
+  fallbackModel?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingAgentGlobalPrompt {
+  id: string
+  templateId: string
+  agentType: MarketingAgentType
+  systemPrompt: string
+  promptVersion: number
+  defaultContextPolicy: Record<string, unknown>
+  defaultModelPolicy: Record<string, unknown>
+  defaultQualityGates: Record<string, unknown>
+  status: 'active' | 'archived'
+  updatedBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type MarketingWorkflowStatus = 'draft' | 'active' | 'paused' | 'archived'
+export type MarketingWorkflowTriggerType = 'manual' | 'scheduled' | 'event' | 'webhook'
+export type MarketingWorkflowNodeType = 'agent' | 'tool' | 'gate' | 'approval' | 'output'
+export type MarketingRunStatus = 'queued' | 'running' | 'waiting_approval' | 'succeeded' | 'failed' | 'cancelled'
+export type MarketingToolRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled'
+export type MarketingRunType = 'manual' | 'scheduled' | 'event' | 'retry'
+export type MarketingRoutingTier = 'cheap' | 'default' | 'premium' | 'fallback'
+
+export interface MarketingWorkflow {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowKey: string
+  name: string
+  description: string
+  status: MarketingWorkflowStatus
+  triggerType: MarketingWorkflowTriggerType
+  config: Record<string, unknown>
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingWorkflowNode {
+  id: string
+  workflowId: string
+  nodeKey: string
+  nodeType: MarketingWorkflowNodeType
+  agentId?: string
+  toolKey?: MarketingToolKey | string
+  name: string
+  positionX: number
+  positionY: number
+  config: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingWorkflowEdge {
+  id: string
+  workflowId: string
+  sourceNodeId: string
+  targetNodeId: string
+  conditionKey: string
+  config: Record<string, unknown>
+  createdAt: string
+}
+
+export interface MarketingWorkflowRun {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowId?: string
+  status: MarketingRunStatus
+  runType: MarketingRunType
+  inputPayload: Record<string, unknown>
+  contextSnapshot: Record<string, unknown>
+  resultPayload: Record<string, unknown>
+  creditDebit: number
+  rawCostEstimate: number
+  errorMessage?: string
+  requestedBy?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingAgentRun {
+  id: string
+  workflowRunId: string
+  workflowNodeId?: string
+  agentId?: string
+  templateId?: string
+  globalPromptId?: string
+  agentType: MarketingAgentType
+  status: MarketingRunStatus
+  agentPromptSnapshot?: string
+  promptConfigSnapshot: Record<string, unknown>
+  contextSummary?: string
+  compiledPromptHash?: string
+  modelProvider?: string
+  modelName?: string
+  fallbackModelName?: string
+  inputPayload: Record<string, unknown>
+  outputPayload: Record<string, unknown>
+  qualityScore?: number
+  inputTokens: number
+  outputTokens: number
+  rawCostEstimate: number
+  creditsCharged: number
+  errorMessage?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+}
+
+export interface MarketingToolRun {
+  id: string
+  workflowRunId: string
+  agentRunId?: string
+  toolKey: MarketingToolKey | string
+  status: MarketingToolRunStatus
+  inputPayload: Record<string, unknown>
+  outputPayload: Record<string, unknown>
+  rawCostEstimate: number
+  creditsCharged: number
+  errorMessage?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+}
+
+export interface AgentBudgetPolicy {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  agentId?: string
+  agentType?: MarketingAgentType
+  maxCostPerRun: number
+  maxCreditsPerRun: number
+  maxRunsPerDay: number
+  monthlyCreditLimit: number
+  requireApprovalOverCredits: number
+  status: 'active' | 'paused' | 'archived'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ModelRoutingRule {
+  id: string
+  organizationId?: string
+  clientId?: string
+  contractId?: string
+  agentId?: string
+  agentType?: MarketingAgentType
+  routingTier: MarketingRoutingTier
+  provider: string
+  modelName: string
+  fallbackModelName?: string
+  maxInputTokens: number
+  maxOutputTokens: number
+  temperature: number
+  maxCostPerRun: number
+  status: 'active' | 'paused' | 'archived'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingAgentToolPolicy {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  agentId?: string
+  agentType?: MarketingAgentType
+  toolKey: MarketingToolKey | string
+  enabled: boolean
+  requiresHumanApproval: boolean
+  maxCallsPerRun: number
+  config: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }

@@ -5,6 +5,9 @@ import { statusAfterReviewDecision } from '@/lib/marketing-studio/marketingStudi
 import { marketingStudioService } from '@/services/marketingStudioService'
 import { platformService } from '@/services/platformService'
 import type {
+  MarketingAgent,
+  MarketingAgentRun,
+  MarketingAgentToolPolicy,
   MarketingCalendarItem,
   MarketingBrandProfile,
   MarketingContentItem,
@@ -15,6 +18,10 @@ import type {
   MarketingKnowledgeMatch,
   MarketingProductService,
   MarketingStudioSettings,
+  MarketingToolRun,
+  MarketingWorkflow,
+  MarketingWorkflowRun,
+  ModelRoutingRule,
 } from '@/types/marketingStudio'
 
 export function MarketingStudioPage() {
@@ -27,6 +34,13 @@ export function MarketingStudioPage() {
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<MarketingKnowledgeDocument[]>([])
   const [knowledgeChunks, setKnowledgeChunks] = useState<MarketingKnowledgeChunk[]>([])
   const [knowledgeMatches, setKnowledgeMatches] = useState<MarketingKnowledgeMatch[]>([])
+  const [agents, setAgents] = useState<MarketingAgent[]>([])
+  const [workflows, setWorkflows] = useState<MarketingWorkflow[]>([])
+  const [workflowRuns, setWorkflowRuns] = useState<MarketingWorkflowRun[]>([])
+  const [agentRuns, setAgentRuns] = useState<MarketingAgentRun[]>([])
+  const [toolRuns, setToolRuns] = useState<MarketingToolRun[]>([])
+  const [modelRoutes, setModelRoutes] = useState<ModelRoutingRule[]>([])
+  const [toolPolicies, setToolPolicies] = useState<MarketingAgentToolPolicy[]>([])
   const [settings, setSettings] = useState<MarketingStudioSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -35,17 +49,40 @@ export function MarketingStudioPage() {
     try {
       const contracts = await platformService.getContracts()
       const defaultContract = contracts[0]
-      const [loadedContents, loadedCalendar, loadedBrand, loadedProducts, loadedDocuments, loadedChunks] = await Promise.all([
+      const [
+        loadedContents,
+        loadedCalendar,
+        loadedBrand,
+        loadedProducts,
+        loadedDocuments,
+        loadedChunks,
+        loadedAgents,
+        loadedWorkflows,
+        loadedWorkflowRuns,
+        loadedModelRoutes,
+        loadedToolPolicies,
+      ] = await Promise.all([
         marketingStudioService.getContents(defaultContract ? { contractId: defaultContract.id } : undefined),
         defaultContract ? marketingStudioService.getCalendarItems({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getBrandProfile(defaultContract.id) : Promise.resolve(null),
         defaultContract ? marketingStudioService.getProductsServices({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getKnowledgeDocuments({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getKnowledgeChunks({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getAgents({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getWorkflows({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getWorkflowRuns({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getModelRoutingRules({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getToolPolicies(defaultContract.id) : Promise.resolve([]),
       ])
       const loadedReviews = defaultContract ? await marketingStudioService.getReviews({ contractId: defaultContract.id }) : []
       const versionPairs = await Promise.all(
         loadedContents.map(async content => [content.id, await marketingStudioService.getContentVersions(content.id)] as const)
+      )
+      const agentRunPairs = await Promise.all(
+        loadedWorkflowRuns.slice(0, 5).map(run => marketingStudioService.getAgentRuns(run.id))
+      )
+      const toolRunPairs = await Promise.all(
+        loadedWorkflowRuns.slice(0, 5).map(run => marketingStudioService.getToolRuns(run.id))
       )
       setContents(loadedContents)
       setCalendarItems(loadedCalendar)
@@ -56,6 +93,13 @@ export function MarketingStudioPage() {
       setKnowledgeDocuments(loadedDocuments)
       setKnowledgeChunks(loadedChunks)
       setKnowledgeMatches([])
+      setAgents(loadedAgents)
+      setWorkflows(loadedWorkflows)
+      setWorkflowRuns(loadedWorkflowRuns)
+      setAgentRuns(agentRunPairs.flat())
+      setToolRuns(toolRunPairs.flat())
+      setModelRoutes(loadedModelRoutes)
+      setToolPolicies(loadedToolPolicies)
       setSettings(defaultContract ? await marketingStudioService.getSettings(defaultContract.id) : null)
     } catch (error) {
       console.error('Erro ao carregar Marketing Studio:', error)
@@ -69,6 +113,13 @@ export function MarketingStudioPage() {
       setKnowledgeDocuments([])
       setKnowledgeChunks([])
       setKnowledgeMatches([])
+      setAgents([])
+      setWorkflows([])
+      setWorkflowRuns([])
+      setAgentRuns([])
+      setToolRuns([])
+      setModelRoutes([])
+      setToolPolicies([])
       setSettings(null)
     } finally {
       setLoading(false)
@@ -154,6 +205,13 @@ export function MarketingStudioPage() {
       knowledgeDocuments={knowledgeDocuments}
       knowledgeChunks={knowledgeChunks}
       knowledgeMatches={knowledgeMatches}
+      agents={agents}
+      workflows={workflows}
+      workflowRuns={workflowRuns}
+      agentRuns={agentRuns}
+      toolRuns={toolRuns}
+      modelRoutes={modelRoutes}
+      toolPolicies={toolPolicies}
       onSubmitForReview={handleSubmitForReview}
       onApproveReview={reviewId => handleReviewDecision(reviewId, 'approved')}
       onRequestChanges={reviewId => handleReviewDecision(reviewId, 'changes_requested')}

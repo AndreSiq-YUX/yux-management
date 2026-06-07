@@ -1,6 +1,12 @@
 import { supabase } from '@/lib/supabase'
 import { sanitizeMarketingContentForPortal } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
+  AgentBudgetPolicy,
+  MarketingAgent,
+  MarketingAgentGlobalPrompt,
+  MarketingAgentTemplate,
+  MarketingAgentToolPolicy,
+  MarketingAgentRun,
   MarketingApprovalPolicy,
   MarketingBrandProfile,
   MarketingCalendarItem,
@@ -15,7 +21,13 @@ import type {
   MarketingProductService,
   MarketingReviewStatus,
   MarketingStudioSettings,
+  MarketingToolRun,
   MarketingUsageLedgerEntry,
+  MarketingWorkflow,
+  MarketingWorkflowEdge,
+  MarketingWorkflowNode,
+  MarketingWorkflowRun,
+  ModelRoutingRule,
   PortalMarketingContentItem,
 } from '@/types/marketingStudio'
 
@@ -213,6 +225,243 @@ export function mapMarketingKnowledgeMatch(row: any): MarketingKnowledgeMatch {
   }
 }
 
+export function mapMarketingAgentTemplate(row: any): MarketingAgentTemplate {
+  return {
+    id: row.id,
+    agentType: row.agent_type,
+    name: row.name,
+    description: row.description || '',
+    defaultTools: row.default_tools || [],
+    requiresHumanApproval: Boolean(row.requires_human_approval),
+    defaultModel: row.default_model || undefined,
+    fallbackModel: row.fallback_model || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingAgent(row: any): MarketingAgent {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id || undefined,
+    contractId: row.contract_id || undefined,
+    name: row.name,
+    agentType: row.agent_type,
+    description: row.description || '',
+    status: row.status || 'active',
+    defaultModel: row.default_model || undefined,
+    fallbackModel: row.fallback_model || undefined,
+    allowedTools: row.allowed_tools || [],
+    requiresHumanApproval: Boolean(row.requires_human_approval),
+    maxCostPerRun: row.max_cost_per_run == null ? undefined : Number(row.max_cost_per_run),
+    maxRunsPerDay: row.max_runs_per_day == null ? undefined : Number(row.max_runs_per_day),
+    basePrompt: row.base_prompt || undefined,
+    promptConfig: row.prompt_config || {},
+    contextPolicy: row.context_policy || {},
+    qualityGates: row.quality_gates || {},
+    modelParameters: row.model_parameters || {},
+    promptVersion: Number(row.prompt_version || 1),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingAgentGlobalPrompt(row: any): MarketingAgentGlobalPrompt {
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    agentType: row.agent_type,
+    systemPrompt: row.system_prompt,
+    promptVersion: Number(row.prompt_version || 1),
+    defaultContextPolicy: row.default_context_policy || {},
+    defaultModelPolicy: row.default_model_policy || {},
+    defaultQualityGates: row.default_quality_gates || {},
+    status: row.status || 'active',
+    updatedBy: row.updated_by || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingWorkflow(row: any): MarketingWorkflow {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    workflowKey: row.workflow_key,
+    name: row.name,
+    description: row.description || '',
+    status: row.status || 'draft',
+    triggerType: row.trigger_type || 'manual',
+    config: row.config || {},
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingWorkflowNode(row: any): MarketingWorkflowNode {
+  return {
+    id: row.id,
+    workflowId: row.workflow_id,
+    nodeKey: row.node_key,
+    nodeType: row.node_type,
+    agentId: row.agent_id || undefined,
+    toolKey: row.tool_key || undefined,
+    name: row.name,
+    positionX: Number(row.position_x || 0),
+    positionY: Number(row.position_y || 0),
+    config: row.config || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingWorkflowEdge(row: any): MarketingWorkflowEdge {
+  return {
+    id: row.id,
+    workflowId: row.workflow_id,
+    sourceNodeId: row.source_node_id,
+    targetNodeId: row.target_node_id,
+    conditionKey: row.condition_key || '',
+    config: row.config || {},
+    createdAt: row.created_at,
+  }
+}
+
+export function mapMarketingWorkflowRun(row: any): MarketingWorkflowRun {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    workflowId: row.workflow_id || undefined,
+    status: row.status || 'queued',
+    runType: row.run_type || 'manual',
+    inputPayload: row.input_payload || {},
+    contextSnapshot: row.context_snapshot || {},
+    resultPayload: row.result_payload || {},
+    creditDebit: Number(row.credit_debit || 0),
+    rawCostEstimate: Number(row.raw_cost_estimate || 0),
+    errorMessage: row.error_message || undefined,
+    requestedBy: row.requested_by || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingAgentRun(row: any): MarketingAgentRun {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    workflowNodeId: row.workflow_node_id || undefined,
+    agentId: row.agent_id || undefined,
+    templateId: row.template_id || undefined,
+    globalPromptId: row.global_prompt_id || undefined,
+    agentType: row.agent_type,
+    status: row.status || 'queued',
+    agentPromptSnapshot: row.agent_prompt_snapshot || undefined,
+    promptConfigSnapshot: row.prompt_config_snapshot || {},
+    contextSummary: row.context_summary || undefined,
+    compiledPromptHash: row.compiled_prompt_hash || undefined,
+    modelProvider: row.model_provider || undefined,
+    modelName: row.model_name || undefined,
+    fallbackModelName: row.fallback_model_name || undefined,
+    inputPayload: row.input_payload || {},
+    outputPayload: row.output_payload || {},
+    qualityScore: row.quality_score == null ? undefined : Number(row.quality_score),
+    inputTokens: Number(row.input_tokens || 0),
+    outputTokens: Number(row.output_tokens || 0),
+    rawCostEstimate: Number(row.raw_cost_estimate || 0),
+    creditsCharged: Number(row.credits_charged || 0),
+    errorMessage: row.error_message || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+  }
+}
+
+export function mapMarketingToolRun(row: any): MarketingToolRun {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    agentRunId: row.agent_run_id || undefined,
+    toolKey: row.tool_key,
+    status: row.status || 'queued',
+    inputPayload: row.input_payload || {},
+    outputPayload: row.output_payload || {},
+    rawCostEstimate: Number(row.raw_cost_estimate || 0),
+    creditsCharged: Number(row.credits_charged || 0),
+    errorMessage: row.error_message || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+  }
+}
+
+export function mapAgentBudgetPolicy(row: any): AgentBudgetPolicy {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    agentId: row.agent_id || undefined,
+    agentType: row.agent_type || undefined,
+    maxCostPerRun: Number(row.max_cost_per_run || 0),
+    maxCreditsPerRun: Number(row.max_credits_per_run || 0),
+    maxRunsPerDay: Number(row.max_runs_per_day || 0),
+    monthlyCreditLimit: Number(row.monthly_credit_limit || 0),
+    requireApprovalOverCredits: Number(row.require_approval_over_credits || 0),
+    status: row.status || 'active',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapModelRoutingRule(row: any): ModelRoutingRule {
+  return {
+    id: row.id,
+    organizationId: row.organization_id || undefined,
+    clientId: row.client_id || undefined,
+    contractId: row.contract_id || undefined,
+    agentId: row.agent_id || undefined,
+    agentType: row.agent_type || undefined,
+    routingTier: row.routing_tier || 'default',
+    provider: row.provider,
+    modelName: row.model_name,
+    fallbackModelName: row.fallback_model_name || undefined,
+    maxInputTokens: Number(row.max_input_tokens || 0),
+    maxOutputTokens: Number(row.max_output_tokens || 0),
+    temperature: Number(row.temperature || 0),
+    maxCostPerRun: Number(row.max_cost_per_run || 0),
+    status: row.status || 'active',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingAgentToolPolicy(row: any): MarketingAgentToolPolicy {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    agentId: row.agent_id || undefined,
+    agentType: row.agent_type || undefined,
+    toolKey: row.tool_key,
+    enabled: Boolean(row.enabled),
+    requiresHumanApproval: Boolean(row.requires_human_approval),
+    maxCallsPerRun: Number(row.max_calls_per_run || 0),
+    config: row.config || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
 export function buildIdeaInsertPayload(input: {
   organizationId: string
   clientId: string
@@ -345,6 +594,7 @@ export function buildUsageLedgerPayload(input: {
   creditsCharged: number
   userId?: string
   agentId?: string
+  workflowRunId?: string
   provider?: string
   model?: string
   inputTokens?: number
@@ -357,6 +607,7 @@ export function buildUsageLedgerPayload(input: {
     contract_id: input.contractId,
     user_id: input.userId || null,
     agent_id: input.agentId || null,
+    workflow_run_id: input.workflowRunId || null,
     action: input.action,
     provider: input.provider || null,
     model: input.model || null,
@@ -488,6 +739,99 @@ export function buildKnowledgeChunkPayload(input: {
   }
 }
 
+export function buildAgentPayload(input: {
+  organizationId: string
+  name: string
+  agentType: MarketingAgent['agentType']
+  description?: string
+  clientId?: string
+  contractId?: string
+  templateId?: string
+  status?: MarketingAgent['status']
+  basePrompt?: string
+  defaultModel?: string
+  fallbackModel?: string
+  allowedTools?: MarketingAgent['allowedTools']
+  requiresHumanApproval?: boolean
+  maxCostPerRun?: number
+  maxRunsPerDay?: number
+  promptConfig?: Record<string, unknown>
+  contextPolicy?: Record<string, unknown>
+  qualityGates?: Record<string, unknown>
+  modelParameters?: Record<string, unknown>
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId || null,
+    contract_id: input.contractId || null,
+    template_id: input.templateId || null,
+    name: input.name.trim(),
+    agent_type: input.agentType,
+    description: input.description?.trim() || '',
+    status: input.status || 'active',
+    base_prompt: input.basePrompt?.trim() || null,
+    default_model: input.defaultModel || null,
+    fallback_model: input.fallbackModel || null,
+    allowed_tools: input.allowedTools || [],
+    requires_human_approval: input.requiresHumanApproval ?? true,
+    max_cost_per_run: input.maxCostPerRun ?? null,
+    max_runs_per_day: input.maxRunsPerDay ?? null,
+    prompt_config: input.promptConfig || {},
+    context_policy: input.contextPolicy || {},
+    quality_gates: input.qualityGates || {},
+    model_parameters: input.modelParameters || {},
+  }
+}
+
+export function buildWorkflowPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowKey: string
+  name: string
+  description?: string
+  status?: MarketingWorkflow['status']
+  triggerType?: MarketingWorkflow['triggerType']
+  config?: Record<string, unknown>
+  createdBy?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    workflow_key: input.workflowKey.trim(),
+    name: input.name.trim(),
+    description: input.description?.trim() || '',
+    status: input.status || 'draft',
+    trigger_type: input.triggerType || 'manual',
+    config: input.config || {},
+    created_by: input.createdBy || null,
+  }
+}
+
+export function buildWorkflowRunPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowId?: string
+  runType?: MarketingWorkflowRun['runType']
+  inputPayload?: Record<string, unknown>
+  contextSnapshot?: Record<string, unknown>
+  requestedBy?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    workflow_id: input.workflowId || null,
+    status: 'queued',
+    run_type: input.runType || 'manual',
+    input_payload: input.inputPayload || {},
+    context_snapshot: input.contextSnapshot || {},
+    requested_by: input.requestedBy || null,
+  }
+}
+
 const CONTENT_SELECT = '*'
 const VERSION_SELECT = '*'
 const REVIEW_SELECT = '*'
@@ -496,6 +840,18 @@ const BRAND_SELECT = '*'
 const PRODUCT_SELECT = '*'
 const DOCUMENT_SELECT = '*'
 const CHUNK_SELECT = '*'
+const AGENT_TEMPLATE_SELECT = '*'
+const AGENT_SELECT = '*'
+const GLOBAL_PROMPT_SELECT = '*'
+const WORKFLOW_SELECT = '*'
+const WORKFLOW_NODE_SELECT = '*'
+const WORKFLOW_EDGE_SELECT = '*'
+const WORKFLOW_RUN_SELECT = '*'
+const AGENT_RUN_SELECT = '*'
+const TOOL_RUN_SELECT = '*'
+const BUDGET_POLICY_SELECT = '*'
+const MODEL_ROUTING_SELECT = '*'
+const TOOL_POLICY_SELECT = '*'
 
 export const marketingStudioService = {
   async getSettings(contractId: string) {
@@ -603,6 +959,122 @@ export const marketingStudioService = {
     })
     if (error) throw error
     return (data || []).map(mapMarketingKnowledgeMatch)
+  },
+
+  async getAgentTemplates() {
+    const { data, error } = await supabase
+      .from('marketing_agent_templates')
+      .select(AGENT_TEMPLATE_SELECT)
+      .order('name', { ascending: true })
+    if (error) throw error
+    return (data || []).map(mapMarketingAgentTemplate)
+  },
+
+  async getAgents(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
+    let query = supabase.from('marketing_agents').select(AGENT_SELECT).order('updated_at', { ascending: false })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingAgent)
+  },
+
+  async getGlobalPrompts() {
+    const { data, error } = await supabase
+      .from('marketing_agent_global_prompts')
+      .select(GLOBAL_PROMPT_SELECT)
+      .order('agent_type', { ascending: true })
+    if (error) throw error
+    return (data || []).map(mapMarketingAgentGlobalPrompt)
+  },
+
+  async getWorkflows(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
+    let query = supabase.from('marketing_workflows').select(WORKFLOW_SELECT).order('updated_at', { ascending: false })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingWorkflow)
+  },
+
+  async getWorkflowNodes(workflowId: string) {
+    const { data, error } = await supabase
+      .from('marketing_workflow_nodes')
+      .select(WORKFLOW_NODE_SELECT)
+      .eq('workflow_id', workflowId)
+      .order('node_key', { ascending: true })
+    if (error) throw error
+    return (data || []).map(mapMarketingWorkflowNode)
+  },
+
+  async getWorkflowEdges(workflowId: string) {
+    const { data, error } = await supabase
+      .from('marketing_workflow_edges')
+      .select(WORKFLOW_EDGE_SELECT)
+      .eq('workflow_id', workflowId)
+    if (error) throw error
+    return (data || []).map(mapMarketingWorkflowEdge)
+  },
+
+  async getWorkflowRuns(filters?: { contractId?: string; workflowId?: string; status?: MarketingWorkflowRun['status'] }) {
+    let query = supabase.from('marketing_workflow_runs').select(WORKFLOW_RUN_SELECT).order('created_at', { ascending: false }).limit(20)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.workflowId) query = query.eq('workflow_id', filters.workflowId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingWorkflowRun)
+  },
+
+  async getAgentRuns(workflowRunId: string) {
+    const { data, error } = await supabase
+      .from('marketing_agent_runs')
+      .select(AGENT_RUN_SELECT)
+      .eq('workflow_run_id', workflowRunId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return (data || []).map(mapMarketingAgentRun)
+  },
+
+  async getToolRuns(workflowRunId: string) {
+    const { data, error } = await supabase
+      .from('marketing_tool_runs')
+      .select(TOOL_RUN_SELECT)
+      .eq('workflow_run_id', workflowRunId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return (data || []).map(mapMarketingToolRun)
+  },
+
+  async getBudgetPolicies(contractId: string) {
+    const { data, error } = await supabase
+      .from('agent_budget_policies')
+      .select(BUDGET_POLICY_SELECT)
+      .eq('contract_id', contractId)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    return (data || []).map(mapAgentBudgetPolicy)
+  },
+
+  async getModelRoutingRules(filters?: { contractId?: string; agentType?: string }) {
+    let query = supabase.from('model_routing_rules').select(MODEL_ROUTING_SELECT).order('routing_tier', { ascending: true })
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.agentType) query = query.eq('agent_type', filters.agentType)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapModelRoutingRule)
+  },
+
+  async getToolPolicies(contractId: string) {
+    const { data, error } = await supabase
+      .from('marketing_agent_tool_policies')
+      .select(TOOL_POLICY_SELECT)
+      .eq('contract_id', contractId)
+      .order('tool_key', { ascending: true })
+    if (error) throw error
+    return (data || []).map(mapMarketingAgentToolPolicy)
   },
 
   async createIdea(input: Parameters<typeof buildIdeaInsertPayload>[0]) {
@@ -726,6 +1198,37 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingKnowledgeChunk(data)
+  },
+
+  async upsertAgent(input: Parameters<typeof buildAgentPayload>[0] & { id?: string }) {
+    const payload = buildAgentPayload(input)
+    const { data, error } = await supabase
+      .from('marketing_agents')
+      .upsert(input.id ? { ...payload, id: input.id } : payload)
+      .select(AGENT_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingAgent(data)
+  },
+
+  async createWorkflow(input: Parameters<typeof buildWorkflowPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_workflows')
+      .insert(buildWorkflowPayload(input))
+      .select(WORKFLOW_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingWorkflow(data)
+  },
+
+  async enqueueWorkflowRun(input: Parameters<typeof buildWorkflowRunPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_workflow_runs')
+      .insert(buildWorkflowRunPayload(input))
+      .select(WORKFLOW_RUN_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingWorkflowRun(data)
   },
 
   async recordUsage(input: Parameters<typeof buildUsageLedgerPayload>[0]) {

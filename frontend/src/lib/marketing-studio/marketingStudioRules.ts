@@ -1,5 +1,8 @@
 import type {
   MarketingAgentType,
+  MarketingAgent,
+  MarketingAgentGlobalPrompt,
+  MarketingAgentRun,
   MarketingCalendarItem,
   MarketingBrandProfile,
   MarketingContentItem,
@@ -13,7 +16,11 @@ import type {
   MarketingReviewStatus,
   MarketingStudioSettings,
   MarketingToolKey,
+  MarketingAgentToolPolicy,
   MarketingUsageAction,
+  MarketingWorkflowRun,
+  ModelRoutingRule,
+  AgentBudgetPolicy,
   PortalMarketingContentItem,
   PortalMarketingBrandProfile,
 } from '@/types/marketingStudio'
@@ -202,6 +209,100 @@ export function summarizeKnowledgeCoverage(input: {
   }
 }
 
+export function composeAgentPrompt(input: {
+  globalPrompt: Pick<MarketingAgentGlobalPrompt, 'systemPrompt' | 'promptVersion' | 'defaultContextPolicy' | 'defaultQualityGates'>
+  agent: Pick<MarketingAgent, 'name' | 'basePrompt' | 'promptConfig' | 'contextPolicy' | 'qualityGates' | 'promptVersion'>
+  context: {
+    brandSummary?: string
+    products?: string[]
+    knowledgeSnippets?: string[]
+    objective?: string
+  }
+}) {
+  const contextLines = [
+    input.context.objective ? `Objetivo: ${input.context.objective}` : '',
+    input.context.brandSummary ? `Marca: ${input.context.brandSummary}` : '',
+    input.context.products?.length ? `Produtos: ${input.context.products.join('; ')}` : '',
+    input.context.knowledgeSnippets?.length ? `Conhecimento: ${input.context.knowledgeSnippets.join(' | ')}` : '',
+  ].filter(Boolean)
+
+  return {
+    systemPrompt: input.globalPrompt.systemPrompt.trim(),
+    agentPrompt: input.agent.basePrompt?.trim() || `Execute a funcao configurada para ${input.agent.name}.`,
+    contextBlock: contextLines.join('\n'),
+    promptConfig: {
+      ...input.globalPrompt.defaultContextPolicy,
+      ...input.globalPrompt.defaultQualityGates,
+      ...input.agent.contextPolicy,
+      ...input.agent.qualityGates,
+      ...input.agent.promptConfig,
+    },
+    promptVersions: {
+      global: input.globalPrompt.promptVersion,
+      agent: input.agent.promptVersion,
+    },
+  }
+}
+
+export function selectModelRoute(input: {
+  agent: Pick<MarketingAgent, 'id' | 'agentType' | 'defaultModel' | 'fallbackModel'>
+  routes: ModelRoutingRule[]
+  tier?: ModelRoutingRule['routingTier']
+}) {
+  const tier = input.tier || 'default'
+  return input.routes.find(route => route.status === 'active' && route.agentId === input.agent.id && route.routingTier === tier)
+    || input.routes.find(route => route.status === 'active' && route.agentType === input.agent.agentType && route.routingTier === tier)
+    || input.routes.find(route => route.status === 'active' && route.agentType === input.agent.agentType)
+    || {
+      provider: 'configured',
+      modelName: input.agent.defaultModel || 'unconfigured',
+      fallbackModelName: input.agent.fallbackModel,
+      routingTier: tier,
+      maxInputTokens: 8000,
+      maxOutputTokens: 1200,
+      temperature: 0.4,
+      maxCostPerRun: input.agent.defaultModel ? 0 : Number.POSITIVE_INFINITY,
+      status: 'active',
+    }
+}
+
+export function filterToolsByPolicies(input: {
+  agent: Pick<MarketingAgent, 'id' | 'agentType' | 'allowedTools'>
+  policies: MarketingAgentToolPolicy[]
+}) {
+  return input.agent.allowedTools.filter(tool => {
+    const policy = input.policies.find(item => item.agentId === input.agent.id && item.toolKey === tool)
+      || input.policies.find(item => item.agentType === input.agent.agentType && item.toolKey === tool)
+    return policy ? policy.enabled : true
+  })
+}
+
+export function shouldBlockAgentRun(input: {
+  policy?: AgentBudgetPolicy
+  estimatedCredits: number
+  estimatedCost: number
+  runsToday: number
+}) {
+  if (!input.policy || input.policy.status !== 'active') return false
+  if (input.policy.maxCreditsPerRun > 0 && input.estimatedCredits > input.policy.maxCreditsPerRun) return true
+  if (input.policy.maxCostPerRun > 0 && input.estimatedCost > input.policy.maxCostPerRun) return true
+  return input.policy.maxRunsPerDay > 0 && input.runsToday >= input.policy.maxRunsPerDay
+}
+
+export function summarizeHarnessTelemetry(input: {
+  workflowRuns: MarketingWorkflowRun[]
+  agentRuns: MarketingAgentRun[]
+}) {
+  const failedWorkflowRuns = input.workflowRuns.filter(run => run.status === 'failed').length
+  return {
+    queuedWorkflowRuns: input.workflowRuns.filter(run => run.status === 'queued').length,
+    runningWorkflowRuns: input.workflowRuns.filter(run => run.status === 'running').length,
+    failedWorkflowRuns,
+    totalCredits: input.agentRuns.reduce((sum, run) => sum + run.creditsCharged, 0),
+    averageQualityScore: average(input.agentRuns.map(run => run.qualityScore).filter(score => score != null) as number[]),
+  }
+}
+
 function toChunk(title: string, body: string, chunkIndex: number) {
   return {
     title,
@@ -217,4 +318,9 @@ function normalizeTerms(query: string) {
     .split(/\s+/)
     .map(term => term.trim())
     .filter(term => term.length >= 3)
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
 }

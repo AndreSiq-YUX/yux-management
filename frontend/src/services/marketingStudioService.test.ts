@@ -8,8 +8,17 @@ import {
   buildIdeaInsertPayload,
   buildKnowledgeChunkPayload,
   buildKnowledgeDocumentPayload,
+  buildAgentPayload,
+  buildWorkflowPayload,
+  buildWorkflowRunPayload,
   buildProductServicePayload,
   buildUsageLedgerPayload,
+  mapAgentBudgetPolicy,
+  mapMarketingAgent,
+  mapMarketingAgentGlobalPrompt,
+  mapMarketingAgentRun,
+  mapMarketingAgentTemplate,
+  mapMarketingAgentToolPolicy,
   mapMarketingBrandProfile,
   mapMarketingCalendarItem,
   mapMarketingContent,
@@ -20,6 +29,12 @@ import {
   mapMarketingKnowledgeMatch,
   mapMarketingProductService,
   mapMarketingSettings,
+  mapMarketingToolRun,
+  mapMarketingWorkflow,
+  mapMarketingWorkflowEdge,
+  mapMarketingWorkflowNode,
+  mapMarketingWorkflowRun,
+  mapModelRoutingRule,
 } from './marketingStudioService'
 
 describe('marketingStudioService mapping helpers', () => {
@@ -134,8 +149,10 @@ describe('marketingStudioService mapping helpers', () => {
       contractId: 'contract-1',
       action: 'generate_social_post',
       creditsCharged: 5,
+      workflowRunId: 'run-1',
     })).toMatchObject({
       organization_id: 'org-1',
+      workflow_run_id: 'run-1',
       action: 'generate_social_post',
       input_tokens: 0,
       output_tokens: 0,
@@ -390,5 +407,264 @@ describe('marketingStudioService mapping helpers', () => {
       body: 'Texto',
       rank: 0.8,
     })).toEqual({ chunkId: 'chunk-1', documentId: 'doc-1', title: 'Guia', body: 'Texto', rank: 0.8 })
+  })
+
+  it('maps agent templates, global prompts and editable agent prompts', () => {
+    expect(mapMarketingAgentTemplate({
+      id: 'template-1',
+      agent_type: 'multichannel_writer',
+      name: 'Redator',
+      description: 'Escreve posts',
+      default_tools: ['rag_search'],
+      requires_human_approval: true,
+      default_model: 'openai/gpt-4o-mini',
+      fallback_model: null,
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ agentType: 'multichannel_writer', defaultTools: ['rag_search'] })
+
+    expect(mapMarketingAgentGlobalPrompt({
+      id: 'global-1',
+      template_id: 'template-1',
+      agent_type: 'multichannel_writer',
+      system_prompt: 'System prompt global da YUX',
+      prompt_version: 2,
+      default_context_policy: { includeBrandProfile: true },
+      default_model_policy: { routingTier: 'default' },
+      default_quality_gates: { minimumQualityScore: 70 },
+      status: 'active',
+      updated_by: null,
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({
+      agentType: 'multichannel_writer',
+      systemPrompt: 'System prompt global da YUX',
+      promptVersion: 2,
+    })
+
+    expect(mapMarketingAgent({
+      id: 'agent-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      name: 'Redator do Cliente',
+      agent_type: 'multichannel_writer',
+      description: 'Prompt editavel pelo cliente',
+      status: 'active',
+      default_model: 'openai/gpt-4o-mini',
+      fallback_model: 'openai/gpt-4o',
+      allowed_tools: ['rag_search'],
+      requires_human_approval: true,
+      max_cost_per_run: 1.5,
+      max_runs_per_day: 10,
+      base_prompt: 'Use exemplos do cliente.',
+      prompt_config: { channel: 'linkedin' },
+      context_policy: { includeProducts: true },
+      quality_gates: { minimumQualityScore: 75 },
+      model_parameters: { temperature: 0.6 },
+      prompt_version: 3,
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({
+      name: 'Redator do Cliente',
+      basePrompt: 'Use exemplos do cliente.',
+      promptConfig: { channel: 'linkedin' },
+      promptVersion: 3,
+    })
+
+    expect(buildAgentPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      name: ' Redator ',
+      agentType: 'multichannel_writer',
+      basePrompt: ' Siga a voz da marca ',
+      allowedTools: ['rag_search'],
+      promptConfig: { channel: 'linkedin' },
+    })).toMatchObject({
+      organization_id: 'org-1',
+      name: 'Redator',
+      base_prompt: 'Siga a voz da marca',
+      allowed_tools: ['rag_search'],
+      prompt_config: { channel: 'linkedin' },
+    })
+  })
+
+  it('maps workflows, run logs, budget, routing and tool policies', () => {
+    expect(mapMarketingWorkflow({
+      id: 'workflow-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      workflow_key: 'post_creation',
+      name: 'Criacao de post',
+      description: 'Fluxo',
+      status: 'active',
+      trigger_type: 'manual',
+      config: { mode: 'dry_run' },
+      created_by: null,
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ workflowKey: 'post_creation', status: 'active' })
+
+    expect(buildWorkflowPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      workflowKey: ' post_creation ',
+      name: ' Criacao ',
+    })).toMatchObject({ workflow_key: 'post_creation', name: 'Criacao', trigger_type: 'manual' })
+
+    expect(mapMarketingWorkflowNode({
+      id: 'node-1',
+      workflow_id: 'workflow-1',
+      node_key: 'writer',
+      node_type: 'agent',
+      agent_id: 'agent-1',
+      tool_key: null,
+      name: 'Writer',
+      position_x: 10,
+      position_y: 20,
+      config: {},
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ nodeKey: 'writer', positionX: 10 })
+
+    expect(mapMarketingWorkflowEdge({
+      id: 'edge-1',
+      workflow_id: 'workflow-1',
+      source_node_id: 'node-1',
+      target_node_id: 'node-2',
+      condition_key: '',
+      config: {},
+      created_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ sourceNodeId: 'node-1', targetNodeId: 'node-2' })
+
+    expect(mapMarketingWorkflowRun({
+      id: 'run-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      workflow_id: 'workflow-1',
+      status: 'queued',
+      run_type: 'manual',
+      input_payload: { topic: 'CRM' },
+      context_snapshot: {},
+      result_payload: {},
+      credit_debit: 5,
+      raw_cost_estimate: 0.1,
+      error_message: null,
+      requested_by: null,
+      started_at: null,
+      completed_at: null,
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ id: 'run-1', creditDebit: 5, inputPayload: { topic: 'CRM' } })
+
+    expect(buildWorkflowRunPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      workflowId: 'workflow-1',
+      inputPayload: { topic: 'CRM' },
+    })).toMatchObject({ workflow_id: 'workflow-1', status: 'queued', input_payload: { topic: 'CRM' } })
+
+    expect(mapMarketingAgentRun({
+      id: 'agent-run-1',
+      workflow_run_id: 'run-1',
+      workflow_node_id: 'node-1',
+      agent_id: 'agent-1',
+      template_id: 'template-1',
+      global_prompt_id: 'global-1',
+      agent_type: 'multichannel_writer',
+      status: 'succeeded',
+      agent_prompt_snapshot: 'Prompt do cliente',
+      prompt_config_snapshot: { channel: 'linkedin' },
+      context_summary: 'Marca e produto',
+      compiled_prompt_hash: 'hash',
+      model_provider: 'openrouter',
+      model_name: 'openai/gpt-4o-mini',
+      fallback_model_name: 'openai/gpt-4o',
+      input_payload: {},
+      output_payload: { title: 'Post' },
+      quality_score: 82,
+      input_tokens: 100,
+      output_tokens: 50,
+      raw_cost_estimate: 0.02,
+      credits_charged: 5,
+      error_message: null,
+      started_at: null,
+      completed_at: null,
+      created_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ globalPromptId: 'global-1', agentPromptSnapshot: 'Prompt do cliente', qualityScore: 82 })
+
+    expect(mapMarketingToolRun({
+      id: 'tool-run-1',
+      workflow_run_id: 'run-1',
+      agent_run_id: 'agent-run-1',
+      tool_key: 'rag_search',
+      status: 'succeeded',
+      input_payload: { query: 'CRM' },
+      output_payload: { matches: 2 },
+      raw_cost_estimate: 0,
+      credits_charged: 1,
+      error_message: null,
+      started_at: null,
+      completed_at: null,
+      created_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ toolKey: 'rag_search', outputPayload: { matches: 2 } })
+
+    expect(mapAgentBudgetPolicy({
+      id: 'budget-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      agent_id: null,
+      agent_type: 'multichannel_writer',
+      max_cost_per_run: 1,
+      max_credits_per_run: 12,
+      max_runs_per_day: 10,
+      monthly_credit_limit: 300,
+      require_approval_over_credits: 20,
+      status: 'active',
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ agentType: 'multichannel_writer', maxCreditsPerRun: 12 })
+
+    expect(mapModelRoutingRule({
+      id: 'route-1',
+      organization_id: null,
+      client_id: null,
+      contract_id: null,
+      agent_id: null,
+      agent_type: 'multichannel_writer',
+      routing_tier: 'default',
+      provider: 'openrouter',
+      model_name: 'openai/gpt-4o-mini',
+      fallback_model_name: 'openai/gpt-4o',
+      max_input_tokens: 12000,
+      max_output_tokens: 2200,
+      temperature: 0.7,
+      max_cost_per_run: 0,
+      status: 'active',
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ provider: 'openrouter', temperature: 0.7 })
+
+    expect(mapMarketingAgentToolPolicy({
+      id: 'tool-policy-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      agent_id: null,
+      agent_type: 'multichannel_writer',
+      tool_key: 'rag_search',
+      enabled: true,
+      requires_human_approval: false,
+      max_calls_per_run: 3,
+      config: { limit: 5 },
+      created_at: '2026-06-06T12:00:00.000Z',
+      updated_at: '2026-06-06T12:00:00.000Z',
+    })).toMatchObject({ toolKey: 'rag_search', maxCallsPerRun: 3 })
   })
 })

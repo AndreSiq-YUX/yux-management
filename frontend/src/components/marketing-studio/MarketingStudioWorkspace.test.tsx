@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { MarketingStudioWorkspace } from './MarketingStudioWorkspace'
 import type {
+  MarketingAgent,
+  MarketingAgentRun,
+  MarketingAgentToolPolicy,
   MarketingCalendarItem,
   MarketingBrandProfile,
   MarketingContentItem,
@@ -13,6 +16,10 @@ import type {
   MarketingKnowledgeMatch,
   MarketingProductService,
   MarketingStudioSettings,
+  MarketingToolRun,
+  MarketingWorkflow,
+  MarketingWorkflowRun,
+  ModelRoutingRule,
 } from '@/types/marketingStudio'
 
 const settings: MarketingStudioSettings = {
@@ -176,6 +183,120 @@ const knowledgeMatches: MarketingKnowledgeMatch[] = [{
   rank: 1,
 }]
 
+const agents: MarketingAgent[] = [{
+  id: 'agent-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  name: 'Redator do cliente',
+  agentType: 'multichannel_writer',
+  description: 'Agente de escrita',
+  status: 'active',
+  defaultModel: 'openai/gpt-4o-mini',
+  allowedTools: ['rag_search'],
+  requiresHumanApproval: true,
+  basePrompt: 'Use exemplos aprovados do cliente.',
+  promptConfig: { channel: 'linkedin' },
+  contextPolicy: { includeProducts: true },
+  qualityGates: { minimumQualityScore: 80 },
+  modelParameters: { temperature: 0.6 },
+  promptVersion: 3,
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const workflows: MarketingWorkflow[] = [{
+  id: 'workflow-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  workflowKey: 'post_creation',
+  name: 'Criacao de post',
+  description: 'Fluxo provider-neutral',
+  status: 'active',
+  triggerType: 'manual',
+  config: {},
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const workflowRuns: MarketingWorkflowRun[] = [{
+  id: 'run-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  workflowId: 'workflow-1',
+  status: 'queued',
+  runType: 'manual',
+  inputPayload: { topic: 'CRM' },
+  contextSnapshot: {},
+  resultPayload: {},
+  creditDebit: 5,
+  rawCostEstimate: 0.1,
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const agentRuns: MarketingAgentRun[] = [{
+  id: 'agent-run-1',
+  workflowRunId: 'run-1',
+  agentId: 'agent-1',
+  agentType: 'multichannel_writer',
+  status: 'succeeded',
+  promptConfigSnapshot: { channel: 'linkedin' },
+  inputPayload: {},
+  outputPayload: { title: 'Post' },
+  qualityScore: 82,
+  inputTokens: 100,
+  outputTokens: 50,
+  rawCostEstimate: 0.02,
+  creditsCharged: 5,
+  createdAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const toolRuns: MarketingToolRun[] = [{
+  id: 'tool-run-1',
+  workflowRunId: 'run-1',
+  agentRunId: 'agent-run-1',
+  toolKey: 'rag_search',
+  status: 'succeeded',
+  inputPayload: {},
+  outputPayload: {},
+  rawCostEstimate: 0,
+  creditsCharged: 1,
+  createdAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const modelRoutes: ModelRoutingRule[] = [{
+  id: 'route-1',
+  agentType: 'multichannel_writer',
+  routingTier: 'default',
+  provider: 'openrouter',
+  modelName: 'openai/gpt-4o-mini',
+  maxInputTokens: 12000,
+  maxOutputTokens: 2200,
+  temperature: 0.7,
+  maxCostPerRun: 0,
+  status: 'active',
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const toolPolicies: MarketingAgentToolPolicy[] = [{
+  id: 'policy-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  agentType: 'multichannel_writer',
+  toolKey: 'rag_search',
+  enabled: true,
+  requiresHumanApproval: false,
+  maxCallsPerRun: 3,
+  config: {},
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
 describe('MarketingStudioWorkspace', () => {
   it('renders internal metrics, tabs, content, and internal operational details', () => {
     const container = document.createElement('div')
@@ -199,6 +320,13 @@ describe('MarketingStudioWorkspace', () => {
           knowledgeDocuments={knowledgeDocuments}
           knowledgeChunks={knowledgeChunks}
           knowledgeMatches={knowledgeMatches}
+          agents={agents}
+          workflows={workflows}
+          workflowRuns={workflowRuns}
+          agentRuns={agentRuns}
+          toolRuns={toolRuns}
+          modelRoutes={modelRoutes}
+          toolPolicies={toolPolicies}
           onSubmitForReview={onSubmitForReview}
           onApproveReview={onApproveReview}
           onSearchKnowledge={onSearchKnowledge}
@@ -212,6 +340,7 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('Aprovacoes 1')
     expect(html).toContain('Agendados 1')
     expect(html).toContain('Creditos 120')
+    expect(html).toContain('Agentes 1')
     expect(html).toContain('Visao geral')
     expect(html).toContain('Conteudo')
     expect(html).toContain('Calendario')
@@ -231,6 +360,15 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('Validar promessa comercial')
     expect(html).toContain('managed_by_yux')
     expect(html).toContain('Custo interno R$ 12')
+    expect(html).toContain('Agentes e fluxos')
+    expect(html).toContain('LangGraph runtime')
+    expect(html).toContain('Redator do cliente')
+    expect(html).toContain('prompt v3')
+    expect(html).toContain('Use exemplos aprovados do cliente.')
+    expect(html).toContain('1 workflows / 1 execucoes recentes')
+    expect(html).toContain('queued / manual')
+    expect(html).toContain('1 agent runs / 1 tool runs')
+    expect(html).toContain('openrouter / openai/gpt-4o-mini')
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[title="Atualizar Marketing Studio"]')!.click()
