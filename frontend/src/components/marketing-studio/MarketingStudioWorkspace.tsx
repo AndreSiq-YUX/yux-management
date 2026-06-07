@@ -20,6 +20,7 @@ import type {
   MarketingIdea,
   MarketingProductService,
   MarketingPublishingConnection,
+  MarketingPublishingProvider,
   MarketingPublishingRun,
   MarketingRadarRun,
   MarketingSource,
@@ -119,6 +120,7 @@ export function MarketingStudioWorkspace({
     suggestions: campaignCreativeSuggestions,
     draftRuns: campaignDraftRuns,
   })
+  const publishingProviderRows = buildPublishingProviderRows(publishingConnections)
 
   return (
     <div className="space-y-6">
@@ -307,23 +309,33 @@ export function MarketingStudioWorkspace({
       <section>
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-slate-950">WordPress e publicacao controlada</h2>
-          <span className="text-xs text-slate-500">rascunho, atualizacao e publicacao apos aprovacao</span>
+          <span className="text-xs text-slate-500">canais nativos, rascunho e publicacao apos aprovacao</span>
         </div>
         <div className="mt-3 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
           <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
             <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
               <Send className="h-4 w-4" />
-              Conexoes WordPress
+              Conexoes WordPress e canais nativos
             </div>
             <p className="text-slate-700">{publishingConnections.filter(connection => connection.status === 'connected').length} conectadas / {publishingConnections.length} cadastradas</p>
             <div className="mt-2 space-y-2">
-              {publishingConnections.slice(0, 4).map(connection => (
-                <div key={connection.id} className="rounded-md bg-slate-50 p-2">
-                  <p className="font-medium text-slate-900">{connection.name}</p>
-                  <p className="text-xs text-slate-500">{connection.siteUrl} / {connection.status}</p>
+              {publishingProviderRows.map(({ provider, label, connection }) => (
+                <div key={provider} className="rounded-md bg-slate-50 p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-slate-900">{connection?.name || label}</p>
+                      <p className="text-xs text-slate-500">{label} / {connection?.status || 'needs_setup'}</p>
+                    </div>
+                    <span className="rounded bg-white px-2 py-1 text-[11px] text-slate-600">{publishingAvailability(connection)}</span>
+                  </div>
+                  <div className="mt-1 grid gap-1 text-xs text-slate-500">
+                    <span>{connection?.providerAssetName || connection?.siteUrl || 'asset nao configurado'}</span>
+                    <span>{connection?.tokenReference ? 'credencial configurada' : 'credencial pendente'}</span>
+                    <span>ultima publicacao: {connection?.lastPublishedAt ? formatDate(connection.lastPublishedAt) : 'nunca'}</span>
+                    {connection?.status === 'needs_reauth' && <span className="text-red-600">reautenticacao necessaria</span>}
+                  </div>
                 </div>
               ))}
-              {publishingConnections.length === 0 && <p className="text-xs text-slate-500">Nenhuma conexao WordPress configurada.</p>}
             </div>
           </article>
 
@@ -603,6 +615,36 @@ function ActionButton({ children, onClick, title }: { children: ReactNode; onCli
       {children}
     </button>
   )
+}
+
+const publishingProviderLabels: Record<MarketingPublishingProvider, string> = {
+  wordpress: 'WordPress',
+  meta_facebook: 'Facebook Page',
+  meta_instagram: 'Instagram',
+  google_business_profile: 'Google Business Profile',
+}
+
+const publishingProviderOrder: MarketingPublishingProvider[] = [
+  'wordpress',
+  'meta_facebook',
+  'meta_instagram',
+  'google_business_profile',
+]
+
+function buildPublishingProviderRows(connections: MarketingPublishingConnection[]) {
+  return publishingProviderOrder.map(provider => ({
+    provider,
+    label: publishingProviderLabels[provider],
+    connection: connections.find(connection => connection.provider === provider),
+  }))
+}
+
+function publishingAvailability(connection?: MarketingPublishingConnection) {
+  if (!connection) return 'sem conexao'
+  if (connection.status === 'needs_reauth') return 'reautenticar'
+  if (connection.status === 'connected' && connection.tokenReference) return 'pronto'
+  if (connection.status === 'stale' && connection.tokenReference) return 'verificar'
+  return 'indisponivel'
 }
 
 function formatDate(value: string) {

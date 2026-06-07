@@ -629,4 +629,47 @@ describe('MarketingStudioWorkspace', () => {
 
     act(() => root.unmount())
   })
+
+  it('renders native publishing provider states without exposing token references', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const tokenReference = 'meta_social:publishing:publishing_connections:connection-ig:access_token'
+
+    act(() => {
+      root.render(
+        <MarketingStudioWorkspace
+          contents={[]}
+          settings={settings}
+          onRefresh={vi.fn()}
+          publishingConnections={[{
+            id: 'connection-ig',
+            organizationId: 'org-1',
+            clientId: 'client-1',
+            contractId: 'contract-1',
+            provider: 'meta_instagram',
+            name: 'Instagram Cliente',
+            status: 'needs_reauth',
+            siteUrl: '',
+            authType: 'token_reference',
+            tokenReference,
+            providerAssetName: '@cliente',
+            publicConfig: {},
+            metadata: {},
+            createdAt: '2026-06-07T10:00:00.000Z',
+            updatedAt: '2026-06-07T10:00:00.000Z',
+          }]}
+        />
+      )
+    })
+
+    const html = container.innerHTML
+    expect(html).toContain('Instagram Cliente')
+    expect(html).toContain('@cliente')
+    expect(html).toContain('needs_reauth')
+    expect(html).toContain('credencial configurada')
+    expect(html).toContain('reautenticacao necessaria')
+    expect(html).not.toContain(tokenReference)
+
+    act(() => root.unmount())
+  })
 })

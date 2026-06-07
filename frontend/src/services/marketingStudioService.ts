@@ -339,6 +339,14 @@ export function mapMarketingPublishingConnection(row: any): MarketingPublishingC
     authType: row.auth_type || 'application_password',
     tokenReference: row.token_reference || undefined,
     providerAccountId: row.provider_account_id || undefined,
+    providerAssetId: row.provider_asset_id || undefined,
+    providerAssetName: row.provider_asset_name || undefined,
+    providerParentAssetId: row.provider_parent_asset_id || undefined,
+    providerScopes: row.provider_scopes || [],
+    tokenExpiresAt: row.token_expires_at || undefined,
+    reauthRequiredAt: row.reauth_required_at || undefined,
+    lastHealthCheckAt: row.last_health_check_at || undefined,
+    lastPublishedAt: row.last_published_at || undefined,
     lastVerifiedAt: row.last_verified_at || undefined,
     protectedError: row.protected_error || undefined,
     publicConfig: row.public_config || {},
@@ -1999,6 +2007,17 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingCampaignDraftRun(data)
+  },
+
+  async executePublishingRun(input: ({ publishingRunId?: string; provider?: MarketingPublishingConnection['provider'] } | (Parameters<typeof buildPublishingRunPayload>[0] & {
+    provider?: MarketingPublishingConnection['provider']
+  }))) {
+    const functionName = input.provider === 'wordpress' ? 'execute-wordpress-publishing' : 'execute-marketing-publishing'
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: input,
+    })
+    if (error) throw error
+    return data as { success?: boolean; duplicate?: boolean; run?: unknown; error?: string }
   },
 
   async executeWordPressPublishingRun(input: { publishingRunId?: string } | Parameters<typeof buildPublishingRunPayload>[0]) {

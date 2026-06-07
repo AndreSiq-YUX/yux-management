@@ -1,4 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  from: vi.fn(),
+}))
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    functions: {
+      invoke: mocks.invoke,
+    },
+    from: mocks.from,
+  },
+}))
+
 import {
   buildContentInsertPayload,
   buildCalendarItemPayload,
@@ -51,6 +66,7 @@ import {
   mapMarketingWorkflowNode,
   mapMarketingWorkflowRun,
   mapModelRoutingRule,
+  marketingStudioService,
 } from './marketingStudioService'
 
 describe('marketingStudioService mapping helpers', () => {
@@ -930,6 +946,33 @@ describe('marketingStudioService mapping helpers', () => {
       status: 'queued',
       idempotency_key: 'connection-1:content-1:create_draft:latest',
     })
+  })
+
+  it('invokes generic marketing publishing for native social providers', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      data: { success: true, run: { id: 'run-1' } },
+      error: null,
+    })
+
+    await marketingStudioService.executePublishingRun({
+      provider: 'meta_instagram',
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      connectionId: 'connection-1',
+      contentItemId: 'content-1',
+      action: 'publish',
+      idempotencyKey: 'connection-1:content-1:publish:latest',
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledWith('execute-marketing-publishing', expect.objectContaining({
+      body: expect.objectContaining({
+        provider: 'meta_instagram',
+        connectionId: 'connection-1',
+        contentItemId: 'content-1',
+        action: 'publish',
+      }),
+    }))
   })
 
   it('maps campaign creative suggestions and draft run payloads', () => {

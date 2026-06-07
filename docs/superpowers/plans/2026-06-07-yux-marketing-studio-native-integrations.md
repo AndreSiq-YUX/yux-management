@@ -1349,7 +1349,7 @@ Expected:
 All shared publishing/provider secret tests pass.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -1368,7 +1368,7 @@ git commit -m "feat: add native social publishing adapters"
 - Modify: `frontend/src/components/marketing-studio/MarketingStudioWorkspace.tsx`
 - Modify: `frontend/src/components/marketing-studio/MarketingStudioWorkspace.test.tsx`
 
-- [ ] **Step 1: Add service tests**
+- [x] **Step 1: Add service tests**
 
 Add to `frontend/src/services/marketingStudioService.test.ts`:
 
@@ -1398,7 +1398,7 @@ it('invokes generic marketing publishing for native social providers', async () 
 })
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run from `frontend/`:
 
@@ -1412,7 +1412,7 @@ Expected:
 FAIL because executePublishingRun still targets execute-wordpress-publishing for every provider or does not include provider.
 ```
 
-- [ ] **Step 3: Update service**
+- [x] **Step 3: Update service**
 
 Modify `marketingStudioService.executePublishingRun`:
 
@@ -1440,7 +1440,7 @@ if (error) throw error
 return data
 ```
 
-- [ ] **Step 4: Update Marketing Studio UI**
+- [x] **Step 4: Update Marketing Studio UI**
 
 In `MarketingStudioWorkspace.tsx`, add a compact provider status panel that displays:
 
@@ -1459,7 +1459,7 @@ status, provider asset name, last published date, needs_reauth warning, publish 
 
 Do not expose raw token references; display only "credencial configurada" when `tokenReference` is present.
 
-- [ ] **Step 5: Add UI test**
+- [x] **Step 5: Add UI test**
 
 Add to `MarketingStudioWorkspace.test.tsx`:
 
@@ -1491,7 +1491,7 @@ it('renders native publishing provider states without exposing token references'
 })
 ```
 
-- [ ] **Step 6: Run focused frontend tests**
+- [x] **Step 6: Run focused frontend tests**
 
 Run from `frontend/`:
 
