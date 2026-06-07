@@ -1505,7 +1505,7 @@ Expected:
 Both suites pass.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run:
 
@@ -1522,7 +1522,7 @@ git commit -m "feat: surface native marketing publishing"
 - Modify: `supabase/functions/_shared/adsProvider.ts`
 - Modify: `supabase/functions/_shared/adsProvider.test.ts`
 
-- [ ] **Step 1: Replace stub expectations with real request builder tests**
+- [x] **Step 1: Replace stub expectations with real request builder tests**
 
 Modify `supabase/functions/_shared/adsProvider.test.ts` to include:
 
@@ -1567,7 +1567,7 @@ Deno.test('builds Google Ads mutate operations for campaign activation draft', (
 })
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -1581,7 +1581,7 @@ Expected:
 FAIL because buildMetaCampaignRequests and buildGoogleAdsCampaignMutateOperations are not implemented.
 ```
 
-- [ ] **Step 3: Implement Meta request builders**
+- [x] **Step 3: Implement Meta request builders**
 
 In `adsProvider.ts`, add:
 
@@ -1663,7 +1663,7 @@ export function buildMetaCampaignRequests(input: {
 }
 ```
 
-- [ ] **Step 4: Implement Google Ads mutate builders**
+- [x] **Step 4: Implement Google Ads mutate builders**
 
 In `adsProvider.ts`, add:
 
@@ -1735,7 +1735,7 @@ export function buildGoogleAdsCampaignMutateOperations(input: {
 }
 ```
 
-- [ ] **Step 5: Implement real executeProviderAdapter**
+- [x] **Step 5: Implement real executeProviderAdapter**
 
 Change `executeProviderAdapter` so:
 
@@ -1751,7 +1751,7 @@ Change `executeProviderAdapter` so:
 9. It sanitizes all provider responses and errors.
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
