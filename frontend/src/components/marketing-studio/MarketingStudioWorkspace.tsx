@@ -1,12 +1,15 @@
-import { BookOpen, Bot, CalendarDays, Check, Clock, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
+import { BookOpen, Bot, CalendarDays, Check, Clock, FileCheck, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
   MarketingAgent,
   MarketingAgentRun,
   MarketingAgentToolPolicy,
   MarketingBrandProfile,
   MarketingCalendarItem,
+  MarketingContentGenerationRun,
   MarketingContentItem,
+  MarketingContentQualityCheck,
   MarketingContentReview,
   MarketingContentVersion,
   MarketingKnowledgeChunk,
@@ -47,6 +50,8 @@ interface MarketingStudioWorkspaceProps {
   sourceItems?: MarketingSourceItem[]
   radarRuns?: MarketingRadarRun[]
   ideas?: MarketingIdea[]
+  generationRuns?: MarketingContentGenerationRun[]
+  qualityChecks?: MarketingContentQualityCheck[]
   onCreateContent?: () => void
   onSubmitForReview?: (contentId: string) => void
   onApproveReview?: (reviewId: string) => void
@@ -81,6 +86,8 @@ export function MarketingStudioWorkspace({
   sourceItems = [],
   radarRuns = [],
   ideas = [],
+  generationRuns = [],
+  qualityChecks = [],
   onCreateContent,
   onSubmitForReview,
   onApproveReview,
@@ -95,6 +102,7 @@ export function MarketingStudioWorkspace({
   const nextCalendarItems = calendarItems
     .filter(item => item.status !== 'cancelled')
     .slice(0, 6)
+  const writingSummary = summarizeWritingPipeline({ generationRuns, qualityChecks })
 
   return (
     <div className="space-y-6">
@@ -130,7 +138,7 @@ export function MarketingStudioWorkspace({
         <Metric label="Aprovacoes" value={pendingApprovals} />
         <Metric label="Agendados" value={scheduled} />
         <Metric label="Creditos" value={settings?.currentCreditBalance ?? 0} />
-        <Metric label="Conhecimento" value={knowledgeChunks.length} />
+        <Metric label="Geracoes" value={generationRuns.length} />
         <Metric label="Agentes" value={agents.length} />
       </div>
 
@@ -218,6 +226,67 @@ export function MarketingStudioWorkspace({
           </div>
         </section>
       </div>
+
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">Redacao, revisao e grounding</h2>
+          <span className="text-xs text-slate-500">Redator Multicanal / Revisor de Marca e Qualidade</span>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <Sparkles className="h-4 w-4" />
+              Esteira de escrita
+            </div>
+            <p className="text-slate-700">{writingSummary.active} ativas / {writingSummary.waitingApproval} aguardando aprovacao</p>
+            <p className="mt-1 text-xs text-slate-500">{writingSummary.succeeded} concluidas / {writingSummary.failed} falhas</p>
+            <div className="mt-2 space-y-2">
+              {generationRuns.slice(0, 4).map(run => (
+                <div key={run.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="line-clamp-1 font-medium text-slate-900">{run.outputTitle || run.briefSnapshot || 'Geracao sem titulo'}</p>
+                  <p className="text-xs text-slate-500">{run.status} / {run.channel} / score {run.qualityScore ?? 0}</p>
+                </div>
+              ))}
+              {generationRuns.length === 0 && <p className="text-xs text-slate-500">Nenhuma geracao registrada.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <ShieldCheck className="h-4 w-4" />
+              Checklist de qualidade
+            </div>
+            <p className="text-slate-700">Score medio {writingSummary.averageQualityScore}</p>
+            <p className="mt-1 text-xs text-slate-500">{qualityChecks.length} revisoes estruturadas</p>
+            <div className="mt-2 space-y-2">
+              {qualityChecks.slice(0, 4).map(check => (
+                <div key={check.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">{check.status} / score {check.qualityScore}</p>
+                  <p className="line-clamp-1 text-xs text-slate-500">{check.riskFlags.join(', ') || check.comments || 'Sem riscos registrados'}</p>
+                </div>
+              ))}
+              {qualityChecks.length === 0 && <p className="text-xs text-slate-500">Nenhuma revisao estruturada registrada.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <FileCheck className="h-4 w-4" />
+              Grounding controlado
+            </div>
+            <p className="text-slate-700">{writingSummary.groundingRequired} geracoes exigem grounding</p>
+            <div className="mt-2 space-y-2">
+              {generationRuns.filter(run => run.requiresGrounding || run.groundingStatus !== 'not_required').slice(0, 4).map(run => (
+                <div key={run.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="line-clamp-1 font-medium text-slate-900">{run.outputTitle || run.briefSnapshot || 'Conteudo factual'}</p>
+                  <p className="text-xs text-slate-500">{run.groundingStatus} / {run.contentType}</p>
+                </div>
+              ))}
+              {writingSummary.groundingRequired === 0 && <p className="text-xs text-slate-500">Nenhum grounding pendente.</p>}
+            </div>
+          </article>
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <section>

@@ -10,8 +10,10 @@ import type {
   MarketingApprovalPolicy,
   MarketingBrandProfile,
   MarketingCalendarItem,
+  MarketingContentGenerationRun,
   MarketingChannel,
   MarketingContentItem,
+  MarketingContentQualityCheck,
   MarketingContentReview,
   MarketingContentVersion,
   MarketingIdea,
@@ -340,6 +342,64 @@ export function mapMarketingRadarRun(row: any): MarketingRadarRun {
     metadata: row.metadata || {},
     startedAt: row.started_at || undefined,
     completedAt: row.completed_at || undefined,
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingContentGenerationRun(row: any): MarketingContentGenerationRun {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    workflowRunId: row.workflow_run_id || undefined,
+    writerAgentRunId: row.writer_agent_run_id || undefined,
+    reviewerAgentRunId: row.reviewer_agent_run_id || undefined,
+    sourceIdeaId: row.source_idea_id || undefined,
+    contentItemId: row.content_item_id || undefined,
+    contentVersionId: row.content_version_id || undefined,
+    status: row.status || 'queued',
+    contentType: row.content_type,
+    channel: row.channel,
+    briefSnapshot: row.brief_snapshot || '',
+    contextSummary: row.context_summary || '',
+    promptSnapshot: row.prompt_snapshot || undefined,
+    outputTitle: row.output_title || undefined,
+    outputBody: row.output_body || undefined,
+    outputCta: row.output_cta || undefined,
+    variationCount: Number(row.variation_count || 0),
+    qualityScore: row.quality_score == null ? undefined : Number(row.quality_score),
+    requiresGrounding: Boolean(row.requires_grounding),
+    groundingStatus: row.grounding_status || 'not_required',
+    checklist: row.checklist || {},
+    errorMessage: row.error_message || undefined,
+    createdBy: row.created_by || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingContentQualityCheck(row: any): MarketingContentQualityCheck {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    contentItemId: row.content_item_id,
+    generationRunId: row.generation_run_id || undefined,
+    reviewerAgentRunId: row.reviewer_agent_run_id || undefined,
+    groundingToolRunId: row.grounding_tool_run_id || undefined,
+    status: row.status || 'pending',
+    qualityScore: Number(row.quality_score || 0),
+    checklist: row.checklist || {},
+    riskFlags: row.risk_flags || [],
+    groundingRequired: Boolean(row.grounding_required),
+    groundingSummary: row.grounding_summary || undefined,
+    comments: row.comments || undefined,
     createdBy: row.created_by || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -990,6 +1050,102 @@ export function buildRadarRunPayload(input: {
   }
 }
 
+export function buildContentGenerationRunPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  contentType: MarketingContentGenerationRun['contentType']
+  channel: MarketingContentGenerationRun['channel']
+  status?: MarketingContentGenerationRun['status']
+  workflowRunId?: string
+  writerAgentRunId?: string
+  reviewerAgentRunId?: string
+  sourceIdeaId?: string
+  contentItemId?: string
+  contentVersionId?: string
+  briefSnapshot?: string
+  contextSummary?: string
+  promptSnapshot?: string
+  outputTitle?: string
+  outputBody?: string
+  outputCta?: string
+  variationCount?: number
+  qualityScore?: number
+  requiresGrounding?: boolean
+  groundingStatus?: MarketingContentGenerationRun['groundingStatus']
+  checklist?: Record<string, unknown>
+  errorMessage?: string
+  createdBy?: string
+  startedAt?: string
+  completedAt?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    workflow_run_id: input.workflowRunId || null,
+    writer_agent_run_id: input.writerAgentRunId || null,
+    reviewer_agent_run_id: input.reviewerAgentRunId || null,
+    source_idea_id: input.sourceIdeaId || null,
+    content_item_id: input.contentItemId || null,
+    content_version_id: input.contentVersionId || null,
+    status: input.status || 'queued',
+    content_type: input.contentType,
+    channel: input.channel,
+    brief_snapshot: input.briefSnapshot?.trim() || '',
+    context_summary: input.contextSummary?.trim() || '',
+    prompt_snapshot: input.promptSnapshot?.trim() || null,
+    output_title: input.outputTitle?.trim() || null,
+    output_body: input.outputBody?.trim() || null,
+    output_cta: input.outputCta?.trim() || null,
+    variation_count: input.variationCount || 0,
+    quality_score: input.qualityScore ?? null,
+    requires_grounding: input.requiresGrounding ?? false,
+    grounding_status: input.groundingStatus || (input.requiresGrounding ? 'required' : 'not_required'),
+    checklist: input.checklist || {},
+    error_message: input.errorMessage?.trim() || null,
+    created_by: input.createdBy || null,
+    started_at: input.startedAt || null,
+    completed_at: input.completedAt || null,
+  }
+}
+
+export function buildContentQualityCheckPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  contentItemId: string
+  status?: MarketingContentQualityCheck['status']
+  generationRunId?: string
+  reviewerAgentRunId?: string
+  groundingToolRunId?: string
+  qualityScore?: number
+  checklist?: Record<string, unknown>
+  riskFlags?: string[]
+  groundingRequired?: boolean
+  groundingSummary?: string
+  comments?: string
+  createdBy?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    content_item_id: input.contentItemId,
+    generation_run_id: input.generationRunId || null,
+    reviewer_agent_run_id: input.reviewerAgentRunId || null,
+    grounding_tool_run_id: input.groundingToolRunId || null,
+    status: input.status || 'pending',
+    quality_score: input.qualityScore || 0,
+    checklist: input.checklist || {},
+    risk_flags: input.riskFlags || [],
+    grounding_required: input.groundingRequired ?? false,
+    grounding_summary: input.groundingSummary?.trim() || null,
+    comments: input.comments?.trim() || null,
+    created_by: input.createdBy || null,
+  }
+}
+
 export function buildAgentPayload(input: {
   organizationId: string
   name: string
@@ -1096,6 +1252,8 @@ const IDEA_SELECT = '*'
 const SOURCE_ITEM_SELECT = '*'
 const RESEARCH_CACHE_SELECT = '*'
 const RADAR_RUN_SELECT = '*'
+const GENERATION_RUN_SELECT = '*'
+const QUALITY_CHECK_SELECT = '*'
 const AGENT_TEMPLATE_SELECT = '*'
 const AGENT_SELECT = '*'
 const GLOBAL_PROMPT_SELECT = '*'
@@ -1255,6 +1413,26 @@ export const marketingStudioService = {
     const { data, error } = await query
     if (error) throw error
     return (data || []).map(mapMarketingRadarRun)
+  },
+
+  async getContentGenerationRuns(filters?: { contractId?: string; contentItemId?: string; status?: MarketingContentGenerationRun['status'] }) {
+    let query = supabase.from('marketing_content_generation_runs').select(GENERATION_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingContentGenerationRun)
+  },
+
+  async getContentQualityChecks(filters?: { contractId?: string; contentItemId?: string; status?: MarketingContentQualityCheck['status'] }) {
+    let query = supabase.from('marketing_content_quality_checks').select(QUALITY_CHECK_SELECT).order('created_at', { ascending: false }).limit(30)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingContentQualityCheck)
   },
 
   async getResearchCache(filters: { contractId: string; provider?: MarketingResearchCacheEntry['provider']; requestKey?: string }) {
@@ -1420,6 +1598,26 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingRadarRun(data)
+  },
+
+  async createContentGenerationRun(input: Parameters<typeof buildContentGenerationRunPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_content_generation_runs')
+      .insert(buildContentGenerationRunPayload(input))
+      .select(GENERATION_RUN_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingContentGenerationRun(data)
+  },
+
+  async createContentQualityCheck(input: Parameters<typeof buildContentQualityCheckPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_content_quality_checks')
+      .insert(buildContentQualityCheckPayload(input))
+      .select(QUALITY_CHECK_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingContentQualityCheck(data)
   },
 
   async createContent(input: Parameters<typeof buildContentInsertPayload>[0]) {

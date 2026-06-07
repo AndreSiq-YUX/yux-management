@@ -20,12 +20,15 @@ import {
   selectModelRoute,
   shouldBlockCreditDebit,
   shouldBlockAgentRun,
+  shouldRequireGrounding,
   scoreSourceItemOpportunity,
   statusAfterReviewDecision,
+  evaluateContentQuality,
   summarizeHarnessTelemetry,
   summarizeKnowledgeCoverage,
   summarizeRadar,
   summarizeReviewQueue,
+  summarizeWritingPipeline,
 } from './marketingStudioRules'
 import type { MarketingBrandProfile, MarketingContentItem, MarketingKnowledgeChunk, MarketingSourceItem, MarketingStudioSettings } from '@/types/marketingStudio'
 
@@ -561,5 +564,100 @@ describe('marketingStudioRules', () => {
         updatedAt: '',
       }],
     })).toMatchObject({ activeSources: 1, capturedItems: 1, ideaGeneratedItems: 1, completedRuns: 1 })
+  })
+
+  it('evaluates generated content quality and flags grounding when factual claims appear', () => {
+    const quality = evaluateContentQuality({
+      title: 'Como reduzir CPL com CRM',
+      body: 'Segundo dados do mercado, empresas podem reduzir 20% do CPL quando conectam CRM, landing pages e atendimento. Fale com a YUX para avaliar seu funil.',
+      cta: 'Fale com a YUX',
+      channel: 'linkedin',
+      brandProfile,
+    })
+
+    expect(quality.qualityScore).toBeGreaterThanOrEqual(76)
+    expect(quality.status).toBe('passed')
+    expect(quality.groundingRequired).toBe(true)
+    expect(quality.riskFlags).toContain('factual_claim')
+    expect(shouldRequireGrounding({ body: 'A pesquisa indica crescimento de 30%.' })).toBe(true)
+  })
+
+  it('summarizes writing, review and grounding pipeline health', () => {
+    expect(summarizeWritingPipeline({
+      generationRuns: [
+        {
+          id: 'generation-1',
+          organizationId: 'org-1',
+          clientId: 'client-1',
+          contractId: 'contract-1',
+          status: 'writing',
+          contentType: 'social_post',
+          channel: 'linkedin',
+          briefSnapshot: 'Gerar post',
+          contextSummary: '',
+          variationCount: 1,
+          requiresGrounding: false,
+          groundingStatus: 'not_required',
+          checklist: {},
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          id: 'generation-2',
+          organizationId: 'org-1',
+          clientId: 'client-1',
+          contractId: 'contract-1',
+          status: 'waiting_approval',
+          contentType: 'blog_article',
+          channel: 'blog',
+          briefSnapshot: 'Gerar artigo',
+          contextSummary: '',
+          variationCount: 1,
+          requiresGrounding: true,
+          groundingStatus: 'required',
+          checklist: {},
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+      qualityChecks: [
+        {
+          id: 'check-1',
+          organizationId: 'org-1',
+          clientId: 'client-1',
+          contractId: 'contract-1',
+          contentItemId: 'content-1',
+          status: 'passed',
+          qualityScore: 82,
+          checklist: {},
+          riskFlags: [],
+          groundingRequired: false,
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          id: 'check-2',
+          organizationId: 'org-1',
+          clientId: 'client-1',
+          contractId: 'contract-1',
+          contentItemId: 'content-2',
+          status: 'needs_changes',
+          qualityScore: 70,
+          checklist: {},
+          riskFlags: ['factual_claim'],
+          groundingRequired: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    })).toEqual({
+      queued: 0,
+      active: 1,
+      waitingApproval: 1,
+      succeeded: 0,
+      failed: 0,
+      groundingRequired: 1,
+      averageQualityScore: 76,
+    })
   })
 })

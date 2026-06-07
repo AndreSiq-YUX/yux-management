@@ -6,6 +6,8 @@ import type {
   MarketingCalendarItem,
   MarketingBrandProfile,
   MarketingContentItem,
+  MarketingContentGenerationRun,
+  MarketingContentQualityCheck,
   MarketingContentReview,
   MarketingContentStatus,
   MarketingContentVersion,
@@ -68,6 +70,12 @@ const baseToolsByAgent: Record<MarketingAgentType, MarketingToolKey[]> = {
   controlled_publisher: ['create_task', 'create_wordpress_draft'],
   performance_analyst: ['rag_search'],
 }
+
+const factualPatterns = [
+  /\b\d+([,.]\d+)?\s?%/,
+  /\br\$\s?\d+/i,
+  /\b(estudo|pesquisa|dados|estatistica|relatorio|noticia|ranking|benchmark)\b/i,
+]
 
 export function requiresHumanApproval(input: {
   action: 'publish_social' | 'publish_wordpress' | 'paid_campaign_draft' | 'premium_image' | 'regulated_claim' | 'generate_short_caption'
@@ -344,6 +352,74 @@ export function summarizeRadar(input: { sources: MarketingSource[]; sourceItems:
     ideaGeneratedItems: input.sourceItems.filter(item => item.status === 'idea_generated').length,
     runningRuns: input.radarRuns.filter(run => ['queued', 'collecting', 'curating'].includes(run.status)).length,
     completedRuns: input.radarRuns.filter(run => run.status === 'completed').length,
+  }
+}
+
+export function shouldRequireGrounding(input: {
+  title?: string
+  body?: string
+  contentType?: MarketingContentItem['contentType']
+  sourceUrls?: string[]
+  riskFlags?: string[]
+}) {
+  const text = `${input.title || ''} ${input.body || ''}`
+  if (input.sourceUrls?.some(Boolean)) return true
+  if (input.riskFlags?.some(flag => ['factual_claim', 'regulated_claim', 'statistics'].includes(flag))) return true
+  if (input.contentType === 'blog_article' && factualPatterns.some(pattern => pattern.test(text))) return true
+  return factualPatterns.some(pattern => pattern.test(text))
+}
+
+export function evaluateContentQuality(input: {
+  title: string
+  body?: string
+  cta?: string
+  channel?: MarketingContentItem['channel']
+  brandProfile?: Pick<MarketingBrandProfile, 'toneOfVoice' | 'forbiddenTopics' | 'priorityTopics'> | null
+}) {
+  const title = input.title.trim()
+  const body = input.body?.trim() || ''
+  const forbiddenTopics = input.brandProfile?.forbiddenTopics || []
+  const priorityTopics = input.brandProfile?.priorityTopics || []
+  const lowerBody = `${title} ${body}`.toLowerCase()
+  const hasForbiddenTopic = forbiddenTopics.some(topic => topic && lowerBody.includes(topic.toLowerCase()))
+  const hasPriorityTopic = priorityTopics.length === 0 || priorityTopics.some(topic => topic && lowerBody.includes(topic.toLowerCase()))
+  const checklist = {
+    hasTitle: title.length >= 6,
+    hasBody: body.length >= 80,
+    hasCta: Boolean(input.cta?.trim()) || /\b(fale|converse|agende|solicite|saiba mais|entre em contato)\b/i.test(body),
+    matchesBrandTone: Boolean(input.brandProfile?.toneOfVoice),
+    avoidsForbiddenTopics: !hasForbiddenTopic,
+    includesPriorityTopic: hasPriorityTopic,
+    formattedForChannel: Boolean(input.channel),
+  }
+  const score = Object.values(checklist).filter(Boolean).length * 14 + (body.length >= 280 ? 2 : 0)
+  const riskFlags = [
+    hasForbiddenTopic ? 'forbidden_topic' : '',
+    shouldRequireGrounding({ title, body, contentType: input.channel === 'blog' ? 'blog_article' : undefined }) ? 'factual_claim' : '',
+    !checklist.hasCta ? 'missing_cta' : '',
+  ].filter(Boolean)
+
+  return {
+    qualityScore: Math.min(100, score),
+    checklist,
+    riskFlags,
+    groundingRequired: shouldRequireGrounding({ title, body, riskFlags }),
+    status: score >= 76 && !hasForbiddenTopic ? 'passed' : 'needs_changes',
+  } as const
+}
+
+export function summarizeWritingPipeline(input: {
+  generationRuns: MarketingContentGenerationRun[]
+  qualityChecks: MarketingContentQualityCheck[]
+}) {
+  return {
+    queued: input.generationRuns.filter(run => run.status === 'queued').length,
+    active: input.generationRuns.filter(run => ['writing', 'reviewing', 'grounding'].includes(run.status)).length,
+    waitingApproval: input.generationRuns.filter(run => run.status === 'waiting_approval').length,
+    succeeded: input.generationRuns.filter(run => run.status === 'succeeded').length,
+    failed: input.generationRuns.filter(run => run.status === 'failed').length,
+    groundingRequired: input.generationRuns.filter(run => run.requiresGrounding || run.groundingStatus === 'required').length,
+    averageQualityScore: average(input.qualityChecks.map(check => check.qualityScore).filter(score => score > 0)),
   }
 }
 

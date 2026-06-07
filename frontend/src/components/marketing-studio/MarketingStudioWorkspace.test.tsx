@@ -9,6 +9,8 @@ import type {
   MarketingCalendarItem,
   MarketingBrandProfile,
   MarketingContentItem,
+  MarketingContentGenerationRun,
+  MarketingContentQualityCheck,
   MarketingContentReview,
   MarketingContentVersion,
   MarketingKnowledgeChunk,
@@ -373,6 +375,47 @@ const ideas: MarketingIdea[] = [{
   updatedAt: '2026-06-07T12:00:00.000Z',
 }]
 
+const generationRuns: MarketingContentGenerationRun[] = [{
+  id: 'generation-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  contentItemId: 'content-1',
+  status: 'waiting_approval',
+  contentType: 'social_post',
+  channel: 'linkedin',
+  briefSnapshot: 'Criar post sobre CRM para PMEs',
+  contextSummary: 'Marca consultiva e CRM YUX',
+  outputTitle: 'Post sobre CRM para PMEs',
+  outputBody: 'Texto gerado pelo redator.',
+  outputCta: 'Fale com a YUX',
+  variationCount: 1,
+  qualityScore: 82,
+  requiresGrounding: true,
+  groundingStatus: 'required',
+  checklist: { hasCta: true },
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const qualityChecks: MarketingContentQualityCheck[] = [{
+  id: 'quality-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  contentItemId: 'content-1',
+  generationRunId: 'generation-1',
+  status: 'passed',
+  qualityScore: 82,
+  checklist: { hasCta: true, matchesBrandTone: true },
+  riskFlags: ['factual_claim'],
+  groundingRequired: true,
+  groundingSummary: 'Validar dado citado antes de aprovar.',
+  comments: 'Bom alinhamento com a marca.',
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
 describe('MarketingStudioWorkspace', () => {
   it('renders internal metrics, tabs, content, and internal operational details', () => {
     const container = document.createElement('div')
@@ -407,6 +450,8 @@ describe('MarketingStudioWorkspace', () => {
           sourceItems={sourceItems}
           radarRuns={radarRuns}
           ideas={ideas}
+          generationRuns={generationRuns}
+          qualityChecks={qualityChecks}
           onSubmitForReview={onSubmitForReview}
           onApproveReview={onApproveReview}
           onSearchKnowledge={onSearchKnowledge}
@@ -456,6 +501,15 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('score 90/70/80')
     expect(html).toContain('completed / 1 ideias')
     expect(html).toContain('crm para pmes')
+    expect(html).toContain('Redacao, revisao e grounding')
+    expect(html).toContain('Geracoes 1')
+    expect(html).toContain('Esteira de escrita')
+    expect(html).toContain('0 ativas / 1 aguardando aprovacao')
+    expect(html).toContain('Checklist de qualidade')
+    expect(html).toContain('Score medio 82')
+    expect(html).toContain('factual_claim')
+    expect(html).toContain('Grounding controlado')
+    expect(html).toContain('1 geracoes exigem grounding')
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[title="Atualizar Marketing Studio"]')!.click()

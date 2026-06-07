@@ -75,6 +75,17 @@ export type MarketingSourceItemStatus = 'captured' | 'summarized' | 'idea_genera
 export type MarketingResearchProvider = 'jina_reader' | 'jina_search' | 'tavily' | 'serper' | 'firecrawl' | 'internal'
 export type MarketingResearchRequestType = 'reader' | 'search' | 'crawl' | 'internal_lookup'
 export type MarketingRadarRunStatus = 'queued' | 'collecting' | 'curating' | 'completed' | 'failed' | 'cancelled'
+export type MarketingContentGenerationStatus =
+  | 'queued'
+  | 'writing'
+  | 'reviewing'
+  | 'grounding'
+  | 'waiting_approval'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+export type MarketingGroundingStatus = 'not_required' | 'required' | 'running' | 'succeeded' | 'failed' | 'blocked'
+export type MarketingQualityCheckStatus = 'pending' | 'passed' | 'needs_changes' | 'rejected' | 'failed'
 
 export type MarketingUsageAction =
   | 'classify_idea'
@@ -529,6 +540,60 @@ export interface MarketingRadarRun {
   metadata: Record<string, unknown>
   startedAt?: string
   completedAt?: string
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingContentGenerationRun {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowRunId?: string
+  writerAgentRunId?: string
+  reviewerAgentRunId?: string
+  sourceIdeaId?: string
+  contentItemId?: string
+  contentVersionId?: string
+  status: MarketingContentGenerationStatus
+  contentType: MarketingContentType
+  channel: MarketingChannel
+  briefSnapshot: string
+  contextSummary: string
+  promptSnapshot?: string
+  outputTitle?: string
+  outputBody?: string
+  outputCta?: string
+  variationCount: number
+  qualityScore?: number
+  requiresGrounding: boolean
+  groundingStatus: MarketingGroundingStatus
+  checklist: Record<string, unknown>
+  errorMessage?: string
+  createdBy?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingContentQualityCheck {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  contentItemId: string
+  generationRunId?: string
+  reviewerAgentRunId?: string
+  groundingToolRunId?: string
+  status: MarketingQualityCheckStatus
+  qualityScore: number
+  checklist: Record<string, unknown>
+  riskFlags: string[]
+  groundingRequired: boolean
+  groundingSummary?: string
+  comments?: string
   createdBy?: string
   createdAt: string
   updatedAt: string
