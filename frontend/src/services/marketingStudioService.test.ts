@@ -9,6 +9,8 @@ import {
   buildKnowledgeChunkPayload,
   buildKnowledgeDocumentPayload,
   buildAgentPayload,
+  buildPublishingConnectionPayload,
+  buildPublishingRunPayload,
   buildRadarRunPayload,
   buildResearchCachePayload,
   buildSourceItemPayload,
@@ -32,6 +34,8 @@ import {
   mapMarketingKnowledgeMatch,
   mapMarketingIdea,
   mapMarketingProductService,
+  mapMarketingPublishingConnection,
+  mapMarketingPublishingRun,
   mapMarketingRadarRun,
   mapMarketingResearchCacheEntry,
   mapMarketingSettings,
@@ -830,5 +834,97 @@ describe('marketingStudioService mapping helpers', () => {
       created_at: '2026-06-06T12:00:00.000Z',
       updated_at: '2026-06-06T12:00:00.000Z',
     })).toMatchObject({ toolKey: 'rag_search', maxCallsPerRun: 3 })
+  })
+
+  it('maps WordPress publishing connections and run payloads', () => {
+    expect(mapMarketingPublishingConnection({
+      id: 'connection-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      provider: 'wordpress',
+      name: 'Blog institucional',
+      status: 'connected',
+      site_url: 'https://example.com',
+      username: 'editor',
+      auth_type: 'token_reference',
+      token_reference: 'WP_CLIENT_EXAMPLE_APP_PASSWORD',
+      provider_account_id: null,
+      last_verified_at: '2026-06-07T12:00:00.000Z',
+      protected_error: null,
+      public_config: { defaultStatus: 'draft' },
+      metadata: {},
+      created_by: null,
+      created_at: '2026-06-07T12:00:00.000Z',
+      updated_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({
+      provider: 'wordpress',
+      siteUrl: 'https://example.com',
+      tokenReference: 'WP_CLIENT_EXAMPLE_APP_PASSWORD',
+    })
+
+    expect(buildPublishingConnectionPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      name: ' Blog institucional ',
+      siteUrl: 'https://example.com/',
+      username: ' editor ',
+      tokenReference: ' WP_CLIENT_EXAMPLE_APP_PASSWORD ',
+    })).toMatchObject({
+      provider: 'wordpress',
+      name: 'Blog institucional',
+      site_url: 'https://example.com',
+      username: 'editor',
+      status: 'connected',
+      token_reference: 'WP_CLIENT_EXAMPLE_APP_PASSWORD',
+    })
+
+    expect(mapMarketingPublishingRun({
+      id: 'publishing-run-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      connection_id: 'connection-1',
+      content_item_id: 'content-1',
+      calendar_item_id: null,
+      workflow_run_id: null,
+      action: 'publish',
+      status: 'succeeded',
+      provider_post_id: '123',
+      published_url: 'https://example.com/post',
+      idempotency_key: 'connection-1:content-1:publish:latest',
+      request_payload: { status: 'publish' },
+      response_payload: { id: 123 },
+      protected_error: null,
+      requested_by: null,
+      approved_by: 'user-1',
+      started_at: null,
+      completed_at: '2026-06-07T12:00:00.000Z',
+      created_at: '2026-06-07T12:00:00.000Z',
+      updated_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({
+      action: 'publish',
+      status: 'succeeded',
+      providerPostId: '123',
+      publishedUrl: 'https://example.com/post',
+    })
+
+    expect(buildPublishingRunPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      connectionId: 'connection-1',
+      contentItemId: 'content-1',
+      action: 'create_draft',
+      idempotencyKey: 'connection-1:content-1:create_draft:latest',
+      requestPayload: { status: 'draft' },
+    })).toMatchObject({
+      connection_id: 'connection-1',
+      content_item_id: 'content-1',
+      action: 'create_draft',
+      status: 'queued',
+      idempotency_key: 'connection-1:content-1:create_draft:latest',
+    })
   })
 })

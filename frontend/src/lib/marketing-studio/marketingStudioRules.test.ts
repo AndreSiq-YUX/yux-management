@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSimpleKnowledgeChunks,
+  buildPublishingIdempotencyKey,
   buildSourceItemDedupeKey,
   composeAgentPrompt,
+  canCreateWordPressDraft,
+  canPublishWordPressContent,
   canTransitionContentStatus,
   calculateCreditsForAction,
   canScheduleContent,
@@ -108,6 +111,7 @@ describe('marketingStudioRules', () => {
     expect(calculateCreditsForAction({ action: 'classify_idea' })).toBe(1)
     expect(calculateCreditsForAction({ action: 'generate_blog_article' })).toBe(30)
     expect(calculateCreditsForAction({ action: 'generate_image', premium: true })).toBe(60)
+    expect(calculateCreditsForAction({ action: 'publish_wordpress' })).toBe(2)
   })
 
   it('blocks debit when balance or monthly limit is exceeded', () => {
@@ -126,6 +130,7 @@ describe('marketingStudioRules', () => {
       'create_task',
       'create_wordpress_draft',
     ])
+    expect(selectAllowedAgentTools({ agentType: 'controlled_publisher', operationMode: 'managed_by_yux' })).toContain('publish_wordpress')
   })
 
   it('removes internal fields from portal content', () => {
@@ -659,5 +664,26 @@ describe('marketingStudioRules', () => {
       groundingRequired: 1,
       averageQualityScore: 76,
     })
+  })
+
+  it('guards WordPress publishing behind blog content and approval', () => {
+    const blogContent: MarketingContentItem = {
+      ...content,
+      contentType: 'blog_article',
+      channel: 'blog',
+      status: 'approved',
+      body: 'Artigo completo para o WordPress com contexto suficiente.',
+    }
+
+    expect(canCreateWordPressDraft({ ...blogContent, status: 'in_review' })).toBe(true)
+    expect(canPublishWordPressContent(blogContent)).toBe(true)
+    expect(canPublishWordPressContent({ ...blogContent, status: 'in_review' })).toBe(false)
+    expect(canCreateWordPressDraft({ ...blogContent, channel: 'linkedin' })).toBe(false)
+    expect(buildPublishingIdempotencyKey({
+      connectionId: 'conn-1',
+      contentItemId: 'content-1',
+      action: 'publish',
+      version: 3,
+    })).toBe('conn-1:content-1:publish:3')
   })
 })

@@ -75,6 +75,10 @@ export type MarketingSourceItemStatus = 'captured' | 'summarized' | 'idea_genera
 export type MarketingResearchProvider = 'jina_reader' | 'jina_search' | 'tavily' | 'serper' | 'firecrawl' | 'internal'
 export type MarketingResearchRequestType = 'reader' | 'search' | 'crawl' | 'internal_lookup'
 export type MarketingRadarRunStatus = 'queued' | 'collecting' | 'curating' | 'completed' | 'failed' | 'cancelled'
+export type MarketingPublishingProvider = 'wordpress'
+export type MarketingPublishingConnectionStatus = 'needs_setup' | 'connected' | 'stale' | 'needs_reauth' | 'failed' | 'disabled'
+export type MarketingPublishingAction = 'create_draft' | 'update_draft' | 'publish'
+export type MarketingPublishingRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled'
 export type MarketingContentGenerationStatus =
   | 'queued'
   | 'writing'
@@ -102,6 +106,9 @@ export type MarketingUsageAction =
   | 'grounding_article'
   | 'generate_image'
   | 'monthly_performance_analysis'
+  | 'create_wordpress_draft'
+  | 'update_wordpress_draft'
+  | 'publish_wordpress'
 
 export interface MarketingApprovalPolicy {
   publishSocial: boolean
@@ -472,6 +479,53 @@ export interface MarketingSource {
   status: MarketingSourceStatus
   lastReadAt?: string
   metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingPublishingConnection {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  provider: MarketingPublishingProvider
+  name: string
+  status: MarketingPublishingConnectionStatus
+  siteUrl: string
+  username?: string
+  authType: 'application_password' | 'token_reference'
+  tokenReference?: string
+  providerAccountId?: string
+  lastVerifiedAt?: string
+  protectedError?: string
+  publicConfig: Record<string, unknown>
+  metadata: Record<string, unknown>
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingPublishingRun {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  connectionId: string
+  contentItemId: string
+  calendarItemId?: string
+  workflowRunId?: string
+  action: MarketingPublishingAction
+  status: MarketingPublishingRunStatus
+  providerPostId?: string
+  publishedUrl?: string
+  idempotencyKey: string
+  requestPayload: Record<string, unknown>
+  responsePayload: Record<string, unknown>
+  protectedError?: string
+  requestedBy?: string
+  approvedBy?: string
+  startedAt?: string
+  completedAt?: string
   createdAt: string
   updatedAt: string
 }

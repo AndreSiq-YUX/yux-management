@@ -6,6 +6,7 @@ from .harness import (
     filter_allowed_tools,
     select_model_route,
 )
+from .providers import JinaClient, OpenRouterClient, ProviderRequestError
 from .research import (
     SourceCandidate,
     content_hash,
@@ -32,6 +33,9 @@ __all__ = [
     "estimate_prompt_hash",
     "filter_allowed_tools",
     "select_model_route",
+    "JinaClient",
+    "OpenRouterClient",
+    "ProviderRequestError",
     "SourceCandidate",
     "content_hash",
     "dedupe_candidates",

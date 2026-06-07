@@ -9,6 +9,7 @@ from yux_agent_runtime.harness import (
     filter_allowed_tools,
     select_model_route,
 )
+from yux_agent_runtime.providers import OpenRouterClient
 
 
 GLOBAL_PROMPT = {
@@ -135,6 +136,48 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(result["agent_runs"][0]["model_name"], "openai/gpt-4o-mini")
         self.assertEqual(result["agent_runs"][0]["agent_prompt_snapshot"], "Use exemplos aprovados do cliente.")
         self.assertNotIn("system_prompt", result["agent_runs"][0])
+
+    def test_harness_executes_openrouter_when_enabled(self):
+        def transport(url, headers, payload, method):
+            return {
+                "id": "chat-1",
+                "model": payload["model"],
+                "choices": [{"finish_reason": "stop", "message": {"content": "Post gerado pelo OpenRouter"}}],
+                "usage": {"prompt_tokens": 30, "completion_tokens": 15, "total_tokens": 45},
+            }
+
+        harness = Harness(
+            global_prompts={"multichannel_writer": GLOBAL_PROMPT},
+            routes=[
+                {
+                    "agent_type": "multichannel_writer",
+                    "routing_tier": "default",
+                    "provider": "openrouter",
+                    "model_name": "openai/gpt-4.1-mini",
+                    "fallback_model_name": "anthropic/claude-sonnet-4",
+                    "max_output_tokens": 900,
+                    "temperature": 0.5,
+                    "status": "active",
+                }
+            ],
+            tool_policies=[],
+            budget_policies=[],
+            llm_client=OpenRouterClient(api_key="or-key", transport=transport),
+        )
+
+        result = harness.execute_agent({
+            "agent": AGENT,
+            "context": {"objective": "Gerar post"},
+            "user_input": "Escreva para LinkedIn",
+            "execute_llm": True,
+            "workflow_run_id": "run-1",
+        })
+
+        output = result["agent_runs"][0]["output_payload"]
+        self.assertFalse(output["dry_run"])
+        self.assertEqual(output["content"], "Post gerado pelo OpenRouter")
+        self.assertEqual(result["agent_runs"][0]["input_tokens"], 30)
+        self.assertEqual(result["agent_runs"][0]["output_tokens"], 15)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-import { BookOpen, Bot, CalendarDays, Check, Clock, FileCheck, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { BookOpen, Bot, CalendarDays, Check, Clock, FileCheck, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
@@ -17,6 +17,8 @@ import type {
   MarketingKnowledgeMatch,
   MarketingIdea,
   MarketingProductService,
+  MarketingPublishingConnection,
+  MarketingPublishingRun,
   MarketingRadarRun,
   MarketingSource,
   MarketingSourceItem,
@@ -52,6 +54,8 @@ interface MarketingStudioWorkspaceProps {
   ideas?: MarketingIdea[]
   generationRuns?: MarketingContentGenerationRun[]
   qualityChecks?: MarketingContentQualityCheck[]
+  publishingConnections?: MarketingPublishingConnection[]
+  publishingRuns?: MarketingPublishingRun[]
   onCreateContent?: () => void
   onSubmitForReview?: (contentId: string) => void
   onApproveReview?: (reviewId: string) => void
@@ -88,6 +92,8 @@ export function MarketingStudioWorkspace({
   ideas = [],
   generationRuns = [],
   qualityChecks = [],
+  publishingConnections = [],
+  publishingRuns = [],
   onCreateContent,
   onSubmitForReview,
   onApproveReview,
@@ -283,6 +289,45 @@ export function MarketingStudioWorkspace({
                 </div>
               ))}
               {writingSummary.groundingRequired === 0 && <p className="text-xs text-slate-500">Nenhum grounding pendente.</p>}
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">WordPress e publicacao controlada</h2>
+          <span className="text-xs text-slate-500">rascunho, atualizacao e publicacao apos aprovacao</span>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <Send className="h-4 w-4" />
+              Conexoes WordPress
+            </div>
+            <p className="text-slate-700">{publishingConnections.filter(connection => connection.status === 'connected').length} conectadas / {publishingConnections.length} cadastradas</p>
+            <div className="mt-2 space-y-2">
+              {publishingConnections.slice(0, 4).map(connection => (
+                <div key={connection.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">{connection.name}</p>
+                  <p className="text-xs text-slate-500">{connection.siteUrl} / {connection.status}</p>
+                </div>
+              ))}
+              {publishingConnections.length === 0 && <p className="text-xs text-slate-500">Nenhuma conexao WordPress configurada.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Execucoes de publicacao</h3>
+            <p className="text-slate-700">{publishingRuns.length} runs recentes</p>
+            <div className="mt-2 space-y-2">
+              {publishingRuns.slice(0, 5).map(run => (
+                <div key={run.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">{run.action} / {run.status}</p>
+                  <p className="line-clamp-1 text-xs text-slate-500">{run.publishedUrl || run.providerPostId || run.protectedError || run.idempotencyKey}</p>
+                </div>
+              ))}
+              {publishingRuns.length === 0 && <p className="text-xs text-slate-500">Nenhuma publicacao executada.</p>}
             </div>
           </article>
         </div>

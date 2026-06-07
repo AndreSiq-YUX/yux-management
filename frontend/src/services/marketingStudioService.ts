@@ -21,6 +21,8 @@ import type {
   MarketingKnowledgeDocument,
   MarketingKnowledgeMatch,
   MarketingProductService,
+  MarketingPublishingConnection,
+  MarketingPublishingRun,
   MarketingRadarRun,
   MarketingResearchCacheEntry,
   MarketingReviewStatus,
@@ -318,6 +320,57 @@ export function mapMarketingResearchCacheEntry(row: any): MarketingResearchCache
     creditsCharged: Number(row.credits_charged || 0),
     expiresAt: row.expires_at || undefined,
     createdAt: row.created_at,
+  }
+}
+
+export function mapMarketingPublishingConnection(row: any): MarketingPublishingConnection {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    provider: row.provider,
+    name: row.name,
+    status: row.status || 'needs_setup',
+    siteUrl: row.site_url,
+    username: row.username || undefined,
+    authType: row.auth_type || 'application_password',
+    tokenReference: row.token_reference || undefined,
+    providerAccountId: row.provider_account_id || undefined,
+    lastVerifiedAt: row.last_verified_at || undefined,
+    protectedError: row.protected_error || undefined,
+    publicConfig: row.public_config || {},
+    metadata: row.metadata || {},
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingPublishingRun(row: any): MarketingPublishingRun {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    connectionId: row.connection_id,
+    contentItemId: row.content_item_id,
+    calendarItemId: row.calendar_item_id || undefined,
+    workflowRunId: row.workflow_run_id || undefined,
+    action: row.action,
+    status: row.status || 'queued',
+    providerPostId: row.provider_post_id || undefined,
+    publishedUrl: row.published_url || undefined,
+    idempotencyKey: row.idempotency_key,
+    requestPayload: row.request_payload || {},
+    responsePayload: row.response_payload || {},
+    protectedError: row.protected_error || undefined,
+    requestedBy: row.requested_by || undefined,
+    approvedBy: row.approved_by || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }
 
@@ -1146,6 +1199,68 @@ export function buildContentQualityCheckPayload(input: {
   }
 }
 
+export function buildPublishingConnectionPayload(input: {
+  id?: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  name: string
+  siteUrl: string
+  username?: string
+  tokenReference?: string
+  status?: MarketingPublishingConnection['status']
+  publicConfig?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+}) {
+  const siteUrl = input.siteUrl.trim().replace(/\/$/, '')
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    provider: 'wordpress',
+    name: input.name.trim(),
+    status: input.status || (input.tokenReference ? 'connected' : 'needs_setup'),
+    site_url: siteUrl,
+    username: input.username?.trim() || null,
+    auth_type: 'token_reference',
+    token_reference: input.tokenReference?.trim() || null,
+    public_config: input.publicConfig || {},
+    metadata: input.metadata || {},
+  }
+}
+
+export function buildPublishingRunPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  connectionId: string
+  contentItemId: string
+  action: MarketingPublishingRun['action']
+  idempotencyKey: string
+  calendarItemId?: string
+  workflowRunId?: string
+  requestPayload?: Record<string, unknown>
+  requestedBy?: string
+  approvedBy?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    connection_id: input.connectionId,
+    content_item_id: input.contentItemId,
+    calendar_item_id: input.calendarItemId || null,
+    workflow_run_id: input.workflowRunId || null,
+    action: input.action,
+    status: 'queued',
+    idempotency_key: input.idempotencyKey,
+    request_payload: input.requestPayload || {},
+    requested_by: input.requestedBy || null,
+    approved_by: input.approvedBy || null,
+  }
+}
+
 export function buildAgentPayload(input: {
   organizationId: string
   name: string
@@ -1254,6 +1369,8 @@ const RESEARCH_CACHE_SELECT = '*'
 const RADAR_RUN_SELECT = '*'
 const GENERATION_RUN_SELECT = '*'
 const QUALITY_CHECK_SELECT = '*'
+const PUBLISHING_CONNECTION_SELECT = '*'
+const PUBLISHING_RUN_SELECT = '*'
 const AGENT_TEMPLATE_SELECT = '*'
 const AGENT_SELECT = '*'
 const GLOBAL_PROMPT_SELECT = '*'
@@ -1433,6 +1550,27 @@ export const marketingStudioService = {
     const { data, error } = await query
     if (error) throw error
     return (data || []).map(mapMarketingContentQualityCheck)
+  },
+
+  async getPublishingConnections(filters?: { organizationId?: string; clientId?: string; contractId?: string; status?: MarketingPublishingConnection['status'] }) {
+    let query = supabase.from('publishing_connections').select(PUBLISHING_CONNECTION_SELECT).order('updated_at', { ascending: false })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingPublishingConnection)
+  },
+
+  async getPublishingRuns(filters?: { contractId?: string; contentItemId?: string; status?: MarketingPublishingRun['status'] }) {
+    let query = supabase.from('publishing_runs').select(PUBLISHING_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingPublishingRun)
   },
 
   async getResearchCache(filters: { contractId: string; provider?: MarketingResearchCacheEntry['provider']; requestKey?: string }) {
@@ -1618,6 +1756,34 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingContentQualityCheck(data)
+  },
+
+  async upsertPublishingConnection(input: Parameters<typeof buildPublishingConnectionPayload>[0]) {
+    const { data, error } = await supabase
+      .from('publishing_connections')
+      .upsert(buildPublishingConnectionPayload(input), { onConflict: 'contract_id,provider,name' })
+      .select(PUBLISHING_CONNECTION_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingPublishingConnection(data)
+  },
+
+  async enqueuePublishingRun(input: Parameters<typeof buildPublishingRunPayload>[0]) {
+    const { data, error } = await supabase
+      .from('publishing_runs')
+      .upsert(buildPublishingRunPayload(input), { onConflict: 'connection_id,idempotency_key' })
+      .select(PUBLISHING_RUN_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingPublishingRun(data)
+  },
+
+  async executeWordPressPublishingRun(input: { publishingRunId?: string } | Parameters<typeof buildPublishingRunPayload>[0]) {
+    const { data, error } = await supabase.functions.invoke('execute-wordpress-publishing', {
+      body: input,
+    })
+    if (error) throw error
+    return data as { success?: boolean; duplicate?: boolean; run?: unknown; error?: string }
   },
 
   async createContent(input: Parameters<typeof buildContentInsertPayload>[0]) {

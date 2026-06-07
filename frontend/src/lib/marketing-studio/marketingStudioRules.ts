@@ -56,6 +56,9 @@ const creditByAction: Record<MarketingUsageAction, number> = {
   grounding_article: 30,
   generate_image: 25,
   monthly_performance_analysis: 50,
+  create_wordpress_draft: 2,
+  update_wordpress_draft: 1,
+  publish_wordpress: 2,
 }
 
 const baseToolsByAgent: Record<MarketingAgentType, MarketingToolKey[]> = {
@@ -67,7 +70,7 @@ const baseToolsByAgent: Record<MarketingAgentType, MarketingToolKey[]> = {
   campaign_strategist: ['campaign_draft', 'rag_search'],
   visual_creative_generator: ['image_generation', 'rag_search'],
   editorial_calendar_manager: ['create_task'],
-  controlled_publisher: ['create_task', 'create_wordpress_draft'],
+  controlled_publisher: ['create_task', 'create_wordpress_draft', 'publish_wordpress'],
   performance_analyst: ['rag_search'],
 }
 
@@ -106,7 +109,7 @@ export function selectAllowedAgentTools(input: { agentType: MarketingAgentType; 
   const tools = baseToolsByAgent[input.agentType]
   if (input.operationMode === 'advanced_partner') return tools
   if (input.operationMode === 'assisted_client') return tools.filter(tool => tool !== 'publish_wordpress')
-  return tools.filter(tool => tool !== 'publish_wordpress' && tool !== 'campaign_draft')
+  return tools.filter(tool => tool !== 'campaign_draft')
 }
 
 export function sanitizeMarketingContentForPortal(content: MarketingContentItem): PortalMarketingContentItem {
@@ -421,6 +424,34 @@ export function summarizeWritingPipeline(input: {
     groundingRequired: input.generationRuns.filter(run => run.requiresGrounding || run.groundingStatus === 'required').length,
     averageQualityScore: average(input.qualityChecks.map(check => check.qualityScore).filter(score => score > 0)),
   }
+}
+
+export function canCreateWordPressDraft(content: MarketingContentItem) {
+  return content.channel === 'blog'
+    && Boolean(content.title.trim())
+    && Boolean(content.body?.trim())
+    && ['in_review', 'approved', 'scheduled'].includes(content.status)
+}
+
+export function canPublishWordPressContent(content: MarketingContentItem) {
+  return content.channel === 'blog'
+    && Boolean(content.title.trim())
+    && Boolean(content.body?.trim())
+    && ['approved', 'scheduled'].includes(content.status)
+}
+
+export function buildPublishingIdempotencyKey(input: {
+  connectionId: string
+  contentItemId: string
+  action: 'create_draft' | 'update_draft' | 'publish'
+  version?: number | string
+}) {
+  return [
+    input.connectionId,
+    input.contentItemId,
+    input.action,
+    input.version || 'latest',
+  ].join(':')
 }
 
 function toChunk(title: string, body: string, chunkIndex: number) {

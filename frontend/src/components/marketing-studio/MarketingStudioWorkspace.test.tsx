@@ -18,6 +18,8 @@ import type {
   MarketingKnowledgeMatch,
   MarketingIdea,
   MarketingProductService,
+  MarketingPublishingConnection,
+  MarketingPublishingRun,
   MarketingRadarRun,
   MarketingSource,
   MarketingSourceItem,
@@ -416,6 +418,42 @@ const qualityChecks: MarketingContentQualityCheck[] = [{
   updatedAt: '2026-06-07T12:00:00.000Z',
 }]
 
+const publishingConnections: MarketingPublishingConnection[] = [{
+  id: 'publishing-connection-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  provider: 'wordpress',
+  name: 'Blog institucional',
+  status: 'connected',
+  siteUrl: 'https://example.com',
+  username: 'editor',
+  authType: 'token_reference',
+  tokenReference: 'WP_CLIENT_EXAMPLE_APP_PASSWORD',
+  publicConfig: {},
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const publishingRuns: MarketingPublishingRun[] = [{
+  id: 'publishing-run-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  connectionId: 'publishing-connection-1',
+  contentItemId: 'content-1',
+  action: 'publish',
+  status: 'succeeded',
+  providerPostId: '123',
+  publishedUrl: 'https://example.com/post-sobre-funil',
+  idempotencyKey: 'publishing-connection-1:content-1:publish:latest',
+  requestPayload: {},
+  responsePayload: { id: 123 },
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
 describe('MarketingStudioWorkspace', () => {
   it('renders internal metrics, tabs, content, and internal operational details', () => {
     const container = document.createElement('div')
@@ -452,6 +490,8 @@ describe('MarketingStudioWorkspace', () => {
           ideas={ideas}
           generationRuns={generationRuns}
           qualityChecks={qualityChecks}
+          publishingConnections={publishingConnections}
+          publishingRuns={publishingRuns}
           onSubmitForReview={onSubmitForReview}
           onApproveReview={onApproveReview}
           onSearchKnowledge={onSearchKnowledge}
@@ -510,6 +550,11 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('factual_claim')
     expect(html).toContain('Grounding controlado')
     expect(html).toContain('1 geracoes exigem grounding')
+    expect(html).toContain('WordPress e publicacao controlada')
+    expect(html).toContain('Blog institucional')
+    expect(html).toContain('1 conectadas / 1 cadastradas')
+    expect(html).toContain('publish / succeeded')
+    expect(html).toContain('https://example.com/post-sobre-funil')
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[title="Atualizar Marketing Studio"]')!.click()

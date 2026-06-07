@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
 
+from .providers import OpenRouterClient
+
 
 class BudgetBlocked(Exception):
     """Raised when a run exceeds the configured budget guard."""
@@ -108,6 +110,7 @@ class Harness:
     routes: list[dict[str, Any]]
     tool_policies: list[dict[str, Any]]
     budget_policies: list[dict[str, Any]]
+    llm_client: OpenRouterClient | None = None
 
     def execute_agent(self, state: dict[str, Any]) -> dict[str, Any]:
         agent = state["agent"]
@@ -120,6 +123,12 @@ class Harness:
         estimated_credits = int(state.get("estimated_credits", 0))
         estimated_cost = float(state.get("estimated_cost", 0))
         enforce_budget(budget, estimated_credits, estimated_cost, int(state.get("runs_today", 0)))
+
+        provider_output = self._execute_llm_if_configured(state, prompt, route)
+        output_payload = provider_output or {
+            "dry_run": True,
+            "message": f"{agent.get('name', agent['agent_type'])} executed by provider-neutral harness",
+        }
 
         agent_run = {
             "agent_id": agent.get("id"),
@@ -135,10 +144,9 @@ class Harness:
             "allowed_tools": tools,
             "credits_charged": estimated_credits,
             "raw_cost_estimate": estimated_cost,
-            "output_payload": {
-                "dry_run": True,
-                "message": f"{agent.get('name', agent['agent_type'])} executed by provider-neutral harness",
-            },
+            "input_tokens": int(output_payload.get("input_tokens", 0)),
+            "output_tokens": int(output_payload.get("output_tokens", 0)),
+            "output_payload": output_payload,
         }
 
         return {
@@ -159,3 +167,50 @@ class Harness:
             ),
             None,
         )
+
+    def _execute_llm_if_configured(
+        self,
+        state: dict[str, Any],
+        prompt: dict[str, Any],
+        route: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not state.get("execute_llm"):
+            return None
+        if route.get("provider") != "openrouter":
+            return None
+        if self.llm_client is None:
+            return None
+
+        response = self.llm_client.chat_completion(
+            model=route["model_name"],
+            fallback_models=[route["fallback_model_name"]] if route.get("fallback_model_name") else None,
+            max_tokens=int(route.get("max_output_tokens", 1200)),
+            temperature=float(route.get("temperature", 0.4)),
+            session_id=state.get("workflow_run_id") or state.get("session_id"),
+            messages=[
+                {"role": "system", "content": prompt["system_prompt"]},
+                {
+                    "role": "user",
+                    "content": "\n\n".join(
+                        part
+                        for part in [
+                            prompt["context_block"],
+                            prompt["agent_prompt"],
+                            state.get("user_input", ""),
+                        ]
+                        if part
+                    ),
+                },
+            ],
+        )
+        return {
+            "dry_run": False,
+            "provider": response["provider"],
+            "model": response["model"],
+            "content": response["content"],
+            "finish_reason": response.get("finish_reason"),
+            "input_tokens": response["input_tokens"],
+            "output_tokens": response["output_tokens"],
+            "total_tokens": response["total_tokens"],
+            "raw_response_id": response.get("raw_response_id"),
+        }
