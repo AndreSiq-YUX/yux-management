@@ -129,7 +129,7 @@ Use these docs during execution to verify current scopes, Graph version, endpoin
 - Read: `supabase/functions/_shared/adsProvider.ts`
 - Read: `supabase/functions/execute-wordpress-publishing/index.ts`
 
-- [ ] **Step 1: Confirm clean task boundary**
+- [x] **Step 1: Confirm clean task boundary**
 
 Run:
 
@@ -153,7 +153,7 @@ Expected:
 
 Do not stage or revert those unrelated existing changes.
 
-- [ ] **Step 2: Recheck provider docs**
+- [x] **Step 2: Recheck provider docs**
 
 Use official provider docs before editing provider adapters:
 
@@ -180,7 +180,7 @@ Expected:
 Record any required scope/endpoint changes directly in the adapter tests before implementing adapters.
 ```
 
-- [ ] **Step 3: Confirm Supabase remote migration history**
+- [x] **Step 3: Confirm Supabase remote migration history**
 
 Use Supabase MCP `_list_migrations` for project `uuowkncimiydpbxqpkej`.
 
@@ -206,7 +206,7 @@ If the remote timestamp differs from the local migration created in this phase, 
 - Modify: `frontend/src/lib/campaigns/campaignRules.ts`
 - Modify: `frontend/src/lib/campaigns/campaignRules.test.ts`
 
-- [ ] **Step 1: Write failing tests for publishing safety**
+- [x] **Step 1: Write failing tests for publishing safety**
 
 Add to `frontend/src/lib/marketing-studio/marketingStudioRules.test.ts`:
 
@@ -244,7 +244,7 @@ it('builds stable native publishing idempotency keys', () => {
 })
 ```
 
-- [ ] **Step 2: Write failing tests for paid campaign safety**
+- [x] **Step 2: Write failing tests for paid campaign safety**
 
 Add to `frontend/src/lib/campaigns/campaignRules.test.ts`:
 
@@ -280,7 +280,7 @@ it('requires approved campaign before native provider activation', () => {
 })
 ```
 
-- [ ] **Step 3: Run tests and verify failure**
+- [x] **Step 3: Run tests and verify failure**
 
 Run from `frontend/`:
 
@@ -294,7 +294,7 @@ Expected:
 FAIL because canExecuteNativePublishingRun, buildNativePublishingIdempotencyKey, and canExecuteProviderMutation are not implemented.
 ```
 
-- [ ] **Step 4: Add types**
+- [x] **Step 4: Add types**
 
 In `frontend/src/types/marketingStudio.ts`, extend provider/action/status types:
 
@@ -347,7 +347,7 @@ export interface AdProviderConnection {
 }
 ```
 
-- [ ] **Step 5: Implement Marketing Studio rules**
+- [x] **Step 5: Implement Marketing Studio rules**
 
 Add to `frontend/src/lib/marketing-studio/marketingStudioRules.ts`:
 
@@ -389,7 +389,7 @@ export function buildNativePublishingIdempotencyKey(input: {
 }
 ```
 
-- [ ] **Step 6: Implement campaign mutation rules**
+- [x] **Step 6: Implement campaign mutation rules**
 
 Add to `frontend/src/lib/campaigns/campaignRules.ts`:
 
@@ -420,7 +420,7 @@ export function canExecuteProviderMutation(input: ProviderMutationGuardInput): P
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run from `frontend/`:
 
@@ -434,7 +434,7 @@ Expected:
 PASS for both focused rule suites.
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Run:
 
@@ -451,7 +451,7 @@ git commit -m "feat: add native marketing integration guards"
 - Create: `supabase/migrations/<timestamp>_marketing_studio_native_integrations.sql`
 - Create: `supabase/probes/<timestamp>_marketing_studio_native_integrations.sql`
 
-- [ ] **Step 1: Create migration**
+- [x] **Step 1: Create migration**
 
 Run:
 
@@ -465,7 +465,7 @@ Expected:
 Created new migration under supabase/migrations.
 ```
 
-- [ ] **Step 2: Add provider OAuth and service-role-only secret tables**
+- [x] **Step 2: Add provider OAuth and service-role-only secret tables**
 
 Add this SQL to the migration:
 
@@ -522,7 +522,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.provider_oauth_sessions TO servic
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.provider_integration_secrets TO service_role;
 ```
 
-- [ ] **Step 3: Extend publishing connections**
+- [x] **Step 3: Extend publishing connections**
 
 Add this SQL:
 
@@ -556,7 +556,7 @@ CREATE INDEX IF NOT EXISTS idx_publishing_connections_provider_asset
   WHERE provider_asset_id IS NOT NULL;
 ```
 
-- [ ] **Step 4: Extend publishing runs**
+- [x] **Step 4: Extend publishing runs**
 
 Add this SQL:
 
@@ -570,7 +570,7 @@ CREATE INDEX IF NOT EXISTS idx_publishing_runs_provider_post
   WHERE provider_post_id IS NOT NULL;
 ```
 
-- [ ] **Step 5: Extend paid provider connections and accounts**
+- [x] **Step 5: Extend paid provider connections and accounts**
 
 Add this SQL:
 
@@ -595,7 +595,7 @@ CREATE INDEX IF NOT EXISTS idx_ad_provider_connections_contract
   WHERE contract_id IS NOT NULL;
 ```
 
-- [ ] **Step 6: Extend provider mutation runs**
+- [x] **Step 6: Extend provider mutation runs**
 
 Add this SQL:
 
@@ -610,7 +610,7 @@ ALTER TABLE public.ad_provider_mutation_runs
   ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 ```
 
-- [ ] **Step 7: Add probe**
+- [x] **Step 7: Add probe**
 
 Create `supabase/probes/<timestamp>_marketing_studio_native_integrations.sql`:
 
@@ -654,7 +654,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 8: Apply migration remotely**
+- [x] **Step 8: Apply migration remotely**
 
 Use Supabase MCP `_apply_migration` with project `uuowkncimiydpbxqpkej`, name `marketing_studio_native_integrations`, and the migration SQL.
 
@@ -664,7 +664,7 @@ Expected:
 success: true
 ```
 
-- [ ] **Step 9: Reconcile local timestamp and run probe**
+- [x] **Step 9: Reconcile local timestamp and run probe**
 
 Use Supabase MCP `_list_migrations` and rename local migration/probe if the remote timestamp differs.
 
@@ -676,7 +676,7 @@ Expected:
 Probe returns [] with no exceptions.
 ```
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 Run:
 
@@ -693,7 +693,7 @@ git commit -m "feat: add native marketing integration schema"
 - Create: `supabase/functions/_shared/providerSecrets.ts`
 - Create: `supabase/functions/_shared/providerSecrets.test.ts`
 
-- [ ] **Step 1: Write tests**
+- [x] **Step 1: Write tests**
 
 Create `supabase/functions/_shared/providerSecrets.test.ts`:
 
@@ -736,7 +736,7 @@ Deno.test('requires a 32-byte base64 encryption key', async () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -750,7 +750,7 @@ Expected:
 FAIL because providerSecrets.ts does not exist.
 ```
 
-- [ ] **Step 3: Implement providerSecrets.ts**
+- [x] **Step 3: Implement providerSecrets.ts**
 
 Create `supabase/functions/_shared/providerSecrets.ts`:
 
@@ -854,7 +854,7 @@ export async function loadProviderSecret(admin: any, reference: string) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
