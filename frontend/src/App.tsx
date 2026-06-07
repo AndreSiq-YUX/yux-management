@@ -31,13 +31,14 @@ import { PortalCampaignsPage } from '@/pages/client-portal/PortalCampaignsPage'
 import { PortalConnectedChannelsPage } from '@/pages/client-portal/PortalConnectedChannelsPage'
 import { PortalOmnichannelPage } from '@/pages/client-portal/PortalOmnichannelPage'
 import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
-import { PortalProposalsPage } from '@/pages/client-portal/PortalProposalsPage'
 import { PortalFinancePage } from '@/pages/client-portal/PortalFinancePage'
 import { PortalLandingPagesPage } from '@/pages/client-portal/PortalLandingPagesPage'
 import { PortalMarketingStudioPage } from '@/pages/client-portal/PortalMarketingStudioPage'
 import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
-import { PortalCrmSettingsPage } from '@/pages/client-portal/PortalCrmSettingsPage'
+import { PortalAccountSettingsPage } from '@/pages/client-portal/PortalAccountSettingsPage'
+import { PortalApprovalsPage } from '@/pages/client-portal/PortalApprovalsPage'
+import { PortalSafeStatePage } from '@/pages/client-portal/PortalSafeStatePage'
 import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
 import { AdminHubPage } from '@/pages/platform/AdminHubPage'
 import { AdminAiPage } from '@/pages/platform/AdminAiPage'
@@ -55,6 +56,9 @@ import { PackagesPage } from '@/pages/platform/PackagesPage'
 
 function App() {
   const { isAuthenticated, user } = useAuthStore()
+  const safePortalPage = (title: string, description: string, capabilities: string[]) => (
+    <PortalSafeStatePage title={title} description={description} capabilities={capabilities} />
+  )
 
   return (
     <Routes>
@@ -116,19 +120,57 @@ function App() {
         {user?.role === 'client' && (
           <>
             <Route path="portal" element={<PortalDashboardPage />} />
-            <Route path="portal/projects" element={<PortalProjectsPage />} />
-            <Route path="portal/proposals" element={<PortalProposalsPage />} />
-            <Route path="portal/crm" element={<LeadsPage />} />
-            <Route path="portal/crm/settings" element={<PortalCrmSettingsPage />} />
-            <Route path="portal/omnichannel" element={<PortalOmnichannelPage />} />
-            <Route path="portal/omnichannel/channels" element={<PortalConnectedChannelsPage />} />
-            <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/omnichannel" replace />} />
-            <Route path="portal/landing-pages" element={<PortalLandingPagesPage />} />
-            <Route path="portal/marketing-studio" element={<PortalMarketingStudioPage />} />
-            <Route path="portal/campaigns" element={<PortalCampaignsPage />} />
-            <Route path="portal/reports" element={<PortalReportsPage />} />
-            <Route path="portal/support" element={<PortalSupportPage />} />
-            <Route path="portal/finance" element={<PortalFinancePage />} />
+
+            <Route path="portal/empresa/perfil" element={safePortalPage('Perfil da Empresa', 'Dados institucionais, segmento, canais, regioes atendidas e diferenciais.', ['Dados da empresa', 'Produtos e servicos', 'Horarios de atendimento', 'Regioes atendidas'])} />
+            <Route path="portal/empresa/usuarios" element={safePortalPage('Usuarios e Equipe', 'Gestao de usuarios, papeis e permissoes por modulo.', ['Convidar usuarios', 'Definir papeis', 'Limitar acesso por modulo', 'Ver ultimo acesso'])} />
+            <Route path="portal/empresa/conhecimento" element={safePortalPage('Base de Conhecimento', 'Fonte compartilhada para IA, Marketing Studio, respostas sugeridas, campanhas, landing pages, FAQ e suporte.', ['Enviar documentos', 'Cadastrar FAQs', 'Importar site', 'Aprovar conhecimento para IA'])} />
+            <Route path="portal/empresa/marca" element={safePortalPage('Marca e Tom de Voz', 'Diretrizes de comunicacao, restricoes, personas e assets da marca.', ['Tom da marca', 'Palavras proibidas', 'Personas', 'Assets da marca'])} />
+            <Route path="portal/empresa/integracoes" element={safePortalPage('Integracoes da Empresa', 'Conexoes do cliente com canais, midia, calendario, planilhas e webhooks.', ['WhatsApp', 'Meta Ads', 'Google Ads', 'WordPress'])} />
+
+            <Route path="portal/comercial/leads" element={<LeadsPage />} />
+            <Route path="portal/comercial/contas" element={safePortalPage('Empresas / Contas', 'Cadastro de empresas prospectadas e oportunidades B2B.', ['Contatos vinculados', 'Potencial', 'Historico', 'Oportunidades'])} />
+            <Route path="portal/comercial/funis" element={<LeadsPage />} />
+            <Route path="portal/comercial/tarefas" element={safePortalPage('Tarefas e Follow-ups', 'Central de atividades comerciais por lead, empresa e responsavel.', ['Tarefas atrasadas', 'Criar tarefa', 'Reagendar', 'Alertas automaticos'])} />
+
+            <Route path="portal/atendimento/conversas" element={<PortalOmnichannelPage />} />
+            <Route path="portal/atendimento/agente-ia" element={safePortalPage('Agente IA', 'Configuracao e acompanhamento do agente de atendimento.', ['Testar agente', 'Perguntas sem resposta', 'Fontes usadas', 'Regras de handoff'])} />
+            <Route path="portal/atendimento/canais" element={<PortalConnectedChannelsPage />} />
+            <Route path="portal/atendimento/filas-handoff" element={safePortalPage('Filas e Handoff', 'Equipes, filas, horario comercial, SLA e regras de transferencia.', ['Equipes', 'Filas', 'Prioridade', 'SLA'])} />
+
+            <Route path="portal/marketing/landing-pages" element={<PortalLandingPagesPage />} />
+            <Route path="portal/marketing/campanhas" element={<PortalCampaignsPage />} />
+            <Route path="portal/marketing/studio" element={<PortalMarketingStudioPage />} />
+            <Route path="portal/marketing/conteudo" element={<PortalMarketingStudioPage />} />
+            <Route path="portal/marketing/calendario" element={<PortalMarketingStudioPage />} />
+            <Route path="portal/marketing/criativos" element={<PortalMarketingStudioPage />} />
+
+            <Route path="portal/automacoes/fluxos" element={safePortalPage('Fluxos de Automacao', 'Fluxos ativos, editor visual, gatilhos, condicoes e acoes.', ['Fluxos ativos', 'Editor visual', 'Pausar', 'Duplicar'])} />
+            <Route path="portal/automacoes/templates" element={safePortalPage('Templates de Automacao', 'Modelos prontos para ativar automacoes por jornada.', ['Templates por setor', 'Criar a partir de modelo', 'Preview de fluxo'])} />
+            <Route path="portal/automacoes/execucoes" element={safePortalPage('Execucoes de Automacao', 'Historico de execucoes, erros e consumo.', ['Execucoes', 'Erros', 'Creditos consumidos', 'Historico'])} />
+            <Route path="portal/automacoes/logs" element={safePortalPage('Logs de Automacao', 'Rastreamento operacional das automacoes contratadas.', ['Logs', 'Falhas', 'Tentativas', 'Diagnostico'])} />
+
+            <Route path="portal/projetos/projetos" element={<PortalProjectsPage />} />
+            <Route path="portal/projetos/aprovacoes" element={<PortalApprovalsPage />} />
+            <Route path="portal/projetos/documentos" element={safePortalPage('Documentos', 'Contratos, propostas, relatorios, materiais e arquivos da empresa.', ['Contratos', 'Propostas', 'Relatorios', 'Materiais enviados'])} />
+
+            <Route path="portal/relatorios" element={<PortalReportsPage />} />
+            <Route path="portal/suporte" element={<PortalSupportPage />} />
+            <Route path="portal/financeiro" element={<PortalFinancePage />} />
+            <Route path="portal/configuracoes/conta" element={<PortalAccountSettingsPage />} />
+
+            <Route path="portal/projects" element={<Navigate to="/portal/projetos/projetos" replace />} />
+            <Route path="portal/proposals" element={<Navigate to="/portal/projetos/aprovacoes" replace />} />
+            <Route path="portal/crm" element={<Navigate to="/portal/comercial/leads" replace />} />
+            <Route path="portal/crm/settings" element={<Navigate to="/portal/empresa/usuarios" replace />} />
+            <Route path="portal/omnichannel" element={<Navigate to="/portal/atendimento/conversas" replace />} />
+            <Route path="portal/omnichannel/channels" element={<Navigate to="/portal/atendimento/canais" replace />} />
+            <Route path="portal/whatsapp-ai" element={<Navigate to="/portal/atendimento/conversas" replace />} />
+            <Route path="portal/landing-pages" element={<Navigate to="/portal/marketing/landing-pages" replace />} />
+            <Route path="portal/marketing-studio" element={<Navigate to="/portal/marketing/studio" replace />} />
+            <Route path="portal/campaigns" element={<Navigate to="/portal/marketing/campanhas" replace />} />
+            <Route path="portal/reports" element={<Navigate to="/portal/relatorios" replace />} />
+            <Route path="portal/support" element={<Navigate to="/portal/suporte" replace />} />
+            <Route path="portal/finance" element={<Navigate to="/portal/financeiro" replace />} />
           </>
         )}
       </Route>
