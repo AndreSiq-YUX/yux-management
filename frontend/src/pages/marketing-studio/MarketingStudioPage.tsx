@@ -16,7 +16,11 @@ import type {
   MarketingKnowledgeChunk,
   MarketingKnowledgeDocument,
   MarketingKnowledgeMatch,
+  MarketingIdea,
   MarketingProductService,
+  MarketingRadarRun,
+  MarketingSource,
+  MarketingSourceItem,
   MarketingStudioSettings,
   MarketingToolRun,
   MarketingWorkflow,
@@ -41,6 +45,10 @@ export function MarketingStudioPage() {
   const [toolRuns, setToolRuns] = useState<MarketingToolRun[]>([])
   const [modelRoutes, setModelRoutes] = useState<ModelRoutingRule[]>([])
   const [toolPolicies, setToolPolicies] = useState<MarketingAgentToolPolicy[]>([])
+  const [sources, setSources] = useState<MarketingSource[]>([])
+  const [sourceItems, setSourceItems] = useState<MarketingSourceItem[]>([])
+  const [radarRuns, setRadarRuns] = useState<MarketingRadarRun[]>([])
+  const [ideas, setIdeas] = useState<MarketingIdea[]>([])
   const [settings, setSettings] = useState<MarketingStudioSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -61,6 +69,10 @@ export function MarketingStudioPage() {
         loadedWorkflowRuns,
         loadedModelRoutes,
         loadedToolPolicies,
+        loadedSources,
+        loadedSourceItems,
+        loadedRadarRuns,
+        loadedIdeas,
       ] = await Promise.all([
         marketingStudioService.getContents(defaultContract ? { contractId: defaultContract.id } : undefined),
         defaultContract ? marketingStudioService.getCalendarItems({ contractId: defaultContract.id }) : Promise.resolve([]),
@@ -73,6 +85,10 @@ export function MarketingStudioPage() {
         defaultContract ? marketingStudioService.getWorkflowRuns({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getModelRoutingRules({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getToolPolicies(defaultContract.id) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getSources({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getSourceItems({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getRadarRuns({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getIdeas({ contractId: defaultContract.id }) : Promise.resolve([]),
       ])
       const loadedReviews = defaultContract ? await marketingStudioService.getReviews({ contractId: defaultContract.id }) : []
       const versionPairs = await Promise.all(
@@ -100,6 +116,10 @@ export function MarketingStudioPage() {
       setToolRuns(toolRunPairs.flat())
       setModelRoutes(loadedModelRoutes)
       setToolPolicies(loadedToolPolicies)
+      setSources(loadedSources)
+      setSourceItems(loadedSourceItems)
+      setRadarRuns(loadedRadarRuns)
+      setIdeas(loadedIdeas)
       setSettings(defaultContract ? await marketingStudioService.getSettings(defaultContract.id) : null)
     } catch (error) {
       console.error('Erro ao carregar Marketing Studio:', error)
@@ -120,6 +140,10 @@ export function MarketingStudioPage() {
       setToolRuns([])
       setModelRoutes([])
       setToolPolicies([])
+      setSources([])
+      setSourceItems([])
+      setRadarRuns([])
+      setIdeas([])
       setSettings(null)
     } finally {
       setLoading(false)
@@ -212,6 +236,10 @@ export function MarketingStudioPage() {
       toolRuns={toolRuns}
       modelRoutes={modelRoutes}
       toolPolicies={toolPolicies}
+      sources={sources}
+      sourceItems={sourceItems}
+      radarRuns={radarRuns}
+      ideas={ideas}
       onSubmitForReview={handleSubmitForReview}
       onApproveReview={reviewId => handleReviewDecision(reviewId, 'approved')}
       onRequestChanges={reviewId => handleReviewDecision(reviewId, 'changes_requested')}

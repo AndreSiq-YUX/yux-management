@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSimpleKnowledgeChunks,
+  buildSourceItemDedupeKey,
   composeAgentPrompt,
   canTransitionContentStatus,
   calculateCreditsForAction,
@@ -9,6 +10,8 @@ import {
   filterToolsByPolicies,
   getNextVersionNumber,
   isBrandProfileReady,
+  normalizeResearchUrl,
+  prioritizeSourceItems,
   rankKnowledgeMatches,
   requiresHumanApproval,
   sanitizeBrandProfileForPortal,
@@ -17,12 +20,14 @@ import {
   selectModelRoute,
   shouldBlockCreditDebit,
   shouldBlockAgentRun,
+  scoreSourceItemOpportunity,
   statusAfterReviewDecision,
   summarizeHarnessTelemetry,
   summarizeKnowledgeCoverage,
+  summarizeRadar,
   summarizeReviewQueue,
 } from './marketingStudioRules'
-import type { MarketingBrandProfile, MarketingContentItem, MarketingKnowledgeChunk, MarketingStudioSettings } from '@/types/marketingStudio'
+import type { MarketingBrandProfile, MarketingContentItem, MarketingKnowledgeChunk, MarketingSourceItem, MarketingStudioSettings } from '@/types/marketingStudio'
 
 const settings: MarketingStudioSettings = {
   id: 'settings-1',
@@ -466,5 +471,95 @@ describe('marketingStudioRules', () => {
       totalCredits: 8,
       averageQualityScore: 70,
     })
+  })
+
+  it('normalizes research URLs and builds source item dedupe keys', () => {
+    expect(normalizeResearchUrl('https://Example.com/post/?utm_source=x&utm_campaign=y#section')).toBe('https://example.com/post')
+    expect(buildSourceItemDedupeKey({
+      title: 'Como vender mais com CRM',
+      sourceUrl: 'https://Example.com/post/?utm_medium=social',
+    })).toBe('https://example.com/post')
+    expect(buildSourceItemDedupeKey({
+      title: 'Como vender mais com CRM',
+      sourceId: 'source-1',
+    })).toBe('source-1:como-vender-mais-com-crm')
+  })
+
+  it('scores and prioritizes source items for Radar curation', () => {
+    const items: MarketingSourceItem[] = [
+      {
+        id: 'item-low',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        itemType: 'article',
+        title: 'Baixa prioridade',
+        summary: '',
+        language: 'pt',
+        contentHash: 'hash-low',
+        dedupeKey: 'low',
+        relevanceScore: 40,
+        noveltyScore: 20,
+        commercialScore: 30,
+        status: 'captured',
+        metadata: {},
+        createdAt: '2026-06-06T12:00:00.000Z',
+        updatedAt: '2026-06-06T12:00:00.000Z',
+      },
+      {
+        id: 'item-high',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        itemType: 'article',
+        title: 'Alta prioridade',
+        summary: '',
+        language: 'pt',
+        contentHash: 'hash-high',
+        dedupeKey: 'high',
+        relevanceScore: 90,
+        noveltyScore: 70,
+        commercialScore: 80,
+        status: 'idea_generated',
+        metadata: {},
+        createdAt: '2026-06-06T13:00:00.000Z',
+        updatedAt: '2026-06-06T13:00:00.000Z',
+      },
+    ]
+
+    expect(scoreSourceItemOpportunity(items[1])).toBe(82)
+    expect(prioritizeSourceItems(items)[0].id).toBe('item-high')
+    expect(summarizeRadar({
+      sources: [
+        {
+          id: 'source-1',
+          organizationId: 'org-1',
+          clientId: 'client-1',
+          contractId: 'contract-1',
+          sourceType: 'blog',
+          name: 'Blog',
+          status: 'active',
+          metadata: {},
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+      sourceItems: items,
+      radarRuns: [{
+        id: 'radar-1',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        status: 'completed',
+        sourceCount: 1,
+        itemCount: 2,
+        ideaCount: 1,
+        rejectedCount: 0,
+        summary: '',
+        metadata: {},
+        createdAt: '',
+        updatedAt: '',
+      }],
+    })).toMatchObject({ activeSources: 1, capturedItems: 1, ideaGeneratedItems: 1, completedRuns: 1 })
   })
 })

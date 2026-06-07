@@ -13,7 +13,10 @@ import type {
   MarketingKnowledgeMatch,
   MarketingOperationMode,
   MarketingProductService,
+  MarketingRadarRun,
   MarketingReviewStatus,
+  MarketingSource,
+  MarketingSourceItem,
   MarketingStudioSettings,
   MarketingToolKey,
   MarketingAgentToolPolicy,
@@ -300,6 +303,47 @@ export function summarizeHarnessTelemetry(input: {
     failedWorkflowRuns,
     totalCredits: input.agentRuns.reduce((sum, run) => sum + run.creditsCharged, 0),
     averageQualityScore: average(input.agentRuns.map(run => run.qualityScore).filter(score => score != null) as number[]),
+  }
+}
+
+export function normalizeResearchUrl(value?: string) {
+  if (!value?.trim()) return ''
+  try {
+    const url = new URL(value.trim())
+    url.hash = ''
+    url.searchParams.delete('utm_source')
+    url.searchParams.delete('utm_medium')
+    url.searchParams.delete('utm_campaign')
+    url.searchParams.delete('utm_content')
+    url.searchParams.delete('utm_term')
+    return url.toString().replace(/\/$/, '').toLowerCase()
+  } catch {
+    return value.trim().toLowerCase()
+  }
+}
+
+export function buildSourceItemDedupeKey(input: { title: string; sourceUrl?: string; sourceId?: string }) {
+  const normalizedUrl = normalizeResearchUrl(input.sourceUrl)
+  if (normalizedUrl) return normalizedUrl
+  return `${input.sourceId || 'manual'}:${normalizeTerms(input.title).join('-') || input.title.trim().toLowerCase()}`
+}
+
+export function scoreSourceItemOpportunity(item: Pick<MarketingSourceItem, 'relevanceScore' | 'noveltyScore' | 'commercialScore'>) {
+  return Math.round((item.relevanceScore * 0.4) + (item.commercialScore * 0.4) + (item.noveltyScore * 0.2))
+}
+
+export function prioritizeSourceItems(items: MarketingSourceItem[]) {
+  return [...items].sort((a, b) => scoreSourceItemOpportunity(b) - scoreSourceItemOpportunity(a) || b.createdAt.localeCompare(a.createdAt))
+}
+
+export function summarizeRadar(input: { sources: MarketingSource[]; sourceItems: MarketingSourceItem[]; radarRuns: MarketingRadarRun[] }) {
+  return {
+    activeSources: input.sources.filter(source => source.status === 'active').length,
+    failedSources: input.sources.filter(source => source.status === 'failed').length,
+    capturedItems: input.sourceItems.filter(item => item.status === 'captured').length,
+    ideaGeneratedItems: input.sourceItems.filter(item => item.status === 'idea_generated').length,
+    runningRuns: input.radarRuns.filter(run => ['queued', 'collecting', 'curating'].includes(run.status)).length,
+    completedRuns: input.radarRuns.filter(run => run.status === 'completed').length,
   }
 }
 

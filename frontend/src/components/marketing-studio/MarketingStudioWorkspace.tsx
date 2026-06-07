@@ -1,4 +1,4 @@
-import { BookOpen, Bot, CalendarDays, Check, Clock, FileText, GitBranch, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
+import { BookOpen, Bot, CalendarDays, Check, Clock, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type {
   MarketingAgent,
@@ -12,7 +12,11 @@ import type {
   MarketingKnowledgeChunk,
   MarketingKnowledgeDocument,
   MarketingKnowledgeMatch,
+  MarketingIdea,
   MarketingProductService,
+  MarketingRadarRun,
+  MarketingSource,
+  MarketingSourceItem,
   MarketingStudioSettings,
   MarketingToolRun,
   MarketingWorkflow,
@@ -39,6 +43,10 @@ interface MarketingStudioWorkspaceProps {
   toolRuns?: MarketingToolRun[]
   modelRoutes?: ModelRoutingRule[]
   toolPolicies?: MarketingAgentToolPolicy[]
+  sources?: MarketingSource[]
+  sourceItems?: MarketingSourceItem[]
+  radarRuns?: MarketingRadarRun[]
+  ideas?: MarketingIdea[]
   onCreateContent?: () => void
   onSubmitForReview?: (contentId: string) => void
   onApproveReview?: (reviewId: string) => void
@@ -69,6 +77,10 @@ export function MarketingStudioWorkspace({
   toolRuns = [],
   modelRoutes = [],
   toolPolicies = [],
+  sources = [],
+  sourceItems = [],
+  radarRuns = [],
+  ideas = [],
   onCreateContent,
   onSubmitForReview,
   onApproveReview,
@@ -235,6 +247,59 @@ export function MarketingStudioWorkspace({
           </div>
         </section>
       </div>
+
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">Ideias e Radar</h2>
+          <span className="text-xs text-slate-500">fontes curadas, pesquisa controlada e curadoria</span>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-slate-950">
+              <Radar className="h-4 w-4" />
+              Fontes monitoradas
+            </div>
+            <p className="text-slate-700">{sources.filter(source => source.status === 'active').length} ativas / {sources.length} cadastradas</p>
+            <div className="mt-2 space-y-2">
+              {sources.slice(0, 4).map(source => (
+                <div key={source.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">{source.name}</p>
+                  <p className="text-xs text-slate-500">{source.sourceType} / {source.status}</p>
+                </div>
+              ))}
+              {sources.length === 0 && <p className="text-xs text-slate-500">Nenhuma fonte configurada.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Itens capturados</h3>
+            <p className="text-slate-700">{sourceItems.length} itens / {ideas.length} ideias</p>
+            <div className="mt-2 space-y-2">
+              {sourceItems.slice(0, 4).map(item => (
+                <div key={item.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="line-clamp-1 font-medium text-slate-900">{item.title}</p>
+                  <p className="text-xs text-slate-500">score {item.relevanceScore}/{item.noveltyScore}/{item.commercialScore} / {item.status}</p>
+                </div>
+              ))}
+              {sourceItems.length === 0 && <p className="text-xs text-slate-500">Nenhum item capturado pelo Radar.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Radar semanal</h3>
+            <p className="text-slate-700">{radarRuns.length} execucoes recentes</p>
+            <div className="mt-2 space-y-2">
+              {radarRuns.slice(0, 4).map(run => (
+                <div key={run.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">{run.status} / {run.ideaCount} ideias</p>
+                  <p className="line-clamp-1 text-xs text-slate-500">{run.query || run.summary || 'Radar sem resumo'}</p>
+                </div>
+              ))}
+              {radarRuns.length === 0 && <p className="text-xs text-slate-500">Nenhum Radar executado.</p>}
+            </div>
+          </article>
+        </div>
+      </section>
 
       <section>
         <div className="flex items-center justify-between gap-3">

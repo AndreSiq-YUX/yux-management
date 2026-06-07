@@ -9,6 +9,9 @@ import {
   buildKnowledgeChunkPayload,
   buildKnowledgeDocumentPayload,
   buildAgentPayload,
+  buildRadarRunPayload,
+  buildResearchCachePayload,
+  buildSourceItemPayload,
   buildWorkflowPayload,
   buildWorkflowRunPayload,
   buildProductServicePayload,
@@ -27,8 +30,13 @@ import {
   mapMarketingKnowledgeChunk,
   mapMarketingKnowledgeDocument,
   mapMarketingKnowledgeMatch,
+  mapMarketingIdea,
   mapMarketingProductService,
+  mapMarketingRadarRun,
+  mapMarketingResearchCacheEntry,
   mapMarketingSettings,
+  mapMarketingSource,
+  mapMarketingSourceItem,
   mapMarketingToolRun,
   mapMarketingWorkflow,
   mapMarketingWorkflowEdge,
@@ -407,6 +415,162 @@ describe('marketingStudioService mapping helpers', () => {
       body: 'Texto',
       rank: 0.8,
     })).toEqual({ chunkId: 'chunk-1', documentId: 'doc-1', title: 'Guia', body: 'Texto', rank: 0.8 })
+  })
+
+  it('maps sources, source items, research cache and radar runs', () => {
+    expect(mapMarketingSource({
+      id: 'source-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      source_type: 'blog',
+      name: 'Blog YUX',
+      source_url: 'https://example.com',
+      status: 'active',
+      last_read_at: null,
+      metadata: { cadence: 'weekly' },
+      created_at: '2026-06-07T12:00:00.000Z',
+      updated_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({ sourceType: 'blog', metadata: { cadence: 'weekly' } })
+
+    expect(mapMarketingSourceItem({
+      id: 'item-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      source_id: 'source-1',
+      radar_run_id: 'radar-1',
+      item_type: 'article',
+      title: 'Tendencia CRM',
+      source_url: 'https://example.com/post',
+      normalized_url: 'https://example.com/post',
+      author: null,
+      published_at: null,
+      summary: 'Resumo',
+      raw_excerpt: null,
+      language: 'pt',
+      content_hash: 'hash',
+      dedupe_key: 'dedupe',
+      relevance_score: 80,
+      novelty_score: 70,
+      commercial_score: 90,
+      status: 'captured',
+      metadata: {},
+      created_at: '2026-06-07T12:00:00.000Z',
+      updated_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({ sourceId: 'source-1', radarRunId: 'radar-1', commercialScore: 90 })
+
+    expect(buildSourceItemPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      title: ' Tendencia CRM ',
+      contentHash: 'hash',
+      dedupeKey: 'dedupe',
+      relevanceScore: 80,
+    })).toMatchObject({ title: 'Tendencia CRM', content_hash: 'hash', dedupe_key: 'dedupe', relevance_score: 80 })
+
+    expect(mapMarketingResearchCacheEntry({
+      id: 'cache-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      provider: 'jina_reader',
+      request_type: 'reader',
+      request_key: 'reader:https://example.com/post',
+      request_payload: { url: 'https://example.com/post' },
+      response_summary: 'Resumo',
+      response_payload: { title: 'Post' },
+      raw_cost_estimate: 0.01,
+      credits_charged: 2,
+      expires_at: null,
+      created_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({ provider: 'jina_reader', creditsCharged: 2 })
+
+    expect(buildResearchCachePayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      provider: 'jina_search',
+      requestType: 'search',
+      requestKey: 'search:crm',
+    })).toMatchObject({ provider: 'jina_search', request_type: 'search', request_key: 'search:crm' })
+
+    expect(mapMarketingRadarRun({
+      id: 'radar-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      workflow_run_id: 'workflow-run-1',
+      agent_id: 'agent-1',
+      status: 'completed',
+      period_start: '2026-06-01',
+      period_end: '2026-06-07',
+      query: 'crm pmes',
+      source_count: 4,
+      item_count: 12,
+      idea_count: 6,
+      rejected_count: 2,
+      summary: 'Radar semanal',
+      error_message: null,
+      metadata: {},
+      started_at: null,
+      completed_at: null,
+      created_by: null,
+      created_at: '2026-06-07T12:00:00.000Z',
+      updated_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({ workflowRunId: 'workflow-run-1', ideaCount: 6 })
+
+    expect(buildRadarRunPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      query: ' crm pmes ',
+    })).toMatchObject({ query: 'crm pmes', status: 'queued' })
+  })
+
+  it('maps radar-linked ideas and builds conversion payloads', () => {
+    expect(mapMarketingIdea({
+      id: 'idea-1',
+      organization_id: 'org-1',
+      client_id: 'client-1',
+      contract_id: 'contract-1',
+      title: 'Ideia CRM',
+      summary: 'Resumo',
+      status: 'curated',
+      source_type: 'radar',
+      source_url: 'https://example.com',
+      source_reference_id: null,
+      source_item_id: 'item-1',
+      radar_run_id: 'radar-1',
+      priority: 'high',
+      opportunity_score: 82,
+      suggested_channel: 'linkedin',
+      rejection_reason: null,
+      curation_notes: 'Boa relacao comercial',
+      next_action: 'briefing',
+      created_at: '2026-06-07T12:00:00.000Z',
+      updated_at: '2026-06-07T12:00:00.000Z',
+    })).toMatchObject({ sourceItemId: 'item-1', radarRunId: 'radar-1', opportunityScore: 82 })
+
+    expect(buildIdeaInsertPayload({
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      title: ' Ideia CRM ',
+      summary: ' Resumo ',
+      sourceType: 'radar',
+      sourceItemId: 'item-1',
+      radarRunId: 'radar-1',
+      curationNotes: ' Boa ',
+      nextAction: ' briefing ',
+    })).toMatchObject({
+      title: 'Ideia CRM',
+      source_item_id: 'item-1',
+      radar_run_id: 'radar-1',
+      curation_notes: 'Boa',
+      next_action: 'briefing',
+    })
   })
 
   it('maps agent templates, global prompts and editable agent prompts', () => {

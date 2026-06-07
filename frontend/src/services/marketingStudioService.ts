@@ -19,7 +19,11 @@ import type {
   MarketingKnowledgeDocument,
   MarketingKnowledgeMatch,
   MarketingProductService,
+  MarketingRadarRun,
+  MarketingResearchCacheEntry,
   MarketingReviewStatus,
+  MarketingSource,
+  MarketingSourceItem,
   MarketingStudioSettings,
   MarketingToolRun,
   MarketingUsageLedgerEntry,
@@ -222,6 +226,123 @@ export function mapMarketingKnowledgeMatch(row: any): MarketingKnowledgeMatch {
     title: row.title || undefined,
     body: row.body,
     rank: Number(row.rank || 0),
+  }
+}
+
+export function mapMarketingSource(row: any): MarketingSource {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    sourceType: row.source_type,
+    name: row.name,
+    sourceUrl: row.source_url || undefined,
+    status: row.status || 'active',
+    lastReadAt: row.last_read_at || undefined,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingIdea(row: any): MarketingIdea {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    title: row.title,
+    summary: row.summary || '',
+    status: row.status || 'captured',
+    sourceType: row.source_type || 'manual',
+    sourceUrl: row.source_url || undefined,
+    sourceReferenceId: row.source_reference_id || undefined,
+    sourceItemId: row.source_item_id || undefined,
+    radarRunId: row.radar_run_id || undefined,
+    priority: row.priority || 'medium',
+    opportunityScore: Number(row.opportunity_score || 0),
+    suggestedChannel: row.suggested_channel || undefined,
+    rejectionReason: row.rejection_reason || undefined,
+    curationNotes: row.curation_notes || undefined,
+    nextAction: row.next_action || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingSourceItem(row: any): MarketingSourceItem {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    sourceId: row.source_id || undefined,
+    radarRunId: row.radar_run_id || undefined,
+    itemType: row.item_type,
+    title: row.title,
+    sourceUrl: row.source_url || undefined,
+    normalizedUrl: row.normalized_url || undefined,
+    author: row.author || undefined,
+    publishedAt: row.published_at || undefined,
+    summary: row.summary || '',
+    rawExcerpt: row.raw_excerpt || undefined,
+    language: row.language || 'pt',
+    contentHash: row.content_hash,
+    dedupeKey: row.dedupe_key,
+    relevanceScore: Number(row.relevance_score || 0),
+    noveltyScore: Number(row.novelty_score || 0),
+    commercialScore: Number(row.commercial_score || 0),
+    status: row.status || 'captured',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingResearchCacheEntry(row: any): MarketingResearchCacheEntry {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    provider: row.provider,
+    requestType: row.request_type,
+    requestKey: row.request_key,
+    requestPayload: row.request_payload || {},
+    responseSummary: row.response_summary || '',
+    responsePayload: row.response_payload || {},
+    rawCostEstimate: Number(row.raw_cost_estimate || 0),
+    creditsCharged: Number(row.credits_charged || 0),
+    expiresAt: row.expires_at || undefined,
+    createdAt: row.created_at,
+  }
+}
+
+export function mapMarketingRadarRun(row: any): MarketingRadarRun {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    workflowRunId: row.workflow_run_id || undefined,
+    agentId: row.agent_id || undefined,
+    status: row.status || 'queued',
+    periodStart: row.period_start || undefined,
+    periodEnd: row.period_end || undefined,
+    query: row.query || undefined,
+    sourceCount: Number(row.source_count || 0),
+    itemCount: Number(row.item_count || 0),
+    ideaCount: Number(row.idea_count || 0),
+    rejectedCount: Number(row.rejected_count || 0),
+    summary: row.summary || '',
+    errorMessage: row.error_message || undefined,
+    metadata: row.metadata || {},
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }
 
@@ -472,7 +593,12 @@ export function buildIdeaInsertPayload(input: {
   priority?: MarketingIdea['priority']
   opportunityScore?: number
   sourceUrl?: string
+  sourceReferenceId?: string
+  sourceItemId?: string
+  radarRunId?: string
   suggestedChannel?: MarketingIdea['suggestedChannel']
+  curationNotes?: string
+  nextAction?: string
 }) {
   return {
     organization_id: input.organizationId,
@@ -484,7 +610,12 @@ export function buildIdeaInsertPayload(input: {
     priority: input.priority || 'medium',
     opportunity_score: input.opportunityScore || 0,
     source_url: input.sourceUrl || null,
+    source_reference_id: input.sourceReferenceId || null,
+    source_item_id: input.sourceItemId || null,
+    radar_run_id: input.radarRunId || null,
     suggested_channel: input.suggestedChannel || null,
+    curation_notes: input.curationNotes?.trim() || null,
+    next_action: input.nextAction?.trim() || null,
   }
 }
 
@@ -739,6 +870,126 @@ export function buildKnowledgeChunkPayload(input: {
   }
 }
 
+export function buildSourceItemPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  title: string
+  itemType?: MarketingSourceItem['itemType']
+  sourceId?: string
+  radarRunId?: string
+  sourceUrl?: string
+  normalizedUrl?: string
+  author?: string
+  publishedAt?: string
+  summary?: string
+  rawExcerpt?: string
+  language?: string
+  contentHash: string
+  dedupeKey: string
+  relevanceScore?: number
+  noveltyScore?: number
+  commercialScore?: number
+  status?: MarketingSourceItem['status']
+  metadata?: Record<string, unknown>
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    source_id: input.sourceId || null,
+    radar_run_id: input.radarRunId || null,
+    item_type: input.itemType || 'article',
+    title: input.title.trim(),
+    source_url: input.sourceUrl || null,
+    normalized_url: input.normalizedUrl || null,
+    author: input.author?.trim() || null,
+    published_at: input.publishedAt || null,
+    summary: input.summary?.trim() || '',
+    raw_excerpt: input.rawExcerpt?.trim() || null,
+    language: input.language || 'pt',
+    content_hash: input.contentHash,
+    dedupe_key: input.dedupeKey,
+    relevance_score: input.relevanceScore || 0,
+    novelty_score: input.noveltyScore || 0,
+    commercial_score: input.commercialScore || 0,
+    status: input.status || 'captured',
+    metadata: input.metadata || {},
+  }
+}
+
+export function buildResearchCachePayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  provider: MarketingResearchCacheEntry['provider']
+  requestType: MarketingResearchCacheEntry['requestType']
+  requestKey: string
+  requestPayload?: Record<string, unknown>
+  responseSummary?: string
+  responsePayload?: Record<string, unknown>
+  rawCostEstimate?: number
+  creditsCharged?: number
+  expiresAt?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    provider: input.provider,
+    request_type: input.requestType,
+    request_key: input.requestKey,
+    request_payload: input.requestPayload || {},
+    response_summary: input.responseSummary?.trim() || '',
+    response_payload: input.responsePayload || {},
+    raw_cost_estimate: input.rawCostEstimate || 0,
+    credits_charged: input.creditsCharged || 0,
+    expires_at: input.expiresAt || null,
+  }
+}
+
+export function buildRadarRunPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowRunId?: string
+  agentId?: string
+  status?: MarketingRadarRun['status']
+  periodStart?: string
+  periodEnd?: string
+  query?: string
+  sourceCount?: number
+  itemCount?: number
+  ideaCount?: number
+  rejectedCount?: number
+  summary?: string
+  metadata?: Record<string, unknown>
+  startedAt?: string
+  completedAt?: string
+  createdBy?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    workflow_run_id: input.workflowRunId || null,
+    agent_id: input.agentId || null,
+    status: input.status || 'queued',
+    period_start: input.periodStart || null,
+    period_end: input.periodEnd || null,
+    query: input.query?.trim() || null,
+    source_count: input.sourceCount || 0,
+    item_count: input.itemCount || 0,
+    idea_count: input.ideaCount || 0,
+    rejected_count: input.rejectedCount || 0,
+    summary: input.summary?.trim() || '',
+    metadata: input.metadata || {},
+    started_at: input.startedAt || null,
+    completed_at: input.completedAt || null,
+    created_by: input.createdBy || null,
+  }
+}
+
 export function buildAgentPayload(input: {
   organizationId: string
   name: string
@@ -840,6 +1091,11 @@ const BRAND_SELECT = '*'
 const PRODUCT_SELECT = '*'
 const DOCUMENT_SELECT = '*'
 const CHUNK_SELECT = '*'
+const SOURCE_SELECT = '*'
+const IDEA_SELECT = '*'
+const SOURCE_ITEM_SELECT = '*'
+const RESEARCH_CACHE_SELECT = '*'
+const RADAR_RUN_SELECT = '*'
 const AGENT_TEMPLATE_SELECT = '*'
 const AGENT_SELECT = '*'
 const GLOBAL_PROMPT_SELECT = '*'
@@ -959,6 +1215,55 @@ export const marketingStudioService = {
     })
     if (error) throw error
     return (data || []).map(mapMarketingKnowledgeMatch)
+  },
+
+  async getSources(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
+    let query = supabase.from('marketing_sources').select(SOURCE_SELECT).order('updated_at', { ascending: false })
+    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
+    if (filters?.clientId) query = query.eq('client_id', filters.clientId)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingSource)
+  },
+
+  async getIdeas(filters?: { contractId?: string; radarRunId?: string; sourceItemId?: string }) {
+    let query = supabase.from('marketing_ideas').select(IDEA_SELECT).order('updated_at', { ascending: false })
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.radarRunId) query = query.eq('radar_run_id', filters.radarRunId)
+    if (filters?.sourceItemId) query = query.eq('source_item_id', filters.sourceItemId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingIdea)
+  },
+
+  async getSourceItems(filters?: { contractId?: string; sourceId?: string; radarRunId?: string; status?: MarketingSourceItem['status'] }) {
+    let query = supabase.from('marketing_source_items').select(SOURCE_ITEM_SELECT).order('created_at', { ascending: false }).limit(50)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.sourceId) query = query.eq('source_id', filters.sourceId)
+    if (filters?.radarRunId) query = query.eq('radar_run_id', filters.radarRunId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingSourceItem)
+  },
+
+  async getRadarRuns(filters?: { contractId?: string; status?: MarketingRadarRun['status'] }) {
+    let query = supabase.from('marketing_radar_runs').select(RADAR_RUN_SELECT).order('created_at', { ascending: false }).limit(20)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingRadarRun)
+  },
+
+  async getResearchCache(filters: { contractId: string; provider?: MarketingResearchCacheEntry['provider']; requestKey?: string }) {
+    let query = supabase.from('marketing_research_cache').select(RESEARCH_CACHE_SELECT).eq('contract_id', filters.contractId).order('created_at', { ascending: false }).limit(20)
+    if (filters.provider) query = query.eq('provider', filters.provider)
+    if (filters.requestKey) query = query.eq('request_key', filters.requestKey)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingResearchCacheEntry)
   },
 
   async getAgentTemplates() {
@@ -1084,7 +1389,37 @@ export const marketingStudioService = {
       .select()
       .single()
     if (error) throw error
-    return data
+    return mapMarketingIdea(data)
+  },
+
+  async createSourceItem(input: Parameters<typeof buildSourceItemPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_source_items')
+      .insert(buildSourceItemPayload(input))
+      .select(SOURCE_ITEM_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingSourceItem(data)
+  },
+
+  async upsertResearchCache(input: Parameters<typeof buildResearchCachePayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_research_cache')
+      .upsert(buildResearchCachePayload(input), { onConflict: 'contract_id,provider,request_type,request_key' })
+      .select(RESEARCH_CACHE_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingResearchCacheEntry(data)
+  },
+
+  async createRadarRun(input: Parameters<typeof buildRadarRunPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_radar_runs')
+      .insert(buildRadarRunPayload(input))
+      .select(RADAR_RUN_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingRadarRun(data)
   },
 
   async createContent(input: Parameters<typeof buildContentInsertPayload>[0]) {

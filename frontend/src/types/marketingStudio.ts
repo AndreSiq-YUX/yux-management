@@ -60,6 +60,21 @@ export type MarketingContentStatus =
   | 'archived'
 
 export type MarketingIdeaStatus = 'captured' | 'curated' | 'approved' | 'rejected' | 'converted'
+export type MarketingSourceType = 'rss' | 'blog' | 'news' | 'youtube' | 'competitor' | 'crm' | 'omnichannel' | 'campaign' | 'manual'
+export type MarketingSourceStatus = 'active' | 'paused' | 'failed' | 'archived'
+export type MarketingSourceItemType =
+  | 'article'
+  | 'search_result'
+  | 'rss_entry'
+  | 'youtube_video'
+  | 'crm_topic'
+  | 'omnichannel_question'
+  | 'campaign_signal'
+  | 'manual'
+export type MarketingSourceItemStatus = 'captured' | 'summarized' | 'idea_generated' | 'dismissed' | 'archived'
+export type MarketingResearchProvider = 'jina_reader' | 'jina_search' | 'tavily' | 'serper' | 'firecrawl' | 'internal'
+export type MarketingResearchRequestType = 'reader' | 'search' | 'crawl' | 'internal_lookup'
+export type MarketingRadarRunStatus = 'queued' | 'collecting' | 'curating' | 'completed' | 'failed' | 'cancelled'
 
 export type MarketingUsageAction =
   | 'classify_idea'
@@ -423,10 +438,98 @@ export interface MarketingIdea {
   sourceType: 'manual' | 'radar' | 'crm' | 'omnichannel' | 'campaign' | 'report'
   sourceUrl?: string
   sourceReferenceId?: string
+  sourceItemId?: string
+  radarRunId?: string
   priority: 'low' | 'medium' | 'high'
   opportunityScore: number
   suggestedChannel?: MarketingChannel
   rejectionReason?: string
+  curationNotes?: string
+  nextAction?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingSource {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  sourceType: MarketingSourceType
+  name: string
+  sourceUrl?: string
+  status: MarketingSourceStatus
+  lastReadAt?: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingSourceItem {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  sourceId?: string
+  radarRunId?: string
+  itemType: MarketingSourceItemType
+  title: string
+  sourceUrl?: string
+  normalizedUrl?: string
+  author?: string
+  publishedAt?: string
+  summary: string
+  rawExcerpt?: string
+  language: string
+  contentHash: string
+  dedupeKey: string
+  relevanceScore: number
+  noveltyScore: number
+  commercialScore: number
+  status: MarketingSourceItemStatus
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingResearchCacheEntry {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  provider: MarketingResearchProvider
+  requestType: MarketingResearchRequestType
+  requestKey: string
+  requestPayload: Record<string, unknown>
+  responseSummary: string
+  responsePayload: Record<string, unknown>
+  rawCostEstimate: number
+  creditsCharged: number
+  expiresAt?: string
+  createdAt: string
+}
+
+export interface MarketingRadarRun {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  workflowRunId?: string
+  agentId?: string
+  status: MarketingRadarRunStatus
+  periodStart?: string
+  periodEnd?: string
+  query?: string
+  sourceCount: number
+  itemCount: number
+  ideaCount: number
+  rejectedCount: number
+  summary: string
+  errorMessage?: string
+  metadata: Record<string, unknown>
+  startedAt?: string
+  completedAt?: string
+  createdBy?: string
   createdAt: string
   updatedAt: string
 }

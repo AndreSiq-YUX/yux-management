@@ -14,7 +14,11 @@ import type {
   MarketingKnowledgeChunk,
   MarketingKnowledgeDocument,
   MarketingKnowledgeMatch,
+  MarketingIdea,
   MarketingProductService,
+  MarketingRadarRun,
+  MarketingSource,
+  MarketingSourceItem,
   MarketingStudioSettings,
   MarketingToolRun,
   MarketingWorkflow,
@@ -297,6 +301,78 @@ const toolPolicies: MarketingAgentToolPolicy[] = [{
   updatedAt: '2026-06-06T12:00:00.000Z',
 }]
 
+const sources: MarketingSource[] = [{
+  id: 'source-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  sourceType: 'blog',
+  name: 'Blog do cliente',
+  sourceUrl: 'https://example.com',
+  status: 'active',
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const sourceItems: MarketingSourceItem[] = [{
+  id: 'source-item-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  sourceId: 'source-1',
+  itemType: 'article',
+  title: 'Tendencia de CRM para PMEs',
+  sourceUrl: 'https://example.com/crm',
+  normalizedUrl: 'https://example.com/crm',
+  summary: 'Resumo da tendencia',
+  language: 'pt',
+  contentHash: 'hash',
+  dedupeKey: 'https://example.com/crm',
+  relevanceScore: 90,
+  noveltyScore: 70,
+  commercialScore: 80,
+  status: 'captured',
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const radarRuns: MarketingRadarRun[] = [{
+  id: 'radar-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  status: 'completed',
+  query: 'crm para pmes',
+  sourceCount: 1,
+  itemCount: 1,
+  ideaCount: 1,
+  rejectedCount: 0,
+  summary: 'Radar semanal',
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const ideas: MarketingIdea[] = [{
+  id: 'idea-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  title: 'Post sobre CRM para PMEs',
+  summary: 'Ideia gerada pelo Radar',
+  status: 'curated',
+  sourceType: 'radar',
+  sourceItemId: 'source-item-1',
+  radarRunId: 'radar-1',
+  priority: 'high',
+  opportunityScore: 82,
+  suggestedChannel: 'linkedin',
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
 describe('MarketingStudioWorkspace', () => {
   it('renders internal metrics, tabs, content, and internal operational details', () => {
     const container = document.createElement('div')
@@ -327,6 +403,10 @@ describe('MarketingStudioWorkspace', () => {
           toolRuns={toolRuns}
           modelRoutes={modelRoutes}
           toolPolicies={toolPolicies}
+          sources={sources}
+          sourceItems={sourceItems}
+          radarRuns={radarRuns}
+          ideas={ideas}
           onSubmitForReview={onSubmitForReview}
           onApproveReview={onApproveReview}
           onSearchKnowledge={onSearchKnowledge}
@@ -369,6 +449,13 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('queued / manual')
     expect(html).toContain('1 agent runs / 1 tool runs')
     expect(html).toContain('openrouter / openai/gpt-4o-mini')
+    expect(html).toContain('Ideias e Radar')
+    expect(html).toContain('Blog do cliente')
+    expect(html).toContain('1 ativas / 1 cadastradas')
+    expect(html).toContain('Tendencia de CRM para PMEs')
+    expect(html).toContain('score 90/70/80')
+    expect(html).toContain('completed / 1 ideias')
+    expect(html).toContain('crm para pmes')
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[title="Atualizar Marketing Studio"]')!.click()
