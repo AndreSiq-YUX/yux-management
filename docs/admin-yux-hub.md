@@ -82,6 +82,15 @@ Tipos previstos:
 - database;
 - internal service.
 
+Provedores globais ja seedados:
+
+- OpenRouter (`OPENROUTER_API_KEY`) como roteador LLM principal;
+- OpenAI direto (`OPENAI_API_KEY`) como fallback externo de LLM;
+- SMTP2GO (`SMTP2GO_API_KEY` e `SMTP2GO_WEBHOOK_SECRET`) como infraestrutura
+  compartilhada de email;
+- Jina AI (`JINA_API_KEY`) como servico interno para Reader, Search e Grounding
+  controlados do Marketing Studio.
+
 ## Canais Conectados
 
 `/admin/channels` centraliza a governanca de canais Meta por cliente. O Admin
@@ -143,6 +152,23 @@ Modelo operacional atual:
 
 Credenciais, API keys e segredos continuam fora do frontend.
 
+## Jina AI
+
+A area `/admin/integrations` tambem possui o provedor global Jina AI com
+`provider_type = internal_service` e `provider_key = jina_ai`.
+
+Configuracao disponivel:
+
+- referencia segura da API key, normalmente `JINA_API_KEY`;
+- endpoint base API `https://api.jina.ai/v1`;
+- endpoint Reader `https://r.jina.ai`;
+- endpoint Search `https://s.jina.ai`;
+- ferramentas operacionais `jina_reader`, `jina_search` e `jina_grounding`.
+
+O Marketing Studio usa esse provedor para Radar, leitura limpa de URLs, busca e
+grounding sob demanda. O valor real de `JINA_API_KEY` deve ser cadastrado como
+secret server-side.
+
 ## Governanca por Modulo
 
 A area `/admin/modules-governance` responde quais modulos possuem disponibilidade,
@@ -185,7 +211,7 @@ Eventos administrativos ficam em `platform_admin_audit_events`.
 - Servico frontend `adminPlatformService`.
 - Mutacoes administrativas para provedores, conexoes SMTP2GO, pacotes e
   modulos.
-- Seed de provedores globais OpenRouter, OpenAI direto e SMTP2GO.
+- Seed de provedores globais OpenRouter, OpenAI direto, SMTP2GO e Jina AI.
 - Painel de limites no contrato.
 - Documentacao operacional inicial.
 

@@ -159,7 +159,7 @@ export function ProviderConnectionEditor({
             value={secretReference}
             onChange={event => setSecretReference(event.target.value)}
             className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm"
-            placeholder="OPENROUTER_API_KEY"
+            placeholder={defaults.secretReference || 'PROVIDER_API_KEY'}
           />
         </label>
 

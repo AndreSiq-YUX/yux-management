@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import {
+  jinaAiProviderDefaults,
   openAiDirectFallbackDefaults,
   openRouterDefaults,
   smtp2GoProviderDefaults,
@@ -41,6 +42,7 @@ export function AdminIntegrationsPage() {
   const openRouterProvider = providers.find(provider => provider.providerKey === 'openrouter')
   const openAiProvider = providers.find(provider => provider.providerKey === 'openai_direct')
   const smtpProvider = providers.find(provider => provider.providerKey === 'smtp2go')
+  const jinaProvider = providers.find(provider => provider.providerKey === 'jina_ai')
   const fallbackProviders = providers.filter(provider => provider.providerType === 'llm' && provider.providerKey !== 'openrouter')
 
   return (
@@ -55,7 +57,8 @@ export function AdminIntegrationsPage() {
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
         Esta area salva referencias seguras e configuracoes publicas. Cadastre os valores reais em secrets do ambiente:
         <span className="ml-1 font-mono">OPENROUTER_API_KEY</span>, <span className="font-mono">OPENAI_API_KEY</span>,
-        <span className="ml-1 font-mono">SMTP2GO_API_KEY</span> e <span className="font-mono">SMTP2GO_WEBHOOK_SECRET</span>.
+        <span className="ml-1 font-mono">SMTP2GO_API_KEY</span>, <span className="font-mono">SMTP2GO_WEBHOOK_SECRET</span> e
+        <span className="ml-1 font-mono">JINA_API_KEY</span>.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando integracoes globais...</p>}
@@ -87,6 +90,16 @@ export function AdminIntegrationsPage() {
             description="Fallback externo quando o OpenRouter inteiro estiver fora, sem substituir o roteador principal."
             provider={openAiProvider}
             defaults={openAiDirectFallbackDefaults}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadProviders()
+            }}
+          />
+          <ProviderConnectionEditor
+            title="Jina AI - Reader/Search/Grounding"
+            description="Leitura limpa, busca e grounding controlados para Radar e agentes do Marketing Studio."
+            provider={jinaProvider}
+            defaults={jinaAiProviderDefaults}
             onSave={async input => {
               await adminPlatformService.upsertProviderConnection(input)
               await loadProviders()

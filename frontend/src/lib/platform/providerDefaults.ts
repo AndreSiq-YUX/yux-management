@@ -59,3 +59,24 @@ export const smtp2GoProviderDefaults: PlatformProviderConnectionInput = {
     webhookFunction: 'smtp2go-webhook',
   },
 }
+
+export const jinaAiProviderDefaults: PlatformProviderConnectionInput = {
+  providerType: 'internal_service',
+  providerKey: 'jina_ai',
+  displayName: 'Jina AI',
+  environment: 'production',
+  status: 'not_configured',
+  secretReference: 'JINA_API_KEY',
+  isDefault: true,
+  publicConfig: {
+    baseUrl: 'https://api.jina.ai/v1',
+    readerBaseUrl: 'https://r.jina.ai',
+    searchBaseUrl: 'https://s.jina.ai',
+    readerTool: 'jina_reader',
+    searchTool: 'jina_search',
+    groundingTool: 'jina_grounding',
+    purpose: 'leitura, busca e grounding controlados para Marketing Studio',
+    managedBy: 'YUX Hub Admin',
+    requiredSecret: 'JINA_API_KEY',
+  },
+}
