@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current provider stubs with real multi-tenant Meta and Google integrations for approved organic/local publishing and approved paid campaign activation.
 
-**Architecture:** Split phase 9 into two independently testable slices: 9A handles organic/local publishing through `publishing_connections` and `publishing_runs`; 9B handles paid media through `ad_provider_connections`, `ad_accounts`, `ad_provider_mutation_runs`, and campaign tables. Store raw OAuth tokens only in a private encrypted Supabase table accessed by service-role Edge Functions; public tables keep only token references, status, scopes, external asset ids, sanitized metadata, and protected errors.
+**Architecture:** Split phase 9 into two independently testable slices: 9A handles organic/local publishing through `publishing_connections` and `publishing_runs`; 9B handles paid media through `ad_provider_connections`, `ad_accounts`, `ad_provider_mutation_runs`, and campaign tables. Store raw OAuth tokens only in an encrypted service-role-only Supabase table; operational tables keep only token references, status, scopes, external asset ids, sanitized metadata, and protected errors. The current Supabase Data API config exposes only `public` and `graphql_public`, so provider OAuth/session tables live in `public` with RLS and grants tuned per table instead of using an unexposed `private` schema.
 
 **Tech Stack:** React 18, TypeScript, Vite, Vitest, Supabase Postgres/RLS, Supabase Edge Functions with Deno, Meta Graph API, Meta Marketing API, Google OAuth 2.0, Google Business Profile API, Google Ads API REST.
 
@@ -36,7 +36,7 @@ Use these docs during execution to verify current scopes, Graph version, endpoin
 
 - Create `supabase/functions/_shared/providerSecrets.ts`
   - Encrypt/decrypt per-client OAuth tokens with AES-GCM using `PROVIDER_SECRET_ENCRYPTION_KEY_B64`.
-  - Insert/read rows in `private.provider_integration_secrets`.
+  - Insert/read rows in `public.provider_integration_secrets` through a service-role client only.
   - Never return raw secrets in API responses.
 
 - Create `supabase/functions/_shared/providerOAuth.ts`
@@ -95,9 +95,9 @@ Use these docs during execution to verify current scopes, Graph version, endpoin
   - `campaign_ad_sets`
   - `campaign_ads`
   - `campaign_creatives`
-- Create private tables:
-  - `private.provider_oauth_sessions`
-  - `private.provider_integration_secrets`
+- Create provider auth tables:
+  - `public.provider_oauth_sessions` with RLS for users allowed to configure Marketing Studio integrations.
+  - `public.provider_integration_secrets` with RLS enabled, no grants to `anon`/`authenticated`, and access through service-role Edge Functions only.
 
 ### Frontend
 
@@ -465,12 +465,12 @@ Expected:
 Created new migration under supabase/migrations.
 ```
 
-- [ ] **Step 2: Add private OAuth and secret tables**
+- [ ] **Step 2: Add provider OAuth and service-role-only secret tables**
 
 Add this SQL to the migration:
 
 ```sql
-CREATE TABLE IF NOT EXISTS private.provider_oauth_sessions (
+CREATE TABLE IF NOT EXISTS public.provider_oauth_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
@@ -490,7 +490,7 @@ CREATE TABLE IF NOT EXISTS private.provider_oauth_sessions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS private.provider_integration_secrets (
+CREATE TABLE IF NOT EXISTS public.provider_integration_secrets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
@@ -509,8 +509,17 @@ CREATE TABLE IF NOT EXISTS private.provider_integration_secrets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-REVOKE ALL ON private.provider_oauth_sessions FROM PUBLIC;
-REVOKE ALL ON private.provider_integration_secrets FROM PUBLIC;
+ALTER TABLE public.provider_oauth_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_integration_secrets ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON public.provider_oauth_sessions FROM PUBLIC;
+REVOKE ALL ON public.provider_integration_secrets FROM PUBLIC;
+REVOKE ALL ON public.provider_integration_secrets FROM anon;
+REVOKE ALL ON public.provider_integration_secrets FROM authenticated;
+
+GRANT SELECT, INSERT, UPDATE ON public.provider_oauth_sessions TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.provider_oauth_sessions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.provider_integration_secrets TO service_role;
 ```
 
 - [ ] **Step 3: Extend publishing connections**
@@ -613,7 +622,7 @@ BEGIN
     WHERE table_schema = 'private'
       AND table_name = 'provider_integration_secrets'
   ) THEN
-    RAISE EXCEPTION 'Missing private.provider_integration_secrets';
+    RAISE EXCEPTION 'Missing public.provider_integration_secrets';
   END IF;
 
   IF EXISTS (
@@ -815,7 +824,7 @@ export async function storeProviderSecret(admin: any, input: {
 }) {
   const encrypted = await encryptProviderSecretValue(input.value)
   const reference = getProviderSecretReference(input)
-  const { data, error } = await admin.from('private.provider_integration_secrets').upsert({
+  const { data, error } = await admin.from('provider_integration_secrets').upsert({
     organization_id: input.organizationId,
     client_id: input.clientId || null,
     contract_id: input.contractId || null,
@@ -836,7 +845,7 @@ export async function storeProviderSecret(admin: any, input: {
 
 export async function loadProviderSecret(admin: any, reference: string) {
   const { data, error } = await admin
-    .from('private.provider_integration_secrets')
+    .from('provider_integration_secrets')
     .select('ciphertext, nonce, expires_at, metadata')
     .eq('reference', reference)
     .single()
@@ -1023,7 +1032,7 @@ Deno.serve(async req => {
     const { data: { user } } = await userClient.auth.getUser()
     if (!user) return json({ error: 'Unauthorized' }, 401)
 
-    const { error } = await userClient.from('private.provider_oauth_sessions').insert({
+    const { error } = await userClient.from('provider_oauth_sessions').insert({
       organization_id: organizationId,
       client_id: optionalString(body.clientId) || null,
       contract_id: optionalString(body.contractId) || null,
@@ -1091,7 +1100,7 @@ Create `complete-marketing-provider-connect` to:
 
 ```text
 1. Validate auth user.
-2. Validate state against private.provider_oauth_sessions.
+2. Validate state against `public.provider_oauth_sessions`.
 3. Exchange code with Meta or Google.
 4. Create or update publishing_connections for meta_facebook, meta_instagram, google_business_profile when targetKind is publishing.
 5. Create or update ad_provider_connections and ad_accounts when targetKind is ads.
@@ -2046,7 +2055,7 @@ git commit -m "docs: document native marketing integrations"
 ## Acceptance Criteria
 
 - Public tables do not contain raw OAuth access tokens, refresh tokens, client secrets, app secrets, or application passwords.
-- `private.provider_integration_secrets` stores encrypted provider tokens and is not granted to `anon` or `authenticated`.
+- `public.provider_integration_secrets` stores encrypted provider tokens, has RLS enabled, and is not granted to `anon` or `authenticated`.
 - OAuth flow supports per-client/per-contract connections for:
   - Facebook Page publishing;
   - Instagram Business publishing;
