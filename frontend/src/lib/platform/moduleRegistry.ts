@@ -14,7 +14,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'CRM & Funis',
     base: false,
     internalRoute: '/leads',
-    portalRoute: '/portal/crm',
+    portalRoute: '/portal/comercial/leads',
     requiredPermissions: ['crm.read', 'leads.read'],
   },
   {
@@ -22,7 +22,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Projetos e Entregas',
     base: true,
     internalRoute: '/projects',
-    portalRoute: '/portal/projects',
+    portalRoute: '/portal/projetos/projetos',
     requiredPermissions: ['projects.read'],
   },
   {
@@ -30,7 +30,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Propostas',
     base: false,
     internalRoute: '/proposals',
-    portalRoute: '/portal/proposals',
+    portalRoute: '/portal/projetos/aprovacoes',
     requiredPermissions: ['proposals.read'],
   },
   {
@@ -38,7 +38,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Conversas IA',
     base: false,
     internalRoute: '/omnichannel',
-    portalRoute: '/portal/omnichannel',
+    portalRoute: '/portal/atendimento/conversas',
     requiredPermissions: ['omnichannel.read'],
   },
   {
@@ -46,7 +46,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Landing Pages',
     base: false,
     internalRoute: '/landing-pages',
-    portalRoute: '/portal/landing-pages',
+    portalRoute: '/portal/marketing/landing-pages',
     requiredPermissions: ['landing_pages.read'],
   },
   {
@@ -54,7 +54,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Campanhas',
     base: false,
     internalRoute: '/campaigns',
-    portalRoute: '/portal/campaigns',
+    portalRoute: '/portal/marketing/campanhas',
     requiredPermissions: ['campaigns.read'],
   },
   {
@@ -62,7 +62,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Marketing Studio',
     base: false,
     internalRoute: '/marketing-studio',
-    portalRoute: '/portal/marketing-studio',
+    portalRoute: '/portal/marketing/studio',
     requiredPermissions: ['marketing_studio.read'],
   },
   {
@@ -70,7 +70,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Relatorios & ROI',
     base: false,
     internalRoute: '/reports',
-    portalRoute: '/portal/reports',
+    portalRoute: '/portal/relatorios',
     requiredPermissions: ['reports.read'],
   },
   {
@@ -78,7 +78,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Automacoes',
     base: false,
     internalRoute: '/automations',
-    portalRoute: null,
+    portalRoute: '/portal/automacoes/fluxos',
     requiredPermissions: ['automations.read'],
   },
   {
@@ -86,7 +86,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Suporte',
     base: true,
     internalRoute: '/support',
-    portalRoute: '/portal/support',
+    portalRoute: '/portal/suporte',
     requiredPermissions: ['support.read'],
   },
   {
@@ -94,7 +94,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Financeiro',
     base: false,
     internalRoute: '/finance',
-    portalRoute: '/portal/finance',
+    portalRoute: '/portal/financeiro',
     requiredPermissions: ['finance.read'],
   },
   {
