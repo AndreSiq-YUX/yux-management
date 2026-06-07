@@ -7,7 +7,7 @@ Reorganizar a arquitetura de navegação do YUX Hub / Portal YUX em torno das jo
 - administração e operação interna da YUX;
 - operação comercial própria da YUX;
 - gestão dos clientes e contratos;
-- módulos que a YUX opera para os clientes;
+- operação dos módulos contratados pelos clientes;
 - portal do cliente como produto completo.
 
 O objetivo não é apenas renomear menus. A mudança deve fazer o produto parecer mais coerente, vendável e fácil de operar, reduzindo a exposição de conceitos técnicos como `Omnichannel`, `CRM Governance`, `Knowledge Source` e agrupamentos baseados na origem técnica dos módulos.
@@ -53,11 +53,11 @@ flowchart TD
   App[YUX Hub / YUX OS] --> Internal[Área Interna YUX]
   App --> Portal[Portal do Cliente]
 
-  Internal --> AdminYUX[Administração YUX]
+  Internal --> AdminYUX[Administração da Plataforma]
   Internal --> OperacaoYUX[Operação YUX]
   Internal --> ComercialYUX[Comercial YUX]
-  Internal --> Clientes[Clientes]
-  Internal --> ModulosCliente[Gestão dos Módulos dos Clientes]
+  Internal --> Clientes[Clientes & Contratos]
+  Internal --> ModulosCliente[Operação dos Clientes]
   Internal --> FinanceiroYUX[Financeiro]
 
   Portal --> PortalHome[Visão Geral]
@@ -70,7 +70,7 @@ flowchart TD
   Portal --> Relatorios[Relatórios]
   Portal --> Suporte[Suporte]
   Portal --> Financeiro[Financeiro]
-  Portal --> Configuracoes[Configurações]
+  Portal --> Configuracoes[Configurações da Conta]
 ```
 
 ## Menu Interno YUX Recomendado
@@ -102,7 +102,7 @@ Rotas e conteúdos:
 
 Objetivo: separar claramente o processo de venda da própria YUX do CRM contratado pelos clientes.
 
-### Clientes
+### Clientes & Contratos
 
 Rotas e conteúdos:
 
@@ -133,7 +133,7 @@ Rotas e conteúdos:
 
 Objetivo: organizar a entrega dos serviços.
 
-### Módulos dos Clientes
+### Operação dos Clientes
 
 Rotas e conteúdos:
 
@@ -148,9 +148,9 @@ Rotas e conteúdos:
 - Automações.
 - Relatórios.
 
-Objetivo: reunir as telas onde a equipe YUX opera módulos contratados pelos clientes.
+Objetivo: reunir as telas onde a equipe YUX opera CRM, conversas, agente IA, canais, campanhas, landing pages, Marketing Studio, automações e relatórios dos clientes.
 
-### Administração
+### Administração da Plataforma
 
 Rotas e conteúdos:
 
@@ -193,7 +193,7 @@ flowchart TD
   Portal --> Relatorios[Relatórios]
   Portal --> Suporte[Suporte]
   Portal --> Financeiro[Financeiro]
-  Portal --> Configuracoes[Configurações]
+  Portal --> Configuracoes[Configurações da Conta]
 
   Empresa --> Perfil[Perfil da Empresa]
   Empresa --> Usuarios[Usuários e Equipe]
@@ -244,6 +244,7 @@ Responsabilidades:
 - faturas;
 - relatórios recentes;
 - alertas importantes;
+- pendências de aprovação como atalho fixo e recorrente;
 - próximas ações.
 
 ### Empresa
@@ -252,7 +253,7 @@ Responsabilidades:
 
 - **Perfil da Empresa:** dados cadastrais, segmento, descrição, site, redes sociais, telefone, endereço, horários, regiões atendidas, produtos/serviços, diferenciais e observações internas.
 - **Usuários e Equipe:** convite, remoção, último acesso, desativação, papéis e permissões por módulo.
-- **Base de Conhecimento:** documentos, FAQs, produtos/serviços, importação de site, páginas lidas, revisão de conhecimento extraído, aprovação para IA, conteúdo público/interno, lacunas detectadas e categorias.
+- **Base de Conhecimento:** documentos, FAQs, produtos/serviços, importação de site, páginas lidas, revisão de conhecimento extraído, aprovação para IA, conteúdo público/interno, lacunas detectadas e categorias. Esta base deve ser compartilhada e alimentar Agente IA, Marketing Studio, respostas sugeridas, campanhas, landing pages, FAQ e suporte.
 - **Marca e Tom de Voz:** tom da marca, formalidade, emojis, palavras proibidas, temas proibidos, personas, exemplos, promessas permitidas, restrições legais, estilo visual e assets.
 - **Integrações da Empresa:** WhatsApp, Instagram, Facebook, Google Ads, Meta Ads, WordPress, Google Calendar, Google Sheets, webhooks, status, reconexão, permissões e logs básicos.
 
@@ -360,6 +361,19 @@ Responsabilidades:
 - recibos;
 - histórico.
 
+### Configurações da Conta
+
+Responsabilidades:
+
+- notificações;
+- preferências pessoais;
+- segurança;
+- idioma;
+- sessões;
+- dados do usuário.
+
+Dados da empresa, usuários/equipe, integrações, marca/tom de voz e Base de Conhecimento permanecem em **Empresa**. Configurações da Conta não deve virar uma segunda área de administração da empresa.
+
 ## Fases de Implementação
 
 ### Fase 1 - Reorganização estrutural de navegação e rotas
@@ -434,6 +448,7 @@ Entregas:
 - estados vazios melhores;
 - permissões por papel;
 - dashboard do cliente com próximas ações reais;
+- atalho fixo para pendências de aprovação no dashboard do cliente;
 - dashboard interno com pendências críticas;
 - remoção gradual de termos técnicos expostos;
 - correção de mojibake/textos quebrados;
@@ -567,7 +582,10 @@ Comandos de validação:
 
 - Portal do cliente funciona como produto completo, não como lista de módulos.
 - Empresa, Comercial, Atendimento & IA e Marketing têm subpáginas claras.
+- O dashboard do cliente destaca pendências de aprovação como ação recorrente.
+- Configurações da Conta fica restrita a preferências pessoais, segurança, idioma, sessões e dados do usuário.
+- Base de Conhecimento é tratada como fonte compartilhada para Agente IA, Marketing Studio, respostas sugeridas, campanhas, landing pages, FAQ e suporte.
 - Funcionalidades críticas deixam de ficar escondidas em abas quando precisam de rota própria.
 - Administração global da YUX fica fora do alcance do cliente.
-- A equipe interna consegue diferenciar Comercial YUX, Clientes, Operação, Módulos dos Clientes e Administração.
+- A equipe interna consegue diferenciar Comercial YUX, Clientes & Contratos, Operação, Operação dos Clientes e Administração da Plataforma.
 - O produto usa linguagem de negócio na navegação.
