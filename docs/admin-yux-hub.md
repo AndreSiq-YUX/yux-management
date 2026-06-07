@@ -90,6 +90,9 @@ Provedores globais ja seedados:
   compartilhada de email;
 - Jina AI (`JINA_API_KEY`) como servico interno para Reader, Search e Grounding
   controlados do Marketing Studio.
+- Meta Marketing/Social e Google Marketing como provedores nativos do
+  Marketing Studio, com OAuth por cliente/contrato e tokens criptografados em
+  `provider_integration_secrets`.
 
 ## Canais Conectados
 
@@ -99,6 +102,27 @@ ultimo evento.
 
 Clientes conectam canais no portal em `/portal/omnichannel/channels`. A YUX
 pode acompanhar saude, reautenticacao e desconexao sem acessar tokens reais.
+
+## Marketing Studio: Meta e Google
+
+As integracoes nativas do Marketing Studio usam OAuth multi-tenant. Cada cliente
+autoriza suas proprias paginas, contas de Instagram Business, perfis Google
+Business Profile, contas Meta Ads ou customers Google Ads.
+
+Secrets server-side exigidos:
+
+- `PROVIDER_SECRET_ENCRYPTION_KEY_B64`: chave AES-GCM de 32 bytes em base64;
+- `META_APP_ID`, `META_APP_SECRET`, `META_MARKETING_OAUTH_REDIRECT_URI`;
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+  `GOOGLE_MARKETING_OAUTH_REDIRECT_URI`;
+- `GOOGLE_ADS_DEVELOPER_TOKEN`;
+- opcionais: `META_GRAPH_VERSION`, `GOOGLE_ADS_API_VERSION`,
+  `GOOGLE_ADS_LOGIN_CUSTOMER_ID`.
+
+O frontend nunca recebe tokens reais. Ele exibe apenas status operacional,
+asset/account conectado, `needs_reauth` e se existe credencial configurada.
+Tokens de acesso e refresh ficam criptografados e acessiveis somente por Edge
+Functions com `service_role`.
 
 ## SMTP2GO
 

@@ -1921,7 +1921,7 @@ Expected:
 Both campaign suites pass.
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Run:
 
@@ -1939,7 +1939,7 @@ git commit -m "feat: execute native ads provider mutations"
 - Modify: `docs/admin-yux-hub.md`
 - Modify: `docs/commercial-mvp-operations.md`
 
-- [ ] **Step 1: Run all focused Edge Function tests**
+- [x] **Step 1: Run all focused Edge Function tests**
 
 Run:
 
@@ -1953,7 +1953,7 @@ Expected:
 All focused Edge Function tests pass.
 ```
 
-- [ ] **Step 2: Run focused frontend tests**
+- [x] **Step 2: Run focused frontend tests**
 
 Run from `frontend/`:
 
@@ -1967,7 +1967,7 @@ Expected:
 All focused frontend tests pass.
 ```
 
-- [ ] **Step 3: Run type-check and build**
+- [x] **Step 3: Run type-check and build**
 
 Run from `frontend/`:
 
@@ -1983,7 +1983,7 @@ type-check passes.
 build passes with only known Browserslist/chunk-size warnings.
 ```
 
-- [ ] **Step 4: Deploy Edge Functions**
+- [x] **Step 4: Deploy Edge Functions**
 
 Deploy to `portal-yux` after secrets are configured:
 
@@ -2002,7 +2002,7 @@ Expected:
 All functions deploy successfully.
 ```
 
-- [ ] **Step 5: Document required runtime secrets**
+- [x] **Step 5: Document required runtime secrets**
 
 Add to `docs/commercial-mvp-operations.md`:
 
@@ -2020,7 +2020,7 @@ Phase 9 native marketing integration secrets:
 - GOOGLE_ADS_LOGIN_CUSTOMER_ID when manager-account access is required
 ```
 
-- [ ] **Step 6: Update implementation status**
+- [x] **Step 6: Update implementation status**
 
 Add an implementation-status row:
 
@@ -2028,7 +2028,7 @@ Add an implementation-status row:
 | Marketing Studio native Meta/Google integrations | Implemented | `/marketing-studio`, `/campaigns`, `/admin/integrations` | `marketing_studio_native_integrations` migration, generic marketing provider OAuth functions, native social publishing adapter, native ads provider adapter | Adds multi-tenant OAuth token references, encrypted private token storage, Facebook/Instagram/Google Business Profile publishing, and approved Meta/Google Ads provider mutations. Live use requires provider app review, OAuth redirect configuration, encrypted secret key and per-client authorization. |
 ```
 
-- [ ] **Step 7: Final git status and scoped commit**
+- [x] **Step 7: Final git status and scoped commit**
 
 Run:
 

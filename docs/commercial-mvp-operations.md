@@ -1,6 +1,6 @@
 # YUX Hub Commercial MVP Operations
 
-Updated: 2026-06-03
+Updated: 2026-06-07
 
 This runbook covers the commercial MVP slices implemented in this repository:
 CRM Cockpit, sector blueprints, landing pages, campaigns, WhatsApp provider,
@@ -30,6 +30,9 @@ Required only for live integrations:
 
 - Meta Ads: app credentials, ad account access, OAuth/token storage reference.
 - Google Ads: developer token, OAuth client, refresh token storage reference.
+- Marketing Studio native publishing: Meta Social OAuth for Facebook Page and
+  Instagram Business publishing, Google Business Profile OAuth and encrypted
+  provider-token storage.
 - WhatsApp Cloud API: access token, phone number ID, WABA ID, webhook verify
   token, app secret for `x-hub-signature-256`.
 - n8n: CRM, campaign, scheduling, and AI webhook URLs if the deployment uses
@@ -48,6 +51,17 @@ Expected server/Edge values:
 - `N8N_CRM_WEBHOOK_URL`
 - `N8N_OMNICHANNEL_AI_WEBHOOK_URL`
 - `N8N_OMNICHANNEL_OUTBOUND_WEBHOOK_URL`
+- `PROVIDER_SECRET_ENCRYPTION_KEY_B64`
+- `META_APP_ID`
+- `META_APP_SECRET`
+- `META_MARKETING_OAUTH_REDIRECT_URI`
+- `META_GRAPH_VERSION`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_MARKETING_OAUTH_REDIRECT_URI`
+- `GOOGLE_ADS_DEVELOPER_TOKEN`
+- `GOOGLE_ADS_API_VERSION`
+- `GOOGLE_ADS_LOGIN_CUSTOMER_ID`
 - `WHATSAPP_ACCESS_TOKEN`
 - `WHATSAPP_GRAPH_VERSION`
 - `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
@@ -59,6 +73,10 @@ Expected server/Edge values:
 Configure provider dashboards with the deployed project URLs:
 
 - Ads OAuth callback: production callback URL for provider connection flow.
+- Marketing Studio Meta OAuth callback:
+  `META_MARKETING_OAUTH_REDIRECT_URI`.
+- Marketing Studio Google OAuth callback:
+  `GOOGLE_MARKETING_OAUTH_REDIRECT_URI`.
 - WhatsApp webhook: `receive-channel-event` public Edge Function endpoint.
 - Public proposal review: `/proposal/review/:token`.
 - Webchat session bootstrap: `/webchat/session/:sessionToken`.
@@ -68,11 +86,14 @@ Configure provider dashboards with the deployed project URLs:
 Deploy shared helpers first by deploying dependent functions after code is
 present:
 
-1. Ads provider functions: `connect-ads-provider`,
+1. Marketing Studio provider OAuth and publishing functions:
+   `start-marketing-provider-connect`, `complete-marketing-provider-connect`,
+   `list-marketing-provider-assets`, `execute-marketing-publishing`.
+2. Ads provider functions: `connect-ads-provider`,
    `execute-ad-provider-mutation`, `sync-ad-metrics`.
-2. Omnichannel provider functions: `receive-channel-event`,
+3. Omnichannel provider functions: `receive-channel-event`,
    `dispatch-outbound-message`, `process-ai-message`.
-3. Automation function: `dispatch-crm-automation`.
+4. Automation function: `dispatch-crm-automation`.
 
 ## Manual Verification Checklist
 
@@ -82,6 +103,15 @@ present:
 - A landing page can be created, versioned, approved, and shown in portal.
 - A campaign draft can be created and provider mutation run is recorded without
   exposing protected provider errors.
+- A Marketing Studio provider OAuth start/complete flow stores only sanitized
+  metadata in public connection tables and encrypted token material in
+  `provider_integration_secrets`.
+- A Facebook Page, Instagram Business or Google Business Profile publishing run
+  requires approved/scheduled content and records `provider_post_id`,
+  `published_url` when returned and sanitized response payload.
+- Meta Ads and Google Ads mutations require explicit approval for campaign
+  creation/budget changes and keep provider-created campaigns paused unless
+  activation is explicitly requested.
 - WhatsApp webhook payload creates/updates contact, conversation and message.
 - Manual WhatsApp outbound creates an outbound run and explicit token state.
 - AI assistant metadata appears in `ai_message_runs.metadata`.
