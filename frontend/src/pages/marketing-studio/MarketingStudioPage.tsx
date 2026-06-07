@@ -10,6 +10,8 @@ import type {
   MarketingAgentToolPolicy,
   MarketingCalendarItem,
   MarketingBrandProfile,
+  MarketingCampaignCreativeSuggestion,
+  MarketingCampaignDraftRun,
   MarketingContentGenerationRun,
   MarketingContentItem,
   MarketingContentQualityCheck,
@@ -38,6 +40,8 @@ export function MarketingStudioPage() {
   const [qualityChecks, setQualityChecks] = useState<MarketingContentQualityCheck[]>([])
   const [publishingConnections, setPublishingConnections] = useState<MarketingPublishingConnection[]>([])
   const [publishingRuns, setPublishingRuns] = useState<MarketingPublishingRun[]>([])
+  const [campaignCreativeSuggestions, setCampaignCreativeSuggestions] = useState<MarketingCampaignCreativeSuggestion[]>([])
+  const [campaignDraftRuns, setCampaignDraftRuns] = useState<MarketingCampaignDraftRun[]>([])
   const [calendarItems, setCalendarItems] = useState<MarketingCalendarItem[]>([])
   const [reviews, setReviews] = useState<MarketingContentReview[]>([])
   const [versionsByContent, setVersionsByContent] = useState<Record<string, MarketingContentVersion[]>>({})
@@ -85,6 +89,8 @@ export function MarketingStudioPage() {
         loadedQualityChecks,
         loadedPublishingConnections,
         loadedPublishingRuns,
+        loadedCampaignCreativeSuggestions,
+        loadedCampaignDraftRuns,
       ] = await Promise.all([
         marketingStudioService.getContents(defaultContract ? { contractId: defaultContract.id } : undefined),
         defaultContract ? marketingStudioService.getCalendarItems({ contractId: defaultContract.id }) : Promise.resolve([]),
@@ -105,6 +111,8 @@ export function MarketingStudioPage() {
         defaultContract ? marketingStudioService.getContentQualityChecks({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getPublishingConnections({ contractId: defaultContract.id }) : Promise.resolve([]),
         defaultContract ? marketingStudioService.getPublishingRuns({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getCampaignCreativeSuggestions({ contractId: defaultContract.id }) : Promise.resolve([]),
+        defaultContract ? marketingStudioService.getCampaignDraftRuns({ contractId: defaultContract.id }) : Promise.resolve([]),
       ])
       const loadedReviews = defaultContract ? await marketingStudioService.getReviews({ contractId: defaultContract.id }) : []
       const versionPairs = await Promise.all(
@@ -140,6 +148,8 @@ export function MarketingStudioPage() {
       setQualityChecks(loadedQualityChecks)
       setPublishingConnections(loadedPublishingConnections)
       setPublishingRuns(loadedPublishingRuns)
+      setCampaignCreativeSuggestions(loadedCampaignCreativeSuggestions)
+      setCampaignDraftRuns(loadedCampaignDraftRuns)
       setSettings(defaultContract ? await marketingStudioService.getSettings(defaultContract.id) : null)
     } catch (error) {
       console.error('Erro ao carregar Marketing Studio:', error)
@@ -168,6 +178,8 @@ export function MarketingStudioPage() {
       setQualityChecks([])
       setPublishingConnections([])
       setPublishingRuns([])
+      setCampaignCreativeSuggestions([])
+      setCampaignDraftRuns([])
       setSettings(null)
     } finally {
       setLoading(false)
@@ -268,6 +280,8 @@ export function MarketingStudioPage() {
       qualityChecks={qualityChecks}
       publishingConnections={publishingConnections}
       publishingRuns={publishingRuns}
+      campaignCreativeSuggestions={campaignCreativeSuggestions}
+      campaignDraftRuns={campaignDraftRuns}
       onSubmitForReview={handleSubmitForReview}
       onApproveReview={reviewId => handleReviewDecision(reviewId, 'approved')}
       onRequestChanges={reviewId => handleReviewDecision(reviewId, 'changes_requested')}

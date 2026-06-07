@@ -10,6 +10,8 @@ import type {
   MarketingApprovalPolicy,
   MarketingBrandProfile,
   MarketingCalendarItem,
+  MarketingCampaignCreativeSuggestion,
+  MarketingCampaignDraftRun,
   MarketingContentGenerationRun,
   MarketingChannel,
   MarketingContentItem,
@@ -367,6 +369,71 @@ export function mapMarketingPublishingRun(row: any): MarketingPublishingRun {
     protectedError: row.protected_error || undefined,
     requestedBy: row.requested_by || undefined,
     approvedBy: row.approved_by || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingCampaignCreativeSuggestion(row: any): MarketingCampaignCreativeSuggestion {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    sourceContentItemId: row.source_content_item_id || undefined,
+    sourceIdeaId: row.source_idea_id || undefined,
+    campaignId: row.campaign_id || undefined,
+    landingPageId: row.landing_page_id || undefined,
+    createdByAgentId: row.created_by_agent_id || undefined,
+    status: row.status || 'draft',
+    provider: row.provider || 'meta',
+    objective: row.objective || 'lead_generation',
+    title: row.title,
+    campaignName: row.campaign_name,
+    angle: row.angle || '',
+    targetAudience: row.target_audience || '',
+    funnelStage: row.funnel_stage || 'consideration',
+    cta: row.cta || undefined,
+    dailyBudget: Number(row.daily_budget || 0),
+    totalBudget: row.total_budget == null ? undefined : Number(row.total_budget),
+    startsAt: row.starts_at || undefined,
+    endsAt: row.ends_at || undefined,
+    utmSource: row.utm_source || undefined,
+    utmMedium: row.utm_medium || 'paid',
+    utmCampaign: row.utm_campaign || undefined,
+    copyVariations: Array.isArray(row.copy_variations) ? row.copy_variations : [],
+    creativeConcepts: Array.isArray(row.creative_concepts) ? row.creative_concepts : [],
+    targetingSuggestions: row.targeting_suggestions || {},
+    qualityScore: row.quality_score == null ? undefined : Number(row.quality_score),
+    riskFlags: row.risk_flags || [],
+    approvalRequired: Boolean(row.approval_required),
+    approvedBy: row.approved_by || undefined,
+    approvedAt: row.approved_at || undefined,
+    rejectionReason: row.rejection_reason || undefined,
+    metadata: row.metadata || {},
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMarketingCampaignDraftRun(row: any): MarketingCampaignDraftRun {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id,
+    contractId: row.contract_id,
+    suggestionId: row.suggestion_id,
+    campaignId: row.campaign_id || undefined,
+    workflowRunId: row.workflow_run_id || undefined,
+    status: row.status || 'queued',
+    idempotencyKey: row.idempotency_key,
+    requestPayload: row.request_payload || {},
+    responsePayload: row.response_payload || {},
+    protectedError: row.protected_error || undefined,
+    requestedBy: row.requested_by || undefined,
     startedAt: row.started_at || undefined,
     completedAt: row.completed_at || undefined,
     createdAt: row.created_at,
@@ -1261,6 +1328,100 @@ export function buildPublishingRunPayload(input: {
   }
 }
 
+export function buildCampaignCreativeSuggestionPayload(input: {
+  id?: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  title: string
+  campaignName: string
+  provider?: MarketingCampaignCreativeSuggestion['provider']
+  objective?: MarketingCampaignCreativeSuggestion['objective']
+  sourceContentItemId?: string
+  sourceIdeaId?: string
+  campaignId?: string
+  landingPageId?: string
+  createdByAgentId?: string
+  status?: MarketingCampaignCreativeSuggestion['status']
+  angle?: string
+  targetAudience?: string
+  funnelStage?: MarketingCampaignCreativeSuggestion['funnelStage']
+  cta?: string
+  dailyBudget?: number
+  totalBudget?: number
+  startsAt?: string
+  endsAt?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  copyVariations?: Array<Record<string, unknown>>
+  creativeConcepts?: Array<Record<string, unknown>>
+  targetingSuggestions?: Record<string, unknown>
+  qualityScore?: number
+  riskFlags?: string[]
+  metadata?: Record<string, unknown>
+}) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    source_content_item_id: input.sourceContentItemId || null,
+    source_idea_id: input.sourceIdeaId || null,
+    campaign_id: input.campaignId || null,
+    landing_page_id: input.landingPageId || null,
+    created_by_agent_id: input.createdByAgentId || null,
+    status: input.status || 'draft',
+    provider: input.provider || 'meta',
+    objective: input.objective || 'lead_generation',
+    title: input.title.trim(),
+    campaign_name: input.campaignName.trim(),
+    angle: input.angle?.trim() || '',
+    target_audience: input.targetAudience?.trim() || '',
+    funnel_stage: input.funnelStage || 'consideration',
+    cta: input.cta?.trim() || null,
+    daily_budget: input.dailyBudget ?? 0,
+    total_budget: input.totalBudget ?? null,
+    starts_at: input.startsAt || null,
+    ends_at: input.endsAt || null,
+    utm_source: input.utmSource || input.provider || 'meta',
+    utm_medium: input.utmMedium || 'paid',
+    utm_campaign: input.utmCampaign || input.campaignName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+    copy_variations: input.copyVariations || [],
+    creative_concepts: input.creativeConcepts || [],
+    targeting_suggestions: input.targetingSuggestions || {},
+    quality_score: input.qualityScore ?? null,
+    risk_flags: input.riskFlags || [],
+    approval_required: true,
+    metadata: input.metadata || {},
+  }
+}
+
+export function buildCampaignDraftRunPayload(input: {
+  organizationId: string
+  clientId: string
+  contractId: string
+  suggestionId: string
+  idempotencyKey: string
+  campaignId?: string
+  workflowRunId?: string
+  requestPayload?: Record<string, unknown>
+  requestedBy?: string
+}) {
+  return {
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    contract_id: input.contractId,
+    suggestion_id: input.suggestionId,
+    campaign_id: input.campaignId || null,
+    workflow_run_id: input.workflowRunId || null,
+    status: 'queued',
+    idempotency_key: input.idempotencyKey,
+    request_payload: input.requestPayload || {},
+    requested_by: input.requestedBy || null,
+  }
+}
+
 export function buildAgentPayload(input: {
   organizationId: string
   name: string
@@ -1371,6 +1532,8 @@ const GENERATION_RUN_SELECT = '*'
 const QUALITY_CHECK_SELECT = '*'
 const PUBLISHING_CONNECTION_SELECT = '*'
 const PUBLISHING_RUN_SELECT = '*'
+const CAMPAIGN_SUGGESTION_SELECT = '*'
+const CAMPAIGN_DRAFT_RUN_SELECT = '*'
 const AGENT_TEMPLATE_SELECT = '*'
 const AGENT_SELECT = '*'
 const GLOBAL_PROMPT_SELECT = '*'
@@ -1571,6 +1734,26 @@ export const marketingStudioService = {
     const { data, error } = await query
     if (error) throw error
     return (data || []).map(mapMarketingPublishingRun)
+  },
+
+  async getCampaignCreativeSuggestions(filters?: { contractId?: string; campaignId?: string; status?: MarketingCampaignCreativeSuggestion['status'] }) {
+    let query = supabase.from('marketing_campaign_creative_suggestions').select(CAMPAIGN_SUGGESTION_SELECT).order('created_at', { ascending: false }).limit(30)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.campaignId) query = query.eq('campaign_id', filters.campaignId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingCampaignCreativeSuggestion)
+  },
+
+  async getCampaignDraftRuns(filters?: { contractId?: string; suggestionId?: string; status?: MarketingCampaignDraftRun['status'] }) {
+    let query = supabase.from('marketing_campaign_draft_runs').select(CAMPAIGN_DRAFT_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
+    if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
+    if (filters?.suggestionId) query = query.eq('suggestion_id', filters.suggestionId)
+    if (filters?.status) query = query.eq('status', filters.status)
+    const { data, error } = await query
+    if (error) throw error
+    return (data || []).map(mapMarketingCampaignDraftRun)
   },
 
   async getResearchCache(filters: { contractId: string; provider?: MarketingResearchCacheEntry['provider']; requestKey?: string }) {
@@ -1776,6 +1959,46 @@ export const marketingStudioService = {
       .single()
     if (error) throw error
     return mapMarketingPublishingRun(data)
+  },
+
+  async upsertCampaignCreativeSuggestion(input: Parameters<typeof buildCampaignCreativeSuggestionPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_campaign_creative_suggestions')
+      .upsert(buildCampaignCreativeSuggestionPayload(input))
+      .select(CAMPAIGN_SUGGESTION_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingCampaignCreativeSuggestion(data)
+  },
+
+  async updateCampaignCreativeSuggestionStatus(id: string, input: {
+    status: MarketingCampaignCreativeSuggestion['status']
+    approvedBy?: string
+    rejectionReason?: string
+  }) {
+    const { data, error } = await supabase
+      .from('marketing_campaign_creative_suggestions')
+      .update({
+        status: input.status,
+        approved_by: input.status === 'approved' ? input.approvedBy || null : null,
+        approved_at: input.status === 'approved' ? new Date().toISOString() : null,
+        rejection_reason: input.rejectionReason || null,
+      })
+      .eq('id', id)
+      .select(CAMPAIGN_SUGGESTION_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingCampaignCreativeSuggestion(data)
+  },
+
+  async enqueueCampaignDraftRun(input: Parameters<typeof buildCampaignDraftRunPayload>[0]) {
+    const { data, error } = await supabase
+      .from('marketing_campaign_draft_runs')
+      .upsert(buildCampaignDraftRunPayload(input), { onConflict: 'suggestion_id,idempotency_key' })
+      .select(CAMPAIGN_DRAFT_RUN_SELECT)
+      .single()
+    if (error) throw error
+    return mapMarketingCampaignDraftRun(data)
   },
 
   async executeWordPressPublishingRun(input: { publishingRunId?: string } | Parameters<typeof buildPublishingRunPayload>[0]) {

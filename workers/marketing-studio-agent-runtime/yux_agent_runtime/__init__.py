@@ -1,4 +1,9 @@
 from .graph import build_runtime_graph
+from .campaign import (
+    CampaignBrief,
+    build_campaign_context,
+    draft_campaign_creative_package,
+)
 from .harness import (
     BudgetBlocked,
     compose_prompt,
@@ -28,8 +33,11 @@ from .writing import (
 
 __all__ = [
     "BudgetBlocked",
+    "CampaignBrief",
     "build_runtime_graph",
+    "build_campaign_context",
     "compose_prompt",
+    "draft_campaign_creative_package",
     "estimate_prompt_hash",
     "filter_allowed_tools",
     "select_model_route",

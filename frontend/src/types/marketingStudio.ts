@@ -79,6 +79,18 @@ export type MarketingPublishingProvider = 'wordpress'
 export type MarketingPublishingConnectionStatus = 'needs_setup' | 'connected' | 'stale' | 'needs_reauth' | 'failed' | 'disabled'
 export type MarketingPublishingAction = 'create_draft' | 'update_draft' | 'publish'
 export type MarketingPublishingRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled'
+export type MarketingCampaignCreativeSuggestionStatus =
+  | 'draft'
+  | 'in_review'
+  | 'approved'
+  | 'changes_requested'
+  | 'rejected'
+  | 'converted'
+  | 'archived'
+export type MarketingCampaignDraftRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled'
+export type MarketingCampaignProvider = 'meta' | 'google'
+export type MarketingCampaignObjective = 'lead_generation' | 'traffic' | 'conversions' | 'awareness'
+export type MarketingCampaignFunnelStage = 'awareness' | 'consideration' | 'conversion' | 'retention'
 export type MarketingContentGenerationStatus =
   | 'queued'
   | 'writing'
@@ -109,6 +121,8 @@ export type MarketingUsageAction =
   | 'create_wordpress_draft'
   | 'update_wordpress_draft'
   | 'publish_wordpress'
+  | 'generate_campaign_creatives'
+  | 'create_campaign_draft'
 
 export interface MarketingApprovalPolicy {
   publishSocial: boolean
@@ -524,6 +538,67 @@ export interface MarketingPublishingRun {
   protectedError?: string
   requestedBy?: string
   approvedBy?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingCampaignCreativeSuggestion {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  sourceContentItemId?: string
+  sourceIdeaId?: string
+  campaignId?: string
+  landingPageId?: string
+  createdByAgentId?: string
+  status: MarketingCampaignCreativeSuggestionStatus
+  provider: MarketingCampaignProvider
+  objective: MarketingCampaignObjective
+  title: string
+  campaignName: string
+  angle: string
+  targetAudience: string
+  funnelStage: MarketingCampaignFunnelStage
+  cta?: string
+  dailyBudget: number
+  totalBudget?: number
+  startsAt?: string
+  endsAt?: string
+  utmSource?: string
+  utmMedium: string
+  utmCampaign?: string
+  copyVariations: Array<Record<string, unknown>>
+  creativeConcepts: Array<Record<string, unknown>>
+  targetingSuggestions: Record<string, unknown>
+  qualityScore?: number
+  riskFlags: string[]
+  approvalRequired: boolean
+  approvedBy?: string
+  approvedAt?: string
+  rejectionReason?: string
+  metadata: Record<string, unknown>
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketingCampaignDraftRun {
+  id: string
+  organizationId: string
+  clientId: string
+  contractId: string
+  suggestionId: string
+  campaignId?: string
+  workflowRunId?: string
+  status: MarketingCampaignDraftRunStatus
+  idempotencyKey: string
+  requestPayload: Record<string, unknown>
+  responsePayload: Record<string, unknown>
+  protectedError?: string
+  requestedBy?: string
   startedAt?: string
   completedAt?: string
   createdAt: string

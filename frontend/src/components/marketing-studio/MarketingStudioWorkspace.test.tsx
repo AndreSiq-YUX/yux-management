@@ -8,6 +8,8 @@ import type {
   MarketingAgentToolPolicy,
   MarketingCalendarItem,
   MarketingBrandProfile,
+  MarketingCampaignCreativeSuggestion,
+  MarketingCampaignDraftRun,
   MarketingContentItem,
   MarketingContentGenerationRun,
   MarketingContentQualityCheck,
@@ -454,6 +456,51 @@ const publishingRuns: MarketingPublishingRun[] = [{
   updatedAt: '2026-06-07T12:00:00.000Z',
 }]
 
+const campaignCreativeSuggestions: MarketingCampaignCreativeSuggestion[] = [{
+  id: 'campaign-suggestion-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  status: 'approved',
+  provider: 'meta',
+  objective: 'lead_generation',
+  title: 'Campanha CRM',
+  campaignName: 'CRM para PMEs',
+  angle: 'Mostrar como CRM reduz retrabalho comercial',
+  targetAudience: 'Donos de PMEs',
+  funnelStage: 'consideration',
+  cta: 'Fale com a YUX',
+  dailyBudget: 80,
+  totalBudget: 1200,
+  utmSource: 'meta',
+  utmMedium: 'paid',
+  utmCampaign: 'crm_para_pmes',
+  copyVariations: [{ headline: 'CRM sem bagunca', body: 'Organize leads e follow-ups com a YUX.' }],
+  creativeConcepts: [{ name: 'Dashboard limpo', format: 'image' }],
+  targetingSuggestions: { interests: ['crm'] },
+  qualityScore: 84,
+  riskFlags: [],
+  approvalRequired: true,
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const campaignDraftRuns: MarketingCampaignDraftRun[] = [{
+  id: 'campaign-draft-run-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  suggestionId: 'campaign-suggestion-1',
+  campaignId: 'campaign-1',
+  status: 'succeeded',
+  idempotencyKey: 'campaign-suggestion-1:new_campaign:latest',
+  requestPayload: {},
+  responsePayload: { campaignId: 'campaign-1' },
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
 describe('MarketingStudioWorkspace', () => {
   it('renders internal metrics, tabs, content, and internal operational details', () => {
     const container = document.createElement('div')
@@ -492,6 +539,8 @@ describe('MarketingStudioWorkspace', () => {
           qualityChecks={qualityChecks}
           publishingConnections={publishingConnections}
           publishingRuns={publishingRuns}
+          campaignCreativeSuggestions={campaignCreativeSuggestions}
+          campaignDraftRuns={campaignDraftRuns}
           onSubmitForReview={onSubmitForReview}
           onApproveReview={onApproveReview}
           onSearchKnowledge={onSearchKnowledge}
@@ -555,6 +604,11 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('1 conectadas / 1 cadastradas')
     expect(html).toContain('publish / succeeded')
     expect(html).toContain('https://example.com/post-sobre-funil')
+    expect(html).toContain('Campanhas e criativos')
+    expect(html).toContain('CRM para PMEs')
+    expect(html).toContain('1 aprovadas / 0 convertidas')
+    expect(html).toContain('CRM sem bagunca')
+    expect(html).toContain('1 runs recentes / 0 falhas')
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[title="Atualizar Marketing Studio"]')!.click()

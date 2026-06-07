@@ -1,12 +1,14 @@
 import { BookOpen, Bot, CalendarDays, Check, Clock, FileCheck, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
+import { summarizeCampaignCreativePipeline, summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
   MarketingAgent,
   MarketingAgentRun,
   MarketingAgentToolPolicy,
   MarketingBrandProfile,
   MarketingCalendarItem,
+  MarketingCampaignCreativeSuggestion,
+  MarketingCampaignDraftRun,
   MarketingContentGenerationRun,
   MarketingContentItem,
   MarketingContentQualityCheck,
@@ -56,6 +58,8 @@ interface MarketingStudioWorkspaceProps {
   qualityChecks?: MarketingContentQualityCheck[]
   publishingConnections?: MarketingPublishingConnection[]
   publishingRuns?: MarketingPublishingRun[]
+  campaignCreativeSuggestions?: MarketingCampaignCreativeSuggestion[]
+  campaignDraftRuns?: MarketingCampaignDraftRun[]
   onCreateContent?: () => void
   onSubmitForReview?: (contentId: string) => void
   onApproveReview?: (reviewId: string) => void
@@ -94,6 +98,8 @@ export function MarketingStudioWorkspace({
   qualityChecks = [],
   publishingConnections = [],
   publishingRuns = [],
+  campaignCreativeSuggestions = [],
+  campaignDraftRuns = [],
   onCreateContent,
   onSubmitForReview,
   onApproveReview,
@@ -109,6 +115,10 @@ export function MarketingStudioWorkspace({
     .filter(item => item.status !== 'cancelled')
     .slice(0, 6)
   const writingSummary = summarizeWritingPipeline({ generationRuns, qualityChecks })
+  const campaignCreativeSummary = summarizeCampaignCreativePipeline({
+    suggestions: campaignCreativeSuggestions,
+    draftRuns: campaignDraftRuns,
+  })
 
   return (
     <div className="space-y-6">
@@ -328,6 +338,55 @@ export function MarketingStudioWorkspace({
                 </div>
               ))}
               {publishingRuns.length === 0 && <p className="text-xs text-slate-500">Nenhuma publicacao executada.</p>}
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">Campanhas e criativos</h2>
+          <span className="text-xs text-slate-500">copies, conceitos, landing page e campanha rascunho</span>
+        </div>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Sugestoes de campanha</h3>
+            <p className="text-slate-700">{campaignCreativeSummary.approved} aprovadas / {campaignCreativeSummary.converted} convertidas</p>
+            <p className="mt-1 text-xs text-slate-500">Score medio {campaignCreativeSummary.averageQualityScore}</p>
+            <div className="mt-2 space-y-2">
+              {campaignCreativeSuggestions.slice(0, 4).map(suggestion => (
+                <div key={suggestion.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="line-clamp-1 font-medium text-slate-900">{suggestion.campaignName}</p>
+                  <p className="text-xs text-slate-500">{suggestion.provider} / {suggestion.objective} / {suggestion.status}</p>
+                </div>
+              ))}
+              {campaignCreativeSuggestions.length === 0 && <p className="text-xs text-slate-500">Nenhuma sugestao de campanha gerada.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Copies e conceitos</h3>
+            {campaignCreativeSuggestions.slice(0, 3).map(suggestion => (
+              <div key={suggestion.id} className="mb-2 rounded-md bg-slate-50 p-2">
+                <p className="font-medium text-slate-900">{String(suggestion.copyVariations[0]?.headline || suggestion.title)}</p>
+                <p className="line-clamp-2 text-xs text-slate-500">{String(suggestion.copyVariations[0]?.body || suggestion.angle)}</p>
+                <p className="mt-1 text-xs text-slate-500">{suggestion.creativeConcepts.length} conceitos / CTA {suggestion.cta || 'nao definido'}</p>
+              </div>
+            ))}
+            {campaignCreativeSuggestions.length === 0 && <p className="text-xs text-slate-500">Copies serao exibidas apos a geracao.</p>}
+          </article>
+
+          <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+            <h3 className="mb-2 font-semibold text-slate-950">Rascunhos pagos</h3>
+            <p className="text-slate-700">{campaignDraftRuns.length} runs recentes / {campaignCreativeSummary.failedDraftRuns} falhas</p>
+            <div className="mt-2 space-y-2">
+              {campaignDraftRuns.slice(0, 4).map(run => (
+                <div key={run.id} className="rounded-md bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">{run.status}</p>
+                  <p className="line-clamp-1 text-xs text-slate-500">{run.campaignId || run.protectedError || run.idempotencyKey}</p>
+                </div>
+              ))}
+              {campaignDraftRuns.length === 0 && <p className="text-xs text-slate-500">Nenhum rascunho de campanha criado.</p>}
             </div>
           </article>
         </div>

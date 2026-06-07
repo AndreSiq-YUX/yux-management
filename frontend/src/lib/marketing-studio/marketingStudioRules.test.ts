@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSimpleKnowledgeChunks,
   buildPublishingIdempotencyKey,
+  buildCampaignDraftIdempotencyKey,
   buildSourceItemDedupeKey,
   composeAgentPrompt,
   canCreateWordPressDraft,
+  canConvertSuggestionToCampaignDraft,
   canPublishWordPressContent,
+  canSubmitCampaignCreativeSuggestionForApproval,
   canTransitionContentStatus,
   calculateCreditsForAction,
   canScheduleContent,
@@ -29,11 +32,12 @@ import {
   evaluateContentQuality,
   summarizeHarnessTelemetry,
   summarizeKnowledgeCoverage,
+  summarizeCampaignCreativePipeline,
   summarizeRadar,
   summarizeReviewQueue,
   summarizeWritingPipeline,
 } from './marketingStudioRules'
-import type { MarketingBrandProfile, MarketingContentItem, MarketingKnowledgeChunk, MarketingSourceItem, MarketingStudioSettings } from '@/types/marketingStudio'
+import type { MarketingBrandProfile, MarketingCampaignCreativeSuggestion, MarketingContentItem, MarketingKnowledgeChunk, MarketingSourceItem, MarketingStudioSettings } from '@/types/marketingStudio'
 
 const settings: MarketingStudioSettings = {
   id: 'settings-1',
@@ -112,6 +116,7 @@ describe('marketingStudioRules', () => {
     expect(calculateCreditsForAction({ action: 'generate_blog_article' })).toBe(30)
     expect(calculateCreditsForAction({ action: 'generate_image', premium: true })).toBe(60)
     expect(calculateCreditsForAction({ action: 'publish_wordpress' })).toBe(2)
+    expect(calculateCreditsForAction({ action: 'generate_campaign_creatives' })).toBe(18)
   })
 
   it('blocks debit when balance or monthly limit is exceeded', () => {
@@ -685,5 +690,44 @@ describe('marketingStudioRules', () => {
       action: 'publish',
       version: 3,
     })).toBe('conn-1:content-1:publish:3')
+  })
+
+  it('guards campaign creative suggestions before approval and draft conversion', () => {
+    const suggestion: MarketingCampaignCreativeSuggestion = {
+      id: 'suggestion-1',
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      status: 'draft',
+      provider: 'meta',
+      objective: 'lead_generation',
+      title: 'Campanha CRM',
+      campaignName: 'CRM para PMEs',
+      angle: 'Mostrar como CRM reduz retrabalho comercial',
+      targetAudience: 'Donos de PMEs',
+      funnelStage: 'consideration',
+      cta: 'Fale com a YUX',
+      dailyBudget: 80,
+      utmMedium: 'paid',
+      copyVariations: [{ headline: 'CRM sem bagunca', body: 'Organize leads e follow-ups.' }],
+      creativeConcepts: [{ name: 'Dashboard limpo', format: 'image' }],
+      targetingSuggestions: { interests: ['crm'] },
+      qualityScore: 84,
+      riskFlags: [],
+      approvalRequired: true,
+      metadata: {},
+      createdAt: '2026-06-07T12:00:00.000Z',
+      updatedAt: '2026-06-07T12:00:00.000Z',
+    }
+
+    expect(canSubmitCampaignCreativeSuggestionForApproval(suggestion)).toBe(true)
+    expect(canConvertSuggestionToCampaignDraft(suggestion)).toBe(false)
+    expect(canConvertSuggestionToCampaignDraft({ ...suggestion, status: 'approved' })).toBe(true)
+    expect(canSubmitCampaignCreativeSuggestionForApproval({ ...suggestion, copyVariations: [] })).toBe(false)
+    expect(buildCampaignDraftIdempotencyKey({ suggestionId: 'suggestion-1', version: 2 })).toBe('suggestion-1:new_campaign:2')
+    expect(summarizeCampaignCreativePipeline({
+      suggestions: [suggestion, { ...suggestion, id: 'suggestion-2', status: 'approved', qualityScore: 76 }],
+      draftRuns: [{ id: 'run-1', organizationId: 'org-1', clientId: 'client-1', contractId: 'contract-1', suggestionId: 'suggestion-2', status: 'failed', idempotencyKey: 'key', requestPayload: {}, responsePayload: {}, createdAt: '', updatedAt: '' }],
+    })).toEqual({ draft: 1, inReview: 0, approved: 1, converted: 0, failedDraftRuns: 1, averageQualityScore: 80 })
   })
 })

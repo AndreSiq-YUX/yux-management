@@ -22,6 +22,8 @@ import type {
   MarketingStudioSettings,
   MarketingToolKey,
   MarketingAgentToolPolicy,
+  MarketingCampaignCreativeSuggestion,
+  MarketingCampaignDraftRun,
   MarketingUsageAction,
   MarketingWorkflowRun,
   ModelRoutingRule,
@@ -59,6 +61,8 @@ const creditByAction: Record<MarketingUsageAction, number> = {
   create_wordpress_draft: 2,
   update_wordpress_draft: 1,
   publish_wordpress: 2,
+  generate_campaign_creatives: 18,
+  create_campaign_draft: 5,
 }
 
 const baseToolsByAgent: Record<MarketingAgentType, MarketingToolKey[]> = {
@@ -452,6 +456,44 @@ export function buildPublishingIdempotencyKey(input: {
     input.action,
     input.version || 'latest',
   ].join(':')
+}
+
+export function canSubmitCampaignCreativeSuggestionForApproval(suggestion: MarketingCampaignCreativeSuggestion) {
+  return ['draft', 'changes_requested'].includes(suggestion.status)
+    && suggestion.campaignName.trim().length >= 3
+    && suggestion.angle.trim().length >= 10
+    && suggestion.copyVariations.length > 0
+    && suggestion.creativeConcepts.length > 0
+}
+
+export function canConvertSuggestionToCampaignDraft(suggestion: MarketingCampaignCreativeSuggestion) {
+  return suggestion.status === 'approved'
+    && suggestion.dailyBudget > 0
+    && suggestion.provider.length > 0
+    && suggestion.objective.length > 0
+    && suggestion.campaignName.trim().length >= 3
+}
+
+export function buildCampaignDraftIdempotencyKey(input: { suggestionId: string; campaignId?: string; version?: number | string }) {
+  return [
+    input.suggestionId,
+    input.campaignId || 'new_campaign',
+    input.version || 'latest',
+  ].join(':')
+}
+
+export function summarizeCampaignCreativePipeline(input: {
+  suggestions: MarketingCampaignCreativeSuggestion[]
+  draftRuns: MarketingCampaignDraftRun[]
+}) {
+  return {
+    draft: input.suggestions.filter(suggestion => suggestion.status === 'draft').length,
+    inReview: input.suggestions.filter(suggestion => suggestion.status === 'in_review').length,
+    approved: input.suggestions.filter(suggestion => suggestion.status === 'approved').length,
+    converted: input.suggestions.filter(suggestion => suggestion.status === 'converted').length,
+    failedDraftRuns: input.draftRuns.filter(run => run.status === 'failed').length,
+    averageQualityScore: average(input.suggestions.map(suggestion => suggestion.qualityScore).filter(score => score != null) as number[]),
+  }
 }
 
 function toChunk(title: string, body: string, chunkIndex: number) {

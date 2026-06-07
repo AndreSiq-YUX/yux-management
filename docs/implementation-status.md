@@ -1,6 +1,6 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-06-07 (Marketing Studio OpenRouter/Jina live integration and WordPress publishing phase applied remotely)
+Updated: 2026-06-07 (Marketing Studio campaign creatives phase applied remotely)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -51,6 +51,7 @@ the target Supabase/Vercel environments.
 | Marketing Studio Radar and research | Implemented | `/marketing-studio`, `/admin/integrations` | `20260607003007_marketing_studio_radar_research.sql`, `20260607003928_yux_hub_jina_provider_defaults.sql`, `2026-06-07-yux-marketing-studio-radar-research.md`, worker Jina Reader/Search request builders, source item/radar service methods, internal Radar panel, Jina AI global provider defaults | Adds controlled source items, research cache, Radar runs, dedupe keys, opportunity scores, typed conversion from captured source item to idea, and Admin YUX global Jina configuration fields. Radar and Jina provider migrations/probes passed remotely. Live scheduled jobs and provider credentials remain follow-up operational work. |
 | Marketing Studio writing, review and grounding | Implemented | `/marketing-studio` | `20260607141134_marketing_studio_writing_review_grounding.sql`, `2026-06-07-yux-marketing-studio-writing-review-grounding.md`, worker writing/review contracts, generation run and quality check service methods, internal writing/review/grounding panel, worker `OpenRouterClient` and `JinaClient` | Adds Redator Multicanal and Revisor de Marca contracts, generated draft logs, quality checklist, risk flags, grounding-required state and internal pipeline visibility. Migration and probe passed remotely. Worker now supports native OpenRouter chat completion and Jina Reader/Search/Grounding using server-side secrets. |
 | Marketing Studio WordPress publishing | Implemented and deployed | `/marketing-studio` | `20260607150115_marketing_studio_wordpress_publishing.sql`, `execute-wordpress-publishing` Edge Function, publishing connection/run service methods, internal WordPress publishing panel | Adds multi-tenant WordPress publishing connections and idempotent publishing runs for draft creation, draft update and approval-bound publication. Migration/probe passed remotely and Edge Function deployed to `portal-yux`. Requires per-client WordPress secret references to be configured before live posting. |
+| Marketing Studio campaign creatives and drafts | Implemented | `/marketing-studio` | `20260607152544_marketing_studio_campaign_creatives.sql`, campaign creative suggestion and draft run service methods, internal campaign creative panel, worker campaign strategist helpers | Adds campaign creative suggestions for Meta/Google-style briefs, copy variations, creative concepts, targeting suggestions, approval states, landing page/campaign links and idempotent campaign draft runs. Migration and probe passed remotely. Native Meta/Google activation remains a later integration phase. |
 | Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
 | Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `AutomationDashboard`, `AutomationGuidedBuilder`, `AutomationSimulationPanel`, `AutomationVersionPanel`, `AutomationDryRunToggle`, `AiActionPreview`, `CrmIntegrationPreview`, `AutomationAuditTrail`, `AutomationRealtime`, `ConfirmDialog`, `AutomationOnboarding`, `Tooltip`, `automationValidation`, `SequencesWorkspace` timeline, SMTP2GO Edge Functions | Full automation workspace with visual builder (When/If/Then), drag-and-drop action reordering, real-time validation, confirmation dialogs, first-time onboarding, timeline visualization, tooltips, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, real-time and dry-run mode. Supabase reset still blocked locally by Docker availability. |
 | Visual Node Editor & Materials Library | Implemented in repo | `/automations`, `/admin/limits` | `20260604220000_automation_graph_and_materials.sql`, `AutomationNodeEditor`, `NodeConfigSidebar`, `MaterialLibraryDialog`, `AdminLimitsPage`, `automationService`, `adminPlatformService` | Visual node-based automation flow editor (React Flow), branched flow traversal (parallel execution), dynamic file attachments (email/WhatsApp) integrated with multitenant Materials Library storage, and administrative interface to configure global and client limits. |
@@ -67,6 +68,8 @@ the target Supabase/Vercel environments.
   development-mode test assets before production.
 - configure per-client WordPress application-password secrets referenced by
   `publishing_connections.token_reference` before executing live blog posts.
+- connect approved Marketing Studio campaign drafts to native per-tenant
+  Meta/Google OAuth and publishing APIs before live ad activation.
 
 ## Implemented Functional Scope
 
@@ -485,7 +488,20 @@ Not complete:
 
 ## Current Validation Evidence
 
-Latest automations, Node Editor & Upload Limits validation:
+Latest Marketing Studio campaign creatives validation:
+
+- Remote Supabase migration `20260607152544_marketing_studio_campaign_creatives`
+  applied to `portal-yux`.
+- Remote probe `supabase/probes/20260607152544_marketing_studio_campaign_creatives.sql`
+  passed.
+- `npm test -- src/lib/marketing-studio/marketingStudioRules.test.ts src/services/marketingStudioService.test.ts src/components/marketing-studio/MarketingStudioWorkspace.test.tsx`:
+  3 files, 44 tests passed.
+- `npm run type-check`: passed.
+- `npm run build`: passed with known Browserslist/chunk-size warnings.
+- `python -m unittest discover -s workers/marketing-studio-agent-runtime/tests -v`:
+  18 tests passed.
+
+Previous automations, Node Editor & Upload Limits validation:
 
 - `npm test`: 62 test files, 261 tests passed.
 - `npm run type-check`: passed with zero errors.
