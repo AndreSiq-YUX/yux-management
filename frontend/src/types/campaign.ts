@@ -16,9 +16,13 @@ export type ProviderMutationAction = 'create_campaign' | 'update_budget' | 'paus
 export interface AdProviderConnection {
   id: string
   organizationId: string
+  clientId?: string
+  contractId?: string
   provider: AdProviderKey
   name: string
   status: ProviderConnectionStatus
+  providerAccountId?: string
+  tokenReferenceConfigured?: boolean
   lastSyncAt?: string
   createdAt: string
   updatedAt: string

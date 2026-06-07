@@ -24,6 +24,9 @@ import type {
   MarketingAgentToolPolicy,
   MarketingCampaignCreativeSuggestion,
   MarketingCampaignDraftRun,
+  MarketingPublishingAction,
+  MarketingPublishingConnectionStatus,
+  MarketingPublishingProvider,
   MarketingUsageAction,
   MarketingWorkflowRun,
   ModelRoutingRule,
@@ -456,6 +459,35 @@ export function buildPublishingIdempotencyKey(input: {
     input.action,
     input.version || 'latest',
   ].join(':')
+}
+
+type NativePublishGuardInput = {
+  provider: MarketingPublishingProvider
+  contentStatus: MarketingContentStatus
+  connectionStatus: MarketingPublishingConnectionStatus
+  action: MarketingPublishingAction
+}
+
+export type NativePublishGuardResult =
+  | { ok: true }
+  | { ok: false; reason: 'content_must_be_approved' | 'provider_needs_reauth' | 'provider_not_connected' }
+
+export function canExecuteNativePublishingRun(input: NativePublishGuardInput): NativePublishGuardResult {
+  if (input.action === 'publish' && !['approved', 'scheduled'].includes(input.contentStatus)) {
+    return { ok: false, reason: 'content_must_be_approved' }
+  }
+  if (input.connectionStatus === 'needs_reauth') return { ok: false, reason: 'provider_needs_reauth' }
+  if (!['connected', 'stale'].includes(input.connectionStatus)) return { ok: false, reason: 'provider_not_connected' }
+  return { ok: true }
+}
+
+export function buildNativePublishingIdempotencyKey(input: {
+  provider: MarketingPublishingProvider
+  connectionId: string
+  contentItemId: string
+  action: MarketingPublishingAction
+}) {
+  return `${input.provider}:${input.connectionId}:${input.contentItemId}:${input.action}`
 }
 
 export function canSubmitCampaignCreativeSuggestionForApproval(suggestion: MarketingCampaignCreativeSuggestion) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateCampaignMroi, sanitizeCampaignForPortal, validateBudgetChange } from './campaignRules'
+import { calculateCampaignMroi, canExecuteProviderMutation, sanitizeCampaignForPortal, validateBudgetChange } from './campaignRules'
 import type { Campaign } from '@/types/campaign'
 
 const campaign: Campaign = {
@@ -43,5 +43,35 @@ describe('campaignRules', () => {
 
   it('calculates campaign MROI from spend and attributed revenue', () => {
     expect(calculateCampaignMroi({ spend: 1000, attributedRevenue: 4300 })).toBe(3.3)
+  })
+
+  it('requires approved campaign before native provider activation', () => {
+    expect(canExecuteProviderMutation({
+      lifecycleStatus: 'draft',
+      providerStatus: 'connected',
+      action: 'create_campaign',
+      explicitApproval: true,
+    })).toEqual({ ok: false, reason: 'campaign_must_be_approved' })
+
+    expect(canExecuteProviderMutation({
+      lifecycleStatus: 'approved',
+      providerStatus: 'needs_reauth',
+      action: 'create_campaign',
+      explicitApproval: true,
+    })).toEqual({ ok: false, reason: 'provider_needs_reauth' })
+
+    expect(canExecuteProviderMutation({
+      lifecycleStatus: 'approved',
+      providerStatus: 'connected',
+      action: 'create_campaign',
+      explicitApproval: false,
+    })).toEqual({ ok: false, reason: 'explicit_approval_required' })
+
+    expect(canExecuteProviderMutation({
+      lifecycleStatus: 'approved',
+      providerStatus: 'connected',
+      action: 'create_campaign',
+      explicitApproval: true,
+    })).toEqual({ ok: true })
   })
 })

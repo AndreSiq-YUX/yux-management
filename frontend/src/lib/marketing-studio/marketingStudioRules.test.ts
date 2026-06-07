@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSimpleKnowledgeChunks,
+  buildNativePublishingIdempotencyKey,
   buildPublishingIdempotencyKey,
   buildCampaignDraftIdempotencyKey,
   buildSourceItemDedupeKey,
   composeAgentPrompt,
+  canExecuteNativePublishingRun,
   canCreateWordPressDraft,
   canConvertSuggestionToCampaignDraft,
   canPublishWordPressContent,
@@ -690,6 +692,38 @@ describe('marketingStudioRules', () => {
       action: 'publish',
       version: 3,
     })).toBe('conn-1:content-1:publish:3')
+  })
+
+  it('requires approved content and connected provider before native publishing', () => {
+    expect(canExecuteNativePublishingRun({
+      provider: 'meta_instagram',
+      contentStatus: 'draft',
+      connectionStatus: 'connected',
+      action: 'publish',
+    })).toEqual({ ok: false, reason: 'content_must_be_approved' })
+
+    expect(canExecuteNativePublishingRun({
+      provider: 'google_business_profile',
+      contentStatus: 'approved',
+      connectionStatus: 'needs_reauth',
+      action: 'publish',
+    })).toEqual({ ok: false, reason: 'provider_needs_reauth' })
+
+    expect(canExecuteNativePublishingRun({
+      provider: 'meta_facebook',
+      contentStatus: 'approved',
+      connectionStatus: 'connected',
+      action: 'publish',
+    })).toEqual({ ok: true })
+  })
+
+  it('builds stable native publishing idempotency keys', () => {
+    expect(buildNativePublishingIdempotencyKey({
+      connectionId: 'connection-1',
+      contentItemId: 'content-1',
+      action: 'publish',
+      provider: 'meta_facebook',
+    })).toBe('meta_facebook:connection-1:content-1:publish')
   })
 
   it('guards campaign creative suggestions before approval and draft conversion', () => {

@@ -75,7 +75,11 @@ export type MarketingSourceItemStatus = 'captured' | 'summarized' | 'idea_genera
 export type MarketingResearchProvider = 'jina_reader' | 'jina_search' | 'tavily' | 'serper' | 'firecrawl' | 'internal'
 export type MarketingResearchRequestType = 'reader' | 'search' | 'crawl' | 'internal_lookup'
 export type MarketingRadarRunStatus = 'queued' | 'collecting' | 'curating' | 'completed' | 'failed' | 'cancelled'
-export type MarketingPublishingProvider = 'wordpress'
+export type MarketingPublishingProvider =
+  | 'wordpress'
+  | 'meta_facebook'
+  | 'meta_instagram'
+  | 'google_business_profile'
 export type MarketingPublishingConnectionStatus = 'needs_setup' | 'connected' | 'stale' | 'needs_reauth' | 'failed' | 'disabled'
 export type MarketingPublishingAction = 'create_draft' | 'update_draft' | 'publish'
 export type MarketingPublishingRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'cancelled'
@@ -102,6 +106,16 @@ export type MarketingContentGenerationStatus =
   | 'cancelled'
 export type MarketingGroundingStatus = 'not_required' | 'required' | 'running' | 'succeeded' | 'failed' | 'blocked'
 export type MarketingQualityCheckStatus = 'pending' | 'passed' | 'needs_changes' | 'rejected' | 'failed'
+
+export interface MarketingProviderAsset {
+  id: string
+  provider: MarketingPublishingProvider | 'meta_ads' | 'google_ads'
+  externalId: string
+  name: string
+  parentExternalId?: string
+  status?: string
+  metadata: Record<string, unknown>
+}
 
 export type MarketingUsageAction =
   | 'classify_idea'
@@ -510,6 +524,14 @@ export interface MarketingPublishingConnection {
   authType: 'application_password' | 'token_reference'
   tokenReference?: string
   providerAccountId?: string
+  providerAssetId?: string
+  providerAssetName?: string
+  providerParentAssetId?: string
+  providerScopes?: string[]
+  tokenExpiresAt?: string
+  reauthRequiredAt?: string
+  lastHealthCheckAt?: string
+  lastPublishedAt?: string
   lastVerifiedAt?: string
   protectedError?: string
   publicConfig: Record<string, unknown>

@@ -1,4 +1,12 @@
-import type { BudgetChangeInput, BudgetChangeValidation, Campaign, PortalCampaign } from '@/types/campaign'
+import type {
+  BudgetChangeInput,
+  BudgetChangeValidation,
+  Campaign,
+  CampaignLifecycleStatus,
+  PortalCampaign,
+  ProviderConnectionStatus,
+  ProviderMutationAction,
+} from '@/types/campaign'
 
 export function calculateCampaignMroi(input: { spend: number; attributedRevenue: number }) {
   if (input.spend <= 0) return 0
@@ -28,6 +36,29 @@ export function sanitizeCampaignForPortal(campaign: Campaign): PortalCampaign {
   } = campaign
 
   return safeCampaign
+}
+
+type ProviderMutationGuardInput = {
+  lifecycleStatus: CampaignLifecycleStatus
+  providerStatus: ProviderConnectionStatus
+  action: ProviderMutationAction
+  explicitApproval?: boolean
+}
+
+export type ProviderMutationGuardResult =
+  | { ok: true }
+  | { ok: false; reason: 'campaign_must_be_approved' | 'provider_needs_reauth' | 'provider_not_connected' | 'explicit_approval_required' }
+
+export function canExecuteProviderMutation(input: ProviderMutationGuardInput): ProviderMutationGuardResult {
+  if (['create_campaign', 'update_budget'].includes(input.action) && input.lifecycleStatus !== 'approved') {
+    return { ok: false, reason: 'campaign_must_be_approved' }
+  }
+  if (input.providerStatus === 'needs_reauth') return { ok: false, reason: 'provider_needs_reauth' }
+  if (!['connected', 'stale'].includes(input.providerStatus)) return { ok: false, reason: 'provider_not_connected' }
+  if (['create_campaign', 'update_budget'].includes(input.action) && !input.explicitApproval) {
+    return { ok: false, reason: 'explicit_approval_required' }
+  }
+  return { ok: true }
 }
 
 export function calculateCampaignSummary(campaigns: Campaign[]) {
