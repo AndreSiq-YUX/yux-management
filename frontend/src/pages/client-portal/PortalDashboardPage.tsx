@@ -8,11 +8,11 @@ function formatDateOnly(value: string) {
 }
 
 const summaryByModule: Record<string, { title: string; value: string; detail: string }> = {
-  crm: { title: 'Funil ativo', value: 'Leads & Funil', detail: 'Pipeline, oportunidades e proximas acoes.' },
-  whatsapp_ai: { title: 'Conversas recentes', value: 'Conversas IA', detail: 'Atendimentos, handoff e contexto comercial.' },
-  landing_pages: { title: 'Aprovacoes pendentes', value: 'Landing Pages', detail: 'Versoes, ajustes e publicacoes.' },
-  campaigns: { title: 'Campanhas ativas', value: 'CPL e MROI', detail: 'Spend, leads, CPL e recomendacoes.' },
-  proposals: { title: 'Propostas', value: 'Pendentes/aprovadas', detail: 'Aprovacoes e conversoes.' },
+  crm: { title: 'Comercial', value: 'Leads & Funis', detail: 'Pipeline, oportunidades e proximas acoes.' },
+  whatsapp_ai: { title: 'Atendimento & IA', value: 'Conversas IA', detail: 'Atendimentos, handoff e contexto comercial.' },
+  landing_pages: { title: 'Marketing', value: 'Landing Pages', detail: 'Versoes, ajustes e publicacoes.' },
+  campaigns: { title: 'Marketing', value: 'Campanhas', detail: 'Spend, leads, CPL e recomendacoes.' },
+  proposals: { title: 'Aprovacoes', value: 'Propostas', detail: 'Aprovacoes e conversoes.' },
   support: { title: 'Suporte', value: 'Tickets e SLA', detail: 'Status de chamados e prioridade.' },
   finance: { title: 'Financeiro', value: 'Faturas e saldo', detail: 'Resumo financeiro contratado.' },
   bi_reports: { title: 'Relatorios', value: 'ROI consolidado', detail: 'Indicadores comerciais seguros.' },
@@ -91,6 +91,20 @@ export function PortalDashboardPage() {
           </div>
         </dl>
       </div>
+
+      <Link
+        to="/portal/projetos/aprovacoes"
+        className="flex flex-col gap-3 rounded-lg border border-yux-200 bg-yux-50 p-4 transition-colors hover:border-yux-400 md:flex-row md:items-center md:justify-between"
+      >
+        <div>
+          <p className="text-xs font-medium uppercase text-yux-700">Pendencias de aprovacao</p>
+          <h2 className="mt-1 font-semibold text-gray-900">Revise aprovacoes recorrentes do portal</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Landing pages, campanhas, propostas, criativos, documentos e entregaveis ficam centralizados neste atalho.
+          </p>
+        </div>
+        <span className="text-sm font-medium text-yux-700">Abrir aprovacoes</span>
+      </Link>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {commercialItems.map(item => {
