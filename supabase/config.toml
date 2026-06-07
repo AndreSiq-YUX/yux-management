@@ -78,3 +78,6 @@ verify_jwt = true
 
 [functions.list-marketing-provider-assets]
 verify_jwt = true
+
+[functions.execute-marketing-publishing]
+verify_jwt = true

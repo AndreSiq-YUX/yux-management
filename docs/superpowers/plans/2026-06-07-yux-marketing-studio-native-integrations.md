@@ -1133,7 +1133,7 @@ Expected:
 All provider OAuth/secret tests pass.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run:
 
@@ -1153,7 +1153,7 @@ git commit -m "feat: add marketing provider oauth flow"
 - Create: `supabase/functions/execute-marketing-publishing/deno.json`
 - Modify: `supabase/functions/execute-wordpress-publishing/index.ts` only if a compatibility wrapper is required
 
-- [ ] **Step 1: Write socialPublishingProvider tests**
+- [x] **Step 1: Write socialPublishingProvider tests**
 
 Create `supabase/functions/_shared/socialPublishingProvider.test.ts`:
 
@@ -1216,7 +1216,7 @@ Deno.test('builds Google Business Profile local post request', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -1230,7 +1230,7 @@ Expected:
 FAIL because socialPublishingProvider.ts does not exist.
 ```
 
-- [ ] **Step 3: Implement request builders and executor**
+- [x] **Step 3: Implement request builders and executor**
 
 Create `supabase/functions/_shared/socialPublishingProvider.ts` with:
 
@@ -1318,7 +1318,7 @@ Then add `executeSocialPublishingAction(connection, content, run, accessToken)` 
 6. Returns provider_post_id and published_url/search_url where available.
 ```
 
-- [ ] **Step 4: Implement generic publishing function**
+- [x] **Step 4: Implement generic publishing function**
 
 Create `supabase/functions/execute-marketing-publishing/index.ts` that mirrors `execute-wordpress-publishing` but:
 
@@ -1335,7 +1335,7 @@ Create `supabase/functions/execute-marketing-publishing/index.ts` that mirrors `
 10. Sets publishing_connections.status = needs_reauth when provider returns OAuth/permission failure.
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
