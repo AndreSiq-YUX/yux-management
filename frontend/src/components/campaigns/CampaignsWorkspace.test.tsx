@@ -55,6 +55,7 @@ describe('CampaignsWorkspace', () => {
       onCreateDraft: vi.fn(),
       onSubmitApproval: vi.fn(),
       onApprove: vi.fn(),
+      onCreateProvider: vi.fn(),
       onSyncMetrics: vi.fn(),
       onPause: vi.fn(),
     }
@@ -99,6 +100,49 @@ describe('CampaignsWorkspace', () => {
     expect(handlers.onApprove).toHaveBeenCalledWith('campaign-1')
     expect(handlers.onSyncMetrics).toHaveBeenCalledWith('campaign-1')
     expect(handlers.onPause).toHaveBeenCalledWith('campaign-1')
+
+    act(() => root.unmount())
+  })
+
+  it('enables provider creation only for approved campaigns with healthy connection and ad account', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const onCreateProvider = vi.fn()
+
+    act(() => {
+      root.render(
+        <CampaignsWorkspace
+          campaigns={[{
+            ...campaign,
+            providerConnectionId: 'connection-1',
+            adAccountId: 'account-1',
+            lifecycleStatus: 'approved',
+          }]}
+          providerConnections={[{
+            id: 'connection-1',
+            organizationId: 'org-1',
+            provider: 'meta',
+            name: 'Meta principal',
+            status: 'connected',
+            tokenReferenceConfigured: true,
+            createdAt: '2026-06-03T10:00:00.000Z',
+            updatedAt: '2026-06-03T10:00:00.000Z',
+          }]}
+          onRefresh={vi.fn()}
+          onCreateDraft={vi.fn()}
+          onSubmitApproval={vi.fn()}
+          onApprove={vi.fn()}
+          onCreateProvider={onCreateProvider}
+          onSyncMetrics={vi.fn()}
+          onPause={vi.fn()}
+        />,
+      )
+    })
+
+    const createButton = container.querySelector<HTMLButtonElement>('button[title="Criar campanha no provider"]')!
+    expect(createButton.disabled).toBe(false)
+    act(() => createButton.click())
+    expect(onCreateProvider).toHaveBeenCalledWith('campaign-1')
 
     act(() => root.unmount())
   })

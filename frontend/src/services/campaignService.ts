@@ -56,9 +56,13 @@ function mapProviderConnection(row: any): AdProviderConnection {
   return {
     id: row.id,
     organizationId: row.organization_id,
+    clientId: row.client_id || undefined,
+    contractId: row.contract_id || undefined,
     provider: row.provider,
     name: row.name,
     status: row.status,
+    providerAccountId: row.provider_account_id || undefined,
+    tokenReferenceConfigured: Boolean(row.token_reference),
     lastSyncAt: row.last_sync_at || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -207,28 +211,51 @@ export const campaignService = {
     return data
   },
 
-  async syncCampaignMetrics(campaignId: string) {
-    const campaign = (await campaignService.getCampaigns()).find(item => item.id === campaignId)
-    if (!campaign) throw new Error('Campaign not found')
-    return campaignService.enqueueProviderMutation({
-      organizationId: campaign.organizationId,
-      provider: campaign.provider,
-      action: 'sync_metrics',
-      campaignId,
-      providerConnectionId: campaign.providerConnectionId,
+  async executeProviderMutation(input: {
+    organizationId: string
+    provider: 'meta' | 'google'
+    action: ProviderMutationAction
+    campaignId: string
+    providerConnectionId: string
+    explicitApproval?: boolean
+    activateProvider?: boolean
+    requestPayload?: Record<string, unknown>
+  }) {
+    const { data, error } = await supabase.functions.invoke('execute-ad-provider-mutation', {
+      body: {
+        organizationId: input.organizationId,
+        provider: input.provider,
+        action: input.action,
+        campaignId: input.campaignId,
+        providerConnectionId: input.providerConnectionId,
+        explicitApproval: Boolean(input.explicitApproval),
+        activateProvider: Boolean(input.activateProvider),
+        requestPayload: input.requestPayload || {},
+      },
     })
+    if (error) throw error
+    return data as { success?: boolean; run?: unknown; error?: string }
+  },
+
+  async syncCampaignMetrics(campaignId: string) {
+    const { data, error } = await supabase.functions.invoke('sync-ad-metrics', {
+      body: { campaignId },
+    })
+    if (error) throw error
+    return data as { success?: boolean; run?: unknown; error?: string }
   },
 
   async pauseCampaign(campaignId: string) {
-    await campaignService.updateCampaignStatus(campaignId, 'paused')
     const campaign = (await campaignService.getCampaigns()).find(item => item.id === campaignId)
     if (!campaign) throw new Error('Campaign not found')
-    return campaignService.enqueueProviderMutation({
+    if (!campaign.providerConnectionId) throw new Error('Provider connection not configured')
+    return campaignService.executeProviderMutation({
       organizationId: campaign.organizationId,
       provider: campaign.provider,
       action: 'pause_campaign',
       campaignId,
       providerConnectionId: campaign.providerConnectionId,
+      explicitApproval: true,
     })
   },
 

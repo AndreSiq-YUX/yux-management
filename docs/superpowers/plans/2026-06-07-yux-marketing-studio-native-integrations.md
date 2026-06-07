@@ -1765,7 +1765,7 @@ Expected:
 All adsProvider tests pass.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run:
 
@@ -1786,7 +1786,7 @@ git commit -m "feat: add native ads provider adapters"
 - Modify: `frontend/src/components/campaigns/CampaignsWorkspace.tsx`
 - Modify: `frontend/src/components/campaigns/CampaignsWorkspace.test.tsx`
 
-- [ ] **Step 1: Add service test for Edge Function execution**
+- [x] **Step 1: Add service test for Edge Function execution**
 
 Add to `frontend/src/services/campaignService.test.ts`:
 
@@ -1816,7 +1816,7 @@ it('executes approved provider mutation through edge function instead of only in
 })
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run from `frontend/`:
 
@@ -1830,7 +1830,7 @@ Expected:
 FAIL because campaignService only inserts ad_provider_mutation_runs.
 ```
 
-- [ ] **Step 3: Modify execute-ad-provider-mutation**
+- [x] **Step 3: Modify execute-ad-provider-mutation**
 
 Update the function to:
 
@@ -1845,7 +1845,7 @@ Update the function to:
 8. Update local campaign_ad_sets, campaign_ads, and campaign_creatives external ids when provider returns them.
 ```
 
-- [ ] **Step 4: Modify sync-ad-metrics**
+- [x] **Step 4: Modify sync-ad-metrics**
 
 Update the function to:
 
@@ -1857,7 +1857,7 @@ Update the function to:
 5. Set provider connection status to needs_reauth for OAuth failures.
 ```
 
-- [ ] **Step 5: Modify campaignService**
+- [x] **Step 5: Modify campaignService**
 
 Add:
 
@@ -1887,7 +1887,7 @@ async executeProviderMutation(input: {
 }
 ```
 
-- [ ] **Step 6: Update CampaignsWorkspace**
+- [x] **Step 6: Update CampaignsWorkspace**
 
 Add explicit action affordances:
 
@@ -1907,7 +1907,7 @@ provider connection status is connected/stale
 campaign has providerConnectionId and adAccountId
 ```
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run from `frontend/`:
 

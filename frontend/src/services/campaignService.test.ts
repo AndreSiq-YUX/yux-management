@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest'
-import { buildCampaignDraftPayload, buildProviderMutationPayload } from './campaignService'
+import { describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  from: vi.fn(),
+}))
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    functions: {
+      invoke: mocks.invoke,
+    },
+    from: mocks.from,
+  },
+}))
+
+import { buildCampaignDraftPayload, buildProviderMutationPayload, campaignService } from './campaignService'
 
 describe('campaignService payload builders', () => {
   it('builds API-first campaign draft payloads while preserving legacy fields', () => {
@@ -52,6 +67,29 @@ describe('campaignService payload builders', () => {
       provider_connection_id: 'connection-1',
       request_payload: { dailyBudget: 100 },
       idempotency_key: 'google:update_budget:campaign-1',
+    }))
+  })
+
+  it('executes approved provider mutation through edge function instead of only inserting a row', async () => {
+    mocks.invoke.mockResolvedValueOnce({ data: { success: true, run: { id: 'run-1' } }, error: null })
+
+    await campaignService.executeProviderMutation({
+      organizationId: 'org-1',
+      provider: 'meta',
+      action: 'create_campaign',
+      campaignId: 'campaign-1',
+      providerConnectionId: 'connection-1',
+      explicitApproval: true,
+      requestPayload: { landingPageUrl: 'https://example.com' },
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledWith('execute-ad-provider-mutation', expect.objectContaining({
+      body: expect.objectContaining({
+        provider: 'meta',
+        action: 'create_campaign',
+        campaignId: 'campaign-1',
+        explicitApproval: true,
+      }),
     }))
   })
 })

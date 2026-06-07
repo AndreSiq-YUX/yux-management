@@ -1,4 +1,4 @@
-import { CheckCircle2, Pause, RefreshCw, ShieldAlert } from 'lucide-react'
+import { CheckCircle2, Pause, RefreshCw, Send, ShieldAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CampaignBuilder } from './CampaignBuilder'
@@ -16,6 +16,7 @@ interface CampaignsWorkspaceProps {
   onCreateDraft: (input: CreateCampaignDraftInput) => void
   onSubmitApproval: (campaignId: string) => void
   onApprove: (campaignId: string) => void
+  onCreateProvider?: (campaignId: string) => void
   onSyncMetrics: (campaignId: string) => void
   onPause: (campaignId: string) => void
 }
@@ -30,6 +31,7 @@ export function CampaignsWorkspace({
   onCreateDraft,
   onSubmitApproval,
   onApprove,
+  onCreateProvider,
   onSyncMetrics,
   onPause,
 }: CampaignsWorkspaceProps) {
@@ -66,7 +68,13 @@ export function CampaignsWorkspace({
       />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {campaigns.map(campaign => (
+        {campaigns.map(campaign => {
+          const providerConnection = providerConnections.find(connection => connection.id === campaign.providerConnectionId)
+          const canCreateInProvider = campaign.lifecycleStatus === 'approved'
+            && Boolean(campaign.providerConnectionId)
+            && Boolean(campaign.adAccountId)
+            && Boolean(providerConnection && ['connected', 'stale'].includes(providerConnection.status))
+          return (
           <article key={campaign.id} className="rounded-md border bg-white p-4">
             <div className="grid gap-4 md:grid-cols-[180px_1fr]">
               <CampaignCreativePanel creatives={campaign.creatives} />
@@ -86,16 +94,19 @@ export function CampaignsWorkspace({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button title="Enviar para aprovacao" size="sm" variant="outline" onClick={() => onSubmitApproval(campaign.id)}>Aprovacao</Button>
-                  <Button title="Aprovar campanha" size="sm" variant="outline" onClick={() => onApprove(campaign.id)}><CheckCircle2 className="mr-1 h-3.5 w-3.5" />Aprovar</Button>
+                  <Button title="Aprovar campanha" size="sm" variant="outline" onClick={() => onApprove(campaign.id)}><CheckCircle2 className="mr-1 h-3.5 w-3.5" />Aprovar local</Button>
+                  <Button title="Criar campanha no provider" size="sm" variant="outline" disabled={!canCreateInProvider} onClick={() => onCreateProvider?.(campaign.id)}><Send className="mr-1 h-3.5 w-3.5" />Criar no provider</Button>
                   <Button title="Sincronizar metricas" size="sm" variant="outline" onClick={() => onSyncMetrics(campaign.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Sync</Button>
                   <Button title="Pausar campanha" size="sm" variant="outline" onClick={() => onPause(campaign.id)}><Pause className="mr-1 h-3.5 w-3.5" />Pausar</Button>
                 </div>
+                {providerConnection?.status === 'needs_reauth' && <p className="text-sm text-red-600">Provider precisa de reautenticacao antes de criar ou sincronizar.</p>}
+                {!campaign.adAccountId && <p className="text-sm text-slate-500">Conta de anuncios pendente para ativacao provider.</p>}
                 {(campaign.alerts?.length || 0) > 0 && <p className="text-sm text-amber-700">{campaign.alerts?.[0].title}</p>}
                 {(campaign.recommendations?.length || 0) > 0 && <p className="text-sm text-slate-600">{campaign.recommendations?.[0].title}</p>}
               </div>
             </div>
           </article>
-        ))}
+        )})}
       </div>
     </div>
   )
