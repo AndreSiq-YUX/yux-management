@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNavigation, buildNavigationGroups } from '@/lib/platform/navigation'
+import { buildBreadcrumbs, buildNavigation, buildNavigationGroups } from '@/lib/platform/navigation'
 import type { PlatformContext } from '@/types/platform'
 
 const internalContext: PlatformContext = {
@@ -458,5 +458,25 @@ describe('buildNavigationGroups', () => {
       'CRM Governance',
       'Knowledge Source',
     ]))
+  })
+
+  it('builds client-oriented breadcrumbs from portal journeys', () => {
+    const breadcrumbs = buildBreadcrumbs({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: ['marketing_studio.read'],
+      },
+      enabledModuleKeys: ['marketing_studio'],
+    }, '/portal/marketing/calendario')
+
+    expect(breadcrumbs).toEqual([
+      { label: 'Portal do Cliente', href: '/portal' },
+      { label: 'Marketing' },
+      { label: 'Calendario Editorial' },
+    ])
   })
 })

@@ -145,7 +145,7 @@ export function Sidebar() {
           <div className="space-y-1">
             <button className="group flex w-full items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:text-gray-900">
               <Settings className="mr-3 h-4 w-4" />
-              Configurações
+              Configuracoes
             </button>
             <button 
               onClick={logout}

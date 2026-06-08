@@ -1,13 +1,19 @@
-import { Bell, Search, Menu } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { Bell, ChevronRight, Search, Menu } from 'lucide-react'
+import { buildBreadcrumbs } from '@/lib/platform/navigation'
 import { useAuthStore } from '@/stores/authStore'
+import { usePlatformContext } from '@/stores/platformStore'
 
 export function Header() {
   const { user } = useAuthStore()
+  const location = useLocation()
+  const platformContext = usePlatformContext()
+  const breadcrumbs = buildBreadcrumbs(platformContext, location.pathname)
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 justify-between items-center">
+        <div className="flex h-16 justify-between items-center gap-4">
           {/* Mobile menu button */}
           <div className="lg:hidden">
             <button
@@ -19,8 +25,20 @@ export function Header() {
           </div>
 
           {/* Search */}
-          <div className="flex-1 max-w-lg lg:max-w-xs">
-            <div className="relative">
+          <div className="min-w-0 flex-1">
+            <nav className="hidden items-center gap-1 text-sm text-gray-500 lg:flex" aria-label="Breadcrumb">
+              {breadcrumbs.map((item, index) => (
+                <span key={`${item.label}-${index}`} className="inline-flex min-w-0 items-center gap-1">
+                  {index > 0 && <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" aria-hidden="true" />}
+                  {item.href && index < breadcrumbs.length - 1 ? (
+                    <Link to={item.href} className="truncate hover:text-yux-700">{item.label}</Link>
+                  ) : (
+                    <span className={index === breadcrumbs.length - 1 ? 'truncate font-medium text-gray-900' : 'truncate'}>{item.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+            <div className="relative mt-0 max-w-lg lg:hidden">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <Search className="h-5 w-5 text-gray-400" />
               </div>
@@ -37,6 +55,7 @@ export function Header() {
             {/* Notifications */}
             <button
               type="button"
+              title="Notificacoes"
               className="relative rounded-full bg-white p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-yux-500 focus:ring-offset-2"
             >
               <Bell className="h-6 w-6" />

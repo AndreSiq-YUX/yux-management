@@ -20,13 +20,13 @@ export function PortalOmnichannelPage() {
   const module = getPlatformModule('whatsapp_ai')
 
   if (isLoading) {
-    return <p className="text-sm text-gray-600">Carregando omnichannel...</p>
+    return <p className="text-sm text-gray-600">Carregando conversas...</p>
   }
 
   if (!activeContract) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Central Omnichannel IA</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Conversas e IA</h1>
         <p className="text-gray-600">Nenhum contrato ativo encontrado para este usuario.</p>
       </div>
     )
@@ -35,7 +35,7 @@ export function PortalOmnichannelPage() {
   if (!module || !canAccessModule(module, role, enabledModuleKeys)) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Central Omnichannel IA</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Conversas e IA</h1>
         <p className="text-gray-600">Modulo nao disponivel para este acesso.</p>
       </div>
     )

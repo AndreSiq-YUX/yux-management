@@ -13,6 +13,11 @@ export interface NavigationGroup {
   items: NavigationItem[]
 }
 
+export interface BreadcrumbItem {
+  label: string
+  href?: string
+}
+
 const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = [
   {
     label: 'Visao Geral',
@@ -199,4 +204,37 @@ export function buildNavigationGroups(context: PlatformContext): NavigationGroup
 
 export function buildNavigation(context: PlatformContext): NavigationItem[] {
   return buildNavigationGroups(context).flatMap(group => group.items)
+}
+
+export function buildBreadcrumbs(context: PlatformContext, pathname: string): BreadcrumbItem[] {
+  const home: BreadcrumbItem = context.mode === 'portal'
+    ? { label: 'Portal do Cliente', href: '/portal' }
+    : { label: 'YUX Hub', href: '/dashboard' }
+  const groups = buildNavigationGroups(context)
+  const exactMatch = groups
+    .flatMap(group => group.items.map(item => ({ group, item })))
+    .find(({ item }) => item.href === pathname)
+
+  if (exactMatch) {
+    return [
+      home,
+      { label: exactMatch.group.label },
+      { label: exactMatch.item.label },
+    ]
+  }
+
+  const prefixMatch = groups
+    .flatMap(group => group.items.map(item => ({ group, item })))
+    .filter(({ item }) => item.href !== home.href && pathname.startsWith(`${item.href}/`))
+    .sort((a, b) => b.item.href.length - a.item.href.length)[0]
+
+  if (prefixMatch) {
+    return [
+      home,
+      { label: prefixMatch.group.label },
+      { label: prefixMatch.item.label, href: prefixMatch.item.href },
+    ]
+  }
+
+  return [home]
 }

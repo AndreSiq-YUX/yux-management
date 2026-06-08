@@ -5,26 +5,26 @@ export function PortalCompanyUsersPage() {
   return (
     <PortalJourneyPage
       eyebrow="Empresa"
-      title="Usuários e Equipe"
-      description="Organiza quem acessa o portal, quais papéis existem e quais módulos cada pessoa pode usar."
+      title="Usuarios e Equipe"
+      description="Organiza quem acessa o portal, quais papeis existem e quais modulos cada pessoa pode usar."
       icon={Users}
       metrics={[
-        { label: 'Papéis', value: '6 perfis', detail: 'Administrador, comercial, atendimento, marketing, financeiro e visualizador.' },
-        { label: 'Permissões', value: 'Por módulo', detail: 'Acesso separado por área contratada.' },
-        { label: 'Segurança', value: 'Acesso', detail: 'Último acesso e desativação de usuários.' },
+        { label: 'Papeis', value: '6 perfis', detail: 'Administrador, comercial, atendimento, marketing, financeiro e visualizador.' },
+        { label: 'Permissoes', value: 'Por modulo', detail: 'Acesso separado por area contratada.' },
+        { label: 'Seguranca', value: 'Acesso', detail: 'Ultimo acesso e desativacao de usuarios.' },
       ]}
       capabilities={[
-        'Convidar, remover, desativar e revisar usuários da empresa.',
-        'Definir papéis como administrador, gestor comercial, atendente, marketing, financeiro e visualizador.',
-        'Limitar acesso ao chat, financeiro, campanhas, relatórios e demais módulos.',
-        'Consultar último acesso e separar permissões de usuário das configurações globais da empresa.',
+        'Convidar, remover, desativar e revisar usuarios da empresa.',
+        'Definir papeis como administrador, gestor comercial, atendente, marketing, financeiro e visualizador.',
+        'Limitar acesso ao chat, financeiro, campanhas, relatorios e demais modulos.',
+        'Consultar ultimo acesso e separar permissoes de usuario das configuracoes globais da empresa.',
       ]}
       secondaryActions={[
-        { label: 'Configurações da Conta', href: '/portal/configuracoes/conta' },
+        { label: 'Configuracoes da Conta', href: '/portal/configuracoes/conta' },
         { label: 'Atendimento & IA', href: '/portal/atendimento/conversas' },
         { label: 'Financeiro', href: '/portal/financeiro' },
       ]}
-      note="A implementação persistente de convites e permissões entra na próxima fase; esta página fixa a jornada correta no portal."
+      note="A implementacao persistente de convites e permissoes entra em fase posterior; esta pagina fixa a jornada correta no portal."
     />
   )
 }

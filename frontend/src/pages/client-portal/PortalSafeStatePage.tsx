@@ -38,7 +38,7 @@ export function PortalSafeStatePage({
           <div>
             <h2 className="text-base font-semibold text-gray-900">Area planejada para este modulo</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Esta tela ja esta posicionada na nova arquitetura do portal. Na Fase 1 ela nao exibe dados internos nem configuracoes sensiveis.
+              Esta tela ja esta posicionada na nova arquitetura do portal. Enquanto a funcionalidade completa nao estiver ativa, ela nao exibe dados internos nem configuracoes sensiveis.
             </p>
           </div>
         </div>

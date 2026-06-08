@@ -6,18 +6,18 @@ export function PortalHandoffQueuesPage() {
     <PortalJourneyPage
       eyebrow="Atendimento & IA"
       title="Filas e Handoff"
-      description="Define equipes, filas, regras de transferência, horário comercial, prioridade e SLA de atendimento."
+      description="Define equipes, filas, regras de transferencia, horario comercial, prioridade e SLA de atendimento."
       icon={MessageCircle}
       metrics={[
-        { label: 'Equipes', value: 'Atendimento', detail: 'Distribuição entre atendentes.' },
+        { label: 'Equipes', value: 'Atendimento', detail: 'Distribuicao entre atendentes.' },
         { label: 'SLA', value: 'Prioridade', detail: 'Regras por tipo de demanda.' },
         { label: 'Handoff', value: 'Humano', detail: 'Quando a IA transfere a conversa.' },
       ]}
       capabilities={[
         'Gerenciar equipes de atendimento e filas operacionais.',
-        'Configurar regras de transferência, prioridade e horário comercial.',
-        'Definir SLA e distribuição entre atendentes.',
-        'Separar governança de atendimento da tela de mensagens.',
+        'Configurar regras de transferencia, prioridade e horario comercial.',
+        'Definir SLA e distribuicao entre atendentes.',
+        'Separar governanca de atendimento da tela de mensagens.',
       ]}
       primaryAction={{ label: 'Abrir Conversas', href: '/portal/atendimento/conversas' }}
       secondaryActions={[
