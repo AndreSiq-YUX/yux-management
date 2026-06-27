@@ -4,7 +4,7 @@ import { FinanceWorkspace } from '@/components/finance/FinanceWorkspace'
 import { calculateFinanceSummary } from '@/lib/finance/financeRules'
 import { financeService } from '@/services/financeService'
 import { platformService } from '@/services/platformService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import type { FinanceInvoice } from '@/types/finance'
 import type { ContractDetails, Organization } from '@/types/platform'
 import type { Client } from '@/types/client'
@@ -24,7 +24,7 @@ export function FinancePage() {
       const [loadedInvoices, loadedContracts, clientsResponse, loadedOrganizations] = await Promise.all([
         financeService.getInvoices(),
         platformService.getContracts(),
-        supabaseService.getClients({ page: 1, limit: 500 }),
+        backendDataService.getClients({ page: 1, limit: 500 }),
         platformService.getOrganizations(),
       ])
       setInvoices(loadedInvoices)

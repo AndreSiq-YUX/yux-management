@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { supabase } from '@/lib/supabase'
+import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
+import { omnichannelDataClient } from '@/lib/omnichannelDataClient'
 import {
   Bot, Clock, User, Tag, Plus, X, Phone, Mail, Building,
   Link, DollarSign, Calendar, AlertTriangle, Sparkles, Check, CheckCheck
@@ -101,7 +102,7 @@ export function ConversationDetails({
       }
       try {
         setLoadingCrm(true)
-        const { data: leadData, error: leadError } = await supabase
+        const { data: leadData, error: leadError } = await crmOpsDataClient
           .from('leads')
           .select('*')
           .eq('id', targetLeadId)
@@ -111,7 +112,7 @@ export function ConversationDetails({
         setLead(mapLead(leadData))
 
         // Fetch stages for the lead's pipeline
-        const { data: stagesData, error: stagesError } = await supabase
+        const { data: stagesData, error: stagesError } = await crmOpsDataClient
           .from('crm_pipeline_stages')
           .select('*')
           .eq('pipeline_id', leadData.pipeline_id)
@@ -147,7 +148,7 @@ export function ConversationDetails({
     try {
       setLoadingCrm(true)
       const legacyStage = selectedStage.isWon ? 'WON' : selectedStage.isLost ? 'LOST' : 'NEW'
-      const { error } = await supabase
+      const { error } = await crmOpsDataClient
         .from('leads')
         .update({
           stage_id: selectedStage.id,
@@ -175,7 +176,7 @@ export function ConversationDetails({
     const trimmed = newTag.trim().toLowerCase()
     if (!trimmed || tags.includes(trimmed)) return
     try {
-      const { error } = await supabase
+      const { error } = await omnichannelDataClient
         .from('conversation_tags')
         .insert({ conversation_id: conversation.id, tag: trimmed })
       if (error) throw error
@@ -191,7 +192,7 @@ export function ConversationDetails({
   // Remove tag
   const handleRemoveTag = async (tagToRemove: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await omnichannelDataClient
         .from('conversation_tags')
         .delete()
         .eq('conversation_id', conversation.id)

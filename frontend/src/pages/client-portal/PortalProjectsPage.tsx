@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { validateApprovalDecision } from '@/lib/projects/approvalRules'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { usePlatformStore } from '@/stores/platformStore'
 import {
   ApprovalDecisionValue,
@@ -57,7 +57,7 @@ export function PortalProjectsPage() {
       return
     }
 
-    supabaseService.getProjects({ limit: 100 })
+    backendDataService.getProjects({ limit: 100 })
       .then(response => {
         setProjects(response.projects)
         setSelectedProjectId(response.projects[0]?.id)
@@ -73,11 +73,11 @@ export function PortalProjectsPage() {
     try {
       setLoading(true)
       const [tasksResponse, phasesResponse, deliverablesResponse, approvalsResponse, timelineResponse] = await Promise.all([
-        supabaseService.getProjectTasks(projectId),
-        supabaseService.getProjectPhases(projectId),
-        supabaseService.getProjectDeliverables(projectId),
-        supabaseService.getProjectApprovalRequests(projectId),
-        supabaseService.getProjectTimeline(projectId),
+        backendDataService.getProjectTasks(projectId),
+        backendDataService.getProjectPhases(projectId),
+        backendDataService.getProjectDeliverables(projectId),
+        backendDataService.getProjectApprovalRequests(projectId),
+        backendDataService.getProjectTimeline(projectId),
       ])
       setTasks(tasksResponse.tasks)
       setPhases(phasesResponse.phases)
@@ -106,7 +106,7 @@ export function PortalProjectsPage() {
 
     try {
       setSubmittingId(approval.id)
-      await supabaseService.submitApprovalDecision(approval.id, decision, comment)
+      await backendDataService.submitApprovalDecision(approval.id, decision, comment)
       toast.success('Decisao registrada')
       if (selectedProjectId) loadProjectDetails(selectedProjectId)
     } catch (error) {

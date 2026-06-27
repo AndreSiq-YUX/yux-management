@@ -11,8 +11,8 @@ import {
 import { sanitizePortalAttribution } from '@/lib/crm/attributionRules'
 import type { LeadSourceRollup } from '@/types/crmAttribution'
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: {},
+vi.mock('@/lib/crmOpsDataClient', () => ({
+  crmOpsDataClient: {},
 }))
 
 const rollup: LeadSourceRollup = {
@@ -71,7 +71,7 @@ describe('crmAttributionService builders and mappers', () => {
     })
   })
 
-  it('maps rollups and alerts from Supabase rows', () => {
+  it('maps rollups and alerts from database rows', () => {
     expect(mapLeadSourceRollup({
       id: 'rollup-1',
       organization_id: 'org-1',

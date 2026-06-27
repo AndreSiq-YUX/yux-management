@@ -23,7 +23,7 @@ import toast from 'react-hot-toast'
 import { format, addDays, differenceInDays, isAfter, isBefore } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Project, ProjectTask, ProjectPhase } from '@/types/project'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 
 interface ProjectNotificationsProps {
   project: Project
@@ -126,11 +126,11 @@ export function ProjectNotifications({ project }: ProjectNotificationsProps) {
     setLoading(true)
     try {
       // Carregar tarefas
-      const tasksResponse = await supabaseService.getProjectTasks(project.id)
+      const tasksResponse = await backendDataService.getProjectTasks(project.id)
       setTasks(tasksResponse.tasks || [])
 
       // Carregar fases
-      const phasesResponse = await supabaseService.getProjectPhases(project.id)
+      const phasesResponse = await backendDataService.getProjectPhases(project.id)
       setPhases(phasesResponse.phases || [])
     } catch (error) {
       console.error('Erro ao carregar dados do projeto:', error)

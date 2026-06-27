@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { aiAssistantDataClient } from '@/lib/aiAssistantDataClient'
 import type {
   AiAssistantInput,
   AiAssistantRequiredField,
@@ -93,14 +93,7 @@ export function mapAiAssistant(row: any): AiAssistantSettings {
   }
 }
 
-const assistantSelect = `
-  *,
-  ai_assistant_objectives(*),
-  ai_assistant_required_fields(*),
-  ai_assistant_handoff_rules(*),
-  ai_assistant_safety_rules(*),
-  ai_assistant_knowledge_links(*, knowledge_entries(id, title, status))
-`
+const assistantSelect = '*'
 
 const requireData = async <T>(request: PromiseLike<{ data: T | null; error: any }>) => {
   const { data, error } = await request
@@ -108,18 +101,65 @@ const requireData = async <T>(request: PromiseLike<{ data: T | null; error: any 
   return data as T
 }
 
+async function attachAssistantRelations(rows: any[]) {
+  const assistantIds = [...new Set(rows.map(row => row.id).filter(Boolean))]
+  if (assistantIds.length === 0) return rows
+
+  const [objectives, requiredFields, handoffRules, safetyRules, knowledgeLinks] = await Promise.all([
+    requireData<any[]>(aiAssistantDataClient.from('ai_assistant_objectives').select('*').in('assistant_id', assistantIds).order('priority')),
+    requireData<any[]>(aiAssistantDataClient.from('ai_assistant_required_fields').select('*').in('assistant_id', assistantIds).order('order_index')),
+    requireData<any[]>(aiAssistantDataClient.from('ai_assistant_handoff_rules').select('*').in('assistant_id', assistantIds)),
+    requireData<any[]>(aiAssistantDataClient.from('ai_assistant_safety_rules').select('*').in('assistant_id', assistantIds)),
+    requireData<any[]>(aiAssistantDataClient.from('ai_assistant_knowledge_links').select('*').in('assistant_id', assistantIds)),
+  ])
+
+  const knowledgeIds = [...new Set((knowledgeLinks || []).map(link => link.knowledge_entry_id).filter(Boolean))]
+  const knowledgeEntries = knowledgeIds.length
+    ? await requireData<any[]>(aiAssistantDataClient.from('knowledge_entries').select('id, title, status').in('id', knowledgeIds))
+    : []
+  const knowledgeById = new Map((knowledgeEntries || []).map(entry => [entry.id, entry]))
+
+  const groupByAssistant = (items: any[]) => {
+    const grouped = new Map<string, any[]>()
+    for (const item of items || []) {
+      const assistantItems = grouped.get(item.assistant_id) || []
+      assistantItems.push(item)
+      grouped.set(item.assistant_id, assistantItems)
+    }
+    return grouped
+  }
+
+  const objectivesByAssistant = groupByAssistant(objectives)
+  const fieldsByAssistant = groupByAssistant(requiredFields)
+  const handoffByAssistant = groupByAssistant(handoffRules)
+  const safetyByAssistant = groupByAssistant(safetyRules)
+  const linksByAssistant = groupByAssistant(knowledgeLinks)
+
+  return rows.map(row => ({
+    ...row,
+    ai_assistant_objectives: objectivesByAssistant.get(row.id) || [],
+    ai_assistant_required_fields: fieldsByAssistant.get(row.id) || [],
+    ai_assistant_handoff_rules: handoffByAssistant.get(row.id) || [],
+    ai_assistant_safety_rules: safetyByAssistant.get(row.id) || [],
+    ai_assistant_knowledge_links: (linksByAssistant.get(row.id) || []).map(link => ({
+      ...link,
+      knowledge_entries: knowledgeById.get(link.knowledge_entry_id),
+    })),
+  }))
+}
+
 export const aiAssistantService = {
   async getAssistants(filters: { organizationId: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('ai_assistants').select(assistantSelect).eq('organization_id', filters.organizationId).order('updated_at', { ascending: false })
+    let query = aiAssistantDataClient.from('ai_assistants').select(assistantSelect).eq('organization_id', filters.organizationId).order('updated_at', { ascending: false })
     if (filters.clientId) query = query.eq('client_id', filters.clientId)
     if (filters.contractId) query = query.eq('contract_id', filters.contractId)
     const data = await requireData<any[]>(query)
-    return (data || []).map(mapAiAssistant)
+    return (await attachAssistantRelations(data || [])).map(mapAiAssistant)
   },
 
   async getActiveAssistant(organizationId: string) {
     const data = await requireData<any>(
-      supabase
+      aiAssistantDataClient
         .from('ai_assistants')
         .select(assistantSelect)
         .eq('organization_id', organizationId)
@@ -128,22 +168,24 @@ export const aiAssistantService = {
         .limit(1)
         .maybeSingle(),
     )
-    return data ? mapAiAssistant(data) : null
+    const [assistant] = data ? await attachAssistantRelations([data]) : []
+    return assistant ? mapAiAssistant(assistant) : null
   },
 
   async upsertAssistant(input: AiAssistantInput) {
     const data = await requireData<any>(
-      supabase
+      aiAssistantDataClient
         .from('ai_assistants')
         .upsert(buildAssistantPayload(input), { onConflict: 'organization_id,client_id,contract_id,name' })
         .select(assistantSelect)
         .single(),
     )
-    return mapAiAssistant(data)
+    const [assistant] = await attachAssistantRelations(data ? [data] : [])
+    return mapAiAssistant(assistant)
   },
 
   async addObjective(assistantId: string, input: { objectiveType: string; label: string; instructions?: string; priority?: number }) {
-    return requireData<any>(supabase.from('ai_assistant_objectives').insert({
+    return requireData<any>(aiAssistantDataClient.from('ai_assistant_objectives').insert({
       assistant_id: assistantId,
       objective_type: input.objectiveType,
       label: input.label.trim(),
@@ -153,11 +195,11 @@ export const aiAssistantService = {
   },
 
   async addRequiredField(assistantId: string, input: Pick<AiAssistantRequiredField, 'fieldKey' | 'label' | 'source' | 'isRequired' | 'orderIndex'>) {
-    return requireData<any>(supabase.from('ai_assistant_required_fields').insert(buildRequiredFieldPayload(assistantId, input)).select().single())
+    return requireData<any>(aiAssistantDataClient.from('ai_assistant_required_fields').insert(buildRequiredFieldPayload(assistantId, input)).select().single())
   },
 
   async addHandoffRule(assistantId: string, input: { name: string; ruleType: string; conditions: JsonRecord; minConfidence?: number; isEnabled?: boolean }) {
-    return requireData<any>(supabase.from('ai_assistant_handoff_rules').insert({
+    return requireData<any>(aiAssistantDataClient.from('ai_assistant_handoff_rules').insert({
       assistant_id: assistantId,
       name: input.name.trim(),
       rule_type: input.ruleType,
@@ -168,7 +210,7 @@ export const aiAssistantService = {
   },
 
   async addSafetyRule(assistantId: string, input: { name: string; ruleType: string; instructions: string; severity?: string; isEnabled?: boolean }) {
-    return requireData<any>(supabase.from('ai_assistant_safety_rules').insert({
+    return requireData<any>(aiAssistantDataClient.from('ai_assistant_safety_rules').insert({
       assistant_id: assistantId,
       name: input.name.trim(),
       rule_type: input.ruleType,
@@ -179,7 +221,7 @@ export const aiAssistantService = {
   },
 
   async linkKnowledgeEntry(assistantId: string, knowledgeEntryId: string) {
-    return requireData<any>(supabase.from('ai_assistant_knowledge_links').insert({
+    return requireData<any>(aiAssistantDataClient.from('ai_assistant_knowledge_links').insert({
       assistant_id: assistantId,
       knowledge_entry_id: knowledgeEntryId,
     }).select().single())

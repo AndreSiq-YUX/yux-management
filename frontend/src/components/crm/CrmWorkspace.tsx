@@ -181,7 +181,7 @@ export function CrmWorkspace() {
     return (
       <CrmNotice
         title="CRM indisponivel neste contexto"
-        description={platformError || 'Nao foi possivel carregar uma organizacao real para o CRM. Verifique a sessao do usuario, as permissoes de organizations na Data API e se as migracoes do Supabase foram aplicadas.'}
+        description={platformError || 'Nao foi possivel carregar uma organizacao real para o CRM. Verifique a sessao do usuario, as permissoes de organizations na API e se as migracoes do Postgres foram aplicadas.'}
       />
     )
   }

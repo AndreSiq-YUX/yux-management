@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase'
+import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
+import { backendMe } from '@/services/backendAuthService'
 import type {
   CrmAssignmentMode,
   CrmGovernanceContext,
@@ -134,7 +135,7 @@ const mapTeamMember = (row: any): CrmTeamMember => ({
 
 export const crmGovernanceService = {
   async getInstanceByContract(contractId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('crm_instances')
       .select('*')
       .eq('contract_id', contractId)
@@ -145,7 +146,7 @@ export const crmGovernanceService = {
   },
 
   async getActiveInstanceForOrganization(organizationId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('crm_instances')
       .select('*')
       .eq('organization_id', organizationId)
@@ -159,7 +160,7 @@ export const crmGovernanceService = {
   },
 
   async createInstance(input: CreateCrmInstanceInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('crm_instances')
       .upsert(buildCrmInstanceInsertPayload(input), { onConflict: 'contract_id' })
       .select()
@@ -170,13 +171,13 @@ export const crmGovernanceService = {
   },
 
   async getGovernanceContext(crmInstanceId: string): Promise<CrmGovernanceContext> {
-    const userResult = await supabase.auth.getUser()
-    const currentUserId = userResult.data.user?.id
+    const userResult = await backendMe()
+    const currentUserId = userResult.user.id
 
     const [{ data: instance, error: instanceError }, { data: members, error: membersError }, { data: teams, error: teamsError }] = await Promise.all([
-      supabase.from('crm_instances').select('*').eq('id', crmInstanceId).single(),
-      supabase.from('crm_instance_members').select('*').eq('crm_instance_id', crmInstanceId),
-      supabase.from('crm_teams').select('*').eq('crm_instance_id', crmInstanceId).eq('is_active', true),
+      crmOpsDataClient.from('crm_instances').select('*').eq('id', crmInstanceId).single(),
+      crmOpsDataClient.from('crm_instance_members').select('*').eq('crm_instance_id', crmInstanceId),
+      crmOpsDataClient.from('crm_teams').select('*').eq('crm_instance_id', crmInstanceId).eq('is_active', true),
     ])
 
     if (instanceError) throw instanceError
@@ -185,7 +186,7 @@ export const crmGovernanceService = {
 
     const teamIds = (teams || []).map((team: any) => team.id)
     const { data: teamMembers, error: teamMembersError } = teamIds.length
-      ? await supabase.from('crm_team_members').select('*').in('team_id', teamIds)
+      ? await crmOpsDataClient.from('crm_team_members').select('*').in('team_id', teamIds)
       : { data: [], error: null }
 
     if (teamMembersError) throw teamMembersError
@@ -202,7 +203,7 @@ export const crmGovernanceService = {
   },
 
   async inviteMember(input: InviteCrmMemberInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('crm_instance_members')
       .insert(buildCrmMemberInvitePayload(input))
       .select()
@@ -213,7 +214,7 @@ export const crmGovernanceService = {
   },
 
   async publishConfiguration(input: PublishCrmConfigurationInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('crm_configuration_publications')
       .insert(buildCrmPublicationPayload(input))
       .select()

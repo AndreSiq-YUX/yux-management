@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabaseService } from '@/services/supabaseService';
+import { backendDataService } from '@/services/backendDataService';
 import { Search, Plus, Eye, Edit, Trash2, Download, ChevronDown, Upload, Loader2, Building2, Mail, Phone, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Client, ClientFilters as ClientFiltersType, ClientStats as ClientStatsType } from '@/types/client';
@@ -46,7 +46,7 @@ export function ClientsPage() {
   const fetchStats = async () => {
     try {
       setStatsLoading(true);
-      const response = await supabaseService.getClientStats();
+      const response = await backendDataService.getClientStats();
       
       if (response.success && response.data) {
         setStats(response.data as ClientStatsType);
@@ -79,7 +79,7 @@ export function ClientsPage() {
       if (currentFilters.startDate) params.startDate = currentFilters.startDate;
       if (currentFilters.endDate) params.endDate = currentFilters.endDate;
       
-      const response = await supabaseService.getClients(params);
+      const response = await backendDataService.getClients(params);
       
       if (response.clients) {
         setClients(response.clients || [])
@@ -116,7 +116,7 @@ export function ClientsPage() {
   useEffect(() => {
     const loadUsers = async () => {
       try {
-        const res = await supabaseService.getUsers({ limit: 500 });
+        const res = await backendDataService.getUsers({ limit: 500 });
         if ((res as any)?.success) {
           const map: Record<string, string> = {};
           for (const u of (((res as any).data) || [])) {
@@ -156,7 +156,7 @@ export function ClientsPage() {
 
   const handleDeleteClient = async (clientId: string) => {
     try {
-      const response = await supabaseService.deleteClient(clientId);
+      const response = await backendDataService.deleteClient(clientId);
       if (response.success) {
         toast.success('Cliente excluído com sucesso!');
         fetchClients(currentPage, searchTerm);
@@ -197,7 +197,7 @@ export function ClientsPage() {
     try {
       setExporting(true);
       setShowExportDropdown(false);
-      const response = await supabaseService.getClients({ ...filters, page: 1, limit: 10000 });
+      const response = await backendDataService.getClients({ ...filters, page: 1, limit: 10000 });
       downloadCsv(`clientes_${new Date().toISOString().split('T')[0]}.csv`, response.clients || []);
       toast.success('Dados exportados com sucesso!');
     } catch (error) {
@@ -212,7 +212,7 @@ export function ClientsPage() {
     try {
       setExporting(true);
       setShowExportDropdown(false);
-      const response = await supabaseService.getClients({ ...filters, page: 1, limit: 10000 });
+      const response = await backendDataService.getClients({ ...filters, page: 1, limit: 10000 });
       downloadCsv(`clientes_${new Date().toISOString().split('T')[0]}.csv`, response.clients || []);
       toast.success('Exportacao gerada em CSV.');
     } catch (error) {

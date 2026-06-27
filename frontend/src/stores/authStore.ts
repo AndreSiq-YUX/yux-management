@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { supabase } from '@/lib/supabase'
-import { supabaseService } from '@/services/supabaseService'
+import { backendLogin, backendLogout, backendMe, isNotAuthenticatedError } from '@/services/backendAuthService'
 
 export interface User {
   id: string
@@ -76,10 +75,14 @@ export const useAuthStore = create<AuthStore>()(
         try {
           set({ isLoading: true })
 
-          let authData
-
           try {
-            authData = await supabaseService.signIn(email, password)
+            const authData = await backendLogin(email, password)
+            set({
+              user: authData.user,
+              token: authData.token,
+              isAuthenticated: true,
+              isLoading: false,
+            })
           } catch (error) {
             const demoUser = getDemoUser(email, password)
             if (demoUser) {
@@ -94,27 +97,6 @@ export const useAuthStore = create<AuthStore>()(
 
             throw error
           }
-          
-          if (authData.user) {
-            const userData = await supabaseService.getCurrentUser()
-            
-            if (userData?.profile) {
-              const user: User = {
-                id: userData.profile.id,
-                name: userData.profile.name,
-                email: authData.user.email || '',
-                role: userData.profile.role.toLowerCase() as 'admin' | 'manager' | 'client',
-                avatar: userData.profile.avatar || undefined
-              }
-
-              set({
-                user,
-                token: authData.session?.access_token || 'fake-token',
-                isAuthenticated: true,
-                isLoading: false,
-              })
-            }
-          }
         } catch (error) {
           set({ isLoading: false })
           throw error
@@ -123,7 +105,7 @@ export const useAuthStore = create<AuthStore>()(
 
       logout: async () => {
         try {
-          await supabaseService.signOut()
+          await backendLogout()
           set({
             user: null,
             token: null,
@@ -150,7 +132,7 @@ export const useAuthStore = create<AuthStore>()(
         const currentUser = get().user
         if (currentUser) {
           set({
-            user: { ...currentUser, ...userData }
+            user: { ...currentUser, ...userData },
           })
         }
       },
@@ -158,35 +140,24 @@ export const useAuthStore = create<AuthStore>()(
       initialize: async () => {
         try {
           set({ isLoading: true })
-          
-          const { data: { session } } = await supabase.auth.getSession()
-          
-          if (session?.user) {
-            const userData = await supabaseService.getCurrentUser()
-            
-            if (userData?.profile) {
-              const user: User = {
-                id: userData.profile.id,
-                name: userData.profile.name,
-                email: session.user.email || '',
-                role: userData.profile.role.toLowerCase() as 'admin' | 'manager' | 'client',
-                avatar: userData.profile.avatar || undefined
-              }
 
-              set({
-                user,
-                isAuthenticated: true,
-                isLoading: false,
-              })
-            } else {
-              set({ isLoading: false })
-            }
-          } else {
-            set({ isLoading: false })
-          }
+          const authData = await backendMe()
+          set({
+            user: authData.user,
+            token: authData.token,
+            isAuthenticated: true,
+            isLoading: false,
+          })
         } catch (error) {
-          console.error('Auth initialization error:', error)
-          set({ isLoading: false })
+          if (!isNotAuthenticatedError(error)) {
+            console.error('Auth initialization error:', error)
+          }
+          set({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+            isLoading: false,
+          })
         }
       },
     }),
@@ -197,23 +168,6 @@ export const useAuthStore = create<AuthStore>()(
         token: state.token,
         isAuthenticated: state.isAuthenticated,
       }),
-    }
-  )
+    },
+  ),
 )
-
-// Listen to auth changes
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT') {
-    // Atualiza somente o estado local para evitar loop com signOut()
-    useAuthStore.setState({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-    })
-  }
-  if (event === 'SIGNED_IN' && session?.user) {
-    // Mantemos sem efeitos colaterais pesados aqui para evitar loops.
-    // A sincronização completa pode ser feita via initialize() quando necessário.
-  }
-})

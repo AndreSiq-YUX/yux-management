@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import type {
   AutomationEvent,
   AutomationFlow,
@@ -105,6 +105,15 @@ const requireData = async <T>(request: PromiseLike<{ data: T | null; error: any 
   return data as T
 }
 
+const buildQuery = (params: Record<string, string | undefined>) => {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) search.set(key, value)
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
 export function isAutomationBackendUnavailableError(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { code?: string; status?: number; message?: string; details?: string; hint?: string }
@@ -119,127 +128,104 @@ export function isAutomationBackendUnavailableError(error: unknown) {
 
 export const automationService = {
   async getFlows(filters?: { organizationId?: string }) {
-    let query = supabase.from('automation_flows').select(flowSelect).order('updated_at', { ascending: false })
-    if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
-    const data = await requireData<any[]>(query)
-    return (data || []).map(mapAutomationFlow)
+    return apiRequest<AutomationFlow[]>(`/automations/flows${buildQuery({ organizationId: filters?.organizationId })}`)
   },
 
   async createFlow(input: AutomationFlowInput) {
-    const data = await requireData<any>(
-      supabase.from('automation_flows').insert(buildFlowPayload(input)).select(flowSelect).single(),
-    )
-    return mapAutomationFlow(data)
+    return apiRequest<AutomationFlow>('/automations/flows', {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async addTrigger(flowId: string, input: Pick<AutomationTrigger, 'triggerType' | 'config'>) {
-    return requireData<any>(supabase.from('automation_triggers').insert(buildTriggerPayload(flowId, input)).select().single())
+    return apiRequest(`/automations/flows/${flowId}/triggers`, {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async addCondition(flowId: string, input: { field: string; operator: string; value?: unknown }) {
-    return requireData<any>(supabase.from('automation_conditions').insert({
-      flow_id: flowId,
-      field: input.field,
-      operator: input.operator,
-      value: input.value ?? null,
-    }).select().single())
+    return apiRequest(`/automations/flows/${flowId}/conditions`, {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async addAction(flowId: string, input: { actionType: string; orderIndex?: number; payload?: Record<string, unknown> }) {
-    return requireData<any>(supabase.from('automation_actions').insert({
-      flow_id: flowId,
-      action_type: input.actionType,
-      order_index: input.orderIndex ?? 1,
-      payload: input.payload || {},
-    }).select().single())
+    return apiRequest(`/automations/flows/${flowId}/actions`, {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async publishFlow(flowId: string) {
-    const data = await requireData<any>(
-      supabase.from('automation_flows').update({ status: 'published' }).eq('id', flowId).select(flowSelect).single(),
-    )
-    return mapAutomationFlow(data)
+    return apiRequest<AutomationFlow>(`/automations/flows/${flowId}`, {
+      method: 'PATCH',
+      body: { status: 'published' },
+    })
   },
 
   async setFlowEnabled(flowId: string, isEnabled: boolean) {
-    const data = await requireData<any>(
-      supabase.from('automation_flows').update({ is_enabled: isEnabled }).eq('id', flowId).select(flowSelect).single(),
-    )
-    return mapAutomationFlow(data)
+    return apiRequest<AutomationFlow>(`/automations/flows/${flowId}`, {
+      method: 'PATCH',
+      body: { isEnabled },
+    })
   },
 
   async updateFlow(flowId: string, input: Partial<Pick<AutomationFlowInput, 'name' | 'description' | 'sectorTemplateKey' | 'dailyRunLimit' | 'requiresHumanApproval' | 'riskLevel' | 'builderMode' | 'graph'>>) {
-    const patch: Record<string, unknown> = {}
-    if (input.name !== undefined) patch.name = input.name.trim()
-    if (input.description !== undefined) patch.description = input.description || null
-    if (input.sectorTemplateKey !== undefined) patch.sector_template_key = input.sectorTemplateKey || null
-    if (input.dailyRunLimit !== undefined) patch.daily_run_limit = input.dailyRunLimit
-    if (input.requiresHumanApproval !== undefined) patch.requires_human_approval = input.requiresHumanApproval
-    if (input.riskLevel !== undefined) patch.risk_level = input.riskLevel
-    if (input.builderMode !== undefined) patch.builder_mode = input.builderMode
-    if (input.graph !== undefined) patch.graph = input.graph
-    const data = await requireData<any>(
-      supabase.from('automation_flows').update(patch).eq('id', flowId).select(flowSelect).single(),
-    )
-    return mapAutomationFlow(data)
+    return apiRequest<AutomationFlow>(`/automations/flows/${flowId}`, {
+      method: 'PATCH',
+      body: input,
+    })
   },
 
   async deleteFlow(flowId: string) {
-    const { error } = await supabase.from('automation_flows').delete().eq('id', flowId)
-    if (error) throw error
+    await apiRequest(`/automations/flows/${flowId}`, { method: 'DELETE' })
+  },
+
+  async getFlowExecutionRuns(flowId: string) {
+    return apiRequest<any[]>(`/automations/flows/${flowId}/executions`)
   },
 
   async updateTrigger(triggerId: string, input: Pick<AutomationTrigger, 'triggerType' | 'config'>) {
-    const data = await requireData<any>(
-      supabase.from('automation_triggers').update({
-        trigger_type: input.triggerType,
-        config: input.config || {},
-      }).eq('id', triggerId).select().single(),
-    )
-    return data
+    return apiRequest(`/automations/triggers/${triggerId}`, {
+      method: 'PATCH',
+      body: input,
+    })
   },
 
   async deleteTrigger(triggerId: string) {
-    const { error } = await supabase.from('automation_triggers').delete().eq('id', triggerId)
-    if (error) throw error
+    await apiRequest(`/automations/triggers/${triggerId}`, { method: 'DELETE' })
   },
 
   async updateCondition(conditionId: string, input: { field: string; operator: string; value?: unknown }) {
-    const data = await requireData<any>(
-      supabase.from('automation_conditions').update({
-        field: input.field,
-        operator: input.operator,
-        value: input.value ?? null,
-      }).eq('id', conditionId).select().single(),
-    )
-    return data
+    return apiRequest(`/automations/conditions/${conditionId}`, {
+      method: 'PATCH',
+      body: input,
+    })
   },
 
   async deleteCondition(conditionId: string) {
-    const { error } = await supabase.from('automation_conditions').delete().eq('id', conditionId)
-    if (error) throw error
+    await apiRequest(`/automations/conditions/${conditionId}`, { method: 'DELETE' })
   },
 
   async updateAction(actionId: string, input: { actionType?: string; orderIndex?: number; payload?: Record<string, unknown> }) {
-    const patch: Record<string, unknown> = {}
-    if (input.actionType !== undefined) patch.action_type = input.actionType
-    if (input.orderIndex !== undefined) patch.order_index = input.orderIndex
-    if (input.payload !== undefined) patch.payload = input.payload
-    const data = await requireData<any>(
-      supabase.from('automation_actions').update(patch).eq('id', actionId).select().single(),
-    )
-    return data
+    return apiRequest(`/automations/actions/${actionId}`, {
+      method: 'PATCH',
+      body: input,
+    })
   },
 
   async deleteAction(actionId: string) {
-    const { error } = await supabase.from('automation_actions').delete().eq('id', actionId)
-    if (error) throw error
+    await apiRequest(`/automations/actions/${actionId}`, { method: 'DELETE' })
   },
 
   async dispatchEvent(event: AutomationEvent) {
-    const { data, error } = await supabase.functions.invoke('dispatch-crm-automation', { body: { event } })
-    if (error) throw error
-    return data
+    return apiRequest('/automations/dispatch', {
+      method: 'POST',
+      body: { event },
+    })
   },
 
   async saveSimulationRun(input: {
@@ -252,30 +238,14 @@ export const automationService = {
     plannedActions: unknown[]
     blockedReasons: string[]
   }) {
-    const data = await requireData<any>(
-      supabase.from('automation_simulation_runs').insert({
-        organization_id: input.organizationId,
-        flow_id: input.flowId,
-        event_type: input.eventType,
-        sample_payload: input.samplePayload,
-        matched: input.matched,
-        condition_results: input.conditionResults,
-        planned_actions: input.plannedActions,
-        blocked_reasons: input.blockedReasons,
-      }).select().single(),
-    )
-    return data
+    return apiRequest('/automations/simulations', {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async getFlowVersions(flowId: string) {
-    const data = await requireData<any[]>(
-      supabase
-        .from('automation_flow_versions')
-        .select('*')
-        .eq('flow_id', flowId)
-        .order('version_number', { ascending: false }),
-    )
-    return data || []
+    return apiRequest<any[]>(`/automations/flows/${flowId}/versions`)
   },
 
   async createFlowVersion(input: {
@@ -284,118 +254,60 @@ export const automationService = {
     snapshot: Record<string, unknown>
     status?: 'draft' | 'published' | 'archived'
   }) {
-    const data = await requireData<any>(
-      supabase
-        .from('automation_flow_versions')
-        .insert(buildFlowVersionPayload(input))
-        .select()
-        .single(),
-    )
-    return data
+    return apiRequest<any>(`/automations/flows/${input.flowId}/versions`, {
+      method: 'POST',
+      body: {
+        versionNumber: input.versionNumber,
+        snapshot: input.snapshot,
+        status: input.status || 'draft',
+      },
+    })
   },
 
   async setActiveVersion(flowId: string, versionId: string, versionNumber: number) {
-    const data = await requireData<any>(
-      supabase
-        .from('automation_flows')
-        .update({
-          active_version_id: versionId,
-          published_version: versionNumber,
-        })
-        .eq('id', flowId)
-        .select(flowSelect)
-        .single(),
-    )
-    return mapAutomationFlow(data)
+    return apiRequest<AutomationFlow>(`/automations/flows/${flowId}`, {
+      method: 'PATCH',
+      body: {
+        activeVersionId: versionId,
+        publishedVersion: versionNumber,
+      },
+    })
   },
 
   async getMaterials(organizationId: string): Promise<OrganizationMaterial[]> {
-    const { data, error } = await supabase
-      .from('organization_materials')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .order('name', { ascending: true })
-    if (error) throw error
-    return data || []
+    return apiRequest<OrganizationMaterial[]>(`/automations/materials?organizationId=${encodeURIComponent(organizationId)}`)
   },
 
   async uploadMaterial(organizationId: string, file: File): Promise<OrganizationMaterial> {
-    const filePath = `${organizationId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
-    
-    // 1. Upload to storage bucket
-    const { error: uploadError } = await supabase.storage
-      .from('materials')
-      .upload(filePath, file)
-    
-    if (uploadError) throw uploadError
-
-    // 2. Get public url
-    const { data: { publicUrl } } = supabase.storage
-      .from('materials')
-      .getPublicUrl(filePath)
-
-    // 3. Register in database
-    const data = await requireData<any>(
-      supabase.from('organization_materials').insert({
-        organization_id: organizationId,
+    return apiRequest<OrganizationMaterial>('/automations/materials', {
+      method: 'POST',
+      body: {
+        organizationId,
         name: file.name,
-        file_url: publicUrl,
-        file_type: file.type,
-        byte_size: file.size,
-      }).select().single()
-    )
-    
-    return data
+        fileType: file.type || 'application/octet-stream',
+        byteSize: file.size,
+        contentBase64: await fileToBase64(file),
+      },
+    })
   },
 
   async deleteMaterial(materialId: string): Promise<void> {
-    // 1. Get material info
-    const { data: material, error: getError } = await supabase
-      .from('organization_materials')
-      .select('*')
-      .eq('id', materialId)
-      .single()
-
-    if (getError || !material) throw new Error('Material not found')
-
-    // 2. Extract path from url
-    const urlParts = material.file_url.split('/storage/v1/object/public/materials/')
-    if (urlParts.length === 2) {
-      const filePath = urlParts[1]
-      await supabase.storage.from('materials').remove([filePath])
-    }
-
-    // 3. Delete from database
-    const { error: deleteError } = await supabase
-      .from('organization_materials')
-      .delete()
-      .eq('id', materialId)
-
-    if (deleteError) throw deleteError
+    await apiRequest(`/automations/materials/${materialId}`, { method: 'DELETE' })
   },
 
   async getUploadLimit(organizationId: string): Promise<number> {
-    let globalLimit = 10
-    try {
-      const { data: globalData } = await supabase
-        .from('system_config')
-        .select('value')
-        .eq('key', 'global_max_upload_size_mb')
-        .maybeSingle()
-      if (globalData?.value && typeof globalData.value === 'object') {
-        globalLimit = Number((globalData.value as any).limit || 10)
-      }
-    } catch (err) {
-      console.warn('Failed to fetch global upload limit, falling back to 10', err)
-    }
-
-    const { data, error } = await supabase
-      .from('omnichannel_settings')
-      .select('max_upload_size_mb')
-      .eq('organization_id', organizationId)
-      .maybeSingle()
-
-    if (error || !data) return globalLimit
-    return Number(data.max_upload_size_mb || globalLimit)
+    const data = await apiRequest<{ limitMb: number }>(`/automations/materials/upload-limit?organizationId=${encodeURIComponent(organizationId)}`)
+    return data.limitMb
   }
+}
+
+async function fileToBase64(file: File) {
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return btoa(binary)
 }

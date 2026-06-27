@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { useAuthStore } from '@/stores/authStore';
-import { supabaseService } from '@/services/supabaseService';
+import { backendDataService } from '@/services/backendDataService';
 import toast from 'react-hot-toast';
 
 // API Response types
@@ -339,7 +339,7 @@ class ApiService {
     return this.put(`/clients/${clientId}/stats`);
   }
 
-  // Project methods - using supabaseService
+  // Project methods - using backendDataService
   async getProjects(params?: {
     page?: number;
     limit?: number;
@@ -354,11 +354,11 @@ class ApiService {
     budgetMin?: number;
     budgetMax?: number;
   }) {
-    return supabaseService.getProjects(params);
+    return backendDataService.getProjects(params);
   }
 
   async getProjectById(id: string) {
-    return supabaseService.getProjectById(id);
+    return backendDataService.getProjectById(id);
   }
 
   async createProject(data: {
@@ -377,7 +377,7 @@ class ApiService {
     tags?: string[];
     notes?: string;
   }) {
-    return supabaseService.createProject(data);
+    return backendDataService.createProject(data);
   }
 
   async updateProject(id: string, data: {
@@ -398,23 +398,23 @@ class ApiService {
     notes?: string;
     progress?: number;
   }) {
-    return supabaseService.updateProject(id, data);
+    return backendDataService.updateProject(id, data);
   }
 
   async deleteProject(id: string) {
-    return supabaseService.deleteProject(id);
+    return backendDataService.deleteProject(id);
   }
 
   async getProjectStats() {
-    return supabaseService.getProjectStats();
+    return backendDataService.getProjectStats();
   }
 
   async updateProjectStatus(id: string, status: string) {
-    return supabaseService.updateProject(id, { status });
+    return backendDataService.updateProject(id, { status });
   }
 
   async updateProjectProgress(id: string, progress: number) {
-    return supabaseService.updateProject(id, { progress });
+    return backendDataService.updateProject(id, { progress });
   }
 
   async getProjectsByClient(clientId: string, params?: {
@@ -423,7 +423,7 @@ class ApiService {
     status?: string;
     includeArchived?: boolean;
   }) {
-    return supabaseService.getProjectsByClient(clientId, params);
+    return backendDataService.getProjectsByClient(clientId, params);
   }
 
   async duplicateProject(id: string, data?: {
@@ -431,15 +431,15 @@ class ApiService {
     clientId?: string;
     startDate?: string;
   }) {
-    return supabaseService.duplicateProject(id, data);
+    return backendDataService.duplicateProject(id, data);
   }
 
   async archiveProject(id: string) {
-    return supabaseService.archiveProject(id);
+    return backendDataService.archiveProject(id);
   }
 
   async unarchiveProject(id: string) {
-    return supabaseService.unarchiveProject(id);
+    return backendDataService.unarchiveProject(id);
   }
 
   // Project Tasks methods

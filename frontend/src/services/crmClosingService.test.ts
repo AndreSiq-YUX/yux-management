@@ -13,8 +13,8 @@ import {
 import type { CrmLead } from '@/types/crm'
 import type { PackageDefinition } from '@/types/platform'
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: {},
+vi.mock('@/lib/crmClosingDataClient', () => ({
+  crmClosingDataClient: {},
 }))
 
 const lead: CrmLead = {

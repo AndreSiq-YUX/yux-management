@@ -1,7 +1,7 @@
-import { supabase } from '@/lib/supabase'
+import { crmConversationDataClient } from '@/lib/crmConversationDataClient'
 import { crmService } from '@/services/crmService'
 import { platformService } from '@/services/platformService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import type { Client } from '@/types/client'
 import type { CrmLead } from '@/types/crm'
 import type { BillingCycle, BlueprintApplicationRun, ContractDetails, ContractStatus, Organization, PackageDefinition } from '@/types/platform'
@@ -64,7 +64,7 @@ async function updateConvertedLead(input: LeadClientConversionInput, clientId: s
     `Cliente convertido em ${now}. Cliente administrativo: ${clientId}. Contrato: ${input.contract.name}.`,
   ].filter(Boolean).join('\n\n')
 
-  const { error } = await supabase
+  const { error } = await crmConversationDataClient
     .from('leads')
     .update({
       client_id: clientId,
@@ -94,7 +94,7 @@ async function updateConvertedLead(input: LeadClientConversionInput, clientId: s
 
 export const clientConversionService = {
   async convertLeadToClientContract(input: LeadClientConversionInput): Promise<LeadClientConversionResult> {
-    const clientResponse = await supabaseService.createClient({
+    const clientResponse = await backendDataService.createClient({
       ...input.client,
       status: 'active',
       acquisitionCost: input.client.acquisitionCost,

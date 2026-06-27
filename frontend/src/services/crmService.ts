@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import type {
   AutomationExecution,
   CreateLeadTaskInput,
@@ -216,6 +216,15 @@ const toLegacyStage = (stage: Pick<CrmPipelineStage, 'key' | 'isWon' | 'isLost'>
   return 'NEW'
 }
 
+const buildQuery = (params: Record<string, string | undefined>) => {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) search.set(key, value)
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
 export const buildLeadScoreUpdatePayload = (score: number) => ({
   score: Math.max(0, Math.min(100, Math.round(score))),
 })
@@ -308,14 +317,7 @@ export const buildLeadLostPayload = (input: MarkLeadLostInput) => ({
 
 export const crmService = {
   async getPipelines(organizationId: string) {
-    const { data, error } = await supabase
-      .from('crm_pipelines')
-      .select('*, crm_pipeline_stages(*)')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true)
-      .order('name')
-    if (error) throw error
-    return (data || []).map(mapPipeline)
+    return apiRequest<CrmPipeline[]>(`/crm/pipelines?organizationId=${encodeURIComponent(organizationId)}`)
   },
 
   async getPipelinesForOrganization(organizationId: string) {
@@ -323,133 +325,86 @@ export const crmService = {
   },
 
   async getLeads(organizationId: string, pipelineId: string) {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('pipeline_id', pipelineId)
-      .order('updated_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapLead)
+    return apiRequest<CrmLead[]>(`/crm/leads${buildQuery({ organizationId, pipelineId })}`)
   },
 
   async getLeadsForPipeline(pipelineId: string) {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('pipeline_id', pipelineId)
-      .order('updated_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapLead)
+    return apiRequest<CrmLead[]>(`/crm/leads${buildQuery({ pipelineId })}`)
   },
 
   async createLead(input: Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt'>) {
-    const { data, error } = await supabase.from('leads').insert({
-      organization_id: input.organizationId,
-      pipeline_id: input.pipelineId,
-      stage_id: input.stageId,
-      name: input.name,
-      email: input.email,
-      phone: input.phone || null,
-      company: input.company || null,
-      source: input.source,
-      source_kind: input.sourceKind || 'manual',
-      status: input.status || 'open',
-      score: input.score,
-      value: input.value ?? null,
-      notes: input.notes || null,
-      owner_id: input.ownerId || input.assignedTo || null,
-      assigned_to: input.assignedTo || null,
-      last_activity_at: input.lastActivityAt || new Date().toISOString(),
-      next_follow_up_at: input.nextFollowUpAt || null,
-      attribution_context: input.attributionContext || {},
-      stage: 'NEW',
-    }).select().single()
-    if (error) throw error
-    return mapLead(data)
+    return apiRequest<CrmLead>('/crm/leads', {
+      method: 'POST',
+      body: {
+        ...input,
+        sourceKind: input.sourceKind || 'manual',
+        status: input.status || 'open',
+        lastActivityAt: input.lastActivityAt || new Date().toISOString(),
+        attributionContext: input.attributionContext || {},
+      },
+    })
   },
 
   async createGovernedLead(input: CreateGovernedLeadInput) {
-    const { data, error } = await supabase
-      .from('leads')
-      .insert(buildGovernedLeadInsertPayload(input))
-      .select()
-      .single()
-    if (error) throw error
-    return mapLead(data)
+    return apiRequest<CrmLead>('/crm/leads', {
+      method: 'POST',
+      body: {
+        ...input,
+        assignmentState: input.ownerMemberId ? 'assigned' : 'in_queue',
+        lastActivityAt: input.lastActivityAt || new Date().toISOString(),
+        sourceKind: input.sourceKind || 'manual',
+        status: input.status || 'open',
+        attributionContext: input.attributionContext || {},
+      },
+    })
   },
 
   async getLeadsForInstance(crmInstanceId: string, pipelineId?: string) {
-    let query = supabase
-      .from('leads')
-      .select('*')
-      .eq('crm_instance_id', crmInstanceId)
-      .order('updated_at', { ascending: false })
-
-    if (pipelineId) {
-      query = query.eq('pipeline_id', pipelineId)
-    }
-
-    const { data, error } = await query
-    if (error) throw error
-    return (data || []).map(mapLead)
+    return apiRequest<CrmLead[]>(`/crm/leads${buildQuery({ crmInstanceId, pipelineId })}`)
   },
 
   async assignLead(leadId: string, input: AssignLeadInput) {
-    const { data, error } = await supabase
-      .from('leads')
-      .update(buildLeadAssignmentPayload(input))
-      .eq('id', leadId)
-      .select()
-      .single()
-    if (error) throw error
-    return mapLead(data)
+    return apiRequest<CrmLead>(`/crm/leads/${leadId}`, {
+      method: 'PATCH',
+      body: {
+        teamId: input.teamId,
+        ownerMemberId: input.ownerMemberId,
+        assignmentMode: input.assignmentMode,
+      },
+    })
   },
 
   async moveLead(leadId: string, stage: CrmPipelineStage) {
     const legacyStage = toLegacyStage(stage)
-    const { data, error } = await supabase
-      .from('leads')
-      .update({
-        stage_id: stage.id,
+    return apiRequest<CrmLead>(`/crm/leads/${leadId}`, {
+      method: 'PATCH',
+      body: {
+        stageId: stage.id,
         stage: legacyStage,
         status: stage.isWon ? 'won' : stage.isLost ? 'lost' : 'open',
-        won_at: stage.isWon ? new Date().toISOString() : null,
-        lost_at: stage.isLost ? new Date().toISOString() : null,
-        last_activity_at: new Date().toISOString(),
-      })
-      .eq('id', leadId)
-      .select()
-      .single()
-    if (error) throw error
-    return mapLead(data)
+        wonAt: stage.isWon ? new Date().toISOString() : null,
+        lostAt: stage.isLost ? new Date().toISOString() : null,
+        lastActivityAt: new Date().toISOString(),
+      },
+    })
   },
 
   async moveLeadToStage(leadId: string, stageId: string) {
-    const { data: stage, error: stageError } = await supabase
-      .from('crm_pipeline_stages')
-      .select('*')
-      .eq('id', stageId)
-      .single()
-    if (stageError) throw stageError
-    return crmService.moveLead(leadId, mapStage(stage))
+    return apiRequest<CrmLead>(`/crm/leads/${leadId}/stage`, {
+      method: 'PATCH',
+      body: { stageId },
+    })
   },
 
   async updateLeadScore(leadId: string, score: number) {
-    const { data, error } = await supabase
-      .from('leads')
-      .update(buildLeadScoreUpdatePayload(score))
-      .eq('id', leadId)
-      .select()
-      .single()
-    if (error) throw error
-    return mapLead(data)
+    return apiRequest<CrmLead>(`/crm/leads/${leadId}`, {
+      method: 'PATCH',
+      body: buildLeadScoreUpdatePayload(score),
+    })
   },
 
   async getInteractions(leadId: string) {
-    const { data, error } = await supabase.from('interactions').select('*').eq('lead_id', leadId).order('date', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapInteraction)
+    return apiRequest<CrmInteraction[]>(`/crm/leads/${leadId}/interactions`)
   },
 
   async createInteraction(organizationId: string, leadId: string, input: Pick<CrmInteraction, 'type' | 'title' | 'description'>) {
@@ -457,21 +412,20 @@ export const crmService = {
   },
 
   async recordLeadActivity(input: RecordLeadActivityInput) {
-    const payload = buildLeadActivityInsertPayload(input)
-    const { data, error } = await supabase.from('interactions').insert(payload).select().single()
-    if (error) throw error
-    const { error: leadError } = await supabase
-      .from('leads')
-      .update({ last_activity_at: payload.date })
-      .eq('id', input.leadId)
-    if (leadError) throw leadError
-    return mapInteraction(data)
+    return apiRequest<CrmInteraction>(`/crm/leads/${input.leadId}/interactions`, {
+      method: 'POST',
+      body: {
+        organizationId: input.organizationId,
+        type: input.type,
+        title: input.title.trim(),
+        description: input.description.trim(),
+        date: input.date || new Date().toISOString(),
+      },
+    })
   },
 
   async getTasks(leadId: string) {
-    const { data, error } = await supabase.from('lead_tasks').select('*').eq('lead_id', leadId).order('due_at')
-    if (error) throw error
-    return (data || []).map(mapTask)
+    return apiRequest<CrmTask[]>(`/crm/leads/${leadId}/tasks`)
   },
 
   async createTask(organizationId: string, leadId: string, title: string, dueAt: string) {
@@ -479,90 +433,99 @@ export const crmService = {
   },
 
   async createLeadTask(input: CreateLeadTaskInput) {
-    const { data, error } = await supabase.from('lead_tasks').insert(buildLeadTaskInsertPayload(input)).select().single()
-    if (error) throw error
-    return mapTask(data)
+    return apiRequest<CrmTask>(`/crm/leads/${input.leadId}/tasks`, {
+      method: 'POST',
+      body: {
+        organizationId: input.organizationId,
+        title: input.title.trim(),
+        description: input.description?.trim() || undefined,
+        dueAt: input.dueAt,
+        assignedTo: input.assignedTo,
+        priority: input.priority || 'medium',
+      },
+    })
   },
 
   async completeLeadTask(taskId: string) {
-    const { data, error } = await supabase
-      .from('lead_tasks')
-      .update({ status: 'completed', completed_at: new Date().toISOString() })
-      .eq('id', taskId)
-      .select()
-      .single()
-    if (error) throw error
-    return mapTask(data)
+    return apiRequest<CrmTask>(`/crm/tasks/${taskId}/complete`, {
+      method: 'PATCH',
+    })
   },
 
   async markLeadWon(input: MarkLeadWonInput) {
-    const { data, error } = await supabase
-      .from('leads')
-      .update(buildLeadWonPayload(input))
-      .eq('id', input.leadId)
-      .select()
-      .single()
-    if (error) throw error
-    return mapLead(data)
+    return apiRequest<CrmLead>(`/crm/leads/${input.leadId}`, {
+      method: 'PATCH',
+      body: {
+        ...(input.stageId ? { stageId: input.stageId, stage: 'WON' } : { stage: 'WON' }),
+        status: 'won',
+        ...(input.value !== undefined ? { value: input.value } : {}),
+        wonAt: new Date().toISOString(),
+        lostAt: null,
+        lostReason: null,
+      },
+    })
   },
 
   async markLeadLost(input: MarkLeadLostInput) {
-    const { data, error } = await supabase
-      .from('leads')
-      .update(buildLeadLostPayload(input))
-      .eq('id', input.leadId)
-      .select()
-      .single()
-    if (error) throw error
-    return mapLead(data)
+    return apiRequest<CrmLead>(`/crm/leads/${input.leadId}`, {
+      method: 'PATCH',
+      body: {
+        ...(input.stageId ? { stageId: input.stageId, stage: 'LOST' } : { stage: 'LOST' }),
+        status: 'lost',
+        lostReason: input.lostReason.trim(),
+        lostAt: new Date().toISOString(),
+        wonAt: null,
+      },
+    })
   },
 
   async getSequences(organizationId: string) {
-    const { data, error } = await supabase.from('crm_sequences').select('*, crm_sequence_steps(*)').eq('organization_id', organizationId).eq('is_active', true)
-    if (error) throw error
-    return (data || []).map(mapSequence)
+    return apiRequest<CrmSequence[]>(`/crm/sequences?organizationId=${encodeURIComponent(organizationId)}`)
   },
 
   async getEnrollments(leadId: string) {
-    const { data, error } = await supabase.from('crm_sequence_enrollments').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapEnrollment)
+    return apiRequest<CrmSequenceEnrollment[]>(`/crm/leads/${leadId}/enrollments`)
   },
 
   async enrollLead(organizationId: string, leadId: string, sequenceId: string) {
-    const { data, error } = await supabase.from('crm_sequence_enrollments').insert({ organization_id: organizationId, lead_id: leadId, sequence_id: sequenceId, next_execution_at: new Date().toISOString() }).select().single()
-    if (error) throw error
-    const { data: execution, error: executionError } = await supabase
-      .from('automation_executions')
-      .select('id')
-      .eq('enrollment_id', data.id)
-      .order('scheduled_at')
-      .limit(1)
-      .maybeSingle()
-    if (executionError) throw executionError
-    if (execution) await supabase.functions.invoke('dispatch-crm-automation', { body: { executionId: execution.id } })
-    return mapEnrollment(data)
+    const enrollment = await apiRequest<CrmSequenceEnrollment>(`/crm/leads/${leadId}/enrollments`, {
+      method: 'POST',
+      body: { organizationId, sequenceId },
+    })
+    await apiRequest('/automations/dispatch', {
+      method: 'POST',
+      body: {
+        event: {
+          type: 'crm.sequence.enrolled',
+          organizationId,
+          leadId,
+          payload: { enrollmentId: enrollment.id, sequenceId },
+        },
+      },
+    })
+    return enrollment
   },
 
   async updateEnrollment(id: string, updates: Partial<Pick<CrmSequenceEnrollment, 'status' | 'nextExecutionAt' | 'manualNote'>>) {
-    const { data, error } = await supabase.from('crm_sequence_enrollments').update({
-      status: updates.status,
-      next_execution_at: updates.nextExecutionAt,
-      manual_note: updates.manualNote,
-    }).eq('id', id).select().single()
-    if (error) throw error
-    return mapEnrollment(data)
+    return apiRequest<CrmSequenceEnrollment>(`/crm/enrollments/${id}`, {
+      method: 'PATCH',
+      body: updates,
+    })
   },
 
   async getExecutions(leadId: string) {
-    const { data, error } = await supabase.from('automation_executions').select('*').eq('lead_id', leadId).order('requested_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapExecution)
+    return apiRequest<AutomationExecution[]>(`/crm/leads/${leadId}/executions`)
   },
 
   async retryExecution(executionId: string) {
-    const { data, error } = await supabase.functions.invoke('dispatch-crm-automation', { body: { executionId } })
-    if (error) throw error
-    return data
+    return apiRequest('/automations/dispatch', {
+      method: 'POST',
+      body: {
+        event: {
+          type: 'crm.execution.retry',
+          payload: { executionId },
+        },
+      },
+    })
   },
 }

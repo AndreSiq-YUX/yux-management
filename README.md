@@ -10,7 +10,7 @@ implementacao completa dos modulos avancados.
 Sistema inteligente de CRM, prospecção ativa e gerenciamento de clientes, projetos e campanhas da YUX Soluções em IA. Este sistema serve tanto como o cérebro operacional da YUX quanto como nossa principal vitrine de tecnologia e automação para futuros clientes.
 
 ## 🌟 Visão Estratégica & Replicabilidade (Blueprints)
-Todo o ecossistema foi projetado sob o princípio da **modularidade extrema**. Os workflows do n8n, os esquemas do banco de dados no Supabase e os painéis do frontend são desacoplados para funcionar como "modelos de prateleira" (*blueprints*). Isso nos permite replicar toda essa infraestrutura para qualquer cliente PME em minutos, reduzindo o custo operacional e maximizando as margens de entrega da YUX.
+Todo o ecossistema foi projetado sob o princípio da **modularidade extrema**. Os workflows do n8n, o backend proprio, os esquemas Postgres e os painéis do frontend são desacoplados para funcionar como "modelos de prateleira" (*blueprints*). Isso nos permite replicar toda essa infraestrutura para qualquer cliente PME em minutos, reduzindo o custo operacional e maximizando as margens de entrega da YUX.
 
 ## 🛠️ Funcionalidades Principais
 
@@ -46,17 +46,18 @@ Uma equipe de agentes autônomos integrados diretamente ao banco de dados e cana
 *   Zustand (Gerenciamento de Estado Global)
 *   Chart.js / Recharts (Visualizações e Relatórios de BI)
 
-### Backend & Banco de Dados (Supabase)
-*   PostgreSQL com suporte a `pgvector` (RAG e similaridade semântica)
-*   Row Level Security (RLS) & Supabase Auth
-*   Real-time Subscriptions para atualizações instantâneas do Kanban
-*   PostgreSQL Migrations (Esquemas reproduzíveis e portáveis)
+### Backend & Banco de Dados (VPS/Dokploy)
+*   API Fastify/TypeScript em Node.js 22
+*   PostgreSQL 17 proprio com suporte a `pgvector` quando habilitado
+*   Redis + BullMQ para jobs assicronos
+*   Auth propria por cookie httpOnly e camada de policies no backend
+*   PostgreSQL migrations em `backend/src/db/migrations`
 
 ### Orquestração & Automações (n8n Self-hosted)
 *   VPS Dockerizada gerenciando as conexões de mensageria (Evolution/Z-API), filas de eventos de WhatsApp, disparo de e-mails e integrações de agendas.
 
 ### Microsserviço de Agentes (Agentic API)
-*   Runtime Python/FastAPI na VPS via Dokploy, com harness de agentes e integração server-side com Supabase.
+*   Runtime Python/FastAPI na VPS via Dokploy, com harness de agentes integrado server-side ao backend.
 
 ---
 
@@ -65,19 +66,18 @@ Uma equipe de agentes autônomos integrados diretamente ao banco de dados e cana
 ```
 yux-client-management/
 ├── frontend/                 # React SPA, Docker/Nginx para Dokploy
-├── supabase/                 # Estruturas de Banco e Migrations SQL
-│   ├── migrations/          # Versionamento reproduzível do banco
-│   └── seed.sql             # Dados de teste para demonstração rápida
+├── backend/                  # API Fastify, auth, policies e migrations Postgres
 ├── workers/                  # Runtime Python de agentes
 ├── docker-compose.dokploy.yml # Compose de producao na VPS
-└── DEPLOY-DOKPLOY-SUPABASE.md
+└── DEPLOY-DOKPLOY-VPS.md
 ```
 
 ## 🚀 Desenvolvimento & Instalação
 
 ### Pré-requisitos
-*   Node.js 18+ & Docker (para rodar Supabase local e n8n)
-*   Supabase CLI instalado localmente
+*   Node.js 22 para backend
+*   Node.js 18+ para frontend
+*   Docker para validar a stack Dokploy localmente
 
 ### Configuração Inicial do Frontend
 ```bash
@@ -88,11 +88,11 @@ npm run dev
 
 ### URLs Locais de Desenvolvimento
 *   Frontend: `http://localhost:3000`
-*   Supabase Dashboard (Local): `http://localhost:54321`
+*   Backend API: `http://localhost:4000/api/health`
 
 ---
 
 ## 📑 Documentação Complementar
 *   [Roadmap de Implementação](ROADMAP.md)
-*   [Deploy VPS/Dokploy & Supabase](DEPLOY-DOKPLOY-SUPABASE.md)
+*   [Deploy VPS/Dokploy com Postgres proprio](DEPLOY-DOKPLOY-VPS.md)
 *   [Guia de Demonstração (Demo)](DEMO-GUIDE.md)

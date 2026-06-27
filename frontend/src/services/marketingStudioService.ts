@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase'
+import { invokeBackendFunction } from '@/lib/backendFunctions'
+import { marketingStudioDataClient } from '@/lib/marketingStudioDataClient'
 import { sanitizeMarketingContentForPortal } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
   AgentBudgetPolicy,
@@ -1557,7 +1558,7 @@ const TOOL_POLICY_SELECT = '*'
 
 export const marketingStudioService = {
   async getSettings(contractId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_studio_settings')
       .select('*')
       .eq('contract_id', contractId)
@@ -1567,7 +1568,7 @@ export const marketingStudioService = {
   },
 
   async getContents(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('content_items').select(CONTENT_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('content_items').select(CONTENT_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1582,7 +1583,7 @@ export const marketingStudioService = {
   },
 
   async getContentVersions(contentItemId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('content_versions')
       .select(VERSION_SELECT)
       .eq('content_item_id', contentItemId)
@@ -1592,7 +1593,7 @@ export const marketingStudioService = {
   },
 
   async getReviews(filters?: { contentItemId?: string; contractId?: string }) {
-    let query = supabase.from('content_reviews').select(REVIEW_SELECT).order('created_at', { ascending: false })
+    let query = marketingStudioDataClient.from('content_reviews').select(REVIEW_SELECT).order('created_at', { ascending: false })
     if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
     if (filters?.contractId) {
       const contentIds = (await marketingStudioService.getContents({ contractId: filters.contractId })).map(content => content.id)
@@ -1605,7 +1606,7 @@ export const marketingStudioService = {
   },
 
   async getCalendarItems(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('editorial_calendar_items').select(CALENDAR_SELECT).order('starts_at', { ascending: true })
+    let query = marketingStudioDataClient.from('editorial_calendar_items').select(CALENDAR_SELECT).order('starts_at', { ascending: true })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1615,7 +1616,7 @@ export const marketingStudioService = {
   },
 
   async getBrandProfile(contractId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_brand_profiles')
       .select(BRAND_SELECT)
       .eq('contract_id', contractId)
@@ -1625,7 +1626,7 @@ export const marketingStudioService = {
   },
 
   async getProductsServices(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('marketing_products_services').select(PRODUCT_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('marketing_products_services').select(PRODUCT_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1635,7 +1636,7 @@ export const marketingStudioService = {
   },
 
   async getKnowledgeDocuments(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('marketing_knowledge_documents').select(DOCUMENT_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('marketing_knowledge_documents').select(DOCUMENT_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1645,7 +1646,7 @@ export const marketingStudioService = {
   },
 
   async getKnowledgeChunks(filters?: { documentId?: string; contractId?: string }) {
-    let query = supabase.from('marketing_knowledge_chunks').select(CHUNK_SELECT).order('chunk_index', { ascending: true })
+    let query = marketingStudioDataClient.from('marketing_knowledge_chunks').select(CHUNK_SELECT).order('chunk_index', { ascending: true })
     if (filters?.documentId) query = query.eq('document_id', filters.documentId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     const { data, error } = await query
@@ -1654,7 +1655,7 @@ export const marketingStudioService = {
   },
 
   async searchKnowledge(contractId: string, query: string, matchCount = 5) {
-    const { data, error } = await supabase.rpc('match_marketing_knowledge', {
+    const { data, error } = await marketingStudioDataClient.rpc('match_marketing_knowledge', {
       target_contract_id: contractId,
       search_query: query,
       match_count: matchCount,
@@ -1664,7 +1665,7 @@ export const marketingStudioService = {
   },
 
   async getSources(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('marketing_sources').select(SOURCE_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('marketing_sources').select(SOURCE_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1674,7 +1675,7 @@ export const marketingStudioService = {
   },
 
   async getIdeas(filters?: { contractId?: string; radarRunId?: string; sourceItemId?: string }) {
-    let query = supabase.from('marketing_ideas').select(IDEA_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('marketing_ideas').select(IDEA_SELECT).order('updated_at', { ascending: false })
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.radarRunId) query = query.eq('radar_run_id', filters.radarRunId)
     if (filters?.sourceItemId) query = query.eq('source_item_id', filters.sourceItemId)
@@ -1684,7 +1685,7 @@ export const marketingStudioService = {
   },
 
   async getSourceItems(filters?: { contractId?: string; sourceId?: string; radarRunId?: string; status?: MarketingSourceItem['status'] }) {
-    let query = supabase.from('marketing_source_items').select(SOURCE_ITEM_SELECT).order('created_at', { ascending: false }).limit(50)
+    let query = marketingStudioDataClient.from('marketing_source_items').select(SOURCE_ITEM_SELECT).order('created_at', { ascending: false }).limit(50)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.sourceId) query = query.eq('source_id', filters.sourceId)
     if (filters?.radarRunId) query = query.eq('radar_run_id', filters.radarRunId)
@@ -1695,7 +1696,7 @@ export const marketingStudioService = {
   },
 
   async getRadarRuns(filters?: { contractId?: string; status?: MarketingRadarRun['status'] }) {
-    let query = supabase.from('marketing_radar_runs').select(RADAR_RUN_SELECT).order('created_at', { ascending: false }).limit(20)
+    let query = marketingStudioDataClient.from('marketing_radar_runs').select(RADAR_RUN_SELECT).order('created_at', { ascending: false }).limit(20)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.status) query = query.eq('status', filters.status)
     const { data, error } = await query
@@ -1704,7 +1705,7 @@ export const marketingStudioService = {
   },
 
   async getContentGenerationRuns(filters?: { contractId?: string; contentItemId?: string; status?: MarketingContentGenerationRun['status'] }) {
-    let query = supabase.from('marketing_content_generation_runs').select(GENERATION_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
+    let query = marketingStudioDataClient.from('marketing_content_generation_runs').select(GENERATION_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
     if (filters?.status) query = query.eq('status', filters.status)
@@ -1714,7 +1715,7 @@ export const marketingStudioService = {
   },
 
   async getContentQualityChecks(filters?: { contractId?: string; contentItemId?: string; status?: MarketingContentQualityCheck['status'] }) {
-    let query = supabase.from('marketing_content_quality_checks').select(QUALITY_CHECK_SELECT).order('created_at', { ascending: false }).limit(30)
+    let query = marketingStudioDataClient.from('marketing_content_quality_checks').select(QUALITY_CHECK_SELECT).order('created_at', { ascending: false }).limit(30)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
     if (filters?.status) query = query.eq('status', filters.status)
@@ -1724,7 +1725,7 @@ export const marketingStudioService = {
   },
 
   async getPublishingConnections(filters?: { organizationId?: string; clientId?: string; contractId?: string; status?: MarketingPublishingConnection['status'] }) {
-    let query = supabase.from('publishing_connections').select(PUBLISHING_CONNECTION_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('publishing_connections').select(PUBLISHING_CONNECTION_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1735,7 +1736,7 @@ export const marketingStudioService = {
   },
 
   async getPublishingRuns(filters?: { contractId?: string; contentItemId?: string; status?: MarketingPublishingRun['status'] }) {
-    let query = supabase.from('publishing_runs').select(PUBLISHING_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
+    let query = marketingStudioDataClient.from('publishing_runs').select(PUBLISHING_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
     if (filters?.status) query = query.eq('status', filters.status)
@@ -1745,7 +1746,7 @@ export const marketingStudioService = {
   },
 
   async getCampaignCreativeSuggestions(filters?: { contractId?: string; campaignId?: string; status?: MarketingCampaignCreativeSuggestion['status'] }) {
-    let query = supabase.from('marketing_campaign_creative_suggestions').select(CAMPAIGN_SUGGESTION_SELECT).order('created_at', { ascending: false }).limit(30)
+    let query = marketingStudioDataClient.from('marketing_campaign_creative_suggestions').select(CAMPAIGN_SUGGESTION_SELECT).order('created_at', { ascending: false }).limit(30)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.campaignId) query = query.eq('campaign_id', filters.campaignId)
     if (filters?.status) query = query.eq('status', filters.status)
@@ -1755,7 +1756,7 @@ export const marketingStudioService = {
   },
 
   async getCampaignDraftRuns(filters?: { contractId?: string; suggestionId?: string; status?: MarketingCampaignDraftRun['status'] }) {
-    let query = supabase.from('marketing_campaign_draft_runs').select(CAMPAIGN_DRAFT_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
+    let query = marketingStudioDataClient.from('marketing_campaign_draft_runs').select(CAMPAIGN_DRAFT_RUN_SELECT).order('created_at', { ascending: false }).limit(30)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.suggestionId) query = query.eq('suggestion_id', filters.suggestionId)
     if (filters?.status) query = query.eq('status', filters.status)
@@ -1765,7 +1766,7 @@ export const marketingStudioService = {
   },
 
   async getResearchCache(filters: { contractId: string; provider?: MarketingResearchCacheEntry['provider']; requestKey?: string }) {
-    let query = supabase.from('marketing_research_cache').select(RESEARCH_CACHE_SELECT).eq('contract_id', filters.contractId).order('created_at', { ascending: false }).limit(20)
+    let query = marketingStudioDataClient.from('marketing_research_cache').select(RESEARCH_CACHE_SELECT).eq('contract_id', filters.contractId).order('created_at', { ascending: false }).limit(20)
     if (filters.provider) query = query.eq('provider', filters.provider)
     if (filters.requestKey) query = query.eq('request_key', filters.requestKey)
     const { data, error } = await query
@@ -1774,7 +1775,7 @@ export const marketingStudioService = {
   },
 
   async getAgentTemplates() {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_agent_templates')
       .select(AGENT_TEMPLATE_SELECT)
       .order('name', { ascending: true })
@@ -1783,7 +1784,7 @@ export const marketingStudioService = {
   },
 
   async getAgents(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('marketing_agents').select(AGENT_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('marketing_agents').select(AGENT_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1793,7 +1794,7 @@ export const marketingStudioService = {
   },
 
   async getGlobalPrompts() {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_agent_global_prompts')
       .select(GLOBAL_PROMPT_SELECT)
       .order('agent_type', { ascending: true })
@@ -1802,7 +1803,7 @@ export const marketingStudioService = {
   },
 
   async getWorkflows(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('marketing_workflows').select(WORKFLOW_SELECT).order('updated_at', { ascending: false })
+    let query = marketingStudioDataClient.from('marketing_workflows').select(WORKFLOW_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
@@ -1812,7 +1813,7 @@ export const marketingStudioService = {
   },
 
   async getWorkflowNodes(workflowId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_workflow_nodes')
       .select(WORKFLOW_NODE_SELECT)
       .eq('workflow_id', workflowId)
@@ -1822,7 +1823,7 @@ export const marketingStudioService = {
   },
 
   async getWorkflowEdges(workflowId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_workflow_edges')
       .select(WORKFLOW_EDGE_SELECT)
       .eq('workflow_id', workflowId)
@@ -1831,7 +1832,7 @@ export const marketingStudioService = {
   },
 
   async getWorkflowRuns(filters?: { contractId?: string; workflowId?: string; status?: MarketingWorkflowRun['status'] }) {
-    let query = supabase.from('marketing_workflow_runs').select(WORKFLOW_RUN_SELECT).order('created_at', { ascending: false }).limit(20)
+    let query = marketingStudioDataClient.from('marketing_workflow_runs').select(WORKFLOW_RUN_SELECT).order('created_at', { ascending: false }).limit(20)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.workflowId) query = query.eq('workflow_id', filters.workflowId)
     if (filters?.status) query = query.eq('status', filters.status)
@@ -1841,7 +1842,7 @@ export const marketingStudioService = {
   },
 
   async getAgentRuns(workflowRunId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_agent_runs')
       .select(AGENT_RUN_SELECT)
       .eq('workflow_run_id', workflowRunId)
@@ -1851,7 +1852,7 @@ export const marketingStudioService = {
   },
 
   async getToolRuns(workflowRunId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_tool_runs')
       .select(TOOL_RUN_SELECT)
       .eq('workflow_run_id', workflowRunId)
@@ -1861,7 +1862,7 @@ export const marketingStudioService = {
   },
 
   async getBudgetPolicies(contractId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('agent_budget_policies')
       .select(BUDGET_POLICY_SELECT)
       .eq('contract_id', contractId)
@@ -1871,7 +1872,7 @@ export const marketingStudioService = {
   },
 
   async getModelRoutingRules(filters?: { contractId?: string; agentType?: string }) {
-    let query = supabase.from('model_routing_rules').select(MODEL_ROUTING_SELECT).order('routing_tier', { ascending: true })
+    let query = marketingStudioDataClient.from('model_routing_rules').select(MODEL_ROUTING_SELECT).order('routing_tier', { ascending: true })
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     if (filters?.agentType) query = query.eq('agent_type', filters.agentType)
     const { data, error } = await query
@@ -1880,7 +1881,7 @@ export const marketingStudioService = {
   },
 
   async getToolPolicies(contractId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_agent_tool_policies')
       .select(TOOL_POLICY_SELECT)
       .eq('contract_id', contractId)
@@ -1890,7 +1891,7 @@ export const marketingStudioService = {
   },
 
   async createIdea(input: Parameters<typeof buildIdeaInsertPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_ideas')
       .insert(buildIdeaInsertPayload(input))
       .select()
@@ -1900,7 +1901,7 @@ export const marketingStudioService = {
   },
 
   async createSourceItem(input: Parameters<typeof buildSourceItemPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_source_items')
       .insert(buildSourceItemPayload(input))
       .select(SOURCE_ITEM_SELECT)
@@ -1910,7 +1911,7 @@ export const marketingStudioService = {
   },
 
   async upsertResearchCache(input: Parameters<typeof buildResearchCachePayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_research_cache')
       .upsert(buildResearchCachePayload(input), { onConflict: 'contract_id,provider,request_type,request_key' })
       .select(RESEARCH_CACHE_SELECT)
@@ -1920,7 +1921,7 @@ export const marketingStudioService = {
   },
 
   async createRadarRun(input: Parameters<typeof buildRadarRunPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_radar_runs')
       .insert(buildRadarRunPayload(input))
       .select(RADAR_RUN_SELECT)
@@ -1930,7 +1931,7 @@ export const marketingStudioService = {
   },
 
   async createContentGenerationRun(input: Parameters<typeof buildContentGenerationRunPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_content_generation_runs')
       .insert(buildContentGenerationRunPayload(input))
       .select(GENERATION_RUN_SELECT)
@@ -1940,7 +1941,7 @@ export const marketingStudioService = {
   },
 
   async createContentQualityCheck(input: Parameters<typeof buildContentQualityCheckPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_content_quality_checks')
       .insert(buildContentQualityCheckPayload(input))
       .select(QUALITY_CHECK_SELECT)
@@ -1950,7 +1951,7 @@ export const marketingStudioService = {
   },
 
   async upsertPublishingConnection(input: Parameters<typeof buildPublishingConnectionPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('publishing_connections')
       .upsert(buildPublishingConnectionPayload(input), { onConflict: 'contract_id,provider,name' })
       .select(PUBLISHING_CONNECTION_SELECT)
@@ -1960,7 +1961,7 @@ export const marketingStudioService = {
   },
 
   async enqueuePublishingRun(input: Parameters<typeof buildPublishingRunPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('publishing_runs')
       .upsert(buildPublishingRunPayload(input), { onConflict: 'connection_id,idempotency_key' })
       .select(PUBLISHING_RUN_SELECT)
@@ -1970,7 +1971,7 @@ export const marketingStudioService = {
   },
 
   async upsertCampaignCreativeSuggestion(input: Parameters<typeof buildCampaignCreativeSuggestionPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_campaign_creative_suggestions')
       .upsert(buildCampaignCreativeSuggestionPayload(input))
       .select(CAMPAIGN_SUGGESTION_SELECT)
@@ -1984,7 +1985,7 @@ export const marketingStudioService = {
     approvedBy?: string
     rejectionReason?: string
   }) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_campaign_creative_suggestions')
       .update({
         status: input.status,
@@ -2000,7 +2001,7 @@ export const marketingStudioService = {
   },
 
   async enqueueCampaignDraftRun(input: Parameters<typeof buildCampaignDraftRunPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_campaign_draft_runs')
       .upsert(buildCampaignDraftRunPayload(input), { onConflict: 'suggestion_id,idempotency_key' })
       .select(CAMPAIGN_DRAFT_RUN_SELECT)
@@ -2013,23 +2014,15 @@ export const marketingStudioService = {
     provider?: MarketingPublishingConnection['provider']
   }))) {
     const functionName = input.provider === 'wordpress' ? 'execute-wordpress-publishing' : 'execute-marketing-publishing'
-    const { data, error } = await supabase.functions.invoke(functionName, {
-      body: input,
-    })
-    if (error) throw error
-    return data as { success?: boolean; duplicate?: boolean; run?: unknown; error?: string }
+    return invokeBackendFunction<{ success?: boolean; duplicate?: boolean; run?: unknown; error?: string }>(functionName, input)
   },
 
   async executeWordPressPublishingRun(input: { publishingRunId?: string } | Parameters<typeof buildPublishingRunPayload>[0]) {
-    const { data, error } = await supabase.functions.invoke('execute-wordpress-publishing', {
-      body: input,
-    })
-    if (error) throw error
-    return data as { success?: boolean; duplicate?: boolean; run?: unknown; error?: string }
+    return invokeBackendFunction<{ success?: boolean; duplicate?: boolean; run?: unknown; error?: string }>('execute-wordpress-publishing', input)
   },
 
   async createContent(input: Parameters<typeof buildContentInsertPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('content_items')
       .insert(buildContentInsertPayload(input))
       .select(CONTENT_SELECT)
@@ -2039,7 +2032,7 @@ export const marketingStudioService = {
   },
 
   async updateContentStatus(id: string, status: MarketingContentItem['status']) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('content_items')
       .update({ status })
       .eq('id', id)
@@ -2050,7 +2043,7 @@ export const marketingStudioService = {
   },
 
   async createContentVersion(input: Parameters<typeof buildContentVersionPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('content_versions')
       .insert(buildContentVersionPayload(input))
       .select(VERSION_SELECT)
@@ -2060,7 +2053,7 @@ export const marketingStudioService = {
   },
 
   async createReview(input: Parameters<typeof buildContentReviewPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('content_reviews')
       .insert(buildContentReviewPayload(input))
       .select(REVIEW_SELECT)
@@ -2075,7 +2068,7 @@ export const marketingStudioService = {
     qualityScore?: number
     checklist?: Record<string, unknown>
   }) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('content_reviews')
       .update({
         status: input.status,
@@ -2092,7 +2085,7 @@ export const marketingStudioService = {
   },
 
   async createCalendarItem(input: Parameters<typeof buildCalendarItemPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('editorial_calendar_items')
       .insert(buildCalendarItemPayload(input))
       .select(CALENDAR_SELECT)
@@ -2102,7 +2095,7 @@ export const marketingStudioService = {
   },
 
   async upsertBrandProfile(input: Parameters<typeof buildBrandProfilePayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_brand_profiles')
       .upsert(buildBrandProfilePayload(input), { onConflict: 'contract_id' })
       .select(BRAND_SELECT)
@@ -2112,7 +2105,7 @@ export const marketingStudioService = {
   },
 
   async createProductService(input: Parameters<typeof buildProductServicePayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_products_services')
       .insert(buildProductServicePayload(input))
       .select(PRODUCT_SELECT)
@@ -2122,7 +2115,7 @@ export const marketingStudioService = {
   },
 
   async createKnowledgeDocument(input: Parameters<typeof buildKnowledgeDocumentPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_knowledge_documents')
       .insert(buildKnowledgeDocumentPayload(input))
       .select(DOCUMENT_SELECT)
@@ -2132,7 +2125,7 @@ export const marketingStudioService = {
   },
 
   async createKnowledgeChunk(input: Parameters<typeof buildKnowledgeChunkPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_knowledge_chunks')
       .insert(buildKnowledgeChunkPayload(input))
       .select(CHUNK_SELECT)
@@ -2143,7 +2136,7 @@ export const marketingStudioService = {
 
   async upsertAgent(input: Parameters<typeof buildAgentPayload>[0] & { id?: string }) {
     const payload = buildAgentPayload(input)
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_agents')
       .upsert(input.id ? { ...payload, id: input.id } : payload)
       .select(AGENT_SELECT)
@@ -2153,7 +2146,7 @@ export const marketingStudioService = {
   },
 
   async createWorkflow(input: Parameters<typeof buildWorkflowPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_workflows')
       .insert(buildWorkflowPayload(input))
       .select(WORKFLOW_SELECT)
@@ -2163,7 +2156,7 @@ export const marketingStudioService = {
   },
 
   async enqueueWorkflowRun(input: Parameters<typeof buildWorkflowRunPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('marketing_workflow_runs')
       .insert(buildWorkflowRunPayload(input))
       .select(WORKFLOW_RUN_SELECT)
@@ -2173,7 +2166,7 @@ export const marketingStudioService = {
   },
 
   async recordUsage(input: Parameters<typeof buildUsageLedgerPayload>[0]) {
-    const { data, error } = await supabase
+    const { data, error } = await marketingStudioDataClient
       .from('ai_usage_ledger')
       .insert(buildUsageLedgerPayload(input))
       .select()

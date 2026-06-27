@@ -1,0 +1,49 @@
+import { describe, expect, it } from 'vitest'
+import { createIdempotencyKey } from '../src/jobs/queue.js'
+
+describe('job idempotency', () => {
+  it('creates the same key for equivalent payloads with different key order', () => {
+    const first = createIdempotencyKey('automation.dispatch', {
+      organizationId: 'org-1',
+      automationId: 'automation-1',
+      payload: {
+        leadId: 'lead-1',
+        score: 91,
+      },
+    })
+
+    const second = createIdempotencyKey('automation.dispatch', {
+      payload: {
+        score: 91,
+        leadId: 'lead-1',
+      },
+      automationId: 'automation-1',
+      organizationId: 'org-1',
+    })
+
+    expect(second).toBe(first)
+  })
+
+  it('creates different keys when the job name or payload changes', () => {
+    const basePayload = {
+      organizationId: 'org-1',
+      messageId: 'message-1',
+    }
+
+    expect(createIdempotencyKey('omnichannel.processMessage', basePayload)).not.toBe(
+      createIdempotencyKey('email.send', basePayload),
+    )
+    expect(createIdempotencyKey('omnichannel.processMessage', basePayload)).not.toBe(
+      createIdempotencyKey('omnichannel.processMessage', { ...basePayload, messageId: 'message-2' }),
+    )
+  })
+
+  it('supports stable idempotency for CRM sequence jobs', () => {
+    expect(createIdempotencyKey('crm.sequence.dispatchDue', { scheduledAt: '2026-06-27T12:00:00.000Z' })).toBe(
+      createIdempotencyKey('crm.sequence.dispatchDue', { scheduledAt: '2026-06-27T12:00:00.000Z' }),
+    )
+    expect(createIdempotencyKey('crm.sequence.processExecution', { executionId: 'execution-1' })).not.toBe(
+      createIdempotencyKey('crm.sequence.processExecution', { executionId: 'execution-2' }),
+    )
+  })
+})

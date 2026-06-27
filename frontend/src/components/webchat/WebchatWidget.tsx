@@ -23,8 +23,7 @@ interface WebchatWidgetProps {
 }
 
 const defaultInvoke: InvokeWebchat = async (action, payload) => {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-  const endpoint = `${supabaseUrl || ''}/functions/v1/submit-webchat-event`
+  const endpoint = '/api/public/webchat/events'
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

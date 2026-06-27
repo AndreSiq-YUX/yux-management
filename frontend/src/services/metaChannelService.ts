@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
+import { invokeBackendFunction } from '@/lib/backendFunctions'
 import {
   deriveConnectedChannelState,
   getMetaChannelLabel,
@@ -49,35 +50,6 @@ export interface StartMetaChannelConnectSession extends StartMetaChannelConnectR
 }
 
 const optional = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined
-
-const metaChannelSelect = [
-  'id',
-  'organization_id',
-  'channel',
-  'name',
-  'is_active',
-  'adapter_key',
-  'provider_account_id',
-  'provider_asset_id',
-  'provider_business_id',
-  'provider_display_name',
-  'provider_username',
-  'provider_scopes',
-  'phone_number_id',
-  'provider_verify_state',
-  'token_state',
-  'last_event_at',
-  'last_provider_sync_at',
-  'connected_at',
-  'disconnected_at',
-  'reauth_required_at',
-  'health_checked_at',
-  'health_status',
-  'health_summary',
-  'fallback_mode',
-  'created_at',
-  'updated_at',
-].join(', ')
 
 export function mapMetaChannelConnection(row: any): ConnectedChannelView {
   const publicMetadata = sanitizeMetaPublicMetadata({
@@ -166,29 +138,26 @@ export function buildMetaConnectUrl(response: StartMetaChannelConnectResponse) {
   return url.toString()
 }
 
-async function requireFunctionData<T>(request: PromiseLike<{ data: T | null; error: any }>) {
-  const { data, error } = await request
-  if (error) throw error
+async function requireFunctionData<T>(request: PromiseLike<T | null>) {
+  const data = await request
   if (!data) throw new Error('Function returned no data')
   return data
 }
 
 export const metaChannelService = {
   async listConnectedChannels(organizationId: string) {
-    const { data, error } = await supabase
-      .from('channel_connections')
-      .select(metaChannelSelect)
-      .eq('organization_id', organizationId)
-      .in('channel', ['whatsapp', 'instagram', 'messenger', 'webchat'])
-      .order('channel')
-    if (error) throw error
+    const params = new URLSearchParams({
+      organizationId,
+      channels: ['whatsapp', 'instagram', 'messenger', 'webchat'].join(','),
+    })
+    const data = await apiRequest<any[]>(`/omnichannel/channel-connections?${params.toString()}`)
     return (data || []).map(mapMetaChannelConnection)
   },
 
   async startConnect(input: { organizationId: string; channel: MetaChannel }) {
-    const data = await requireFunctionData<StartMetaChannelConnectResponse>(supabase.functions.invoke('start-meta-channel-connect', {
-      body: buildStartMetaConnectPayload(input),
-    }))
+    const data = await requireFunctionData<StartMetaChannelConnectResponse>(
+      invokeBackendFunction('start-meta-channel-connect', buildStartMetaConnectPayload(input)),
+    )
     return {
       ...data,
       authUrl: buildMetaConnectUrl(data),
@@ -203,18 +172,18 @@ export const metaChannelService = {
     state: string
     assets: JsonRecord[]
   }) {
-    return requireFunctionData(supabase.functions.invoke('complete-meta-channel-connect', { body: input }))
+    return requireFunctionData(invokeBackendFunction('complete-meta-channel-connect', input))
   },
 
   async disconnect(connectionId: string) {
-    return requireFunctionData(supabase.functions.invoke('disconnect-meta-channel', { body: { connectionId } }))
+    return requireFunctionData(invokeBackendFunction('disconnect-meta-channel', { connectionId }))
   },
 
   async refreshHealth(connectionId: string) {
-    return requireFunctionData(supabase.functions.invoke('refresh-meta-channel-health', { body: { connectionId } }))
+    return requireFunctionData(invokeBackendFunction('refresh-meta-channel-health', { connectionId }))
   },
 
   async sendTest(connectionId: string) {
-    return requireFunctionData(supabase.functions.invoke('send-meta-channel-test', { body: { connectionId } }))
+    return requireFunctionData(invokeBackendFunction('send-meta-channel-test', { connectionId }))
   },
 }

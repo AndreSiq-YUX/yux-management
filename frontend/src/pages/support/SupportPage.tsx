@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import { SupportWorkspace } from '@/components/support/SupportWorkspace'
 import { calculateSupportSummary } from '@/lib/support/supportRules'
 import { platformService } from '@/services/platformService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { supportService } from '@/services/supportService'
 import type { SupportTicket } from '@/types/support'
 import type { Client } from '@/types/client'
@@ -26,9 +26,9 @@ export function SupportPage() {
       const [loadedTickets, loadedContracts, clientsResponse, loadedOrganizations, projectsResponse] = await Promise.all([
         supportService.getTickets(),
         platformService.getContracts(),
-        supabaseService.getClients({ page: 1, limit: 500 }),
+        backendDataService.getClients({ page: 1, limit: 500 }),
         platformService.getOrganizations(),
-        supabaseService.getProjects({ page: 1, limit: 500 }),
+        backendDataService.getProjects({ page: 1, limit: 500 }),
       ])
       setTickets(loadedTickets)
       setContracts(loadedContracts)

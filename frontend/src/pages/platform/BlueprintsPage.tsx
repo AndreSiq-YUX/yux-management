@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { BlueprintApplyPanel } from '@/components/platform/BlueprintApplyPanel'
 import { platformService } from '@/services/platformService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import type { Client } from '@/types/client'
 import type { Blueprint, ContractDetails, Organization } from '@/types/platform'
 
@@ -24,7 +24,7 @@ export function BlueprintsPage() {
         const [nextBlueprints, nextContracts, clientsResponse, nextOrganizations] = await Promise.all([
           platformService.getBlueprints(),
           platformService.getContracts(),
-          supabaseService.getClients({ page: 1, limit: 500 }),
+          backendDataService.getClients({ page: 1, limit: 500 }),
           platformService.getOrganizations(),
         ])
         const nextClients = ((clientsResponse as any).clients || (clientsResponse as any).data || []) as Client[]
@@ -38,7 +38,7 @@ export function BlueprintsPage() {
         setContracts([])
         setClients([])
         setOrganizations([])
-        setError('Modelos setoriais ainda nao carregados do Supabase.')
+        setError('Modelos setoriais ainda nao carregados do backend.')
       } finally {
         setLoading(false)
       }

@@ -3,7 +3,7 @@
   if (!script) return;
 
   var publicToken = script.getAttribute('data-yux-widget-token');
-  var endpoint = script.getAttribute('data-yux-endpoint') || '/functions/v1/submit-webchat-event';
+  var endpoint = script.getAttribute('data-yux-endpoint') || '/api/public/webchat/events';
   var iframeBase = script.getAttribute('data-yux-iframe-base') || '/webchat/session/';
 
   if (!publicToken) return;

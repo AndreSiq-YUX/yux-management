@@ -1,15 +1,26 @@
 # YUX Hub Commercial MVP Operations
 
-Updated: 2026-06-07
+Updated: 2026-06-27
+
+> Legacy note: this document describes the original Supabase/Edge Function
+> operating model for the Commercial MVP. Production cutover now targets the
+> self-hosted VPS backend documented in `docs/backend-vps-runbook.md` and
+> `DEPLOY-DOKPLOY-VPS.md`. Do not deploy Supabase Edge Functions for the active
+> environment.
 
 This runbook covers the commercial MVP slices implemented in this repository:
 CRM Cockpit, sector blueprints, landing pages, campaigns, WhatsApp provider,
 AI assistant, Flow Builder Lite, operational reports, and the client portal
 commercial view.
 
-## Supabase Migrations And Probes
+## Historical Schema Additions
 
-Apply migrations in timestamp order. Commercial MVP additions are:
+These timestamped files were the original Supabase migration/probe inputs used
+while the commercial MVP was built. They are no longer an operational deploy
+surface. The active VPS schema is managed through `backend/src/db/migrations/`
+and verified by backend/release checks.
+
+Commercial MVP additions converted into the VPS schema include:
 
 - `20260601260000_crm_cockpit_upgrade.sql`
 - `20260601270000_sector_funnel_blueprints.sql`
@@ -19,10 +30,6 @@ Apply migrations in timestamp order. Commercial MVP additions are:
 - `20260601310000_ai_assistant_settings.sql`
 - `20260601320000_flow_builder_lite.sql`
 - `20260601330000_operational_reports.sql`
-
-Run matching probes in `supabase/probes/` after applying migrations. New public
-tables use RLS and explicit `GRANT` because Supabase Data API exposure rules can
-vary by project settings.
 
 ## Provider Credentials
 
@@ -38,17 +45,17 @@ Required only for live integrations:
 - n8n: CRM, campaign, scheduling, and AI webhook URLs if the deployment uses
   external workflow execution.
 
-Do not put provider tokens in frontend env vars. Store them as Supabase Edge
-Function secrets or Dokploy server-side environment variables and reference
-them through protected metadata fields.
+Do not put provider tokens in frontend env vars. Store them as Dokploy
+server-side environment variables or encrypted backend-managed provider
+secrets and reference them through protected metadata fields.
 
 ## Server-Side Environment Variables
 
-Expected server/Edge values:
+Expected server-side values in the VPS/Dokploy backend:
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `SESSION_SECRET`
 - `N8N_CRM_WEBHOOK_URL`
 - `N8N_OMNICHANNEL_AI_WEBHOOK_URL`
 - `N8N_OMNICHANNEL_OUTBOUND_WEBHOOK_URL`
@@ -78,23 +85,20 @@ Configure provider dashboards with the deployed project URLs:
   `META_MARKETING_OAUTH_REDIRECT_URI`.
 - Marketing Studio Google OAuth callback:
   `GOOGLE_MARKETING_OAUTH_REDIRECT_URI`.
-- WhatsApp webhook: `receive-channel-event` public Edge Function endpoint.
+- WhatsApp webhook: backend public/provider webhook endpoint under `/api/*`.
 - Public proposal review: `/proposal/review/:token`.
 - Webchat session bootstrap: `/webchat/session/:sessionToken`.
 
-## Edge Function Deploy Order
+## Backend Deploy Order
 
-Deploy shared helpers first by deploying dependent functions after code is
-present:
+Deploy the Dokploy stack as one environment:
 
-1. Marketing Studio provider OAuth and publishing functions:
-   `start-marketing-provider-connect`, `complete-marketing-provider-connect`,
-   `list-marketing-provider-assets`, `execute-marketing-publishing`.
-2. Ads provider functions: `connect-ads-provider`,
-   `execute-ad-provider-mutation`, `sync-ad-metrics`.
-3. Omnichannel provider functions: `receive-channel-event`,
-   `dispatch-outbound-message`, `process-ai-message`.
-4. Automation function: `dispatch-crm-automation`.
+1. `yux-postgres` and `yux-redis`.
+2. `yux-backend-api` and `yux-backend-worker`.
+3. `yux-agent-harness-runtime`.
+4. `yux-frontend`.
+
+Run `backend` migrations before production smoke tests.
 
 ## Manual Verification Checklist
 

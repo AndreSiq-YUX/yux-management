@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest'
-import { buildSequencePayload, mapAutomationSequence } from './automationSequenceService'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { automationSequenceService, buildSequencePayload, mapAutomationSequence } from './automationSequenceService'
+
+const fetchMock = vi.fn()
+
+function jsonResponse(body: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+}
+
+afterEach(() => {
+  fetchMock.mockReset()
+  vi.unstubAllGlobals()
+})
 
 describe('automationSequenceService helpers', () => {
   it('builds sequence payloads with defaults', () => {
@@ -45,6 +60,51 @@ describe('automationSequenceService helpers', () => {
       activeEnrollmentCount: 10,
       convertedEnrollmentCount: 3,
       steps: [{ channel: 'email', stepKind: 'message' }],
+    })
+  })
+})
+
+describe('automationSequenceService backend API methods', () => {
+  it('loads sequences from the backend API', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'sequence-1', name: 'Reativacao' }]))
+
+    await expect(automationSequenceService.getSequences('org-1')).resolves.toEqual([
+      { id: 'sequence-1', name: 'Reativacao' },
+    ])
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/sequences?organizationId=org-1', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('creates sequences and steps through the backend API', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'sequence-1', name: 'Reativacao' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'step-1', stepKind: 'message' }, { status: 201 }))
+
+    await expect(automationSequenceService.createSequence({
+      organizationId: 'org-1',
+      name: 'Reativacao',
+    })).resolves.toEqual({ id: 'sequence-1', name: 'Reativacao' })
+    await expect(automationSequenceService.addStep('sequence-1', {
+      stepKind: 'message',
+      channel: 'whatsapp',
+      body: 'Ola',
+    })).resolves.toEqual({ id: 'step-1', stepKind: 'message' })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/automations/sequences', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: JSON.stringify({ organizationId: 'org-1', name: 'Reativacao' }),
+      credentials: 'include',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/automations/sequences/sequence-1/steps', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: JSON.stringify({ stepKind: 'message', channel: 'whatsapp', body: 'Ola' }),
+      credentials: 'include',
     })
   })
 })

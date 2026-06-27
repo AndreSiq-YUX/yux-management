@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import { calculateFinanceSummary, sanitizeInvoiceForPortal } from '@/lib/finance/financeRules'
 import type {
   BillingItem,
@@ -72,23 +72,18 @@ export function mapInvoiceSummary(row: any): FinanceSummary {
   }
 }
 
+function buildQuery(filters: InvoiceFilters) {
+  const search = new URLSearchParams()
+  Object.entries(buildInvoiceFilters(filters)).forEach(([key, value]) => {
+    search.set(key, String(value))
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
 export class FinanceService {
   async getInvoices(filters: InvoiceFilters = {}) {
-    const activeFilters = buildInvoiceFilters(filters)
-    let query = supabase
-      .from('invoices')
-      .select('*, billing_items(*), clients(company_name), contracts(name, billing_cycle)')
-      .order('due_date', { ascending: true })
-
-    if (activeFilters.organizationId) query = query.eq('organization_id', activeFilters.organizationId)
-    if (activeFilters.clientId) query = query.eq('client_id', activeFilters.clientId)
-    if (activeFilters.contractId) query = query.eq('contract_id', activeFilters.contractId)
-    if (activeFilters.status) query = query.eq('status', activeFilters.status)
-    if (activeFilters.dueFrom) query = query.gte('due_date', activeFilters.dueFrom)
-    if (activeFilters.dueTo) query = query.lte('due_date', activeFilters.dueTo)
-
-    const { data, error } = await query
-    if (error) throw error
+    const data = await apiRequest<any[]>(`/finance/invoices${buildQuery(filters)}`)
     return (data || []).map(mapInvoiceRow)
   }
 
@@ -113,43 +108,18 @@ export class FinanceService {
     notes?: string
     internalNotes?: string
   }) {
-    const { data, error } = await supabase
-      .from('invoices')
-      .insert({
-        organization_id: input.organizationId,
-        client_id: input.clientId,
-        contract_id: input.contractId,
-        invoice_number: input.invoiceNumber,
-        issue_date: input.issueDate,
-        due_date: input.dueDate,
-        period_start: input.periodStart || null,
-        period_end: input.periodEnd || null,
-        notes: input.notes || null,
-        internal_notes: input.internalNotes || null,
-      })
-      .select('*, billing_items(*), clients(company_name), contracts(name, billing_cycle)')
-      .single()
-
-    if (error) throw error
+    const data = await apiRequest<any>('/finance/invoices', {
+      method: 'POST',
+      body: input,
+    })
     return mapInvoiceRow(data)
   }
 
   async updateInvoiceStatus(invoiceId: string, status: InvoiceStatus, paidAmount?: number) {
-    const payload: Record<string, unknown> = {
-      status,
-      paid_at: status === 'paid' ? new Date().toISOString() : null,
-    }
-
-    if (paidAmount !== undefined) payload.paid_amount = paidAmount
-
-    const { data, error } = await supabase
-      .from('invoices')
-      .update(payload)
-      .eq('id', invoiceId)
-      .select('*, billing_items(*), clients(company_name), contracts(name, billing_cycle)')
-      .single()
-
-    if (error) throw error
+    const data = await apiRequest<any>(`/finance/invoices/${invoiceId}/status`, {
+      method: 'PATCH',
+      body: { status, paidAmount },
+    })
     return mapInvoiceRow(data)
   }
 
@@ -160,19 +130,10 @@ export class FinanceService {
     unitAmount: number
     kind: BillingItemKind
   }) {
-    const { data, error } = await supabase
-      .from('billing_items')
-      .insert({
-        invoice_id: input.invoiceId,
-        description: input.description,
-        quantity: input.quantity,
-        unit_amount: input.unitAmount,
-        kind: input.kind,
-      })
-      .select()
-      .single()
-
-    if (error) throw error
+    const data = await apiRequest<any>('/finance/billing-items', {
+      method: 'POST',
+      body: input,
+    })
     return mapBillingItemRow(data)
   }
 }

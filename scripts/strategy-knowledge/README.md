@@ -7,7 +7,7 @@ The raw source stays `internal_only` by default. Client-facing agents receive co
 ## Requirements
 
 - Node.js 18+.
-- Supabase service credentials for import: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+- Backend/Postgres import credentials: `DATABASE_URL`. Run after backend migrations are applied.
 - Optional PDF tools:
   - `pdftotext` for text extraction.
   - `pdftoppm` for page image generation.

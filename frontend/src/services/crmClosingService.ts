@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { crmClosingDataClient } from '@/lib/crmClosingDataClient'
 import { buildConversionPlan, buildProposalFromLeadDraft, recommendPackageForLead } from '@/lib/crm/closingRules'
 import { proposalService } from '@/services/proposalService'
 import type { CrmLead } from '@/types/crm'
@@ -259,12 +259,12 @@ export const crmClosingService = {
   async getLeadProposalContext(leadId: string) {
     const [proposals, recommendations, events, followUps, objections, checklists, runs] = await Promise.all([
       proposalService.getByLead(leadId),
-      requireData<any[]>(supabase.from('lead_proposal_recommendations').select('*').eq('lead_id', leadId).order('score', { ascending: false })),
-      requireData<any[]>(supabase.from('proposal_view_events').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
-      requireData<any[]>(supabase.from('proposal_follow_up_tasks').select('*').eq('lead_id', leadId).order('due_at', { ascending: true })),
-      requireData<any[]>(supabase.from('proposal_objections').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
-      requireData<any[]>(supabase.from('proposal_closing_checklists').select('*').eq('lead_id', leadId).order('updated_at', { ascending: false })),
-      requireData<any[]>(supabase.from('proposal_conversion_runs').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
+      requireData<any[]>(crmClosingDataClient.from('lead_proposal_recommendations').select('*').eq('lead_id', leadId).order('score', { ascending: false })),
+      requireData<any[]>(crmClosingDataClient.from('proposal_view_events').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
+      requireData<any[]>(crmClosingDataClient.from('proposal_follow_up_tasks').select('*').eq('lead_id', leadId).order('due_at', { ascending: true })),
+      requireData<any[]>(crmClosingDataClient.from('proposal_objections').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
+      requireData<any[]>(crmClosingDataClient.from('proposal_closing_checklists').select('*').eq('lead_id', leadId).order('updated_at', { ascending: false })),
+      requireData<any[]>(crmClosingDataClient.from('proposal_conversion_runs').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
     ])
 
     return {
@@ -292,7 +292,7 @@ export const crmClosingService = {
 
     const recommendationPayload = buildRecommendationPayload(input.lead, recommendation)
     if (recommendationPayload) {
-      await supabase.from('lead_proposal_recommendations').upsert(recommendationPayload, { onConflict: 'lead_id,package_id' })
+      await crmClosingDataClient.from('lead_proposal_recommendations').upsert(recommendationPayload, { onConflict: 'lead_id,package_id' })
     }
 
     const draft: ProposalFromLeadDraft = buildProposalFromLeadDraft(input.lead, recommendation)
@@ -323,28 +323,28 @@ export const crmClosingService = {
 
   async recordProposalViewEvent(input: ProposalEventInput) {
     const data = await requireData<any>(
-      supabase.from('proposal_view_events').insert(buildProposalViewEventPayload(input)).select().single(),
+      crmClosingDataClient.from('proposal_view_events').insert(buildProposalViewEventPayload(input)).select().single(),
     )
     return mapProposalViewEvent(data)
   },
 
   async recordProposalObjection(input: ProposalObjectionInput) {
     const data = await requireData<any>(
-      supabase.from('proposal_objections').insert(buildProposalObjectionPayload(input)).select().single(),
+      crmClosingDataClient.from('proposal_objections').insert(buildProposalObjectionPayload(input)).select().single(),
     )
     return mapProposalObjection(data)
   },
 
   async scheduleProposalFollowUp(input: ProposalFollowUpInput) {
     const data = await requireData<any>(
-      supabase.from('proposal_follow_up_tasks').insert(buildProposalFollowUpPayload(input)).select().single(),
+      crmClosingDataClient.from('proposal_follow_up_tasks').insert(buildProposalFollowUpPayload(input)).select().single(),
     )
     return mapProposalFollowUpTask(data)
   },
 
   async createClosingChecklist(proposal: ProposalDraft & { crmInstanceId?: string }) {
     const data = await requireData<any>(
-      supabase
+      crmClosingDataClient
         .from('proposal_closing_checklists')
         .upsert(buildClosingChecklistPayload(proposal), { onConflict: 'proposal_id' })
         .select()
@@ -356,7 +356,7 @@ export const crmClosingService = {
   async runProposalConversion(proposalId: string) {
     const proposal = await proposalService.getById(proposalId) as ProposalDraft & { crmInstanceId?: string }
     const runs = await requireData<any[]>(
-      supabase.from('proposal_conversion_runs').select('*').eq('proposal_id', proposalId).order('attempt_number', { ascending: false }),
+      crmClosingDataClient.from('proposal_conversion_runs').select('*').eq('proposal_id', proposalId).order('attempt_number', { ascending: false }),
     )
     const plan = buildConversionPlan(proposal, runs.map(mapCrmProposalConversionRun))
     if (!plan.canRun) throw new Error(plan.blockedReason || 'conversion_blocked')
@@ -364,7 +364,7 @@ export const crmClosingService = {
     try {
       const result = await proposalService.retryConversion(proposalId) as JsonRecord
       const latestRun = await requireData<any>(
-        supabase
+        crmClosingDataClient
           .from('proposal_conversion_runs')
           .select('*')
           .eq('proposal_id', proposalId)
@@ -373,7 +373,7 @@ export const crmClosingService = {
           .single(),
       )
       const updated = await requireData<any>(
-        supabase
+        crmClosingDataClient
           .from('proposal_conversion_runs')
           .update(buildCrmConversionRunPatch(proposal, plan.idempotencyKey, result))
           .eq('id', latestRun.id)
@@ -383,7 +383,7 @@ export const crmClosingService = {
       return mapCrmProposalConversionRun(updated)
     } catch (error) {
       const failed = await requireData<any>(
-        supabase.from('proposal_conversion_runs').insert({
+        crmClosingDataClient.from('proposal_conversion_runs').insert({
           organization_id: proposal.organizationId,
           crm_instance_id: proposal.crmInstanceId || null,
           lead_id: proposal.leadId,

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { automationService } from '@/services/automationService'
 import type { AutomationExecutionRun } from '@/types/automation'
 
 interface AutomationRealtimeProps {
@@ -11,33 +11,33 @@ export function AutomationRealtime({ flowId, onNewExecution }: AutomationRealtim
   useEffect(() => {
     if (!flowId || !onNewExecution) return
 
-    const channel = supabase
-      .channel(`automation-executions-${flowId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'automation_execution_runs',
-          filter: `flow_id=eq.${flowId}`,
-        },
-        payload => {
-          const run: AutomationExecutionRun = {
-            id: payload.new.id,
-            status: payload.new.status,
-            eventType: payload.new.event_type || undefined,
-            leadId: payload.new.lead_id || undefined,
-            lastError: payload.new.last_error || undefined,
-            startedAt: payload.new.started_at || undefined,
-            completedAt: payload.new.completed_at || undefined,
-          }
-          onNewExecution(run)
-        },
-      )
-      .subscribe()
+    let cancelled = false
+    let initialized = false
+    const seenRunIds = new Set<string>()
+
+    const poll = async () => {
+      try {
+        const runs = await automationService.getFlowExecutionRuns(flowId)
+        if (cancelled) return
+
+        const newRuns = runs.filter(run => !seenRunIds.has(run.id))
+        runs.forEach(run => seenRunIds.add(run.id))
+
+        if (initialized) {
+          newRuns.reverse().forEach(run => onNewExecution(run as AutomationExecutionRun))
+        }
+        initialized = true
+      } catch (error) {
+        console.warn('Nao foi possivel atualizar execucoes de automacao:', error)
+      }
+    }
+
+    void poll()
+    const intervalId = window.setInterval(() => void poll(), 5000)
 
     return () => {
-      supabase.removeChannel(channel)
+      cancelled = true
+      window.clearInterval(intervalId)
     }
   }, [flowId, onNewExecution])
 

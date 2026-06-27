@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import { calculateSupportSummary, sanitizeTicketForPortal } from '@/lib/support/supportRules'
 import type {
   PortalSupportTicket,
@@ -122,26 +122,18 @@ export function buildUpdateTicketPayload(input: {
   return payload
 }
 
-const ticketSelect = '*, support_messages(*), clients(company_name), contracts(name), projects(name)'
+function buildQuery(filters: SupportTicketFilters) {
+  const search = new URLSearchParams()
+  Object.entries(buildSupportTicketFilters(filters)).forEach(([key, value]) => {
+    search.set(key, String(value))
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
 
 export class SupportService {
   async getTickets(filters: SupportTicketFilters = {}): Promise<SupportTicket[]> {
-    const activeFilters = buildSupportTicketFilters(filters)
-    let query = supabase
-      .from('support_tickets')
-      .select(ticketSelect)
-      .order('updated_at', { ascending: false })
-
-    if (activeFilters.organizationId) query = query.eq('organization_id', activeFilters.organizationId)
-    if (activeFilters.clientId) query = query.eq('client_id', activeFilters.clientId)
-    if (activeFilters.contractId) query = query.eq('contract_id', activeFilters.contractId)
-    if (activeFilters.projectId) query = query.eq('project_id', activeFilters.projectId)
-    if (activeFilters.status) query = query.eq('status', activeFilters.status)
-    if (activeFilters.priority) query = query.eq('priority', activeFilters.priority)
-    if (activeFilters.category) query = query.eq('category', activeFilters.category)
-
-    const { data, error } = await query
-    if (error) throw error
+    const data = await apiRequest<any[]>(`/support/tickets${buildQuery(filters)}`)
     return (data || []).map(mapSupportTicketRow)
   }
 
@@ -155,36 +147,26 @@ export class SupportService {
   }
 
   async createTicket(input: Parameters<typeof buildCreateTicketPayload>[0]): Promise<SupportTicket> {
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .insert(buildCreateTicketPayload(input))
-      .select(ticketSelect)
-      .single()
-
-    if (error) throw error
+    const data = await apiRequest<any>('/support/tickets', {
+      method: 'POST',
+      body: input,
+    })
     return mapSupportTicketRow(data)
   }
 
   async addMessage(input: Parameters<typeof buildCreateMessagePayload>[0]): Promise<SupportMessage> {
-    const { data, error } = await supabase
-      .from('support_messages')
-      .insert(buildCreateMessagePayload(input))
-      .select()
-      .single()
-
-    if (error) throw error
+    const data = await apiRequest<any>('/support/messages', {
+      method: 'POST',
+      body: input,
+    })
     return mapSupportMessageRow(data)
   }
 
   async updateTicket(ticketId: string, input: Parameters<typeof buildUpdateTicketPayload>[0]): Promise<SupportTicket> {
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .update(buildUpdateTicketPayload(input))
-      .eq('id', ticketId)
-      .select(ticketSelect)
-      .single()
-
-    if (error) throw error
+    const data = await apiRequest<any>(`/support/tickets/${ticketId}`, {
+      method: 'PATCH',
+      body: input,
+    })
     return mapSupportTicketRow(data)
   }
 }

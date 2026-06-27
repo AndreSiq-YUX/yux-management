@@ -19,7 +19,7 @@ O YUX Strategy Engine e a camada interna que orienta agentes comerciais, Marketi
 
 1. Ingerir fontes privadas com `scripts/strategy-knowledge`.
 2. Transformar conteudo em concept cards revisados.
-3. Gerar embeddings e importar via Supabase service role.
+3. Gerar embeddings e importar via `DATABASE_URL` no Postgres proprio da VPS.
 4. Recuperar contexto por perfil e etapa.
 5. Compor strategy context no harness antes de snippets RAG comuns.
 6. Registrar recomendacao, handoff, outcome e learning signal.
@@ -32,4 +32,4 @@ Conteudo `internal_only` nao deve ser exposto ao portal ou webhooks externos. O 
 
 Implementado no repositorio: schema, ingestion, retrieval, guards, harness context, metric rules, objection rules, CRM controller rules, multi-assistant routing, servico frontend e Admin Strategy Engine.
 
-Pendente para producao: aplicar migration em Supabase remoto, executar probe `supabase/probes/20260611190000_yux_strategy_engine.sql`, importar cards reais revisados e validar credenciais de embeddings/webhooks.
+Pendente para producao: aplicar as migrations convertidas no Postgres da VPS, importar cards reais revisados e validar credenciais de embeddings/webhooks.

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import {
   buildExecutiveCampaignMetrics,
   buildReportAiInsight,
@@ -155,35 +155,30 @@ export const buildMetricCachePayload = (input: { organizationId: string; metricK
   dimensions: input.dimensions || {},
 })
 
-async function readTable(table: string, organizationId: string) {
-  const { data, error } = await supabase.from(table).select('*').eq('organization_id', organizationId)
-  if (error) return []
-  return data || []
-}
-
-async function readAttributionRollups(organizationId: string) {
-  const { data, error } = await supabase
-    .from('lead_source_rollups')
-    .select('*, lead_sources(*)')
-    .eq('organization_id', organizationId)
-    .order('period_end', { ascending: false })
-  if (error) return []
-  return data || []
-}
-
 export const reportService = {
   async getOperationalReport(organizationId: string): Promise<OperationalReport> {
-    const [leads, campaigns, landingPages, proposals, conversations, interactions, projects, attributionRollups, attributionAlerts] = await Promise.all([
-      readTable('leads', organizationId),
-      readTable('campaigns', organizationId),
-      readTable('landing_pages', organizationId),
-      readTable('proposals', organizationId),
-      readTable('conversations', organizationId),
-      readTable('interactions', organizationId),
-      readTable('projects', organizationId),
-      readAttributionRollups(organizationId),
-      readTable('crm_mroi_alerts', organizationId),
-    ])
+    const {
+      leads,
+      campaigns,
+      landingPages,
+      proposals,
+      conversations,
+      interactions,
+      projects,
+      attributionRollups,
+      attributionAlerts,
+    } = await apiRequest<{
+      leads: Row[]
+      campaigns: Row[]
+      landingPages: Row[]
+      proposals: Row[]
+      conversations: Row[]
+      interactions: Row[]
+      projects: Row[]
+      attributionRollups: Row[]
+      attributionAlerts: Row[]
+    }>(`/reports/operational-data/${organizationId}`)
+
     return buildOperationalReport({ organizationId, leads, campaigns, landingPages, proposals, conversations, interactions, projects, attributionRollups, attributionAlerts })
   },
 
@@ -192,14 +187,16 @@ export const reportService = {
   },
 
   async saveSnapshot(report: OperationalReport, scope: 'internal' | 'portal' = 'internal') {
-    const { data, error } = await supabase.from('report_snapshots').insert({
-      organization_id: report.organizationId,
+    const data = await apiRequest<Row>('/reports/snapshots', {
+      method: 'POST',
+      body: {
+      organizationId: report.organizationId,
       scope,
       metrics: report,
-      period_start: new Date().toISOString().slice(0, 10),
-      period_end: new Date().toISOString().slice(0, 10),
-    }).select().single()
-    if (error) throw error
+      periodStart: new Date().toISOString().slice(0, 10),
+      periodEnd: new Date().toISOString().slice(0, 10),
+      },
+    })
     return mapReportSnapshot(data)
   },
 }

@@ -1,14 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   buildInvoiceFilters,
   mapBillingItemRow,
   mapInvoiceRow,
   mapInvoiceSummary,
 } from './financeService'
-
-vi.mock('@/lib/supabase', () => ({
-  supabase: {},
-}))
 
 describe('financeService mapping', () => {
   it('maps invoice rows, nested billing items, and numeric strings', () => {

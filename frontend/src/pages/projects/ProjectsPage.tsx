@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { 
   Plus, 
   Search, 
@@ -61,7 +61,7 @@ export function ProjectsPage() {
   const fetchProjects = async () => {
     try {
       setLoading(true)
-      const response = await supabaseService.getProjects()
+      const response = await backendDataService.getProjects()
       
       if (response.projects) {
         setProjects(response.projects || [])
@@ -115,7 +115,7 @@ export function ProjectsPage() {
     if (!confirm('Tem certeza que deseja excluir este projeto?')) return
     
     try {
-      await supabaseService.deleteProject(projectId)
+      await backendDataService.deleteProject(projectId)
       toast({
         title: 'Sucesso',
         description: 'Projeto excluído com sucesso'
@@ -133,7 +133,7 @@ export function ProjectsPage() {
 
   const handleArchiveProject = async (projectId: string) => {
     try {
-      await supabaseService.archiveProject(projectId)
+      await backendDataService.archiveProject(projectId)
       toast({
         title: 'Sucesso',
         description: 'Projeto arquivado com sucesso'
@@ -151,7 +151,7 @@ export function ProjectsPage() {
 
   const handleDuplicateProject = async (projectId: string) => {
     try {
-      await supabaseService.duplicateProject(projectId)
+      await backendDataService.duplicateProject(projectId)
       toast({
         title: 'Sucesso',
         description: 'Projeto duplicado com sucesso'

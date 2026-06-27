@@ -50,7 +50,7 @@ import {
   PROJECT_TYPE_LABELS,
 } from '@/types/project'
 import { Client } from '@/types/client'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { projectFormSchema } from '@/lib/validations/project'
 import toast from 'react-hot-toast'
 
@@ -101,7 +101,7 @@ export function ProjectFormModal({
     const fetchClients = async () => {
       setLoadingClients(true)
       try {
-        const response: any = await supabaseService.getClients({ page: 1, limit: 1000 })
+        const response: any = await backendDataService.getClients({ page: 1, limit: 1000 })
 
         // Suportar múltiplos formatos de retorno
         let clientsData: any[] = []
@@ -189,7 +189,7 @@ export function ProjectFormModal({
           id: project.id,
           data: formData,
         })
-        const response = await supabaseService.updateProject(project.id, formData)
+        const response = await backendDataService.updateProject(project.id, formData)
         console.debug('[ProjectFormModal] updateProject -> response', response)
         toast.success('Projeto atualizado com sucesso!')
       } else {
@@ -197,7 +197,7 @@ export function ProjectFormModal({
         console.debug('[ProjectFormModal] createProject -> request', {
           data: formData,
         })
-        const response = await supabaseService.createProject(formData)
+        const response = await backendDataService.createProject(formData)
         console.debug('[ProjectFormModal] createProject -> response', response)
         toast.success('Projeto criado com sucesso!')
       }

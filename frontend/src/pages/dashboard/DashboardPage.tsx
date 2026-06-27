@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Activity, AlertCircle, ArrowRight, Bot, FileCheck2, FolderOpen, Loader2, TrendingUp, Users } from 'lucide-react'
 import { PortalEmptyState } from '@/components/client-portal/PortalEmptyState'
 import { adminPlatformService } from '@/services/adminPlatformService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { useAuthStore } from '@/stores/authStore'
 import type { AdminHubSummary } from '@/types/adminPlatform'
 
@@ -62,7 +62,7 @@ export function DashboardPage() {
 
       try {
         const [stats, summary] = await Promise.all([
-          supabaseService.getDashboardStats(),
+          backendDataService.getDashboardStats(),
           adminPlatformService.getAdminHubSummary(),
         ])
         if (!active) return

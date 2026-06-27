@@ -16,7 +16,7 @@ import {
   Plus
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { supabaseService } from '@/services/supabaseService';
+import { backendDataService } from '@/services/backendDataService';
 import { Client, ClientProject } from '@/types/client';
 import { formatCurrency, formatDate, formatClientLocation } from '@/lib/utils';
 
@@ -54,7 +54,7 @@ export function ClientDetailsModal({
       setLoading(true);
       
       // Carregar projetos do cliente
-      const projectsResponse = await supabaseService.getProjects({ 
+      const projectsResponse = await backendDataService.getProjects({
         clientId: client.id,
         limit: 50 
       });
@@ -79,7 +79,7 @@ export function ClientDetailsModal({
     
     try {
       setLoading(true);
-      const response = await supabaseService.deleteClient(client.id);
+      const response = await backendDataService.deleteClient(client.id);
       
       if (response.success) {
         toast.success('Cliente excluído com sucesso!');

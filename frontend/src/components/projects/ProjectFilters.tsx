@@ -45,7 +45,7 @@ import {
   PROJECT_TYPE_LABELS,
 } from '@/types/project'
 import { Client } from '@/types/client'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 
 export interface ProjectFiltersState {
   search: string
@@ -95,7 +95,7 @@ export function ProjectFilters({ filters, onFiltersChange, projects }: ProjectFi
 
   const loadClients = async () => {
     try {
-      const response = await supabaseService.getClients()
+      const response = await backendDataService.getClients()
       setClients(response.clients || [])
     } catch (error) {
       console.error('Erro ao carregar clientes:', error)

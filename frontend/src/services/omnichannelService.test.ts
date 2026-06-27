@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildOmnichannelFilters,
   deriveProviderHealth,
@@ -7,7 +7,18 @@ import {
   mapOmnichannelConversation,
   mapOmnichannelMessage,
   mapPortalConversation,
+  omnichannelService,
 } from './omnichannelService'
+
+const fetchMock = vi.fn()
+
+function jsonResponse(body: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+}
 
 describe('omnichannel service mappings', () => {
   it('maps conversation list rows with contact, connection, queue, team and assigned user summaries', () => {
@@ -239,5 +250,63 @@ describe('omnichannel service mappings', () => {
       bodySnapshot: 'Resposta publicada',
       entry: { body: 'Rascunho editado depois' },
     })
+  })
+})
+
+describe('omnichannelService backend API methods', () => {
+  afterEach(() => {
+    fetchMock.mockReset()
+    vi.unstubAllGlobals()
+  })
+
+  it('loads inbox conversations through the backend API', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'conversation-1', channel: 'whatsapp' }]))
+
+    await expect(omnichannelService.getInternalInbox({ organizationId: 'org-1', status: 'open', handoff: false })).resolves.toEqual([
+      { id: 'conversation-1', channel: 'whatsapp' },
+    ])
+    expect(fetchMock).toHaveBeenCalledWith('/api/omnichannel/conversations?organizationId=org-1&status=open&handoff=false', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('sends human replies and queues outbound retry through backend endpoints', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'message-1', body: 'Ola' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+
+    await expect(omnichannelService.sendHumanReply({ conversationId: 'conversation-1', body: 'Ola' })).resolves.toEqual({ id: 'message-1', body: 'Ola' })
+    await expect(omnichannelService.retryOutboundMessage('message-1')).resolves.toEqual({ success: true })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/omnichannel/messages/human-reply', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: JSON.stringify({ conversationId: 'conversation-1', body: 'Ola' }),
+      credentials: 'include',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/omnichannel/messages/message-1/retry', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('uses backend endpoints for settings, knowledge publication and scheduling', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ organization_id: 'org-1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'publication-1' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ success: true, schedulingRequest: { id: 'schedule-1' } }))
+
+    await omnichannelService.upsertSettings({ organizationId: 'org-1', defaultResponseMode: 'assisted' })
+    await omnichannelService.publishKnowledgeEntry({ organizationId: 'org-1', entryId: 'entry-1', bodySnapshot: 'FAQ' })
+    await omnichannelService.requestScheduling({ conversationId: 'conversation-1', requestedSlot: { startAt: '2026-01-01T12:00:00.000Z' } })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/omnichannel/settings', expect.objectContaining({ method: 'PUT' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/omnichannel/knowledge-publications', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/omnichannel/scheduling', expect.objectContaining({ method: 'POST' }))
   })
 })

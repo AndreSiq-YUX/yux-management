@@ -6,11 +6,24 @@ import {
   buildLeadScoreUpdatePayload,
   buildLeadTaskInsertPayload,
   buildLeadWonPayload,
+  crmService,
 } from './crmService'
+
+const fetchMock = vi.fn()
+
+function jsonResponse(body: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+}
 
 describe('crmService payload builders', () => {
   afterEach(() => {
     vi.useRealTimers()
+    fetchMock.mockReset()
+    vi.unstubAllGlobals()
   })
 
   it('clamps lead score updates to the supported range', () => {
@@ -99,5 +112,143 @@ describe('crmService payload builders', () => {
       assignment_state: 'reassigned',
     })
     expect(typeof payload.last_assignment_at).toBe('string')
+  })
+})
+
+describe('crmService backend API methods', () => {
+  afterEach(() => {
+    fetchMock.mockReset()
+    vi.unstubAllGlobals()
+  })
+
+  it('loads leads from the backend CRM endpoint', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'lead-1', name: 'Maria' }]))
+
+    await expect(crmService.getLeads('org-1', 'pipeline-1')).resolves.toEqual([{ id: 'lead-1', name: 'Maria' }])
+    expect(fetchMock).toHaveBeenCalledWith('/api/crm/leads?organizationId=org-1&pipelineId=pipeline-1', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('loads CRM pipelines from the backend CRM endpoint', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'pipeline-1', name: 'Comercial', stages: [] }]))
+
+    await expect(crmService.getPipelines('org-1')).resolves.toEqual([{ id: 'pipeline-1', name: 'Comercial', stages: [] }])
+    expect(fetchMock).toHaveBeenCalledWith('/api/crm/pipelines?organizationId=org-1', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('creates CRM leads through the backend CRM endpoint', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'lead-1', name: 'Maria' }, { status: 201 }))
+
+    await expect(crmService.createLead({
+      organizationId: 'org-1',
+      pipelineId: 'pipeline-1',
+      stageId: 'stage-1',
+      name: 'Maria',
+      email: 'maria@yux.com.br',
+      source: 'manual',
+      score: 10,
+    })).resolves.toEqual({ id: 'lead-1', name: 'Maria' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/crm/leads', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: expect.stringContaining('"organizationId":"org-1"'),
+      credentials: 'include',
+    })
+  })
+
+  it('creates lead tasks through the backend CRM endpoint', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'task-1', title: 'Ligar' }, { status: 201 }))
+
+    await expect(crmService.createLeadTask({
+      organizationId: 'org-1',
+      leadId: 'lead-1',
+      title: ' Ligar ',
+      dueAt: '2026-01-01T00:00:00.000Z',
+    })).resolves.toEqual({ id: 'task-1', title: 'Ligar' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/crm/leads/lead-1/tasks', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: expect.stringContaining('"title":"Ligar"'),
+      credentials: 'include',
+    })
+  })
+
+  it('moves leads and completes tasks through backend CRM endpoints', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'lead-1', stageId: 'stage-2' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'task-1', status: 'completed' }))
+
+    await expect(crmService.moveLeadToStage('lead-1', 'stage-2')).resolves.toEqual({ id: 'lead-1', stageId: 'stage-2' })
+    await expect(crmService.completeLeadTask('task-1')).resolves.toEqual({ id: 'task-1', status: 'completed' })
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/crm/leads/lead-1/stage', {
+      method: 'PATCH',
+      headers: expect.any(Headers),
+      body: JSON.stringify({ stageId: 'stage-2' }),
+      credentials: 'include',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/crm/tasks/task-1/complete', {
+      method: 'PATCH',
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('loads CRM sequences, enrollments and executions through backend endpoints', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ id: 'sequence-1', name: 'Follow-up' }]))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'enrollment-1', leadId: 'lead-1' }]))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'execution-1', leadId: 'lead-1' }]))
+
+    await expect(crmService.getSequences('org-1')).resolves.toEqual([{ id: 'sequence-1', name: 'Follow-up' }])
+    await expect(crmService.getEnrollments('lead-1')).resolves.toEqual([{ id: 'enrollment-1', leadId: 'lead-1' }])
+    await expect(crmService.getExecutions('lead-1')).resolves.toEqual([{ id: 'execution-1', leadId: 'lead-1' }])
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/crm/sequences?organizationId=org-1', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/crm/leads/lead-1/enrollments', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/crm/leads/lead-1/executions', {
+      headers: expect.any(Headers),
+      credentials: 'include',
+    })
+  })
+
+  it('enrolls leads and queues sequence dispatch through backend endpoints', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'enrollment-1', leadId: 'lead-1' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, jobId: 'job-1' }, { status: 202 }))
+
+    await expect(crmService.enrollLead('org-1', 'lead-1', 'sequence-1')).resolves.toEqual({
+      id: 'enrollment-1',
+      leadId: 'lead-1',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/crm/leads/lead-1/enrollments', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: JSON.stringify({ organizationId: 'org-1', sequenceId: 'sequence-1' }),
+      credentials: 'include',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/automations/dispatch', {
+      method: 'POST',
+      headers: expect.any(Headers),
+      body: expect.stringContaining('crm.sequence.enrolled'),
+      credentials: 'include',
+    })
   })
 })

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { ApprovalRequest, Project, ProjectDeliverable, ProjectTimelineEntry } from '@/types/project'
 
 const approvalLabels: Record<ApprovalRequest['status'], string> = {
@@ -50,9 +50,9 @@ export function ProjectDeliveryManager({ project }: { project: Project }) {
     try {
       setLoading(true)
       const [deliverablesResponse, approvalsResponse, timelineResponse] = await Promise.all([
-        supabaseService.getProjectDeliverables(project.id),
-        supabaseService.getProjectApprovalRequests(project.id),
-        supabaseService.getProjectTimeline(project.id),
+        backendDataService.getProjectDeliverables(project.id),
+        backendDataService.getProjectApprovalRequests(project.id),
+        backendDataService.getProjectTimeline(project.id),
       ])
       setDeliverables(deliverablesResponse.deliverables)
       setApprovals(approvalsResponse.approvals)
@@ -73,7 +73,7 @@ export function ProjectDeliveryManager({ project }: { project: Project }) {
     event.preventDefault()
     if (!deliverableForm.title.trim()) return
     try {
-      await supabaseService.createProjectDeliverable(project.id, {
+      await backendDataService.createProjectDeliverable(project.id, {
         ...deliverableForm,
         title: deliverableForm.title.trim(),
       })
@@ -88,11 +88,11 @@ export function ProjectDeliveryManager({ project }: { project: Project }) {
 
   const requestApproval = async (deliverable: ProjectDeliverable) => {
     try {
-      await supabaseService.updateProjectDeliverable(project.id, deliverable.id, {
+      await backendDataService.updateProjectDeliverable(project.id, deliverable.id, {
         status: 'in_review',
         isClientVisible: true,
       })
-      await supabaseService.createApprovalRequest(project.id, {
+      await backendDataService.createApprovalRequest(project.id, {
         targetType: 'deliverable',
         targetId: deliverable.id,
         title: deliverable.title,
@@ -110,7 +110,7 @@ export function ProjectDeliveryManager({ project }: { project: Project }) {
     event.preventDefault()
     if (!timelineForm.title.trim()) return
     try {
-      await supabaseService.createProjectTimelineEntry(project.id, {
+      await backendDataService.createProjectTimelineEntry(project.id, {
         ...timelineForm,
         title: timelineForm.title.trim(),
       })

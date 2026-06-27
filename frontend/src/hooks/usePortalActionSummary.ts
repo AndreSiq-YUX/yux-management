@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getInvoicePaymentState } from '@/lib/finance/financeRules'
 import { financeService } from '@/services/financeService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { PortalFinanceInvoice } from '@/types/finance'
 import type { ApprovalRequest, Project } from '@/types/project'
@@ -68,12 +68,14 @@ export function usePortalActionSummary() {
 
       try {
         const [projectsResponse, invoices] = await Promise.all([
-          enabledModuleKeys.includes('projects') ? supabaseService.getProjects({ limit: 50 }) : Promise.resolve({ projects: [] }),
+          enabledModuleKeys.includes('projects') ? backendDataService.getProjects({ limit: 50 }) : Promise.resolve({ projects: [] }),
           enabledModuleKeys.includes('finance') ? financeService.getPortalInvoices(activeContract.id) : Promise.resolve([]),
         ])
-        const projects = projectsResponse.projects || []
-        const approvalResponses = await Promise.all(projects.slice(0, 20).map(project => supabaseService.getProjectApprovalRequests(project.id)))
-        const approvals = approvalResponses.flatMap(response => response.approvals).filter(approval => approval.isClientVisible)
+        const projects: Project[] = projectsResponse.projects || []
+        const approvalResponses = await Promise.all(projects.slice(0, 20).map(project => backendDataService.getProjectApprovalRequests(project.id)))
+        const approvals: ApprovalRequest[] = approvalResponses
+          .flatMap(response => response.approvals as ApprovalRequest[])
+          .filter(approval => approval.isClientVisible)
 
         if (!cancelled) {
           setProjectState({

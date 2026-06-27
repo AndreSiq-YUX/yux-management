@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { AlertCircle, CheckCircle, Download, FileText, Upload, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 
 interface ClientImportModalProps {
   isOpen: boolean
@@ -151,7 +151,7 @@ export function ClientImportModal({ isOpen, onClose, onSuccess }: ClientImportMo
           continue
         }
 
-        const response = await supabaseService.createClient(payload)
+        const response = await backendDataService.createClient(payload)
         if (response.success) {
           imported++
         } else {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   buildCreateMessagePayload,
   buildCreateTicketPayload,
@@ -7,10 +7,6 @@ import {
   mapSupportMessageRow,
   mapSupportTicketRow,
 } from './supportService'
-
-vi.mock('@/lib/supabase', () => ({
-  supabase: {},
-}))
 
 describe('supportService mapping', () => {
   it('maps ticket rows, nested messages, and joined names', () => {
@@ -84,7 +80,7 @@ describe('supportService mapping', () => {
     })
   })
 
-  it('builds Supabase payloads for ticket creation, messages, and updates', () => {
+  it('builds database payloads for ticket creation, messages, and updates', () => {
     expect(buildCreateTicketPayload({
       organizationId: 'org-1',
       clientId: 'client-1',

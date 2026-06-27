@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { X, Building2, User, Mail, Phone, Globe, MapPin, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { supabaseService } from '@/services/supabaseService';
+import { backendDataService } from '@/services/backendDataService';
 import { 
   Client, 
   CLIENT_SIZES, 
@@ -135,7 +135,7 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
   useEffect(() => {
     const loadUsers = async () => {
       try {
-        const res = await supabaseService.getUsers({ limit: 200 });
+        const res = await backendDataService.getUsers({ limit: 200 });
         if (res && (res as any).success) {
           setUsers(((res as any).data || []) as Array<{ id: string; name: string; email: string }>);
         }
@@ -204,9 +204,9 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
 
       let response;
       if (client) {
-        response = await supabaseService.updateClient(client.id, payload);
+        response = await backendDataService.updateClient(client.id, payload);
       } else {
-        response = await supabaseService.createClient(payload);
+        response = await backendDataService.createClient(payload);
       }
 
       if (response.success) {

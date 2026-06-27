@@ -34,7 +34,7 @@ import {
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import toast from 'react-hot-toast'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import {
   Project,
   PROJECT_STATUS_LABELS,
@@ -179,7 +179,7 @@ export function ProjectStatusManager({
         updateData.notes = statusUpdate.notes.trim()
       }
 
-      const response = await supabaseService.updateProject(project.id, updateData)
+      const response = await backendDataService.updateProject(project.id, updateData)
       
       if (response.project) {
         const updatedProject = { ...project, ...updateData }

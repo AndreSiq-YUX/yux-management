@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import type {
   ConversationStatus,
   DeliveryStatus,
@@ -367,74 +367,42 @@ export function mapKnowledgePublication(row: any): OmnichannelKnowledgePublicati
   }
 }
 
-const conversationSelect = `
-  *,
-  omnichannel_contacts(id, display_name, email, phone, lead_id, client_id),
-  channel_connections(id, channel, name, adapter_key, is_active, provider_account_id, phone_number_id, provider_verify_state, token_state, last_provider_sync_at, protected_metadata_references),
-  conversation_queues(id, name),
-  omnichannel_teams(id, name),
-  users(id, name),
-  conversation_tags(tag)
-`
-
-const applyConversationFilters = (query: any, filters: OmnichannelConversationFilters) => {
-  const normalized = buildOmnichannelFilters(filters)
-  let next = query
-  if (normalized.organization_id) next = next.eq('organization_id', normalized.organization_id)
-  if (normalized.channel) next = next.eq('channel', normalized.channel)
-  if (normalized.status) next = next.eq('status', normalized.status)
-  if (normalized.queue_id) next = next.eq('queue_id', normalized.queue_id)
-  if (normalized.team_id) next = next.eq('team_id', normalized.team_id)
-  if (normalized.assigned_user_id) next = next.eq('assigned_user_id', normalized.assigned_user_id)
-  if (normalized.sla === 'overdue') next = next.lt('sla_deadline_at', new Date().toISOString()).neq('status', 'resolved')
-  if (normalized.sla === 'due_soon') {
-    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-    next = next.gte('sla_deadline_at', new Date().toISOString()).lte('sla_deadline_at', soon).neq('status', 'resolved')
-  }
-  return next
+const buildQuery = (params: Record<string, string | boolean | undefined | null>) => {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
 }
 
-const requireData = async <T>(request: PromiseLike<{ data: T | null; error: any }>) => {
-  const { data, error } = await request
-  if (error) throw error
-  return data as T
-}
+const conversationQuery = (filters: OmnichannelConversationFilters = {}) => buildQuery({
+  organizationId: filters.organizationId || undefined,
+  channel: filters.channel || undefined,
+  status: filters.status || undefined,
+  queueId: filters.queueId || undefined,
+  teamId: filters.teamId || undefined,
+  assignedUserId: filters.assignedUserId || undefined,
+  sla: filters.sla || undefined,
+  tag: filters.tag || undefined,
+  handoff: filters.handoff,
+})
 
 export const omnichannelService = {
   async getInternalInbox(filters: OmnichannelConversationFilters = {}) {
-    const query = applyConversationFilters(
-      supabase.from('conversations').select(conversationSelect),
-      filters,
-    ).order('last_message_at', { ascending: false, nullsFirst: false })
-    const data = await requireData<any[]>(query)
-    return (data || []).map(mapOmnichannelConversation)
+    return apiRequest<OmnichannelConversationSummary[]>(`/omnichannel/conversations${conversationQuery(filters)}`)
   },
 
   async getPortalInbox(filters: OmnichannelConversationFilters = {}) {
-    const query = applyConversationFilters(
-      supabase.from('conversations').select(conversationSelect),
-      filters,
-    ).order('last_message_at', { ascending: false, nullsFirst: false })
-    const data = await requireData<any[]>(query)
-    return (data || []).map(mapPortalConversation)
+    return apiRequest<PortalOmnichannelConversationSummary[]>(`/omnichannel/portal/conversations${conversationQuery(filters)}`)
   },
 
   async getConversationDetail(conversationId: string, portal = false) {
-    const data = await requireData<any>(
-      supabase.from('conversations').select(conversationSelect).eq('id', conversationId).single(),
-    )
-    return portal ? mapPortalConversation(data) : mapOmnichannelConversation(data)
+    return apiRequest<OmnichannelConversationSummary | PortalOmnichannelConversationSummary>(`/omnichannel/conversations/${conversationId}${buildQuery({ portal })}`)
   },
 
   async getMessages(conversationId: string) {
-    const data = await requireData<any[]>(
-      supabase
-        .from('messages')
-        .select('*, message_attachments(*)')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true }),
-    )
-    return (data || []).map(mapOmnichannelMessage)
+    return apiRequest<OmnichannelMessageView[]>(`/omnichannel/conversations/${conversationId}/messages`)
   },
 
   async getConversationTimeline(conversationId: string) {
@@ -442,75 +410,43 @@ export const omnichannelService = {
   },
 
   async getTeams(organizationId: string) {
-    return requireData<any[]>(
-      supabase.from('omnichannel_teams').select('*').eq('organization_id', organizationId).order('name'),
-    )
+    return apiRequest<any[]>(`/omnichannel/teams${buildQuery({ organizationId })}`)
   },
 
   async getTeamMembers(teamId: string) {
-    return requireData<any[]>(
-      supabase.from('omnichannel_team_members').select('*, users(id, name)').eq('team_id', teamId).order('priority'),
-    )
+    return apiRequest<any[]>(`/omnichannel/teams/${teamId}/members`)
   },
 
   async getQueues(organizationId: string) {
-    return requireData<any[]>(
-      supabase.from('conversation_queues').select('*, omnichannel_teams(id, name)').eq('organization_id', organizationId).order('name'),
-    )
+    return apiRequest<any[]>(`/omnichannel/queues${buildQuery({ organizationId })}`)
   },
 
   async getRules(organizationId: string) {
-    return requireData<any[]>(
-      supabase.from('handoff_rules').select('*').eq('organization_id', organizationId).order('priority'),
-    )
+    return apiRequest<any[]>(`/omnichannel/rules${buildQuery({ organizationId })}`)
   },
 
   async getSettings(organizationId: string) {
-    return requireData<any>(
-      supabase.from('omnichannel_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
-    )
+    return apiRequest<any>(`/omnichannel/settings${buildQuery({ organizationId })}`)
   },
 
   async getWidgetConfiguration(organizationId: string) {
-    return requireData<any[]>(
-      supabase.from('webchat_widgets').select('*').eq('organization_id', organizationId).order('name'),
-    )
+    return apiRequest<any[]>(`/omnichannel/widgets${buildQuery({ organizationId })}`)
   },
 
   async getKnowledgeSources(organizationId: string) {
-    return requireData<any[]>(
-      supabase.from('knowledge_sources').select('*').eq('organization_id', organizationId).order('updated_at', { ascending: false }),
-    )
+    return apiRequest<any[]>(`/omnichannel/knowledge-sources${buildQuery({ organizationId })}`)
   },
 
   async getKnowledgeEntries(organizationId: string) {
-    return requireData<any[]>(
-      supabase.from('knowledge_entries').select('*, knowledge_sources(id, name)').eq('organization_id', organizationId).order('updated_at', { ascending: false }),
-    )
+    return apiRequest<any[]>(`/omnichannel/knowledge-entries${buildQuery({ organizationId })}`)
   },
 
   async getKnowledgePublications(organizationId: string) {
-    const data = await requireData<any[]>(
-      supabase
-        .from('knowledge_publications')
-        .select('*, knowledge_entries(id, title, body, status)')
-        .eq('organization_id', organizationId)
-        .order('published_at', { ascending: false }),
-    )
-    return (data || []).map(mapKnowledgePublication)
+    return apiRequest<OmnichannelKnowledgePublicationView[]>(`/omnichannel/knowledge-publications${buildQuery({ organizationId })}`)
   },
 
   async getInternalMetrics(organizationId: string) {
-    const [aiRuns, crmRuns, outboundRuns] = await Promise.all([
-      requireData<any[]>(supabase.from('ai_message_runs').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false })),
-      requireData<any[]>(supabase.from('crm_sync_runs').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false })),
-      requireData<any[]>(supabase.from('outbound_message_runs').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false })),
-    ])
-    return {
-      aiRuns: aiRuns.map(mapAiRun),
-      crmRuns,
-      outboundRuns,
-    }
+    return apiRequest<{ aiRuns: OmnichannelAiRunView[]; crmRuns: any[]; outboundRuns: any[] }>(`/omnichannel/metrics${buildQuery({ organizationId })}`)
   },
 
   async getPortalMetrics(organizationId: string) {
@@ -528,66 +464,29 @@ export const omnichannelService = {
   },
 
   async getWebhookEvents(organizationId: string) {
-    return requireData<any[]>(
-      supabase
-        .from('channel_webhook_events')
-        .select('*, channel_connections(id, organization_id)')
-        .eq('channel_connections.organization_id', organizationId)
-        .order('received_at', { ascending: false }),
-    )
+    return apiRequest<any[]>(`/omnichannel/webhook-events${buildQuery({ organizationId })}`)
   },
 
   async getOutboundRetryLogs(conversationId: string) {
-    return requireData<any[]>(
-      supabase.from('outbound_message_runs').select('*').eq('conversation_id', conversationId).order('created_at', { ascending: false }),
-    )
+    return apiRequest<any[]>(`/omnichannel/conversations/${conversationId}/outbound-runs`)
   },
 
   async sendHumanReply(input: { conversationId: string; connectionId?: string; body: string; authorUserId?: string; metadata?: JsonRecord }) {
-    const data = await requireData<any>(
-      supabase.from('messages').insert({
-        conversation_id: input.conversationId,
-        connection_id: input.connectionId || null,
-        direction: 'outbound',
-        author_type: 'agent',
-        author_user_id: input.authorUserId || null,
-        content_type: 'text',
-        body: input.body,
-        delivery_status: 'queued',
-        metadata: input.metadata || {},
-      }).select('*, message_attachments(*)').single(),
-    )
-    await supabase.functions.invoke('dispatch-outbound-message', { body: { messageId: data.id } })
-    return mapOmnichannelMessage(data)
+    return apiRequest<OmnichannelMessageView>('/omnichannel/messages/human-reply', {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async approveAssistedSuggestion(messageId: string) {
-    const { data, error } = await supabase.functions.invoke('dispatch-outbound-message', { body: { messageId } })
-    if (error) throw error
-    return data
+    return apiRequest(`/omnichannel/messages/${messageId}/approve`, { method: 'POST' })
   },
 
   async assignConversation(input: { conversationId: string; queueId?: string; teamId?: string; assignedUserId?: string; reason?: string; assignedByUserId?: string }) {
-    const assignment = await requireData<any>(
-      supabase.from('conversation_assignments').insert({
-        conversation_id: input.conversationId,
-        queue_id: input.queueId || null,
-        team_id: input.teamId || null,
-        assigned_user_id: input.assignedUserId || null,
-        source: 'manual',
-        reason: input.reason || null,
-        assigned_by_user_id: input.assignedByUserId || null,
-      }).select().single(),
-    )
-    await requireData(
-      supabase.from('conversations').update({
-        queue_id: input.queueId || null,
-        team_id: input.teamId || null,
-        assigned_user_id: input.assignedUserId || null,
-        status: input.assignedUserId ? 'assigned' : 'waiting_human',
-      }).eq('id', input.conversationId).select('id').single(),
-    )
-    return assignment
+    return apiRequest('/omnichannel/assignments', {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async reassignConversation(input: { conversationId: string; queueId?: string; teamId?: string; assignedUserId?: string; reason?: string; assignedByUserId?: string }) {
@@ -595,160 +494,66 @@ export const omnichannelService = {
   },
 
   async handoffConversation(input: { conversationId: string; trigger: string; ruleId?: string; outcome?: JsonRecord; assignedByUserId?: string }) {
-    const event = await requireData<any>(
-      supabase.from('handoff_events').insert({
-        conversation_id: input.conversationId,
-        rule_id: input.ruleId || null,
-        trigger: input.trigger,
-        outcome: input.outcome || {},
-      }).select().single(),
-    )
-    await requireData(supabase.from('conversations').update({ status: 'waiting_human', response_mode: 'manual' }).eq('id', input.conversationId).select('id').single())
-    return event
+    return apiRequest('/omnichannel/handoff', {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async resolveConversation(conversationId: string) {
-    return requireData<any>(
-      supabase.from('conversations').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('id', conversationId).select(conversationSelect).single(),
-    ).then(mapOmnichannelConversation)
+    return apiRequest<OmnichannelConversationSummary>(`/omnichannel/conversations/${conversationId}/resolve`, { method: 'PATCH' })
   },
 
   async reopenConversation(conversationId: string) {
-    return requireData<any>(
-      supabase.from('conversations').update({ status: 'open', resolved_at: null }).eq('id', conversationId).select(conversationSelect).single(),
-    ).then(mapOmnichannelConversation)
+    return apiRequest<OmnichannelConversationSummary>(`/omnichannel/conversations/${conversationId}/reopen`, { method: 'PATCH' })
   },
 
   async createTeam(input: { organizationId: string; name: string; availabilityMode?: string; isActive?: boolean }) {
-    return requireData<any>(supabase.from('omnichannel_teams').insert({
-      organization_id: input.organizationId,
-      name: input.name,
-      availability_mode: input.availabilityMode || 'business_hours',
-      is_active: input.isActive ?? true,
-    }).select().single())
+    return apiRequest('/omnichannel/teams', { method: 'POST', body: input })
   },
 
   async updateTeam(id: string, input: { name?: string; availabilityMode?: string; isActive?: boolean }) {
-    return requireData<any>(supabase.from('omnichannel_teams').update(cleanPayload({
-      name: input.name,
-      availability_mode: input.availabilityMode,
-      is_active: input.isActive,
-    })).eq('id', id).select().single())
+    return apiRequest(`/omnichannel/teams/${id}`, { method: 'PATCH', body: input })
   },
 
   async createQueue(input: { organizationId: string; teamId?: string; name: string; strategy?: string; slaSettings?: JsonRecord; isActive?: boolean }) {
-    return requireData<any>(supabase.from('conversation_queues').insert({
-      organization_id: input.organizationId,
-      team_id: input.teamId || null,
-      name: input.name,
-      strategy: input.strategy || 'round_robin',
-      sla_settings: input.slaSettings || {},
-      is_active: input.isActive ?? true,
-    }).select().single())
+    return apiRequest('/omnichannel/queues', { method: 'POST', body: input })
   },
 
   async updateQueue(id: string, input: { teamId?: string | null; name?: string; strategy?: string; slaSettings?: JsonRecord; isActive?: boolean }) {
-    return requireData<any>(supabase.from('conversation_queues').update(cleanPayload({
-      team_id: input.teamId,
-      name: input.name,
-      strategy: input.strategy,
-      sla_settings: input.slaSettings,
-      is_active: input.isActive,
-    })).eq('id', id).select().single())
+    return apiRequest(`/omnichannel/queues/${id}`, { method: 'PATCH', body: input })
   },
 
   async createRule(input: { organizationId: string; name: string; isEnabled?: boolean; priority?: number; combinator?: 'all' | 'any'; conditions?: unknown[]; outcome?: JsonRecord }) {
-    return requireData<any>(supabase.from('handoff_rules').insert({
-      organization_id: input.organizationId,
-      name: input.name,
-      is_enabled: input.isEnabled ?? true,
-      priority: input.priority ?? 100,
-      combinator: input.combinator || 'all',
-      conditions: input.conditions || [],
-      outcome: input.outcome || {},
-    }).select().single())
+    return apiRequest('/omnichannel/rules', { method: 'POST', body: input })
   },
 
   async updateRule(id: string, input: { name?: string; isEnabled?: boolean; priority?: number; combinator?: 'all' | 'any'; conditions?: unknown[]; outcome?: JsonRecord }) {
-    return requireData<any>(supabase.from('handoff_rules').update(cleanPayload({
-      name: input.name,
-      is_enabled: input.isEnabled,
-      priority: input.priority,
-      combinator: input.combinator,
-      conditions: input.conditions,
-      outcome: input.outcome,
-    })).eq('id', id).select().single())
+    return apiRequest(`/omnichannel/rules/${id}`, { method: 'PATCH', body: input })
   },
 
   async upsertSettings(input: { organizationId: string; defaultResponseMode?: ResponseMode; retentionMonths?: number; attachmentRetentionMonths?: number; anonymizeOnRetention?: boolean; crmSyncFilters?: JsonRecord; businessHours?: JsonRecord; aiLogicalProvider?: string; aiModel?: string; aiTokenPrices?: JsonRecord }) {
-    return requireData<any>(supabase.from('omnichannel_settings').upsert({
-      organization_id: input.organizationId,
-      default_response_mode: input.defaultResponseMode || 'assisted',
-      retention_months: input.retentionMonths ?? 12,
-      attachment_retention_months: input.attachmentRetentionMonths ?? 12,
-      anonymize_on_retention: input.anonymizeOnRetention ?? false,
-      crm_sync_filters: input.crmSyncFilters || {},
-      business_hours: input.businessHours || {},
-      ai_logical_provider: input.aiLogicalProvider || null,
-      ai_model: input.aiModel || null,
-      ai_token_prices: input.aiTokenPrices || {},
-    }, { onConflict: 'organization_id' }).select().single())
+    return apiRequest('/omnichannel/settings', { method: 'PUT', body: input })
   },
 
   async createWidget(input: { organizationId: string; name: string; isActive?: boolean; allowedOrigins?: string[]; branding?: JsonRecord; consentText?: string; initialForm?: JsonRecord }) {
-    return requireData<any>(supabase.from('webchat_widgets').insert({
-      organization_id: input.organizationId,
-      name: input.name,
-      is_active: input.isActive ?? true,
-      allowed_origins: input.allowedOrigins || [],
-      branding: input.branding || {},
-      consent_text: input.consentText || null,
-      initial_form: input.initialForm || {},
-    }).select().single())
+    return apiRequest('/omnichannel/widgets', { method: 'POST', body: input })
   },
 
   async updateWidget(id: string, input: { name?: string; isActive?: boolean; allowedOrigins?: string[]; branding?: JsonRecord; consentText?: string | null; initialForm?: JsonRecord }) {
-    return requireData<any>(supabase.from('webchat_widgets').update(cleanPayload({
-      name: input.name,
-      is_active: input.isActive,
-      allowed_origins: input.allowedOrigins,
-      branding: input.branding,
-      consent_text: input.consentText,
-      initial_form: input.initialForm,
-    })).eq('id', id).select().single())
+    return apiRequest(`/omnichannel/widgets/${id}`, { method: 'PATCH', body: input })
   },
 
   async createKnowledgeSource(input: { organizationId: string; sourceType: string; name: string; sourceUrl?: string; storagePath?: string; retentionDeadlineAt?: string; status?: string }) {
-    return requireData<any>(supabase.from('knowledge_sources').insert({
-      organization_id: input.organizationId,
-      source_type: input.sourceType,
-      name: input.name,
-      source_url: input.sourceUrl || null,
-      storage_path: input.storagePath || null,
-      retention_deadline_at: input.retentionDeadlineAt || null,
-      status: input.status || 'draft',
-    }).select().single())
+    return apiRequest('/omnichannel/knowledge-sources', { method: 'POST', body: input })
   },
 
   async createKnowledgeEntry(input: { organizationId: string; sourceId?: string; title: string; body: string; status?: string; reviewerUserId?: string }) {
-    return requireData<any>(supabase.from('knowledge_entries').insert({
-      organization_id: input.organizationId,
-      source_id: input.sourceId || null,
-      title: input.title,
-      body: input.body,
-      status: input.status || 'draft',
-      reviewer_user_id: input.reviewerUserId || null,
-    }).select().single())
+    return apiRequest('/omnichannel/knowledge-entries', { method: 'POST', body: input })
   },
 
   async updateKnowledgeEntry(id: string, input: { title?: string; body?: string; status?: string; reviewerUserId?: string | null }) {
-    return requireData<any>(supabase.from('knowledge_entries').update(cleanPayload({
-      title: input.title,
-      body: input.body,
-      status: input.status,
-      reviewer_user_id: input.reviewerUserId,
-      reviewed_at: input.status === 'approved' || input.status === 'published' ? new Date().toISOString() : undefined,
-    })).eq('id', id).select().single())
+    return apiRequest(`/omnichannel/knowledge-entries/${id}`, { method: 'PATCH', body: input })
   },
 
   async submitKnowledgeForReview(entryId: string) {
@@ -756,31 +561,18 @@ export const omnichannelService = {
   },
 
   async publishKnowledgeEntry(input: { organizationId: string; entryId: string; bodySnapshot: string; publisherUserId?: string }) {
-    const publication = await requireData<any>(supabase.from('knowledge_publications').insert({
-      organization_id: input.organizationId,
-      entry_id: input.entryId,
-      body_snapshot: input.bodySnapshot,
-      publisher_user_id: input.publisherUserId || null,
-    }).select('*, knowledge_entries(id, title, body, status)').single())
-    await this.updateKnowledgeEntry(input.entryId, { status: 'published', reviewerUserId: input.publisherUserId || null })
-    return mapKnowledgePublication(publication)
+    return apiRequest<OmnichannelKnowledgePublicationView>('/omnichannel/knowledge-publications', { method: 'POST', body: input })
   },
 
   async simulateChannelEvent(body: JsonRecord) {
-    const { data, error } = await supabase.functions.invoke('simulate-channel-event', { body })
-    if (error) throw error
-    return data
+    return apiRequest('/omnichannel/simulate-channel-event', { method: 'POST', body })
   },
 
   async retryOutboundMessage(messageId: string) {
-    const { data, error } = await supabase.functions.invoke('retry-outbound-message', { body: { messageId } })
-    if (error) throw error
-    return data
+    return apiRequest(`/omnichannel/messages/${messageId}/retry`, { method: 'POST' })
   },
 
   async requestScheduling(body: JsonRecord) {
-    const { data, error } = await supabase.functions.invoke('request-scheduling', { body })
-    if (error) throw error
-    return data
+    return apiRequest('/omnichannel/scheduling', { method: 'POST', body })
   },
 }

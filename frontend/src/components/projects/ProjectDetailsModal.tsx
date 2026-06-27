@@ -20,7 +20,7 @@ import {
   Users,
   Building2
 } from 'lucide-react'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import { Project, ProjectTask, ProjectPhase, PROJECT_STATUS_LABELS, PROJECT_PRIORITY_LABELS, PROJECT_TYPE_LABELS } from '@/types/project'
 import { Client } from '@/types/client'
 import { Button } from '@/components/ui/button'
@@ -82,16 +82,16 @@ export function ProjectDetailsModal({
       setLoading(true)
 
       // Carregar tarefas do projeto
-      const tasksResponse = await supabaseService.getProjectTasks(project.id)
+      const tasksResponse = await backendDataService.getProjectTasks(project.id)
       setTasks(tasksResponse.tasks || [])
 
       // Carregar fases do projeto
-      const phasesResponse = await supabaseService.getProjectPhases(project.id)
+      const phasesResponse = await backendDataService.getProjectPhases(project.id)
       setPhases(phasesResponse.phases || [])
 
       // Carregar dados do cliente se não estiver incluído
       if (project.clientId && !project.client) {
-        const clientResponse = await supabaseService.getClientById(project.clientId)
+        const clientResponse = await backendDataService.getClientById(project.clientId)
         setClient(clientResponse.client)
       } else if (project.client) {
         setClient(project.client as Client)

@@ -12,7 +12,7 @@ describe('sortPipelineStages', () => {
 })
 
 describe('isPersistedOrganizationId', () => {
-  it('rejects the local organization placeholder before Supabase hydration', () => {
+  it('rejects the local organization placeholder before backend hydration', () => {
     expect(isPersistedOrganizationId('local-yux')).toBe(false)
     expect(isPersistedOrganizationId('650e8400-e29b-41d4-a716-446655440001')).toBe(true)
   })

@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase'
+import { invokeBackendFunction } from '@/lib/backendFunctions'
+import { strategyEngineDataClient } from '@/lib/strategyEngineDataClient'
 import type {
   AgentAutonomyPolicy,
   AgentExecutionRun,
@@ -386,13 +387,13 @@ export function buildAssistantRoutingRulePayload(input: StrategyAssistantRouting
 
 export const strategyEngineService = {
   async getAgentProfiles() {
-    const data = await requireData<DbRow[]>(supabase.from('yux_strategy_agent_profiles').select('*').order('profile_key'))
+    const data = await requireData<DbRow[]>(strategyEngineDataClient.from('yux_strategy_agent_profiles').select('*').order('profile_key'))
     return data.map(mapStrategyProfile)
   },
 
   async updateAgentProfile(input: StrategyAgentProfileUpdateInput) {
     return requireData<DbRow>(
-      supabase
+      strategyEngineDataClient
         .from('yux_strategy_agent_profiles')
         .update(buildStrategyProfilePayload(input))
         .eq('id', input.id)
@@ -402,11 +403,11 @@ export const strategyEngineService = {
   },
 
   async getSkills() {
-    return requireData<StrategySkill[]>(supabase.from('yux_strategy_skills').select('*').order('skill_key'))
+    return requireData<StrategySkill[]>(strategyEngineDataClient.from('yux_strategy_skills').select('*').order('skill_key'))
   },
 
   async getConceptCards(filters: { profileKey?: string; stage?: string; visibility?: string } = {}) {
-    let query = supabase.from('yux_strategy_concept_cards').select('*').order('updated_at', { ascending: false })
+    let query = strategyEngineDataClient.from('yux_strategy_concept_cards').select('*').order('updated_at', { ascending: false })
     if (filters.profileKey) query = query.contains('allowed_agent_profile_keys', [filters.profileKey])
     if (filters.stage) query = query.contains('stage_tags', [filters.stage])
     if (filters.visibility) query = query.eq('visibility', filters.visibility)
@@ -414,18 +415,18 @@ export const strategyEngineService = {
   },
 
   async getSourceDocuments(filters: { visibility?: string } = {}) {
-    let query = supabase.from('yux_strategy_source_documents').select('*').order('updated_at', { ascending: false })
+    let query = strategyEngineDataClient.from('yux_strategy_source_documents').select('*').order('updated_at', { ascending: false })
     if (filters.visibility) query = query.eq('visibility', filters.visibility)
     return requireData<StrategySourceDocument[]>(query)
   },
 
   async getKnowledgeStats() {
     const [documents, chunks, assets, cards, retrievals] = await Promise.all([
-      supabase.from('yux_strategy_source_documents').select('id', { count: 'exact', head: true }),
-      supabase.from('yux_strategy_source_chunks').select('id', { count: 'exact', head: true }),
-      supabase.from('yux_strategy_source_assets').select('id', { count: 'exact', head: true }),
-      supabase.from('yux_strategy_concept_cards').select('id', { count: 'exact', head: true }),
-      supabase.from('yux_strategy_retrieval_queries').select('id', { count: 'exact', head: true }),
+      strategyEngineDataClient.from('yux_strategy_source_documents').select('id', { count: 'exact', head: true }),
+      strategyEngineDataClient.from('yux_strategy_source_chunks').select('id', { count: 'exact', head: true }),
+      strategyEngineDataClient.from('yux_strategy_source_assets').select('id', { count: 'exact', head: true }),
+      strategyEngineDataClient.from('yux_strategy_concept_cards').select('id', { count: 'exact', head: true }),
+      strategyEngineDataClient.from('yux_strategy_retrieval_queries').select('id', { count: 'exact', head: true }),
     ])
     const errors = [documents.error, chunks.error, assets.error, cards.error, retrievals.error].filter(Boolean)
     if (errors.length > 0) throw errors[0]
@@ -439,20 +440,20 @@ export const strategyEngineService = {
   },
 
   async getRetrievalQueries(filters: { profileKey?: string; limit?: number } = {}) {
-    let query = supabase.from('yux_strategy_retrieval_queries').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
+    let query = strategyEngineDataClient.from('yux_strategy_retrieval_queries').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
     if (filters.profileKey) query = query.eq('profile_key', filters.profileKey)
     return requireData<StrategyRetrievalQuery[]>(query)
   },
 
   async getAgentBindings(filters: { profileId?: string } = {}) {
-    let query = supabase.from('yux_strategy_agent_bindings').select('*').order('created_at', { ascending: false })
+    let query = strategyEngineDataClient.from('yux_strategy_agent_bindings').select('*').order('created_at', { ascending: false })
     if (filters.profileId) query = query.eq('profile_id', filters.profileId)
     return requireData<StrategyAgentBinding[]>(query)
   },
 
   async getLlmProviders() {
     return requireData<StrategyLlmProvider[]>(
-      supabase
+      strategyEngineDataClient
         .from('platform_provider_connections')
         .select('*')
         .eq('provider_type', 'llm')
@@ -461,7 +462,7 @@ export const strategyEngineService = {
   },
 
   async getModelRoutes(filters: { agentType?: string } = {}) {
-    let query = supabase.from('model_routing_rules').select('*').order('agent_type').order('routing_tier')
+    let query = strategyEngineDataClient.from('model_routing_rules').select('*').order('agent_type').order('routing_tier')
     if (filters.agentType) query = query.eq('agent_type', filters.agentType)
     const data = await requireData<DbRow[]>(query)
     return data.map(mapStrategyModelRoute)
@@ -470,15 +471,15 @@ export const strategyEngineService = {
   async upsertModelRoute(input: StrategyModelRouteInput) {
     const payload = buildStrategyModelRoutePayload(input)
     const mutation = input.id
-      ? supabase.from('model_routing_rules').update(payload).eq('id', input.id)
-      : supabase.from('model_routing_rules').insert(payload)
+      ? strategyEngineDataClient.from('model_routing_rules').update(payload).eq('id', input.id)
+      : strategyEngineDataClient.from('model_routing_rules').insert(payload)
     const data = await requireData<DbRow>(mutation.select().single())
     return mapStrategyModelRoute(data)
   },
 
   async getClientOrganizations() {
     return requireData<StrategyOrganization[]>(
-      supabase
+      strategyEngineDataClient
         .from('organizations')
         .select('id, name, slug')
         .eq('kind', 'client')
@@ -487,7 +488,7 @@ export const strategyEngineService = {
   },
 
   async getConversationAssistants(filters: { organizationId?: string } = {}) {
-    let query = supabase
+    let query = strategyEngineDataClient
       .from('ai_assistants')
       .select('*, ai_assistant_routing_rules(*)')
       .order('updated_at', { ascending: false })
@@ -499,8 +500,8 @@ export const strategyEngineService = {
   async upsertConversationAssistant(input: StrategyConversationAssistantInput) {
     const payload = buildStrategyAssistantPayload(input)
     const mutation = input.id
-      ? supabase.from('ai_assistants').update(payload).eq('id', input.id)
-      : supabase.from('ai_assistants').insert(payload)
+      ? strategyEngineDataClient.from('ai_assistants').update(payload).eq('id', input.id)
+      : strategyEngineDataClient.from('ai_assistants').insert(payload)
     const data = await requireData<DbRow>(mutation.select().single())
     return mapStrategyAssistant(data)
   },
@@ -508,53 +509,53 @@ export const strategyEngineService = {
   async upsertAssistantRoutingRule(input: StrategyAssistantRoutingRuleInput) {
     const payload = buildAssistantRoutingRulePayload(input)
     const mutation = input.id
-      ? supabase.from('ai_assistant_routing_rules').update(payload).eq('id', input.id)
-      : supabase.from('ai_assistant_routing_rules').insert(payload)
+      ? strategyEngineDataClient.from('ai_assistant_routing_rules').update(payload).eq('id', input.id)
+      : strategyEngineDataClient.from('ai_assistant_routing_rules').insert(payload)
     return requireData<StrategyAssistantRoutingRule>(mutation.select().single())
   },
 
   async upsertAgentBinding(input: Record<string, unknown>) {
-    return requireData<StrategyAgentBinding>(supabase.from('yux_strategy_agent_bindings').upsert(input).select().single())
+    return requireData<StrategyAgentBinding>(strategyEngineDataClient.from('yux_strategy_agent_bindings').upsert(input).select().single())
   },
 
   async getRecommendations(filters: { profileKey?: string; status?: string } = {}) {
-    let query = supabase.from('yux_strategy_agent_recommendations').select('*').order('created_at', { ascending: false })
+    let query = strategyEngineDataClient.from('yux_strategy_agent_recommendations').select('*').order('created_at', { ascending: false })
     if (filters.profileKey) query = query.eq('profile_key', filters.profileKey)
     if (filters.status) query = query.eq('status', filters.status)
     return requireData<DbRow[]>(query)
   },
 
   async createRecommendation(input: StrategyRecommendationInput) {
-    return requireData<DbRow>(supabase.from('yux_strategy_agent_recommendations').insert(buildRecommendationPayload(input)).select().single())
+    return requireData<DbRow>(strategyEngineDataClient.from('yux_strategy_agent_recommendations').insert(buildRecommendationPayload(input)).select().single())
   },
 
   async createHandoff(input: StrategyHandoffInput) {
-    return requireData<DbRow>(supabase.from('yux_strategy_agent_handoffs').insert(buildHandoffPayload(input)).select().single())
+    return requireData<DbRow>(strategyEngineDataClient.from('yux_strategy_agent_handoffs').insert(buildHandoffPayload(input)).select().single())
   },
 
   async updateHandoffStatus(id: string, status: string) {
-    return requireData<DbRow>(supabase.from('yux_strategy_agent_handoffs').update({ status }).eq('id', id).select().single())
+    return requireData<DbRow>(strategyEngineDataClient.from('yux_strategy_agent_handoffs').update({ status }).eq('id', id).select().single())
   },
 
   async recordOutcome(input: StrategyOutcomeInput) {
-    return requireData<DbRow>(supabase.from('yux_strategy_outcome_events').insert(buildOutcomePayload(input)).select().single())
+    return requireData<DbRow>(strategyEngineDataClient.from('yux_strategy_outcome_events').insert(buildOutcomePayload(input)).select().single())
   },
 
   async getObjectionPlaybook(filters: { categoryKey?: string; visibility?: string } = {}) {
-    let query = supabase.from('yux_objection_playbook_items').select('*').order('category_key')
+    let query = strategyEngineDataClient.from('yux_objection_playbook_items').select('*').order('category_key')
     if (filters.categoryKey) query = query.eq('category_key', filters.categoryKey)
     if (filters.visibility) query = query.eq('visibility', filters.visibility)
     return requireData<DbRow[]>(query)
   },
 
   async getMetricsSnapshots(filters: { organizationId?: string } = {}) {
-    let query = supabase.from('yux_metrics_cash_snapshots').select('*').order('snapshot_date', { ascending: false }).limit(50)
+    let query = strategyEngineDataClient.from('yux_metrics_cash_snapshots').select('*').order('snapshot_date', { ascending: false }).limit(50)
     if (filters.organizationId) query = query.eq('organization_id', filters.organizationId)
     return requireData<DbRow[]>(query)
   },
 
   async getAgentExecutionRuns(filters: { organizationId?: string; status?: string; limit?: number } = {}) {
-    let query = supabase.from('agent_execution_runs').select('*').order('created_at', { ascending: false }).limit(filters.limit || 25)
+    let query = strategyEngineDataClient.from('agent_execution_runs').select('*').order('created_at', { ascending: false }).limit(filters.limit || 25)
     if (filters.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters.status) query = query.eq('status', filters.status)
     const data = await requireData<DbRow[]>(query)
@@ -564,7 +565,7 @@ export const strategyEngineService = {
   async getAgentExecutionSteps(runId: string) {
     if (!runId) return []
     const data = await requireData<DbRow[]>(
-      supabase
+      strategyEngineDataClient
         .from('agent_execution_steps')
         .select('*')
         .eq('run_id', runId)
@@ -574,7 +575,7 @@ export const strategyEngineService = {
   },
 
   async getAgentAutonomyPolicies(filters: { organizationId?: string; profileKey?: string } = {}) {
-    let query = supabase.from('agent_autonomy_policies').select('*').order('created_at', { ascending: false })
+    let query = strategyEngineDataClient.from('agent_autonomy_policies').select('*').order('created_at', { ascending: false })
     if (filters.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters.profileKey) query = query.eq('profile_key', filters.profileKey)
     const data = await requireData<DbRow[]>(query)
@@ -582,12 +583,12 @@ export const strategyEngineService = {
   },
 
   async getStrategyWorkflowSpecs() {
-    const data = await requireData<DbRow[]>(supabase.from('strategy_workflow_specs').select('*').order('workflow_key').order('version', { ascending: false }))
+    const data = await requireData<DbRow[]>(strategyEngineDataClient.from('strategy_workflow_specs').select('*').order('workflow_key').order('version', { ascending: false }))
     return data.map(mapStrategyWorkflowSpec)
   },
 
   async getAgentLearningSignals(filters: { organizationId?: string; profileKey?: string; limit?: number } = {}) {
-    let query = supabase.from('agent_learning_signals').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
+    let query = strategyEngineDataClient.from('agent_learning_signals').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
     if (filters.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters.profileKey) query = query.eq('profile_key', filters.profileKey)
     const data = await requireData<DbRow[]>(query)
@@ -595,14 +596,14 @@ export const strategyEngineService = {
   },
 
   async getAgentImprovementRecommendations(filters: { status?: string; limit?: number } = {}) {
-    let query = supabase.from('agent_improvement_recommendations').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
+    let query = strategyEngineDataClient.from('agent_improvement_recommendations').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
     if (filters.status) query = query.eq('status', filters.status)
     const data = await requireData<DbRow[]>(query)
     return data.map(mapAgentImprovementRecommendation)
   },
 
   async getAgentShadowExperiments(filters: { status?: string; limit?: number } = {}) {
-    let query = supabase.from('agent_shadow_experiments').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
+    let query = strategyEngineDataClient.from('agent_shadow_experiments').select('*').order('created_at', { ascending: false }).limit(filters.limit || 50)
     if (filters.status) query = query.eq('status', filters.status)
     const data = await requireData<DbRow[]>(query)
     return data.map(mapAgentShadowExperiment)
@@ -610,7 +611,7 @@ export const strategyEngineService = {
 
   async getStrategyChatSessions() {
     const data = await requireData<DbRow[]>(
-      supabase
+      strategyEngineDataClient
         .from('yux_strategy_chat_sessions')
         .select('*')
         .eq('profile_key', 'growth_strategist')
@@ -624,7 +625,7 @@ export const strategyEngineService = {
   async getStrategyChatMessages(sessionId: string) {
     if (!sessionId) return []
     const data = await requireData<DbRow[]>(
-      supabase
+      strategyEngineDataClient
         .from('yux_strategy_chat_messages')
         .select('*')
         .eq('session_id', sessionId)
@@ -634,14 +635,12 @@ export const strategyEngineService = {
   },
 
   async runStrategyAdminChat(input: StrategyAdminChatRequest): Promise<StrategyAdminChatResponse> {
-    const { data, error } = await supabase.functions.invoke('run-strategy-admin-chat', { body: input })
-    if (error) throw error
-    const row = data as {
+    const row = await invokeBackendFunction<{
       session: DbRow
       userMessage: DbRow
       assistantMessage: DbRow
       route?: StrategyAdminChatResponse['route']
-    }
+    }>('run-strategy-admin-chat', input)
     return {
       session: mapStrategyChatSession(row.session),
       userMessage: mapStrategyChatMessage(row.userMessage),

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Bot, Sparkles, Volume2, ShieldCheck, Tag, Plus, Trash2,
   Save, ArrowRight, ArrowLeft, Check, BookOpen, Link, FileText, DollarSign, CheckCheck, X
@@ -6,7 +6,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { supabase } from '@/lib/supabase'
+import { aiAssistantDataClient } from '@/lib/aiAssistantDataClient'
 import toast from 'react-hot-toast'
 import type { AiAssistantRole, AiAssistantSettings, AiAssistantHandoffRule, AiAssistantSafetyRule, AiAssistantKnowledgeLink } from '@/types/aiAssistant'
 
@@ -67,7 +67,7 @@ export function AssistantSettingsPanel({
   useEffect(() => {
     const fetchQueues = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await aiAssistantDataClient
           .from('conversation_queues')
           .select('id, name')
           .eq('organization_id', organizationId)
@@ -86,7 +86,7 @@ export function AssistantSettingsPanel({
   useEffect(() => {
     const fetchKnowledge = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await aiAssistantDataClient
           .from('knowledge_entries')
           .select('id, title, body, status')
           .eq('organization_id', organizationId)
@@ -163,19 +163,19 @@ export function AssistantSettingsPanel({
   // Add Product to catalog & unified knowledge database
   const handleAddProduct = async () => {
     if (!newProdName.trim() || !newProdPrice.trim()) {
-      toast.error('Preencha pelo menos o nome e preÃ§o do produto')
+      toast.error('Preencha pelo menos o nome e preço do produto')
       return
     }
 
     try {
       setSaving(true)
       // Save product as a unified knowledge entry
-      const { data, error } = await supabase
+      const { data, error } = await aiAssistantDataClient
         .from('knowledge_entries')
         .insert({
           organization_id: organizationId,
           title: `[PRODUTO] ${newProdName.trim()}`,
-          body: `Nome: ${newProdName.trim()}\nPreÃ§o: ${newProdPrice.trim()}\nDescriÃ§Ã£o: ${newProdDesc.trim()}\nLink: ${newProdLink.trim()}`,
+          body: `Nome: ${newProdName.trim()}\nPreço: ${newProdPrice.trim()}\nDescrição: ${newProdDesc.trim()}\nLink: ${newProdLink.trim()}`,
           status: 'published'
         })
         .select()
@@ -203,7 +203,7 @@ export function AssistantSettingsPanel({
       setNewProdDesc('')
       setNewProdLink('')
       setShowAddProduct(false)
-      toast.success('Produto adicionado e integrado Ã  Base de Conhecimento')
+      toast.success('Produto adicionado e integrado à Base de Conhecimento')
     } catch (e) {
       console.error(e)
       toast.error('Erro ao registrar produto')
@@ -215,7 +215,7 @@ export function AssistantSettingsPanel({
   // Handle master save
   const handleSave = async () => {
     if (!agentName.trim()) {
-      toast.error('O nome do bot Ã© obrigatÃ³rio')
+      toast.error('O nome do bot é obrigatório')
       return
     }
     try {
@@ -238,13 +238,13 @@ export function AssistantSettingsPanel({
       }
 
       if (assistantId && assistantId !== 'new') {
-        const { error } = await supabase
+        const { error } = await aiAssistantDataClient
           .from('ai_assistants')
           .update(assistantPayload)
           .eq('id', assistantId)
         if (error) throw error
       } else {
-        const { data, error } = await supabase
+        const { data, error } = await aiAssistantDataClient
           .from('ai_assistants')
           .insert({ ...assistantPayload, id: undefined })
           .select()
@@ -254,7 +254,7 @@ export function AssistantSettingsPanel({
       }
 
       // 2. Save Handoff Rules (clean delete & insert)
-      await supabase.from('ai_assistant_handoff_rules').delete().eq('assistant_id', assistantId)
+      await aiAssistantDataClient.from('ai_assistant_handoff_rules').delete().eq('assistant_id', assistantId)
 
       const keywords = escapeKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
       const handoffRulesPayload = [
@@ -267,23 +267,23 @@ export function AssistantSettingsPanel({
         },
         {
           assistant_id: assistantId,
-          name: 'Limiar de confianÃ§a',
+          name: 'Limiar de confiança',
           rule_type: 'low_confidence',
           conditions: {},
           min_confidence: Number(confidenceThreshold / 100),
           is_enabled: true
         }
       ]
-      const { error: handoffError } = await supabase.from('ai_assistant_handoff_rules').insert(handoffRulesPayload)
+      const { error: handoffError } = await aiAssistantDataClient.from('ai_assistant_handoff_rules').insert(handoffRulesPayload)
       if (handoffError) throw handoffError
 
       // 3. Save Safety Rules / Metadata (clean delete & insert)
-      await supabase.from('ai_assistant_safety_rules').delete().eq('assistant_id', assistantId)
+      await aiAssistantDataClient.from('ai_assistant_safety_rules').delete().eq('assistant_id', assistantId)
 
       const safetyRulesPayload = [
         {
           assistant_id: assistantId,
-          name: 'InstruÃ§Ãµes do Sistema',
+          name: 'Instruções do Sistema',
           rule_type: 'system_prompt',
           instructions: systemPrompt.trim(),
           severity: 'medium',
@@ -299,25 +299,25 @@ export function AssistantSettingsPanel({
         },
         {
           assistant_id: assistantId,
-          name: 'Habilidades de MÃ­dia',
+          name: 'Habilidades de Mídia',
           rule_type: 'capabilities',
           instructions: JSON.stringify({ understandVoice, understandImages, understandFiles, understandVideos }),
           severity: 'medium',
           is_enabled: true
         }
       ]
-      const { error: safetyError } = await supabase.from('ai_assistant_safety_rules').insert(safetyRulesPayload)
+      const { error: safetyError } = await aiAssistantDataClient.from('ai_assistant_safety_rules').insert(safetyRulesPayload)
       if (safetyError) throw safetyError
 
       // 4. Save Knowledge Links (clean delete & insert)
-      await supabase.from('ai_assistant_knowledge_links').delete().eq('assistant_id', assistantId)
+      await aiAssistantDataClient.from('ai_assistant_knowledge_links').delete().eq('assistant_id', assistantId)
 
       if (selectedKnowledgeIds.length > 0) {
         const linksPayload = selectedKnowledgeIds.map(entryId => ({
           assistant_id: assistantId,
           knowledge_entry_id: entryId
         }))
-        const { error: linksError } = await supabase.from('ai_assistant_knowledge_links').insert(linksPayload)
+        const { error: linksError } = await aiAssistantDataClient.from('ai_assistant_knowledge_links').insert(linksPayload)
         if (linksError) throw linksError
       }
 
@@ -325,7 +325,7 @@ export function AssistantSettingsPanel({
       if (onSaveAssistant) onSaveAssistant(organizationId)
     } catch (e) {
       console.error(e)
-      toast.error('Erro ao salvar configuraÃ§Ãµes do assistente')
+      toast.error('Erro ao salvar configurações do assistente')
     } finally {
       setSaving(false)
     }
@@ -364,7 +364,7 @@ export function AssistantSettingsPanel({
           <div className="space-y-3">
             <div className="border-b pb-1.5 mb-2">
               <h3 className="font-bold text-sm text-gray-900">Identidade e Prompt do Agente</h3>
-              <p className="text-xs text-gray-400">Configure a persona do bot e as instruÃ§Ãµes fundamentais que guiarÃ£o as respostas.</p>
+              <p className="text-xs text-gray-400">Configure a persona do bot e as instruções fundamentais que guiarão as respostas.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-xs">
@@ -378,9 +378,9 @@ export function AssistantSettingsPanel({
                   onChange={e => setTone(e.target.value)}
                   className="h-9 w-full rounded-md border px-2 bg-white text-xs text-gray-800"
                 >
-                  <option value="consultivo">Consultivo (Orienta e sugere soluÃ§Ãµes)</option>
+                  <option value="consultivo">Consultivo (Orienta e sugere soluções)</option>
                   <option value="objetivo">Objetivo (Direto ao ponto, respostas curtas)</option>
-                  <option value="acolhedor">Acolhedor (EmpÃ¡tico e amigÃ¡vel)</option>
+                  <option value="acolhedor">Acolhedor (Empático e amigável)</option>
                   <option value="premium">Premium (Formal, refinado e polido)</option>
                 </select>
               </label>
@@ -389,7 +389,7 @@ export function AssistantSettingsPanel({
                 <Input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Ex: Portal YUX" className="h-9" />
               </label>
               <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Site Oficial de ReferÃªncia</span>
+                <span className="font-semibold text-gray-700">Site Oficial de Referência</span>
                 <Input value={websiteUrl} onChange={e => setWebsiteUrl(e.target.value)} placeholder="Ex: https://yux.com.br" className="h-9" />
               </label>
               <label className="space-y-1 text-xs">
@@ -421,14 +421,14 @@ export function AssistantSettingsPanel({
             </div>
             <div className="space-y-1 text-xs pt-1">
               <span className="font-semibold text-gray-700 flex justify-between">
-                <span>InstruÃ§Ãµes de Sistema (System Prompt)</span>
+                <span>Instruções de Sistema (System Prompt)</span>
                 <span className="text-gray-400">{systemPrompt.length} caracteres</span>
               </span>
               <textarea
                 value={systemPrompt}
                 onChange={e => setSystemPrompt(e.target.value)}
                 rows={6}
-                placeholder="Insira as regras rÃ­gidas do bot. Ex: 'VocÃª Ã© um vendedor de planos da empresa X. Nunca forneÃ§a descontos sem permissÃ£o. Sempre direcione o cliente para o agendamento...'"
+                placeholder="Insira as regras rígidas do bot. Ex: 'Você é um vendedor de planos da empresa X. Nunca forneça descontos sem permissão. Sempre direcione o cliente para o agendamento...'"
                 className="w-full rounded-md border p-3 text-xs bg-slate-50/50 focus:ring-1 focus:ring-yux-500 focus:outline-none"
               />
             </div>
@@ -439,7 +439,7 @@ export function AssistantSettingsPanel({
         {step === 2 && (
           <div className="space-y-3">
             <div className="border-b pb-1.5 mb-2">
-              <h3 className="font-bold text-sm text-gray-900">Habilidades e MÃ­dias Suportadas</h3>
+              <h3 className="font-bold text-sm text-gray-900">Habilidades e Mídias Suportadas</h3>
               <p className="text-xs text-gray-400">Ative o que o agente de IA pode entender nas conversas com os clientes.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 pt-2">
@@ -453,9 +453,9 @@ export function AssistantSettingsPanel({
                 <div className="text-xs">
                   <div className="font-bold text-gray-800 flex items-center gap-1.5">
                     <Volume2 className="h-4 w-4 text-yux-600" />
-                    Compreender Ãudios (Voz)
+                    Compreender Áudios (Voz)
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">O bot transcreverÃ¡ e interpretarÃ¡ mensagens de voz enviadas no WhatsApp.</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">O bot transcreverá e interpretará mensagens de voz enviadas no WhatsApp.</p>
                 </div>
               </label>
 
@@ -487,7 +487,7 @@ export function AssistantSettingsPanel({
                     <FileText className="h-4 w-4 text-yux-600" />
                     Compreender Arquivos (PDF/Docs)
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">O bot lerÃ¡ o conteÃºdo de PDFs ou planilhas anexadas.</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">O bot lerá o conteúdo de PDFs ou planilhas anexadas.</p>
                 </div>
               </label>
 
@@ -501,9 +501,9 @@ export function AssistantSettingsPanel({
                 <div className="text-xs">
                   <div className="font-bold text-gray-800 flex items-center gap-1.5">
                     <Bot className="h-4 w-4 text-yux-600" />
-                    Compreender VÃ­deos
+                    Compreender Vídeos
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">Analisa frames e transcriÃ§Ãµes de Ã¡udio de vÃ­deos curtos.</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">Analisa frames e transcrições de áudio de vídeos curtos.</p>
                 </div>
               </label>
             </div>
@@ -514,13 +514,13 @@ export function AssistantSettingsPanel({
         {step === 3 && (
           <div className="space-y-3">
             <div className="border-b pb-1.5 mb-2">
-              <h3 className="font-bold text-sm text-gray-900">Gatilhos de TransferÃªncia (Handoff) & CRM</h3>
-              <p className="text-xs text-gray-400">Configure em quais situaÃ§Ãµes a IA deve passar a conversa para um atendente humano.</p>
+              <h3 className="font-bold text-sm text-gray-900">Gatilhos de Transferência (Handoff) & CRM</h3>
+              <p className="text-xs text-gray-400">Configure em quais situações a IA deve passar a conversa para um atendente humano.</p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 text-xs">
               <div className="space-y-1.5">
-                <span className="font-semibold text-gray-700">Limiar de ConfianÃ§a da IA: {confidenceThreshold}%</span>
+                <span className="font-semibold text-gray-700">Limiar de Confiança da IA: {confidenceThreshold}%</span>
                 <input
                   type="range"
                   min="50"
@@ -529,11 +529,11 @@ export function AssistantSettingsPanel({
                   onChange={e => setConfidenceThreshold(Number(e.target.value))}
                   className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yux-600"
                 />
-                <p className="text-[10px] text-gray-400">Transfere se a confianÃ§a da resposta da IA cair abaixo de {confidenceThreshold}%.</p>
+                <p className="text-[10px] text-gray-400">Transfere se a confiança da resposta da IA cair abaixo de {confidenceThreshold}%.</p>
               </div>
 
               <label className="space-y-1">
-                <span className="font-semibold text-gray-700">Palavras-chave de Escape (separadas por vÃ­rgula)</span>
+                <span className="font-semibold text-gray-700">Palavras-chave de Escape (separadas por vírgula)</span>
                 <Input
                   value={escapeKeywords}
                   onChange={e => setEscapeKeywords(e.target.value)}
@@ -543,14 +543,14 @@ export function AssistantSettingsPanel({
               </label>
 
               <label className="space-y-1">
-                <span className="font-semibold text-gray-700">Comportamento fora do horÃ¡rio comercial</span>
+                <span className="font-semibold text-gray-700">Comportamento fora do horário comercial</span>
                 <select
                   value={outOfHoursBehavior}
                   onChange={e => setOutOfHoursBehavior(e.target.value)}
                   className="h-9 w-full rounded-md border px-2 bg-white text-xs text-gray-800"
                 >
                   <option value="unavailability_message">Informar indisponibilidade e manter na IA</option>
-                  <option value="queue_handoff">Informar e enviar para fila humana de urgÃªncia</option>
+                  <option value="queue_handoff">Informar e enviar para fila humana de urgência</option>
                   <option value="ai_only">Permitir que a IA responda 24h normalmente</option>
                 </select>
               </label>
@@ -577,7 +577,7 @@ export function AssistantSettingsPanel({
                 />
                 <div>
                   <span className="font-bold text-gray-800">Mover lead no CRM ao transferir para humano</span>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Move automaticamente o estÃ¡gio do lead associado para a etapa de "Handoff Humano".</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Move automaticamente o estágio do lead associado para a etapa de "Handoff Humano".</p>
                 </div>
               </label>
             </div>
@@ -589,7 +589,7 @@ export function AssistantSettingsPanel({
           <div className="space-y-3">
             <div className="border-b pb-1.5 mb-2 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-sm text-gray-900">Biblioteca de Conhecimento & CatÃ¡logo</h3>
+                <h3 className="font-bold text-sm text-gray-900">Biblioteca de Conhecimento & Catálogo</h3>
                 <p className="text-xs text-gray-400">Associe materiais gerais da empresa ao assistente ou cadastre produtos.</p>
               </div>
               <Button
@@ -607,7 +607,7 @@ export function AssistantSettingsPanel({
             {showAddProduct && (
               <div className="bg-slate-50 border rounded-lg p-3 space-y-2 text-xs">
                 <div className="flex items-center justify-between border-b pb-1">
-                  <span className="font-bold text-slate-800">Novo Produto no CatÃ¡logo Unificado</span>
+                  <span className="font-bold text-slate-800">Novo Produto no Catálogo Unificado</span>
                   <button onClick={() => setShowAddProduct(false)}><X className="h-4 w-4 text-slate-400 hover:text-slate-600" /></button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -616,7 +616,7 @@ export function AssistantSettingsPanel({
                     <Input value={newProdName} onChange={e => setNewProdName(e.target.value)} placeholder="Ex: Notebook Pro" className="h-8 text-xs" />
                   </label>
                   <label className="space-y-1">
-                    <span className="font-medium">PreÃ§o</span>
+                    <span className="font-medium">Preço</span>
                     <Input value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} placeholder="Ex: R$ 4.500,00" className="h-8 text-xs" />
                   </label>
                   <label className="space-y-1 col-span-2">
@@ -624,12 +624,12 @@ export function AssistantSettingsPanel({
                     <Input value={newProdLink} onChange={e => setNewProdLink(e.target.value)} placeholder="Ex: https://checkout.com/note-pro" className="h-8 text-xs" />
                   </label>
                   <label className="space-y-1 col-span-2">
-                    <span className="font-medium">DescriÃ§Ã£o Completa</span>
+                    <span className="font-medium">Descrição Completa</span>
                     <textarea
                       value={newProdDesc}
                       onChange={e => setNewProdDesc(e.target.value)}
                       rows={2}
-                      placeholder="Ficha tÃ©cnica, cores, garantia..."
+                      placeholder="Ficha técnica, cores, garantia..."
                       className="w-full rounded-md border p-2 text-xs focus:ring-1 focus:ring-yux-500 focus:outline-none"
                     />
                   </label>
@@ -704,7 +704,7 @@ export function AssistantSettingsPanel({
             onClick={() => setStep(step + 1)}
             className="text-xs"
           >
-            AvanÃ§ar
+            Avançar
             <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
           </Button>
         ) : (

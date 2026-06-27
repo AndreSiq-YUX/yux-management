@@ -10,6 +10,9 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   YUX_AGENT_RUNTIME_URL: z.string().url().optional(),
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
+  N8N_CRM_WEBHOOK_URL: z.string().url().optional(),
+  OMNICHANNEL_ATTACHMENTS_DIR: z.string().optional(),
+  OMNICHANNEL_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().optional(),
 })
 
 export type AppEnv = z.infer<typeof envSchema>

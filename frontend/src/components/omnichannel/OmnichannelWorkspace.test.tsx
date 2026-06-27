@@ -169,7 +169,7 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof OmnichannelWor
 }
 
 describe('OmnichannelWorkspace', () => {
-  it('does not query Supabase with the local organization placeholder', () => {
+  it('does not query the backend with the local organization placeholder', () => {
     vi.clearAllMocks()
     const container = document.createElement('div')
     document.body.appendChild(container)

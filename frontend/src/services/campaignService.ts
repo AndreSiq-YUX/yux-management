@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase'
+import { campaignDataClient } from '@/lib/campaignDataClient'
+import { invokeBackendFunction } from '@/lib/backendFunctions'
 import { sanitizeCampaignForPortal, validateBudgetChange } from '@/lib/campaigns/campaignRules'
 import type {
   AdProviderConnection,
@@ -148,29 +149,64 @@ function mapCampaign(row: any): Campaign {
   }
 }
 
-const CAMPAIGN_SELECT = `
-  *,
-  campaign_creatives(*),
-  campaign_recommendations(*),
-  campaign_alerts(*),
-  ad_provider_mutation_runs(*)
-`
+const CAMPAIGN_SELECT = '*'
+
+async function requireRows<T>(request: PromiseLike<{ data: T[] | null; error: any }>) {
+  const { data, error } = await request
+  if (error) throw error
+  return data || []
+}
+
+async function attachCampaignRelations(rows: any[]) {
+  const campaignIds = [...new Set(rows.map(row => row.id).filter(Boolean))]
+  if (campaignIds.length === 0) return rows
+
+  const [creatives, recommendations, alerts, runs] = await Promise.all([
+    requireRows(campaignDataClient.from('campaign_creatives').select('*').in('campaign_id', campaignIds)),
+    requireRows(campaignDataClient.from('campaign_recommendations').select('*').in('campaign_id', campaignIds)),
+    requireRows(campaignDataClient.from('campaign_alerts').select('*').in('campaign_id', campaignIds)),
+    requireRows(campaignDataClient.from('ad_provider_mutation_runs').select('*').in('campaign_id', campaignIds).order('created_at', { ascending: false })),
+  ])
+
+  const groupByCampaign = (items: any[]) => {
+    const grouped = new Map<string, any[]>()
+    for (const item of items || []) {
+      const group = grouped.get(item.campaign_id) || []
+      group.push(item)
+      grouped.set(item.campaign_id, group)
+    }
+    return grouped
+  }
+
+  const creativesByCampaign = groupByCampaign(creatives)
+  const recommendationsByCampaign = groupByCampaign(recommendations)
+  const alertsByCampaign = groupByCampaign(alerts)
+  const runsByCampaign = groupByCampaign(runs)
+
+  return rows.map(row => ({
+    ...row,
+    campaign_creatives: creativesByCampaign.get(row.id) || [],
+    campaign_recommendations: recommendationsByCampaign.get(row.id) || [],
+    campaign_alerts: alertsByCampaign.get(row.id) || [],
+    ad_provider_mutation_runs: runsByCampaign.get(row.id) || [],
+  }))
+}
 
 export const campaignService = {
   async getProviderConnections() {
-    const { data, error } = await supabase.from('ad_provider_connections').select('*').order('provider')
+    const { data, error } = await campaignDataClient.from('ad_provider_connections').select('*').order('provider')
     if (error) throw error
     return (data || []).map(mapProviderConnection)
   },
 
   async getCampaigns(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('campaigns').select(CAMPAIGN_SELECT).order('updated_at', { ascending: false })
+    let query = campaignDataClient.from('campaigns').select(CAMPAIGN_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     const { data, error } = await query
     if (error) throw error
-    return (data || []).map(mapCampaign)
+    return (await attachCampaignRelations(data || [])).map(mapCampaign)
   },
 
   async getPortalCampaigns(contractId: string) {
@@ -179,13 +215,14 @@ export const campaignService = {
   },
 
   async createCampaignDraft(input: CreateCampaignDraftInput) {
-    const { data, error } = await supabase
+    const { data, error } = await campaignDataClient
       .from('campaigns')
       .insert(buildCampaignDraftPayload(input))
       .select(CAMPAIGN_SELECT)
       .single()
     if (error) throw error
-    return mapCampaign(data)
+    const [campaign] = await attachCampaignRelations(data ? [data] : [])
+    return mapCampaign(campaign)
   },
 
   async updateCampaignDraft(id: string, input: Partial<CreateCampaignDraftInput>) {
@@ -195,9 +232,10 @@ export const campaignService = {
     if (input.dailyBudget !== undefined) payload.daily_budget = input.dailyBudget
     if (input.totalBudget !== undefined) payload.total_budget = input.totalBudget
     if (input.landingPageId !== undefined) payload.landing_page_id = input.landingPageId || null
-    const { data, error } = await supabase.from('campaigns').update(payload).eq('id', id).select(CAMPAIGN_SELECT).single()
+    const { data, error } = await campaignDataClient.from('campaigns').update(payload).eq('id', id).select(CAMPAIGN_SELECT).single()
     if (error) throw error
-    return mapCampaign(data)
+    const [campaign] = await attachCampaignRelations(data ? [data] : [])
+    return mapCampaign(campaign)
   },
 
   async submitCampaignForApproval(id: string) {
@@ -209,7 +247,7 @@ export const campaignService = {
   },
 
   async enqueueProviderMutation(input: Parameters<typeof buildProviderMutationPayload>[0]) {
-    const { data, error } = await supabase.from('ad_provider_mutation_runs').insert(buildProviderMutationPayload(input)).select().single()
+    const { data, error } = await campaignDataClient.from('ad_provider_mutation_runs').insert(buildProviderMutationPayload(input)).select().single()
     if (error) throw error
     return data
   },
@@ -224,8 +262,7 @@ export const campaignService = {
     activateProvider?: boolean
     requestPayload?: Record<string, unknown>
   }) {
-    const { data, error } = await supabase.functions.invoke('execute-ad-provider-mutation', {
-      body: {
+    return invokeBackendFunction<{ success?: boolean; run?: unknown; error?: string }>('execute-ad-provider-mutation', {
         organizationId: input.organizationId,
         provider: input.provider,
         action: input.action,
@@ -234,18 +271,11 @@ export const campaignService = {
         explicitApproval: Boolean(input.explicitApproval),
         activateProvider: Boolean(input.activateProvider),
         requestPayload: input.requestPayload || {},
-      },
-    })
-    if (error) throw error
-    return data as { success?: boolean; run?: unknown; error?: string }
+      })
   },
 
   async syncCampaignMetrics(campaignId: string) {
-    const { data, error } = await supabase.functions.invoke('sync-ad-metrics', {
-      body: { campaignId },
-    })
-    if (error) throw error
-    return data as { success?: boolean; run?: unknown; error?: string }
+    return invokeBackendFunction<{ success?: boolean; run?: unknown; error?: string }>('sync-ad-metrics', { campaignId })
   },
 
   async pauseCampaign(campaignId: string) {
@@ -265,20 +295,22 @@ export const campaignService = {
   async updateCampaignBudget(input: { campaignId: string; currentDaily: number; nextDaily: number; explicitApproval?: boolean }) {
     const validation = validateBudgetChange(input)
     if (!validation.ok) throw new Error(validation.reason)
-    const { data, error } = await supabase.from('campaigns').update({ daily_budget: input.nextDaily }).eq('id', input.campaignId).select(CAMPAIGN_SELECT).single()
+    const { data, error } = await campaignDataClient.from('campaigns').update({ daily_budget: input.nextDaily }).eq('id', input.campaignId).select(CAMPAIGN_SELECT).single()
     if (error) throw error
-    return mapCampaign(data)
+    const [campaign] = await attachCampaignRelations(data ? [data] : [])
+    return mapCampaign(campaign)
   },
 
   async updateCampaignStatus(id: string, lifecycleStatus: CampaignLifecycleStatus) {
     const legacyStatus = lifecycleStatus === 'active' ? 'ACTIVE' : lifecycleStatus === 'paused' ? 'PAUSED' : lifecycleStatus === 'archived' ? 'ENDED' : 'PAUSED'
-    const { data, error } = await supabase
+    const { data, error } = await campaignDataClient
       .from('campaigns')
       .update({ lifecycle_status: lifecycleStatus, status: legacyStatus })
       .eq('id', id)
       .select(CAMPAIGN_SELECT)
       .single()
     if (error) throw error
-    return mapCampaign(data)
+    const [campaign] = await attachCampaignRelations(data ? [data] : [])
+    return mapCampaign(campaign)
   },
 }

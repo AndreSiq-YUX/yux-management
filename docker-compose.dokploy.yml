@@ -27,6 +27,12 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
       YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+      MATERIALS_STORAGE_DIR: ${MATERIALS_STORAGE_DIR:-/app/storage/materials}
+      OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
+      OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
+    volumes:
+      - yux_materials_data:/app/storage/materials
+      - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
     depends_on:
       - yux-postgres
       - yux-redis
@@ -46,6 +52,11 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
       YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+      OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
+      OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
+      N8N_CRM_WEBHOOK_URL: ${N8N_CRM_WEBHOOK_URL:-}
+    volumes:
+      - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
     depends_on:
       - yux-postgres
       - yux-redis
@@ -77,8 +88,6 @@ services:
       - "${YUX_AGENT_RUNTIME_PORT:-8080}:8080"
     environment:
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
-      SUPABASE_URL: ""
-      SUPABASE_SERVICE_ROLE_KEY: ""
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       JINA_API_KEY: ${JINA_API_KEY:-}
     restart: unless-stopped
@@ -86,3 +95,5 @@ services:
 volumes:
   yux_postgres_data:
   yux_redis_data:
+  yux_materials_data:
+  yux_omnichannel_attachments_data:

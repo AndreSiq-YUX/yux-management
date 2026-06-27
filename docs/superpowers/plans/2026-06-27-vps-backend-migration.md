@@ -48,9 +48,10 @@ Modify:
 - `docker-compose.dokploy.yml`: add backend, worker, Postgres, Redis, volumes, and env wiring.
 - `frontend/.env.example`: replace Supabase browser envs with `VITE_API_BASE_URL`.
 - `frontend/src/stores/authStore.ts`: switch auth calls from Supabase to backend adapter.
-- `frontend/src/lib/supabase.ts`: mark as legacy and stop importing it from auth path.
+- `frontend/src/lib/backendDataClient.ts`: backend data compatibility client for legacy query-style frontend code.
+- `frontend/src/services/backendDataService.ts`: renamed project/client data service that now targets the backend compatibility API.
 - `scripts/run-release-checks.ps1`: add backend tests and compose validation.
-- `DEPLOY-DOKPLOY-SUPABASE.md`: rename/supersede with self-hosted backend wording.
+- `DEPLOY-DOKPLOY-VPS.md`: rename/supersede with self-hosted backend wording.
 
 ---
 
@@ -1221,7 +1222,7 @@ git commit -m "feat: migrate frontend auth to backend api"
 - Create: `scripts/convert-supabase-migrations.ps1`
 - Test: `backend/tests/schema-smoke.test.ts`
 
-- [ ] **Step 1: Create conversion script**
+- [x] **Step 1: Create conversion script**
 
 Create `scripts/convert-supabase-migrations.ps1`:
 
@@ -1250,7 +1251,7 @@ foreach ($file in $files) {
 Write-Host "Wrote $target"
 ```
 
-- [ ] **Step 2: Run conversion script**
+- [x] **Step 2: Run conversion script**
 
 ```powershell
 .\scripts\convert-supabase-migrations.ps1
@@ -1262,7 +1263,7 @@ Expected:
 Wrote backend/src/db/migrations/0100_portal_schema.sql
 ```
 
-- [ ] **Step 3: Manually review generated SQL**
+- [x] **Step 3: Manually review generated SQL**
 
 Run:
 
@@ -1277,7 +1278,7 @@ No auth.uid/auth.role remains.
 Any storage/vault/http references are reviewed and either removed or replaced before applying.
 ```
 
-- [ ] **Step 4: Create admin bootstrap script**
+- [x] **Step 4: Create admin bootstrap script**
 
 Create `backend/scripts/create-admin-user.ts`:
 
@@ -1312,6 +1313,8 @@ Run this command only from a trusted operator machine or inside the backend cont
 
 - [ ] **Step 5: Apply migrations to disposable Postgres**
 
+Status on 2026-06-27: pending on this workstation because neither `docker` nor `psql` is available in PATH. The generated migration was statically reviewed by smoke tests and forbidden Supabase runtime pattern scans; apply it on the VPS or a machine with Postgres available before production cutover.
+
 ```powershell
 cd backend
 $env:DATABASE_URL = "postgresql://yux_app:<password>@localhost:5432/yux_hub"
@@ -1345,7 +1348,7 @@ git commit -m "feat: add self-hosted portal schema migrations"
 - Modify: `backend/src/server.ts`
 - Test: `backend/tests/platform-routes.test.ts`
 
-- [ ] **Step 1: Create platform repository**
+- [x] **Step 1: Create platform repository**
 
 Create `backend/src/modules/platform/repository.ts`:
 
@@ -1369,7 +1372,7 @@ export async function getPlatformContext(pool: pg.Pool, userId: string) {
 }
 ```
 
-- [ ] **Step 2: Create platform routes**
+- [x] **Step 2: Create platform routes**
 
 Create `backend/src/modules/platform/routes.ts`:
 
@@ -1386,7 +1389,9 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 }
 ```
 
-- [ ] **Step 3: Add request user decoration**
+- [x] **Step 3: Add request user decoration**
+
+Implemented as a route-local authenticated session resolver using the shared `authStore` and signed session cookie, instead of a broad `request.user` decoration.
 
 Extend `backend/src/server.ts` after auth helper work:
 
@@ -1400,7 +1405,7 @@ declare module 'fastify' {
 
 Add a preHandler that loads `request.user` from `yux_session` for `/api/platform/*`.
 
-- [ ] **Step 4: Register platform routes**
+- [x] **Step 4: Register platform routes**
 
 Modify `backend/src/server.ts`:
 
@@ -1410,7 +1415,7 @@ import { registerPlatformRoutes } from './modules/platform/routes.js'
 await app.register(registerPlatformRoutes, { prefix: '/api/platform' })
 ```
 
-- [ ] **Step 5: Add route test**
+- [x] **Step 5: Add route test**
 
 Create `backend/tests/platform-routes.test.ts` with a mocked authenticated context or integration DB fixture. The first assertion should verify unauthenticated access returns `401`:
 
@@ -1448,7 +1453,7 @@ git commit -m "feat: add platform context api"
 ## Task 9: Migrate Frontend Services Module By Module
 
 **Files:**
-- Modify: `frontend/src/services/supabaseService.ts`
+- Modify: `frontend/src/services/backendDataService.ts`
 - Modify: `frontend/src/services/platformService.ts`
 - Modify: `frontend/src/services/crmService.ts`
 - Modify: `frontend/src/services/automationService.ts`
@@ -1457,7 +1462,7 @@ git commit -m "feat: add platform context api"
 - Modify: `frontend/src/services/strategyEngineService.ts`
 - Create backend route/repository files per module under `backend/src/modules/*`
 
-- [ ] **Step 1: Start with read-only platform endpoints**
+- [x] **Step 1: Start with read-only platform endpoints**
 
 Add backend endpoints:
 
@@ -1469,7 +1474,7 @@ GET /api/platform/blueprints
 
 Then change only `frontend/src/services/platformService.ts` to call `apiRequest`.
 
-- [ ] **Step 2: Run platform tests**
+- [x] **Step 2: Run platform tests**
 
 ```powershell
 cd frontend
@@ -1479,7 +1484,7 @@ npm run type-check
 
 Expected: platform tests pass before moving to CRM.
 
-- [ ] **Step 3: Migrate CRM endpoints**
+- [x] **Step 3: Migrate CRM endpoints**
 
 Add backend endpoints:
 
@@ -1495,7 +1500,7 @@ POST /api/crm/leads/:id/tasks
 
 Change `frontend/src/services/crmService.ts` to use `apiRequest`.
 
-- [ ] **Step 4: Run CRM tests**
+- [x] **Step 4: Run CRM tests**
 
 ```powershell
 cd frontend
@@ -1503,7 +1508,9 @@ npm test -- crmService followUpRules pipelineRules conversationRules
 npm run type-check
 ```
 
-- [ ] **Step 5: Migrate automations endpoints**
+- [x] **Step 5: Migrate automations endpoints**
+
+Status on 2026-06-27: flow CRUD, trigger/condition/action CRUD, simulation persistence, version persistence, active-version updates, dispatch queueing, CRM sequences/enrollments/executions, and organization material upload/storage now run through the backend API. Material files are stored on the VPS through `MATERIALS_STORAGE_DIR`, backed by the `yux_materials_data` Docker volume.
 
 Add backend endpoints:
 
@@ -1518,26 +1525,25 @@ POST /api/automations/dispatch
 
 Move dispatch behavior from Supabase function logic into backend service and BullMQ job.
 
-- [ ] **Step 6: Migrate remaining modules in this order**
+- [x] **Step 6: Migrate remaining modules in this order**
 
-1. `proposalService`
-2. `omnichannelService`
-3. `marketingStudioService`
-4. `campaignService`
-5. `reportService`
-6. `strategyEngineService`
-7. `financeService`
-8. `supportService`
+1. `proposalService` - completed on 2026-06-27. Protected proposal CRUD, diagnostics, price rules, versioning, send/public token flow, portal/public decisions, generation fallback, conversion retry job and frontend service now use the VPS backend API.
+2. `omnichannelService` - completed on 2026-06-27. Inbox, portal inbox, conversation detail/messages, teams, queues, handoff rules/events, settings, widgets, knowledge base, metrics, webhook logs, human replies, scheduling and outbound retry/simulation now use the VPS backend API and BullMQ jobs.
+3. CRM sequence scheduler - completed on 2026-06-27. Due enrollments are scanned by `backend/src/modules/crm/scheduler.ts`, the worker processes pending `automation_executions`, internal sequence steps create `lead_tasks`, and external email/WhatsApp steps call `N8N_CRM_WEBHOOK_URL`.
+4. VPS file storage - completed for organization materials and omnichannel message attachments on 2026-06-27. Materials use `MATERIALS_STORAGE_DIR`; message attachments use `OMNICHANNEL_ATTACHMENTS_DIR` and the `yux_omnichannel_attachments_data` Docker volume. The old Supabase Storage signed-upload path is no longer used by the webchat runtime.
+5. Public webchat - completed for the Edge Function replacement on 2026-06-27. `frontend/public/yux-webchat.js` and `WebchatWidget` now call `/api/public/webchat/events`; the backend registers `backend/src/modules/webchat/routes.ts`.
+6. `marketingStudioService`, `campaignService`, `reportService`, `strategyEngineService`, `financeService`, and `supportService` - runtime migration completed on 2026-06-27 through `frontend/src/lib/backendDataClient.ts`, `frontend/src/services/backendDataService.ts`, `POST /api/data/query`, `POST /api/data/rpc`, and `POST /api/functions/:name`. These modules no longer import `@supabase/supabase-js` or call Supabase URLs from the browser.
+7. Domain hardening still required after cutover: replace the generic compatibility paths with explicit backend services for complex joins, realtime subscriptions, and provider side effects that are currently queued through compatibility jobs.
 
 For each service:
 
 ```powershell
-rg -n "supabase\.|functions\.invoke|functions/v1|VITE_SUPABASE" frontend/src/services/<service-file>.ts
+rg -n "Supabase|supabase|@/lib/supabase|@supabase/supabase-js|VITE_SUPABASE|functions/v1|@/services/supabaseService" frontend/src frontend/package.json frontend/package-lock.json frontend/.env frontend/.env.local
 npm test -- <service-name>
 npm run type-check
 ```
 
-Expected: no Supabase runtime calls remain in the migrated service.
+Expected: no Supabase runtime references remain in frontend source, package manifests, or browser env files.
 
 - [ ] **Step 7: Commit after each module**
 
@@ -1559,6 +1565,8 @@ git commit -m "feat: migrate automations to backend api"
 - Create: `backend/src/modules/automations/jobs.ts`
 - Create: `backend/src/modules/omnichannel/jobs.ts`
 - Create: `backend/src/modules/integrations/routes.ts`
+- Create: `backend/src/lib/edge-compat/*`
+- Create: `backend/tests/edge-compat/*.test.ts`
 - Create: `backend/src/modules/public/routes.ts`
 - Modify: `backend/src/server.ts`
 - Test: `backend/tests/jobs.test.ts`
@@ -1735,20 +1743,22 @@ git commit -m "feat: connect backend to agent harness runtime"
 **Files:**
 - Modify: `frontend/package.json`
 - Modify: `frontend/package-lock.json`
-- Delete or quarantine: `frontend/src/lib/supabase.ts`
-- Modify all frontend files still importing `@/lib/supabase`
+- Delete: `frontend/src/lib/supabase.ts`
+- Create: `frontend/src/lib/backendDataClient.ts`
+- Rename: `frontend/src/services/supabaseService.ts` to `frontend/src/services/backendDataService.ts`
+- Modify all frontend files still importing `@/lib/supabase` or `@/services/supabaseService`
 
-- [ ] **Step 1: Find remaining runtime imports**
+- [x] **Step 1: Find remaining runtime imports**
 
 Run:
 
 ```powershell
-rg -n "from '@/lib/supabase'|from \"@/lib/supabase\"|@supabase/supabase-js|VITE_SUPABASE|functions/v1|supabase\\." frontend/src frontend/package.json
+rg -n "Supabase|supabase|@/lib/supabase|@supabase/supabase-js|VITE_SUPABASE|functions/v1|@/services/supabaseService" frontend/src frontend/package.json frontend/package-lock.json frontend/.env frontend/.env.local
 ```
 
-Expected: list all remaining Supabase dependencies.
+Status on 2026-06-27: returned no frontend matches after replacing the package client with `backendDataClient`, renaming `supabaseService` to `backendDataService`, and updating user-facing/test strings.
 
-- [ ] **Step 2: Migrate each remaining file**
+- [x] **Step 2: Migrate each remaining file**
 
 For every file in the search result:
 
@@ -1757,7 +1767,7 @@ For every file in the search result:
 3. Replace direct Supabase call.
 4. Run focused test for the affected service/component.
 
-- [ ] **Step 3: Remove package dependency**
+- [x] **Step 3: Remove package dependency**
 
 Run:
 
@@ -1775,12 +1785,44 @@ No TypeScript errors.
 No runtime import of @supabase/supabase-js.
 ```
 
+Status on 2026-06-27: `@supabase/supabase-js` was removed from `frontend/package.json` and `frontend/package-lock.json`. Runtime reads/writes now go through `/api/data/query`, `/api/data/rpc`, and `/api/functions/:name`.
+
 - [ ] **Step 4: Commit**
 
 ```powershell
 git add frontend/package.json frontend/package-lock.json frontend/src
 git commit -m "refactor: remove supabase frontend runtime"
 ```
+
+Status on 2026-06-27: not committed in this working tree because the operator did not request a commit.
+
+---
+
+## Task 12B: Remove Supabase Edge Function Runtime Artifacts
+
+**Files:**
+- Create: `backend/src/lib/edge-compat/*`
+- Create: `backend/tests/edge-compat/*.test.ts`
+- Delete: `supabase/functions/`
+- Delete: `supabase/config.toml`
+- Delete: `supabase/seed.sql`
+- Modify: `scripts/run-release-checks.ps1`
+
+- [x] **Step 1: Port shared Edge helpers to backend**
+
+Status on 2026-06-27: shared helpers formerly tested under `supabase/functions/_shared` were copied to `backend/src/lib/edge-compat`, with Node-compatible `process.env` access replacing `Deno.env.get`.
+
+- [x] **Step 2: Port Deno shared tests to Vitest**
+
+Status on 2026-06-27: the former 54 shared Edge Function tests now run inside the backend Vitest suite under `backend/tests/edge-compat`.
+
+- [x] **Step 3: Remove Deno checks from release script**
+
+Status on 2026-06-27: `scripts/run-release-checks.ps1` no longer requires Deno or `supabase/functions`.
+
+- [x] **Step 4: Remove Edge Function source/config and legacy Supabase folders**
+
+Status on 2026-06-27: `supabase/functions/`, `supabase/config.toml`, `supabase/seed.sql`, `supabase/migrations`, `supabase/probes`, `supabase/legacy-migrations`, and the Supabase conversion/probe scripts were removed from the active codebase. The active database path is `backend/src/db/migrations/`.
 
 ---
 
@@ -1789,7 +1831,7 @@ git commit -m "refactor: remove supabase frontend runtime"
 **Files:**
 - Modify: `scripts/run-release-checks.ps1`
 - Create: `docs/backend-vps-runbook.md`
-- Modify: `DEPLOY-DOKPLOY-SUPABASE.md`
+- Modify: `DEPLOY-DOKPLOY-VPS.md`
 - Modify: `README.md`
 - Modify: `QUICK-START.md`
 
@@ -1856,7 +1898,7 @@ Run daily Postgres dumps and retain at least 7 daily and 4 weekly backups.
 
 - [ ] **Step 3: Update docs**
 
-Update `README.md`, `QUICK-START.md`, and `DEPLOY-DOKPLOY-SUPABASE.md` to say:
+Update `README.md`, `QUICK-START.md`, and `DEPLOY-DOKPLOY-VPS.md` to say:
 
 ```text
 Supabase is no longer the production backend target. Production uses self-hosted Postgres, backend API, Redis, workers, and Agent Harness on Dokploy.
@@ -1869,7 +1911,7 @@ Run:
 ```powershell
 .\scripts\run-release-checks.ps1
 docker compose -f docker-compose.dokploy.yml config
-rg -n "VITE_SUPABASE|@supabase/supabase-js|functions/v1|supabase\\." frontend/src frontend/package.json
+rg -n "Supabase|supabase|@/lib/supabase|@supabase/supabase-js|VITE_SUPABASE|functions/v1|@/services/supabaseService" frontend/src frontend/package.json frontend/package-lock.json frontend/.env frontend/.env.local
 ```
 
 Expected:
@@ -1877,13 +1919,13 @@ Expected:
 ```text
 Release checks pass.
 Compose config renders.
-No Supabase runtime references remain in frontend.
+No Supabase runtime references remain in frontend. Backend compatibility routes now own the former browser data/function calls; explicit domain routes should continue replacing compatibility paths after VPS cutover.
 ```
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add scripts/run-release-checks.ps1 docs/backend-vps-runbook.md DEPLOY-DOKPLOY-SUPABASE.md README.md QUICK-START.md
+git add scripts/run-release-checks.ps1 docs/backend-vps-runbook.md DEPLOY-DOKPLOY-VPS.md README.md QUICK-START.md
 git commit -m "docs: document self-hosted backend operations"
 ```
 
@@ -1909,7 +1951,7 @@ Create `docs/vps-backend-cutover-checklist.md`:
 - [ ] `SESSION_SECRET` has at least 64 random characters.
 - [ ] Admin seed password hash was generated locally and committed only as a hash.
 - [ ] No browser env var contains a database URL, service secret, provider token, or runtime token.
-- [ ] `rg -n "VITE_SUPABASE|@supabase/supabase-js|functions/v1|supabase\\." frontend/src frontend/package.json` returns no runtime dependency.
+- [ ] `rg -n "Supabase|supabase|@/lib/supabase|@supabase/supabase-js|VITE_SUPABASE|functions/v1|@/services/supabaseService" frontend/src frontend/package.json frontend/package-lock.json frontend/.env frontend/.env.local` returns no runtime dependency.
 
 ## Deploy
 

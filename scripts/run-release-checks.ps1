@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$backendRoot = Join-Path $repoRoot 'backend'
 $frontendRoot = Join-Path $repoRoot 'frontend'
 
 function Invoke-Step {
@@ -28,6 +29,64 @@ Invoke-Step 'Validate Dokploy compose exists' {
   }
 }
 
+Invoke-Step 'Validate Dokploy compose syntax' {
+  $composePath = Join-Path $repoRoot 'docker-compose.dokploy.yml'
+  if (Get-Command docker -ErrorAction SilentlyContinue) {
+    docker compose -f $composePath config *> $null
+    return
+  }
+
+  if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw 'Docker is not available and Python fallback is not installed.'
+  }
+
+  $script = @'
+from pathlib import Path
+import yaml
+
+compose = yaml.safe_load(Path("docker-compose.dokploy.yml").read_text(encoding="utf-8"))
+required = {
+    "yux-frontend",
+    "yux-backend-api",
+    "yux-backend-worker",
+    "yux-postgres",
+    "yux-redis",
+    "yux-agent-harness-runtime",
+}
+services = set((compose or {}).get("services", {}))
+missing = sorted(required - services)
+if missing:
+    raise SystemExit(f"Missing services: {missing}")
+
+volumes = set((compose or {}).get("volumes", {}))
+for volume in ("yux_postgres_data", "yux_redis_data", "yux_materials_data", "yux_omnichannel_attachments_data"):
+    if volume not in volumes:
+        raise SystemExit(f"Missing volume: {volume}")
+'@
+  Push-Location $repoRoot
+  try {
+    $script | python -
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+Push-Location $backendRoot
+try {
+  if (-not $SkipInstall) {
+    Invoke-Step 'Install backend dependencies' { npm ci }
+  }
+
+  Invoke-Step 'Run backend tests' { npm test }
+  Invoke-Step 'Run backend type-check' { npm run type-check }
+  Invoke-Step 'Build backend' { npm run build }
+  Invoke-Step 'Audit backend production dependencies' { npm audit --omit=dev }
+}
+finally {
+  Pop-Location
+}
+
 Push-Location $frontendRoot
 try {
   if (-not $SkipInstall) {
@@ -40,26 +99,6 @@ try {
 }
 finally {
   Pop-Location
-}
-
-Invoke-Step 'Run shared Supabase Edge tests' {
-  deno test (Join-Path $repoRoot 'supabase/functions/_shared')
-}
-
-$edgeEntrypoints = @(
-  'receive-channel-event',
-  'simulate-channel-event',
-  'process-ai-message',
-  'dispatch-outbound-message',
-  'retry-outbound-message',
-  'request-scheduling',
-  'submit-webchat-event'
-)
-
-foreach ($entrypoint in $edgeEntrypoints) {
-  Invoke-Step "Deno check $entrypoint" {
-    deno check (Join-Path $repoRoot "supabase/functions/$entrypoint/index.ts")
-  }
 }
 
 Invoke-Step 'Check git whitespace' {

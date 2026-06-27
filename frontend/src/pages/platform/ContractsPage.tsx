@@ -4,7 +4,7 @@ import { CheckCircle2, Edit, Plus, RefreshCw } from 'lucide-react'
 import { ContractFormModal } from '@/components/platform/ContractFormModal'
 import { ContractModulesPanel } from '@/components/platform/ContractModulesPanel'
 import { platformService } from '@/services/platformService'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 import type { Client } from '@/types/client'
 import type { Blueprint, ContractDetails, Organization, PackageDefinition } from '@/types/platform'
 
@@ -43,7 +43,7 @@ export function ContractsPage() {
       const [loadedContracts, loadedPackages, clientsResponse, loadedBlueprints, loadedOrganizations] = await Promise.all([
         platformService.getContracts(),
         platformService.getPackages(),
-        supabaseService.getClients({ page: 1, limit: 500 }),
+        backendDataService.getClients({ page: 1, limit: 500 }),
         platformService.getBlueprints(),
         platformService.getOrganizations(),
       ])
@@ -62,7 +62,7 @@ export function ContractsPage() {
       setSelectedId(nextSelectedId)
     } catch (error) {
       console.error('Error loading contracts:', error)
-      setError('Contratos ainda nao carregados do Supabase.')
+      setError('Contratos ainda nao carregados do backend.')
       setContracts([])
       setPackages([])
       setClients([])

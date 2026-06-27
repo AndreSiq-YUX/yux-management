@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { apiRequest } from '@/lib/apiClient'
 import type { BillingCycle } from '@/types/platform'
 import type {
   AiGenerationRun,
@@ -95,259 +95,119 @@ export function mapProposalVersion(row: any): ProposalVersion {
   }
 }
 
-function mapDiagnostic(row: any): CommercialDiagnostic {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    leadId: row.lead_id,
-    summary: row.summary || '',
-    painPoints: row.pain_points || [],
-    goals: row.goals || [],
-    budgetRange: row.budget_range || undefined,
-    timeline: row.timeline || undefined,
-    decisionProcess: row.decision_process || undefined,
-    notes: row.notes || undefined,
-    createdBy: row.created_by || undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
+const buildQuery = (params: Record<string, string | undefined>) => {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) search.set(key, value)
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
 }
-
-function mapDecision(row: any): ProposalDecision {
-  return {
-    id: row.id,
-    proposalVersionId: row.proposal_version_id,
-    decision: row.decision,
-    source: row.source,
-    comment: row.comment || undefined,
-    decidedBy: row.decided_by || undefined,
-    createdAt: row.created_at,
-  }
-}
-
-function mapPriceRule(row: any): ProposalPriceRule {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    packageId: row.package_id,
-    itemKey: row.item_key,
-    label: row.label,
-    minimumValue: numberValue(row.minimum_value),
-    recommendedValue: numberValue(row.recommended_value),
-    maximumValue: numberValue(row.maximum_value),
-  }
-}
-
-function mapGenerationRun(row: any): AiGenerationRun {
-  return {
-    id: row.id,
-    proposalId: row.proposal_id,
-    status: row.status,
-    inputSummary: row.input_summary || {},
-    resultMetadata: row.result_metadata || {},
-    error: row.error || undefined,
-    createdAt: row.created_at,
-    completedAt: row.completed_at || undefined,
-  }
-}
-
-function mapConversionRun(row: any): ProposalConversionRun {
-  return {
-    id: row.id,
-    proposalId: row.proposal_id,
-    attemptNumber: row.attempt_number,
-    status: row.status,
-    clientId: row.client_id || undefined,
-    contractId: row.contract_id || undefined,
-    projectId: row.project_id || undefined,
-    error: row.error || undefined,
-    createdAt: row.created_at,
-    completedAt: row.completed_at || undefined,
-  }
-}
-
-const proposalSelect = '*, proposal_items(*)'
 
 export const proposalService = {
   async getQueue(organizationId: string, filters: Partial<{ status: ProposalStatus; leadId: string; packageId: string; assignedTo: string }> = {}) {
-    let query = supabase.from('proposals').select(proposalSelect).eq('organization_id', organizationId)
-    if (filters.status) query = query.eq('status', filters.status)
-    if (filters.leadId) query = query.eq('lead_id', filters.leadId)
-    if (filters.packageId) query = query.eq('package_id', filters.packageId)
-    if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo)
-    const { data, error } = await query.order('updated_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapProposal)
+    return apiRequest<ProposalDraft[]>(`/proposals${buildQuery({
+      organizationId,
+      status: filters.status,
+      leadId: filters.leadId,
+      packageId: filters.packageId,
+      assignedTo: filters.assignedTo,
+    })}`)
   },
 
   async getById(proposalId: string) {
-    const { data, error } = await supabase.from('proposals').select(proposalSelect).eq('id', proposalId).single()
-    if (error) throw error
-    return mapProposal(data)
+    return apiRequest<ProposalDraft>(`/proposals/${proposalId}`)
   },
 
   async getByLead(leadId: string) {
-    const { data, error } = await supabase.from('proposals').select(proposalSelect).eq('lead_id', leadId).order('updated_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapProposal)
+    return apiRequest<ProposalDraft[]>(`/proposals/by-lead/${leadId}`)
   },
 
   async getPortalProposals() {
-    const { data, error } = await supabase.from('proposals').select(proposalSelect).order('updated_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapProposal)
+    return apiRequest<ProposalDraft[]>('/proposals/portal')
   },
 
   async getVersions(proposalId: string) {
-    const { data, error } = await supabase.from('proposal_versions').select('*').eq('proposal_id', proposalId).order('version_number', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapProposalVersion)
+    return apiRequest<ProposalVersion[]>(`/proposals/${proposalId}/versions`)
   },
 
   async getDecisions(versionIds: string[]) {
     if (!versionIds.length) return []
-    const { data, error } = await supabase.from('proposal_decisions').select('*').in('proposal_version_id', versionIds).order('created_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapDecision)
+    return apiRequest<ProposalDecision[]>(`/proposals/decisions?versionIds=${encodeURIComponent(versionIds.join(','))}`)
   },
 
   async getDiagnostic(leadId: string) {
-    const { data, error } = await supabase.from('commercial_diagnostics').select('*').eq('lead_id', leadId).maybeSingle()
-    if (error) throw error
-    return data ? mapDiagnostic(data) : null
+    return apiRequest<CommercialDiagnostic | null>(`/proposals/diagnostics/${leadId}`)
   },
 
   async saveDiagnostic(input: Omit<CommercialDiagnostic, 'id' | 'createdAt' | 'updatedAt'>) {
-    const { data, error } = await supabase.from('commercial_diagnostics').upsert({
-      organization_id: input.organizationId,
-      lead_id: input.leadId,
-      summary: input.summary,
-      pain_points: input.painPoints,
-      goals: input.goals,
-      budget_range: input.budgetRange || null,
-      timeline: input.timeline || null,
-      decision_process: input.decisionProcess || null,
-      notes: input.notes || null,
-      created_by: input.createdBy || null,
-    }, { onConflict: 'lead_id' }).select().single()
-    if (error) throw error
-    return mapDiagnostic(data)
+    return apiRequest<CommercialDiagnostic>('/proposals/diagnostics', {
+      method: 'PUT',
+      body: input,
+    })
   },
 
   async getPriceRules(organizationId: string, packageId: string) {
-    const { data, error } = await supabase.from('proposal_price_rules').select('*').eq('organization_id', organizationId).eq('package_id', packageId).order('item_key')
-    if (error) throw error
-    return (data || []).map(mapPriceRule)
+    return apiRequest<ProposalPriceRule[]>(`/proposals/price-rules${buildQuery({ organizationId, packageId })}`)
   },
 
   async createDraft(input: { organizationId: string; leadId: string; packageId: string; crmInstanceId?: string; recommendedPackageId?: string; blueprintId?: string; title: string; billingCycle?: BillingCycle; selectedModuleKeys?: string[] }) {
-    const { data, error } = await supabase.from('proposals').insert({
-      organization_id: input.organizationId,
-      lead_id: input.leadId,
-      crm_instance_id: input.crmInstanceId || null,
-      package_id: input.packageId,
-      recommended_package_id: input.recommendedPackageId || null,
-      blueprint_id: input.blueprintId || null,
-      title: input.title,
-      billing_cycle: input.billingCycle || 'monthly',
-      selected_module_keys: input.selectedModuleKeys || [],
-    }).select(proposalSelect).single()
-    if (error) throw error
-    return mapProposal(data)
+    return apiRequest<ProposalDraft>('/proposals', {
+      method: 'POST',
+      body: input,
+    })
   },
 
   async updateDraft(proposalId: string, input: Partial<Pick<ProposalDraft, 'title' | 'scope' | 'whatsappMessage' | 'emailSubject' | 'emailBody' | 'packageId' | 'blueprintId' | 'billingCycle' | 'selectedModuleKeys' | 'finalValue' | 'overrideReason'>>) {
-    const payload: Record<string, unknown> = {}
-    if (input.title !== undefined) payload.title = input.title
-    if (input.scope !== undefined) payload.scope = input.scope
-    if (input.whatsappMessage !== undefined) payload.whatsapp_message = input.whatsappMessage
-    if (input.emailSubject !== undefined) payload.email_subject = input.emailSubject
-    if (input.emailBody !== undefined) payload.email_body = input.emailBody
-    if (input.packageId !== undefined) payload.package_id = input.packageId
-    if (input.blueprintId !== undefined) payload.blueprint_id = input.blueprintId || null
-    if (input.billingCycle !== undefined) payload.billing_cycle = input.billingCycle
-    if (input.selectedModuleKeys !== undefined) payload.selected_module_keys = input.selectedModuleKeys
-    if (input.finalValue !== undefined) payload.final_value = input.finalValue
-    if (input.overrideReason !== undefined) payload.override_reason = input.overrideReason || null
-    const { data, error } = await supabase.from('proposals').update(payload).eq('id', proposalId).select(proposalSelect).single()
-    if (error) throw error
-    return mapProposal(data)
+    return apiRequest<ProposalDraft>(`/proposals/${proposalId}`, {
+      method: 'PATCH',
+      body: input,
+    })
   },
 
   async replaceItems(proposalId: string, items: Omit<ProposalItem, 'id' | 'proposalId' | 'totalValue'>[]) {
-    const { error: deleteError } = await supabase.from('proposal_items').delete().eq('proposal_id', proposalId)
-    if (deleteError) throw deleteError
-    if (!items.length) return []
-    const { data, error } = await supabase.from('proposal_items').insert(items.map(item => ({
-      proposal_id: proposalId,
-      item_key: item.itemKey,
-      label: item.label,
-      description: item.description || null,
-      quantity: item.quantity,
-      unit_value: item.unitValue,
-      order_index: item.orderIndex,
-    }))).select()
-    if (error) throw error
-    return (data || []).map(mapProposalItem)
+    return apiRequest<ProposalItem[]>(`/proposals/${proposalId}/items`, {
+      method: 'PUT',
+      body: items,
+    })
   },
 
   async submitPortalDecision(proposalVersionId: string, decision: ProposalDecisionValue, comment?: string, decidedBy?: string) {
-    const { data, error } = await supabase.from('proposal_decisions').insert({
-      proposal_version_id: proposalVersionId,
-      decision,
-      source: 'portal',
-      comment: comment?.trim() || null,
-      decided_by: decidedBy || null,
-    }).select().single()
-    if (error) throw error
-    return mapDecision(data)
+    return apiRequest<ProposalDecision>('/proposals/decisions', {
+      method: 'POST',
+      body: { proposalVersionId, decision, comment, decidedBy },
+    })
   },
 
   async getGenerationRuns(proposalId: string) {
-    const { data, error } = await supabase.from('ai_generation_runs').select('*').eq('proposal_id', proposalId).order('created_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapGenerationRun)
+    return apiRequest<AiGenerationRun[]>(`/proposals/${proposalId}/generation-runs`)
   },
 
   async getConversionRuns(proposalId: string) {
-    const { data, error } = await supabase.from('proposal_conversion_runs').select('*').eq('proposal_id', proposalId).order('created_at', { ascending: false })
-    if (error) throw error
-    return (data || []).map(mapConversionRun)
+    return apiRequest<ProposalConversionRun[]>(`/proposals/${proposalId}/conversion-runs`)
   },
 
   async generateDraft(proposalId: string) {
-    const { data, error } = await supabase.functions.invoke('generate-proposal-draft', { body: { proposalId } })
-    if (error) throw error
-    return data
+    return apiRequest(`/proposals/${proposalId}/generate-draft`, { method: 'POST' })
   },
 
   async send(proposalId: string) {
-    const { data, error } = await supabase.functions.invoke('send-proposal', { body: { proposalId } })
-    if (error) throw error
-    return data
+    return apiRequest<{ success: boolean; versionId: string; versionNumber: number; expiresAt: string; publicUrl: string }>(`/proposals/${proposalId}/send`, { method: 'POST' })
   },
 
   async retryConversion(proposalId: string) {
-    const { data, error } = await supabase.functions.invoke('convert-approved-proposal', { body: { proposalId } })
-    if (error) throw error
-    return data
+    return apiRequest(`/proposals/${proposalId}/retry-conversion`, { method: 'POST' })
   },
 
   async getPublicReview(token: string) {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-proposal-decision?token=${encodeURIComponent(token)}`)
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Link invalido.')
+    const data = await apiRequest<any>(`/public/proposals/${encodeURIComponent(token)}/decision`)
     return { ...data, snapshot: mapProposalSnapshot(data.snapshot) }
   },
 
   async submitPublicDecision(token: string, decision: ProposalDecisionValue, comment?: string) {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-proposal-decision`, {
+    return apiRequest(`/public/proposals/${encodeURIComponent(token)}/decision`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, decision, comment }),
+      body: { decision, comment },
     })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Nao foi possivel registrar a decisao.')
-    return data
   },
 }

@@ -71,7 +71,7 @@ describe('AutomationWorkspace', () => {
       root.render(
         <AutomationWorkspace
           flows={[flow]}
-          loadError="A base de automacoes ainda nao esta disponivel no Supabase alvo."
+          loadError="A base de automacoes ainda nao esta disponivel no backend alvo."
           backendUnavailable
           onCreateFlow={onCreateFlow}
         />,

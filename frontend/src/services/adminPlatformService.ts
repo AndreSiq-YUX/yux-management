@@ -1,6 +1,6 @@
-import { supabase } from '@/lib/supabase'
-import { summarizeAdminHub } from '@/lib/platform/adminRules'
+import { apiRequest } from '@/lib/apiClient'
 import type {
+  AdminHubSummary,
   ClientModuleLimit,
   ClientModuleLimitSource,
   EmailProviderConnection,
@@ -243,270 +243,90 @@ export function buildEmailProviderConnectionPayload(input: EmailProviderConnecti
 
 export class AdminPlatformService {
   async getProviderConnections(): Promise<PlatformProviderConnection[]> {
-    const { data, error } = await supabase
-      .from('platform_provider_connections')
-      .select('*')
-      .order('provider_type')
-
-    if (error) throw error
-    return (data || []).map(mapProviderConnectionRow)
+    return apiRequest<PlatformProviderConnection[]>('/platform/admin/provider-connections')
   }
 
   async upsertProviderConnection(input: PlatformProviderConnectionInput): Promise<PlatformProviderConnection> {
-    const { data, error } = await supabase
-      .from('platform_provider_connections')
-      .upsert(buildProviderConnectionPayload(input), { onConflict: 'provider_type,provider_key,environment' })
-      .select()
-      .single()
-
-    if (error) throw error
-    return mapProviderConnectionRow(data)
-  }
-
-  async getEmailProviderConnections(): Promise<EmailProviderConnection[]> {
-    const { data, error } = await supabase
-      .from('email_provider_connections')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-    return (data || []).map(mapEmailProviderConnectionRow)
-  }
-
-  async upsertEmailProviderConnection(input: EmailProviderConnectionInput): Promise<EmailProviderConnection> {
-    const { data, error } = await supabase
-      .from('email_provider_connections')
-      .upsert(buildEmailProviderConnectionPayload(input), { onConflict: 'organization_id,provider' })
-      .select()
-      .single()
-
-    if (error) throw error
-    return mapEmailProviderConnectionRow(data)
-  }
-
-  async getClientModuleLimits(organizationId?: string): Promise<ClientModuleLimit[]> {
-    let query = supabase
-      .from('client_module_limits')
-      .select('*')
-      .order('module_key')
-
-    if (organizationId) query = query.eq('organization_id', organizationId)
-
-    const { data, error } = await query
-    if (error) throw error
-    return (data || []).map(mapClientModuleLimitRow)
-  }
-
-  async upsertClientModuleLimit(input: ClientModuleLimitInput): Promise<ClientModuleLimit> {
-    const payload = buildClientModuleLimitPayload(input)
-    let lookup = supabase
-      .from('client_module_limits')
-      .select('id')
-      .eq('organization_id', input.organizationId)
-      .eq('module_key', input.moduleKey)
-      .eq('limit_key', input.limitKey)
-
-    lookup = input.contractId
-      ? lookup.eq('contract_id', input.contractId)
-      : lookup.is('contract_id', null)
-
-    const existing = await lookup.maybeSingle()
-    if (existing.error) throw existing.error
-
-    const mutation = existing.data?.id
-      ? supabase.from('client_module_limits').update(payload).eq('id', existing.data.id)
-      : supabase.from('client_module_limits').insert(payload)
-
-    const { data, error } = await mutation
-      .select()
-      .single()
-
-    if (error) throw error
-    return mapClientModuleLimitRow(data)
-  }
-
-  async getUsageCounters(organizationId?: string): Promise<PlatformUsageCounter[]> {
-    let query = supabase
-      .from('platform_usage_counters')
-      .select('*')
-      .order('period_end', { ascending: false })
-
-    if (organizationId) query = query.eq('organization_id', organizationId)
-
-    const { data, error } = await query
-    if (error) throw error
-    return (data || []).map(mapUsageCounterRow)
-  }
-
-  async getAuditEvents(limit = 50): Promise<PlatformAdminAuditEvent[]> {
-    const { data, error } = await supabase
-      .from('platform_admin_audit_events')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit)
-
-    if (error) throw error
-    return (data || []).map(mapAuditEventRow)
-  }
-
-  async getAdminChannelConnections(): Promise<AdminChannelConnectionRow[]> {
-    const { data, error } = await supabase
-      .from('channel_connections')
-      .select([
-        'id',
-        'organization_id',
-        'channel',
-        'name',
-        'provider_account_id',
-        'provider_display_name',
-        'health_status',
-        'token_state',
-        'provider_verify_state',
-        'last_event_at',
-        'updated_at',
-        'organizations(name)',
-      ].join(', '))
-      .in('channel', ['whatsapp', 'instagram', 'messenger'])
-      .order('updated_at', { ascending: false })
-
-    if (error) throw error
-    return (data || []).map(mapAdminChannelConnectionRow)
-  }
-
-  async recordAuditEvent(input: PlatformAdminAuditEventInput): Promise<PlatformAdminAuditEvent> {
-    const { data, error } = await supabase
-      .from('platform_admin_audit_events')
-      .insert(buildAuditEventPayload(input))
-      .select()
-      .single()
-
-    if (error) throw error
-    return mapAuditEventRow(data)
-  }
-
-  async getAdminHubSummary() {
-    const [clients, contracts, modules, providers, usage] = await Promise.all([
-      supabase.from('organizations').select('id').eq('kind', 'client'),
-      supabase.from('contracts').select('id, status'),
-      supabase.from('contract_modules').select('module_key, enabled').eq('enabled', true),
-      supabase.from('platform_provider_connections').select('id, status'),
-      supabase.from('platform_usage_counters').select('id, status'),
-    ])
-
-    if (clients.error) throw clients.error
-    if (contracts.error) throw contracts.error
-    if (modules.error) throw modules.error
-    if (providers.error) throw providers.error
-    if (usage.error) throw usage.error
-
-    return summarizeAdminHub({
-      clients: clients.data || [],
-      contracts: contracts.data || [],
-      modules: (modules.data || []).map((item: any) => item.module_key),
-      providers: providers.data || [],
-      usage: usage.data || [],
+    return apiRequest<PlatformProviderConnection>('/platform/admin/provider-connections', {
+      method: 'POST',
+      body: input,
     })
   }
 
+  async getEmailProviderConnections(): Promise<EmailProviderConnection[]> {
+    return apiRequest<EmailProviderConnection[]>('/platform/admin/email-provider-connections')
+  }
+
+  async upsertEmailProviderConnection(input: EmailProviderConnectionInput): Promise<EmailProviderConnection> {
+    return apiRequest<EmailProviderConnection>('/platform/admin/email-provider-connections', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  async getClientModuleLimits(organizationId?: string): Promise<ClientModuleLimit[]> {
+    const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : ''
+    return apiRequest<ClientModuleLimit[]>(`/platform/admin/client-module-limits${query}`)
+  }
+
+  async upsertClientModuleLimit(input: ClientModuleLimitInput): Promise<ClientModuleLimit> {
+    return apiRequest<ClientModuleLimit>('/platform/admin/client-module-limits', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  async getUsageCounters(organizationId?: string): Promise<PlatformUsageCounter[]> {
+    const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : ''
+    return apiRequest<PlatformUsageCounter[]>(`/platform/admin/usage-counters${query}`)
+  }
+
+  async getAuditEvents(limit = 50): Promise<PlatformAdminAuditEvent[]> {
+    return apiRequest<PlatformAdminAuditEvent[]>(`/platform/admin/audit-events?limit=${encodeURIComponent(String(limit))}`)
+  }
+
+  async getAdminChannelConnections(): Promise<AdminChannelConnectionRow[]> {
+    return apiRequest<AdminChannelConnectionRow[]>('/platform/admin/channel-connections')
+  }
+
+  async recordAuditEvent(input: PlatformAdminAuditEventInput): Promise<PlatformAdminAuditEvent> {
+    return apiRequest<PlatformAdminAuditEvent>('/platform/admin/audit-events', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  async getAdminHubSummary(): Promise<AdminHubSummary> {
+    return apiRequest<AdminHubSummary>('/platform/admin/hub-summary')
+  }
+
   async getSmtp2GoSummary(): Promise<Smtp2GoAdminSummary> {
-    const today = new Date().toISOString().slice(0, 10)
-    const [connections, subaccounts, usage, suppressions] = await Promise.all([
-      supabase.from('email_provider_connections').select('id', { count: 'exact', head: true }),
-      supabase.from('smtp2go_subaccounts').select('id', { count: 'exact', head: true }),
-      supabase.from('email_usage_counters').select('sent_count, failed_count').eq('period_date', today),
-      supabase.from('email_suppression_entries').select('id', { count: 'exact', head: true }),
-    ])
-
-    if (connections.error) throw connections.error
-    if (subaccounts.error) throw subaccounts.error
-    if (usage.error) throw usage.error
-    if (suppressions.error) throw suppressions.error
-
-    return {
-      connectionCount: connections.count || 0,
-      subaccountCount: subaccounts.count || 0,
-      sentToday: (usage.data || []).reduce((sum: number, row: any) => sum + numberValue(row.sent_count), 0),
-      failedToday: (usage.data || []).reduce((sum: number, row: any) => sum + numberValue(row.failed_count), 0),
-      suppressedCount: suppressions.count || 0,
-    }
+    return apiRequest<Smtp2GoAdminSummary>('/platform/admin/smtp2go-summary')
   }
 
   async getGlobalUploadLimit(): Promise<number> {
-    const { data, error } = await supabase
-      .from('system_config')
-      .select('value')
-      .eq('key', 'global_max_upload_size_mb')
-      .maybeSingle()
-
-    if (error || !data || !data.value) return 10
-    return Number((data.value as any).limit || 10)
+    const response = await apiRequest<{ limit: number }>('/platform/admin/upload-limit/global')
+    return response.limit
   }
 
   async updateGlobalUploadLimit(limit: number): Promise<void> {
-    const { error } = await supabase
-      .from('system_config')
-      .upsert({
-        key: 'global_max_upload_size_mb',
-        value: { limit },
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'key' })
-
-    if (error) throw error
+    await apiRequest('/platform/admin/upload-limit/global', {
+      method: 'PUT',
+      body: { limit },
+    })
   }
 
   async getOrganizationsWithLimits(): Promise<Array<{ id: string; name: string; slug: string; limit: number | null }>> {
-    const { data: orgs, error: orgsError } = await supabase
-      .from('organizations')
-      .select('id, name, slug')
-      .eq('kind', 'client')
-      .order('name')
-    if (orgsError) throw orgsError
-
-    const { data: settings, error: settingsError } = await supabase
-      .from('omnichannel_settings')
-      .select('organization_id, max_upload_size_mb')
-    if (settingsError) throw settingsError
-
-    const settingsMap = new Map(settings?.map(s => [s.organization_id, s.max_upload_size_mb]))
-
-    return (orgs || []).map(org => ({
-      id: org.id,
-      name: org.name,
-      slug: org.slug,
-      limit: settingsMap.get(org.id) ?? null
-    }))
+    return apiRequest<Array<{ id: string; name: string; slug: string; limit: number | null }>>(
+      '/platform/admin/upload-limit/organizations',
+    )
   }
 
   async updateClientUploadLimit(organizationId: string, limit: number): Promise<void> {
-    const { data: existing, error: findError } = await supabase
-      .from('omnichannel_settings')
-      .select('organization_id')
-      .eq('organization_id', organizationId)
-      .maybeSingle()
-    if (findError) throw findError
-
-    if (existing) {
-      const { error } = await supabase
-        .from('omnichannel_settings')
-        .update({ max_upload_size_mb: limit, updated_at: new Date().toISOString() })
-        .eq('organization_id', organizationId)
-      if (error) throw error
-    } else {
-      const { error } = await supabase
-        .from('omnichannel_settings')
-        .insert({
-          organization_id: organizationId,
-          max_upload_size_mb: limit,
-          default_response_mode: 'assisted',
-          retention_months: 12,
-          attachment_retention_months: 12,
-          anonymize_on_retention: false,
-          crm_sync_filters: {},
-          business_hours: {},
-          ai_token_prices: {}
-        })
-      if (error) throw error
-    }
+    await apiRequest(`/platform/admin/upload-limit/organizations/${organizationId}`, {
+      method: 'PUT',
+      body: { limit },
+    })
   }
 }
 

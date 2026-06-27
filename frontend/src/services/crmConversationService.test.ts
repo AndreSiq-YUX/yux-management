@@ -10,8 +10,8 @@ import {
   mapResponseSuggestion,
 } from './crmConversationService'
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: {},
+vi.mock('@/lib/crmConversationDataClient', () => ({
+  crmConversationDataClient: {},
 }))
 
 describe('crmConversationService payload builders and mappers', () => {

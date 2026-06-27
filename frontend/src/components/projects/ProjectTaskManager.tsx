@@ -16,7 +16,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'react-hot-toast'
 import { Project, Task, Phase } from '@/types/project'
-import { supabaseService } from '@/services/supabaseService'
+import { backendDataService } from '@/services/backendDataService'
 
 interface ProjectTaskManagerProps {
   project: Project
@@ -113,8 +113,8 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     try {
       setLoading(true)
       const [tasksResponse, phasesResponse] = await Promise.all([
-        supabaseService.getProjectTasks(project.id),
-        supabaseService.getProjectPhases(project.id)
+        backendDataService.getProjectTasks(project.id),
+        backendDataService.getProjectPhases(project.id)
       ])
       
       setTasks(tasksResponse.tasks || [])
@@ -185,10 +185,10 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       }
 
       if (editingTask) {
-        await supabaseService.updateProjectTask(project.id, editingTask.id, taskData)
+        await backendDataService.updateProjectTask(project.id, editingTask.id, taskData)
         toast.success('Tarefa atualizada com sucesso!')
       } else {
-        await supabaseService.createProjectTask(project.id, taskData)
+        await backendDataService.createProjectTask(project.id, taskData)
         toast.success('Tarefa criada com sucesso!')
       }
 
@@ -211,10 +211,10 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
       }
 
       if (editingPhase) {
-        await supabaseService.updateProjectPhase(project.id, editingPhase.id, phaseData)
+        await backendDataService.updateProjectPhase(project.id, editingPhase.id, phaseData)
         toast.success('Fase atualizada com sucesso!')
       } else {
-        await supabaseService.createProjectPhase(project.id, {
+        await backendDataService.createProjectPhase(project.id, {
           ...phaseData,
           startDate: phaseForm.startDate || new Date().toISOString().split('T')[0],
           endDate: phaseForm.endDate || new Date().toISOString().split('T')[0],
@@ -236,7 +236,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     if (!confirm('Tem certeza que deseja excluir esta tarefa?')) return
 
     try {
-      await supabaseService.deleteProjectTask(project.id, taskId)
+      await backendDataService.deleteProjectTask(project.id, taskId)
       toast.success('Tarefa excluída com sucesso!')
       loadTasksAndPhases()
       onUpdate?.()
@@ -250,7 +250,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
     if (!confirm('Tem certeza que deseja excluir esta fase?')) return
 
     try {
-      await supabaseService.deleteProjectPhase(project.id, phaseId)
+      await backendDataService.deleteProjectPhase(project.id, phaseId)
       toast.success('Fase excluída com sucesso!')
       loadTasksAndPhases()
       onUpdate?.()
@@ -263,7 +263,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
   const toggleTaskStatus = async (task: Task) => {
     const newStatus = task.status === 'completed' ? 'pending' : 'completed'
     try {
-      await supabaseService.updateProjectTask(project.id, task.id, { status: newStatus })
+      await backendDataService.updateProjectTask(project.id, task.id, { status: newStatus })
       loadTasksAndPhases()
       onUpdate?.()
     } catch (error) {
@@ -274,7 +274,7 @@ export function ProjectTaskManager({ project, onUpdate }: ProjectTaskManagerProp
 
   const toggleTaskVisibility = async (task: Task) => {
     try {
-      await supabaseService.updateProjectTaskVisibility(project.id, task.id, !task.isClientVisible)
+      await backendDataService.updateProjectTaskVisibility(project.id, task.id, !task.isClientVisible)
       loadTasksAndPhases()
       onUpdate?.()
     } catch (error) {

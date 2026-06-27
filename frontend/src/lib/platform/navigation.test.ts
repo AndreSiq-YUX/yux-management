@@ -281,6 +281,7 @@ describe('buildNavigationGroups', () => {
       { label: 'Catalogo de Modulos', href: '/admin/modules-governance' },
       { label: 'Integracoes Globais', href: '/admin/integrations' },
       { label: 'IA / Modelos / Custos', href: '/admin/ai' },
+      { label: 'Strategy Engine', href: '/admin/strategy-engine' },
       { label: 'Canais', href: '/admin/channels' },
       { label: 'Email', href: '/admin/email' },
       { label: 'Saude da Plataforma', href: '/admin/health' },

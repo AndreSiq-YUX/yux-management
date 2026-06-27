@@ -59,9 +59,9 @@ health states and sanitized audit events.
 
 ## Tokens And Webchat
 
-Adapter inbound tokens and widget public tokens are stored only as hashes. `webchat_widgets` stores public configuration and token rotation metadata; token hashes live behind service-role-only boundaries.
+Adapter inbound tokens and widget public tokens are stored only as hashes. `webchat_widgets` stores public configuration and token rotation metadata; token hashes live in the backend Postgres schema and are never exposed to the browser.
 
-The host page loads `frontend/public/yux-webchat.js` with a public widget token. The script sends the browser `Origin` to `submit-webchat-event`, receives a short-lived session token, and injects an iframe with only that session token. The long-lived widget token is never placed in the iframe URL.
+The host page loads `frontend/public/yux-webchat.js` with a public widget token. The script sends the browser `Origin` to `/api/public/webchat/events`, receives a short-lived session token, and injects an iframe with only that session token. The long-lived widget token is never placed in the iframe URL.
 
 Rotate widget tokens from the Webchat settings panel. Revoke or deactivate widgets when an origin is no longer trusted.
 
@@ -75,15 +75,15 @@ Inbound messages call transactional CRM sync after conversation creation. Organi
 
 ## Retention
 
-Conversation and attachment retention deadlines are stored at write time. Cleanup, anonymization, and storage purge jobs are intentionally left as a later scheduled operations task.
+Conversation and attachment retention deadlines are stored at write time. Message attachment files are stored on the VPS under `OMNICHANNEL_ATTACHMENTS_DIR` and persisted by the `yux_omnichannel_attachments_data` Docker volume. Cleanup, anonymization, and file purge jobs are intentionally left as a later scheduled operations task.
 
 ## Adapter Onboarding Checklist
 
 1. Select the real provider or n8n workflow for the channel.
-2. Store provider credentials only in n8n or Supabase secrets.
+2. Store provider credentials only in n8n, Dokploy secrets, or the selected server-side adapter layer.
 3. Create or rotate the channel adapter token.
 4. Configure `channel_connections.adapter_key` and n8n routing metadata.
-5. Send normalized events to `receive-channel-event`.
+5. Send normalized events to the backend omnichannel ingestion route for the selected adapter.
 6. Verify duplicate external events do not duplicate messages.
 7. Verify outbound delivery status and retry behavior.
 8. Verify protected errors are sanitized before storage.

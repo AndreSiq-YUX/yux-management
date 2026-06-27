@@ -40,7 +40,7 @@ export function AutomationsPage() {
       const isBackendMissing = isAutomationBackendUnavailableError(error)
       setBackendUnavailable(isBackendMissing)
       setLoadError(isBackendMissing
-        ? 'A base de automacoes ainda nao esta disponivel no Supabase alvo. Aplique as migrations/probes de automacoes e confira os grants da Data API.'
+        ? 'A base de automacoes ainda nao esta disponivel no backend alvo. Aplique as migrations/probes de automacoes e confira as permissoes da API.'
         : 'Nao foi possivel carregar automacoes para esta organizacao.')
       if (!isBackendMissing) toast.error('Erro ao carregar automacoes')
       setFlows([])

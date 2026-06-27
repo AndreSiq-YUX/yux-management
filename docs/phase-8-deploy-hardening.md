@@ -2,92 +2,79 @@
 
 ## Current Target State
 
-O alvo de producao do Portal YUX nao e mais Vercel. A arquitetura atual usa:
+O alvo de producao do Portal YUX nao e mais Vercel nem Supabase Pro. A stack de producao passa a rodar em VPS propria com Dokploy:
 
-- VPS propria gerenciada por Dokploy para frontend e runtime de agentes;
-- Supabase Cloud para Auth, Postgres, RLS, Storage, Realtime e Edge Functions;
-- `docker-compose.dokploy.yml` como definicao operacional do deploy na VPS;
-- `DEPLOY-DOKPLOY-SUPABASE.md` como guia principal de setup.
+- frontend React/Vite servido por Nginx em `hub.yux.com.br`;
+- backend Fastify/TypeScript em `yux-backend-api`;
+- Postgres 17 proprio em `yux-postgres`;
+- Redis 7 em `yux-redis`;
+- worker BullMQ em `yux-backend-worker`;
+- Agent Harness Runtime em `yux-agent-harness-runtime`.
+
+Guia principal: `DEPLOY-DOKPLOY-VPS.md`.
 
 ## Runtime Surfaces
 
 | Surface | Runtime | Notes |
 | --- | --- | --- |
-| Frontend React/Vite | `yux-frontend` em Dokploy | Build em `frontend/Dockerfile`, servido por Nginx com fallback SPA. |
-| Agent Harness Runtime | `yux-agent-harness-runtime` em Dokploy | FastAPI/Python em `workers/marketing-studio-agent-runtime`. |
-| Auth/DB/RLS/Storage/Realtime | Supabase Cloud | Migrations e probes continuam em `supabase/`. |
-| Edge Functions | Supabase Cloud | Podem chamar `YUX_AGENT_RUNTIME_URL` quando configurado. |
+| Frontend React/Vite | `yux-frontend` | Nginx serve SPA e proxy `/api/*`. |
+| Backend API | `yux-backend-api` | Fastify, auth, policies e acesso ao Postgres. |
+| Worker | `yux-backend-worker` | BullMQ para jobs assicronos. |
+| Database | `yux-postgres` | Postgres 17 com volume persistente. |
+| Queue/cache | `yux-redis` | Redis 7 com append-only file. |
+| Agent Harness Runtime | `yux-agent-harness-runtime` | FastAPI/Python para orquestracao de agentes. |
 
-## Required Environment Variables
+## Required Dokploy Variables
 
-Dokploy:
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `YUX_FRONTEND_PORT`
-- `YUX_AGENT_RUNTIME_PORT`
+- `DATABASE_URL`
+- `POSTGRES_PASSWORD`
+- `REDIS_URL`
+- `SESSION_SECRET`
+- `CORS_ORIGIN=https://hub.yux.com.br`
+- `VITE_API_BASE_URL=/api`
+- `YUX_AGENT_RUNTIME_URL=http://yux-agent-harness-runtime:8080`
 - `YUX_AGENT_RUNTIME_TOKEN`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
 - `OPENROUTER_API_KEY`
 - `JINA_API_KEY`
 
-Supabase Edge Function secrets:
-
-- `YUX_AGENT_RUNTIME_URL`
-- `YUX_AGENT_RUNTIME_TOKEN`
-- provider secrets for Meta, Google, WordPress, SMTP2GO, n8n and AI providers as enabled.
-
-Only `VITE_*` values can be public browser configuration. Service role keys and provider credentials must stay in Dokploy or Supabase server-side secrets.
+Segredos nao podem usar prefixo `VITE_`.
 
 ## CI Gate
 
-`.github/workflows/ci.yml` and the local release script should verify code, not deploy production automatically.
-
-Local equivalent:
+Local:
 
 ```powershell
-.\scripts\run-release-checks.ps1
+.\scripts\run-release-checks.ps1 -SkipInstall
 ```
 
-When Docker is available, also run:
+Com Docker disponivel:
 
 ```powershell
 docker compose -f docker-compose.dokploy.yml config
 docker compose -f docker-compose.dokploy.yml build
 ```
 
-## Supabase Gate
+## Database Gate
 
-Run probes only from a trusted machine. Never commit database URLs or passwords.
+Antes do primeiro deploy real:
 
-```powershell
-$env:SUPABASE_DB_URL = 'postgresql://...'
-.\scripts\run-supabase-probes.ps1
-```
-
-Required coverage:
-
-- RLS enabled on public tables;
-- organization, contract and membership isolation;
-- Data API grants for tables intentionally exposed to authenticated users;
-- no widget, provider token or service credential leakage;
-- agent runtime tables and Strategy Engine tables protected by internal/service-role policies.
+1. Aplicar `backend/src/db/migrations` no Postgres da VPS.
+2. Criar usuario admin inicial por script operacional, sem versionar senha.
+3. Confirmar backup diario do Postgres.
+4. Validar restore em banco separado antes de trafego real.
 
 ## Dokploy Deployment Sequence
 
-1. Confirm Supabase project is active.
-2. Apply or confirm all required migrations.
-3. Run probes against the target Supabase project.
-4. Deploy or redeploy active Edge Functions.
-5. Configure Supabase Edge secrets.
-6. Configure Dokploy environment variables.
-7. Deploy `docker-compose.dokploy.yml`.
-8. Attach production domains and HTTPS in Dokploy.
-9. Update Supabase Auth Site URL and Redirect URLs to the production domain.
-10. Validate `/health` for frontend and runtime.
-11. Run authenticated browser QA.
-12. Review Dokploy container logs and Supabase Edge Function logs.
+1. Configurar DNS de `hub.yux.com.br` para a VPS.
+2. Configurar `agents.yux.com.br` se o runtime for exposto.
+3. Criar app/compose no Dokploy apontando para `docker-compose.dokploy.yml`.
+4. Configurar variaveis obrigatorias.
+5. Deployar stack.
+6. Rodar migrations no container da API.
+7. Criar admin inicial.
+8. Ativar HTTPS.
+9. Validar health checks.
+10. Rodar QA autenticado admin e cliente.
 
 ## Health Checks
 
@@ -97,7 +84,12 @@ Frontend:
 curl -I https://hub.yux.com.br/health
 ```
 
-Expected: HTTP `204`.
+Backend:
+
+```bash
+curl https://hub.yux.com.br/api/health
+curl https://hub.yux.com.br/api/ready
+```
 
 Agent runtime:
 
@@ -105,61 +97,36 @@ Agent runtime:
 curl https://agents.yux.com.br/health
 ```
 
-Expected JSON:
-
-```json
-{"status":"ok","service":"yux-agent-harness-runtime"}
-```
-
 ## Backup And Restore
 
-Before production usage:
+Minimo antes de producao:
 
-1. Confirm Supabase point-in-time recovery or scheduled backups.
-2. Record the retention window and restore owner.
-3. Before applying new migrations, export a schema/data snapshot or confirm a successful platform backup.
-4. Test restore into a non-production Supabase branch/project before relying on the process.
-
-Minimum dump:
-
-```powershell
-supabase db dump --linked --file backup-pre-release.sql
-```
-
-## Monitoring
-
-Required before real client traffic:
-
-- Dokploy deployment/container failure notifications;
-- container logs reviewed after every deploy;
-- Supabase Edge Function logs reviewed for message, strategy and provider paths;
-- n8n/provider workflow failure notifications where used;
-- an incident owner and escalation channel;
-- backup restore owner and process;
-- periodic runtime health check for `agents` domain.
+- backup diario automatizado;
+- retencao de 7 diarios, 4 semanais e 3 mensais;
+- restore testado fora de producao;
+- responsavel definido para incidentes e restauracao.
 
 ## Security Review
 
-Review before production:
+Review antes de producao:
 
-- no service-role keys, DB passwords, runtime tokens or provider credentials in Git;
-- frontend variables limited to `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`;
-- Supabase Edge secrets hold private provider and runtime configuration;
-- RLS probe results attached to release notes;
-- webchat script remains cacheable and embeddable where required;
-- portal users cannot read protected errors, token hashes or AI cost internals;
-- client users remain constrained by active contract module and organization membership;
-- runtime endpoints requiring mutation reject requests without `Authorization: Bearer <token>`.
+- sem service-role keys, DB passwords, runtime tokens ou provider credentials em Git;
+- frontend limitado a `VITE_API_BASE_URL`;
+- cookies de auth `httpOnly`, `sameSite=lax` e `secure` em producao;
+- policies de backend cobrindo org, modulo e role;
+- endpoints mutaveis exigem usuario autenticado ou webhook secret;
+- runtime de agentes rejeita requests sem token;
+- logs nao expõem tokens, prompts sensiveis, hashes de sessao ou credenciais.
 
 ## Production Gate
 
-Production is ready only when all are true:
+Producao fica liberada somente quando:
 
-- release checks pass locally or in CI;
-- Supabase migrations/probes are green on target project;
-- Dokploy deploy is healthy for frontend and runtime;
-- Supabase Auth URLs match the production domain;
-- authenticated admin/client QA passes;
-- backup/restore process is confirmed;
-- monitoring and provider failure notifications are configured;
-- security review is signed off.
+- release checks passam;
+- compose valida em ambiente com Docker;
+- migrations aplicam no Postgres da VPS;
+- `hub.yux.com.br/api/health` responde;
+- login admin funciona;
+- smoke test de CRM, automacoes, omnichannel, Marketing Studio e Strategy Engine passa;
+- backup/restore esta confirmado;
+- monitoramento e alertas estao configurados.

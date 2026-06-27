@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
 import { buildCsvImportPreview } from '@/lib/crm/cockpitRules'
 import { crmService } from '@/services/crmService'
 import type {
@@ -137,7 +137,7 @@ export const crmCockpitService = {
     const [pipelines, leads, nextActionsResult] = await Promise.all([
       crmService.getPipelines(organizationId),
       crmService.getLeadsForInstance(crmInstanceId, pipelineId),
-      supabase
+      crmOpsDataClient
         .from('lead_next_actions')
         .select('*')
         .eq('crm_instance_id', crmInstanceId)
@@ -156,7 +156,7 @@ export const crmCockpitService = {
   },
 
   async getSavedViews(crmInstanceId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_saved_views')
       .select('*')
       .eq('crm_instance_id', crmInstanceId)
@@ -167,7 +167,7 @@ export const crmCockpitService = {
   },
 
   async saveView(input: SaveViewInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_saved_views')
       .insert(buildSavedViewPayload(input))
       .select()
@@ -182,7 +182,7 @@ export const crmCockpitService = {
   },
 
   async executeLeadImport(input: LeadImportInput) {
-    const { data: importRun, error: importError } = await supabase
+    const { data: importRun, error: importError } = await crmOpsDataClient
       .from('lead_imports')
       .insert(buildLeadImportPayload(input))
       .select()
@@ -191,7 +191,7 @@ export const crmCockpitService = {
     if (importError) throw importError
 
     if (input.preview.rows.length) {
-      const { error: rowsError } = await supabase
+      const { error: rowsError } = await crmOpsDataClient
         .from('lead_import_rows')
         .insert(input.preview.rows.map(row => buildLeadImportRowPayload(input.crmInstanceId, importRun.id, row)))
 
@@ -202,7 +202,7 @@ export const crmCockpitService = {
   },
 
   async recordStageHistory(input: StageHistoryInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_stage_history')
       .insert(buildStageHistoryPayload(input))
       .select()
@@ -213,7 +213,7 @@ export const crmCockpitService = {
   },
 
   async createLeadTag(input: LeadTagInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_tags')
       .insert(buildLeadTagPayload(input))
       .select()
@@ -224,7 +224,7 @@ export const crmCockpitService = {
   },
 
   async assignLeadTag(input: AssignLeadTagInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_tag_assignments')
       .insert(buildLeadTagAssignmentPayload(input))
       .select()
@@ -235,7 +235,7 @@ export const crmCockpitService = {
   },
 
   async createNextAction(input: NextActionInput) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_next_actions')
       .insert(buildNextActionPayload(input))
       .select()
@@ -246,7 +246,7 @@ export const crmCockpitService = {
   },
 
   async completeNextAction(actionId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await crmOpsDataClient
       .from('lead_next_actions')
       .update({ completed_at: new Date().toISOString() })
       .eq('id', actionId)

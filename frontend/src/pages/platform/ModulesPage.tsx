@@ -39,7 +39,7 @@ export function ModulesPage() {
       console.error('Error loading platform modules:', error)
       setModules(PLATFORM_MODULES)
       if (!selectedKey && PLATFORM_MODULES[0]) selectModule(PLATFORM_MODULES[0])
-      setError('Dados do Supabase indisponiveis; exibindo registro local de modulos.')
+      setError('Dados do backend indisponiveis; exibindo registro local de modulos.')
     } finally {
       setLoading(false)
     }

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { landingPageDataClient } from '@/lib/landingPageDataClient'
 import { sanitizeLandingPageForPortal } from '@/lib/landing-pages/landingPageRules'
 import type {
   CreateLandingPageInput,
@@ -130,23 +130,67 @@ function mapLandingPage(row: any): LandingPage {
   }
 }
 
-const LANDING_PAGE_SELECT = `
-  *,
-  landing_page_versions(*),
-  landing_page_forms(*, landing_page_field_mappings(*)),
-  landing_page_change_requests(*),
-  landing_page_approvals(*)
-`
+const LANDING_PAGE_SELECT = '*'
+
+async function attachLandingPageRelations(rows: any[]) {
+  const pageIds = [...new Set(rows.map(row => row.id).filter(Boolean))]
+  if (pageIds.length === 0) return rows
+
+  const [versions, forms, changeRequests, approvals] = await Promise.all([
+    requireRows(landingPageDataClient.from('landing_page_versions').select('*').in('landing_page_id', pageIds).order('created_at', { ascending: false })),
+    requireRows(landingPageDataClient.from('landing_page_forms').select('*').in('landing_page_id', pageIds)),
+    requireRows(landingPageDataClient.from('landing_page_change_requests').select('*').in('landing_page_id', pageIds).order('created_at', { ascending: false })),
+    requireRows(landingPageDataClient.from('landing_page_approvals').select('*').in('landing_page_id', pageIds).order('created_at', { ascending: false })),
+  ])
+
+  const formIds = [...new Set((forms || []).map(form => form.id).filter(Boolean))]
+  const fieldMappings = formIds.length
+    ? await requireRows(landingPageDataClient.from('landing_page_field_mappings').select('*').in('form_id', formIds))
+    : []
+
+  const groupBy = (items: any[], key: string) => {
+    const grouped = new Map<string, any[]>()
+    for (const item of items || []) {
+      const group = grouped.get(item[key]) || []
+      group.push(item)
+      grouped.set(item[key], group)
+    }
+    return grouped
+  }
+
+  const mappingsByForm = groupBy(fieldMappings, 'form_id')
+  const formsByPage = groupBy((forms || []).map(form => ({
+    ...form,
+    landing_page_field_mappings: mappingsByForm.get(form.id) || [],
+  })), 'landing_page_id')
+  const versionsByPage = groupBy(versions, 'landing_page_id')
+  const requestsByPage = groupBy(changeRequests, 'landing_page_id')
+  const approvalsByPage = groupBy(approvals, 'landing_page_id')
+
+  return rows.map(row => ({
+    ...row,
+    landing_page_versions: versionsByPage.get(row.id) || [],
+    landing_page_forms: formsByPage.get(row.id) || [],
+    landing_page_change_requests: requestsByPage.get(row.id) || [],
+    landing_page_approvals: approvalsByPage.get(row.id) || [],
+  }))
+}
+
+async function requireRows<T>(request: PromiseLike<{ data: T[] | null; error: any }>) {
+  const { data, error } = await request
+  if (error) throw error
+  return data || []
+}
 
 export const landingPageService = {
   async getLandingPages(filters?: { organizationId?: string; clientId?: string; contractId?: string }) {
-    let query = supabase.from('landing_pages').select(LANDING_PAGE_SELECT).order('updated_at', { ascending: false })
+    let query = landingPageDataClient.from('landing_pages').select(LANDING_PAGE_SELECT).order('updated_at', { ascending: false })
     if (filters?.organizationId) query = query.eq('organization_id', filters.organizationId)
     if (filters?.clientId) query = query.eq('client_id', filters.clientId)
     if (filters?.contractId) query = query.eq('contract_id', filters.contractId)
     const { data, error } = await query
     if (error) throw error
-    return (data || []).map(mapLandingPage)
+    return (await attachLandingPageRelations(data || [])).map(mapLandingPage)
   },
 
   async getPortalLandingPages(contractId: string) {
@@ -155,28 +199,30 @@ export const landingPageService = {
   },
 
   async createLandingPage(input: CreateLandingPageInput) {
-    const { data, error } = await supabase
+    const { data, error } = await landingPageDataClient
       .from('landing_pages')
       .insert(buildLandingPageInsertPayload(input))
       .select(LANDING_PAGE_SELECT)
       .single()
     if (error) throw error
-    return mapLandingPage(data)
+    const [page] = await attachLandingPageRelations(data ? [data] : [])
+    return mapLandingPage(page)
   },
 
   async updateLandingPageStatus(id: string, status: LandingPageStatus) {
-    const { data, error } = await supabase
+    const { data, error } = await landingPageDataClient
       .from('landing_pages')
       .update({ status })
       .eq('id', id)
       .select(LANDING_PAGE_SELECT)
       .single()
     if (error) throw error
-    return mapLandingPage(data)
+    const [page] = await attachLandingPageRelations(data ? [data] : [])
+    return mapLandingPage(page)
   },
 
   async addLandingPageVersion(input: { landingPageId: string; title: string; previewUrl?: string; internalOnly?: boolean }) {
-    const { data, error } = await supabase.from('landing_page_versions').insert({
+    const { data, error } = await landingPageDataClient.from('landing_page_versions').insert({
       landing_page_id: input.landingPageId,
       version_number: Date.now(),
       title: input.title.trim(),
@@ -188,7 +234,7 @@ export const landingPageService = {
   },
 
   async requestLandingPageChange(input: { landingPageId: string; message: string }) {
-    const { data, error } = await supabase.from('landing_page_change_requests').insert({
+    const { data, error } = await landingPageDataClient.from('landing_page_change_requests').insert({
       landing_page_id: input.landingPageId,
       message: input.message.trim(),
     }).select().single()
@@ -197,7 +243,7 @@ export const landingPageService = {
   },
 
   async approveLandingPage(input: { landingPageId: string; versionId?: string; status: LandingPageApprovalStatus; comment?: string }) {
-    const { data, error } = await supabase
+    const { data, error } = await landingPageDataClient
       .from('landing_page_approvals')
       .insert(buildLandingPageApprovalPayload(input))
       .select()
@@ -207,7 +253,7 @@ export const landingPageService = {
   },
 
   async recordLandingPageEvent(input: { landingPageId: string; eventType: 'view' | 'lead' | 'cta_click' | 'form_submit' | 'approval'; leadId?: string; metadata?: Record<string, unknown> }) {
-    const { data, error } = await supabase.from('landing_page_events').insert({
+    const { data, error } = await landingPageDataClient.from('landing_page_events').insert({
       landing_page_id: input.landingPageId,
       event_type: input.eventType,
       lead_id: input.leadId || null,

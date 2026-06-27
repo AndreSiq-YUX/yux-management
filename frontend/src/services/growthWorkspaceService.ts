@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { growthWorkspaceDataClient } from '@/lib/growthWorkspaceDataClient'
 import {
   buildOnboardingChecklistFromBlueprint,
 } from '@/lib/growth-workspace/onboardingRules'
@@ -83,8 +83,50 @@ function buildCampaignPlanStepPayload(step: CampaignPlanStep, planId: string) {
   }
 }
 
-const CAMPAIGN_PLAN_SELECT = '*, growth_campaign_plan_steps(*)'
-const ONBOARDING_SELECT = '*, growth_onboarding_steps(*)'
+const CAMPAIGN_PLAN_SELECT = '*'
+const ONBOARDING_SELECT = '*'
+
+async function attachCampaignPlanSteps(rows: any[]) {
+  const planIds = [...new Set(rows.map(row => row.id).filter(Boolean))]
+  if (planIds.length === 0) return rows.map(row => ({ ...row, growth_campaign_plan_steps: [] }))
+
+  const { data, error } = await growthWorkspaceDataClient
+    .from('growth_campaign_plan_steps')
+    .select('*')
+    .in('plan_id', planIds)
+    .order('sort_order', { ascending: true })
+
+  if (error) throw error
+  const stepsByPlan = new Map<string, any[]>()
+  for (const step of data || []) {
+    const steps = stepsByPlan.get(step.plan_id) || []
+    steps.push(step)
+    stepsByPlan.set(step.plan_id, steps)
+  }
+
+  return rows.map(row => ({ ...row, growth_campaign_plan_steps: stepsByPlan.get(row.id) || [] }))
+}
+
+async function attachOnboardingSteps(rows: any[]) {
+  const checklistIds = [...new Set(rows.map(row => row.id).filter(Boolean))]
+  if (checklistIds.length === 0) return rows.map(row => ({ ...row, growth_onboarding_steps: [] }))
+
+  const { data, error } = await growthWorkspaceDataClient
+    .from('growth_onboarding_steps')
+    .select('*')
+    .in('checklist_id', checklistIds)
+    .order('sort_order', { ascending: true })
+
+  if (error) throw error
+  const stepsByChecklist = new Map<string, any[]>()
+  for (const step of data || []) {
+    const steps = stepsByChecklist.get(step.checklist_id) || []
+    steps.push(step)
+    stepsByChecklist.set(step.checklist_id, steps)
+  }
+
+  return rows.map(row => ({ ...row, growth_onboarding_steps: stepsByChecklist.get(row.id) || [] }))
+}
 
 function onboardingStepHref(moduleKey: string, stepKey: string) {
   const byStep: Record<string, string> = {
@@ -138,7 +180,7 @@ function mapOnboardingChecklist(row: any): GrowthOnboardingChecklist {
 
 export const growthWorkspaceService = {
   async listCampaignPlans(filters?: { organizationId?: string; contractId?: string }) {
-    let query = supabase
+    let query = growthWorkspaceDataClient
       .from('growth_campaign_plans')
       .select(CAMPAIGN_PLAN_SELECT)
       .order('updated_at', { ascending: false })
@@ -148,22 +190,23 @@ export const growthWorkspaceService = {
 
     const { data, error } = await query
     if (error) throw error
-    return (data || []).map(mapCampaignPlan)
+    return (await attachCampaignPlanSteps(data || [])).map(mapCampaignPlan)
   },
 
   async getCampaignPlan(planId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await growthWorkspaceDataClient
       .from('growth_campaign_plans')
       .select(CAMPAIGN_PLAN_SELECT)
       .eq('id', planId)
       .single()
 
     if (error) throw error
-    return mapCampaignPlan(data)
+    const [plan] = await attachCampaignPlanSteps(data ? [data] : [])
+    return mapCampaignPlan(plan)
   },
 
   async createCampaignPlan(plan: CampaignPlan) {
-    const { data: planRow, error: planError } = await supabase
+    const { data: planRow, error: planError } = await growthWorkspaceDataClient
       .from('growth_campaign_plans')
       .insert(buildCampaignPlanPayload(plan))
       .select('*')
@@ -172,7 +215,7 @@ export const growthWorkspaceService = {
     if (planError) throw planError
 
     if (plan.steps.length > 0) {
-      const { error: stepsError } = await supabase
+      const { error: stepsError } = await growthWorkspaceDataClient
         .from('growth_campaign_plan_steps')
         .insert(plan.steps.map(step => buildCampaignPlanStepPayload(step, planRow.id)))
 
@@ -190,7 +233,7 @@ export const growthWorkspaceService = {
     if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt || null
     if (patch.blockedReason !== undefined) payload.blocked_reason = patch.blockedReason || null
 
-    const { data, error } = await supabase
+    const { data, error } = await growthWorkspaceDataClient
       .from('growth_campaign_plan_steps')
       .update(payload)
       .eq('id', stepId)
@@ -202,7 +245,7 @@ export const growthWorkspaceService = {
   },
 
   async linkCampaignPlanStep(stepId: string, entityType: string, entityId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await growthWorkspaceDataClient
       .from('growth_campaign_plan_steps')
       .update({
         linked_entity_type: entityType,
@@ -219,7 +262,7 @@ export const growthWorkspaceService = {
   },
 
   async listOnboardingChecklists(filters?: { organizationId?: string; contractId?: string; sourceBlueprintId?: string }) {
-    let query = supabase
+    let query = growthWorkspaceDataClient
       .from('growth_onboarding_checklists')
       .select(ONBOARDING_SELECT)
       .order('updated_at', { ascending: false })
@@ -230,7 +273,7 @@ export const growthWorkspaceService = {
 
     const { data, error } = await query
     if (error) throw error
-    return (data || []).map(mapOnboardingChecklist)
+    return (await attachOnboardingSteps(data || [])).map(mapOnboardingChecklist)
   },
 
   async createOnboardingChecklistFromBlueprint(input: {
@@ -246,7 +289,7 @@ export const growthWorkspaceService = {
 
     if (existing[0]) return existing[0]
 
-    const { data: checklistRow, error: checklistError } = await supabase
+    const { data: checklistRow, error: checklistError } = await growthWorkspaceDataClient
       .from('growth_onboarding_checklists')
       .insert({
         organization_id: input.organizationId,
@@ -261,7 +304,7 @@ export const growthWorkspaceService = {
 
     const steps = buildOnboardingChecklistFromBlueprint(input.blueprint)
     if (steps.length > 0) {
-      const { error: stepsError } = await supabase
+      const { error: stepsError } = await growthWorkspaceDataClient
         .from('growth_onboarding_steps')
         .insert(steps.map(step => ({
           checklist_id: checklistRow.id,
@@ -291,7 +334,7 @@ export const growthWorkspaceService = {
     if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt || null
     if (patch.skippedReason !== undefined) payload.skipped_reason = patch.skippedReason || null
 
-    const { data, error } = await supabase
+    const { data, error } = await growthWorkspaceDataClient
       .from('growth_onboarding_steps')
       .update(payload)
       .eq('id', stepId)

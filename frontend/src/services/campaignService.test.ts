@@ -1,17 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  invokeBackendFunction: vi.fn(),
   invoke: vi.fn(),
   from: vi.fn(),
 }))
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    functions: {
-      invoke: mocks.invoke,
-    },
+vi.mock('@/lib/campaignDataClient', () => ({
+  campaignDataClient: {
     from: mocks.from,
   },
+}))
+
+vi.mock('@/lib/backendFunctions', () => ({
+  invokeBackendFunction: mocks.invokeBackendFunction,
 }))
 
 import { buildCampaignDraftPayload, buildProviderMutationPayload, campaignService } from './campaignService'
@@ -70,8 +72,8 @@ describe('campaignService payload builders', () => {
     }))
   })
 
-  it('executes approved provider mutation through edge function instead of only inserting a row', async () => {
-    mocks.invoke.mockResolvedValueOnce({ data: { success: true, run: { id: 'run-1' } }, error: null })
+  it('executes approved provider mutation through backend function instead of only inserting a row', async () => {
+    mocks.invokeBackendFunction.mockResolvedValueOnce({ success: true, run: { id: 'run-1' } })
 
     await campaignService.executeProviderMutation({
       organizationId: 'org-1',
@@ -83,13 +85,11 @@ describe('campaignService payload builders', () => {
       requestPayload: { landingPageUrl: 'https://example.com' },
     })
 
-    expect(mocks.invoke).toHaveBeenCalledWith('execute-ad-provider-mutation', expect.objectContaining({
-      body: expect.objectContaining({
+    expect(mocks.invokeBackendFunction).toHaveBeenCalledWith('execute-ad-provider-mutation', expect.objectContaining({
         provider: 'meta',
         action: 'create_campaign',
         campaignId: 'campaign-1',
         explicitApproval: true,
-      }),
     }))
   })
 })

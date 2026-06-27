@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { crmConversationDataClient } from '@/lib/crmConversationDataClient'
 import { scoreConversationLeadMatch } from '@/lib/crm/conversationRules'
 import { crmService } from '@/services/crmService'
 import { omnichannelService } from '@/services/omnichannelService'
@@ -285,7 +285,7 @@ export const mapMessageTemplate = (row: any): CrmMessageTemplate => ({
 export const crmConversationService = {
   async findLeadMatchesForConversation(input: FindLeadMatchesInput) {
     const data = await requireData<any[]>(
-      supabase
+      crmConversationDataClient
         .from('leads')
         .select('*')
         .eq('crm_instance_id', input.crmInstanceId)
@@ -310,7 +310,7 @@ export const crmConversationService = {
   async linkConversationToLead(input: LinkConversationToLeadInput) {
     const payload = buildLeadConversationLinkPayload(input)
     const link = await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_conversation_links')
         .insert(payload)
         .select()
@@ -318,7 +318,7 @@ export const crmConversationService = {
     )
 
     await requireData(
-      supabase
+      crmConversationDataClient
         .from('conversations')
         .update({ lead_id: input.leadId, updated_at: new Date().toISOString() })
         .eq('id', input.conversationId)
@@ -327,7 +327,7 @@ export const crmConversationService = {
     )
 
     await requireData(
-      supabase
+      crmConversationDataClient
         .from('leads')
         .update({ last_conversation_at: payload.linked_at, last_activity_at: payload.linked_at })
         .eq('id', input.leadId)
@@ -340,7 +340,7 @@ export const crmConversationService = {
 
   async createLeadFromConversation(input: CreateLeadFromConversationInput) {
     const payload = buildLeadFromConversationPayload(input)
-    const lead = await requireData<any>(supabase.from('leads').insert(payload).select().single())
+    const lead = await requireData<any>(crmConversationDataClient.from('leads').insert(payload).select().single())
     await this.linkConversationToLead({
       organizationId: input.organizationId,
       crmInstanceId: input.crmInstanceId,
@@ -357,27 +357,38 @@ export const crmConversationService = {
 
   async getLeadConversations(leadId: string) {
     const data = await requireData<any[]>(
-      supabase
+      crmConversationDataClient
         .from('lead_conversation_links')
-        .select('*, conversations(*)')
+        .select('*')
         .eq('lead_id', leadId)
         .neq('status', 'archived')
         .order('updated_at', { ascending: false }),
     )
+    const conversationIds = [...new Set((data || []).map(row => row.conversation_id).filter(Boolean))]
+    const conversations = conversationIds.length
+      ? await requireData<any[]>(
+        crmConversationDataClient
+          .from('conversations')
+          .select('*')
+          .in('id', conversationIds),
+      )
+      : []
+    const conversationsById = new Map((conversations || []).map(conversation => [conversation.id, conversation]))
+
     return (data || []).map(row => ({
       ...mapLeadConversationLink(row),
-      conversation: row.conversations,
+      conversation: conversationsById.get(row.conversation_id),
     }))
   },
 
   async getLeadAiInsights(leadId: string) {
     const [insights, fieldSuggestions, responseSuggestions, slaEvents, quickReplies, templates] = await Promise.all([
-      requireData<any[]>(supabase.from('lead_ai_insights').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
-      requireData<any[]>(supabase.from('lead_ai_field_suggestions').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
-      requireData<any[]>(supabase.from('lead_response_suggestions').select('*').eq('lead_id', leadId).order('updated_at', { ascending: false })),
-      requireData<any[]>(supabase.from('lead_sla_events').select('*').eq('lead_id', leadId).order('due_at', { ascending: true })),
-      requireData<any[]>(supabase.from('crm_quick_replies').select('*').eq('is_active', true).order('label')),
-      requireData<any[]>(supabase.from('crm_message_templates').select('*').eq('status', 'active').order('name')),
+      requireData<any[]>(crmConversationDataClient.from('lead_ai_insights').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
+      requireData<any[]>(crmConversationDataClient.from('lead_ai_field_suggestions').select('*').eq('lead_id', leadId).order('created_at', { ascending: false })),
+      requireData<any[]>(crmConversationDataClient.from('lead_response_suggestions').select('*').eq('lead_id', leadId).order('updated_at', { ascending: false })),
+      requireData<any[]>(crmConversationDataClient.from('lead_sla_events').select('*').eq('lead_id', leadId).order('due_at', { ascending: true })),
+      requireData<any[]>(crmConversationDataClient.from('crm_quick_replies').select('*').eq('is_active', true).order('label')),
+      requireData<any[]>(crmConversationDataClient.from('crm_message_templates').select('*').eq('status', 'active').order('name')),
     ])
 
     return {
@@ -393,7 +404,7 @@ export const crmConversationService = {
   async confirmAiFieldSuggestion(suggestionId: string, confirmedBy?: string) {
     const confirmedAt = new Date().toISOString()
     const suggestion = await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_ai_field_suggestions')
         .update({ status: 'confirmed', confirmed_by: confirmedBy || null, confirmed_at: confirmedAt })
         .eq('id', suggestionId)
@@ -403,7 +414,7 @@ export const crmConversationService = {
 
     const mapped = mapFieldSuggestion(suggestion)
     await requireData(
-      supabase
+      crmConversationDataClient
         .from('leads')
         .update({ [mapped.fieldKey]: mapped.suggestedValue, updated_at: confirmedAt })
         .eq('id', mapped.leadId)
@@ -415,7 +426,7 @@ export const crmConversationService = {
 
   async createResponseSuggestion(input: CreateResponseSuggestionInput) {
     const data = await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_response_suggestions')
         .insert(buildResponseSuggestionPayload(input))
         .select()
@@ -426,7 +437,7 @@ export const crmConversationService = {
 
   async sendSuggestedReply(input: SendSuggestedReplyInput) {
     const suggestion = mapResponseSuggestion(await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_response_suggestions')
         .select('*')
         .eq('id', input.suggestionId)
@@ -441,7 +452,7 @@ export const crmConversationService = {
     })
 
     const updated = await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_response_suggestions')
         .update({
           status: 'sent',
@@ -458,7 +469,7 @@ export const crmConversationService = {
 
   async startHumanHandoff(input: StartHumanHandoffInput) {
     const lock = await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_handoff_locks')
         .insert(buildHumanHandoffPayload(input))
         .select()
@@ -477,7 +488,7 @@ export const crmConversationService = {
 
   async releaseHumanHandoff(lockId: string) {
     const data = await requireData<any>(
-      supabase
+      crmConversationDataClient
         .from('lead_handoff_locks')
         .update({ active: false, released_at: new Date().toISOString() })
         .eq('id', lockId)

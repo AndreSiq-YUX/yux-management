@@ -1,17 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  invokeBackendFunction: vi.fn(),
   invoke: vi.fn(),
   from: vi.fn(),
 }))
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: {
+vi.mock('@/lib/marketingStudioDataClient', () => ({
+  marketingStudioDataClient: {
     functions: {
       invoke: mocks.invoke,
     },
     from: mocks.from,
   },
+}))
+
+vi.mock('@/lib/backendFunctions', () => ({
+  invokeBackendFunction: mocks.invokeBackendFunction,
 }))
 
 import {
@@ -949,10 +954,7 @@ describe('marketingStudioService mapping helpers', () => {
   })
 
   it('invokes generic marketing publishing for native social providers', async () => {
-    mocks.invoke.mockResolvedValueOnce({
-      data: { success: true, run: { id: 'run-1' } },
-      error: null,
-    })
+    mocks.invokeBackendFunction.mockResolvedValueOnce({ success: true, run: { id: 'run-1' } })
 
     await marketingStudioService.executePublishingRun({
       provider: 'meta_instagram',
@@ -965,13 +967,11 @@ describe('marketingStudioService mapping helpers', () => {
       idempotencyKey: 'connection-1:content-1:publish:latest',
     })
 
-    expect(mocks.invoke).toHaveBeenCalledWith('execute-marketing-publishing', expect.objectContaining({
-      body: expect.objectContaining({
+    expect(mocks.invokeBackendFunction).toHaveBeenCalledWith('execute-marketing-publishing', expect.objectContaining({
         provider: 'meta_instagram',
         connectionId: 'connection-1',
         contentItemId: 'content-1',
         action: 'publish',
-      }),
     }))
   })
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-import { createClient } from '@supabase/supabase-js'
+import { createRequire } from 'node:module'
 import { parseArgs, readJson, readJsonl, requireArg, sha256 } from './_shared.mjs'
+
+const backendRequire = createRequire(new URL('../../backend/package.json', import.meta.url))
+const { Pool } = backendRequire('pg')
 
 function env(name) {
   const value = process.env[name]
@@ -31,23 +34,57 @@ function snakeCard(card) {
   }
 }
 
-async function upsertRows(supabase, table, rows, onConflict, select = 'id') {
+function assertIdentifier(value) {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) throw new Error(`Invalid SQL identifier: ${value}`)
+  return value
+}
+
+function normalizeSelect(select) {
+  return select.split(',').map(column => assertIdentifier(column.trim())).join(', ')
+}
+
+function normalizeConflict(onConflict) {
+  return onConflict.split(',').map(column => assertIdentifier(column.trim()))
+}
+
+function normalizeValue(column, value) {
+  if (value === undefined) return null
+  if ((column === 'metadata' || column === 'embedding_values') && value !== null) return JSON.stringify(value)
+  return value
+}
+
+async function upsertRows(db, table, rows, onConflict, select = 'id') {
   if (!rows.length) return []
-  const { data, error } = await supabase
-    .from(table)
-    .upsert(rows, { onConflict })
-    .select(select)
-  if (error) throw new Error(`${table} upsert failed: ${error.message}`)
-  return data || []
+  const tableName = assertIdentifier(table)
+  const columns = [...new Set(rows.flatMap(row => Object.keys(row)))].map(assertIdentifier)
+  const conflictColumns = normalizeConflict(onConflict)
+  const returning = normalizeSelect(select)
+  const values = []
+  const placeholders = rows.map(row => {
+    const rowPlaceholders = columns.map(column => {
+      values.push(normalizeValue(column, row[column]))
+      return `$${values.length}`
+    })
+    return `(${rowPlaceholders.join(', ')})`
+  })
+  const updateColumns = columns.filter(column => !conflictColumns.includes(column))
+  const updateSet = updateColumns.length
+    ? updateColumns.map(column => `${column} = EXCLUDED.${column}`).join(', ')
+    : `${conflictColumns[0]} = EXCLUDED.${conflictColumns[0]}`
+
+  const sql = `
+    INSERT INTO public.${tableName} (${columns.join(', ')})
+    VALUES ${placeholders.join(', ')}
+    ON CONFLICT (${conflictColumns.join(', ')}) DO UPDATE SET ${updateSet}
+    RETURNING ${returning}
+  `
+  const result = await db.query(sql, values)
+  return result.rows
 }
 
 async function main() {
   const args = parseArgs()
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
-  if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
-
-  const supabase = createClient(url, key, { auth: { persistSession: false } })
+  const db = new Pool({ connectionString: env('DATABASE_URL') })
   const pagesPath = args.documents
   const chunksPath = args.chunks
   const assetsPath = args.assets
@@ -78,7 +115,7 @@ async function main() {
   }
 
   const documentRows = await upsertRows(
-    supabase,
+    db,
     'yux_strategy_source_documents',
     [...documentsByHash.values()],
     'source_hash',
@@ -95,7 +132,7 @@ async function main() {
     image_storage_path: page.imageStoragePath || null,
     metadata: page.metadata || {},
   })).filter(row => row.document_id)
-  const importedPages = await upsertRows(supabase, 'yux_strategy_source_pages', pageRows, 'document_id,page_number', 'id, document_id, page_number, page_hash')
+  const importedPages = await upsertRows(db, 'yux_strategy_source_pages', pageRows, 'document_id,page_number', 'id, document_id, page_number, page_hash')
   const pageIds = new Map(importedPages.map(row => [`${row.document_id}:${row.page_number}`, row.id]))
 
   const chunkRows = chunks.map(chunk => {
@@ -117,7 +154,7 @@ async function main() {
       metadata: chunk.metadata || {},
     }
   }).filter(row => row.document_id)
-  await upsertRows(supabase, 'yux_strategy_source_chunks', chunkRows, 'document_id,chunk_hash')
+  await upsertRows(db, 'yux_strategy_source_chunks', chunkRows, 'document_id,chunk_hash')
 
   const assetRows = assets.map(asset => {
     const documentId = documentIds.get(asset.sourceHash)
@@ -137,10 +174,10 @@ async function main() {
       metadata: asset.metadata || {},
     }
   }).filter(row => row.document_id && row.asset_hash && row.storage_path)
-  await upsertRows(supabase, 'yux_strategy_source_assets', assetRows, 'asset_hash')
+  await upsertRows(db, 'yux_strategy_source_assets', assetRows, 'asset_hash')
 
   const cardRows = cards.map(snakeCard)
-  const importedCards = await upsertRows(supabase, 'yux_strategy_concept_cards', cardRows, 'concept,category', 'id, concept, category')
+  const importedCards = await upsertRows(db, 'yux_strategy_concept_cards', cardRows, 'concept,category', 'id, concept, category')
   const cardIds = new Map(importedCards.map(row => [`${row.concept}:${row.category}`, row.id]))
 
   const embeddingRows = cardEmbeddings.map(item => ({
@@ -151,7 +188,7 @@ async function main() {
     content_hash: item.contentHash,
     metadata: item.metadata || {},
   })).filter(row => row.card_id)
-  await upsertRows(supabase, 'yux_strategy_card_embeddings', embeddingRows, 'card_id,embedding_model,content_hash')
+  await upsertRows(db, 'yux_strategy_card_embeddings', embeddingRows, 'card_id,embedding_model,content_hash')
 
   console.log(JSON.stringify({
     documents: documentRows.length,
@@ -161,6 +198,8 @@ async function main() {
     cards: cardRows.length,
     cardEmbeddings: embeddingRows.length,
   }, null, 2))
+
+  await db.end()
 }
 
 main().catch(error => {

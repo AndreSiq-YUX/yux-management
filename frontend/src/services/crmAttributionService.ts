@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
 import {
   buildAttributionDashboard,
   derivePrimarySource,
@@ -300,22 +300,36 @@ function escapeCsv(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`
 }
 
+async function attachRollupSources(rows: Row[]) {
+  const sourceIds = [...new Set((rows || []).map(row => row.source_id).filter(Boolean))]
+  if (sourceIds.length === 0) return rows
+
+  const sources = await requireData<Row[]>(
+    crmOpsDataClient
+      .from('lead_sources')
+      .select('*')
+      .in('id', sourceIds),
+  )
+  const sourceById = new Map((sources || []).map(source => [source.id, source]))
+  return rows.map(row => ({ ...row, lead_sources: sourceById.get(row.source_id) }))
+}
+
 export const crmAttributionService = {
   async recordLeadAttribution(input: RecordLeadAttributionInput): Promise<LeadAttributionEvent> {
     const sourcePayload = buildLeadSourcePayload(input)
-    const source = await requireData<Row>(supabase
+    const source = await requireData<Row>(crmOpsDataClient
       .from('lead_sources')
       .upsert(sourcePayload, { onConflict: 'organization_id,crm_instance_id,key' })
       .select()
       .single())
 
-    const event = await requireData<Row>(supabase
+    const event = await requireData<Row>(crmOpsDataClient
       .from('lead_attribution_events')
       .insert(buildAttributionEventPayload(input, source.id))
       .select()
       .single())
 
-    await supabase
+    await crmOpsDataClient
       .from('leads')
       .update({ primary_source_id: source.id, source_confidence: derivePrimarySource({ source: input.source, campaignId: input.campaignId, landingPageId: input.landingPageId, whatsappClickId: input.whatsappClickId, utm: input.utm }).confidence })
       .eq('id', input.leadId)
@@ -329,10 +343,10 @@ export const crmAttributionService = {
     const periodEnd = filters.periodEnd || new Date().toISOString().slice(0, 10)
     const [rollupRows, alertRows] = await Promise.all([
       requireData<Row[]>(applyDashboardFilters(
-        supabase.from('lead_source_rollups').select('*, lead_sources(*)').order('leads', { ascending: false }),
+        crmOpsDataClient.from('lead_source_rollups').select('*').order('leads', { ascending: false }),
         { ...filters, periodStart, periodEnd },
       )),
-      requireData<Row[]>(supabase
+      requireData<Row[]>(crmOpsDataClient
         .from('crm_mroi_alerts')
         .select('*')
         .eq('organization_id', filters.organizationId)
@@ -345,7 +359,7 @@ export const crmAttributionService = {
       crmInstanceId: filters.crmInstanceId,
       periodStart,
       periodEnd,
-      rollups: (rollupRows || []).map(mapLeadSourceRollup),
+      rollups: (await attachRollupSources(rollupRows || [])).map(mapLeadSourceRollup),
       alerts: (alertRows || []).map(mapMroiAlert),
     })
   },
@@ -364,7 +378,7 @@ export const crmAttributionService = {
   },
 
   async getCampaignMroi(campaignId: string): Promise<CampaignCrmPerformanceSnapshot[]> {
-    const rows = await requireData<Row[]>(supabase
+    const rows = await requireData<Row[]>(crmOpsDataClient
       .from('campaign_crm_performance_snapshots')
       .select('*')
       .eq('campaign_id', campaignId)
@@ -377,7 +391,7 @@ export const crmAttributionService = {
   },
 
   async createMroiAlert(alert: Omit<CrmMroiAlert, 'id' | 'createdAt' | 'resolvedAt'>): Promise<CrmMroiAlert> {
-    const row = await requireData<Row>(supabase.from('crm_mroi_alerts').insert({
+    const row = await requireData<Row>(crmOpsDataClient.from('crm_mroi_alerts').insert({
       organization_id: alert.organizationId,
       crm_instance_id: alert.crmInstanceId || null,
       source_id: alert.sourceId || null,
@@ -403,7 +417,7 @@ export const crmAttributionService = {
       scope: input.scope || 'internal',
       requestedBy: input.requestedBy,
     })
-    const row = await requireData<Row>(supabase.from('crm_report_exports').insert(payload).select().single())
+    const row = await requireData<Row>(crmOpsDataClient.from('crm_report_exports').insert(payload).select().single())
     return mapReportExport(row)
   },
 }
