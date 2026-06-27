@@ -45,6 +45,7 @@ const byPriority = (action: PortalNextAction) => {
 export function usePortalActionSummary() {
   const activeContract = usePlatformStore(state => state.activeContract)
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const crm = usePortalCrmContext()
   const marketing = usePortalMarketingContext({ includeCampaigns: true, includeOperations: true })
   const [projectState, setProjectState] = useState<ProjectActionState>(emptyProjectActionState)
@@ -53,6 +54,11 @@ export function usePortalActionSummary() {
     let cancelled = false
 
     async function load() {
+      if (isPlatformLoading) {
+        setProjectState(current => ({ ...current, loading: true, error: null }))
+        return
+      }
+
       if (!activeContract) {
         setProjectState({ ...emptyProjectActionState, loading: false })
         return
@@ -97,7 +103,7 @@ export function usePortalActionSummary() {
     return () => {
       cancelled = true
     }
-  }, [activeContract, enabledModuleKeys])
+  }, [activeContract, enabledModuleKeys, isPlatformLoading])
 
   const actions = useMemo<PortalNextAction[]>(() => {
     const pendingProjectApprovals = projectState.approvals.filter(approval => approval.status === 'pending')

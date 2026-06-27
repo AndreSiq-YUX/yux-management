@@ -22,9 +22,73 @@ export interface CampaignReportMetric {
   campaignId: string
   name: string
   spend: number
+  impressions?: number
+  clicks?: number
   leads: number
   cpl: number
+  opportunities?: number
+  proposals?: number
+  clients?: number
+  revenue?: number
   mroi: number
+  syncStatus?: 'connected' | 'stale' | 'needs_reauth' | 'failed' | 'not_configured'
+  aiRecommendation?: string
+}
+
+export interface ExecutiveCampaignMetric {
+  campaignId: string
+  name: string
+  spend: number
+  impressions: number
+  clicks: number
+  leads: number
+  cpl: number
+  opportunities: number
+  proposals: number
+  clients: number
+  revenue: number
+  mroi: number
+  syncStatus: 'connected' | 'stale' | 'needs_reauth' | 'failed' | 'not_configured'
+  aiRecommendation: string
+}
+
+export interface ExecutiveCampaignSummary {
+  spend: number
+  impressions: number
+  clicks: number
+  leads: number
+  cpl: number
+  opportunities: number
+  proposals: number
+  clients: number
+  revenue: number
+  mroi: number
+  syncStatus: ExecutiveCampaignMetric['syncStatus']
+  aiRecommendation: string
+}
+
+export type ReportPresetKey =
+  | 'campaign_performance'
+  | 'lead_source_roi'
+  | 'landing_page_conversion'
+  | 'whatsapp_follow_up'
+  | 'automation_impact'
+  | 'sector_onboarding_progress'
+  | 'brand_knowledge_readiness'
+
+export interface ReportPreset {
+  key: ReportPresetKey
+  label: string
+  description: string
+  moduleKey: string
+  portalVisible: boolean
+}
+
+export interface ReportAiInsight {
+  topOpportunity: string
+  periodChange: string
+  dataGaps: string[]
+  attributionCaveat?: string
 }
 
 export interface LandingPageReportMetric {
@@ -59,6 +123,10 @@ export interface OperationalReport {
   ownerActivity: OwnerActivityMetric[]
   projectDelivery: ReportMetric[]
   crmAttribution?: CrmAttributionDashboard
+  executiveCampaignMetrics?: ExecutiveCampaignMetric[]
+  executiveCampaignSummary?: ExecutiveCampaignSummary
+  reportPresets?: ReportPreset[]
+  aiInsight?: ReportAiInsight
 }
 
 export type PortalOperationalReport = Omit<OperationalReport, 'ownerActivity'> & {

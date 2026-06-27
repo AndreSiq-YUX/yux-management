@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { validateApprovalDecision } from '@/lib/projects/approvalRules'
 import { supabaseService } from '@/services/supabaseService'
+import { usePlatformStore } from '@/stores/platformStore'
 import {
   ApprovalDecisionValue,
   ApprovalRequest,
@@ -28,6 +29,8 @@ const approvalLabels: Record<ApprovalRequest['status'], string> = {
 }
 
 export function PortalProjectsPage() {
+  const activeContract = usePlatformStore(state => state.activeContract)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string>()
   const [tasks, setTasks] = useState<ProjectTask[]>([])
@@ -42,6 +45,18 @@ export function PortalProjectsPage() {
   const selectedProject = projects.find(project => project.id === selectedProjectId)
 
   useEffect(() => {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
+    if (!activeContract) {
+      setProjects([])
+      setSelectedProjectId(undefined)
+      setLoading(false)
+      return
+    }
+
     supabaseService.getProjects({ limit: 100 })
       .then(response => {
         setProjects(response.projects)
@@ -52,7 +67,7 @@ export function PortalProjectsPage() {
         toast.error('Erro ao carregar projetos')
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [activeContract, isPlatformLoading])
 
   const loadProjectDetails = async (projectId: string) => {
     try {

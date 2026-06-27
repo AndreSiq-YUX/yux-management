@@ -13,6 +13,8 @@ export const automationTriggerCatalog: AutomationCatalogTrigger[] = [
   { key: 'project.phase_delayed', module: 'projects', label: 'Fase atrasada', payloadSchema: { projectId: 'string', phaseId: 'string' } },
   { key: 'invoice.overdue', module: 'finance', label: 'Fatura vencida', payloadSchema: { invoiceId: 'string', daysOverdue: 'number' } },
   { key: 'campaign.cpl_above_threshold', module: 'campaigns', label: 'CPL acima do limite', payloadSchema: { campaignId: 'string', cpl: 'number' } },
+  { key: 'appointment.scheduled', module: 'crm', label: 'Agendamento criado', payloadSchema: { leadId: 'string', scheduledAt: 'string' } },
+  { key: 'creative.approval_requested', module: 'campaigns', label: 'Criativo aguardando aprovacao', payloadSchema: { creativeId: 'string', campaignId: 'string' } },
   { key: 'report.anomaly_detected', module: 'reports', label: 'Anomalia detectada', payloadSchema: { reportId: 'string', metricKey: 'string' } },
   { key: 'ticket.created', module: 'support', label: 'Ticket criado', payloadSchema: { ticketId: 'string', priority: 'string' } },
   { key: 'ticket.overdue', module: 'support', label: 'Ticket atrasado', payloadSchema: { ticketId: 'string', slaHours: 'number' } },

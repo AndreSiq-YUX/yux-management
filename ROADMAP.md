@@ -11,10 +11,10 @@
 ## ✅ Funcionalidades Implementadas (Base Operacional)
 
 ### 🏗️ Infraestrutura Base & Limpeza
-*   [x] Reorganização arquitetural: migração completa de Node.js/Docker para **Vercel + Supabase** (redução de 50% de arquivos e complexidade).
+*   [x] Reorganização arquitetural inicial para frontend React/Vite + Supabase.
 *   [x] Estrutura frontend em **React + TypeScript + Vite**.
 *   [x] Design System unificado com Tailwind CSS + shadcn/ui.
-*   [x] Conexão com Supabase DB local (via CLI) e em nuvem (Vercel).
+*   [x] Conexão com Supabase DB local (via CLI) e Supabase Cloud.
 
 ### 👥 CRM Base (Clientes)
 *   [x] Listagem inteligente de clientes com tabela responsiva e filtros avançados (setor, tamanho, valor, origem).
@@ -104,7 +104,7 @@ Fase 1: CRM Base (Projetos & Leads) 🚀
 *   [ ] Kanban de Clientes e Projetos 100% funcional no React.
 *   [ ] n8n integrado capturando leads ativos e cadastrando no Supabase.
 *   [ ] Agente de Atendimento WhatsApp respondendo perguntas institucionais com RAG e agendando diagnósticos.
-*   [ ] Deploy estável na Vercel conectado ao Supabase Cloud.
+*   [ ] Deploy estável na VPS/Dokploy conectado ao Supabase Cloud.
 
 ### Versão 2.0 (Vitrine Premium)
 *   [ ] Todos os 3 agentes rodando (Prospector, Qualificador, Supervisor do CRM).

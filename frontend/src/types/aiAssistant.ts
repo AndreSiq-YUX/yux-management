@@ -2,6 +2,7 @@ export type AiAssistantStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type AiAssistantObjectiveType = 'lead_qualification' | 'support_triage' | 'scheduling' | 'sales_conversion' | 'retention'
 export type AiAssistantHandoffRuleType = 'human_request' | 'sentiment_intent' | 'low_confidence' | 'missing_required_field' | 'safety'
 export type AiAssistantSafetySeverity = 'low' | 'medium' | 'high'
+export type AiAssistantRole = 'sdr' | 'closer' | 'support' | 'retention' | 'custom'
 
 export interface AiAssistantObjective {
   id: string
@@ -53,6 +54,10 @@ export interface AiAssistantSettings {
   name: string
   tone: string
   status: AiAssistantStatus
+  assistantRole?: AiAssistantRole
+  strategyProfileId?: string
+  routingPriority?: number
+  routingMetadata?: Record<string, unknown>
   summaryEnabled: boolean
   classificationEnabled: boolean
   objectives: AiAssistantObjective[]
@@ -71,6 +76,10 @@ export interface AiAssistantInput {
   name: string
   tone: string
   status?: AiAssistantStatus
+  assistantRole?: AiAssistantRole
+  strategyProfileId?: string
+  routingPriority?: number
+  routingMetadata?: Record<string, unknown>
   summaryEnabled?: boolean
   classificationEnabled?: boolean
 }

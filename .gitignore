@@ -84,6 +84,7 @@ public
 # Temporary folders
 tmp/
 temp/
+.strategy-work/
 
 # Editor directories and files
 .vscode/

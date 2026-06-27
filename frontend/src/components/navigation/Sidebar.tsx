@@ -50,6 +50,8 @@ const iconByHref: Record<string, LucideIcon> = {
   '/admin/ai': Bot,
   '/admin/health': Activity,
   '/admin/limits': Briefcase,
+  '/client-workspaces': Building2,
+  '/client-conversions': UserPlus,
   '/contracts': FileCheck2,
   '/packages': Boxes,
   '/modules': LayoutDashboard,
@@ -83,7 +85,11 @@ export function Sidebar() {
               <span className="text-white font-bold text-sm">YUX</span>
             </div>
             <span className="ml-3 truncate text-lg font-semibold text-gray-900">
-              {platformContext.mode === 'internal' ? 'YUX Hub' : 'Portal YUX'}
+              {platformContext.mode === 'client_workspace'
+                ? 'Workspace Cliente'
+                : platformContext.mode === 'internal'
+                  ? 'YUX Hub'
+                  : 'Portal YUX'}
             </span>
           </div>
         </div>
@@ -101,10 +107,11 @@ export function Sidebar() {
                     const Icon = item.moduleKey
                       ? iconByModule[item.moduleKey] || LayoutDashboard
                       : iconByHref[item.href] || LayoutDashboard
+                    const navigationKey = `${group.label}:${item.label}:${item.href}`
 
                     return (
                       <NavLink
-                        key={item.href}
+                        key={navigationKey}
                         to={item.href}
                         className={({ isActive }) =>
                           `group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${

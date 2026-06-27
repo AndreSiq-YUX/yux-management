@@ -23,6 +23,9 @@ const campaign: Campaign = {
   impressions: 10000,
   clicks: 500,
   leads: 83,
+  opportunities: 20,
+  proposals: 8,
+  clients: 3,
   cpl: 12.05,
   mroi: 3.3,
   protectedError: 'token abc123 failed',
@@ -83,6 +86,10 @@ describe('CampaignsWorkspace', () => {
 
     const html = container.innerHTML.replace(/&nbsp;/g, ' ')
     expect(html).toContain('Campanhas')
+    expect(html).toContain('Campanha 360')
+    expect(html).toContain('Cockpit executivo Ads/MROI')
+    expect(html).toContain('Atribuicao: ultima interacao de anuncio')
+    expect(html).toContain('Criar plano guiado')
     expect(html).toContain('Botox Junho')
     expect(html).toContain('Conexao Meta stale')
     expect(html).toContain('3.3x')

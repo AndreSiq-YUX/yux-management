@@ -1,10 +1,16 @@
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { AlertCircle, ArrowRight, CheckCircle2, Clock3 } from 'lucide-react'
 import { PortalEmptyState } from '@/components/client-portal/PortalEmptyState'
+import { SectorOnboardingChecklist } from '@/components/growth-workspace/SectorOnboardingChecklist'
 import { usePortalActionSummary } from '@/hooks/usePortalActionSummary'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { buildNavigation } from '@/lib/platform/navigation'
 import { statusLabel } from '@/lib/client-portal/portalDisplay'
+import { growthWorkspaceService } from '@/services/growthWorkspaceService'
 import { usePlatformStore } from '@/stores/platformStore'
+import type { GrowthOnboardingChecklist, GrowthOnboardingStep } from '@/types/growthWorkspace'
 
 function formatDateOnly(value: string) {
   const [year, month, day] = value.split('T')[0].split('-')
@@ -29,12 +35,29 @@ const actionTone: Record<string, string> = {
   normal: 'border-yux-200 bg-yux-50 text-yux-800',
 }
 
+const getUniqueModuleItems = (items: ReturnType<typeof buildNavigation>) => {
+  const seenModuleKeys = new Set<string>()
+
+  return items.filter(item => {
+    if (!item.moduleKey || !summaryByModule[item.moduleKey] || seenModuleKeys.has(item.moduleKey)) {
+      return false
+    }
+
+    seenModuleKeys.add(item.moduleKey)
+    return true
+  })
+}
+
 export function PortalDashboardPage() {
+  const portalPath = usePortalWorkspacePath()
+  const [onboardingChecklists, setOnboardingChecklists] = useState<GrowthOnboardingChecklist[]>([])
+  const [onboardingLoading, setOnboardingLoading] = useState(false)
   const {
     activeContract,
     enabledModuleKeys,
     isLoading,
     membership,
+    mode,
     organization,
     role,
   } = usePlatformStore(state => ({
@@ -42,14 +65,54 @@ export function PortalDashboardPage() {
     enabledModuleKeys: state.enabledModuleKeys,
     isLoading: state.isLoading,
     membership: state.membership,
+    mode: state.mode,
     organization: state.organization,
     role: state.role,
   }))
   const actionSummary = usePortalActionSummary()
+  const loadOnboarding = useCallback(async () => {
+    if (!organization?.id || !activeContract?.id) {
+      setOnboardingChecklists([])
+      return
+    }
+
+    setOnboardingLoading(true)
+    try {
+      const checklists = await growthWorkspaceService.listOnboardingChecklists({
+        organizationId: organization.id,
+        contractId: activeContract.id,
+      })
+      setOnboardingChecklists(checklists)
+    } catch (error) {
+      console.error('Erro ao carregar onboarding setorial:', error)
+      setOnboardingChecklists([])
+    } finally {
+      setOnboardingLoading(false)
+    }
+  }, [activeContract?.id, organization?.id])
+
+  useEffect(() => {
+    loadOnboarding()
+  }, [loadOnboarding])
+
+  const completeOnboardingStep = async (step: GrowthOnboardingStep) => {
+    try {
+      await growthWorkspaceService.updateOnboardingStep(step.id, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      })
+      toast.success('Etapa de onboarding concluida')
+      await loadOnboarding()
+    } catch (error) {
+      console.error('Erro ao concluir onboarding:', error)
+      toast.error('Erro ao concluir etapa de onboarding')
+    }
+  }
+
   const items = buildNavigation({
     enabledModuleKeys,
     membership,
-    mode: 'portal',
+    mode,
     organization,
     role,
   }).filter(item => item.moduleKey)
@@ -68,8 +131,9 @@ export function PortalDashboardPage() {
   }
 
   const startsAt = formatDateOnly(activeContract.startsAt)
-  const commercialItems = items.filter(item => item.moduleKey && summaryByModule[item.moduleKey])
+  const commercialItems = getUniqueModuleItems(items)
   const visibleActions = actionSummary.actions.slice(0, 6)
+  const activeOnboarding = onboardingChecklists.find(checklist => checklist.status === 'active') || onboardingChecklists[0]
 
   return (
     <div className="space-y-6">
@@ -79,7 +143,7 @@ export function PortalDashboardPage() {
           <p className="text-gray-600">Acompanhe prioridades, aprovacoes, operacao comercial e modulos contratados.</p>
         </div>
         <Link
-          to="/portal/projetos/aprovacoes"
+          to={portalPath('/portal/projetos/aprovacoes')}
           className="inline-flex items-center justify-center rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700"
         >
           Pendencias de aprovacao
@@ -117,6 +181,21 @@ export function PortalDashboardPage() {
         </dl>
       </section>
 
+      {onboardingLoading ? (
+        <section className="rounded-lg border bg-white p-4 text-sm text-gray-600">
+          Carregando onboarding setorial...
+        </section>
+      ) : activeOnboarding ? (
+        <SectorOnboardingChecklist
+          checklist={activeOnboarding}
+          title="Onboarding setorial"
+          description="Proximas configuracoes recomendadas a partir do Modelo Setorial aplicado pela YUX."
+          hrefPrefix={portalPath('/portal')}
+          maxSteps={3}
+          onCompleteStep={completeOnboardingStep}
+        />
+      ) : null}
+
       <section className="rounded-lg border bg-white p-5">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
@@ -133,7 +212,7 @@ export function PortalDashboardPage() {
             {visibleActions.map(action => (
               <Link
                 key={action.id}
-                to={action.href}
+                to={portalPath(action.href)}
                 className={`rounded-md border p-4 transition-colors hover:border-yux-300 ${actionTone[action.priority]}`}
               >
                 <div className="flex items-start gap-3">
@@ -160,7 +239,7 @@ export function PortalDashboardPage() {
           const summary = summaryByModule[item.moduleKey!]
           return (
             <Link
-              key={`summary-${item.href}`}
+              key={`summary-${item.moduleKey}`}
               to={item.href}
               className="rounded-lg border bg-white p-4 transition-colors hover:border-yux-300 hover:bg-yux-50"
             >

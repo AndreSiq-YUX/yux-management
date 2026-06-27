@@ -10,6 +10,7 @@ import type { ProposalDraft } from '@/types/proposal'
 
 export function PortalDocumentsPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [proposals, setProposals] = useState<ProposalDraft[]>([])
   const [invoices, setInvoices] = useState<PortalFinanceInvoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -19,6 +20,11 @@ export function PortalDocumentsPage() {
     let cancelled = false
 
     async function load() {
+      if (isPlatformLoading) {
+        setLoading(true)
+        return
+      }
+
       if (!activeContract) {
         setLoading(false)
         return
@@ -56,7 +62,7 @@ export function PortalDocumentsPage() {
     return () => {
       cancelled = true
     }
-  }, [activeContract])
+  }, [activeContract, isPlatformLoading])
 
   return (
     <PortalJourneyPage

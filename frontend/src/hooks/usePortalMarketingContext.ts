@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { sanitizeBrandProfileForPortal } from '@/lib/marketing-studio/marketingStudioRules'
+import {
+  canGenerateCampaignWithBrandContext,
+  listBrandReadinessGaps,
+  sanitizeBrandProfileForPortal,
+  summarizeBrandReadiness,
+} from '@/lib/marketing-studio/marketingStudioRules'
 import { campaignService } from '@/services/campaignService'
 import { marketingStudioService } from '@/services/marketingStudioService'
 import { usePlatformStore } from '@/stores/platformStore'
@@ -68,6 +73,7 @@ const fallback = async <T,>(promise: Promise<T>, value: T): Promise<T> => {
 export function usePortalMarketingContext(options: PortalMarketingContextOptions = {}) {
   const activeContract = usePlatformStore(state => state.activeContract)
   const organization = usePlatformStore(state => state.organization)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const includeCampaigns = Boolean(options.includeCampaigns)
   const includeOperations = Boolean(options.includeOperations)
   const [state, setState] = useState<PortalMarketingContextState>(emptyState)
@@ -75,6 +81,11 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
     if (!activeContract) {
       setState(emptyState)
       setError(null)
@@ -138,11 +149,21 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
     } finally {
       setLoading(false)
     }
-  }, [activeContract, includeCampaigns, includeOperations])
+  }, [activeContract, includeCampaigns, includeOperations, isPlatformLoading])
 
   useEffect(() => {
     load()
   }, [load])
+
+  const brandReadinessProfile = state.brandProfile || (state.settings ? {
+    toneOfVoice: state.settings.toneOfVoice || '',
+    persona: state.settings.persona || '',
+    brandVoiceSummary: state.settings.toneOfVoice || '',
+    forbiddenTopics: state.settings.forbiddenTopics || [],
+    priorityTopics: state.settings.priorityTopics || [],
+    visualGuidelines: state.settings.visualPreferences,
+    status: 'active' as const,
+  } : null)
 
   return {
     activeContract,
@@ -150,6 +171,9 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
     loading,
     error,
     reload: load,
+    brandReadiness: summarizeBrandReadiness(brandReadinessProfile, state.knowledgeDocuments, state.productsServices),
+    brandReadinessGaps: listBrandReadinessGaps(brandReadinessProfile, state.knowledgeDocuments, state.productsServices),
+    canGenerateWithBrandContext: canGenerateCampaignWithBrandContext(brandReadinessProfile, state.knowledgeDocuments, state.productsServices),
     ...state,
   }
 }

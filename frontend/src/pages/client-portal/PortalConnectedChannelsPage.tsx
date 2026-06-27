@@ -22,12 +22,14 @@ export function PortalConnectedChannelsPage() {
     role: state.role,
   }))
   const module = getPlatformModule('whatsapp_ai')
-  const organizationId = organization?.id || activeContract?.clientId
+  const organizationId = activeContract && organization?.kind === 'client'
+    ? organization.id
+    : undefined
   const [channels, setChannels] = useState<ConnectedChannelView[]>([])
   const [loadingChannels, setLoadingChannels] = useState(false)
 
   const loadChannels = useCallback(async () => {
-    if (!organizationId) return
+    if (isLoading || !organizationId) return
     setLoadingChannels(true)
     try {
       setChannels(await metaChannelService.listConnectedChannels(organizationId))
@@ -37,7 +39,7 @@ export function PortalConnectedChannelsPage() {
     } finally {
       setLoadingChannels(false)
     }
-  }, [organizationId])
+  }, [isLoading, organizationId])
 
   useEffect(() => { loadChannels() }, [loadChannels])
 

@@ -1,5 +1,6 @@
 import { BookOpen, Bot, CalendarDays, Check, Clock, FileCheck, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { BrandReadinessPanel } from '@/components/growth-workspace/BrandReadinessPanel'
 import { summarizeCampaignCreativePipeline, summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
   MarketingAgent,
@@ -159,6 +160,14 @@ export function MarketingStudioWorkspace({
         <Metric label="Geracoes" value={generationRuns.length} />
         <Metric label="Agentes" value={agents.length} />
       </div>
+
+      <BrandReadinessPanel
+        profile={brandProfile}
+        knowledgeDocuments={knowledgeDocuments}
+        productsServices={productsServices}
+        title="Prontidao da marca para geracao"
+        compact
+      />
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
         {tabs.map(tab => (
@@ -493,6 +502,14 @@ export function MarketingStudioWorkspace({
             <Search className="h-3.5 w-3.5" />
             Buscar RAG
           </ActionButton>
+        </div>
+        <div className="mt-3">
+          <BrandReadinessPanel
+            profile={brandProfile}
+            knowledgeDocuments={knowledgeDocuments}
+            productsServices={productsServices}
+            title="Central da Marca"
+          />
         </div>
         <div className="mt-3 grid gap-4 lg:grid-cols-3">
           <article className="rounded-md border border-slate-200 bg-white p-3 text-sm">

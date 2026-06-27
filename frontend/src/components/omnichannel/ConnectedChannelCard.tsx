@@ -11,6 +11,21 @@ interface ConnectedChannelCardProps {
   onSendTest: () => void
 }
 
+const connectionStateLabels: Record<string, string> = {
+  connected: 'Conectado',
+  disconnected: 'Desconectado',
+  not_configured: 'Nao configurado',
+  needs_reauth: 'Reconectar',
+  stale: 'Sem sincronizacao recente',
+  failed: 'Com erro',
+}
+
+const fallbackModeLabels: Record<string, string> = {
+  official: 'Oficial',
+  manual: 'Manual',
+  disabled: 'Desativado',
+}
+
 export function ConnectedChannelCard({
   channel,
   connectLabel,
@@ -21,7 +36,8 @@ export function ConnectedChannelCard({
   onSendTest,
 }: ConnectedChannelCardProps) {
   const connected = Boolean(channel.id && channel.state !== 'disconnected' && channel.state !== 'not_configured')
-  const statusLabel = channel.state.replace(/_/g, ' ')
+  const statusLabel = connectionStateLabels[channel.state] || channel.state.replace(/_/g, ' ')
+  const fallbackLabel = fallbackModeLabels[channel.fallbackMode] || channel.fallbackMode.replace(/_/g, ' ')
 
   return (
     <section className="rounded-lg border bg-white p-4">
@@ -44,7 +60,7 @@ export function ConnectedChannelCard({
         </div>
         <div className="flex justify-between gap-3">
           <dt>Fallback</dt>
-          <dd className="text-gray-900">{channel.fallbackMode}</dd>
+          <dd className="text-gray-900">{fallbackLabel}</dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt>Ultima checagem</dt>

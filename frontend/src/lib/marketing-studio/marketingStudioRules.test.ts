@@ -7,6 +7,7 @@ import {
   buildSourceItemDedupeKey,
   composeAgentPrompt,
   canExecuteNativePublishingRun,
+  canGenerateCampaignWithBrandContext,
   canCreateWordPressDraft,
   canConvertSuggestionToCampaignDraft,
   canPublishWordPressContent,
@@ -32,6 +33,8 @@ import {
   scoreSourceItemOpportunity,
   statusAfterReviewDecision,
   evaluateContentQuality,
+  listBrandReadinessGaps,
+  summarizeBrandReadiness,
   summarizeHarnessTelemetry,
   summarizeKnowledgeCoverage,
   summarizeCampaignCreativePipeline,
@@ -39,7 +42,7 @@ import {
   summarizeReviewQueue,
   summarizeWritingPipeline,
 } from './marketingStudioRules'
-import type { MarketingBrandProfile, MarketingCampaignCreativeSuggestion, MarketingContentItem, MarketingKnowledgeChunk, MarketingSourceItem, MarketingStudioSettings } from '@/types/marketingStudio'
+import type { MarketingBrandProfile, MarketingCampaignCreativeSuggestion, MarketingContentItem, MarketingKnowledgeChunk, MarketingKnowledgeDocument, MarketingSourceItem, MarketingStudioSettings } from '@/types/marketingStudio'
 
 const settings: MarketingStudioSettings = {
   id: 'settings-1',
@@ -217,6 +220,83 @@ describe('marketingStudioRules', () => {
 
   it('removes compliance notes from portal brand profile', () => {
     expect(sanitizeBrandProfileForPortal(brandProfile)).not.toHaveProperty('complianceNotes')
+  })
+
+  it('summarizes brand readiness from profile and indexed knowledge sources', () => {
+    const documents = [
+      {
+        id: 'doc-brand-kit',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        title: 'Kit visual da marca',
+        documentType: 'brand',
+        status: 'indexed',
+        metadata: {
+          logoUrl: 'https://example.com/logo.png',
+          brandColors: ['#0f172a', '#16a34a'],
+        },
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'doc-service',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        title: 'Servico principal',
+        documentType: 'service',
+        status: 'published',
+        sourceUrl: 'https://example.com/servicos',
+        metadata: {},
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'doc-social',
+        organizationId: 'org-1',
+        clientId: 'client-1',
+        contractId: 'contract-1',
+        title: 'Instagram aprovado',
+        documentType: 'campaign',
+        status: 'published',
+        sourceUrl: 'https://instagram.com/cliente',
+        metadata: {},
+        createdAt: '',
+        updatedAt: '',
+      },
+    ] satisfies MarketingKnowledgeDocument[]
+
+    const summary = summarizeBrandReadiness(brandProfile, documents)
+
+    expect(summary).toMatchObject({
+      total: 8,
+      ready: 8,
+      percentage: 100,
+      status: 'ready',
+    })
+    expect(listBrandReadinessGaps(brandProfile, documents)).toEqual([])
+    expect(canGenerateCampaignWithBrandContext(brandProfile, documents)).toBe(true)
+  })
+
+  it('blocks campaign generation when essential brand context is missing', () => {
+    const documents: MarketingKnowledgeDocument[] = [{
+      id: 'doc-social',
+      organizationId: 'org-1',
+      clientId: 'client-1',
+      contractId: 'contract-1',
+      title: 'Social dispensado',
+      documentType: 'other',
+      status: 'published',
+      metadata: { socialSourceSkipped: true },
+      createdAt: '',
+      updatedAt: '',
+    }]
+
+    expect(summarizeBrandReadiness(null, documents).status).toBe('blocked')
+    expect(listBrandReadinessGaps(null, documents)).toContain('Tom de voz e persona')
+    expect(listBrandReadinessGaps(null, documents)).toContain('Produtos ou servicos')
+    expect(canGenerateCampaignWithBrandContext(null, documents)).toBe(false)
   })
 
   it('builds simple knowledge chunks from paragraphs', () => {

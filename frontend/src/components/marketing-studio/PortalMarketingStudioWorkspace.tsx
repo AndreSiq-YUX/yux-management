@@ -1,5 +1,6 @@
 import { Check, MessageSquare, RotateCcw, X } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { BrandReadinessPanel } from '@/components/growth-workspace/BrandReadinessPanel'
 import type {
   MarketingCalendarItem,
   MarketingContentReview,
@@ -51,6 +52,14 @@ export function PortalMarketingStudioWorkspace({
         <Metric label="Conteudos" value={contents.length} />
         <Metric label="Creditos" value={settings?.currentCreditBalance ?? 0} />
       </div>
+
+      <BrandReadinessPanel
+        profile={brandProfile}
+        knowledgeDocuments={knowledgeDocuments}
+        productsServices={productsServices}
+        title="Prontidao da marca"
+        compact
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         <section className="rounded-md border border-slate-200 bg-white p-3">

@@ -1,10 +1,16 @@
+import { useState } from 'react'
 import { CheckCircle2, Pause, RefreshCw, Send, ShieldAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CampaignBuilder } from './CampaignBuilder'
 import { CampaignCreativePanel } from './CampaignCreativePanel'
 import { CampaignMetricsPanel } from './CampaignMetricsPanel'
+import { CampaignPlanDetail } from '@/components/growth-workspace/CampaignPlanDetail'
+import { CampaignPlanWizard } from '@/components/growth-workspace/CampaignPlanWizard'
+import { GrowthTemplateLibrary } from '@/components/growth-workspace/GrowthTemplateLibrary'
+import { createCampaignPlanDraft, updateCampaignPlanStepStatuses } from '@/lib/growth-workspace/campaignPlanRules'
 import type { AdProviderConnection, Campaign, CreateCampaignDraftInput } from '@/types/campaign'
+import type { CampaignPlan, CampaignPlanStep, GrowthTemplateFilter } from '@/types/growthWorkspace'
 
 interface CampaignsWorkspaceProps {
   campaigns: Campaign[]
@@ -12,8 +18,14 @@ interface CampaignsWorkspaceProps {
   defaultOrganizationId?: string
   defaultClientId?: string
   defaultContractId?: string
+  campaignPlans?: CampaignPlan[]
   onRefresh: () => void
   onCreateDraft: (input: CreateCampaignDraftInput) => void
+  onCreateCampaignPlan?: (plan: CampaignPlan) => Promise<CampaignPlan | void> | CampaignPlan | void
+  onUpdateCampaignPlanStep?: (
+    stepId: string,
+    patch: Partial<Pick<CampaignPlanStep, 'status' | 'ownerId' | 'dueAt' | 'completedAt' | 'blockedReason'>>
+  ) => Promise<CampaignPlanStep | void> | CampaignPlanStep | void
   onSubmitApproval: (campaignId: string) => void
   onApprove: (campaignId: string) => void
   onCreateProvider?: (campaignId: string) => void
@@ -27,8 +39,11 @@ export function CampaignsWorkspace({
   defaultOrganizationId,
   defaultClientId,
   defaultContractId,
+  campaignPlans,
   onRefresh,
   onCreateDraft,
+  onCreateCampaignPlan,
+  onUpdateCampaignPlanStep,
   onSubmitApproval,
   onApprove,
   onCreateProvider,
@@ -36,6 +51,63 @@ export function CampaignsWorkspace({
   onPause,
 }: CampaignsWorkspaceProps) {
   const unhealthyConnections = providerConnections.filter(connection => connection.status !== 'connected')
+  const isControlledPlanList = Array.isArray(campaignPlans)
+  const [localPlans, setLocalPlans] = useState<CampaignPlan[]>(() => {
+    const campaign = campaigns[0]
+    if (!campaign || !defaultOrganizationId) return []
+
+    return [createCampaignPlanDraft({
+      organizationId: defaultOrganizationId,
+      contractId: defaultContractId,
+      name: campaign.name,
+      objective: campaign.objective === 'lead_generation' ? 'lead_generation' : 'offer_promotion',
+    })]
+  })
+  const plans = isControlledPlanList ? campaignPlans : localPlans
+  const [activePlanId, setActivePlanId] = useState<string | undefined>(() => plans[0]?.id)
+  const [selectedTemplateLabel, setSelectedTemplateLabel] = useState<string>()
+  const activePlan = plans.find(plan => plan.id === activePlanId) || plans[0] || null
+  const templateFilters: GrowthTemplateFilter | undefined = activePlan ? {
+    objectiveKey: activePlan.objective,
+    campaignStepKey: updateCampaignPlanStepStatuses(activePlan).steps.find(step => !['completed', 'linked', 'skipped'].includes(step.status))?.key,
+    portalVisibleOnly: true,
+  } : undefined
+
+  const handleCreatePlan = async (plan: CampaignPlan) => {
+    if (onCreateCampaignPlan) {
+      const createdPlan = await onCreateCampaignPlan(plan)
+      if (createdPlan?.id) setActivePlanId(createdPlan.id)
+      return
+    }
+
+    setLocalPlans(currentPlans => [plan, ...currentPlans])
+    setActivePlanId(plan.id)
+  }
+
+  const handlePlanStepAction = async (step: CampaignPlanStep) => {
+    if (!activePlan || step.status === 'blocked') return
+
+    const completedAt = new Date().toISOString()
+    if (onUpdateCampaignPlanStep) {
+      await onUpdateCampaignPlanStep(step.id, {
+        status: step.status === 'completed' || step.status === 'linked' ? step.status : 'completed',
+        completedAt,
+      })
+      return
+    }
+
+    const updatedPlan = updateCampaignPlanStepStatuses({
+      ...activePlan,
+      steps: activePlan.steps.map(item => item.id === step.id
+        ? {
+            ...item,
+            status: item.status === 'completed' || item.status === 'linked' ? item.status : 'completed',
+            completedAt,
+          }
+        : item),
+    })
+    setLocalPlans(currentPlans => currentPlans.map(plan => plan.id === updatedPlan.id ? updatedPlan : plan))
+  }
 
   return (
     <div className="space-y-5">
@@ -59,7 +131,35 @@ export function CampaignsWorkspace({
         </div>
       </div>
 
-      <CampaignMetricsPanel campaigns={campaigns} />
+      <CampaignPlanWizard
+        organizationId={defaultOrganizationId}
+        contractId={defaultContractId}
+        onCreatePlan={handleCreatePlan}
+      />
+
+      {activePlan && (
+        <>
+          <CampaignPlanDetail
+            plan={activePlan}
+            onStepAction={handlePlanStepAction}
+          />
+          <GrowthTemplateLibrary
+            key={`${activePlan.id}:${templateFilters?.campaignStepKey || 'all'}`}
+            title="Templates para a campanha"
+            description="Modelos filtrados pelo objetivo do plano e pela proxima etapa em aberto."
+            compact
+            initialFilters={templateFilters}
+            onSelectTemplate={template => setSelectedTemplateLabel(template.label)}
+          />
+          {selectedTemplateLabel && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+              Template selecionado: {selectedTemplateLabel}. Vincule um ativo real na etapa correspondente do plano.
+            </div>
+          )}
+        </>
+      )}
+
+      <CampaignMetricsPanel campaigns={campaigns} providerConnections={providerConnections} activeCampaignPlanId={activePlan?.id} />
       <CampaignBuilder
         defaultOrganizationId={defaultOrganizationId}
         defaultClientId={defaultClientId}

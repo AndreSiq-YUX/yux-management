@@ -14,11 +14,18 @@ function Invoke-Step {
   )
 
   Write-Host "==> $Name"
+  $global:LASTEXITCODE = 0
   & $Command
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Name failed with exit code $LASTEXITCODE"
+  }
 }
 
-Invoke-Step 'Validate vercel.json' {
-  Get-Content (Join-Path $repoRoot 'vercel.json') -Raw | ConvertFrom-Json | Out-Null
+Invoke-Step 'Validate Dokploy compose exists' {
+  $composePath = Join-Path $repoRoot 'docker-compose.dokploy.yml'
+  if (-not (Test-Path $composePath)) {
+    throw "Missing Dokploy compose file: $composePath"
+  }
 }
 
 Push-Location $frontendRoot

@@ -8,11 +8,17 @@ import type { PortalSupportTicket } from '@/types/support'
 
 export function PortalSupportPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [tickets, setTickets] = useState<PortalSupportTicket[]>([])
   const [organizationId, setOrganizationId] = useState<string>()
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
     if (!activeContract) {
       setLoading(false)
       return
@@ -33,11 +39,13 @@ export function PortalSupportPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeContract])
+  }, [activeContract, isPlatformLoading])
 
   useEffect(() => {
     load()
   }, [load])
+
+  if (isPlatformLoading || loading) return <p className="text-sm text-gray-600">Carregando suporte...</p>
 
   if (!activeContract) {
     return (
@@ -47,8 +55,6 @@ export function PortalSupportPage() {
       </div>
     )
   }
-
-  if (loading) return <p className="text-sm text-gray-600">Carregando suporte...</p>
 
   return (
     <PortalSupportWorkspace

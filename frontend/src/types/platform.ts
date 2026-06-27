@@ -1,4 +1,4 @@
-export type PlatformMode = 'internal' | 'portal'
+export type PlatformMode = 'internal' | 'portal' | 'client_workspace'
 
 export type OrganizationKind = 'yux' | 'client'
 
@@ -11,6 +11,7 @@ export interface Organization {
   name: string
   slug: string
   kind: OrganizationKind
+  clientId?: string
   createdAt: string
   updatedAt: string
 }

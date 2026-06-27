@@ -24,7 +24,7 @@ export function PortalCompanyUsersPage() {
         { label: 'Atendimento & IA', href: '/portal/atendimento/conversas' },
         { label: 'Financeiro', href: '/portal/financeiro' },
       ]}
-      note="A implementacao persistente de convites e permissoes entra em fase posterior; esta pagina fixa a jornada correta no portal."
+      note="Convites, desativacoes e mudancas de permissao devem ser executados por administradores autorizados para manter rastreabilidade de acesso."
     />
   )
 }

@@ -25,6 +25,10 @@ import { AutomationsPage } from '@/pages/automations/AutomationsPage'
 import { ReportsPage } from '@/pages/reports/ReportsPage'
 import { MarketingStudioPage } from '@/pages/marketing-studio/MarketingStudioPage'
 
+// Client workspace pages
+import { ClientWorkspaceLayout } from '@/pages/client-workspaces/ClientWorkspaceLayout'
+import { ClientWorkspaceSelectorPage } from '@/pages/client-workspaces/ClientWorkspaceSelectorPage'
+
 // Client portal pages
 import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
 import { PortalCampaignsPage } from '@/pages/client-portal/PortalCampaignsPage'
@@ -63,6 +67,8 @@ import { AdminHealthPage } from '@/pages/platform/AdminHealthPage'
 import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
 import { AdminModuleGovernancePage } from '@/pages/platform/AdminModuleGovernancePage'
 import { AdminLimitsPage } from '@/pages/platform/AdminLimitsPage'
+import { StrategyEnginePage } from '@/pages/platform/StrategyEnginePage'
+import { ClientConversionsPage } from '@/pages/platform/ClientConversionsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
@@ -107,10 +113,12 @@ function App() {
             <Route path="admin/channels" element={<AdminChannelsPage />} />
             <Route path="admin/email" element={<AdminEmailPage />} />
             <Route path="admin/ai" element={<AdminAiPage />} />
+            <Route path="admin/strategy-engine" element={<StrategyEnginePage />} />
             <Route path="admin/health" element={<AdminHealthPage />} />
             <Route path="admin/modules-governance" element={<AdminModuleGovernancePage />} />
             <Route path="admin/limits" element={<AdminLimitsPage />} />
             <Route path="contracts" element={<ContractsPage />} />
+            <Route path="client-conversions" element={<ClientConversionsPage />} />
             <Route path="packages" element={<PackagesPage />} />
             <Route path="modules" element={<ModulesPage />} />
             <Route path="crm-governance" element={<CrmGovernancePage />} />
@@ -128,6 +136,48 @@ function App() {
             <Route path="support" element={<SupportPage />} />
             <Route path="finance" element={<FinancePage />} />
             <Route path="blueprints" element={<BlueprintsPage />} />
+
+            <Route path="client-workspaces" element={<ClientWorkspaceSelectorPage />} />
+            <Route path="client-workspaces/:organizationId" element={<ClientWorkspaceLayout />}>
+              <Route index element={<PortalDashboardPage />} />
+
+              <Route path="empresa/perfil" element={<PortalCompanyProfilePage />} />
+              <Route path="empresa/usuarios" element={<PortalCompanyUsersPage />} />
+              <Route path="empresa/conhecimento" element={<PortalKnowledgeBasePage />} />
+              <Route path="empresa/marca" element={<PortalBrandVoicePage />} />
+              <Route path="empresa/integracoes" element={<PortalCompanyIntegrationsPage />} />
+
+              <Route path="comercial/leads" element={<PortalCommercialLeadsPage />} />
+              <Route path="comercial/contas" element={<PortalCommercialAccountsPage />} />
+              <Route path="comercial/funis" element={<PortalCommercialFunnelsPage />} />
+              <Route path="comercial/tarefas" element={<PortalCommercialTasksPage />} />
+
+              <Route path="atendimento/conversas" element={<PortalServiceConversationsPage />} />
+              <Route path="atendimento/agente-ia" element={<PortalAiAgentPage />} />
+              <Route path="atendimento/canais" element={<PortalConnectedChannelsPage />} />
+              <Route path="atendimento/filas-handoff" element={<PortalHandoffQueuesPage />} />
+
+              <Route path="marketing/landing-pages" element={<PortalLandingPagesPage />} />
+              <Route path="marketing/campanhas" element={<PortalCampaignsPage />} />
+              <Route path="marketing/studio" element={<PortalMarketingStudioPage />} />
+              <Route path="marketing/conteudo" element={<PortalOrganicContentPage />} />
+              <Route path="marketing/calendario" element={<PortalEditorialCalendarPage />} />
+              <Route path="marketing/criativos" element={<PortalCreativeAssetsPage />} />
+
+              <Route path="automacoes/fluxos" element={safePortalPage('Fluxos de Automacao', 'Fluxos ativos, editor visual, gatilhos, condicoes e acoes.', ['Fluxos ativos', 'Editor visual', 'Pausar', 'Duplicar'])} />
+              <Route path="automacoes/templates" element={safePortalPage('Templates de Automacao', 'Modelos prontos para ativar automacoes por jornada.', ['Templates por setor', 'Criar a partir de modelo', 'Preview de fluxo'])} />
+              <Route path="automacoes/execucoes" element={safePortalPage('Execucoes de Automacao', 'Historico de execucoes, erros e consumo.', ['Execucoes', 'Erros', 'Creditos consumidos', 'Historico'])} />
+              <Route path="automacoes/logs" element={safePortalPage('Logs de Automacao', 'Rastreamento operacional das automacoes contratadas.', ['Logs', 'Falhas', 'Tentativas', 'Diagnostico'])} />
+
+              <Route path="projetos/projetos" element={<PortalProjectsPage />} />
+              <Route path="projetos/aprovacoes" element={<PortalApprovalsPage />} />
+              <Route path="projetos/documentos" element={<PortalDocumentsPage />} />
+
+              <Route path="relatorios" element={<PortalReportsPage />} />
+              <Route path="suporte" element={<PortalSupportPage />} />
+              <Route path="financeiro" element={<PortalFinancePage />} />
+              <Route path="configuracoes/conta" element={<PortalAccountSettingsPage />} />
+            </Route>
           </>
         )}
 

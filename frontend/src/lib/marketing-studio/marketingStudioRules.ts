@@ -12,6 +12,7 @@ import type {
   MarketingContentStatus,
   MarketingContentVersion,
   MarketingKnowledgeChunk,
+  MarketingKnowledgeDocument,
   MarketingKnowledgeMatch,
   MarketingOperationMode,
   MarketingProductService,
@@ -174,6 +175,126 @@ export function isBrandProfileReady(profile: Pick<MarketingBrandProfile, 'toneOf
 export function sanitizeBrandProfileForPortal(profile: MarketingBrandProfile): PortalMarketingBrandProfile {
   const { complianceNotes: _complianceNotes, ...portalProfile } = profile
   return portalProfile
+}
+
+type BrandReadinessProfile = Partial<Pick<
+  MarketingBrandProfile,
+  | 'toneOfVoice'
+  | 'persona'
+  | 'brandVoiceSummary'
+  | 'vocabularyDo'
+  | 'vocabularyDont'
+  | 'forbiddenTopics'
+  | 'priorityTopics'
+  | 'visualGuidelines'
+  | 'complianceNotes'
+  | 'status'
+>> | null | undefined
+
+export interface BrandReadinessCheck {
+  key: 'logo' | 'colors' | 'tone' | 'products' | 'restrictions' | 'promises' | 'site' | 'social'
+  label: string
+  ready: boolean
+  detail: string
+}
+
+export interface BrandReadinessSummary {
+  total: number
+  ready: number
+  percentage: number
+  status: 'ready' | 'partial' | 'blocked'
+  checks: BrandReadinessCheck[]
+}
+
+export function summarizeBrandReadiness(
+  profile: BrandReadinessProfile,
+  knowledgeDocuments: MarketingKnowledgeDocument[] = [],
+  productsServices: Pick<MarketingProductService, 'status'>[] = []
+): BrandReadinessSummary {
+  const activeDocuments = knowledgeDocuments.filter(isKnowledgeDocumentActive)
+  const activeProductsServices = productsServices.filter(product => product.status === 'active')
+  const visualText = `${profile?.visualGuidelines || ''} ${activeDocuments.map(document => `${document.title} ${document.summary || ''}`).join(' ')}`
+  const checks: BrandReadinessCheck[] = [
+    {
+      key: 'logo',
+      label: 'Logo ou kit visual',
+      ready: hasMetadataValue(activeDocuments, ['logo', 'logoUrl', 'logotipo', 'brandLogo', 'brandKit']) || /\blogo|logotipo|kit de marca\b/i.test(visualText),
+      detail: 'Necessario para criativos, landing pages e pecas de campanha.',
+    },
+    {
+      key: 'colors',
+      label: 'Cores da marca',
+      ready: hasMetadataValue(activeDocuments, ['colors', 'brandColors', 'palette', 'paleta']) || /#(?:[0-9a-f]{3}){1,2}\b/i.test(visualText) || /\bcor|cores|paleta\b/i.test(visualText),
+      detail: 'Evita pecas genericas e garante consistencia visual.',
+    },
+    {
+      key: 'tone',
+      label: 'Tom de voz e persona',
+      ready: Boolean(profile?.toneOfVoice?.trim() && profile?.persona?.trim() && profile?.brandVoiceSummary?.trim()),
+      detail: 'Usado por redator, revisor de marca, agente IA e respostas sugeridas.',
+    },
+    {
+      key: 'products',
+      label: 'Produtos ou servicos',
+      ready: activeProductsServices.length > 0 || activeDocuments.some(document => ['product', 'service'].includes(document.documentType)),
+      detail: 'Define o que a IA pode vender, explicar e transformar em campanha.',
+    },
+    {
+      key: 'restrictions',
+      label: 'Palavras e temas restritos',
+      ready: Boolean(profile?.forbiddenTopics?.length || profile?.vocabularyDont?.length),
+      detail: 'Reduz risco de promessas indevidas e desalinhamento comercial.',
+    },
+    {
+      key: 'promises',
+      label: 'Promessas e restricoes legais',
+      ready: Boolean(profile?.complianceNotes?.trim() || profile?.vocabularyDont?.length || hasMetadataValue(activeDocuments, ['restrictions', 'legalRestrictions', 'allowedPromises'])),
+      detail: 'Ajuda o Studio a bloquear claims sensiveis antes de publicar.',
+    },
+    {
+      key: 'site',
+      label: 'Site importado e indexado',
+      ready: activeDocuments.some(document => Boolean(document.sourceUrl) || hasMetadataValue([document], ['sourceUrl', 'website', 'siteUrl']) || metadataText(document.metadata).includes('site')),
+      detail: 'Mantem a base alinhada com posicionamento, ofertas e paginas publicas.',
+    },
+    {
+      key: 'social',
+      label: 'Fonte social conectada ou dispensada',
+      ready: activeDocuments.some(document => isSocialSourceDocument(document)) || hasMetadataValue(activeDocuments, ['socialConnected', 'skipSocialSource', 'socialSourceSkipped']),
+      detail: 'Permite usar repertorio social aprovado ou registrar que ele nao sera usado.',
+    },
+  ]
+  const ready = checks.filter(check => check.ready).length
+  const percentage = Math.round((ready / checks.length) * 100)
+
+  return {
+    total: checks.length,
+    ready,
+    percentage,
+    status: percentage >= 80 ? 'ready' : percentage >= 45 ? 'partial' : 'blocked',
+    checks,
+  }
+}
+
+export function listBrandReadinessGaps(
+  profile: BrandReadinessProfile,
+  knowledgeDocuments: MarketingKnowledgeDocument[] = [],
+  productsServices: Pick<MarketingProductService, 'status'>[] = []
+) {
+  return summarizeBrandReadiness(profile, knowledgeDocuments, productsServices).checks
+    .filter(check => !check.ready)
+    .map(check => check.label)
+}
+
+export function canGenerateCampaignWithBrandContext(
+  profile: BrandReadinessProfile,
+  knowledgeDocuments: MarketingKnowledgeDocument[] = [],
+  productsServices: Pick<MarketingProductService, 'status'>[] = []
+) {
+  const summary = summarizeBrandReadiness(profile, knowledgeDocuments, productsServices)
+  const requiredKeys: BrandReadinessCheck['key'][] = ['tone', 'products', 'site']
+  return requiredKeys.every(key => summary.checks.some(check => check.key === key && check.ready))
+    && summary.percentage >= 50
 }
 
 export function buildSimpleKnowledgeChunks(input: { title: string; body: string; maxChars?: number }) {
@@ -548,4 +669,43 @@ function normalizeTerms(query: string) {
 function average(values: number[]) {
   if (!values.length) return 0
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function isKnowledgeDocumentActive(document: Pick<MarketingKnowledgeDocument, 'status'>) {
+  return ['indexed', 'published'].includes(document.status)
+}
+
+function hasMetadataValue(documents: Array<Pick<MarketingKnowledgeDocument, 'metadata'>>, keys: string[]) {
+  return documents.some(document => hasNestedMetadataValue(document.metadata, keys))
+}
+
+function hasNestedMetadataValue(value: unknown, keys: string[]): boolean {
+  if (!value || typeof value !== 'object') return false
+  return Object.entries(value as Record<string, unknown>).some(([key, nestedValue]) => {
+    const normalizedKey = key.toLowerCase()
+    if (keys.some(item => normalizedKey === item.toLowerCase()) && hasMeaningfulValue(nestedValue)) return true
+    return hasNestedMetadataValue(nestedValue, keys)
+  })
+}
+
+function hasMeaningfulValue(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (value && typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+  return false
+}
+
+function metadataText(metadata: Record<string, unknown>) {
+  try {
+    return JSON.stringify(metadata).toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+function isSocialSourceDocument(document: Pick<MarketingKnowledgeDocument, 'sourceUrl' | 'metadata'>) {
+  const text = `${document.sourceUrl || ''} ${metadataText(document.metadata)}`
+  return /\b(instagram|facebook|linkedin|tiktok|youtube|social)\b/i.test(text)
 }

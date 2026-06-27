@@ -51,7 +51,7 @@ describe('metaChannelService', () => {
       appId: 'app-1',
       graphVersion: 'v20.0',
       embeddedSignupConfigId: 'config-1',
-      redirectUri: 'https://app.yux.com.br/meta/callback',
+      redirectUri: 'https://hub.yux.com.br/meta/callback',
       expiresAt: '2026-06-05T12:15:00Z',
     })
 

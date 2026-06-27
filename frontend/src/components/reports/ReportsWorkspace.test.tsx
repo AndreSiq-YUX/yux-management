@@ -12,7 +12,21 @@ const report: OperationalReport = {
   stageConversions: [{ stage: 'Novo', entered: 100, advanced: 28, conversionRate: 28 }],
   responseTimeHours: 2.5,
   stalledOpportunities: 3,
-  campaignMetrics: [{ campaignId: 'campaign-1', name: 'Botox', spend: 1200, leads: 40, cpl: 30, mroi: 4 }],
+  campaignMetrics: [{
+    campaignId: 'campaign-1',
+    name: 'Botox',
+    spend: 1200,
+    impressions: 10000,
+    clicks: 500,
+    leads: 40,
+    cpl: 30,
+    opportunities: 12,
+    proposals: 6,
+    clients: 2,
+    revenue: 7200,
+    mroi: 5,
+    syncStatus: 'connected',
+  }],
   landingPageMetrics: [{ landingPageId: 'lp-1', name: 'Landing Botox', visits: 1000, leads: 83, conversionRate: 8.3 }],
   proposalMetrics: { sent: 10, approved: 4, approvalRate: 40 },
   ownerActivity: [{ owner: 'Ana YUX', activities: 22 }],
@@ -32,7 +46,10 @@ describe('ReportsWorkspace', () => {
     expect(html).toContain('2.5h')
     expect(html).toContain('Botox')
     expect(html).toContain('CPL R$ 30')
-    expect(html).toContain('MROI 4x')
+    expect(html).toContain('MROI 5x')
+    expect(html).toContain('Cockpit executivo Ads/MROI')
+    expect(html).toContain('Presets de relatorio')
+    expect(html).toContain('Resumo de IA')
     expect(html).toContain('Landing Botox')
     expect(html).toContain('Ana YUX')
 
@@ -47,6 +64,8 @@ describe('ReportsWorkspace', () => {
 
     expect(html).toContain('Relatorios do contrato')
     expect(html).toContain('Botox')
+    expect(html).toContain('Cockpit executivo Ads/MROI')
+    expect(html).toContain('Marca e conhecimento')
     expect(html).not.toContain('Ana YUX')
 
     act(() => root.unmount())

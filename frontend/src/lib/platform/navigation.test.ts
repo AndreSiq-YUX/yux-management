@@ -23,14 +23,17 @@ describe('buildNavigation', () => {
     expect(items[0]).toEqual({ label: 'Dashboard', href: '/dashboard' })
     expect(labels).toContain('Clientes')
     expect(labels).toContain('Contratos')
-    expect(labels).toContain('CRM & Funis')
+    expect(labels).toContain('Conversoes de Leads')
+    expect(labels).toContain('Selecionar Cliente')
+    expect(labels).toContain('Crescimento YUX')
     expect(labels).toContain('Projetos')
-    expect(labels).toContain('Campanhas')
-    expect(labels).toContain('Blueprints')
-    expect(items.find(item => item.label === 'CRM & Funis')?.href).toBe('/leads')
+    expect(labels).toContain('Modelos Setoriais')
+    expect(labels).not.toContain('Leads YUX')
+    expect(labels).not.toContain('Campanhas')
+    expect(items.find(item => item.label === 'Selecionar Cliente')?.href).toBe('/client-workspaces')
   })
 
-  it('builds the client-operations route set for internal users', () => {
+  it('requires internal users to select a client before operating client journeys', () => {
     const items = buildNavigation({
       ...internalContext,
       role: {
@@ -42,16 +45,9 @@ describe('buildNavigation', () => {
       enabledModuleKeys: ['crm', 'whatsapp_ai', 'landing_pages', 'campaigns', 'automations', 'bi_reports', 'marketing_studio'],
     })
 
-    expect(items).toEqual(expect.arrayContaining([
-      { label: 'CRM & Funis', href: '/leads', moduleKey: 'crm' },
-      { label: 'Conversas', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
-      { label: 'Agente IA', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
-      { label: 'Landing Pages', href: '/landing-pages', moduleKey: 'landing_pages' },
-      { label: 'Campanhas', href: '/campaigns', moduleKey: 'campaigns' },
-      { label: 'Marketing Studio', href: '/marketing-studio', moduleKey: 'marketing_studio' },
-      { label: 'Automacoes', href: '/automations', moduleKey: 'automations' },
-      { label: 'Relatorios', href: '/reports', moduleKey: 'bi_reports' },
-    ]))
+    expect(items).toContainEqual({ label: 'Selecionar Cliente', href: '/client-workspaces' })
+    expect(items.find(item => item.label === 'CRM & Funis')).toBeUndefined()
+    expect(items.find(item => item.label === 'Conversas' && item.href === '/omnichannel')).toBeUndefined()
   })
 
   it('builds portal navigation without internal-only modules', () => {
@@ -73,7 +69,7 @@ describe('buildNavigation', () => {
     expect(labels).toContain('Campanhas')
     expect(labels).toContain('Suporte')
     expect(labels).not.toContain('Clientes')
-    expect(labels).not.toContain('Blueprints')
+    expect(labels).not.toContain('Modelos Setoriais')
     expect(items.find(item => item.moduleKey === 'campaigns')?.href).toBe('/portal/marketing/campanhas')
   })
 
@@ -178,17 +174,7 @@ describe('buildNavigation', () => {
     expect(buildNavigation({ ...context, enabledModuleKeys: [] }).find(item => item.moduleKey === 'proposals')).toBeUndefined()
   })
 
-  it('keeps whatsapp_ai as the commercial key while routing the atendimento workspace', () => {
-    const internalItems = buildNavigation({
-      ...internalContext,
-      role: {
-        key: 'yux_manager',
-        name: 'YUX Manager',
-        scope: 'internal',
-        permissions: ['omnichannel.read'],
-      },
-      enabledModuleKeys: ['whatsapp_ai'],
-    })
+  it('keeps whatsapp_ai as the commercial key while routing the portal atendimento workspace', () => {
     const portalItems = buildNavigation({
       ...internalContext,
       mode: 'portal',
@@ -201,11 +187,6 @@ describe('buildNavigation', () => {
       enabledModuleKeys: ['whatsapp_ai'],
     })
 
-    expect(internalItems.find(item => item.moduleKey === 'whatsapp_ai')).toEqual({
-      label: 'Conversas',
-      href: '/omnichannel',
-      moduleKey: 'whatsapp_ai',
-    })
     expect(portalItems.find(item => item.moduleKey === 'whatsapp_ai')).toEqual({
       label: 'Conversas',
       href: '/portal/atendimento/conversas',
@@ -229,17 +210,7 @@ describe('buildNavigation', () => {
     expect(items.find(item => item.moduleKey === 'whatsapp_ai')).toBeUndefined()
   })
 
-  it('routes Marketing Studio internally and in the contracted portal', () => {
-    const internalItems = buildNavigation({
-      ...internalContext,
-      role: {
-        key: 'yux_manager',
-        name: 'YUX Manager',
-        scope: 'internal',
-        permissions: ['marketing_studio.read'],
-      },
-      enabledModuleKeys: ['marketing_studio'],
-    })
+  it('routes Marketing Studio inside the contracted portal journey', () => {
     const portalItems = buildNavigation({
       ...internalContext,
       mode: 'portal',
@@ -252,11 +223,6 @@ describe('buildNavigation', () => {
       enabledModuleKeys: ['marketing_studio'],
     })
 
-    expect(internalItems.find(item => item.moduleKey === 'marketing_studio')).toEqual({
-      label: 'Marketing Studio',
-      href: '/marketing-studio',
-      moduleKey: 'marketing_studio',
-    })
     expect(portalItems.find(item => item.moduleKey === 'marketing_studio')).toEqual({
       label: 'Marketing Studio',
       href: '/portal/marketing/studio',
@@ -288,10 +254,9 @@ describe('buildNavigationGroups', () => {
 
     expect(groups.map(group => group.label)).toEqual([
       'Visao Geral',
-      'Comercial YUX',
       'Clientes & Contratos',
       'Operacao',
-      'Operacao dos Clientes',
+      'Workspaces dos Clientes',
       'Administracao da Plataforma',
       'Financeiro',
     ])
@@ -300,24 +265,19 @@ describe('buildNavigationGroups', () => {
     ])
     expect(groups.find(group => group.label === 'Clientes & Contratos')?.items).toEqual([
       { label: 'Clientes', href: '/clients', moduleKey: 'clients' },
+      { label: 'Conversoes de Leads', href: '/client-conversions', moduleKey: 'crm' },
       { label: 'Contratos', href: '/contracts' },
       { label: 'Pacotes', href: '/packages' },
       { label: 'Modulos Contratados', href: '/modules' },
       { label: 'Creditos e Limites', href: '/admin/limits' },
     ])
-    expect(groups.find(group => group.label === 'Operacao dos Clientes')?.items).toEqual([
-      { label: 'CRM & Funis', href: '/leads', moduleKey: 'crm' },
-      { label: 'Conversas', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
-      { label: 'Agente IA', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
-      { label: 'Landing Pages', href: '/landing-pages', moduleKey: 'landing_pages' },
-      { label: 'Campanhas', href: '/campaigns', moduleKey: 'campaigns' },
-      { label: 'Marketing Studio', href: '/marketing-studio', moduleKey: 'marketing_studio' },
-      { label: 'Automacoes', href: '/automations', moduleKey: 'automations' },
-      { label: 'Relatorios', href: '/reports', moduleKey: 'bi_reports' },
+    expect(groups.find(group => group.label === 'Workspaces dos Clientes')?.items).toEqual([
+      { label: 'Selecionar Cliente', href: '/client-workspaces' },
+      { label: 'Crescimento YUX', href: '/client-workspaces' },
     ])
     expect(groups.find(group => group.label === 'Administracao da Plataforma')?.items).toEqual([
       { label: 'Admin YUX Hub', href: '/admin' },
-      { label: 'Blueprints', href: '/blueprints', moduleKey: 'blueprints' },
+      { label: 'Modelos Setoriais', href: '/blueprints', moduleKey: 'blueprints' },
       { label: 'Catalogo de Modulos', href: '/admin/modules-governance' },
       { label: 'Integracoes Globais', href: '/admin/integrations' },
       { label: 'IA / Modelos / Custos', href: '/admin/ai' },
@@ -344,7 +304,7 @@ describe('buildNavigationGroups', () => {
       enabledModuleKeys: ['crm', 'projects', 'support', 'finance'],
     })
     const operacaoItems = groups.find(group => group.label === 'Operacao')?.items
-    const clientOperationItems = groups.find(group => group.label === 'Operacao dos Clientes')?.items
+    const clientOperationItems = groups.find(group => group.label === 'Workspaces dos Clientes')?.items
     const financeiroItems = groups.find(group => group.label === 'Financeiro')?.items
 
     expect(operacaoItems).toEqual([
@@ -353,7 +313,8 @@ describe('buildNavigationGroups', () => {
       { label: 'Aprovacoes', href: '/projects', moduleKey: 'projects' },
     ])
     expect(clientOperationItems).toEqual([
-      { label: 'CRM & Funis', href: '/leads', moduleKey: 'crm' },
+      { label: 'Selecionar Cliente', href: '/client-workspaces' },
+      { label: 'Crescimento YUX', href: '/client-workspaces' },
     ])
     expect(financeiroItems).toEqual([])
   })
@@ -437,6 +398,70 @@ describe('buildNavigationGroups', () => {
       { label: 'Templates', href: '/portal/automacoes/templates', moduleKey: 'automations' },
       { label: 'Execucoes', href: '/portal/automacoes/execucoes', moduleKey: 'automations' },
       { label: 'Logs', href: '/portal/automacoes/logs', moduleKey: 'automations' },
+    ])
+  })
+
+  it('builds client workspace navigation with selected client route prefix', () => {
+    const groups = buildNavigationGroups({
+      ...internalContext,
+      mode: 'client_workspace',
+      organization: {
+        id: 'org-client-1',
+        name: 'Empresa ABC',
+        slug: 'empresa-abc',
+        kind: 'client',
+        clientId: 'client-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: [
+          'crm.read',
+          'leads.read',
+          'omnichannel.read',
+          'marketing_studio.read',
+          'projects.read',
+          'finance.read',
+        ],
+      },
+      enabledModuleKeys: ['crm', 'whatsapp_ai', 'marketing_studio', 'projects', 'finance'],
+    })
+
+    expect(groups[0]).toEqual({
+      label: 'Workspaces dos Clientes',
+      items: [{ label: 'Selecionar Cliente', href: '/client-workspaces' }],
+    })
+    expect(groups.find(group => group.label === 'Visao Geral')?.items).toEqual([
+      { label: 'Visao Geral', href: '/client-workspaces/org-client-1' },
+    ])
+    expect(groups.find(group => group.label === 'Comercial')?.items).toEqual(expect.arrayContaining([
+      { label: 'Leads', href: '/client-workspaces/org-client-1/comercial/leads', moduleKey: 'crm' },
+      { label: 'Funis', href: '/client-workspaces/org-client-1/comercial/funis', moduleKey: 'crm' },
+    ]))
+    expect(groups.find(group => group.label === 'Atendimento & IA')?.items).toEqual(expect.arrayContaining([
+      { label: 'Conversas', href: '/client-workspaces/org-client-1/atendimento/conversas', moduleKey: 'whatsapp_ai' },
+    ]))
+    expect(groups.find(group => group.label === 'Financeiro')?.items).toEqual([
+      { label: 'Financeiro', href: '/client-workspaces/org-client-1/financeiro', moduleKey: 'finance' },
+    ])
+  })
+
+  it('does not show portal journeys in client workspace before a client is selected', () => {
+    const groups = buildNavigationGroups({
+      ...internalContext,
+      mode: 'client_workspace',
+      organization: null,
+      enabledModuleKeys: ['crm', 'finance'],
+    })
+
+    expect(groups).toEqual([
+      {
+        label: 'Workspaces dos Clientes',
+        items: [{ label: 'Selecionar Cliente', href: '/client-workspaces' }],
+      },
     ])
   })
 

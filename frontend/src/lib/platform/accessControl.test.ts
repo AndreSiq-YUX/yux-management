@@ -110,7 +110,7 @@ describe('module registry', () => {
     expect(getPlatformModule('landing_pages')).toMatchObject({
       name: 'Landing Pages',
       internalRoute: '/landing-pages',
-      portalRoute: '/portal/landing-pages',
+      portalRoute: '/portal/marketing/landing-pages',
       requiredPermissions: ['landing_pages.read'],
     })
   })

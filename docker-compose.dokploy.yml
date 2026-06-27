@@ -1,0 +1,88 @@
+services:
+  yux-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    ports:
+      - "${YUX_FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - yux-backend-api
+    restart: unless-stopped
+
+  yux-backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${YUX_BACKEND_PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://yux-redis:6379}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-yux_session}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
+      YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
+      YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+    depends_on:
+      - yux-postgres
+      - yux-redis
+      - yux-agent-harness-runtime
+    restart: unless-stopped
+
+  yux-backend-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["node", "dist/src/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://yux-redis:6379}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
+      YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
+      YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+    depends_on:
+      - yux-postgres
+      - yux-redis
+      - yux-agent-harness-runtime
+    restart: unless-stopped
+
+  yux-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-yux_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-yux_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - yux_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  yux-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - yux_redis_data:/data
+    restart: unless-stopped
+
+  yux-agent-harness-runtime:
+    build:
+      context: ./workers/marketing-studio-agent-runtime
+      dockerfile: Dockerfile
+    ports:
+      - "${YUX_AGENT_RUNTIME_PORT:-8080}:8080"
+    environment:
+      YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+      SUPABASE_URL: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JINA_API_KEY: ${JINA_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  yux_postgres_data:
+  yux_redis_data:

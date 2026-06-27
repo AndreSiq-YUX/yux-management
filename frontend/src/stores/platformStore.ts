@@ -26,6 +26,27 @@ const fallbackRole: PlatformRole = {
   permissions: ['platform.manage'],
 }
 
+const fallbackClientWorkspaceRole: PlatformRole = {
+  key: 'client_admin',
+  name: 'Client Admin',
+  scope: 'client',
+  permissions: [
+    'crm.read',
+    'leads.read',
+    'landing_pages.read',
+    'projects.read',
+    'approvals.read',
+    'proposals.read',
+    'campaigns.read',
+    'marketing_studio.read',
+    'reports.read',
+    'automations.read',
+    'support.read',
+    'omnichannel.read',
+    'finance.read',
+  ],
+}
+
 const internalModuleKeys = [
   'clients',
   'crm',
@@ -48,6 +69,15 @@ const createEmptyPortalContractContext = (): PortalContractContext => ({
   enabledModuleKeys: [],
 })
 
+const createSafePortalState = () => ({
+  organization: null,
+  membership: null,
+  role: null,
+  activeContract: null,
+  portalContractContext: createEmptyPortalContractContext(),
+  enabledModuleKeys: [],
+})
+
 interface PlatformState extends PlatformContext {
   isLoading: boolean
   error: string | null
@@ -57,6 +87,7 @@ interface PlatformState extends PlatformContext {
   portalContractContext: PortalContractContext
   setMode: (mode: PlatformMode) => void
   initializeForUser: (userId: string) => Promise<void>
+  initializeClientWorkspace: (organizationId: string) => Promise<void>
   setEnabledModuleKeys: (moduleKeys: string[]) => void
 }
 
@@ -73,12 +104,121 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
   activeContract: null,
   portalContractContext: createEmptyPortalContractContext(),
 
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => set((state) => {
+    if (mode === 'internal') {
+      if (state.mode === 'internal') return { mode }
+
+      return {
+        mode,
+        organization: fallbackOrganization,
+        membership: null,
+        role: fallbackRole,
+        activeContract: null,
+        portalContractContext: createEmptyPortalContractContext(),
+        enabledModuleKeys: getInternalModuleKeys(),
+      }
+    }
+
+    if (mode === 'client_workspace') {
+      if (state.mode === 'client_workspace') return { mode }
+
+      return {
+        mode,
+        organization: null,
+        membership: null,
+        role: fallbackClientWorkspaceRole,
+        activeContract: null,
+        portalContractContext: createEmptyPortalContractContext(),
+        enabledModuleKeys: [],
+        isLoading: true,
+        error: null,
+      }
+    }
+
+    const shouldClearFallbackContext =
+      state.mode !== 'portal'
+      && (!state.organization || state.organization.id === fallbackOrganization.id)
+
+    return shouldClearFallbackContext
+      ? { mode, ...createSafePortalState() }
+      : { mode }
+  }),
 
   setEnabledModuleKeys: (enabledModuleKeys) => set({ enabledModuleKeys: [...enabledModuleKeys] }),
 
+  initializeClientWorkspace: async (organizationId: string) => {
+    set({
+      mode: 'client_workspace',
+      isLoading: true,
+      error: null,
+    })
+
+    try {
+      const [organizations, roles] = await Promise.all([
+        platformService.getOrganizations(),
+        platformService.getRoles(),
+      ])
+      const organization = organizations.find(item => item.id === organizationId && item.kind === 'client') || null
+
+      if (!organization?.clientId) {
+        set({
+          mode: 'client_workspace',
+          organization: null,
+          membership: null,
+          role: fallbackClientWorkspaceRole,
+          activeContract: null,
+          portalContractContext: createEmptyPortalContractContext(),
+          enabledModuleKeys: [],
+          error: 'Cliente nao encontrado para operacao assistida.',
+          isLoading: false,
+        })
+        return
+      }
+
+      const portalContractContext = await platformService.getPortalContractContextForClient(organization.clientId)
+      const portalContractContextState = {
+        ...portalContractContext,
+        enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
+      }
+      const role = roles.find(item => item.key === 'client_admin') || fallbackClientWorkspaceRole
+
+      set({
+        mode: 'client_workspace',
+        organization,
+        membership: null,
+        role,
+        roles: roles.length ? roles : [fallbackRole, fallbackClientWorkspaceRole],
+        activeContract: portalContractContextState.contract,
+        portalContractContext: portalContractContextState,
+        enabledModuleKeys: portalContractContextState.enabledModuleKeys,
+        error: null,
+        isLoading: false,
+      })
+    } catch (error) {
+      console.error('Client workspace initialization error:', error)
+      set({
+        mode: 'client_workspace',
+        organization: null,
+        membership: null,
+        role: fallbackClientWorkspaceRole,
+        activeContract: null,
+        portalContractContext: createEmptyPortalContractContext(),
+        enabledModuleKeys: [],
+        error: 'Erro ao carregar workspace do cliente.',
+        isLoading: false,
+      })
+    }
+  },
+
   initializeForUser: async (userId: string) => {
-    set({ isLoading: true, error: null })
+    const isPortalPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')
+
+    set({
+      ...(isPortalPath ? createSafePortalState() : {}),
+      mode: isPortalPath ? 'portal' : get().mode,
+      isLoading: true,
+      error: null,
+    })
 
     try {
       const [
@@ -123,20 +263,14 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
       })
     } catch (error) {
       console.error('Platform initialization error:', error)
-      const isPortalPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')
       const isPortalMode = get().mode === 'portal' || isPortalPath
 
       if (isPortalMode) {
         set({
-          organization: null,
-          membership: null,
-          role: null,
+          ...createSafePortalState(),
           roles: [fallbackRole],
           packages: [],
-          activeContract: null,
-          portalContractContext: createEmptyPortalContractContext(),
           error: 'Erro ao carregar contexto da plataforma.',
-          enabledModuleKeys: [],
           isLoading: false,
         })
         return

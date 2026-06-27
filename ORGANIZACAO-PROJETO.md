@@ -1,101 +1,73 @@
-# Organização do Projeto YUX Client Management
+# Organizacao do Projeto YUX Client Management
 
-## 🧹 **Limpeza Realizada**
+Este arquivo resume a estrutura operacional atual do projeto. Ele substitui a
+organizacao antiga baseada em Vercel.
 
-### **Arquivos e Pastas Removidos**
-- ✅ `backend/` - Backend Node.js completo (substituído pelo Supabase)
-- ✅ `node_modules/` - Dependências da raiz (não mais necessárias)
-- ✅ `scripts/` - Scripts de deploy para Render
-- ✅ `package.json` e `package-lock.json` da raiz
-- ✅ `docker-compose.yml` - Configuração Docker obsoleta
-- ✅ `render.yaml` - Configuração Render obsoleta
-- ✅ `.env.production` - Variáveis de ambiente obsoletas
+## Estrutura Atual
 
-### **Documentação Obsoleta Removida**
-- ✅ `ARCHITECTURE-RENDER.md`
-- ✅ `RENDER-DEPLOY.md`
-- ✅ `PRODUCTION-DEPLOY-GUIDE.md`
-- ✅ `SETUP.md` e `SETUP-WINDOWS.md`
-- ✅ `TESTING.md`
-- ✅ `READY-FOR-DEPLOY.md`
-- ✅ `ESTRUTURA-COMPLETA-GITHUB.md`
-- ✅ `UPLOAD-GITHUB-COMPLETO.md`
-- ✅ `ARQUIVOS-PARA-GITHUB.md`
-
-## 🏗 **Nova Estrutura**
-
-```
+```text
 yux-client-management/
-├── frontend/                 # React App (deploy Vercel)
-│   ├── src/                 # Código fonte
-│   ├── dist/                # Build output
-│   ├── package.json         # Dependências frontend
-│   └── vercel.json          # Config Vercel específica
-├── supabase/                # Configurações Supabase
-│   ├── migrations/          # Migrations SQL
-│   ├── config.toml          # Config local Supabase
-│   └── seed.sql             # Dados iniciais
-├── .env.example             # Template variáveis ambiente
-├── .gitignore               # Atualizado para Vercel/Supabase
-├── vercel.json              # Configuração deploy Vercel
-├── README.md                # Documentação atualizada
-├── VERCEL-SUPABASE-DEPLOY.md # Guia deploy atual
-├── deploy-to-vercel.md      # Guia rápido deploy
-├── QUICK-START.md           # Início rápido
-└── DEMO-GUIDE.md            # Guia demonstração
+├── frontend/                         # React/Vite, Dockerfile e Nginx para Dokploy
+├── supabase/                         # Migrations, probes, config local e Edge Functions
+├── workers/marketing-studio-agent-runtime/
+│   ├── Dockerfile                    # Runtime Python/FastAPI dos agentes
+│   ├── docker-compose.yml            # Compose isolado do runtime
+│   └── yux_agent_runtime/            # Harness, fila, workflows e API
+├── scripts/                          # Release checks, probes e ingestion de conhecimento
+├── docs/                             # Documentacao de produto, status e operacao
+├── docker-compose.dokploy.yml        # Deploy principal para VPS/Dokploy
+├── DEPLOY-DOKPLOY-SUPABASE.md        # Guia passo a passo de producao
+└── QUICK-START.md                    # Desenvolvimento local
 ```
 
-## 🔧 **Arquivos Criados/Atualizados**
+## Arquitetura Atual
 
-### **Novos Arquivos**
-- ✅ `vercel.json` - Configuração otimizada para deploy Vercel
-- ✅ `.env.example` - Template para variáveis de ambiente
-- ✅ `ORGANIZACAO-PROJETO.md` - Este arquivo de resumo
+```text
+Dokploy/VPS
+  ├─ yux-frontend (React/Vite servido por Nginx)
+  └─ yux-agent-harness-runtime (Python/FastAPI)
 
-### **Arquivos Atualizados**
-- ✅ `README.md` - Stack atualizada para Vercel + Supabase
-- ✅ `.gitignore` - Removido Prisma/Render, adicionado Vercel/Supabase
-
-## 🚀 **Nova Arquitetura**
-
-### **Antes (Node.js + PostgreSQL + Redis)**
-```
-VPS/Render → Node.js API → PostgreSQL + Redis
+Supabase Cloud
+  ├─ Auth
+  ├─ Postgres + RLS + pgvector
+  ├─ Storage/Realtime
+  └─ Edge Functions
 ```
 
-### **Agora (Vercel + Supabase)**
+## Arquivos Removidos ou Substituidos
+
+- `vercel.json`: removido.
+- `frontend/vercel.json`: removido.
+- `deploy-to-vercel.md`: removido.
+- `VERCEL-SUPABASE-DEPLOY.md`: removido.
+- `docs/phase-8-deploy-hardening.md`: substituido por gates de Dokploy/VPS.
+
+## Arquivos de Deploy Atuais
+
+- `docker-compose.dokploy.yml`: compose principal para o Dokploy.
+- `frontend/Dockerfile`: build do frontend e imagem Nginx.
+- `frontend/nginx.conf`: fallback SPA, headers e healthcheck.
+- `workers/marketing-studio-agent-runtime/Dockerfile`: runtime Python.
+- `DEPLOY-DOKPLOY-SUPABASE.md`: checklist operacional completo.
+
+## Responsabilidades
+
+- Frontend: renderizar a aplicacao, consumir Supabase com chave publica e nao
+  carregar segredos privados.
+- Supabase: manter Auth, dados, RLS, Edge Functions e secrets das functions.
+- Runtime Python: executar orquestracao de agentes, workflows, retrieval e
+  processamento server-side com service role.
+- Dokploy: build/deploy dos containers, dominios, HTTPS e logs da VPS.
+
+## Validacao Recomendada
+
+```powershell
+.\scripts\run-release-checks.ps1
+docker compose -f docker-compose.dokploy.yml config
 ```
-Vercel (Frontend) → Supabase (Backend + DB + Auth)
+
+Quando Docker estiver disponivel, tambem valide build e healthchecks:
+
+```powershell
+docker compose -f docker-compose.dokploy.yml up --build
 ```
-
-## 💡 **Benefícios da Reorganização**
-
-### **Simplicidade**
-- ✅ **50% menos arquivos** no projeto
-- ✅ **Zero configuração** de servidor
-- ✅ **Deploy automático** via Git push
-- ✅ **Documentação focada** na stack atual
-
-### **Manutenção**
-- ✅ **Sem backend para manter** (Supabase gerencia)
-- ✅ **Sem dependências da raiz** (apenas frontend)
-- ✅ **Sem scripts de deploy** (Vercel automático)
-- ✅ **Documentação atualizada** e relevante
-
-### **Performance**
-- ✅ **CDN global** via Vercel
-- ✅ **Edge functions** via Supabase
-- ✅ **Auto-scaling** nativo
-- ✅ **SSL automático**
-
-## 📋 **Próximos Passos**
-
-1. **Verificar funcionamento** do frontend
-2. **Testar deploy** no Vercel
-3. **Configurar domínio** app.yux.com.br
-4. **Migrar dados** para Supabase (se necessário)
-5. **Configurar integrações** Google Ads/Meta Ads
-
-## 🎯 **Resultado**
-
-O projeto agora está **limpo**, **organizado** e **alinhado** com a arquitetura moderna Vercel + Supabase, removendo toda a complexidade desnecessária da stack anterior.

@@ -1,8 +1,9 @@
 # Quick Start - Portal YUX
 
-Este projeto esta estabilizado em torno de React/Vite no frontend e Supabase
-como backend gerenciado. O backend Node/Prisma antigo foi removido e nao deve
-ser usado para subir o app atual.
+Este projeto esta estabilizado em torno de React/Vite no frontend, Supabase
+como backend gerenciado e VPS/Dokploy para deploy do frontend e do runtime de
+agentes. O backend Node/Prisma antigo foi removido e nao deve ser usado para
+subir o app atual.
 
 ## Requisitos
 
@@ -10,6 +11,7 @@ ser usado para subir o app atual.
 - Projeto Supabase ativo.
 - Variaveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` configuradas
   em `frontend/.env`.
+- Docker, quando for validar `docker-compose.dokploy.yml` localmente.
 
 ## Rodar Localmente
 
@@ -34,6 +36,15 @@ npm run build
 ```
 
 Ambos os comandos devem passar antes de novas funcionalidades.
+
+## Deploy
+
+O guia operacional atual e `DEPLOY-DOKPLOY-SUPABASE.md`. O deploy de producao
+usa `docker-compose.dokploy.yml` no Dokploy, com:
+
+- `yux-frontend` para o bundle React servido por Nginx;
+- `yux-agent-harness-runtime` para a API Python/FastAPI dos agentes;
+- Supabase Cloud para Auth, Postgres, RLS e Edge Functions.
 
 ## Banco De Dados
 

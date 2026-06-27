@@ -16,6 +16,10 @@ export const buildAssistantPayload = (input: AiAssistantInput) => ({
   name: input.name.trim(),
   tone: input.tone.trim(),
   status: input.status || 'active',
+  assistant_role: input.assistantRole || 'sdr',
+  strategy_profile_id: input.strategyProfileId || null,
+  routing_priority: input.routingPriority ?? 100,
+  routing_metadata: input.routingMetadata || {},
   summary_enabled: input.summaryEnabled ?? true,
   classification_enabled: input.classificationEnabled ?? true,
 })
@@ -41,6 +45,10 @@ export function mapAiAssistant(row: any): AiAssistantSettings {
     name: row.name,
     tone: row.tone,
     status: row.status,
+    assistantRole: row.assistant_role || 'sdr',
+    strategyProfileId: optional(row.strategy_profile_id),
+    routingPriority: Number(row.routing_priority || 100),
+    routingMetadata: row.routing_metadata || {},
     summaryEnabled: Boolean(row.summary_enabled),
     classificationEnabled: Boolean(row.classification_enabled),
     objectives: (row.ai_assistant_objectives || []).map((objective: any) => ({

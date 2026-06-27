@@ -12,7 +12,7 @@ max_rows = 1000
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["https://app.yux.com.br"]
+additional_redirect_urls = ["https://hub.yux.com.br"]
 jwt_expiry = 3600
 
 [auth.email]

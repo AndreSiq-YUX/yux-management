@@ -67,7 +67,7 @@ ultima verificacao, erro e referencia segura.
 
 Credenciais reais nao devem aparecer no frontend nem no banco. O frontend salva
 apenas `secret_reference` e metadados operacionais. O valor real da credencial
-deve existir como secret server-side no runtime das Edge Functions, Vercel ou
+deve existir como secret server-side no runtime das Edge Functions, Dokploy ou
 ambiente equivalente.
 
 Tipos previstos:

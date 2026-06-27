@@ -1,5 +1,6 @@
 import { Palette } from 'lucide-react'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { BrandReadinessPanel } from '@/components/growth-workspace/BrandReadinessPanel'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
 
 export function PortalBrandVoicePage() {
@@ -7,7 +8,10 @@ export function PortalBrandVoicePage() {
     loading,
     error,
     brandProfile,
+    knowledgeDocuments,
+    productsServices,
     settings,
+    brandReadiness,
   } = usePortalMarketingContext()
 
   const tone = brandProfile?.toneOfVoice || settings?.toneOfVoice || 'Nao configurado'
@@ -18,14 +22,24 @@ export function PortalBrandVoicePage() {
   const priorityTopics = brandProfile?.priorityTopics?.length
     ? brandProfile.priorityTopics
     : settings?.priorityTopics || []
+  const brandReadinessProfile = brandProfile || (settings ? {
+    toneOfVoice: settings.toneOfVoice || '',
+    persona: settings.persona || '',
+    brandVoiceSummary: settings.toneOfVoice || '',
+    forbiddenTopics: settings.forbiddenTopics || [],
+    priorityTopics: settings.priorityTopics || [],
+    visualGuidelines: settings.visualPreferences,
+    status: 'active' as const,
+  } : null)
 
   return (
     <PortalJourneyPage
       eyebrow="Empresa"
-      title="Marca e Tom de Voz"
-      description="Define como a empresa se comunica em atendimento, conteudo, campanhas e materiais comerciais."
+      title="Central da Marca"
+      description="Organiza identidade, tom de voz, guardrails e ativos usados por IA, atendimento, campanhas, landing pages e conteudos."
       icon={Palette}
       metrics={[
+        { label: 'Prontidao', value: `${brandReadiness.percentage}%`, detail: `${brandReadiness.ready}/${brandReadiness.total} criterios atendidos.` },
         { label: 'Tom', value: brandProfile ? 'Configurado' : 'Pendente', detail: tone },
         { label: 'Persona', value: persona === 'Nao configurada' ? 'Pendente' : 'Definida', detail: persona },
         { label: 'Regras', value: String(forbiddenTopics.length), detail: 'Temas restritos para IA e marketing.' },
@@ -42,6 +56,13 @@ export function PortalBrandVoicePage() {
         { label: 'Criativos e Assets', href: '/portal/marketing/criativos' },
       ]}
     >
+      <BrandReadinessPanel
+        profile={brandReadinessProfile}
+        knowledgeDocuments={knowledgeDocuments}
+        productsServices={productsServices}
+        title="Prontidao para usar a marca no Studio"
+      />
+
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-lg border bg-white p-5">
           <h2 className="text-base font-semibold text-gray-900">Diretrizes carregadas</h2>

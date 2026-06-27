@@ -20,7 +20,8 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { CrmIntegrationPreview } from './CrmIntegrationPreview'
 import { EmailSettingsPanel } from './EmailSettingsPanel'
 import { SequencesWorkspace } from './SequencesWorkspace'
-import { getSectorTemplate } from '@/lib/automations/sectorTemplateCatalog'
+import { GrowthTemplateLibrary } from '@/components/growth-workspace/GrowthTemplateLibrary'
+import { automationObjectiveTemplates, getSectorTemplate } from '@/lib/automations/sectorTemplateCatalog'
 import type { AutomationAction, AutomationFlow, AutomationFlowInput } from '@/types/automation'
 import type { AutomationSequence, AutomationSequenceChannel, AutomationSequenceStatus, AutomationSequenceStepKind } from '@/types/automationSequence'
 
@@ -113,6 +114,7 @@ export function AutomationWorkspace({
   const [deleteConfirmFlowId, setDeleteConfirmFlowId] = useState<string | null>(null)
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false)
   const [publishConfirmFlowId, setPublishConfirmFlowId] = useState<string | null>(null)
+  const [selectedObjectiveKey, setSelectedObjectiveKey] = useState<string | undefined>(automationObjectiveTemplates[0]?.key)
   const actionsDisabled = Boolean(loadError || backendUnavailable)
 
   const filteredFlows = useMemo(() => {
@@ -124,6 +126,7 @@ export function AutomationWorkspace({
   }, [flows, searchQuery, statusFilter])
 
   const selected = flows.find(f => f.id === selectedFlowId) || flows[0]
+  const selectedObjective = automationObjectiveTemplates.find(template => template.key === selectedObjectiveKey)
 
   const handleSelectFlow = (flowId: string) => {
     setSelectedFlowId(flowId)
@@ -346,6 +349,12 @@ export function AutomationWorkspace({
           {activeSection === 'Dashboard' && <AutomationDashboard flows={flows} />}
           {activeSection === 'Automacoes' && (
             <div className="space-y-4">
+              <AutomationObjectivePanel
+                selectedKey={selectedObjectiveKey}
+                onSelect={setSelectedObjectiveKey}
+                onCreateFromTemplate={onCreateFromTemplate}
+                disabled={actionsDisabled}
+              />
               {selected && (
                 <div className="flex flex-wrap items-center justify-between border-b pb-3 gap-2">
                   <div className="flex items-center gap-2">
@@ -386,6 +395,7 @@ export function AutomationWorkspace({
               ) : (
                 <AutomationGuidedBuilder
                   flow={selected}
+                  selectedObjectiveLabel={selectedObjective?.label}
                   disabled={actionsDisabled}
                   onAddTrigger={(triggerType, config) => selected && onAddTrigger?.(selected.id, triggerType, config)}
                   onUpdateTrigger={(triggerId, triggerType, config) => selected && onUpdateTrigger?.(selected.id, triggerId, triggerType, config)}
@@ -492,6 +502,55 @@ export function AutomationWorkspace({
   )
 }
 
+function AutomationObjectivePanel({
+  selectedKey,
+  onSelect,
+  onCreateFromTemplate,
+  disabled,
+}: {
+  selectedKey?: string
+  onSelect: (key: string) => void
+  onCreateFromTemplate?: (templateKey: string) => void
+  disabled?: boolean
+}) {
+  return (
+    <section className="rounded-md border bg-slate-50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-950">O que voce deseja automatizar?</h2>
+          <p className="mt-1 text-sm text-slate-600">Escolha primeiro o objetivo. Depois ajuste trigger, condicoes e acoes no builder.</p>
+        </div>
+        <Badge variant="secondary">{automationObjectiveTemplates.length} objetivos</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {automationObjectiveTemplates.map(template => (
+          <article
+            key={template.key}
+            className={`rounded-md border bg-white p-3 ${selectedKey === template.key ? 'border-slate-950 shadow-sm' : ''}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="font-medium text-slate-950">{template.label}</p>
+                <p className="mt-1 text-xs text-slate-500">{template.channel || 'crm'} - {template.requiredModuleKeys?.join(', ')}</p>
+              </div>
+              {!template.portalVisible && <Badge variant="outline">Interno</Badge>}
+            </div>
+            <p className="mt-2 min-h-[48px] text-sm text-slate-600">{template.description}</p>
+            <div className="mt-3 flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => onSelect(template.key)}>
+                Selecionar
+              </Button>
+              <Button type="button" size="sm" disabled={disabled} onClick={() => onCreateFromTemplate?.(template.key)}>
+                Criar fluxo
+              </Button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function AutomationNotice({
   backendUnavailable,
   description,
@@ -523,43 +582,49 @@ function AutomationNotice({
 
 function AutomationTemplatesPanel({ onCreateFromTemplate }: { onCreateFromTemplate?: (templateKey: string) => void }) {
   return (
-    <section className="rounded-md border bg-white p-4 space-y-4">
-      <div className="flex items-start gap-2">
-        <Layers3 className="mt-0.5 h-4 w-4 text-slate-600" />
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">Templates</h2>
-          <p className="text-sm text-slate-600">Modelos setoriais prontos para uso. Clique para criar um fluxo a partir do template.</p>
+    <div className="space-y-4">
+      <GrowthTemplateLibrary
+        initialFilters={{ moduleKey: 'automations', portalVisibleOnly: true }}
+        onSelectTemplate={template => onCreateFromTemplate?.(template.id)}
+      />
+      <section className="rounded-md border bg-white p-4 space-y-4">
+        <div className="flex items-start gap-2">
+          <Layers3 className="mt-0.5 h-4 w-4 text-slate-600" />
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">Modelos setoriais</h2>
+            <p className="text-sm text-slate-600">Modelos setoriais prontos para uso. Clique para criar um fluxo a partir do template.</p>
+          </div>
         </div>
-      </div>
-      <div className="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-3">
-        {['clinic', 'real_estate', 'dealer', 'workshop', 'agency'].map(templateKey => {
-          const template = getSectorTemplate(templateKey)
-          if (!template) return null
-          return (
-            <div key={templateKey} className="rounded-md border bg-slate-50 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-900">{template.label}</p>
-                <Badge variant="outline" className="text-xs">{templateKey}</Badge>
+        <div className="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-3">
+          {['clinic', 'real_estate', 'dealer', 'workshop', 'agency'].map(templateKey => {
+            const template = getSectorTemplate(templateKey)
+            if (!template) return null
+            return (
+              <div key={templateKey} className="rounded-md border bg-slate-50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-slate-900">{template.label}</p>
+                  <Badge variant="outline" className="text-xs">{templateKey}</Badge>
+                </div>
+                <p className="text-xs text-slate-600">{template.description}</p>
+                <div className="text-xs text-slate-500">
+                  {template.triggers.length} trigger(s), {template.conditions.length} condicao(oes), {template.actions.length} acao(oes)
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => onCreateFromTemplate?.(templateKey)}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Criar fluxo
+                </Button>
               </div>
-              <p className="text-xs text-slate-600">{template.description}</p>
-              <div className="text-xs text-slate-500">
-                {template.triggers.length} trigger(s), {template.conditions.length} condicao(oes), {template.actions.length} acao(oes)
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={() => onCreateFromTemplate?.(templateKey)}
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Criar fluxo
-              </Button>
-            </div>
-          )
-        })}
-      </div>
-    </section>
+            )
+          })}
+        </div>
+      </section>
+    </div>
   )
 }
 

@@ -29,7 +29,7 @@ reforce decisoes antigas que ja nao representam o sistema.
 ## Fora do Escopo Agora
 
 - Deploy de producao.
-- Dominio e configuracao final da Vercel.
+- Dominio e configuracao final de Dokploy/VPS.
 - Hardening completo de seguranca/RLS.
 - Multi-tenant definitivo.
 - Workers, filas, n8n e agentes IA.
@@ -39,10 +39,10 @@ reforce decisoes antigas que ja nao representam o sistema.
 
 Quando o sistema crescer, a arquitetura recomendada e:
 
-`Vercel frontend -> Supabase Auth/DB/RLS -> Backend/Workers para integracoes -> n8n para blueprints e automacoes replicaveis`
+`Dokploy/VPS frontend -> Supabase Auth/DB/RLS -> Workers na VPS para integracoes -> n8n para blueprints e automacoes replicaveis`
 
-Supabase e Vercel seguem validos como base, mas nao devem absorver toda a logica
-assincrona, integracoes externas, processamento de IA ou jobs longos.
+Supabase segue valido como nucleo de dados/autenticacao. Dokploy/VPS e o alvo
+para frontend, workers, processamento de IA e jobs longos.
 
 ## Spec e Plano Aprovados
 

@@ -3,6 +3,7 @@ import { CheckCircle2, FileText, Megaphone, MousePointerClick } from 'lucide-rea
 import { PortalEmptyState } from '@/components/client-portal/PortalEmptyState'
 import { Button } from '@/components/ui/button'
 import { usePortalActionSummary } from '@/hooks/usePortalActionSummary'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { formatPortalDateTime, statusLabel } from '@/lib/client-portal/portalDisplay'
 
 const approvalLinks = [
@@ -27,6 +28,7 @@ const approvalLinks = [
 ]
 
 export function PortalApprovalsPage() {
+  const portalPath = usePortalWorkspacePath()
   const { actions, approvals, loading, error } = usePortalActionSummary()
   const pendingProjectApprovals = approvals.filter(approval => approval.status === 'pending')
   const approvalActions = actions.filter(action => action.kind === 'approval' || action.kind === 'marketing')
@@ -44,7 +46,7 @@ export function PortalApprovalsPage() {
         {approvalLinks.map(item => {
           const Icon = item.icon
           return (
-            <Link key={item.href} to={item.href} className="rounded-lg border bg-white p-4 transition-colors hover:border-yux-300 hover:bg-yux-50">
+            <Link key={item.href} to={portalPath(item.href)} className="rounded-lg border bg-white p-4 transition-colors hover:border-yux-300 hover:bg-yux-50">
               <Icon className="h-5 w-5 text-yux-700" />
               <h2 className="mt-3 font-semibold text-gray-900">{item.label}</h2>
               <p className="mt-2 text-sm text-gray-600">{item.description}</p>
@@ -65,7 +67,7 @@ export function PortalApprovalsPage() {
             </div>
           </div>
           <Button variant="outline" asChild>
-            <Link to="/portal">Voltar para Visao Geral</Link>
+            <Link to={portalPath('/portal')}>Voltar para Visao Geral</Link>
           </Button>
         </div>
 
@@ -76,13 +78,13 @@ export function PortalApprovalsPage() {
         ) : approvalActions.length > 0 || pendingProjectApprovals.length > 0 ? (
           <div className="mt-5 grid gap-3 lg:grid-cols-2">
             {approvalActions.map(action => (
-              <Link key={action.id} to={action.href} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
+              <Link key={action.id} to={portalPath(action.href)} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
                 <p className="text-sm font-semibold text-gray-900">{action.title}</p>
                 <p className="mt-1 text-sm text-gray-600">{action.description}</p>
               </Link>
             ))}
             {pendingProjectApprovals.slice(0, 6).map(approval => (
-              <Link key={approval.id} to="/portal/projetos/projetos" className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
+              <Link key={approval.id} to={portalPath('/portal/projetos/projetos')} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-gray-900">{approval.title}</p>
                   <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(approval.status)}</span>

@@ -2,6 +2,8 @@ import { CheckCircle2, Layers3, MessageSquare, PlayCircle, SlidersHorizontal } f
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SectorOnboardingChecklist } from '@/components/growth-workspace/SectorOnboardingChecklist'
+import { createOnboardingChecklistDraft } from '@/lib/growth-workspace/onboardingRules'
 import { buildPipelineFromBlueprint, summarizeBlueprintApplication } from '@/lib/platform/blueprintApplicationRules'
 import type { Blueprint, ContractDetails } from '@/types/platform'
 
@@ -25,6 +27,10 @@ export function BlueprintApplyPanel({
   const pipeline = buildPipelineFromBlueprint(blueprint)
   const summary = summarizeBlueprintApplication(blueprint)
   const latestRun = blueprint.applicationRuns?.[0]
+  const onboardingPreview = createOnboardingChecklistDraft({
+    organizationId: 'preview',
+    blueprint,
+  })
 
   return (
     <div className="space-y-4 rounded-md border bg-white p-4">
@@ -68,6 +74,14 @@ export function BlueprintApplyPanel({
         </div>
       </div>
 
+      <SectorOnboardingChecklist
+        checklist={onboardingPreview}
+        title="Checklist que sera criado"
+        description="Passos operacionais gerados para ativar o cliente depois que este modelo for aplicado."
+        maxSteps={5}
+        showActions={false}
+      />
+
       <div className="grid gap-2 md:grid-cols-[1fr_auto]">
         <Select value={selectedContractId} onValueChange={onContractChange}>
           <SelectTrigger>
@@ -81,9 +95,9 @@ export function BlueprintApplyPanel({
             ))}
           </SelectContent>
         </Select>
-        <Button title="Aplicar blueprint ao contrato" disabled={!selectedContractId || applying} onClick={onApply}>
+        <Button title="Aplicar modelo setorial ao contrato" disabled={!selectedContractId || applying} onClick={onApply}>
           <CheckCircle2 className="mr-2 h-4 w-4" />
-          {applying ? 'Aplicando' : 'Aplicar ao contrato'}
+          {applying ? 'Aplicando' : 'Aplicar modelo'}
         </Button>
       </div>
 

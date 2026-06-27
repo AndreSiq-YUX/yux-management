@@ -26,18 +26,10 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
     ],
   },
   {
-    label: 'Comercial YUX',
-    items: [
-      { label: 'Leads YUX', href: '/leads', moduleKey: 'crm' },
-      { label: 'Diagnosticos', href: '/leads', moduleKey: 'crm' },
-      { label: 'Propostas', href: '/proposals', moduleKey: 'proposals' },
-      { label: 'Follow-ups', href: '/leads', moduleKey: 'crm' },
-    ],
-  },
-  {
     label: 'Clientes & Contratos',
     items: [
       { label: 'Clientes', href: '/clients', moduleKey: 'clients' },
+      { label: 'Conversoes de Leads', href: '/client-conversions', moduleKey: 'crm' },
       { label: 'Contratos', href: '/contracts' },
       { label: 'Pacotes', href: '/packages' },
       { label: 'Modulos Contratados', href: '/modules' },
@@ -54,26 +46,21 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
     ],
   },
   {
-    label: 'Operacao dos Clientes',
+    label: 'Workspaces dos Clientes',
     items: [
-      { label: 'CRM & Funis', href: '/leads', moduleKey: 'crm' },
-      { label: 'Conversas', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
-      { label: 'Agente IA', href: '/omnichannel', moduleKey: 'whatsapp_ai' },
-      { label: 'Landing Pages', href: '/landing-pages', moduleKey: 'landing_pages' },
-      { label: 'Campanhas', href: '/campaigns', moduleKey: 'campaigns' },
-      { label: 'Marketing Studio', href: '/marketing-studio', moduleKey: 'marketing_studio' },
-      { label: 'Automacoes', href: '/automations', moduleKey: 'automations' },
-      { label: 'Relatorios', href: '/reports', moduleKey: 'bi_reports' },
+      { label: 'Selecionar Cliente', href: '/client-workspaces' },
+      { label: 'Crescimento YUX', href: '/client-workspaces' },
     ],
   },
   {
     label: 'Administracao da Plataforma',
     items: [
       { label: 'Admin YUX Hub', href: '/admin' },
-      { label: 'Blueprints', href: '/blueprints', moduleKey: 'blueprints' },
+      { label: 'Modelos Setoriais', href: '/blueprints', moduleKey: 'blueprints' },
       { label: 'Catalogo de Modulos', href: '/admin/modules-governance' },
       { label: 'Integracoes Globais', href: '/admin/integrations' },
       { label: 'IA / Modelos / Custos', href: '/admin/ai' },
+      { label: 'Strategy Engine', href: '/admin/strategy-engine' },
       { label: 'Canais', href: '/admin/channels' },
       { label: 'Email', href: '/admin/email' },
       { label: 'Saude da Plataforma', href: '/admin/health' },
@@ -104,84 +91,86 @@ function moduleItem(context: PlatformContext, item: NavigationItem): NavigationI
   return canAccessModuleKey(item.moduleKey, context) ? [item] : []
 }
 
-function buildPortalNavigationGroups(context: PlatformContext): NavigationGroup[] {
+function buildPortalNavigationGroups(context: PlatformContext, basePath = '/portal'): NavigationGroup[] {
+  const href = (path = '') => `${basePath}${path}`
+
   const groups: NavigationGroup[] = [
     {
       label: 'Visao Geral',
-      items: [{ label: 'Visao Geral', href: '/portal' }],
+      items: [{ label: 'Visao Geral', href: href() }],
     },
     {
       label: 'Empresa',
       items: [
-        { label: 'Perfil da Empresa', href: '/portal/empresa/perfil' },
-        { label: 'Usuarios e Equipe', href: '/portal/empresa/usuarios' },
-        { label: 'Base de Conhecimento', href: '/portal/empresa/conhecimento' },
-        { label: 'Marca e Tom de Voz', href: '/portal/empresa/marca' },
-        { label: 'Integracoes', href: '/portal/empresa/integracoes' },
+        { label: 'Perfil da Empresa', href: href('/empresa/perfil') },
+        { label: 'Usuarios e Equipe', href: href('/empresa/usuarios') },
+        { label: 'Base de Conhecimento', href: href('/empresa/conhecimento') },
+        { label: 'Marca e Tom de Voz', href: href('/empresa/marca') },
+        { label: 'Integracoes', href: href('/empresa/integracoes') },
       ],
     },
     {
       label: 'Comercial',
       items: [
-        ...moduleItem(context, { label: 'Leads', href: '/portal/comercial/leads', moduleKey: 'crm' }),
-        ...moduleItem(context, { label: 'Empresas / Contas', href: '/portal/comercial/contas', moduleKey: 'crm' }),
-        ...moduleItem(context, { label: 'Funis', href: '/portal/comercial/funis', moduleKey: 'crm' }),
-        ...moduleItem(context, { label: 'Tarefas e Follow-ups', href: '/portal/comercial/tarefas', moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Leads', href: href('/comercial/leads'), moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Empresas / Contas', href: href('/comercial/contas'), moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Funis', href: href('/comercial/funis'), moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Tarefas e Follow-ups', href: href('/comercial/tarefas'), moduleKey: 'crm' }),
       ],
     },
     {
       label: 'Atendimento & IA',
       items: [
-        ...moduleItem(context, { label: 'Conversas', href: '/portal/atendimento/conversas', moduleKey: 'whatsapp_ai' }),
-        ...moduleItem(context, { label: 'Agente IA', href: '/portal/atendimento/agente-ia', moduleKey: 'whatsapp_ai' }),
-        ...moduleItem(context, { label: 'Canais', href: '/portal/atendimento/canais', moduleKey: 'whatsapp_ai' }),
-        ...moduleItem(context, { label: 'Filas e Handoff', href: '/portal/atendimento/filas-handoff', moduleKey: 'whatsapp_ai' }),
+        ...moduleItem(context, { label: 'Conversas', href: href('/atendimento/conversas'), moduleKey: 'whatsapp_ai' }),
+        ...moduleItem(context, { label: 'Agente IA', href: href('/atendimento/agente-ia'), moduleKey: 'whatsapp_ai' }),
+        ...moduleItem(context, { label: 'Canais', href: href('/atendimento/canais'), moduleKey: 'whatsapp_ai' }),
+        ...moduleItem(context, { label: 'Filas e Handoff', href: href('/atendimento/filas-handoff'), moduleKey: 'whatsapp_ai' }),
       ],
     },
     {
       label: 'Marketing',
       items: [
-        ...moduleItem(context, { label: 'Landing Pages', href: '/portal/marketing/landing-pages', moduleKey: 'landing_pages' }),
-        ...moduleItem(context, { label: 'Campanhas', href: '/portal/marketing/campanhas', moduleKey: 'campaigns' }),
-        ...moduleItem(context, { label: 'Marketing Studio', href: '/portal/marketing/studio', moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Conteudo Organico', href: '/portal/marketing/conteudo', moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Calendario Editorial', href: '/portal/marketing/calendario', moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Criativos e Assets', href: '/portal/marketing/criativos', moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Landing Pages', href: href('/marketing/landing-pages'), moduleKey: 'landing_pages' }),
+        ...moduleItem(context, { label: 'Campanhas', href: href('/marketing/campanhas'), moduleKey: 'campaigns' }),
+        ...moduleItem(context, { label: 'Marketing Studio', href: href('/marketing/studio'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Conteudo Organico', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Calendario Editorial', href: href('/marketing/calendario'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Criativos e Assets', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
       ],
     },
     {
       label: 'Automacoes',
       items: [
-        ...moduleItem(context, { label: 'Fluxos', href: '/portal/automacoes/fluxos', moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Templates', href: '/portal/automacoes/templates', moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Execucoes', href: '/portal/automacoes/execucoes', moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Logs', href: '/portal/automacoes/logs', moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Fluxos', href: href('/automacoes/fluxos'), moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Templates', href: href('/automacoes/templates'), moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Execucoes', href: href('/automacoes/execucoes'), moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Logs', href: href('/automacoes/logs'), moduleKey: 'automations' }),
       ],
     },
     {
       label: 'Projetos',
       items: [
-        ...moduleItem(context, { label: 'Projetos', href: '/portal/projetos/projetos', moduleKey: 'projects' }),
-        ...moduleItem(context, { label: 'Aprovacoes', href: '/portal/projetos/aprovacoes', moduleKey: 'projects' }),
-        ...moduleItem(context, { label: 'Documentos', href: '/portal/projetos/documentos', moduleKey: 'projects' }),
-        ...moduleItem(context, { label: 'Propostas', href: '/portal/projetos/aprovacoes', moduleKey: 'proposals' }),
+        ...moduleItem(context, { label: 'Projetos', href: href('/projetos/projetos'), moduleKey: 'projects' }),
+        ...moduleItem(context, { label: 'Aprovacoes', href: href('/projetos/aprovacoes'), moduleKey: 'projects' }),
+        ...moduleItem(context, { label: 'Documentos', href: href('/projetos/documentos'), moduleKey: 'projects' }),
+        ...moduleItem(context, { label: 'Propostas', href: href('/projetos/aprovacoes'), moduleKey: 'proposals' }),
       ],
     },
     {
       label: 'Relatorios',
-      items: moduleItem(context, { label: 'Relatorios', href: '/portal/relatorios', moduleKey: 'bi_reports' }),
+      items: moduleItem(context, { label: 'Relatorios', href: href('/relatorios'), moduleKey: 'bi_reports' }),
     },
     {
       label: 'Suporte',
-      items: moduleItem(context, { label: 'Suporte', href: '/portal/suporte', moduleKey: 'support' }),
+      items: moduleItem(context, { label: 'Suporte', href: href('/suporte'), moduleKey: 'support' }),
     },
     {
       label: 'Financeiro',
-      items: moduleItem(context, { label: 'Financeiro', href: '/portal/financeiro', moduleKey: 'finance' }),
+      items: moduleItem(context, { label: 'Financeiro', href: href('/financeiro'), moduleKey: 'finance' }),
     },
     {
       label: 'Configuracoes da Conta',
-      items: [{ label: 'Conta', href: '/portal/configuracoes/conta' }],
+      items: [{ label: 'Conta', href: href('/configuracoes/conta') }],
     },
   ]
 
@@ -191,6 +180,31 @@ function buildPortalNavigationGroups(context: PlatformContext): NavigationGroup[
 export function buildNavigationGroups(context: PlatformContext): NavigationGroup[] {
   if (context.mode === 'portal') {
     return buildPortalNavigationGroups(context)
+  }
+
+  if (context.mode === 'client_workspace') {
+    if (!context.organization?.id) {
+      return [
+        {
+          label: 'Workspaces dos Clientes',
+          items: [
+            { label: 'Selecionar Cliente', href: '/client-workspaces' },
+          ],
+        },
+      ]
+    }
+
+    const basePath = `/client-workspaces/${context.organization.id}`
+
+    return [
+      {
+        label: 'Workspaces dos Clientes',
+        items: [
+          { label: 'Selecionar Cliente', href: '/client-workspaces' },
+        ],
+      },
+      ...buildPortalNavigationGroups(context, basePath),
+    ]
   }
 
   return internalModuleGroups.map(group => ({
@@ -209,7 +223,9 @@ export function buildNavigation(context: PlatformContext): NavigationItem[] {
 export function buildBreadcrumbs(context: PlatformContext, pathname: string): BreadcrumbItem[] {
   const home: BreadcrumbItem = context.mode === 'portal'
     ? { label: 'Portal do Cliente', href: '/portal' }
-    : { label: 'YUX Hub', href: '/dashboard' }
+    : context.mode === 'client_workspace'
+      ? { label: 'Workspaces dos Clientes', href: '/client-workspaces' }
+      : { label: 'YUX Hub', href: '/dashboard' }
   const groups = buildNavigationGroups(context)
   const exactMatch = groups
     .flatMap(group => group.items.map(item => ({ group, item })))

@@ -99,7 +99,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
   },
   {
     key: 'blueprints',
-    name: 'Blueprints',
+    name: 'Modelos Setoriais',
     base: false,
     internalRoute: '/blueprints',
     portalRoute: null,

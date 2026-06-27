@@ -38,10 +38,11 @@ Required only for live integrations:
 - n8n: CRM, campaign, scheduling, and AI webhook URLs if the deployment uses
   external workflow execution.
 
-Do not put provider tokens in frontend env vars. Store them as Supabase/Vercel
-secrets and reference them through protected metadata fields.
+Do not put provider tokens in frontend env vars. Store them as Supabase Edge
+Function secrets or Dokploy server-side environment variables and reference
+them through protected metadata fields.
 
-## Vercel Environment Variables
+## Server-Side Environment Variables
 
 Expected server/Edge values:
 

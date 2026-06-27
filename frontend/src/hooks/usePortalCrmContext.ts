@@ -17,13 +17,20 @@ const emptyState: PortalCrmContextState = {
 
 export function usePortalCrmContext() {
   const organization = usePlatformStore(state => state.organization)
+  const activeContract = usePlatformStore(state => state.activeContract)
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [state, setState] = useState<PortalCrmContextState>(emptyState)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!organization || !enabledModuleKeys.includes('crm')) {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
+    if (!activeContract || !organization || organization.kind !== 'client' || !enabledModuleKeys.includes('crm')) {
       setState(emptyState)
       setError(null)
       setLoading(false)
@@ -55,7 +62,7 @@ export function usePortalCrmContext() {
     } finally {
       setLoading(false)
     }
-  }, [enabledModuleKeys, organization])
+  }, [activeContract, enabledModuleKeys, isPlatformLoading, organization])
 
   useEffect(() => {
     load()

@@ -11,10 +11,84 @@ class BudgetBlocked(Exception):
     """Raised when a run exceeds the configured budget guard."""
 
 
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _string_list(value: Any) -> list[str]:
+    return [str(item) for item in _as_list(value) if str(item).strip()]
+
+
+def _strategy_item_text(item: dict[str, Any]) -> str:
+    if item.get("concept"):
+        parts = [f"Card: {item['concept']}"]
+        if item.get("problem_solved"):
+            parts.append(f"Problema: {item['problem_solved']}")
+        actions = _string_list(item.get("recommended_actions"))
+        if actions:
+            parts.append("Ações: " + "; ".join(actions))
+        return " | ".join(parts)
+    if item.get("chunk_text"):
+        return f"Chunk {item.get('id', item.get('section_key', 'retrieved'))}: {item['chunk_text']}"
+    if item.get("storage_path"):
+        return f"Asset {item.get('id', item.get('asset_type', 'retrieved'))}: {item['storage_path']}"
+    return str(item.get("title") or item.get("id") or "")
+
+
+def _append_strategy_context(context_lines: list[str], strategy_context: dict[str, Any]) -> None:
+    profile_key = strategy_context.get("profile_key")
+    if profile_key:
+        context_lines.append(f"Estratégia YUX: {profile_key}")
+
+    for rule in _string_list(strategy_context.get("skill_rules")):
+        context_lines.append(f"Regra: {rule}")
+
+    commercial_stage = strategy_context.get("commercial_stage")
+    if commercial_stage:
+        context_lines.append(f"Estágio comercial: {commercial_stage}")
+    customer_context = strategy_context.get("customer_context")
+    if customer_context:
+        context_lines.append(f"Contexto do cliente: {customer_context}")
+
+    for card in _as_list(strategy_context.get("concept_cards")):
+        if isinstance(card, dict):
+            text = _strategy_item_text(card)
+            if text:
+                context_lines.append(text)
+
+    for chunk in _as_list(strategy_context.get("chunks")):
+        if isinstance(chunk, dict):
+            text = _strategy_item_text(chunk)
+            if text:
+                context_lines.append(text)
+
+    for asset in _as_list(strategy_context.get("assets")):
+        if isinstance(asset, dict):
+            text = _strategy_item_text(asset)
+            if text:
+                context_lines.append(text)
+
+    allowed_actions = _string_list(strategy_context.get("allowed_actions"))
+    forbidden_actions = _string_list(strategy_context.get("forbidden_actions"))
+    if allowed_actions:
+        context_lines.append("Ações permitidas: " + "; ".join(allowed_actions))
+    if forbidden_actions:
+        context_lines.append("Ações proibidas: " + "; ".join(forbidden_actions))
+    if strategy_context.get("approval_policy"):
+        context_lines.append(f"Política de aprovação: {strategy_context['approval_policy']}")
+
+
 def compose_prompt(global_prompt: dict[str, Any], agent: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     context_lines = []
     if context.get("objective"):
         context_lines.append(f"Objetivo: {context['objective']}")
+    strategy_context = context.get("strategy_context")
+    if isinstance(strategy_context, dict):
+        _append_strategy_context(context_lines, strategy_context)
     if context.get("brand_summary"):
         context_lines.append(f"Marca: {context['brand_summary']}")
     if context.get("products"):

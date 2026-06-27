@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { statusLabel } from '@/lib/client-portal/portalDisplay'
 import { getInvoicePaymentState, sanitizeInvoiceForPortal } from '@/lib/finance/financeRules'
 import type { FinanceInvoice, FinanceSummary } from '@/types/finance'
 import type { ContractDetails } from '@/types/platform'
@@ -44,7 +45,7 @@ export function PortalFinanceWorkspace({ contract, invoices, summary }: PortalFi
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-3 text-base">
                 <span>{invoice.invoiceNumber}</span>
-                <span className="rounded bg-gray-100 px-2 py-1 text-xs font-normal">{getInvoicePaymentState(invoice)}</span>
+                <span className="rounded bg-gray-100 px-2 py-1 text-xs font-normal">{statusLabel(getInvoicePaymentState(invoice))}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -52,7 +53,7 @@ export function PortalFinanceWorkspace({ contract, invoices, summary }: PortalFi
                 <Info label="Vencimento" value={invoice.dueDate} />
                 <Info label="Valor" value={money.format(invoice.totalAmount)} />
                 <Info label="Pago" value={money.format(invoice.paidAmount)} />
-                <Info label="Status" value={invoice.status} />
+                <Info label="Status" value={statusLabel(invoice.status)} />
               </div>
               {invoice.notes && <p className="text-sm text-gray-600">{invoice.notes}</p>}
               <div className="space-y-2">

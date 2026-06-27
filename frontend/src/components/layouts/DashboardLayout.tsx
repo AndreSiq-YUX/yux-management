@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from '@/components/navigation/Sidebar'
 import { Header } from '@/components/navigation/Header'
@@ -17,8 +17,15 @@ export function DashboardLayout() {
     }
   }, [initializeForUser, user?.id])
 
-  useEffect(() => {
-    setMode(location.pathname.startsWith('/portal') ? 'portal' : 'internal')
+  useLayoutEffect(() => {
+    const isSelectedClientWorkspace = /^\/client-workspaces\/[^/]+/.test(location.pathname)
+    const mode = location.pathname.startsWith('/portal')
+      ? 'portal'
+      : isSelectedClientWorkspace
+        ? 'client_workspace'
+        : 'internal'
+
+    setMode(mode)
   }, [location.pathname, setMode])
 
   return (

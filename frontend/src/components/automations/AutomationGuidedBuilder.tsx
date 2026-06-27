@@ -24,6 +24,7 @@ interface AutomationGuidedBuilderProps {
   onUpdateAction?: (actionId: string, actionType: string, payload: Record<string, unknown>) => void
   onDeleteAction?: (actionId: string) => void
   onReorderActions?: (actions: AutomationAction[]) => void
+  selectedObjectiveLabel?: string
   disabled?: boolean
 }
 
@@ -95,6 +96,7 @@ export function AutomationGuidedBuilder({
   onUpdateAction,
   onDeleteAction,
   onReorderActions,
+  selectedObjectiveLabel,
   disabled,
 }: AutomationGuidedBuilderProps) {
   if (!flow) {
@@ -112,7 +114,11 @@ export function AutomationGuidedBuilder({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-slate-950">Builder guiado</h2>
-          <p className="text-sm text-slate-600">Configure o trigger, condicoes e acoes do fluxo.</p>
+          <p className="text-sm text-slate-600">
+            {selectedObjectiveLabel
+              ? `Objetivo selecionado: ${selectedObjectiveLabel}. Ajuste trigger, condicoes e acoes do fluxo.`
+              : 'Configure o trigger, condicoes e acoes do fluxo.'}
+          </p>
         </div>
       </div>
       <div className="space-y-3">

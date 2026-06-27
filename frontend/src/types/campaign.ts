@@ -97,6 +97,9 @@ export interface Campaign {
   impressions: number
   clicks: number
   leads: number
+  opportunities?: number
+  proposals?: number
+  clients?: number
   cpl: number
   mroi: number
   utmSource?: string

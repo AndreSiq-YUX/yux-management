@@ -1,5 +1,14 @@
 import { supabase } from '@/lib/supabase'
-import { calculateCpl, calculateMroi, calculateStageConversion, sanitizeReportForPortal } from '@/lib/reports/reportRules'
+import {
+  buildExecutiveCampaignMetrics,
+  buildReportAiInsight,
+  buildReportPresets,
+  calculateCpl,
+  calculateMroi,
+  calculateStageConversion,
+  sanitizeReportForPortal,
+  summarizeExecutiveCampaignMetrics,
+} from '@/lib/reports/reportRules'
 import { buildAttributionDashboard, mapLeadSourceRollup, mapMroiAlert } from '@/services/crmAttributionService'
 import type {
   CampaignReportMetric,
@@ -58,11 +67,20 @@ export function buildOperationalReport(input: {
       campaignId: campaign.id,
       name: campaign.name,
       spend,
+      impressions: Number(campaign.impressions || 0),
+      clicks: Number(campaign.clicks || 0),
       leads,
       cpl: calculateCpl({ spend, leads }),
+      opportunities: Number(campaign.opportunities || campaign.opportunity_count || 0),
+      proposals: Number(campaign.proposals || campaign.proposal_count || 0),
+      clients: Number(campaign.clients || campaign.client_count || 0),
+      revenue: Number(campaign.attributed_revenue || campaign.attributedRevenue || 0),
       mroi: calculateMroi({ spend, attributedRevenue: Number(campaign.attributed_revenue || campaign.attributedRevenue || 0) }),
+      syncStatus: campaign.sync_status || campaign.provider_sync_status || campaign.provider_status || (campaign.provider_connection_id ? 'stale' : 'not_configured'),
+      aiRecommendation: campaign.ai_recommendation || campaign.recommendation || undefined,
     }
   })
+  const executiveCampaignMetrics = buildExecutiveCampaignMetrics(campaignMetrics)
 
   const landingPageMetrics: LandingPageReportMetric[] = landingPages.map(page => {
     const visits = Number(page.visits || 0)
@@ -98,6 +116,9 @@ export function buildOperationalReport(input: {
     proposalMetrics: { sent, approved, approvalRate: calculateStageConversion({ entered: sent, advanced: approved }) },
     ownerActivity,
     projectDelivery: [{ label: 'Projetos ativos', value: projects.filter(project => project.status !== 'completed' && project.status !== 'cancelled').length }],
+    executiveCampaignMetrics,
+    executiveCampaignSummary: summarizeExecutiveCampaignMetrics(executiveCampaignMetrics),
+    reportPresets: buildReportPresets(),
   }
 
   if (attributionRollups.length > 0) {
@@ -109,6 +130,8 @@ export function buildOperationalReport(input: {
       alerts: attributionAlerts.map(mapMroiAlert),
     })
   }
+
+  report.aiInsight = buildReportAiInsight(report)
 
   return report
 }

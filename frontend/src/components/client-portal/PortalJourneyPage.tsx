@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 
 export interface PortalJourneyMetric {
   label: string
@@ -38,6 +39,8 @@ export function PortalJourneyPage({
   note,
   children,
 }: PortalJourneyPageProps) {
+  const portalPath = usePortalWorkspacePath()
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 rounded-lg border bg-white p-5 md:flex-row md:items-start md:justify-between">
@@ -53,7 +56,7 @@ export function PortalJourneyPage({
         </div>
         {primaryAction && (
           <Link
-            to={primaryAction.href}
+            to={portalPath(primaryAction.href)}
             className="inline-flex items-center justify-center rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700"
           >
             {primaryAction.label}
@@ -94,7 +97,7 @@ export function PortalJourneyPage({
             {secondaryActions.map(action => (
               <Link
                 key={action.href}
-                to={action.href}
+                to={portalPath(action.href)}
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm font-medium text-gray-700 hover:border-yux-300 hover:bg-yux-50"
               >
                 {action.label}

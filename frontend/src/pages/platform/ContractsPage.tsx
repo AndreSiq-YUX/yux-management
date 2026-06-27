@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Edit, Plus, RefreshCw } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { CheckCircle2, Edit, Plus, RefreshCw } from 'lucide-react'
 import { ContractFormModal } from '@/components/platform/ContractFormModal'
 import { ContractModulesPanel } from '@/components/platform/ContractModulesPanel'
 import { platformService } from '@/services/platformService'
 import { supabaseService } from '@/services/supabaseService'
 import type { Client } from '@/types/client'
-import type { ContractDetails, PackageDefinition } from '@/types/platform'
+import type { Blueprint, ContractDetails, Organization, PackageDefinition } from '@/types/platform'
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -16,7 +17,11 @@ export function ContractsPage() {
   const [contracts, setContracts] = useState<ContractDetails[]>([])
   const [packages, setPackages] = useState<PackageDefinition[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [blueprints, setBlueprints] = useState<Blueprint[]>([])
+  const [organizations, setOrganizations] = useState<Organization[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState('')
+  const [applyingBlueprint, setApplyingBlueprint] = useState(false)
   const [editingContract, setEditingContract] = useState<ContractDetails | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -35,16 +40,20 @@ export function ContractsPage() {
     setError(null)
 
     try {
-      const [loadedContracts, loadedPackages, clientsResponse] = await Promise.all([
+      const [loadedContracts, loadedPackages, clientsResponse, loadedBlueprints, loadedOrganizations] = await Promise.all([
         platformService.getContracts(),
         platformService.getPackages(),
         supabaseService.getClients({ page: 1, limit: 500 }),
+        platformService.getBlueprints(),
+        platformService.getOrganizations(),
       ])
 
       const loadedClients = ((clientsResponse as any).clients || (clientsResponse as any).data || []) as Client[]
       setContracts(loadedContracts)
       setPackages(loadedPackages)
       setClients(loadedClients)
+      setBlueprints(loadedBlueprints)
+      setOrganizations(loadedOrganizations)
 
       const nextSelectedId =
         preferredId && loadedContracts.some(contract => contract.id === preferredId)
@@ -57,6 +66,8 @@ export function ContractsPage() {
       setContracts([])
       setPackages([])
       setClients([])
+      setBlueprints([])
+      setOrganizations([])
       setSelectedId(null)
     } finally {
       setLoading(false)
@@ -80,6 +91,42 @@ export function ContractsPage() {
   function handleSaved(contract: ContractDetails) {
     setSelectedId(contract.id)
     load(contract.id)
+  }
+
+  async function handleApplyBlueprint() {
+    if (!selectedContract || !selectedBlueprintId) return
+
+    const client = clients.find(clientItem => clientItem.id === selectedContract.clientId)
+    let organization = organizations.find(item => item.clientId === selectedContract.clientId)
+
+    if (!client) {
+      toast.error('Cliente do contrato nao foi carregado.')
+      return
+    }
+
+    setApplyingBlueprint(true)
+    try {
+      if (!organization) {
+        organization = await platformService.createClientOrganization({
+          clientId: selectedContract.clientId,
+          name: client.companyName,
+        })
+      }
+
+      await platformService.applyBlueprintToContract({
+        blueprintId: selectedBlueprintId,
+        contractId: selectedContract.id,
+        organizationId: organization.id,
+      })
+      toast.success('Modelo setorial aplicado ao contrato.')
+      setSelectedBlueprintId('')
+      await load(selectedContract.id)
+    } catch (error) {
+      console.error('Error applying blueprint from contract:', error)
+      toast.error('Erro ao aplicar modelo setorial.')
+    } finally {
+      setApplyingBlueprint(false)
+    }
   }
 
   if (loading) {
@@ -182,10 +229,48 @@ export function ContractsPage() {
           </div>
         </section>
 
-        <ContractModulesPanel
-          contract={selectedContract}
-          onChange={() => selectedContract && load(selectedContract.id)}
-        />
+        <div className="space-y-4">
+          <ContractModulesPanel
+            contract={selectedContract}
+            onChange={() => selectedContract && load(selectedContract.id)}
+          />
+
+          <section className="rounded-lg border bg-white p-4">
+            <h2 className="text-base font-semibold text-gray-900">Modelo setorial</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Aplique um blueprint para configurar funis, modulos e automacoes do contrato.
+            </p>
+            <div className="mt-4 space-y-3">
+              <select
+                value={selectedBlueprintId}
+                onChange={event => setSelectedBlueprintId(event.target.value)}
+                disabled={!selectedContract}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">Selecionar modelo</option>
+                {blueprints.map(blueprint => (
+                  <option key={blueprint.id} value={blueprint.id}>
+                    {blueprint.name} - {blueprint.sector}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleApplyBlueprint}
+                disabled={!selectedContract || !selectedBlueprintId || applyingBlueprint}
+                className="inline-flex w-full items-center justify-center rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                {applyingBlueprint ? 'Aplicando...' : 'Aplicar modelo ao contrato'}
+              </button>
+              {selectedContract && !organizations.some(item => item.clientId === selectedContract.clientId) && (
+                <p className="text-xs text-amber-700">
+                  Este cliente ainda nao tem organizacao de portal; ela sera criada ao aplicar o modelo.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
 
       <ContractFormModal

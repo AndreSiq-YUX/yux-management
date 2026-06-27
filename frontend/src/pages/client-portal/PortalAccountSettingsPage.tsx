@@ -42,7 +42,7 @@ export function PortalAccountSettingsPage() {
         <div className="flex items-start gap-2">
           <ShieldCheck className="mt-0.5 h-4 w-4" />
           <p>
-            Preferencias persistentes serao implementadas nas proximas fases, respeitando permissoes e seguranca por usuario.
+            Alteracoes de seguranca e acesso da empresa devem ser tratadas em Empresa. Esta area fica limitada ao usuario logado.
           </p>
         </div>
       </section>

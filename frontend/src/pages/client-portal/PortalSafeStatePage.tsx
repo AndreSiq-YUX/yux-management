@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowLeft, LockKeyhole } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 
 interface PortalSafeStatePageProps {
   title: string
@@ -15,6 +16,8 @@ export function PortalSafeStatePage({
   capabilities,
   backTo = '/portal',
 }: PortalSafeStatePageProps) {
+  const portalPath = usePortalWorkspacePath()
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -23,7 +26,7 @@ export function PortalSafeStatePage({
           <p className="mt-1 max-w-3xl text-sm text-gray-600">{description}</p>
         </div>
         <Button variant="outline" asChild>
-          <Link to={backTo}>
+          <Link to={portalPath(backTo)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Voltar
           </Link>
@@ -36,9 +39,9 @@ export function PortalSafeStatePage({
             <LockKeyhole className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Area planejada para este modulo</h2>
+            <h2 className="text-base font-semibold text-gray-900">Modulo protegido no portal</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Esta tela ja esta posicionada na nova arquitetura do portal. Enquanto a funcionalidade completa nao estiver ativa, ela nao exibe dados internos nem configuracoes sensiveis.
+              Esta tela mostra apenas informacoes liberadas para o contrato atual. Dados internos e configuracoes sensiveis permanecem restritos a operacao YUX.
             </p>
           </div>
         </div>

@@ -7,10 +7,16 @@ import type { PortalCampaign } from '@/types/campaign'
 
 export function PortalCampaignsPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [campaigns, setCampaigns] = useState<PortalCampaign[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
     if (!activeContract) {
       setLoading(false)
       return
@@ -26,11 +32,13 @@ export function PortalCampaignsPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeContract])
+  }, [activeContract, isPlatformLoading])
 
   useEffect(() => {
     load()
   }, [load])
+
+  if (isPlatformLoading || loading) return <p className="text-sm text-slate-600">Carregando campanhas...</p>
 
   if (!activeContract) {
     return (
@@ -40,8 +48,6 @@ export function PortalCampaignsPage() {
       </div>
     )
   }
-
-  if (loading) return <p className="text-sm text-slate-600">Carregando campanhas...</p>
 
   return (
     <PortalCampaignsWorkspace

@@ -2,6 +2,17 @@
 
 Atualizado em: 2026-06-04
 
+## Integracao com YUX Strategy Engine
+
+O CRM passa a ter uma camada estrategica para classificar estagios comerciais, orientar CRM Controller, Revenue Recovery e agentes de conversa.
+
+- `ai_sdr_comercial_1`: atende e qualifica levantadas de mao sem tratar lead frio como oportunidade.
+- `ai_closer`: apoia follow-up de proposta e objecoes, sem prometer desconto ou alterar termos sem aprovacao.
+- `support_assistant`: resolve suporte receptivo sem pressao comercial.
+- `customer_growth_comercial_2` e `revenue_recovery`: atuam em recorrencia, upsell, churn, ex-clientes, nao-clientes e propostas perdidas.
+
+O roteamento omnichannel escolhe uma unica IA por mensagem e usa `conversation_current_role`, `conversation_stage` e `role_locked_until` para evitar troca incoerente de papel durante a conversa. O CRM Controller usa estágio, follow-up, objeções, propostas e métricas para gerar recomendacoes estruturadas com objetivo, publico, acao, canal, responsavel, metrica e proximo passo.
+
 Este documento descreve o modulo de CRM e gestao de leads conforme implementado
 neste repositorio, incluindo escopo funcional, modelo de dados, integracoes,
 regras de seguranca, relacao com outros modulos e dependencias operacionais
@@ -886,7 +897,7 @@ A validacao anterior do MVP comercial tambem incluiu:
 - type-check;
 - build de producao;
 - testes compartilhados de Supabase Edge Functions;
-- deploy Vercel com sucesso.
+- deploy historico em Vercel validado antes da migracao do alvo de producao para Dokploy/VPS.
 
 ## O CRM Esta 100% Implementado?
 

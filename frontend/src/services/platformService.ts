@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { buildPipelineFromBlueprint, summarizeBlueprintApplication } from '@/lib/platform/blueprintApplicationRules'
 import { formatLocalDateOnly } from '@/lib/platform/contracts'
 import { crmGovernanceService } from '@/services/crmGovernanceService'
+import { growthWorkspaceService } from '@/services/growthWorkspaceService'
 import type {
   BillingCycle,
   Blueprint,
@@ -33,6 +34,7 @@ function mapOrganization(row: any): Organization {
     name: row.name,
     slug: row.slug,
     kind: row.kind,
+    clientId: row.client_id || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -261,6 +263,44 @@ export class PlatformService {
     return (data || []).map(mapOrganization)
   }
 
+  async createClientOrganization(input: {
+    clientId: string
+    name: string
+    slug?: string
+  }) {
+    const { data: existingOrganization, error: existingError } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('client_id', input.clientId)
+      .limit(1)
+      .maybeSingle()
+
+    if (existingError) throw existingError
+    if (existingOrganization) return mapOrganization(existingOrganization)
+
+    const baseSlug = (input.slug || input.name)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || `cliente-${input.clientId.slice(0, 8)}`
+
+    const { data, error } = await supabase
+      .from('organizations')
+      .insert({
+        name: input.name.trim(),
+        slug: `${baseSlug}-${input.clientId.slice(0, 8)}`,
+        kind: 'client',
+        client_id: input.clientId,
+      })
+      .select('*')
+      .single()
+
+    if (error) throw error
+    return mapOrganization(data)
+  }
+
   async getRoles() {
     const { data, error } = await supabase
       .from('roles')
@@ -469,7 +509,11 @@ export class PlatformService {
       return { contract: null, enabledModuleKeys: [] }
     }
 
-    const contract = await this.getActiveContractForClient(client.id)
+    return this.getPortalContractContextForClient(client.id)
+  }
+
+  async getPortalContractContextForClient(clientId: string): Promise<PortalContractContext> {
+    const contract = await this.getActiveContractForClient(clientId)
     return {
       contract,
       enabledModuleKeys: contract
@@ -627,6 +671,12 @@ export class PlatformService {
 
     if (existingRunError) throw existingRunError
     if (existingRun?.status === 'succeeded') {
+      const blueprint = await this.getBlueprintById(input.blueprintId)
+      await growthWorkspaceService.createOnboardingChecklistFromBlueprint({
+        organizationId: input.organizationId,
+        contractId: input.contractId,
+        blueprint,
+      })
       return mapBlueprintApplicationRun(existingRun)
     }
 
@@ -734,6 +784,11 @@ export class PlatformService {
         .single()
 
       if (completedRunError) throw completedRunError
+      await growthWorkspaceService.createOnboardingChecklistFromBlueprint({
+        organizationId: input.organizationId,
+        contractId: input.contractId,
+        blueprint,
+      })
       return mapBlueprintApplicationRun(completedRun)
     } catch (error) {
       await supabase

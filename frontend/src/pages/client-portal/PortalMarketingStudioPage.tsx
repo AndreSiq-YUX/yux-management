@@ -19,6 +19,7 @@ import type {
 
 export function PortalMarketingStudioPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [contents, setContents] = useState<PortalMarketingContentItem[]>([])
   const [calendarItems, setCalendarItems] = useState<MarketingCalendarItem[]>([])
   const [reviews, setReviews] = useState<MarketingContentReview[]>([])
@@ -30,6 +31,11 @@ export function PortalMarketingStudioPage() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
     if (!activeContract) {
       setLoading(false)
       return
@@ -69,11 +75,13 @@ export function PortalMarketingStudioPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeContract])
+  }, [activeContract, isPlatformLoading])
 
   useEffect(() => {
     load()
   }, [load])
+
+  if (isPlatformLoading || loading) return <p className="text-sm text-slate-600">Carregando Marketing Studio...</p>
 
   if (!activeContract) {
     return (
@@ -83,8 +91,6 @@ export function PortalMarketingStudioPage() {
       </div>
     )
   }
-
-  if (loading) return <p className="text-sm text-slate-600">Carregando Marketing Studio...</p>
 
   const handleReviewDecision = async (decision: PortalMarketingReviewDecision) => {
     const review = reviews.find(item => item.contentItemId === decision.contentItemId && item.status === 'pending')

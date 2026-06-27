@@ -3,26 +3,25 @@ import toast from 'react-hot-toast'
 import { PortalFinanceWorkspace } from '@/components/finance/PortalFinanceWorkspace'
 import { calculateFinanceSummary } from '@/lib/finance/financeRules'
 import { financeService } from '@/services/financeService'
-import { useAuthStore } from '@/stores/authStore'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { FinanceInvoice } from '@/types/finance'
 
 export function PortalFinancePage() {
-  const { user } = useAuthStore()
-  const { activeContract, initializeForUser } = usePlatformStore(state => ({
+  const { activeContract, isPlatformLoading } = usePlatformStore(state => ({
     activeContract: state.activeContract,
-    initializeForUser: state.initializeForUser,
+    isPlatformLoading: state.isLoading,
   }))
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const summary = useMemo(() => calculateFinanceSummary(invoices), [invoices])
 
   useEffect(() => {
-    if (user?.id) initializeForUser(user.id)
-  }, [initializeForUser, user?.id])
-
-  useEffect(() => {
     async function load() {
+      if (isPlatformLoading) {
+        setLoading(true)
+        return
+      }
+
       if (!activeContract) {
         setLoading(false)
         return
@@ -41,7 +40,7 @@ export function PortalFinancePage() {
     }
 
     load()
-  }, [activeContract])
+  }, [activeContract, isPlatformLoading])
 
   if (loading) return <p className="text-sm text-gray-600">Carregando financeiro...</p>
 

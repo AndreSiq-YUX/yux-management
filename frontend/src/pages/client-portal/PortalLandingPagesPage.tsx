@@ -7,10 +7,16 @@ import type { PortalLandingPage } from '@/types/landingPage'
 
 export function PortalLandingPagesPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
+  const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [pages, setPages] = useState<PortalLandingPage[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    if (isPlatformLoading) {
+      setLoading(true)
+      return
+    }
+
     if (!activeContract) {
       setLoading(false)
       return
@@ -26,11 +32,13 @@ export function PortalLandingPagesPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeContract])
+  }, [activeContract, isPlatformLoading])
 
   useEffect(() => {
     load()
   }, [load])
+
+  if (isPlatformLoading || loading) return <p className="text-sm text-slate-600">Carregando landing pages...</p>
 
   if (!activeContract) {
     return (
@@ -40,8 +48,6 @@ export function PortalLandingPagesPage() {
       </div>
     )
   }
-
-  if (loading) return <p className="text-sm text-slate-600">Carregando landing pages...</p>
 
   return (
     <PortalLandingPagesWorkspace

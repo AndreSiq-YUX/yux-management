@@ -56,6 +56,50 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(prompt["prompt_versions"], {"global": 2, "agent": 3})
         self.assertEqual(len(prompt["compiled_prompt_hash"]), 64)
 
+    def test_compose_prompt_accepts_existing_agent_without_strategy_context(self):
+        prompt = compose_prompt(GLOBAL_PROMPT, AGENT, {"objective": "Gerar post"})
+
+        self.assertIn("Objetivo: Gerar post", prompt["context_block"])
+        self.assertNotIn("Estratégia YUX", prompt["context_block"])
+        self.assertEqual(prompt["agent_prompt"], "Use exemplos aprovados do cliente.")
+
+    def test_compose_prompt_includes_strategy_context_before_rag_snippets(self):
+        prompt = compose_prompt(
+            GLOBAL_PROMPT,
+            AGENT,
+            {
+                "objective": "Qualificar lead",
+                "brand_summary": "Marca consultiva",
+                "knowledge_snippets": ["Snippet RAG comum"],
+                "strategy_context": {
+                    "profile_key": "ai_sdr_comercial_1",
+                    "commercial_stage": "raised_hand",
+                    "customer_context": "Lead pediu orçamento no WhatsApp.",
+                    "skill_rules": ["Pergunte antes de apresentar solução."],
+                    "concept_cards": [
+                        {
+                            "id": "card-spin",
+                            "concept": "SPIN SDR",
+                            "problem_solved": "Lead sem diagnóstico.",
+                            "recommended_actions": ["Conduzir perguntas SPIN."],
+                        }
+                    ],
+                    "chunks": [{"id": "chunk-sdr", "chunk_text": "Registrar próximo passo no CRM."}],
+                    "allowed_actions": ["qualify_lead"],
+                    "forbidden_actions": ["activate_campaign"],
+                    "approval_policy": {"send_external_message": "approval_required"},
+                },
+            },
+        )
+
+        context = prompt["context_block"]
+        self.assertIn("Estratégia YUX: ai_sdr_comercial_1", context)
+        self.assertIn("Regra: Pergunte antes de apresentar solução.", context)
+        self.assertIn("Card: SPIN SDR", context)
+        self.assertIn("Chunk chunk-sdr: Registrar próximo passo no CRM.", context)
+        self.assertLess(context.index("Regra:"), context.index("Card:"))
+        self.assertLess(context.index("Card:"), context.index("Conhecimento:"))
+
     def test_select_model_route_prefers_agent_override(self):
         route = select_model_route(
             AGENT,
@@ -136,6 +180,21 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(result["agent_runs"][0]["model_name"], "openai/gpt-4o-mini")
         self.assertEqual(result["agent_runs"][0]["agent_prompt_snapshot"], "Use exemplos aprovados do cliente.")
         self.assertNotIn("system_prompt", result["agent_runs"][0])
+
+    def test_graph_executes_existing_marketing_agent_without_strategy_binding(self):
+        harness = Harness(
+            global_prompts={"multichannel_writer": GLOBAL_PROMPT},
+            routes=[],
+            tool_policies=[],
+            budget_policies=[],
+        )
+        result = harness.execute_agent({
+            "agent": AGENT,
+            "context": {"objective": "Gerar post"},
+        })
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertNotIn("strategy_context", result["agent_runs"][0])
 
     def test_harness_executes_openrouter_when_enabled(self):
         def transport(url, headers, payload, method):

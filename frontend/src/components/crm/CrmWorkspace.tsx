@@ -213,7 +213,18 @@ export function CrmWorkspace() {
       <Metric label="Conversao" value={`${summary.conversionRate}%`} />
       <Metric label="Pipeline aberto" value={summary.openPipelineValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
     </div>
-    <LeadAdvancedFilters filters={filters} stages={stages} sources={sources} onChange={setFilters} />
+    <LeadAdvancedFilters
+      filters={filters}
+      stages={stages}
+      sources={sources}
+      onChange={setFilters}
+      showSmartSegmentBuilder
+      onSaveSmartSegment={segment => toast.success(`Segmento salvo: ${segment.name}`)}
+      onCreateSegmentTask={segment => toast.success(`Tarefa criada para ${segment.estimatedSize} leads estimados`)}
+      onStartSegmentAutomation={segment => toast.success(`Automacao preparada para ${segment.name}`)}
+      onCreateSegmentCampaign={segment => toast.success(`Campanha preparada para ${segment.name}`)}
+      onExportSegment={segment => toast.success(`Exportacao preparada para ${segment.estimatedSize} leads estimados`)}
+    />
     <CockpitTabs activeTab={activeTab} onTabChange={setActiveTab} />
     {activeTab === 'kanban' && <LeadKanbanBoard stages={stages} leads={filteredLeads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />}
     {activeTab === 'list' && <LeadList stages={stages} leads={filteredLeads} onSelectLead={setSelectedLead} onMoveLead={moveLead} />}
@@ -358,7 +369,7 @@ function LeadOperationsModal({ organizationId, lead, onClose }: { organizationId
   const setStatus = async (item: CrmSequenceEnrollment, status: CrmSequenceEnrollment['status']) => { await crmService.updateEnrollment(item.id, { status, manualNote: status === 'manual' ? 'Atendimento assumido manualmente.' : undefined }); refresh() }
   const reschedule = async (item: CrmSequenceEnrollment) => { if (!rescheduleAt) return; await crmService.updateEnrollment(item.id, { status: 'active', nextExecutionAt: new Date(rescheduleAt).toISOString() }); setRescheduleAt(''); toast.success('Follow-up reagendado'); refresh() }
   const sendSuggestion = async (suggestionId: string) => { await crmConversationService.sendSuggestedReply({ suggestionId }); toast.success('Resposta enviada'); refresh() }
-  return <Dialog open={Boolean(lead)} onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>{lead?.name}</DialogTitle></DialogHeader>{lead && <Tabs defaultValue="follow-up">
+  return <Dialog open={Boolean(lead)} onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-7xl overflow-y-auto"><DialogHeader><DialogTitle>{lead?.name}</DialogTitle></DialogHeader>{lead && <Tabs defaultValue="follow-up">
     <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="follow-up">Follow-up</TabsTrigger><TabsTrigger value="history">Historico</TabsTrigger><TabsTrigger value="tasks">Tarefas</TabsTrigger><TabsTrigger value="automations">Execucoes</TabsTrigger><TabsTrigger value="commercial">Comercial</TabsTrigger></TabsList>
     <TabsContent value="follow-up" className="space-y-4"><Lead360Panel lead={lead} interactions={interactions} tasks={tasks} conversations={crmConversations} aiInsights={aiInsights} fieldSuggestions={fieldSuggestions} responseSuggestions={responseSuggestions} slaEvents={slaEvents} quickReplies={quickReplies} templates={templates} onSendSuggestion={sendSuggestion} taskTitle={taskTitle} dueAt={dueAt} onTaskTitleChange={setTaskTitle} onDueAtChange={setDueAt} onCreateTask={addTask} onCompleteTask={completeTask} onMarkWon={markWon} onMarkLost={markLost} /><div className="flex gap-2"><Select value={sequenceId} onValueChange={setSequenceId}><SelectTrigger><SelectValue placeholder="Escolha uma sequencia" /></SelectTrigger><SelectContent>{sequences.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><Button disabled={!sequenceId} onClick={enroll}>Iniciar sequencia</Button></div>{sequences.length === 0 && <p className="text-sm text-gray-500">Nenhuma sequencia configurada.</p>}{enrollments.map(item => <div key={item.id} className="space-y-3 rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm">{item.status}{item.nextExecutionAt ? ` - proximo envio ${new Date(item.nextExecutionAt).toLocaleString('pt-BR')}` : ''}</span><div className="flex gap-2"><Button size="sm" variant="outline" title="Pausar automacao" onClick={() => setStatus(item, 'paused')}><Pause className="h-3 w-3" /></Button><Button size="sm" variant="outline" title="Retomar automacao" onClick={() => setStatus(item, 'active')}><Play className="h-3 w-3" /></Button><Button size="sm" variant="outline" onClick={() => setStatus(item, 'manual')}><UserRoundCheck className="mr-1 h-3 w-3" />Assumir</Button></div></div><div className="flex gap-2"><Input type="datetime-local" value={rescheduleAt} onChange={event => setRescheduleAt(event.target.value)} /><Button size="sm" variant="outline" disabled={!rescheduleAt} onClick={() => reschedule(item)}>Reagendar</Button></div></div>)}</TabsContent>
     <TabsContent value="history" className="space-y-3"><div className="flex gap-2"><Textarea placeholder="Registrar atualizacao" value={note} onChange={event => setNote(event.target.value)} /><Button onClick={addNote}>Registrar</Button></div><LeadTimeline interactions={interactions} /></TabsContent>

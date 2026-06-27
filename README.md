@@ -40,7 +40,7 @@ Uma equipe de agentes autônomos integrados diretamente ao banco de dados e cana
 
 ## 📐 Stack Tecnológico
 
-### Frontend (Vercel)
+### Frontend (VPS/Dokploy)
 *   React 18 + TypeScript + Vite
 *   Tailwind CSS + Shadcn UI
 *   Zustand (Gerenciamento de Estado Global)
@@ -56,7 +56,7 @@ Uma equipe de agentes autônomos integrados diretamente ao banco de dados e cana
 *   VPS Dockerizada gerenciando as conexões de mensageria (Evolution/Z-API), filas de eventos de WhatsApp, disparo de e-mails e integrações de agendas.
 
 ### Microsserviço de Agentes (Agentic API)
-*   API Python (FastAPI) rodando CrewAI, Agno ou LangGraph, conectada de forma assíncrona ao n8n e Supabase.
+*   Runtime Python/FastAPI na VPS via Dokploy, com harness de agentes e integração server-side com Supabase.
 
 ---
 
@@ -64,12 +64,13 @@ Uma equipe de agentes autônomos integrados diretamente ao banco de dados e cana
 
 ```
 yux-client-management/
-├── frontend/                 # React SPA (deploy Vercel)
+├── frontend/                 # React SPA, Docker/Nginx para Dokploy
 ├── supabase/                 # Estruturas de Banco e Migrations SQL
 │   ├── migrations/          # Versionamento reproduzível do banco
 │   └── seed.sql             # Dados de teste para demonstração rápida
-├── agentic-core/             # (Planejado) Scripts/API Python dos agentes autônomos
-└── README.md
+├── workers/                  # Runtime Python de agentes
+├── docker-compose.dokploy.yml # Compose de producao na VPS
+└── DEPLOY-DOKPLOY-SUPABASE.md
 ```
 
 ## 🚀 Desenvolvimento & Instalação
@@ -93,5 +94,5 @@ npm run dev
 
 ## 📑 Documentação Complementar
 *   [Roadmap de Implementação](ROADMAP.md)
-*   [Deploy Vercel & Supabase](VERCEL-SUPABASE-DEPLOY.md)
+*   [Deploy VPS/Dokploy & Supabase](DEPLOY-DOKPLOY-SUPABASE.md)
 *   [Guia de Demonstração (Demo)](DEMO-GUIDE.md)

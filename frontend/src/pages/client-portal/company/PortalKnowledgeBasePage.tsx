@@ -1,5 +1,6 @@
 import { BookOpen } from 'lucide-react'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { KnowledgeReadinessPanel } from '@/components/growth-workspace/KnowledgeReadinessPanel'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
 import { countItems, formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
 
@@ -7,14 +8,25 @@ export function PortalKnowledgeBasePage() {
   const {
     loading,
     error,
+    brandProfile,
     knowledgeDocuments,
     knowledgeMatches,
     productsServices,
+    settings,
   } = usePortalMarketingContext()
 
   const publishedCount = countItems(knowledgeDocuments, document => document.status === 'published')
   const indexedCount = countItems(knowledgeDocuments, document => document.status === 'indexed')
   const activeProducts = productsServices.filter(product => product.status === 'active')
+  const brandReadinessProfile = brandProfile || (settings ? {
+    toneOfVoice: settings.toneOfVoice || '',
+    persona: settings.persona || '',
+    brandVoiceSummary: settings.toneOfVoice || '',
+    forbiddenTopics: settings.forbiddenTopics || [],
+    priorityTopics: settings.priorityTopics || [],
+    visualGuidelines: settings.visualPreferences,
+    status: 'active' as const,
+  } : null)
 
   return (
     <PortalJourneyPage
@@ -40,6 +52,13 @@ export function PortalKnowledgeBasePage() {
       ]}
       note="A regra de produto e evitar bases duplicadas por modulo. Esta pagina representa a fonte unica de conhecimento da empresa."
     >
+      <KnowledgeReadinessPanel
+        profile={brandReadinessProfile}
+        knowledgeDocuments={knowledgeDocuments}
+        productsServices={productsServices}
+        knowledgeMatches={knowledgeMatches}
+      />
+
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-lg border bg-white p-5">
           <h2 className="text-base font-semibold text-gray-900">Documentos recentes</h2>
