@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 import type { AdminHubSummary } from '@/types/adminPlatform'
 
 interface DashboardStats {
-  overview: {
+  overview?: {
     totalClients: number
     totalProjects: number
     totalLeads: number
@@ -16,18 +16,23 @@ interface DashboardStats {
     activeProjects: number
     qualifiedLeads: number
   }
-  financial: {
+  financial?: {
     totalBudget: number
     totalCampaignSpent: number
     budgetUtilization: number
   }
-  marketing: {
+  marketing?: {
     totalImpressions: number
     totalClicks: number
     ctr: number
     avgROAS: number
   }
-  recent: {
+  campaigns?: {
+    totalBudget: number
+    totalSpent: number
+    totalConversions: number
+  }
+  recent?: {
     projects: Array<{
       id: string
       name: string
@@ -36,6 +41,7 @@ interface DashboardStats {
       progress: number
     }>
   }
+  recentActivity?: DashboardStats['recent']
 }
 
 interface CriticalItem {
@@ -119,10 +125,28 @@ export function DashboardPage() {
     )
   }
 
+  const overview = {
+    totalClients: 0,
+    totalProjects: 0,
+    totalLeads: 0,
+    totalCampaigns: 0,
+    activeProjects: 0,
+    qualifiedLeads: 0,
+    ...dashboardStats?.overview,
+  }
+  const marketing = {
+    totalImpressions: 0,
+    totalClicks: 0,
+    ctr: 0,
+    avgROAS: 0,
+    ...dashboardStats?.marketing,
+  }
+  const recentProjects = dashboardStats?.recent?.projects ?? dashboardStats?.recentActivity?.projects ?? []
+
   const stats = [
     {
       name: 'Clientes',
-      value: adminSummary?.clientCount ?? dashboardStats?.overview.totalClients ?? 0,
+      value: adminSummary?.clientCount ?? overview.totalClients,
       detail: 'Clientes cadastrados',
       icon: Users,
     },
@@ -134,14 +158,14 @@ export function DashboardPage() {
     },
     {
       name: 'Projetos ativos',
-      value: dashboardStats?.overview.activeProjects ?? 0,
-      detail: `${dashboardStats?.overview.totalProjects ?? 0} projetos no total`,
+      value: overview.activeProjects,
+      detail: `${overview.totalProjects} projetos no total`,
       icon: FolderOpen,
     },
     {
       name: 'ROAS medio',
-      value: `${(dashboardStats?.marketing.avgROAS ?? 0).toFixed(1)}x`,
-      detail: `${(dashboardStats?.marketing.ctr ?? 0).toFixed(2)}% CTR`,
+      value: `${marketing.avgROAS.toFixed(1)}x`,
+      detail: `${marketing.ctr.toFixed(2)}% CTR`,
       icon: TrendingUp,
     },
   ]
@@ -220,7 +244,7 @@ export function DashboardPage() {
         <article className="rounded-lg border bg-white p-5">
           <h2 className="text-base font-semibold text-gray-900">Projetos recentes</h2>
           <div className="mt-4 space-y-3">
-            {(dashboardStats?.recent.projects || []).map(project => (
+            {recentProjects.map(project => (
               <div key={project.id} className="rounded-md border bg-gray-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-gray-900">{project.name}</p>
@@ -229,7 +253,7 @@ export function DashboardPage() {
                 <p className="mt-1 text-xs text-gray-500">{project.client || 'Cliente nao informado'}</p>
               </div>
             ))}
-            {(!dashboardStats?.recent.projects || dashboardStats.recent.projects.length === 0) && (
+            {recentProjects.length === 0 && (
               <PortalEmptyState
                 title="Nenhum projeto recente"
                 description="Projetos criados ou atualizados aparecem nesta area para acompanhamento interno."

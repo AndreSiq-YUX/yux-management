@@ -407,12 +407,25 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
         ORDER BY p.created_at DESC
         LIMIT 5
       `),
-      app.pg.query('SELECT budget, spent, conversions FROM public.campaigns'),
+      app.pg.query('SELECT budget, spent, impressions, clicks, conversions, roas FROM public.campaigns'),
     ])
 
     const totalBudget = campaignRows.rows.reduce((sum, row) => sum + Number(row.budget || 0), 0)
     const totalSpent = campaignRows.rows.reduce((sum, row) => sum + Number(row.spent || 0), 0)
+    const totalImpressions = campaignRows.rows.reduce((sum, row) => sum + Number(row.impressions || 0), 0)
+    const totalClicks = campaignRows.rows.reduce((sum, row) => sum + Number(row.clicks || 0), 0)
     const totalConversions = campaignRows.rows.reduce((sum, row) => sum + Number(row.conversions || 0), 0)
+    const totalRoas = campaignRows.rows.reduce((sum, row) => sum + Number(row.roas || 0), 0)
+    const budgetUtilization = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0
+    const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+    const avgROAS = campaignRows.rows.length > 0 ? totalRoas / campaignRows.rows.length : 0
+    const recentProjectRows = recentProjects.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      client: row.company_name || '',
+      status: row.status,
+      progress: 0,
+    }))
 
     return {
       overview: {
@@ -423,17 +436,25 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
         activeProjects: activeProjects.rows[0]?.count || 0,
         qualifiedLeads: qualifiedLeads.rows[0]?.count || 0,
       },
+      financial: {
+        totalBudget,
+        totalCampaignSpent: totalSpent,
+        budgetUtilization,
+      },
+      marketing: {
+        totalImpressions,
+        totalClicks,
+        ctr,
+        avgROAS,
+      },
       campaigns: { totalBudget, totalSpent, totalConversions },
       recentActivity: {
-        projects: recentProjects.rows.map(row => ({
-          id: row.id,
-          name: row.name,
-          client: row.company_name || '',
-          status: row.status,
-          progress: 0,
-        })),
+        projects: recentProjectRows,
         leads: [],
         tasks: [],
+      },
+      recent: {
+        projects: recentProjectRows,
       },
     }
   })
