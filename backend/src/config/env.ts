@@ -1,5 +1,10 @@
 import { z } from 'zod'
 
+const optionalUrl = z.preprocess((value) => {
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}, z.string().url().optional())
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -8,9 +13,9 @@ const envSchema = z.object({
   SESSION_COOKIE_NAME: z.string().default('yux_session'),
   SESSION_SECRET: z.string().min(32),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
-  YUX_AGENT_RUNTIME_URL: z.string().url().optional(),
+  YUX_AGENT_RUNTIME_URL: optionalUrl,
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
-  N8N_CRM_WEBHOOK_URL: z.string().url().optional(),
+  N8N_CRM_WEBHOOK_URL: optionalUrl,
   OMNICHANNEL_ATTACHMENTS_DIR: z.string().optional(),
   OMNICHANNEL_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().optional(),
 })
