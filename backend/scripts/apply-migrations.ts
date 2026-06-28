@@ -38,10 +38,11 @@ export async function applyMigrations(pool: MigrationPool, migrationsDir: string
       continue
     }
 
-    const sql = await readFile(path.join(migrationsDir, file), 'utf8')
+    const sql = normalizeMigrationSql(await readFile(path.join(migrationsDir, file), 'utf8'))
 
     await pool.query('BEGIN')
     try {
+      log.log(`applying ${version} from ${file} (${sql.length} chars)`)
       await pool.query(sql)
       await pool.query('INSERT INTO schema_migrations(version) VALUES ($1)', [version])
       await pool.query('COMMIT')
@@ -51,6 +52,10 @@ export async function applyMigrations(pool: MigrationPool, migrationsDir: string
       throw error
     }
   }
+}
+
+function normalizeMigrationSql(sql: string) {
+  return sql.replace(/^\uFEFF/, '').replace(/\u0000/g, '').trimStart()
 }
 
 export async function runMigrations() {
