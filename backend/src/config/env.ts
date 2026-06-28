@@ -5,6 +5,16 @@ const optionalUrl = z.preprocess((value) => {
   return value
 }, z.string().url().optional())
 
+const optionalString = z.preprocess((value) => {
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}, z.string().optional())
+
+const optionalEmail = z.preprocess((value) => {
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}, z.string().email().optional())
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -14,9 +24,9 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   PUBLIC_APP_URL: optionalUrl,
-  SMTP2GO_API_KEY: z.string().optional(),
-  SMTP2GO_SENDER_EMAIL: z.string().email().optional(),
-  SMTP2GO_SENDER_NAME: z.string().optional(),
+  SMTP2GO_API_KEY: optionalString,
+  SMTP2GO_SENDER_EMAIL: optionalEmail,
+  SMTP2GO_SENDER_NAME: optionalString,
   YUX_AGENT_RUNTIME_URL: optionalUrl,
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
   N8N_CRM_WEBHOOK_URL: optionalUrl,
