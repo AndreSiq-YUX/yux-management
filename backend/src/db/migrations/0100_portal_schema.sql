@@ -1,4 +1,4 @@
-﻿-- Portal YUX self-hosted schema bootstrap.
+-- Portal YUX self-hosted schema bootstrap.
 -- Generated from reviewed Supabase migration files.
 -- Application authorization is enforced by backend policies.
 -- Supabase policies, storage buckets, auth triggers, Data API grants and PostgREST reloads are intentionally omitted.
@@ -16,7 +16,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
     CREATE TYPE public.user_role AS ENUM ('ADMIN', 'MANAGER', 'CLIENT');
   END IF;
-END
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -1412,7 +1412,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 
@@ -1953,7 +1953,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 INSERT INTO public.proposal_templates (
@@ -2964,7 +2964,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 INSERT INTO public.roles (key, name, scope)
@@ -3875,7 +3875,7 @@ BEGIN
       ADD CONSTRAINT automation_flows_active_version_fkey
       FOREIGN KEY (active_version_id) REFERENCES public.automation_flow_versions(id) ON DELETE SET NULL;
   END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS public.automation_simulation_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -4087,7 +4087,7 @@ BEGIN
     'internal_service'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -4101,7 +4101,7 @@ BEGIN
     'stale'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS public.client_module_limits (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -4463,7 +4463,7 @@ BEGIN
       ADD CONSTRAINT channel_connections_fallback_mode_check
       CHECK (fallback_mode IN ('official', 'n8n'));
   END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS public.meta_oauth_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -5756,43 +5756,43 @@ DO $$
 BEGIN
   CREATE TYPE public.crm_instance_status AS ENUM ('draft', 'active', 'paused', 'archived');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
   CREATE TYPE public.crm_instance_role AS ENUM ('seller', 'manager', 'client_admin', 'yux_admin');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
   CREATE TYPE public.crm_member_status AS ENUM ('invited', 'active', 'disabled');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
   CREATE TYPE public.crm_assignment_mode AS ENUM ('manual', 'queue', 'round_robin', 'pull_next');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
   CREATE TYPE public.crm_assignment_state AS ENUM ('unassigned', 'assigned', 'in_queue', 'reassigned');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
   CREATE TYPE public.crm_publication_status AS ENUM ('draft', 'reviewing', 'published', 'failed');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
   CREATE TYPE public.crm_migration_strategy AS ENUM ('keep_existing', 'migrate_all', 'migrate_open', 'mapped_stages');
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS public.crm_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -6150,7 +6150,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 INSERT INTO public.crm_instances (
@@ -6412,7 +6412,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 
@@ -6572,7 +6572,7 @@ BEGIN
     FOREIGN KEY (template_id) REFERENCES public.crm_message_templates(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN
   NULL;
-END
+END;
 $$;
 
 DO $$
@@ -6582,7 +6582,7 @@ BEGIN
     FOREIGN KEY (quick_reply_id) REFERENCES public.crm_quick_replies(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN
   NULL;
-END
+END;
 $$;
 
 CREATE INDEX IF NOT EXISTS idx_conversations_lead_id ON public.conversations(lead_id);
@@ -6625,7 +6625,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 
@@ -6648,7 +6648,7 @@ BEGIN
     ALTER TABLE public.invoices
       ADD COLUMN IF NOT EXISTS source_proposal_id UUID REFERENCES public.proposals(id) ON DELETE SET NULL;
   END IF;
-END
+END;
 $$;
 
 CREATE TABLE IF NOT EXISTS public.lead_proposal_recommendations (
@@ -6748,7 +6748,7 @@ BEGIN
     CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped'));
 EXCEPTION WHEN duplicate_object THEN
   NULL;
-END
+END;
 $$;
 
 DO $$
@@ -6760,7 +6760,7 @@ BEGIN
   END IF;
 EXCEPTION WHEN duplicate_object THEN
   NULL;
-END
+END;
 $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_proposal_conversion_runs_idempotency
@@ -6818,7 +6818,7 @@ BEGIN
   IF to_regclass('public.invoices') IS NOT NULL THEN
     CREATE INDEX IF NOT EXISTS idx_invoices_source_proposal ON public.invoices(source_proposal_id);
   END IF;
-END
+END;
 $$;
 
 DO $$
@@ -6838,7 +6838,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 DROP TRIGGER IF EXISTS update_proposal_conversion_runs_updated_at ON public.proposal_conversion_runs;
@@ -6944,7 +6944,7 @@ BEGIN
     ALTER TABLE public.invoices
       ADD COLUMN IF NOT EXISTS source_lead_id UUID REFERENCES public.leads(id) ON DELETE SET NULL;
   END IF;
-END
+END;
 $$;
 
 CREATE TABLE IF NOT EXISTS public.lead_attribution_events (
@@ -6978,7 +6978,7 @@ BEGIN
   END IF;
 EXCEPTION WHEN duplicate_object THEN
   NULL;
-END
+END;
 $$;
 
 CREATE TABLE IF NOT EXISTS public.lead_source_rollups (
@@ -7056,7 +7056,7 @@ BEGIN
   END IF;
 EXCEPTION WHEN duplicate_object THEN
   NULL;
-END
+END;
 $$;
 
 CREATE TABLE IF NOT EXISTS public.crm_mroi_alerts (
@@ -7199,7 +7199,7 @@ BEGIN
   IF to_regclass('public.invoices') IS NOT NULL THEN
     CREATE INDEX IF NOT EXISTS idx_invoices_source_lead ON public.invoices(source_lead_id);
   END IF;
-END
+END;
 $$;
 
 DO $$
@@ -7218,7 +7218,7 @@ BEGIN
       target_table
     );
   END LOOP;
-END
+END;
 $$;
 
 
@@ -7583,7 +7583,9 @@ ON CONFLICT (role_key, permission_key) DO NOTHING;
 -- source: 20260606233110_marketing_studio_knowledge_rag.sql
 -- Marketing Studio knowledge, brand voice, structured offers, and simple RAG.
 
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+-- pgvector is optional in the self-hosted stack. The default postgres:17-alpine
+-- image does not ship the extension, so vector embeddings use JSONB until the
+-- operator intentionally swaps to a pgvector-enabled image.
 
 CREATE TABLE public.marketing_brand_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -7653,7 +7655,7 @@ CREATE TABLE public.marketing_knowledge_chunks (
   body TEXT NOT NULL CHECK (BTRIM(body) <> ''),
   token_count INTEGER NOT NULL DEFAULT 0 CHECK (token_count >= 0),
   embedding_model TEXT,
-  embedding extensions.vector(1536),
+  embedding JSONB CHECK (embedding IS NULL OR jsonb_typeof(embedding) = 'array'),
   metadata JSONB NOT NULL DEFAULT '{}'::JSONB CHECK (jsonb_typeof(metadata) = 'object'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -7670,7 +7672,7 @@ CREATE INDEX idx_marketing_knowledge_chunks_contract_document ON public.marketin
 
 CREATE INDEX idx_marketing_knowledge_chunks_body_fts ON public.marketing_knowledge_chunks USING GIN (to_tsvector('portuguese', body));
 
-CREATE INDEX idx_marketing_knowledge_chunks_embedding ON public.marketing_knowledge_chunks USING ivfflat (embedding extensions.vector_cosine_ops) WHERE embedding IS NOT NULL;
+-- Vector index omitted until pgvector is installed in the VPS Postgres image.
 
 CREATE TRIGGER update_marketing_brand_profiles_updated_at BEFORE UPDATE ON public.marketing_brand_profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -8735,7 +8737,8 @@ CREATE INDEX IF NOT EXISTS idx_growth_onboarding_steps_checklist ON public.growt
 -- profiles, action policies, commercial stage taxonomy and conversation role
 -- ownership for cross-module AI agents.
 
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+-- pgvector is optional in the self-hosted stack. Keep vector payloads as JSONB
+-- for the initial VPS bootstrap.
 
 CREATE TABLE IF NOT EXISTS public.yux_strategy_doctrines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -9084,7 +9087,7 @@ CREATE TABLE IF NOT EXISTS public.yux_strategy_card_embeddings (
   card_id UUID NOT NULL REFERENCES public.yux_strategy_concept_cards(id) ON DELETE CASCADE,
   embedding_model TEXT NOT NULL CHECK (BTRIM(embedding_model) <> ''),
   embedding_dimensions INTEGER NOT NULL CHECK (embedding_dimensions > 0),
-  embedding extensions.vector(1536),
+  embedding JSONB CHECK (embedding IS NULL OR jsonb_typeof(embedding) = 'array'),
   embedding_values JSONB CHECK (embedding_values IS NULL OR jsonb_typeof(embedding_values) = 'array'),
   content_hash TEXT NOT NULL CHECK (BTRIM(content_hash) <> ''),
   metadata JSONB NOT NULL DEFAULT '{}'::JSONB CHECK (jsonb_typeof(metadata) = 'object'),
@@ -9097,7 +9100,7 @@ CREATE TABLE IF NOT EXISTS public.yux_strategy_chunk_embeddings (
   chunk_id UUID NOT NULL REFERENCES public.yux_strategy_source_chunks(id) ON DELETE CASCADE,
   embedding_model TEXT NOT NULL CHECK (BTRIM(embedding_model) <> ''),
   embedding_dimensions INTEGER NOT NULL CHECK (embedding_dimensions > 0),
-  embedding extensions.vector(1536),
+  embedding JSONB CHECK (embedding IS NULL OR jsonb_typeof(embedding) = 'array'),
   embedding_values JSONB CHECK (embedding_values IS NULL OR jsonb_typeof(embedding_values) = 'array'),
   content_hash TEXT NOT NULL CHECK (BTRIM(content_hash) <> ''),
   metadata JSONB NOT NULL DEFAULT '{}'::JSONB CHECK (jsonb_typeof(metadata) = 'object'),
@@ -9110,7 +9113,7 @@ CREATE TABLE IF NOT EXISTS public.yux_strategy_asset_embeddings (
   asset_id UUID NOT NULL REFERENCES public.yux_strategy_source_assets(id) ON DELETE CASCADE,
   embedding_model TEXT NOT NULL CHECK (BTRIM(embedding_model) <> ''),
   embedding_dimensions INTEGER NOT NULL CHECK (embedding_dimensions > 0),
-  embedding extensions.vector(1536),
+  embedding JSONB CHECK (embedding IS NULL OR jsonb_typeof(embedding) = 'array'),
   embedding_values JSONB CHECK (embedding_values IS NULL OR jsonb_typeof(embedding_values) = 'array'),
   content_hash TEXT NOT NULL CHECK (BTRIM(content_hash) <> ''),
   metadata JSONB NOT NULL DEFAULT '{}'::JSONB CHECK (jsonb_typeof(metadata) = 'object'),
@@ -9426,11 +9429,11 @@ CREATE INDEX IF NOT EXISTS idx_yux_retrieval_queries_profile_created ON public.y
 
 CREATE INDEX IF NOT EXISTS idx_yux_retrieval_queries_org_created ON public.yux_strategy_retrieval_queries(organization_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_yux_card_embeddings_vector ON public.yux_strategy_card_embeddings USING ivfflat (embedding extensions.vector_cosine_ops) WHERE embedding IS NOT NULL;
+-- Vector indexes omitted until pgvector is installed in the VPS Postgres image.
 
-CREATE INDEX IF NOT EXISTS idx_yux_chunk_embeddings_vector ON public.yux_strategy_chunk_embeddings USING ivfflat (embedding extensions.vector_cosine_ops) WHERE embedding IS NOT NULL;
+-- Vector indexes omitted until pgvector is installed in the VPS Postgres image.
 
-CREATE INDEX IF NOT EXISTS idx_yux_asset_embeddings_vector ON public.yux_strategy_asset_embeddings USING ivfflat (embedding extensions.vector_cosine_ops) WHERE embedding IS NOT NULL;
+-- Vector indexes omitted until pgvector is installed in the VPS Postgres image.
 
 CREATE INDEX IF NOT EXISTS idx_yux_metrics_cash_org_date ON public.yux_metrics_cash_snapshots(organization_id, snapshot_date DESC);
 
@@ -9457,7 +9460,7 @@ CREATE INDEX IF NOT EXISTS idx_yux_strategy_outcomes_org_type ON public.yux_stra
 CREATE INDEX IF NOT EXISTS idx_yux_strategy_learning_profile ON public.yux_strategy_learning_signals(profile_key, outcome_type, created_at DESC);
 
 CREATE OR REPLACE FUNCTION public.match_yux_strategy_concept_cards(
-  query_embedding extensions.vector(1536),
+  query_embedding JSONB,
   match_profile_key TEXT,
   match_stage TEXT DEFAULT NULL,
   match_portal_safe BOOLEAN DEFAULT FALSE,
@@ -9470,20 +9473,12 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 AS $$
-  SELECT c.id AS card_id,
-         1 - (e.embedding <=> query_embedding) AS similarity
-  FROM public.yux_strategy_concept_cards c
-  JOIN public.yux_strategy_card_embeddings e ON e.card_id = c.id
-  WHERE e.embedding IS NOT NULL
-    AND match_profile_key = ANY(c.allowed_agent_profile_keys)
-    AND (match_stage IS NULL OR CARDINALITY(c.stage_tags) = 0 OR match_stage = ANY(c.stage_tags))
-    AND (NOT match_portal_safe OR (c.visibility = 'client_safe' AND c.human_review_status = 'approved'))
-  ORDER BY e.embedding <=> query_embedding
-  LIMIT GREATEST(match_count, 0)
+  SELECT NULL::UUID AS card_id, NULL::DOUBLE PRECISION AS similarity
+  WHERE FALSE
 $$;
 
 CREATE OR REPLACE FUNCTION public.match_yux_strategy_source_chunks(
-  query_embedding extensions.vector(1536),
+  query_embedding JSONB,
   match_profile_key TEXT,
   match_stage TEXT DEFAULT NULL,
   match_portal_safe BOOLEAN DEFAULT FALSE,
@@ -9496,16 +9491,8 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 AS $$
-  SELECT c.id AS chunk_id,
-         1 - (e.embedding <=> query_embedding) AS similarity
-  FROM public.yux_strategy_source_chunks c
-  JOIN public.yux_strategy_chunk_embeddings e ON e.chunk_id = c.id
-  WHERE e.embedding IS NOT NULL
-    AND match_profile_key = ANY(c.allowed_agent_profile_keys)
-    AND (match_stage IS NULL OR CARDINALITY(c.stage_tags) = 0 OR match_stage = ANY(c.stage_tags))
-    AND (NOT match_portal_safe OR (c.visibility = 'client_safe' AND c.human_review_status = 'approved'))
-  ORDER BY e.embedding <=> query_embedding
-  LIMIT GREATEST(match_count, 0)
+  SELECT NULL::UUID AS chunk_id, NULL::DOUBLE PRECISION AS similarity
+  WHERE FALSE
 $$;
 
 CREATE TRIGGER update_yux_strategy_doctrines_updated_at BEFORE UPDATE ON public.yux_strategy_doctrines FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
@@ -9606,10 +9593,10 @@ CROSS JOIN (
     ('yux_comercial_1_sdr', 'Comercial 1 SDR', 'Qualificacao, triagem, levantada de mao e handoff.', ARRAY['SDR qualifica e agenda; nao promete entrega complexa']::TEXT[], jsonb_build_array('transferir para humano quando houver proposta ou objecao sensivel'), jsonb_build_object('requiresHandoffRules', true)),
     ('yux_comercial_2_customer_growth', 'Comercial 2 Customer Growth', 'Recorrencia, carteira, segunda venda, LTV e churn.', ARRAY['base atual vem antes de lead frio']::TEXT[], jsonb_build_array('avaliar cliente ativo, inativo e recorrente'), jsonb_build_object('requiresLifecycleStage', true)),
     ('yux_revenue_recovery', 'Revenue Recovery', 'Recuperacao de ex-clientes, nao-clientes e propostas perdidas.', ARRAY['reativar oportunidades perdidas antes de aumentar CAC']::TEXT[], jsonb_build_array('priorizar valor recuperavel'), jsonb_build_object('requiresRecoveryValue', true)),
-    ('yux_offer_conversion', 'Offer And Conversion', 'Oferta, copy, landing page, proposta, objeções e conversao.', ARRAY['objecoes alimentam oferta e copy']::TEXT[], jsonb_build_array('mapear objecao para melhoria de oferta'), jsonb_build_object('requiresObjectionMap', true)),
-    ('yux_objection_intelligence', 'Objection Intelligence', 'Registra e transforma objeções em playbooks, conteudos e ajustes comerciais.', ARRAY['objecao repetida vira melhoria de playbook']::TEXT[], jsonb_build_array('registrar categoria e acao recomendada'), jsonb_build_object('requiresObjectionCategory', true)),
+    ('yux_offer_conversion', 'Offer And Conversion', 'Oferta, copy, landing page, proposta, objeÃ§Ãµes e conversao.', ARRAY['objecoes alimentam oferta e copy']::TEXT[], jsonb_build_array('mapear objecao para melhoria de oferta'), jsonb_build_object('requiresObjectionMap', true)),
+    ('yux_objection_intelligence', 'Objection Intelligence', 'Registra e transforma objeÃ§Ãµes em playbooks, conteudos e ajustes comerciais.', ARRAY['objecao repetida vira melhoria de playbook']::TEXT[], jsonb_build_array('registrar categoria e acao recomendada'), jsonb_build_object('requiresObjectionCategory', true)),
     ('yux_marketing_by_funnel_stage', 'Marketing Por Estagio Do Funil', 'Cria conteudo e campanha por publico, consciencia e etapa comercial.', ARRAY['conteudo tem funcao comercial']::TEXT[], jsonb_build_array('alinhar canal e etapa'), jsonb_build_object('requiresFunnelStage', true)),
-    ('yux_referral_growth', 'Referral Growth', 'Indicações, prova social e crescimento por clientes promotores.', ARRAY['pedir indicacao no momento correto']::TEXT[], jsonb_build_array('verificar satisfacao antes do pedido'), jsonb_build_object('requiresSatisfactionSignal', true)),
+    ('yux_referral_growth', 'Referral Growth', 'IndicaÃ§Ãµes, prova social e crescimento por clientes promotores.', ARRAY['pedir indicacao no momento correto']::TEXT[], jsonb_build_array('verificar satisfacao antes do pedido'), jsonb_build_object('requiresSatisfactionSignal', true)),
     ('yux_metrics_cash_mroi', 'Metrics Cash And MROI', 'CAC, ticket, LTV, MROI, margem e decisao de investimento.', ARRAY['avaliar lucro e caixa, nao apenas lead']::TEXT[], jsonb_build_array('comparar CAC, ticket, margem e LTV'), jsonb_build_object('requiresFinancialMetric', true)),
     ('yux_proposal_delivery_strategy', 'Proposal And Delivery Strategy', 'Proposta, escopo, implementacao e transicao para entrega.', ARRAY['proposta deve conectar diagnostico, acao e resultado esperado']::TEXT[], jsonb_build_array('explicitar escopo e proximo passo'), jsonb_build_object('requiresProposalNextStep', true))
 ) AS seed(skill_key, name, description, global_rules, decision_rules, output_contract)
@@ -9700,9 +9687,9 @@ SET name = EXCLUDED.name,
 
 INSERT INTO public.yux_objection_categories (category_key, name, description, default_playbook_action)
 VALUES
-  ('price', 'Preco', 'Objeção relacionada a valor, orçamento ou percepção de custo.', 'Reforcar valor percebido, prova e custo de inacao.'),
-  ('timing', 'Timing', 'Lead diz que não é o momento certo.', 'Criar follow-up com gatilho temporal e implicacao.'),
-  ('trust', 'Confiança', 'Falta de confiança na empresa, prova ou promessa.', 'Adicionar prova social, cases e garantias operacionais.'),
+  ('price', 'Preco', 'ObjeÃ§Ã£o relacionada a valor, orÃ§amento ou percepÃ§Ã£o de custo.', 'Reforcar valor percebido, prova e custo de inacao.'),
+  ('timing', 'Timing', 'Lead diz que nÃ£o Ã© o momento certo.', 'Criar follow-up com gatilho temporal e implicacao.'),
+  ('trust', 'ConfianÃ§a', 'Falta de confianÃ§a na empresa, prova ou promessa.', 'Adicionar prova social, cases e garantias operacionais.'),
   ('authority', 'Autoridade', 'Contato nao decide sozinho ou precisa validar com terceiros.', 'Mapear decisores e criar material de apoio.'),
   ('urgency', 'Urgencia', 'Lead nao percebe prioridade para agir agora.', 'Explicitar consequencia da inacao e proximo passo simples.'),
   ('product_fit', 'Fit de Produto', 'Duvida se a oferta resolve o caso especifico.', 'Refinar diagnostico e ajustar proposta/escopo.'),
