@@ -10,6 +10,8 @@
     "test": "vitest run",
     "type-check": "tsc --noEmit",
     "migrate": "tsx scripts/apply-migrations.ts",
+    "migrate:prod": "node dist/scripts/apply-migrations.js",
+    "create-admin:prod": "node dist/scripts/create-admin-user.js",
     "worker": "tsx src/worker.ts"
   },
   "dependencies": {

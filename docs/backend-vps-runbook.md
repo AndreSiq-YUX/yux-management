@@ -26,8 +26,8 @@
 1. Rode `.\scripts\run-release-checks.ps1 -SkipInstall`.
 2. Em ambiente com Docker, rode `docker compose -f docker-compose.dokploy.yml config`.
 3. Faça deploy no Dokploy.
-4. Rode `npm run migrate` dentro de `yux-backend-api`.
-5. Crie o admin inicial com `ADMIN_EMAIL=admin@yux.com.br` e `ADMIN_PASSWORD` temporario.
+4. Rode `npm run migrate:prod` dentro de `yux-backend-api`.
+5. Crie o admin inicial com `ADMIN_EMAIL=admin@yux.com.br ADMIN_PASSWORD='<senha>' npm run create-admin:prod`.
 6. Valide `/health`, `/api/health`, `/api/ready` e `/health` do runtime.
 
 ## Backup

@@ -64,7 +64,7 @@ usa `docker-compose.dokploy.yml` no Dokploy, com:
 ## Banco De Dados
 
 As migrations de producao ficam em `backend/src/db/migrations` e devem ser
-aplicadas no Postgres da VPS com `npm run migrate` dentro do container
+aplicadas no Postgres da VPS com `npm run migrate:prod` dentro do container
 `yux-backend-api`.
 
 ## Observacoes
