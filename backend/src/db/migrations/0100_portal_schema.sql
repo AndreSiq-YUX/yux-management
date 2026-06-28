@@ -630,6 +630,136 @@ CREATE SCHEMA IF NOT EXISTS private;
 
 REVOKE ALL ON SCHEMA private FROM PUBLIC;
 
+CREATE OR REPLACE FUNCTION private.is_internal_user()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_access_client(target_client_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.is_platform_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_access_crm_organization(target_organization_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_access_crm_instance(target_instance_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_manage_crm_instance(target_instance_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.crm_member_role(target_instance_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT 'yux_admin'::TEXT;
+$$;
+
+CREATE OR REPLACE FUNCTION private.current_crm_member_id(target_instance_id UUID)
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULL::UUID;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_access_portal_proposal(target_proposal_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.has_active_omnichannel_contract(target_organization_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.has_omnichannel_permission(target_organization_id UUID, target_permission TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_supervise_omnichannel()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_access_omnichannel_storage_object(bucket_id TEXT, object_name TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.has_marketing_studio_permission(target_organization_id UUID, target_permission TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT TRUE;
+$$;
+
+CREATE OR REPLACE FUNCTION private.record_deliverable_created()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.record_approval_requested()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION private.can_access_project(target_project_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
