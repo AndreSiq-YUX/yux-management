@@ -102,10 +102,6 @@ frontend, backend, worker, Postgres, Redis e runtime de agentes.
 5. Clique em `Save`.
 
 ```bash
-YUX_FRONTEND_PORT=3000
-YUX_BACKEND_PORT=4000
-YUX_AGENT_RUNTIME_PORT=8080
-
 POSTGRES_DB=yux_hub
 POSTGRES_USER=yux_app
 POSTGRES_PASSWORD=<senha-forte-do-postgres>
@@ -136,6 +132,8 @@ Regras importantes:
 - `REDIS_URL` deve apontar para o hostname interno `yux-redis`.
 - As variaveis do Dokploy sao lidas pelo compose via `${VAR}`; este repositorio
   ja referencia cada variavel necessaria em `docker-compose.dokploy.yml`.
+- O compose nao publica portas no host da VPS. O acesso externo deve passar
+  pelos dominios do Dokploy/Traefik usando as portas internas dos containers.
 - Nao configure Supabase nem Vercel como dependencia de producao.
 
 ## 7. Configurar Dominios
@@ -199,6 +197,28 @@ Se o build falhar:
 3. Leia o log do servico que falhou.
 4. Corrija a variavel, dominio ou erro de build.
 5. Clique em `Redeploy`.
+
+### Erro: `port is already allocated`
+
+Se aparecer erro parecido com:
+
+```text
+Bind for 0.0.0.0:3000 failed: port is already allocated
+```
+
+o compose esta tentando publicar uma porta diretamente no host da VPS. A versao
+atual deste repositorio usa `expose` em vez de `ports`, entao esse erro nao deve
+mais ocorrer depois de atualizar a branch `deploy/vps` e fazer novo deploy.
+
+No Dokploy:
+
+1. Abra `yux-portal-stack`.
+2. Confirme que a branch configurada e `deploy/vps`.
+3. Clique em `Deployments`.
+4. Clique em `Deploy Latest Commit` ou `Redeploy`.
+5. Se o erro persistir, abra `Environment` e remova variaveis antigas
+   `YUX_FRONTEND_PORT`, `YUX_BACKEND_PORT` e `YUX_AGENT_RUNTIME_PORT`; elas nao
+   sao mais usadas pelo compose atual.
 
 ## 9. Aplicar Migrations Do Banco
 

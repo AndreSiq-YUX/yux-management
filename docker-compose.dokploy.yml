@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
-    ports:
-      - "${YUX_FRONTEND_PORT:-3000}:80"
+    expose:
+      - "80"
     depends_on:
       - yux-backend-api
     restart: unless-stopped
@@ -15,8 +15,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "${YUX_BACKEND_PORT:-4000}:4000"
+    expose:
+      - "4000"
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -84,8 +84,8 @@ services:
     build:
       context: ./workers/marketing-studio-agent-runtime
       dockerfile: Dockerfile
-    ports:
-      - "${YUX_AGENT_RUNTIME_PORT:-8080}:8080"
+    expose:
+      - "8080"
     environment:
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
