@@ -1,8 +1,8 @@
 # Quick Start - Portal YUX
 
-Este projeto agora esta sendo migrado para uma stack self-hosted na VPS:
-React/Vite no frontend, backend Fastify/TypeScript, Postgres proprio, Redis,
-workers e Agent Harness via Dokploy.
+Este projeto usa uma stack self-hosted na VPS: React/Vite no frontend, backend
+Fastify/TypeScript, Postgres proprio, Redis, workers e Agent Harness via
+Dokploy.
 
 ## Requisitos
 
@@ -63,14 +63,13 @@ usa `docker-compose.dokploy.yml` no Dokploy, com:
 
 ## Banco De Dados
 
-As novas migrations de producao ficam em `backend/src/db/migrations`.
-As migrations Supabase antigas ficam no repositorio como referencia de conversao
-ate a migracao dos modulos terminar.
+As migrations de producao ficam em `backend/src/db/migrations` e devem ser
+aplicadas no Postgres da VPS com `npm run migrate` dentro do container
+`yux-backend-api`.
 
 ## Observacoes
 
-- `apiService` e os services Supabase sao legado temporario para pontos ainda
-  nao migrados.
-- A nova camada padrao de dados deve usar rotas `/api/*` do backend.
+- A camada padrao de dados usa rotas `/api/*` do backend.
+- Supabase e Vercel nao fazem parte do runtime de producao atual.
 - Nao adicionar novas funcionalidades antes de manter `type-check` e `build`
   passando.

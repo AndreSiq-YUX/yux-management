@@ -157,4 +157,6 @@ Retencao minima recomendada:
 
 ## Observacao De Migracao
 
-O codigo Supabase remanescente no repositorio e referencia de migracao ate que todos os modulos sejam movidos para rotas `/api/*`. Nao configure Supabase como dependencia de producao nova.
+Supabase e Vercel nao fazem parte do runtime de producao atual. O frontend,
+backend, Postgres, Redis, worker e runtime de agentes devem ser operados pela
+stack Dokploy/VPS descrita neste guia.
