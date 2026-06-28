@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Save } from 'lucide-react'
+import { HelpCircle, Save } from 'lucide-react'
 import { AdminStatusBadge } from '@/components/platform/admin/AdminStatusBadge'
 import type { PlatformProviderConnectionInput } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection, PlatformProviderStatus, PlatformProviderType } from '@/types/adminPlatform'
@@ -28,6 +28,23 @@ const providerTypes: PlatformProviderType[] = [
 
 function stringifyConfig(value: Record<string, unknown>) {
   return JSON.stringify(value, null, 2)
+}
+
+function FieldLabel({ children, help }: { children: string; help?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 font-medium text-gray-700">
+      {children}
+      {help && (
+        <span
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-400 hover:text-yux-700"
+          title={help}
+          aria-label={help}
+        >
+          <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      )}
+    </span>
+  )
 }
 
 export function ProviderConnectionEditor({
@@ -61,6 +78,8 @@ export function ProviderConnectionEditor({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const isLockedSmtp2GoProvider = defaults.providerKey === 'smtp2go'
+  const providerKeyValue = isLockedSmtp2GoProvider ? defaults.providerKey : providerKey
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -70,10 +89,13 @@ export function ProviderConnectionEditor({
 
     try {
       const parsedConfig = JSON.parse(publicConfig) as Record<string, unknown>
+      if (!isLockedSmtp2GoProvider && /^api[-_]/i.test(providerKey.trim())) {
+        throw new Error('provider_key_looks_like_api_key')
+      }
       await onSave({
         id: provider?.id,
         providerType,
-        providerKey,
+        providerKey: providerKeyValue,
         displayName,
         environment,
         status,
@@ -84,7 +106,15 @@ export function ProviderConnectionEditor({
       })
       setSaved(true)
     } catch (error) {
-      setError(error instanceof SyntaxError ? 'JSON de configuracao invalido.' : 'Nao foi possivel salvar o provedor.')
+      if (error instanceof SyntaxError) {
+        setError('JSON de configuracao invalido.')
+      } else if (error instanceof Error && error.message === 'provider_key_looks_like_api_key') {
+        setError('Chave do provedor nao e API key. Use um identificador interno como smtp2go.')
+      } else if (error instanceof Error && error.message) {
+        setError(error.message)
+      } else {
+        setError('Nao foi possivel salvar o provedor.')
+      }
     } finally {
       setSaving(false)
     }
@@ -102,7 +132,7 @@ export function ProviderConnectionEditor({
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Tipo</span>
+          <FieldLabel help="Categoria tecnica do provedor dentro do YUX Hub. Para SMTP2GO deve ser email.">Tipo</FieldLabel>
           <select
             value={providerType}
             onChange={event => setProviderType(event.target.value as PlatformProviderType)}
@@ -113,17 +143,20 @@ export function ProviderConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Chave do provedor</span>
+          <FieldLabel help="Identificador interno fixo usado pelo sistema, por exemplo smtp2go. Nao cole API key neste campo.">
+            Identificador interno
+          </FieldLabel>
           <input
-            value={providerKey}
+            value={providerKeyValue}
             onChange={event => setProviderKey(event.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm disabled:bg-gray-50 disabled:text-gray-500"
             required
+            disabled={isLockedSmtp2GoProvider}
           />
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Nome comercial</span>
+          <FieldLabel help="Nome legivel exibido no Admin. Nao afeta a conexao tecnica.">Nome exibido</FieldLabel>
           <input
             value={displayName}
             onChange={event => setDisplayName(event.target.value)}
@@ -133,7 +166,7 @@ export function ProviderConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Ambiente</span>
+          <FieldLabel help="Ambiente operacional dessa conexao. Normalmente production na VPS.">Ambiente</FieldLabel>
           <input
             value={environment}
             onChange={event => setEnvironment(event.target.value)}
@@ -143,7 +176,7 @@ export function ProviderConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Status</span>
+          <FieldLabel help="Estado operacional salvo no Admin. Use active quando a credencial master estiver cadastrada e validada no backend.">Status</FieldLabel>
           <select
             value={status}
             onChange={event => setStatus(event.target.value as PlatformProviderStatus)}
@@ -154,7 +187,9 @@ export function ProviderConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Referencia do segredo</span>
+          <FieldLabel help="Apelido interno da credencial armazenada de forma segura pelo Admin/backend. Nao e o valor da API key.">
+            Referencia da credencial
+          </FieldLabel>
           <input
             value={secretReference}
             onChange={event => setSecretReference(event.target.value)}
@@ -164,7 +199,7 @@ export function ProviderConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm lg:col-span-2">
-          <span className="font-medium text-gray-700">Fallback externo</span>
+          <FieldLabel help="Provedor alternativo usado se este falhar. Em SMTP2GO normalmente fica vazio.">Fallback externo</FieldLabel>
           <select
             value={fallbackProviderId}
             onChange={event => setFallbackProviderId(event.target.value)}
@@ -183,12 +218,14 @@ export function ProviderConnectionEditor({
             checked={isDefault}
             onChange={event => setIsDefault(event.target.checked)}
           />
-          Provedor padrao
+          <FieldLabel help="Marca este provedor como padrao para o tipo e ambiente selecionados.">Provedor padrao</FieldLabel>
         </label>
       </div>
 
       <label className="mt-4 block space-y-1 text-sm">
-        <span className="font-medium text-gray-700">Configuracao publica JSON</span>
+        <FieldLabel help="Configuracao operacional nao sensivel usada pelo backend. Nao coloque API keys ou segredos neste JSON.">
+          Configuracao publica JSON
+        </FieldLabel>
         <textarea
           value={publicConfig}
           onChange={event => setPublicConfig(event.target.value)}

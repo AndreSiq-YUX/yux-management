@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Save } from 'lucide-react'
+import { HelpCircle, Save } from 'lucide-react'
 import type { Smtp2GoSubaccountInput } from '@/services/adminPlatformService'
 import type {
   EmailProviderConnection,
@@ -16,6 +16,23 @@ function metadataText(subaccount?: Smtp2GoSubaccount) {
 
 function defaultSubaccountName(organization?: Organization) {
   return organization ? `${organization.name} SMTP2GO` : ''
+}
+
+function FieldLabel({ children, help }: { children: string; help?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 font-medium text-gray-700">
+      {children}
+      {help && (
+        <span
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-400 hover:text-yux-700"
+          title={help}
+          aria-label={help}
+        >
+          <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      )}
+    </span>
+  )
 }
 
 export function Smtp2GoSubaccountEditor({
@@ -106,7 +123,7 @@ export function Smtp2GoSubaccountEditor({
 
       <div className="mt-4 grid gap-4 lg:grid-cols-4">
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Cliente</span>
+          <FieldLabel help="Organizacao cliente dona desta subconta SMTP2GO.">Cliente</FieldLabel>
           <select
             value={organizationId}
             onChange={event => handleOrganizationChange(event.target.value)}
@@ -120,7 +137,9 @@ export function Smtp2GoSubaccountEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">ID da subconta</span>
+          <FieldLabel help="ID retornado pela API do SMTP2GO quando o backend provisiona a subconta. Nao e API key.">
+            ID da subconta
+          </FieldLabel>
           <input
             value={smtp2goAccountId}
             onChange={event => setSmtp2goAccountId(event.target.value)}
@@ -131,7 +150,7 @@ export function Smtp2GoSubaccountEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Nome da subconta</span>
+          <FieldLabel help="Nome legivel para identificar a subconta do cliente no Admin e no SMTP2GO.">Nome da subconta</FieldLabel>
           <input
             value={name}
             onChange={event => setName(event.target.value)}
@@ -141,7 +160,7 @@ export function Smtp2GoSubaccountEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Status</span>
+          <FieldLabel help="Estado operacional da subconta. Pausada/failed impede ou sinaliza bloqueio operacional.">Status</FieldLabel>
           <select
             value={status}
             onChange={event => setStatus(event.target.value as Smtp2GoSubaccountStatus)}
@@ -152,7 +171,7 @@ export function Smtp2GoSubaccountEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Limite diario</span>
+          <FieldLabel help="Limite diario aplicado a essa subconta especifica.">Limite diario</FieldLabel>
           <input
             type="number"
             min="0"
@@ -163,7 +182,7 @@ export function Smtp2GoSubaccountEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Quota mensal</span>
+          <FieldLabel help="Cota mensal planejada para governanca e acompanhamento de uso do cliente.">Quota mensal</FieldLabel>
           <input
             type="number"
             min="0"
@@ -174,13 +193,18 @@ export function Smtp2GoSubaccountEditor({
         </label>
 
         <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 lg:col-span-2">
-          Conexao vinculada:{' '}
+          <FieldLabel help="Registro de conexao SMTP2GO por cliente ao qual esta subconta fica associada.">
+            Conexao vinculada
+          </FieldLabel>
+          :{' '}
           <span className="font-mono text-gray-800">{selectedConnection?.id || 'crie a conexao do cliente primeiro'}</span>
         </div>
       </div>
 
       <label className="mt-4 block space-y-1 text-sm">
-        <span className="font-medium text-gray-700">Metadados JSON</span>
+        <FieldLabel help="Dados nao sensiveis de dominio, status de verificacao e observacoes de provisionamento.">
+          Metadados JSON
+        </FieldLabel>
         <textarea
           value={metadata}
           onChange={event => setMetadata(event.target.value)}

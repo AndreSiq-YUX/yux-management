@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Save } from 'lucide-react'
+import { HelpCircle, Save } from 'lucide-react'
 import type { EmailProviderConnection, EmailProviderConnectionStatus } from '@/types/adminPlatform'
 import type { Organization } from '@/types/platform'
 
@@ -7,6 +7,23 @@ const statuses: EmailProviderConnectionStatus[] = ['needs_setup', 'connected', '
 
 function metadataText(connection?: EmailProviderConnection) {
   return JSON.stringify(connection?.metadata || {}, null, 2)
+}
+
+function FieldLabel({ children, help }: { children: string; help?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 font-medium text-gray-700">
+      {children}
+      {help && (
+        <span
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-400 hover:text-yux-700"
+          title={help}
+          aria-label={help}
+        >
+          <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      )}
+    </span>
+  )
 }
 
 export function Smtp2GoConnectionEditor({
@@ -88,7 +105,7 @@ export function Smtp2GoConnectionEditor({
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Cliente</span>
+          <FieldLabel help="Organizacao cliente que usara remetente, limite e credencial de envio propria.">Cliente</FieldLabel>
           <select
             value={organizationId}
             onChange={event => handleOrganizationChange(event.target.value)}
@@ -102,7 +119,7 @@ export function Smtp2GoConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Status</span>
+          <FieldLabel help="Estado da conexao de envio deste cliente. Use connected quando remetente/dominio estiverem prontos.">Status</FieldLabel>
           <select
             value={status}
             onChange={event => setStatus(event.target.value as EmailProviderConnectionStatus)}
@@ -113,7 +130,7 @@ export function Smtp2GoConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Limite diario</span>
+          <FieldLabel help="Quantidade maxima de emails que este cliente pode enviar por dia pelo YUX Hub.">Limite diario</FieldLabel>
           <input
             type="number"
             min="0"
@@ -124,7 +141,9 @@ export function Smtp2GoConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Credencial de envio</span>
+          <FieldLabel help="Referencia interna da credencial de envio criada pelo fluxo seguro do Admin. Nao cole API key bruta.">
+            Credencial de envio
+          </FieldLabel>
           <input
             value={tokenReference}
             onChange={event => setTokenReference(event.target.value)}
@@ -134,7 +153,7 @@ export function Smtp2GoConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Email remetente</span>
+          <FieldLabel help="Endereco From usado nos emails enviados para este cliente, depois de dominio/remetente aprovado.">Email remetente</FieldLabel>
           <input
             type="email"
             value={defaultFromEmail}
@@ -145,7 +164,7 @@ export function Smtp2GoConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Nome remetente</span>
+          <FieldLabel help="Nome exibido junto ao email remetente na caixa de entrada do destinatario.">Nome remetente</FieldLabel>
           <input
             value={defaultFromName}
             onChange={event => setDefaultFromName(event.target.value)}
@@ -155,7 +174,9 @@ export function Smtp2GoConnectionEditor({
       </div>
 
       <label className="mt-4 block space-y-1 text-sm">
-        <span className="font-medium text-gray-700">Metadados JSON</span>
+        <FieldLabel help="Dados operacionais nao sensiveis da conexao, como dominio, status de validacao ou observacoes.">
+          Metadados JSON
+        </FieldLabel>
         <textarea
           value={metadata}
           onChange={event => setMetadata(event.target.value)}

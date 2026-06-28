@@ -80,6 +80,39 @@ export async function getProviderConnections(pool: pg.Pool) {
 }
 
 export async function upsertProviderConnection(pool: pg.Pool, input: PlatformProviderConnectionInput) {
+  if (input.id) {
+    const result = await pool.query(
+      `UPDATE public.platform_provider_connections
+       SET provider_type = $2::public.platform_provider_type,
+           provider_key = $3,
+           display_name = $4,
+           environment = $5,
+           status = $6::public.platform_provider_status,
+           public_config = $7::jsonb,
+           secret_reference = $8,
+           is_default = $9,
+           fallback_provider_id = $10::uuid,
+           updated_at = NOW()
+       WHERE id = $1::uuid
+       RETURNING id, provider_type, provider_key, display_name, environment, status, public_config,
+         secret_reference, last_checked_at, last_error, is_default, fallback_provider_id, created_at, updated_at`,
+      [
+        input.id,
+        input.providerType,
+        input.providerKey.trim(),
+        input.displayName.trim(),
+        input.environment?.trim() || 'production',
+        input.status || 'not_configured',
+        JSON.stringify(input.publicConfig ?? {}),
+        input.secretReference?.trim() || null,
+        Boolean(input.isDefault),
+        input.fallbackProviderId ?? null,
+      ],
+    )
+
+    return mapProviderConnection(result.rows[0])
+  }
+
   const result = await pool.query(
     `INSERT INTO public.platform_provider_connections (
        id, provider_type, provider_key, display_name, environment, status, public_config,
