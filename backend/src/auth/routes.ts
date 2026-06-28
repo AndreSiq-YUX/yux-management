@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
+import { hashInvitationToken } from './invitations.js'
+import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from './password.js'
 import { createSessionToken, hashSessionToken, sessionExpiry } from './session.js'
-import { verifyPassword } from './password.js'
 
 export type AuthUser = {
   id: string
@@ -25,6 +26,11 @@ export type AuthStore = {
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+})
+
+const setPasswordSchema = z.object({
+  token: z.string().min(20),
+  password: z.string().min(MIN_PASSWORD_LENGTH),
 })
 
 declare module 'fastify' {
@@ -100,6 +106,52 @@ export function createPgAuthStore(pool: pg.Pool): AuthStore {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
+  app.post('/invitations/set-password', async (request, reply) => {
+    const parsed = setPasswordSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid_set_password_request' })
+    }
+
+    const tokenHash = hashInvitationToken(parsed.data.token)
+    const client = await app.pg.connect()
+
+    try {
+      await client.query('BEGIN')
+      const tokenResult = await client.query<{ id: string; user_id: string }>(
+        `SELECT t.id, t.user_id
+         FROM app_password_reset_tokens t
+         JOIN app_users u ON u.id = t.user_id
+         WHERE t.token_hash = $1
+           AND t.purpose = 'set_password'
+           AND t.used_at IS NULL
+           AND t.expires_at > NOW()
+           AND u.is_active = TRUE
+         LIMIT 1
+         FOR UPDATE OF t`,
+        [tokenHash],
+      )
+      const token = tokenResult.rows[0]
+
+      if (!token) {
+        await client.query('ROLLBACK')
+        return reply.code(400).send({ error: 'invalid_or_expired_invitation' })
+      }
+
+      const passwordHash = await hashPassword(parsed.data.password)
+      await client.query('UPDATE app_users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [passwordHash, token.user_id])
+      await client.query('UPDATE app_password_reset_tokens SET used_at = NOW() WHERE id = $1', [token.id])
+      await client.query('DELETE FROM app_sessions WHERE user_id = $1', [token.user_id])
+      await client.query('COMMIT')
+
+      return { ok: true }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  })
+
   app.post('/login', async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body)
     if (!parsed.success) {

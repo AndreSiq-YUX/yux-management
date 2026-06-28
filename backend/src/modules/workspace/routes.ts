@@ -1,12 +1,19 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
+import { buildClientInvitationEmail } from '../../auth/invitations.js'
 import { hashSessionToken } from '../../auth/session.js'
+import { sendSmtp2GoEmail } from '../../email/smtp2go.js'
 import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
+import { ClientAccessError, provisionClientPortalAccess } from './clientAccess.js'
 
 type SqlState = {
   values: unknown[]
   where: string[]
+}
+
+type Queryable = {
+  query(sql: string, params?: unknown[]): Promise<{ rows: any[] }>
 }
 
 const idParamSchema = z.object({ id: z.string().uuid() })
@@ -313,7 +320,7 @@ function projectPayload(input: Record<string, unknown>, includeDefaults = false)
   return row
 }
 
-async function insertReturning(pool: pg.Pool, table: string, payload: Record<string, unknown>) {
+async function insertReturning(pool: Queryable, table: string, payload: Record<string, unknown>) {
   const entries = Object.entries(payload).filter(([, value]) => value !== undefined)
   const columns = entries.map(([column]) => column)
   const values = entries.map(([, value]) => value)
@@ -325,7 +332,7 @@ async function insertReturning(pool: pg.Pool, table: string, payload: Record<str
   return rows[0]
 }
 
-async function updateReturning(pool: pg.Pool, table: string, id: string, payload: Record<string, unknown>, extraFilters: Record<string, unknown> = {}) {
+async function updateReturning(pool: Queryable, table: string, id: string, payload: Record<string, unknown>, extraFilters: Record<string, unknown> = {}) {
   const entries = Object.entries(payload).filter(([, value]) => value !== undefined)
   if (entries.length === 0) {
     throw new Error('empty_update_payload')
@@ -578,10 +585,56 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
     return { success: true, data: client, client }
   })
 
-  app.post('/clients', async (request) => {
-    const row = await insertReturning(app.pg, 'clients', clientPayload(request.body as Record<string, unknown>))
-    const client = clientRow({ ...row, projects: [] })
-    return { success: true, data: client, client }
+  app.post('/clients', async (request, reply) => {
+    const db = await app.pg.connect()
+    let row: any
+    let access: Awaited<ReturnType<typeof provisionClientPortalAccess>>
+
+    try {
+      await db.query('BEGIN')
+      row = await insertReturning(db, 'clients', clientPayload(request.body as Record<string, unknown>))
+      access = await provisionClientPortalAccess(db, app.config, row)
+      await db.query('COMMIT')
+    } catch (error) {
+      await db.query('ROLLBACK')
+      if (error instanceof ClientAccessError) {
+        return reply.code(error.statusCode).send({ success: false, error: error.message })
+      }
+      throw error
+    } finally {
+      db.release()
+    }
+
+    const invitationEmail = buildClientInvitationEmail({
+      contactName: row.contact_name,
+      companyName: row.company_name,
+      inviteUrl: access.invitationUrl,
+    })
+    const emailResult = await sendSmtp2GoEmail({
+      apiKey: app.config.SMTP2GO_API_KEY,
+      senderEmail: app.config.SMTP2GO_SENDER_EMAIL,
+      senderName: app.config.SMTP2GO_SENDER_NAME,
+      to: row.email,
+      subject: invitationEmail.subject,
+      textBody: invitationEmail.text,
+      htmlBody: invitationEmail.html,
+      customHeaders: [{ header: 'X-YUX-Invitation-ID', value: access.invitationTokenId }],
+    })
+
+    const client = clientRow({ ...row, user_id: access.userId, projects: [] })
+    return {
+      success: true,
+      data: client,
+      client,
+      invitation: {
+        userId: access.userId,
+        organizationId: access.organizationId,
+        inviteUrl: access.invitationUrl,
+        emailSent: emailResult.sent,
+        emailProviderMessageId: emailResult.sent ? emailResult.providerMessageId : undefined,
+        emailError: emailResult.sent ? undefined : emailResult.reason,
+      },
+    }
   })
 
   app.patch('/clients/:id', async (request, reply) => {

@@ -210,7 +210,16 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
       }
 
       if (response.success) {
-        toast.success(client ? 'Cliente atualizado com sucesso!' : 'Cliente criado com sucesso!');
+        if (!client && response.invitation) {
+          if (response.invitation.emailSent) {
+            toast.success('Cliente criado e convite enviado com sucesso!');
+          } else {
+            toast.error('Cliente criado, mas o convite nao foi enviado. Verifique a configuracao SMTP2GO.');
+            console.warn('[ClientFormModal] Convite pendente:', response.invitation);
+          }
+        } else {
+          toast.success(client ? 'Cliente atualizado com sucesso!' : 'Cliente criado com sucesso!');
+        }
         onSuccess();
         onClose();
       } else {

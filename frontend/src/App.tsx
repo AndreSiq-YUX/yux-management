@@ -7,6 +7,7 @@ import { DashboardLayout } from '@/components/layouts/DashboardLayout'
 
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage'
+import { SetPasswordPage } from '@/pages/auth/SetPasswordPage'
 import { PublicProposalPage } from '@/pages/public/PublicProposalPage'
 import { WebchatWidgetPage } from '@/pages/webchat/WebchatWidgetPage'
 
@@ -86,6 +87,7 @@ function App() {
       {/* Public routes */}
       <Route path="/auth" element={<AuthLayout />}>
         <Route path="login" element={<LoginPage />} />
+        <Route path="set-password" element={<SetPasswordPage />} />
         <Route index element={<Navigate to="/auth/login" replace />} />
       </Route>
       <Route path="/proposal/review/:token" element={<PublicProposalPage />} />

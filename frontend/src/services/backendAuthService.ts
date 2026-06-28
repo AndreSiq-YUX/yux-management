@@ -63,6 +63,13 @@ export async function backendMe() {
   }
 }
 
+export async function setInvitationPassword(token: string, password: string) {
+  return apiRequest<{ ok: boolean }>('/auth/invitations/set-password', {
+    method: 'POST',
+    body: { token, password },
+  })
+}
+
 export function isNotAuthenticatedError(error: unknown) {
   if (!(error instanceof ApiClientError)) return false
   if (error.status !== 401) return false

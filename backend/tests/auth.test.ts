@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { OutgoingHttpHeaders } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
+import { buildSetPasswordUrl, createInvitationToken, hashInvitationToken } from '../src/auth/invitations.js'
 import { hashPassword, verifyPassword } from '../src/auth/password.js'
 import { type AuthStore, type AuthUser } from '../src/auth/routes.js'
 import { createSessionToken, hashSessionToken, sessionExpiry } from '../src/auth/session.js'
@@ -69,6 +70,71 @@ const noopPool = {
   },
 }
 
+class FakePasswordResetClient {
+  tokenId = 'token-row-1'
+  userId = 'client-user-1'
+  passwordHash = 'old-password-hash'
+  usedAt: Date | null = null
+  sessionsDeleted = false
+  committed = false
+  rolledBack = false
+  released = false
+
+  constructor(
+    private readonly tokenHash: string,
+    private readonly expiresAt = new Date(Date.now() + 60_000),
+  ) {}
+
+  async query(sql: string, params: unknown[] = []) {
+    if (sql === 'BEGIN') return { rows: [], rowCount: null }
+    if (sql === 'COMMIT') {
+      this.committed = true
+      return { rows: [], rowCount: null }
+    }
+    if (sql === 'ROLLBACK') {
+      this.rolledBack = true
+      return { rows: [], rowCount: null }
+    }
+    if (sql.includes('FROM app_password_reset_tokens')) {
+      const valid = params[0] === this.tokenHash && !this.usedAt && this.expiresAt > new Date()
+      return {
+        rows: valid ? [{ id: this.tokenId, user_id: this.userId }] : [],
+        rowCount: valid ? 1 : 0,
+      }
+    }
+    if (sql.startsWith('UPDATE app_users SET password_hash')) {
+      this.passwordHash = params[0] as string
+      return { rows: [], rowCount: 1 }
+    }
+    if (sql.startsWith('UPDATE app_password_reset_tokens SET used_at')) {
+      this.usedAt = new Date()
+      return { rows: [], rowCount: 1 }
+    }
+    if (sql.startsWith('DELETE FROM app_sessions')) {
+      this.sessionsDeleted = true
+      return { rows: [], rowCount: 1 }
+    }
+
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+
+  release() {
+    this.released = true
+  }
+}
+
+class FakePasswordResetPool {
+  constructor(readonly client: FakePasswordResetClient) {}
+
+  async connect() {
+    return this.client
+  }
+
+  async end() {
+    return undefined
+  }
+}
+
 let app: FastifyInstance | undefined
 
 afterEach(async () => {
@@ -112,9 +178,68 @@ describe('auth helpers', () => {
     expect(diffInDays).toBeGreaterThan(6.99)
     expect(diffInDays).toBeLessThan(7.01)
   })
+
+  it('creates one-way invitation token hashes and set-password URLs', () => {
+    const token = createInvitationToken()
+    const hash = hashInvitationToken(token)
+
+    expect(hash).not.toBe(token)
+    expect(hashInvitationToken(token)).toBe(hash)
+    expect(buildSetPasswordUrl('https://hub.yux.com.br/', token)).toBe(`https://hub.yux.com.br/auth/set-password?token=${encodeURIComponent(token)}`)
+  })
 })
 
 describe('auth routes', () => {
+  it('sets a password from a valid invitation token and consumes the token', async () => {
+    const rawToken = createInvitationToken()
+    const client = new FakePasswordResetClient(hashInvitationToken(rawToken))
+    app = await buildServer(testEnv, {
+      authStore: new FakeAuthStore(),
+      pool: new FakePasswordResetPool(client) as never,
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/invitations/set-password',
+      payload: {
+        token: rawToken,
+        password: 'new-client-password',
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true })
+    await expect(verifyPassword(client.passwordHash, 'new-client-password')).resolves.toBe(true)
+    expect(client.usedAt).toBeInstanceOf(Date)
+    expect(client.sessionsDeleted).toBe(true)
+    expect(client.committed).toBe(true)
+    expect(client.released).toBe(true)
+  })
+
+  it('rejects invalid invitation tokens without setting a password', async () => {
+    const validToken = createInvitationToken()
+    const client = new FakePasswordResetClient(hashInvitationToken(validToken))
+    app = await buildServer(testEnv, {
+      authStore: new FakeAuthStore(),
+      pool: new FakePasswordResetPool(client) as never,
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/invitations/set-password',
+      payload: {
+        token: createInvitationToken(),
+        password: 'new-client-password',
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({ error: 'invalid_or_expired_invitation' })
+    expect(client.passwordHash).toBe('old-password-hash')
+    expect(client.rolledBack).toBe(true)
+    expect(client.released).toBe(true)
+  })
+
   it('logs in, sets a session cookie, and returns the authenticated user', async () => {
     const store = new FakeAuthStore()
     store.user = {
