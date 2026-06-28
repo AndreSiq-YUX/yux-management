@@ -55,6 +55,7 @@ export interface PlatformProviderConnection {
 }
 
 export type EmailProviderConnectionStatus = 'connected' | 'stale' | 'needs_setup' | 'failed'
+export type Smtp2GoSubaccountStatus = 'active' | 'paused' | 'failed'
 
 export interface EmailProviderConnection {
   id: string
@@ -67,6 +68,20 @@ export interface EmailProviderConnection {
   dailySendLimit: number
   lastVerifiedAt?: string | null
   protectedError?: string | null
+  metadata: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface Smtp2GoSubaccount {
+  id: string
+  organizationId: string
+  connectionId: string
+  smtp2goAccountId: string
+  name: string
+  monthlyQuota: number
+  dailySendLimit: number
+  status: Smtp2GoSubaccountStatus
   metadata: Record<string, unknown>
   createdAt?: string
   updatedAt?: string

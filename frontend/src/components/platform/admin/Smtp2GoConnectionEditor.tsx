@@ -31,7 +31,7 @@ export function Smtp2GoConnectionEditor({
   const selectedConnection = connections.find(connection => connection.organizationId === organizationId)
   const initialMetadata = useMemo(() => metadataText(selectedConnection), [selectedConnection])
   const [status, setStatus] = useState<EmailProviderConnectionStatus>(selectedConnection?.status || 'needs_setup')
-  const [tokenReference, setTokenReference] = useState(selectedConnection?.tokenReference || 'SMTP2GO_API_KEY')
+  const [tokenReference, setTokenReference] = useState(selectedConnection?.tokenReference || 'smtp2go:client')
   const [defaultFromEmail, setDefaultFromEmail] = useState(selectedConnection?.defaultFromEmail || '')
   const [defaultFromName, setDefaultFromName] = useState(selectedConnection?.defaultFromName || 'YUX Hub')
   const [dailySendLimit, setDailySendLimit] = useState(selectedConnection?.dailySendLimit || 500)
@@ -44,7 +44,7 @@ export function Smtp2GoConnectionEditor({
     const nextConnection = connections.find(connection => connection.organizationId === nextOrganizationId)
     setOrganizationId(nextOrganizationId)
     setStatus(nextConnection?.status || 'needs_setup')
-    setTokenReference(nextConnection?.tokenReference || 'SMTP2GO_API_KEY')
+    setTokenReference(nextConnection?.tokenReference || 'smtp2go:client')
     setDefaultFromEmail(nextConnection?.defaultFromEmail || '')
     setDefaultFromName(nextConnection?.defaultFromName || 'YUX Hub')
     setDailySendLimit(nextConnection?.dailySendLimit || 500)
@@ -82,7 +82,7 @@ export function Smtp2GoConnectionEditor({
       <div>
         <h2 className="text-base font-semibold text-gray-900">SMTP2GO por cliente</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Configure remetente, limite e referencia segura para a subconta/conexao do cliente.
+          Configure remetente, limite e referencia segura usada pelo backend da VPS para os envios do cliente.
         </p>
       </div>
 
@@ -124,12 +124,12 @@ export function Smtp2GoConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium text-gray-700">Referencia da API key</span>
+          <span className="font-medium text-gray-700">Credencial de envio</span>
           <input
             value={tokenReference}
             onChange={event => setTokenReference(event.target.value)}
             className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm"
-            placeholder="SMTP2GO_API_KEY"
+            placeholder="smtp2go:client"
           />
         </label>
 
@@ -166,7 +166,7 @@ export function Smtp2GoConnectionEditor({
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-gray-500">
-          Para envios reais, cadastre o valor da secret no runtime das Edge Functions.
+          Use uma credencial criada/gerenciada pelo Admin; nao insira API key bruta neste campo.
         </p>
         <button
           type="submit"

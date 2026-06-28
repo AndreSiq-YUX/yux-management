@@ -3,6 +3,8 @@ import type pg from 'pg'
 const numberValue = (value: number | string | null | undefined) => Number(value || 0)
 const objectValue = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+const isUndefinedTableError = (error: unknown) =>
+  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === '42P01')
 
 export type PlatformProviderConnectionInput = {
   id?: string
@@ -25,6 +27,18 @@ export type EmailProviderConnectionInput = {
   defaultFromEmail?: string | null
   defaultFromName?: string | null
   dailySendLimit?: number
+  metadata?: Record<string, unknown>
+}
+
+export type Smtp2GoSubaccountInput = {
+  id?: string
+  organizationId: string
+  connectionId: string
+  smtp2goAccountId: string
+  name: string
+  monthlyQuota?: number
+  dailySendLimit?: number
+  status?: string
   metadata?: Record<string, unknown>
 }
 
@@ -113,6 +127,24 @@ export async function getEmailProviderConnections(pool: pg.Pool) {
   return result.rows.map(mapEmailProviderConnection)
 }
 
+export async function getSmtp2GoSubaccounts(pool: pg.Pool) {
+  let result: pg.QueryResult
+
+  try {
+    result = await pool.query(
+      `SELECT id, organization_id, connection_id, smtp2go_account_id, name, monthly_quota,
+              daily_send_limit, status, metadata, created_at, updated_at
+       FROM public.smtp2go_subaccounts
+       ORDER BY created_at DESC`,
+    )
+  } catch (error) {
+    if (isUndefinedTableError(error)) return []
+    throw error
+  }
+
+  return result.rows.map(mapSmtp2GoSubaccount)
+}
+
 export async function upsertEmailProviderConnection(pool: pg.Pool, input: EmailProviderConnectionInput) {
   const result = await pool.query(
     `INSERT INTO public.email_provider_connections (
@@ -143,6 +175,39 @@ export async function upsertEmailProviderConnection(pool: pg.Pool, input: EmailP
   )
 
   return mapEmailProviderConnection(result.rows[0])
+}
+
+export async function upsertSmtp2GoSubaccount(pool: pg.Pool, input: Smtp2GoSubaccountInput) {
+  const result = await pool.query(
+    `INSERT INTO public.smtp2go_subaccounts (
+       id, organization_id, connection_id, smtp2go_account_id, name, monthly_quota,
+       daily_send_limit, status, metadata, updated_at
+     )
+     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())
+     ON CONFLICT (connection_id, smtp2go_account_id) DO UPDATE SET
+       organization_id = EXCLUDED.organization_id,
+       name = EXCLUDED.name,
+       monthly_quota = EXCLUDED.monthly_quota,
+       daily_send_limit = EXCLUDED.daily_send_limit,
+       status = EXCLUDED.status,
+       metadata = EXCLUDED.metadata,
+       updated_at = NOW()
+     RETURNING id, organization_id, connection_id, smtp2go_account_id, name, monthly_quota,
+       daily_send_limit, status, metadata, created_at, updated_at`,
+    [
+      input.id ?? null,
+      input.organizationId,
+      input.connectionId,
+      input.smtp2goAccountId.trim(),
+      input.name.trim(),
+      input.monthlyQuota ?? 0,
+      input.dailySendLimit ?? 500,
+      input.status || 'active',
+      JSON.stringify(input.metadata ?? {}),
+    ],
+  )
+
+  return mapSmtp2GoSubaccount(result.rows[0])
 }
 
 export async function getClientModuleLimits(pool: pg.Pool, organizationId?: string) {
@@ -321,24 +386,48 @@ export async function getAdminHubSummary(pool: pg.Pool) {
 
 export async function getSmtp2GoSummary(pool: pg.Pool, today = new Date().toISOString().slice(0, 10)) {
   const [connections, subaccounts, usage, suppressions] = await Promise.all([
-    pool.query<{ count: string }>('SELECT COUNT(*) AS count FROM public.email_provider_connections'),
-    pool.query<{ count: string }>('SELECT COUNT(*) AS count FROM public.smtp2go_subaccounts'),
-    pool.query<{ sent_today: string | number | null; failed_today: string | number | null }>(
+    queryCountOrZero(pool, 'SELECT COUNT(*) AS count FROM public.email_provider_connections'),
+    queryCountOrZero(pool, 'SELECT COUNT(*) AS count FROM public.smtp2go_subaccounts'),
+    queryUsageOrZero(
+      pool,
       `SELECT COALESCE(SUM(sent_count), 0) AS sent_today,
               COALESCE(SUM(failed_count), 0) AS failed_today
        FROM public.email_usage_counters
        WHERE period_date = $1`,
       [today],
     ),
-    pool.query<{ count: string }>('SELECT COUNT(*) AS count FROM public.email_suppression_entries'),
+    queryCountOrZero(pool, 'SELECT COUNT(*) AS count FROM public.email_suppression_entries'),
   ])
 
   return {
-    connectionCount: Number(connections.rows[0]?.count ?? 0),
-    subaccountCount: Number(subaccounts.rows[0]?.count ?? 0),
-    sentToday: numberValue(usage.rows[0]?.sent_today),
-    failedToday: numberValue(usage.rows[0]?.failed_today),
-    suppressedCount: Number(suppressions.rows[0]?.count ?? 0),
+    connectionCount: connections,
+    subaccountCount: subaccounts,
+    sentToday: numberValue(usage.sentToday),
+    failedToday: numberValue(usage.failedToday),
+    suppressedCount: suppressions,
+  }
+}
+
+async function queryCountOrZero(pool: pg.Pool, sql: string, params: unknown[] = []) {
+  try {
+    const result = await pool.query<{ count: string }>(sql, params)
+    return Number(result.rows[0]?.count ?? 0)
+  } catch (error) {
+    if (isUndefinedTableError(error)) return 0
+    throw error
+  }
+}
+
+async function queryUsageOrZero(pool: pg.Pool, sql: string, params: unknown[] = []) {
+  try {
+    const result = await pool.query<{ sent_today: string | number | null; failed_today: string | number | null }>(sql, params)
+    return {
+      sentToday: result.rows[0]?.sent_today ?? 0,
+      failedToday: result.rows[0]?.failed_today ?? 0,
+    }
+  } catch (error) {
+    if (isUndefinedTableError(error)) return { sentToday: 0, failedToday: 0 }
+    throw error
   }
 }
 
@@ -431,6 +520,22 @@ function mapEmailProviderConnection(row: any) {
     dailySendLimit: numberValue(row.daily_send_limit),
     lastVerifiedAt: row.last_verified_at ?? null,
     protectedError: row.protected_error ?? null,
+    metadata: objectValue(row.metadata),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapSmtp2GoSubaccount(row: any) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    connectionId: row.connection_id,
+    smtp2goAccountId: row.smtp2go_account_id,
+    name: row.name,
+    monthlyQuota: numberValue(row.monthly_quota),
+    dailySendLimit: numberValue(row.daily_send_limit),
+    status: row.status,
     metadata: objectValue(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -11,6 +11,7 @@ import {
   getOrganizationsWithLimits,
   getProviderConnections,
   getSmtp2GoSummary,
+  getSmtp2GoSubaccounts,
   getUsageCounters,
   recordAuditEvent,
   updateClientUploadLimit,
@@ -18,6 +19,7 @@ import {
   upsertClientModuleLimit,
   upsertEmailProviderConnection,
   upsertProviderConnection,
+  upsertSmtp2GoSubaccount,
 } from './adminRepository.js'
 import {
   applyBlueprintToContract,
@@ -141,6 +143,18 @@ const emailProviderConnectionSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
+const smtp2GoSubaccountSchema = z.object({
+  id: z.string().uuid().optional(),
+  organizationId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  smtp2goAccountId: z.string().min(1),
+  name: z.string().min(1),
+  monthlyQuota: z.number().int().nonnegative().optional(),
+  dailySendLimit: z.number().int().nonnegative().optional(),
+  status: z.enum(['active', 'paused', 'failed']).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+
 const clientModuleLimitSchema = z.object({
   id: z.string().uuid().optional(),
   organizationId: z.string().uuid(),
@@ -234,6 +248,23 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
 
     return upsertEmailProviderConnection(app.pg, parsed.data)
+  })
+
+  app.get('/admin/smtp2go-subaccounts', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+
+    return getSmtp2GoSubaccounts(app.pg)
+  })
+
+  app.post('/admin/smtp2go-subaccounts', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+
+    const parsed = smtp2GoSubaccountSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
+
+    return upsertSmtp2GoSubaccount(app.pg, parsed.data)
   })
 
   app.get('/admin/client-module-limits', async (request, reply) => {

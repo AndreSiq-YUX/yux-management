@@ -5,6 +5,7 @@ import {
   buildClientModuleLimitPayload,
   buildEmailProviderConnectionPayload,
   buildProviderConnectionPayload,
+  buildSmtp2GoSubaccountPayload,
 } from './adminPlatformService'
 
 vi.mock('@/lib/apiClient', () => ({
@@ -146,7 +147,7 @@ describe('adminPlatformService', () => {
     expect(buildEmailProviderConnectionPayload({
       organizationId: 'org-1',
       status: 'connected',
-      tokenReference: ' SMTP2GO_API_KEY ',
+      tokenReference: ' smtp2go:client ',
       defaultFromEmail: ' contato@yux.com.br ',
       defaultFromName: ' YUX Hub ',
       dailySendLimit: 900,
@@ -155,7 +156,7 @@ describe('adminPlatformService', () => {
       organization_id: 'org-1',
       provider: 'smtp2go',
       status: 'connected',
-      token_reference: 'SMTP2GO_API_KEY',
+      token_reference: 'smtp2go:client',
       default_from_email: 'contato@yux.com.br',
       default_from_name: 'YUX Hub',
       daily_send_limit: 900,
@@ -180,6 +181,59 @@ describe('adminPlatformService', () => {
       suppressedCount: 7,
     })
     expect(apiRequestMock).toHaveBeenCalledWith('/platform/admin/smtp2go-summary')
+  })
+
+  it('builds SMTP2GO subaccount payloads', () => {
+    expect(buildSmtp2GoSubaccountPayload({
+      organizationId: 'org-1',
+      connectionId: 'conn-1',
+      smtp2goAccountId: ' smtp-123 ',
+      name: ' Cliente SMTP2GO ',
+      status: 'active',
+      dailySendLimit: 700,
+      monthlyQuota: 20000,
+      metadata: { domain: 'cliente.com.br' },
+    })).toEqual({
+      organization_id: 'org-1',
+      connection_id: 'conn-1',
+      smtp2go_account_id: 'smtp-123',
+      name: 'Cliente SMTP2GO',
+      monthly_quota: 20000,
+      daily_send_limit: 700,
+      status: 'active',
+      metadata: { domain: 'cliente.com.br' },
+    })
+  })
+
+  it('loads and upserts SMTP2GO subaccounts through the backend admin endpoint', async () => {
+    const input = {
+      organizationId: 'org-1',
+      connectionId: 'conn-1',
+      smtp2goAccountId: 'smtp-123',
+      name: 'Cliente SMTP2GO',
+      status: 'active' as const,
+      dailySendLimit: 700,
+      monthlyQuota: 20000,
+      metadata: { domain: 'cliente.com.br' },
+    }
+    apiRequestMock
+      .mockResolvedValueOnce([{ id: 'sub-1', ...input }])
+      .mockResolvedValueOnce({ id: 'sub-1', ...input })
+
+    await expect(adminPlatformService.getSmtp2GoSubaccounts()).resolves.toEqual([expect.objectContaining({
+      id: 'sub-1',
+      smtp2goAccountId: 'smtp-123',
+    })])
+    await expect(adminPlatformService.upsertSmtp2GoSubaccount(input)).resolves.toEqual(expect.objectContaining({
+      id: 'sub-1',
+      connectionId: 'conn-1',
+    }))
+
+    expect(apiRequestMock).toHaveBeenNthCalledWith(1, '/platform/admin/smtp2go-subaccounts')
+    expect(apiRequestMock).toHaveBeenNthCalledWith(2, '/platform/admin/smtp2go-subaccounts', {
+      method: 'POST',
+      body: input,
+    })
   })
 
   it('gets and updates global upload limit through the backend', async () => {

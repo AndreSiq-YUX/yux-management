@@ -63,12 +63,13 @@ primeira versao e de leitura; edicao profunda entra em evolucoes futuras.
 
 A area `/admin/integrations` configura provedores globais da plataforma. Ela
 lista e edita tipo, ambiente, status, fallback externo, configuracao publica,
-ultima verificacao, erro e referencia segura.
+ultima verificacao, erro e identificador da credencial gerenciada.
 
-Credenciais reais nao devem aparecer no frontend nem no banco. O frontend salva
-apenas `secret_reference` e metadados operacionais. O valor real da credencial
-deve existir como secret server-side no runtime das Edge Functions, Dokploy ou
-ambiente equivalente.
+Credenciais reais nao devem aparecer de volta no frontend. No runtime VPS, a
+fonte operacional deve ser o Admin YUX Hub: o operador cadastra a credencial no
+painel, o backend valida, criptografa e armazena server-side. `secret_reference`
+e `token_reference` continuam existindo como identificadores internos/legados,
+nao como instrucao para configurar variavel de ambiente fora do Admin.
 
 Tipos previstos:
 
@@ -86,8 +87,9 @@ Provedores globais ja seedados:
 
 - OpenRouter (`OPENROUTER_API_KEY`) como roteador LLM principal;
 - OpenAI direto (`OPENAI_API_KEY`) como fallback externo de LLM;
-- SMTP2GO (`SMTP2GO_API_KEY` e `SMTP2GO_WEBHOOK_SECRET`) como infraestrutura
-  compartilhada de email;
+- SMTP2GO como infraestrutura compartilhada de email, com conta master
+  cadastrada no Admin, provisionamento de subcontas por cliente e webhooks
+  gerenciados pelo backend VPS;
 - Jina AI (`JINA_API_KEY`) como servico interno para Reader, Search e Grounding
   controlados do Marketing Studio.
 - Meta Marketing/Social e Google Marketing como provedores nativos do
@@ -121,8 +123,8 @@ Secrets server-side exigidos:
 
 O frontend nunca recebe tokens reais. Ele exibe apenas status operacional,
 asset/account conectado, `needs_reauth` e se existe credencial configurada.
-Tokens de acesso e refresh ficam criptografados e acessiveis somente por Edge
-Functions com `service_role`.
+Tokens de acesso e refresh ficam criptografados e acessiveis somente pelo
+backend server-side autorizado.
 
 ## SMTP2GO
 
@@ -139,19 +141,32 @@ Ela resume:
 
 Configuracao disponivel:
 
-- provedor global SMTP2GO em `platform_provider_connections`;
-- referencia segura da API key, normalmente `SMTP2GO_API_KEY`;
-- referencia do webhook secret, normalmente `SMTP2GO_WEBHOOK_SECRET`, dentro da
-  configuracao publica do provedor global;
+- provedor global SMTP2GO em `platform_provider_connections`, representando a
+  conta master SMTP2GO cadastrada pelo Admin;
+- credencial master SMTP2GO cadastrada no Admin, validada e criptografada pelo
+  backend VPS;
+- segredo de webhook gerado/armazenado pelo backend e associado a configuracao
+  publica do provedor global;
 - conexao SMTP2GO por cliente em `email_provider_connections`;
+- subconta SMTP2GO por cliente em `smtp2go_subaccounts`;
 - remetente padrao por cliente;
 - limite diario de envios por cliente;
 - metadados seguros para dominio, subconta ou observacoes operacionais.
 
-O valor real de `SMTP2GO_API_KEY` e `SMTP2GO_WEBHOOK_SECRET` deve ser cadastrado
-como secret server-side. A Edge Function `send-email` le `SMTP2GO_API_KEY` ou a
-secret apontada por `token_reference`. A Edge Function `smtp2go-webhook` valida
-`SMTP2GO_WEBHOOK_SECRET`.
+Fluxo operacional correto:
+
+- Admin cadastra a API key master SMTP2GO no painel;
+- backend valida permissoes de envio, subcontas, dominios/remetentes, webhooks,
+  suppressions, estatisticas e atividade;
+- backend cria/vincula subcontas automaticamente para clientes habilitados;
+- Admin configura dominio/remetente e acompanha verificacao;
+- webhooks SMTP2GO apontam para rota do backend VPS e atualizam eventos,
+  suppressions e contadores locais.
+
+O fluxo antigo baseado em Supabase Edge Functions `send-email` e
+`smtp2go-webhook`, variaveis `SMTP2GO_API_KEY`/`SMTP2GO_WEBHOOK_SECRET` como
+configuracao primaria, ou criacao manual de subcontas por cliente foi
+substituido pela arquitetura VPS/Admin.
 
 ## IA/LLM
 

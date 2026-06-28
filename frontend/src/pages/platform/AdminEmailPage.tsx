@@ -4,10 +4,16 @@ import { AlertTriangle, Mail, Send, ServerCog, ShieldAlert, Users } from 'lucide
 import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { Smtp2GoConnectionEditor } from '@/components/platform/admin/Smtp2GoConnectionEditor'
+import { Smtp2GoSubaccountEditor } from '@/components/platform/admin/Smtp2GoSubaccountEditor'
 import { smtp2GoProviderDefaults } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import { platformService } from '@/services/platformService'
-import type { EmailProviderConnection, PlatformProviderConnection, Smtp2GoAdminSummary } from '@/types/adminPlatform'
+import type {
+  EmailProviderConnection,
+  PlatformProviderConnection,
+  Smtp2GoAdminSummary,
+  Smtp2GoSubaccount,
+} from '@/types/adminPlatform'
 import type { Organization } from '@/types/platform'
 
 export function AdminEmailPage() {
@@ -15,6 +21,7 @@ export function AdminEmailPage() {
   const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [emailConnections, setEmailConnections] = useState<EmailProviderConnection[]>([])
+  const [subaccounts, setSubaccounts] = useState<Smtp2GoSubaccount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,12 +36,17 @@ export function AdminEmailPage() {
         platformService.getOrganizations(),
         adminPlatformService.getEmailProviderConnections(),
       ])
+      const subaccountResult = await adminPlatformService.getSmtp2GoSubaccounts().catch(error => {
+        console.warn('Could not load SMTP2GO subaccounts:', error)
+        return []
+      })
 
       if (active) {
         setSummary(summaryResult)
         setProviders(providerResult)
         setOrganizations(organizationResult)
         setEmailConnections(connectionResult)
+        setSubaccounts(subaccountResult)
       }
     } catch (error) {
       console.error('Error loading SMTP2GO administration:', error)
@@ -72,9 +84,8 @@ export function AdminEmailPage() {
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        O valor real das chaves deve ficar em secrets server-side. Configure nesta tela as referencias
-        <span className="ml-1 font-mono">SMTP2GO_API_KEY</span> e <span className="ml-1 font-mono">SMTP2GO_WEBHOOK_SECRET</span>,
-        remetentes e limites por cliente.
+        Configure aqui a conta master SMTP2GO, subcontas por cliente, remetentes, limites e webhooks. O backend da VPS deve
+        validar e armazenar credenciais de forma criptografada; o frontend nunca exibe API keys brutas depois de salvas.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando administracao de Email/SMTP2GO...</p>}
@@ -122,7 +133,7 @@ export function AdminEmailPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           <ProviderConnectionEditor
             title="SMTP2GO global"
-            description="Define a infraestrutura compartilhada de email e as referencias de secrets usadas pelas Edge Functions."
+            description="Define a conta master SMTP2GO e a politica de provisionamento automatico usada pelo backend da VPS."
             provider={smtpProvider}
             defaults={smtp2GoProviderDefaults}
             onSave={async input => {
@@ -138,6 +149,17 @@ export function AdminEmailPage() {
               await loadEmailAdministration()
             }}
           />
+          <div className="xl:col-span-2">
+            <Smtp2GoSubaccountEditor
+              organizations={organizations}
+              connections={emailConnections}
+              subaccounts={subaccounts}
+              onSave={async input => {
+                await adminPlatformService.upsertSmtp2GoSubaccount(input)
+                await loadEmailAdministration()
+              }}
+            />
+          </div>
         </div>
       )}
 
@@ -150,8 +172,7 @@ export function AdminEmailPage() {
             <div>
               <h2 className="text-base font-semibold text-gray-900">Governanca SMTP2GO</h2>
               <p className="mt-1 text-sm text-gray-600">
-                Use esta visao para acompanhar a base compartilhada antes de abrir operacoes de credenciais,
-                dominios ou ajuste de subcontas.
+                Use esta visao para acompanhar a base compartilhada, credenciais server-side, dominios, subcontas e limites.
               </p>
             </div>
           </div>

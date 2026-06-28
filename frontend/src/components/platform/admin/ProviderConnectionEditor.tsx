@@ -199,7 +199,7 @@ export function ProviderConnectionEditor({
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-gray-500">
-          Salva apenas metadados e nomes de secrets. O valor real da API key deve ficar em secrets server-side.
+          Salva configuracoes operacionais e identificadores internos. Credenciais reais devem ser cadastradas no fluxo seguro do Admin.
         </p>
         <button
           type="submit"

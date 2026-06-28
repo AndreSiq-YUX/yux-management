@@ -74,5 +74,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     throw new ApiClientError(response, responseBody)
   }
 
+  if (typeof responseBody === 'string') {
+    throw new ApiClientError(response, {
+      error: 'invalid_json_response',
+      message: 'API returned a non-JSON response',
+    })
+  }
+
   return responseBody as T
 }

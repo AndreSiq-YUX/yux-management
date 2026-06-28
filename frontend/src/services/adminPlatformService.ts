@@ -12,6 +12,8 @@ import type {
   PlatformProviderType,
   PlatformUsageCounter,
   Smtp2GoAdminSummary,
+  Smtp2GoSubaccount,
+  Smtp2GoSubaccountStatus,
 } from '@/types/adminPlatform'
 
 const numberValue = (value: number | string | null | undefined) => Number(value || 0)
@@ -68,6 +70,18 @@ export interface EmailProviderConnectionInput {
   metadata?: Record<string, unknown>
 }
 
+export interface Smtp2GoSubaccountInput {
+  id?: string
+  organizationId: string
+  connectionId: string
+  smtp2goAccountId: string
+  name: string
+  monthlyQuota?: number
+  dailySendLimit?: number
+  status?: Smtp2GoSubaccountStatus
+  metadata?: Record<string, unknown>
+}
+
 export interface AdminChannelConnectionRow {
   id: string
   organizationName: string
@@ -114,6 +128,22 @@ export function mapEmailProviderConnectionRow(row: any): EmailProviderConnection
     metadata: objectValue(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+export function mapSmtp2GoSubaccountRow(row: any): Smtp2GoSubaccount {
+  return {
+    id: row.id,
+    organizationId: row.organization_id || row.organizationId,
+    connectionId: row.connection_id || row.connectionId,
+    smtp2goAccountId: row.smtp2go_account_id || row.smtp2goAccountId,
+    name: row.name,
+    monthlyQuota: numberValue(row.monthly_quota ?? row.monthlyQuota),
+    dailySendLimit: numberValue(row.daily_send_limit ?? row.dailySendLimit),
+    status: row.status as Smtp2GoSubaccountStatus,
+    metadata: objectValue(row.metadata),
+    createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt,
   }
 }
 
@@ -241,6 +271,20 @@ export function buildEmailProviderConnectionPayload(input: EmailProviderConnecti
   }
 }
 
+export function buildSmtp2GoSubaccountPayload(input: Smtp2GoSubaccountInput) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    organization_id: input.organizationId,
+    connection_id: input.connectionId,
+    smtp2go_account_id: input.smtp2goAccountId.trim(),
+    name: input.name.trim(),
+    monthly_quota: input.monthlyQuota ?? 0,
+    daily_send_limit: input.dailySendLimit ?? 500,
+    status: input.status || 'active',
+    metadata: input.metadata || {},
+  }
+}
+
 export class AdminPlatformService {
   async getProviderConnections(): Promise<PlatformProviderConnection[]> {
     return apiRequest<PlatformProviderConnection[]>('/platform/admin/provider-connections')
@@ -259,6 +303,17 @@ export class AdminPlatformService {
 
   async upsertEmailProviderConnection(input: EmailProviderConnectionInput): Promise<EmailProviderConnection> {
     return apiRequest<EmailProviderConnection>('/platform/admin/email-provider-connections', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  async getSmtp2GoSubaccounts(): Promise<Smtp2GoSubaccount[]> {
+    return apiRequest<Smtp2GoSubaccount[]>('/platform/admin/smtp2go-subaccounts')
+  }
+
+  async upsertSmtp2GoSubaccount(input: Smtp2GoSubaccountInput): Promise<Smtp2GoSubaccount> {
+    return apiRequest<Smtp2GoSubaccount>('/platform/admin/smtp2go-subaccounts', {
       method: 'POST',
       body: input,
     })

@@ -457,16 +457,16 @@ Implementado em 2026-06-04:
   oficinas e agencias;
 - hub SMTP2GO com conexoes por organizacao, subcontas, limites, suppressions,
   contadores de uso, fila de envio, eventos e webhooks;
-- Edge Functions `send-email` e `smtp2go-webhook` mantendo a API key SMTP2GO no
-  servidor.
+- envio e webhooks SMTP2GO no backend VPS, usando credenciais cadastradas e
+  criptografadas pelo Admin YUX Hub.
 
 Ainda depende de operacao/ambiente:
 
-- aplicar as migrations novas no Supabase alvo;
-- configurar variaveis `SMTP2GO_API_KEY` ou referencias por cliente;
-- criar/subvincular subcontas reais no SMTP2GO;
-- ativar webhooks SMTP2GO apontando para a Edge Function;
-- executar QA autenticado em `/automations` depois do deploy.
+- aplicar as migrations no Postgres da VPS;
+- cadastrar e validar a API key master SMTP2GO pelo Admin YUX Hub;
+- implementar/concluir o adapter backend que provisiona subcontas, dominios,
+  remetentes, webhooks e credenciais de envio via API master;
+- executar QA autenticado em `/admin/email` e `/automations` depois do deploy.
 
 Specs e plano:
 

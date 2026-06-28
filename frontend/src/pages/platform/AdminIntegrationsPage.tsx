@@ -55,10 +55,8 @@ export function AdminIntegrationsPage() {
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        Esta area salva referencias seguras e configuracoes publicas. Cadastre os valores reais em secrets do ambiente:
-        <span className="ml-1 font-mono">OPENROUTER_API_KEY</span>, <span className="font-mono">OPENAI_API_KEY</span>,
-        <span className="ml-1 font-mono">SMTP2GO_API_KEY</span>, <span className="font-mono">SMTP2GO_WEBHOOK_SECRET</span> e
-        <span className="ml-1 font-mono">JINA_API_KEY</span>.
+        Esta area salva configuracoes operacionais e identificadores internos. Provedores como SMTP2GO devem ser
+        conectados pelo fluxo seguro do Admin, com credenciais criptografadas no backend da VPS.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando integracoes globais...</p>}
@@ -108,7 +106,7 @@ export function AdminIntegrationsPage() {
           <div className="xl:col-span-2">
             <ProviderConnectionEditor
               title="SMTP2GO global"
-              description="Infraestrutura compartilhada para emails transacionais, operacionais e de automacoes."
+              description="Conta master, subcontas, dominios, webhooks e envios transacionais/operacionais."
               provider={smtpProvider}
               defaults={smtp2GoProviderDefaults}
               onSave={async input => {
