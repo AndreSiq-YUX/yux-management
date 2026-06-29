@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { z } from 'zod'
 import { buildClientInvitationEmail } from '../../auth/invitations.js'
 import { hashSessionToken } from '../../auth/session.js'
-import { sendSmtp2GoEmail } from '../../email/smtp2go.js'
+import { sendConfiguredSmtp2GoEmail } from '../../email/smtp2goConfigured.js'
 import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
 import { ClientAccessError, provisionClientPortalAccess } from './clientAccess.js'
 
@@ -610,16 +610,19 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
       companyName: row.company_name,
       inviteUrl: access.invitationUrl,
     })
-    const emailResult = await sendSmtp2GoEmail({
-      apiKey: app.config.SMTP2GO_API_KEY,
-      senderEmail: app.config.SMTP2GO_SENDER_EMAIL,
-      senderName: app.config.SMTP2GO_SENDER_NAME,
+    const emailResult = await sendConfiguredSmtp2GoEmail(app.pg, app.config.SESSION_SECRET, {
       to: row.email,
       subject: invitationEmail.subject,
       textBody: invitationEmail.text,
       htmlBody: invitationEmail.html,
       customHeaders: [{ header: 'X-YUX-Invitation-ID', value: access.invitationTokenId }],
     })
+    if (!emailResult.sent) {
+      app.log.warn(
+        { reason: emailResult.reason, error: emailResult.error, clientId: row.id },
+        'client invitation email was not sent',
+      )
+    }
 
     const client = clientRow({ ...row, user_id: access.userId, projects: [] })
     return {
@@ -633,6 +636,7 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
         emailSent: emailResult.sent,
         emailProviderMessageId: emailResult.sent ? emailResult.providerMessageId : undefined,
         emailError: emailResult.sent ? undefined : emailResult.reason,
+        emailErrorMessage: emailResult.sent ? undefined : emailResult.error,
       },
     }
   })
