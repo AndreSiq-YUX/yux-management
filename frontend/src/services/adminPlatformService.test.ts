@@ -143,6 +143,38 @@ describe('adminPlatformService', () => {
     })
   })
 
+  it('tests provider connections through the backend admin endpoint', async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      ok: true,
+      message: 'Conexao validada pela API do SMTP2GO.',
+      permissions: ['email/send'],
+    })
+
+    await expect(adminPlatformService.testProviderConnection('provider-1')).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      permissions: ['email/send'],
+    }))
+    expect(apiRequestMock).toHaveBeenCalledWith('/platform/admin/provider-connections/provider-1/test', {
+      method: 'POST',
+    })
+  })
+
+  it('saves provider credentials through the backend admin endpoint', async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      ok: true,
+      reference: 'platform:provider-1:api_key',
+    })
+
+    await expect(adminPlatformService.saveProviderCredential('provider-1', 'api-secret')).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      reference: 'platform:provider-1:api_key',
+    }))
+    expect(apiRequestMock).toHaveBeenCalledWith('/platform/admin/provider-connections/provider-1/credential', {
+      method: 'POST',
+      body: { apiKey: 'api-secret' },
+    })
+  })
+
   it('builds SMTP2GO organization connection payloads', () => {
     expect(buildEmailProviderConnectionPayload({
       organizationId: 'org-1',

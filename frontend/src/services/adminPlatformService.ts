@@ -59,6 +59,20 @@ export interface PlatformProviderConnectionInput {
   fallbackProviderId?: string | null
 }
 
+export interface ProviderConnectionTestResult {
+  ok: boolean
+  message: string
+  checkedAt?: string
+  provider?: PlatformProviderConnection
+  permissions?: string[]
+}
+
+export interface ProviderCredentialSaveResult {
+  ok: boolean
+  reference: string
+  provider?: PlatformProviderConnection
+}
+
 export interface EmailProviderConnectionInput {
   id?: string
   organizationId: string
@@ -294,6 +308,19 @@ export class AdminPlatformService {
     return apiRequest<PlatformProviderConnection>('/platform/admin/provider-connections', {
       method: 'POST',
       body: input,
+    })
+  }
+
+  async testProviderConnection(providerId: string): Promise<ProviderConnectionTestResult> {
+    return apiRequest<ProviderConnectionTestResult>(`/platform/admin/provider-connections/${providerId}/test`, {
+      method: 'POST',
+    })
+  }
+
+  async saveProviderCredential(providerId: string, apiKey: string): Promise<ProviderCredentialSaveResult> {
+    return apiRequest<ProviderCredentialSaveResult>(`/platform/admin/provider-connections/${providerId}/credential`, {
+      method: 'POST',
+      body: { apiKey },
     })
   }
 

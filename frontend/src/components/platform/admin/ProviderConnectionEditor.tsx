@@ -1,7 +1,11 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { HelpCircle, Save } from 'lucide-react'
+import { HelpCircle, Save, Wifi } from 'lucide-react'
 import { AdminStatusBadge } from '@/components/platform/admin/AdminStatusBadge'
-import type { PlatformProviderConnectionInput } from '@/services/adminPlatformService'
+import type {
+  PlatformProviderConnectionInput,
+  ProviderConnectionTestResult,
+  ProviderCredentialSaveResult,
+} from '@/services/adminPlatformService'
 import type { PlatformProviderConnection, PlatformProviderStatus, PlatformProviderType } from '@/types/adminPlatform'
 
 const providerStatuses: PlatformProviderStatus[] = [
@@ -54,6 +58,8 @@ export function ProviderConnectionEditor({
   defaults,
   fallbackProviders = [],
   onSave,
+  onTest,
+  onSaveCredential,
 }: {
   title: string
   description: string
@@ -61,6 +67,8 @@ export function ProviderConnectionEditor({
   defaults: PlatformProviderConnectionInput
   fallbackProviders?: PlatformProviderConnection[]
   onSave: (input: PlatformProviderConnectionInput) => Promise<void>
+  onTest?: (providerId: string) => Promise<ProviderConnectionTestResult>
+  onSaveCredential?: (providerId: string, apiKey: string) => Promise<ProviderCredentialSaveResult>
 }) {
   const initialConfig = useMemo(
     () => stringifyConfig(provider?.publicConfig || defaults.publicConfig || {}),
@@ -76,8 +84,13 @@ export function ProviderConnectionEditor({
   const [fallbackProviderId, setFallbackProviderId] = useState(provider?.fallbackProviderId || defaults.fallbackProviderId || '')
   const [publicConfig, setPublicConfig] = useState(initialConfig)
   const [saving, setSaving] = useState(false)
+  const [savingCredential, setSavingCredential] = useState(false)
+  const [testing, setTesting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [credentialSaved, setCredentialSaved] = useState(false)
+  const [testResult, setTestResult] = useState<ProviderConnectionTestResult | null>(null)
+  const [apiKey, setApiKey] = useState('')
   const isLockedSmtp2GoProvider = defaults.providerKey === 'smtp2go'
   const providerKeyValue = isLockedSmtp2GoProvider ? defaults.providerKey : providerKey
 
@@ -86,6 +99,8 @@ export function ProviderConnectionEditor({
     setSaving(true)
     setError(null)
     setSaved(false)
+    setCredentialSaved(false)
+    setTestResult(null)
 
     try {
       const parsedConfig = JSON.parse(publicConfig) as Record<string, unknown>
@@ -117,6 +132,42 @@ export function ProviderConnectionEditor({
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleTestConnection() {
+    if (!provider?.id || !onTest) return
+
+    setTesting(true)
+    setError(null)
+    setTestResult(null)
+
+    try {
+      const result = await onTest(provider.id)
+      setTestResult(result)
+    } catch (error) {
+      setError(error instanceof Error && error.message ? error.message : 'Nao foi possivel testar a conexao.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  async function handleSaveCredential() {
+    if (!provider?.id || !onSaveCredential || !apiKey.trim()) return
+
+    setSavingCredential(true)
+    setError(null)
+    setCredentialSaved(false)
+    setTestResult(null)
+
+    try {
+      await onSaveCredential(provider.id, apiKey)
+      setApiKey('')
+      setCredentialSaved(true)
+    } catch (error) {
+      setError(error instanceof Error && error.message ? error.message : 'Nao foi possivel salvar a credencial.')
+    } finally {
+      setSavingCredential(false)
     }
   }
 
@@ -234,21 +285,76 @@ export function ProviderConnectionEditor({
         />
       </label>
 
+      {onSaveCredential && (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+          <label className="block space-y-1 text-sm">
+            <FieldLabel help="Cole aqui a API key real do SMTP2GO. O backend criptografa e salva; o valor nao volta para o frontend.">
+              API key master SMTP2GO
+            </FieldLabel>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={event => setApiKey(event.target.value)}
+              className="w-full rounded-md border border-amber-200 px-3 py-2 font-mono text-sm"
+              placeholder={provider?.secretReference ? 'Credencial ja cadastrada. Preencha apenas para substituir.' : 'Cole a API key real uma unica vez'}
+              autoComplete="off"
+            />
+          </label>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-amber-800">
+              Esta chave sera criptografada no backend e nunca sera exibida novamente.
+            </p>
+            <button
+              type="button"
+              disabled={savingCredential || saving || testing || !provider?.id || !apiKey.trim()}
+              onClick={handleSaveCredential}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              title={provider?.id ? 'Salva a API key criptografada no backend.' : 'Salve o provedor antes de cadastrar a credencial.'}
+            >
+              <Save className="h-4 w-4" aria-hidden="true" />
+              {savingCredential ? 'Salvando credencial...' : 'Salvar credencial'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-gray-500">
           Salva configuracoes operacionais e identificadores internos. Credenciais reais devem ser cadastradas no fluxo seguro do Admin.
         </p>
-        <button
-          type="submit"
-          disabled={saving}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Save className="h-4 w-4" aria-hidden="true" />
-          {saving ? 'Salvando...' : 'Salvar provedor'}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {onTest && (
+            <button
+              type="button"
+              disabled={testing || saving || savingCredential || !provider?.id}
+              onClick={handleTestConnection}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              title={provider?.id ? 'Testa a credencial master no backend sem enviar email.' : 'Salve o provedor antes de testar.'}
+            >
+              <Wifi className="h-4 w-4" aria-hidden="true" />
+              {testing ? 'Testando...' : 'Testar conexao'}
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={saving || testing || savingCredential}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" aria-hidden="true" />
+            {saving ? 'Salvando...' : 'Salvar provedor'}
+          </button>
+        </div>
       </div>
 
       {error && <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {credentialSaved && <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Credencial criptografada salva.</div>}
+      {testResult && (
+        <div className={`mt-3 rounded-md border px-3 py-2 text-sm ${
+          testResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
+        }`}>
+          {testResult.message}
+        </div>
+      )}
       {saved && <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Provedor salvo.</div>}
     </form>
   )

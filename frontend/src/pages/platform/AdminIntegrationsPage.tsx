@@ -113,6 +113,16 @@ export function AdminIntegrationsPage() {
                 await adminPlatformService.upsertProviderConnection(input)
                 await loadProviders()
               }}
+              onTest={async providerId => {
+                const result = await adminPlatformService.testProviderConnection(providerId)
+                await loadProviders()
+                return result
+              }}
+              onSaveCredential={async (providerId, apiKey) => {
+                const result = await adminPlatformService.saveProviderCredential(providerId, apiKey)
+                await loadProviders()
+                return result
+              }}
             />
           </div>
         </div>

@@ -9,13 +9,17 @@ import {
   getEmailProviderConnections,
   getGlobalUploadLimit,
   getOrganizationsWithLimits,
+  loadPlatformProviderSecret,
+  getProviderConnectionById,
   getProviderConnections,
   getSmtp2GoSummary,
   getSmtp2GoSubaccounts,
   getUsageCounters,
   recordAuditEvent,
+  storePlatformProviderSecret,
   updateClientUploadLimit,
   updateGlobalUploadLimit,
+  updateProviderConnectionHealth,
   upsertClientModuleLimit,
   upsertEmailProviderConnection,
   upsertProviderConnection,
@@ -50,6 +54,7 @@ import {
 } from './repository.js'
 
 const userParams = z.object({ userId: z.string().uuid() })
+const providerConnectionParams = z.object({ providerId: z.string().uuid() })
 const clientParams = z.object({ clientId: z.string().uuid() })
 const contractParams = z.object({ contractId: z.string().uuid() })
 const packageParams = z.object({ packageId: z.string().uuid() })
@@ -130,6 +135,10 @@ const providerConnectionSchema = z.object({
   secretReference: z.string().nullable().optional(),
   isDefault: z.boolean().optional(),
   fallbackProviderId: z.string().uuid().nullable().optional(),
+})
+
+const providerSecretSchema = z.object({
+  apiKey: z.string().min(10),
 })
 
 const emailProviderConnectionSchema = z.object({
@@ -231,6 +240,66 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
 
     return upsertProviderConnection(app.pg, parsed.data)
+  })
+
+  app.post('/admin/provider-connections/:providerId/test', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+
+    const params = providerConnectionParams.safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
+
+    const provider = await getProviderConnectionById(app.pg, params.data.providerId)
+    if (!provider) return reply.code(404).send({ error: 'provider_not_found' })
+    if (provider.providerKey !== 'smtp2go') {
+      return reply.code(400).send({ error: 'unsupported_provider_test' })
+    }
+
+    const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', app.config.SESSION_SECRET)
+    const result = await testSmtp2GoProvider(apiKey)
+    const updatedProvider = await updateProviderConnectionHealth(app.pg, provider.id, {
+      status: result.ok ? 'active' : 'failed',
+      lastError: result.ok ? null : result.message,
+    })
+
+    return {
+      ok: result.ok,
+      message: result.message,
+      checkedAt: updatedProvider?.lastCheckedAt ?? new Date().toISOString(),
+      provider: updatedProvider,
+      permissions: result.permissions,
+    }
+  })
+
+  app.post('/admin/provider-connections/:providerId/credential', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+
+    const params = providerConnectionParams.safeParse(request.params)
+    const parsed = providerSecretSchema.safeParse(request.body)
+    if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
+
+    const provider = await getProviderConnectionById(app.pg, params.data.providerId)
+    if (!provider) return reply.code(404).send({ error: 'provider_not_found' })
+    if (provider.providerKey !== 'smtp2go') {
+      return reply.code(400).send({ error: 'unsupported_provider_credential' })
+    }
+
+    const secret = await storePlatformProviderSecret(app.pg, {
+      providerConnectionId: provider.id,
+      secretKind: 'api_key',
+      value: parsed.data.apiKey,
+      metadata: { provider: 'smtp2go', source: 'admin' },
+    }, app.config.SESSION_SECRET)
+
+    const updatedProvider = await getProviderConnectionById(app.pg, provider.id)
+
+    return {
+      ok: true,
+      reference: secret.reference,
+      provider: updatedProvider,
+    }
   })
 
   app.get('/admin/email-provider-connections', async (request, reply) => {
@@ -604,4 +673,81 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     if (!blueprint) return reply.code(404).send({ error: 'blueprint_not_found' })
     return blueprint
   })
+}
+
+type Smtp2GoTestResult = {
+  ok: boolean
+  message: string
+  permissions?: string[]
+}
+
+async function testSmtp2GoProvider(apiKey?: string | null): Promise<Smtp2GoTestResult> {
+  if (!apiKey) {
+    return {
+      ok: false,
+      message: 'Credencial master SMTP2GO nao esta disponivel no backend.',
+    }
+  }
+
+  try {
+    const response = await fetch('https://api.smtp2go.com/v3/api_keys/permissions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Smtp2go-Api-Key': apiKey,
+      },
+      body: '{}',
+    })
+    const body = await response.json().catch(() => null)
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: extractSmtp2GoError(body) || `SMTP2GO retornou HTTP ${response.status}.`,
+      }
+    }
+
+    const permissions = extractSmtp2GoPermissions(body)
+    return {
+      ok: true,
+      message: permissions.length
+        ? `Conexao validada. ${permissions.length} permissao(oes) retornada(s) pela API.`
+        : 'Conexao validada pela API do SMTP2GO.',
+      permissions,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Nao foi possivel conectar ao SMTP2GO.',
+    }
+  }
+}
+
+function extractSmtp2GoError(body: unknown) {
+  if (!body || typeof body !== 'object') return null
+  const value = body as { data?: unknown; error?: unknown; message?: unknown }
+  if (typeof value.error === 'string') return value.error
+  if (typeof value.message === 'string') return value.message
+  if (value.data && typeof value.data === 'object') {
+    const data = value.data as { error?: unknown; message?: unknown }
+    if (typeof data.error === 'string') return data.error
+    if (typeof data.message === 'string') return data.message
+  }
+  return null
+}
+
+function extractSmtp2GoPermissions(body: unknown) {
+  if (!body || typeof body !== 'object') return []
+  const value = body as { data?: unknown; permissions?: unknown }
+  const candidates = [
+    value.permissions,
+    value.data && typeof value.data === 'object' ? (value.data as { permissions?: unknown }).permissions : undefined,
+    value.data && typeof value.data === 'object' ? (value.data as { endpoints?: unknown }).endpoints : undefined,
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.filter((item): item is string => typeof item === 'string')
+  }
+
+  return []
 }

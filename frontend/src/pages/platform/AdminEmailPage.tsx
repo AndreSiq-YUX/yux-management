@@ -140,6 +140,16 @@ export function AdminEmailPage() {
               await adminPlatformService.upsertProviderConnection(input)
               await loadEmailAdministration()
             }}
+            onTest={async providerId => {
+              const result = await adminPlatformService.testProviderConnection(providerId)
+              await loadEmailAdministration()
+              return result
+            }}
+            onSaveCredential={async (providerId, apiKey) => {
+              const result = await adminPlatformService.saveProviderCredential(providerId, apiKey)
+              await loadEmailAdministration()
+              return result
+            }}
           />
           <Smtp2GoConnectionEditor
             organizations={organizations}

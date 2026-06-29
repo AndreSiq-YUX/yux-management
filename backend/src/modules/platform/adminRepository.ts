@@ -1,3 +1,4 @@
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import type pg from 'pg'
 
 const numberValue = (value: number | string | null | undefined) => Number(value || 0)
@@ -5,6 +6,8 @@ const objectValue = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 const isUndefinedTableError = (error: unknown) =>
   Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === '42P01')
+const aesAlgorithm = 'aes-256-gcm'
+const nonceBytes = 12
 
 export type PlatformProviderConnectionInput = {
   id?: string
@@ -39,6 +42,13 @@ export type Smtp2GoSubaccountInput = {
   monthlyQuota?: number
   dailySendLimit?: number
   status?: string
+  metadata?: Record<string, unknown>
+}
+
+export type PlatformProviderSecretInput = {
+  providerConnectionId: string
+  secretKind: 'api_key' | 'webhook_secret'
+  value: string
   metadata?: Record<string, unknown>
 }
 
@@ -77,6 +87,99 @@ export async function getProviderConnections(pool: pg.Pool) {
   )
 
   return result.rows.map(mapProviderConnection)
+}
+
+export async function getProviderConnectionById(pool: pg.Pool, id: string) {
+  const result = await pool.query(
+    `SELECT id, provider_type, provider_key, display_name, environment, status, public_config,
+            secret_reference, last_checked_at, last_error, is_default, fallback_provider_id, created_at, updated_at
+     FROM public.platform_provider_connections
+     WHERE id = $1::uuid
+     LIMIT 1`,
+    [id],
+  )
+
+  return result.rows[0] ? mapProviderConnection(result.rows[0]) : null
+}
+
+export async function updateProviderConnectionHealth(pool: pg.Pool, id: string, input: { status: string; lastError?: string | null }) {
+  const result = await pool.query(
+    `UPDATE public.platform_provider_connections
+     SET status = $2::public.platform_provider_status,
+         last_checked_at = NOW(),
+         last_error = $3,
+         updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING id, provider_type, provider_key, display_name, environment, status, public_config,
+       secret_reference, last_checked_at, last_error, is_default, fallback_provider_id, created_at, updated_at`,
+    [id, input.status, input.lastError ?? null],
+  )
+
+  return result.rows[0] ? mapProviderConnection(result.rows[0]) : null
+}
+
+export async function storePlatformProviderSecret(pool: pg.Pool, input: PlatformProviderSecretInput, keyMaterial: string) {
+  const encrypted = encryptSecretValue(input.value, keyMaterial)
+  const reference = `platform:${input.providerConnectionId}:${input.secretKind}`
+
+  const result = await pool.query(
+    `INSERT INTO public.platform_provider_secrets (
+       provider_connection_id, secret_kind, reference, ciphertext, nonce, auth_tag, metadata, updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+     ON CONFLICT (provider_connection_id, secret_kind) DO UPDATE SET
+       reference = EXCLUDED.reference,
+       ciphertext = EXCLUDED.ciphertext,
+       nonce = EXCLUDED.nonce,
+       auth_tag = EXCLUDED.auth_tag,
+       metadata = EXCLUDED.metadata,
+       updated_at = NOW()
+     RETURNING reference`,
+    [
+      input.providerConnectionId,
+      input.secretKind,
+      reference,
+      encrypted.ciphertext,
+      encrypted.nonce,
+      encrypted.authTag,
+      JSON.stringify(input.metadata ?? {}),
+    ],
+  )
+
+  await pool.query(
+    `UPDATE public.platform_provider_connections
+     SET secret_reference = $2,
+         updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [input.providerConnectionId, result.rows[0].reference],
+  )
+
+  return { reference: result.rows[0].reference as string }
+}
+
+export async function loadPlatformProviderSecret(
+  pool: pg.Pool,
+  providerConnectionId: string,
+  secretKind: 'api_key' | 'webhook_secret',
+  keyMaterial: string,
+) {
+  const result = await pool.query(
+    `SELECT ciphertext, nonce, auth_tag
+     FROM public.platform_provider_secrets
+     WHERE provider_connection_id = $1::uuid
+       AND secret_kind = $2
+     LIMIT 1`,
+    [providerConnectionId, secretKind],
+  )
+
+  const row = result.rows[0]
+  if (!row) return null
+
+  return decryptSecretValue({
+    ciphertext: row.ciphertext,
+    nonce: row.nonce,
+    authTag: row.auth_tag,
+  }, keyMaterial)
 }
 
 export async function upsertProviderConnection(pool: pg.Pool, input: PlatformProviderConnectionInput) {
@@ -624,4 +727,41 @@ function mapAuditEvent(row: any) {
     note: row.note ?? null,
     createdAt: row.created_at,
   }
+}
+
+function deriveSecretKey(keyMaterial: string) {
+  const explicitKey = process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+  if (explicitKey) {
+    const decoded = Buffer.from(explicitKey, 'base64')
+    if (decoded.length !== 32) throw new Error('PROVIDER_SECRET_ENCRYPTION_KEY_B64 must decode to 32 bytes')
+    return decoded
+  }
+
+  return createHash('sha256').update(keyMaterial).digest()
+}
+
+function encryptSecretValue(value: string, keyMaterial: string) {
+  const key = deriveSecretKey(keyMaterial)
+  const nonce = randomBytes(nonceBytes)
+  const cipher = createCipheriv(aesAlgorithm, key, nonce)
+  const ciphertext = Buffer.concat([cipher.update(value.trim(), 'utf8'), cipher.final()])
+
+  return {
+    ciphertext: ciphertext.toString('base64'),
+    nonce: nonce.toString('base64'),
+    authTag: cipher.getAuthTag().toString('base64'),
+  }
+}
+
+function decryptSecretValue(input: { ciphertext: string; nonce: string; authTag: string }, keyMaterial: string) {
+  const key = deriveSecretKey(keyMaterial)
+  const decipher = createDecipheriv(aesAlgorithm, key, Buffer.from(input.nonce, 'base64'))
+  decipher.setAuthTag(Buffer.from(input.authTag, 'base64'))
+
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(input.ciphertext, 'base64')),
+    decipher.final(),
+  ])
+
+  return plaintext.toString('utf8')
 }
