@@ -114,14 +114,10 @@ export function AdminIntegrationsPage() {
                 await loadProviders()
               }}
               onTest={async providerId => {
-                const result = await adminPlatformService.testProviderConnection(providerId)
-                await loadProviders()
-                return result
+                return adminPlatformService.testProviderConnection(providerId)
               }}
               onSaveCredential={async (providerId, apiKey) => {
-                const result = await adminPlatformService.saveProviderCredential(providerId, apiKey)
-                await loadProviders()
-                return result
+                return adminPlatformService.saveProviderCredential(providerId, apiKey)
               }}
             />
           </div>

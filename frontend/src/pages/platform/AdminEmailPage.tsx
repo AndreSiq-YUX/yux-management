@@ -141,14 +141,10 @@ export function AdminEmailPage() {
               await loadEmailAdministration()
             }}
             onTest={async providerId => {
-              const result = await adminPlatformService.testProviderConnection(providerId)
-              await loadEmailAdministration()
-              return result
+              return adminPlatformService.testProviderConnection(providerId)
             }}
             onSaveCredential={async (providerId, apiKey) => {
-              const result = await adminPlatformService.saveProviderCredential(providerId, apiKey)
-              await loadEmailAdministration()
-              return result
+              return adminPlatformService.saveProviderCredential(providerId, apiKey)
             }}
           />
           <Smtp2GoConnectionEditor
