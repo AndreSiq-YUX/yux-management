@@ -75,6 +75,12 @@ export class BackendDataService {
     })
   }
 
+  async sendClientAccessEmail(id: string) {
+    return apiRequest<any>(`/workspace/clients/${id}/access-email`, {
+      method: 'POST',
+    })
+  }
+
   async deleteClient(id: string) {
     return apiRequest<any>(`/workspace/clients/${id}`, { method: 'DELETE' })
   }

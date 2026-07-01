@@ -70,6 +70,13 @@ export async function setInvitationPassword(token: string, password: string) {
   })
 }
 
+export async function requestPasswordReset(email: string) {
+  return apiRequest<{ ok: boolean }>('/auth/forgot-password', {
+    method: 'POST',
+    body: { email },
+  })
+}
+
 export function isNotAuthenticatedError(error: unknown) {
   if (!(error instanceof ApiClientError)) return false
   if (error.status !== 401) return false

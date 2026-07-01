@@ -54,6 +54,42 @@ export function buildClientInvitationEmail(input: {
   return { subject, text, html }
 }
 
+export function buildPasswordResetEmail(input: {
+  contactName: string
+  resetUrl: string
+}) {
+  const subject = 'Redefina sua senha do YUX Hub'
+  const text = [
+    `Ola, ${input.contactName}.`,
+    '',
+    'Recebemos uma solicitacao para redefinir sua senha de acesso ao YUX Hub.',
+    'Use o link abaixo para criar uma nova senha:',
+    '',
+    input.resetUrl,
+    '',
+    'Este link expira em 7 dias.',
+    '',
+    'Se voce nao solicitou essa alteracao, ignore este email.',
+    '',
+    'Equipe YUX',
+  ].join('\n')
+  const html = `
+    <p>Ola, ${escapeHtml(input.contactName)}.</p>
+    <p>Recebemos uma solicitacao para redefinir sua senha de acesso ao <strong>YUX Hub</strong>.</p>
+    <p>Use o botao abaixo para criar uma nova senha.</p>
+    <p>
+      <a href="${escapeAttribute(input.resetUrl)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:6px;font-weight:600;">
+        Redefinir senha
+      </a>
+    </p>
+    <p>Este link expira em 7 dias.</p>
+    <p>Se voce nao solicitou essa alteracao, ignore este email.</p>
+    <p>Equipe YUX</p>
+  `
+
+  return { subject, text, html }
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')

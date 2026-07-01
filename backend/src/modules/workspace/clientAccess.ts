@@ -72,9 +72,17 @@ export async function provisionClientPortalAccess(
 
   const token = createInvitationToken()
   const tokenHash = hashInvitationToken(token)
+  await client.query(
+    `UPDATE app_password_reset_tokens
+     SET used_at = NOW()
+     WHERE user_id = $1
+       AND purpose = 'client_invitation'
+       AND used_at IS NULL`,
+    [userId],
+  )
   const tokenResult = await client.query<{ id: string }>(
     `INSERT INTO app_password_reset_tokens (user_id, token_hash, purpose, expires_at)
-     VALUES ($1, $2, 'set_password', $3)
+     VALUES ($1, $2, 'client_invitation', $3)
      RETURNING id`,
     [userId, tokenHash, invitationExpiry()],
   )

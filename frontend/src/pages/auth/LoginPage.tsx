@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+import { requestPasswordReset } from '@/services/backendAuthService'
 import { useAuthStore } from '@/stores/authStore'
 
 const loginSchema = z.object({
@@ -18,12 +19,14 @@ type LoginForm = z.infer<typeof loginSchema>
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setLoading] = useState(false)
+  const [isResettingPassword, setResettingPassword] = useState(false)
   const navigate = useNavigate()
   const { login } = useAuthStore()
 
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -42,6 +45,26 @@ export function LoginPage() {
       toast.error(errorMessage)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    const email = getValues('email')
+    const parsedEmail = z.string().email().safeParse(email)
+
+    if (!parsedEmail.success) {
+      toast.error('Informe seu email para redefinir a senha.')
+      return
+    }
+
+    try {
+      setResettingPassword(true)
+      await requestPasswordReset(parsedEmail.data)
+      toast.success('Se o email existir no YUX Hub, enviaremos um link de redefinicao.')
+    } catch (error: any) {
+      toast.error(error.message || 'Nao foi possivel solicitar a redefinicao de senha.')
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -108,9 +131,14 @@ export function LoginPage() {
         </div>
 
         <div className="text-sm">
-          <a href="#" className="font-medium text-yux-600 hover:text-yux-500">
-            Esqueceu a senha?
-          </a>
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={isResettingPassword}
+            className="font-medium text-yux-600 hover:text-yux-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isResettingPassword ? 'Enviando...' : 'Esqueceu a senha?'}
+          </button>
         </div>
       </div>
 

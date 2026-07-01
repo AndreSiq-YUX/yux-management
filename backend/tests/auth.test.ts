@@ -26,6 +26,7 @@ class FakeAuthStore implements AuthStore {
     | null = null
 
   sessions = new Map<string, { userId: string; expiresAt: Date }>()
+  loggedInUserId: string | null = null
 
   async findActiveUserByEmail(email: string) {
     if (!this.user || !this.user.active || this.user.email.toLowerCase() !== email.toLowerCase()) {
@@ -43,6 +44,10 @@ class FakeAuthStore implements AuthStore {
 
   async createSession(userId: string, sessionTokenHash: string, expiresAt: Date) {
     this.sessions.set(sessionTokenHash, { userId, expiresAt })
+  }
+
+  async recordLogin(userId: string) {
+    this.loggedInUserId = userId
   }
 
   async deleteSession(sessionTokenHash: string) {

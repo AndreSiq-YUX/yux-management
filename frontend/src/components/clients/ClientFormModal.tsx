@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { X, Building2, User, Mail, Phone, Globe, MapPin, DollarSign } from 'lucide-react';
+import { X, Building2, User, Mail, Phone, Globe, MapPin, DollarSign, KeyRound, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { backendDataService } from '@/services/backendDataService';
 import { 
@@ -57,6 +57,7 @@ interface ClientFormModalProps {
 
 export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFormModalProps) {
   const [loading, setLoading] = useState(false);
+  const [sendingAccessEmail, setSendingAccessEmail] = useState(false);
   const [showAddressFields, setShowAddressFields] = useState(false);
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
 
@@ -235,21 +236,68 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
     }
   };
 
+  const handleSendAccessEmail = async () => {
+    if (!client) return;
+
+    try {
+      setSendingAccessEmail(true);
+      const response = await backendDataService.sendClientAccessEmail(client.id);
+
+      if (response.success && response.invitation?.emailSent) {
+        toast.success(
+          response.invitation.action === 'password_reset'
+            ? 'E-mail de redefinicao de senha enviado.'
+            : 'Novo convite enviado para o cliente.',
+        );
+        onSuccess();
+        return;
+      }
+
+      toast.error('O e-mail de acesso nao foi enviado. Verifique a configuracao SMTP2GO.');
+      console.warn('[ClientFormModal] E-mail de acesso pendente:', response.invitation || response);
+    } catch (error) {
+      toast.error('Erro ao enviar e-mail de acesso');
+      console.error('Erro ao enviar e-mail de acesso:', error);
+    } finally {
+      setSendingAccessEmail(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {client ? 'Editar Cliente' : 'Novo Cliente'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-6 w-6" />
-          </button>
+        <div className="flex flex-col gap-4 p-6 border-b sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {client ? 'Editar Cliente' : 'Novo Cliente'}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {client && (
+              <button
+                type="button"
+                onClick={handleSendAccessEmail}
+                disabled={sendingAccessEmail}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-yux-200 bg-yux-50 px-3 py-2 text-sm font-medium text-yux-700 hover:bg-yux-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {sendingAccessEmail ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <KeyRound className="h-4 w-4" aria-hidden="true" />
+                )}
+                {client.portalHasLoggedIn ? 'Enviar redefinicao de senha' : 'Enviar novo convite'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">

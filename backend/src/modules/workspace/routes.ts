@@ -6,6 +6,7 @@ import { hashSessionToken } from '../../auth/session.js'
 import { sendConfiguredSmtp2GoEmail } from '../../email/smtp2goConfigured.js'
 import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
 import { ClientAccessError, provisionClientPortalAccess } from './clientAccess.js'
+import { createClientAccessEmailToken } from './clientAccessEmails.js'
 
 type SqlState = {
   values: unknown[]
@@ -122,6 +123,9 @@ function clientRow(row: any) {
       : (row.communication_preferences ? [row.communication_preferences] : undefined),
     notes: row.notes || undefined,
     assignedTo: row.assigned_to || undefined,
+    portalUserId: row.portal_user_id || row.user_id || undefined,
+    portalLastLogin: row.portal_last_login ?? undefined,
+    portalHasLoggedIn: Boolean(row.portal_last_login),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     projects: Array.isArray(row.projects)
@@ -499,12 +503,13 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
     const count = await app.pg.query(`SELECT COUNT(*)::int AS count FROM public.clients c ${whereSql(state)}`, state.values)
     const values = [...state.values, limit, offset]
     const { rows } = await app.pg.query(`
-      SELECT c.*, COALESCE((
+      SELECT c.*, au.id AS portal_user_id, au.last_login AS portal_last_login, COALESCE((
         SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'status', p.status, 'budget', p.budget))
         FROM public.projects p
         WHERE p.client_id = c.id
       ), '[]'::jsonb) AS projects
       FROM public.clients c
+      LEFT JOIN app_users au ON au.id = c.user_id
       ${whereSql(state)}
       ORDER BY c.created_at DESC
       LIMIT $${state.values.length + 1} OFFSET $${state.values.length + 2}
@@ -572,12 +577,13 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_client_id' })
     const { rows } = await app.pg.query(`
-      SELECT c.*, COALESCE((
+      SELECT c.*, au.id AS portal_user_id, au.last_login AS portal_last_login, COALESCE((
         SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'status', p.status, 'budget', p.budget))
         FROM public.projects p
         WHERE p.client_id = c.id
       ), '[]'::jsonb) AS projects
       FROM public.clients c
+      LEFT JOIN app_users au ON au.id = c.user_id
       WHERE c.id = $1
     `, [params.data.id])
     if (!rows[0]) return reply.code(404).send({ error: 'client_not_found' })
@@ -633,6 +639,101 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
         userId: access.userId,
         organizationId: access.organizationId,
         inviteUrl: access.invitationUrl,
+        emailSent: emailResult.sent,
+        emailProviderMessageId: emailResult.sent ? emailResult.providerMessageId : undefined,
+        emailError: emailResult.sent ? undefined : emailResult.reason,
+        emailErrorMessage: emailResult.sent ? undefined : emailResult.error,
+      },
+    }
+  })
+
+  app.post('/clients/:id/access-email', async (request, reply) => {
+    const params = idParamSchema.safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_client_id' })
+
+    const db = await app.pg.connect()
+    let row: any
+    let tokenEmail: {
+      action: 'client_invitation' | 'password_reset'
+      tokenId: string
+      accessUrl: string
+      subject: string
+      text: string
+      html: string
+    }
+
+    try {
+      await db.query('BEGIN')
+      const clientResult = await db.query(
+        `SELECT c.*, au.id AS portal_user_id, au.last_login AS portal_last_login
+         FROM public.clients c
+         LEFT JOIN app_users au ON au.id = c.user_id
+         WHERE c.id = $1
+         FOR UPDATE OF c`,
+        [params.data.id],
+      )
+      row = clientResult.rows[0]
+
+      if (!row) {
+        await db.query('ROLLBACK')
+        return reply.code(404).send({ success: false, error: 'client_not_found' })
+      }
+
+      if (!row.portal_user_id) {
+        const access = await provisionClientPortalAccess(db, app.config, row)
+        tokenEmail = {
+          action: 'client_invitation',
+          tokenId: access.invitationTokenId,
+          accessUrl: access.invitationUrl,
+          ...buildClientInvitationEmail({
+            contactName: row.contact_name,
+            companyName: row.company_name,
+            inviteUrl: access.invitationUrl,
+          }),
+        }
+      } else {
+        tokenEmail = await createClientAccessEmailToken(db, app.config, {
+          userId: row.portal_user_id,
+          contactName: row.contact_name,
+          companyName: row.company_name,
+          hasLoggedIn: Boolean(row.portal_last_login),
+        })
+      }
+
+      await db.query('COMMIT')
+    } catch (error) {
+      await db.query('ROLLBACK')
+      if (error instanceof ClientAccessError) {
+        return reply.code(error.statusCode).send({ success: false, error: error.message })
+      }
+      throw error
+    } finally {
+      db.release()
+    }
+
+    const emailResult = await sendConfiguredSmtp2GoEmail(app.pg, app.config.SESSION_SECRET, {
+      to: row.email,
+      subject: tokenEmail.subject,
+      textBody: tokenEmail.text,
+      htmlBody: tokenEmail.html,
+      customHeaders: [{
+        header: tokenEmail.action === 'client_invitation' ? 'X-YUX-Invitation-ID' : 'X-YUX-Password-Reset-ID',
+        value: tokenEmail.tokenId,
+      }],
+    })
+
+    if (!emailResult.sent) {
+      app.log.warn(
+        { reason: emailResult.reason, error: emailResult.error, clientId: row.id, action: tokenEmail.action },
+        'client access email was not sent',
+      )
+    }
+
+    return {
+      success: true,
+      invitation: {
+        action: tokenEmail.action,
+        accessUrl: tokenEmail.accessUrl,
         emailSent: emailResult.sent,
         emailProviderMessageId: emailResult.sent ? emailResult.providerMessageId : undefined,
         emailError: emailResult.sent ? undefined : emailResult.reason,

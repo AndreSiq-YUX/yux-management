@@ -48,6 +48,9 @@ export interface Client {
   size: 'small' | 'medium' | 'large';
   address?: Address;
   userId?: string; // Link to User account if client has portal access
+  portalUserId?: string;
+  portalLastLogin?: string;
+  portalHasLoggedIn?: boolean;
   leadSource: string;
   acquisitionCost?: number;
   lifetimeValue?: number;
