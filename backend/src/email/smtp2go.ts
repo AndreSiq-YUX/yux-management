@@ -27,7 +27,7 @@ export async function sendSmtp2GoEmail(input: Smtp2GoSendInput): Promise<EmailSe
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': input.apiKey,
+        'X-Smtp2go-Api-Key': input.apiKey,
       },
       body: JSON.stringify({
         sender,

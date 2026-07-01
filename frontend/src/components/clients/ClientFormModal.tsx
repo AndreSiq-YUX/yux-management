@@ -215,7 +215,8 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
           if (response.invitation.emailSent) {
             toast.success('Cliente criado e convite enviado com sucesso!');
           } else {
-            toast.error('Cliente criado, mas o convite nao foi enviado. Verifique a configuracao SMTP2GO.');
+            const errorMessage = response.invitation.emailErrorMessage || response.invitation.emailError;
+            toast.error(errorMessage ? `Cliente criado, mas convite nao enviado: ${errorMessage}` : 'Cliente criado, mas o convite nao foi enviado. Verifique a configuracao SMTP2GO.');
             console.warn('[ClientFormModal] Convite pendente:', response.invitation);
           }
         } else {
@@ -253,7 +254,8 @@ export function ClientFormModal({ isOpen, onClose, onSuccess, client }: ClientFo
         return;
       }
 
-      toast.error('O e-mail de acesso nao foi enviado. Verifique a configuracao SMTP2GO.');
+      const errorMessage = response.invitation?.emailErrorMessage || response.invitation?.emailError;
+      toast.error(errorMessage ? `E-mail nao enviado: ${errorMessage}` : 'O e-mail de acesso nao foi enviado. Verifique a configuracao SMTP2GO.');
       console.warn('[ClientFormModal] E-mail de acesso pendente:', response.invitation || response);
     } catch (error) {
       toast.error('Erro ao enviar e-mail de acesso');
