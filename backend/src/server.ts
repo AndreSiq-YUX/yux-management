@@ -21,6 +21,7 @@ import { registerMarketingStudioRoutes } from './modules/marketing-studio/routes
 import { registerOmnichannelRoutes } from './modules/omnichannel/routes.js'
 import { registerPlatformRoutes } from './modules/platform/routes.js'
 import { registerProposalRoutes, registerPublicProposalRoutes } from './modules/proposals/routes.js'
+import { registerRadarRoutes } from './modules/radar/routes.js'
 import { registerReportRoutes } from './modules/reports/routes.js'
 import { registerStrategyEngineRoutes } from './modules/strategy-engine/routes.js'
 import { registerSupportRoutes } from './modules/support/routes.js'
@@ -74,6 +75,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerEmailTemplateRoutes, { prefix: '/api/email-templates' })
   await app.register(registerFunctionRoutes, { prefix: '/api/functions' })
   await app.register(registerCrmRoutes, { prefix: '/api/crm' })
+  await app.register(registerRadarRoutes, { prefix: '/api/radar' })
   await app.register(registerAutomationRoutes, { prefix: '/api/automations' })
   await app.register(registerProposalRoutes, { prefix: '/api/proposals' })
   await app.register(registerPublicProposalRoutes, { prefix: '/api/public/proposals' })
