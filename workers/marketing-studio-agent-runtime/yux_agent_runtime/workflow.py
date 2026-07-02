@@ -158,6 +158,8 @@ def synthesize_radar_workflow_result(message: str, plan: dict[str, Any], subagen
         city=_string((retrieval_context or {}).get("city")),
         state=_string((retrieval_context or {}).get("state")),
         website_url=_string((retrieval_context or {}).get("website_url")),
+        source_type=_string((retrieval_context or {}).get("source_type")),
+        source_url=_string((retrieval_context or {}).get("source_url")),
         channels=tuple(str(item) for item in _as_list((retrieval_context or {}).get("channels"))),
         evidence=tuple(
             str(item.get("title") or item.get("content") or item.get("id"))

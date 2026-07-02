@@ -45,6 +45,8 @@ class RadarCompanyInput:
     city: str = ""
     state: str = ""
     website_url: str = ""
+    source_type: str = ""
+    source_url: str = ""
     channels: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
 
@@ -81,6 +83,7 @@ def synthesize_radar_output(company: RadarCompanyInput, recommended_offer: str =
 
     return {
         "summary": f"Analise da oportunidade para {company.name}.",
+        "source": {"type": company.source_type, "url": company.source_url},
         "evidence": evidence,
         "pain_hypotheses": ["Possivel perda de oportunidades por baixa estrutura de captura e follow-up."],
         "recommended_offer": recommended_offer,
