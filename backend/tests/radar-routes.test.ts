@@ -28,6 +28,10 @@ const ids = {
   pipeline: '00000000-0000-4000-8000-000000000010',
   stage: '00000000-0000-4000-8000-000000000011',
   lead: '00000000-0000-4000-8000-000000000012',
+  dataSource: '00000000-0000-4000-8000-000000000020',
+  enrichmentRun: '00000000-0000-4000-8000-000000000021',
+  candidate: '00000000-0000-4000-8000-000000000022',
+  duplicate: '00000000-0000-4000-8000-000000000023',
 }
 
 const now = '2026-07-02T00:00:00.000Z'
@@ -61,6 +65,8 @@ class FakeRadarPool {
   convertedLeadId: string | null = null
   convertedAt: string | null = null
   convertedBy: string | null = null
+  dataSourceEnabled = false
+  candidateStatus = 'pending_review'
   queries: Array<{ sql: string; params: unknown[] }> = []
 
   async connect() {
@@ -72,8 +78,13 @@ class FakeRadarPool {
     const normalized = sql.replace(/\s+/g, ' ').trim()
 
     if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') return { rows: [] }
+    if (normalized.includes('FROM public.radar_data_sources')) return { rows: [dataSourceRow(this)] }
+    if (normalized.includes('UPDATE public.radar_data_sources')) {
+      return { rows: [{ ...dataSourceRow(this), enabled: params[1] ?? true, rate_limit_per_day: params[2] ?? 50 }] }
+    }
     if (normalized.includes('SELECT * FROM public.radar_campaigns')) return { rows: [campaignRow()] }
     if (normalized.includes('SELECT id FROM public.radar_campaigns')) return { rows: [{ id: ids.campaign }] }
+    if (normalized.includes('FROM public.radar_enrichment_runs')) return { rows: [enrichmentRunRow()] }
     if (normalized.includes('row_to_json(c)::jsonb AS company')) {
       return {
         rows: [{
@@ -99,9 +110,51 @@ class FakeRadarPool {
         }],
       }
     }
+    if (normalized.includes('COUNT(DISTINCT c.id) AS companies')) {
+      return {
+        rows: [
+          {
+            source_type: 'manual',
+            companies: 1,
+            opportunities: 1,
+            candidates: 0,
+            converted: this.opportunityStatus === 'converted' ? 1 : 0,
+            estimated_cost: '0.250000',
+          },
+          {
+            source_type: 'jina_search',
+            companies: 0,
+            opportunities: 0,
+            candidates: 2,
+            converted: 0,
+            estimated_cost: 0,
+          },
+        ],
+      }
+    }
     if (normalized.includes('INSERT INTO public.radar_campaigns')) return { rows: [campaignRow()] }
+    if (normalized.includes('INSERT INTO public.radar_enrichment_runs')) return { rows: [{ id: ids.enrichmentRun }] }
+    if (normalized.includes('UPDATE public.radar_enrichment_runs')) return { rows: [] }
+    if (normalized.includes('INSERT INTO public.radar_candidate_records')) return { rows: [candidateRow({ sourceType: params[3] as string, title: params[5] as string, snippet: params[6] as string, dedupeKey: params[9] as string })] }
+    if (normalized.includes('SELECT * FROM public.radar_candidate_records WHERE id = $1')) return { rows: [candidateRow({ status: this.candidateStatus })] }
+    if (normalized.includes('FROM public.radar_candidate_records')) return { rows: [candidateRow({ status: this.candidateStatus })] }
+    if (normalized.includes("SET status = 'imported'")) {
+      this.candidateStatus = 'imported'
+      return { rows: [candidateRow({ status: 'imported', importedCompanyRecordId: params[1] as string, importedOpportunityId: params[2] as string })] }
+    }
+    if (normalized.includes("SET status = 'discarded'")) {
+      this.candidateStatus = 'discarded'
+      return { rows: [candidateRow({ status: 'discarded' })] }
+    }
+    if (normalized.includes('FROM public.radar_duplicate_candidates')) return { rows: [duplicateRow()] }
+    if (normalized.includes('UPDATE public.radar_duplicate_candidates')) return { rows: [{ ...duplicateRow(), status: params[1] }] }
     if (normalized.includes('INSERT INTO public.radar_company_records')) return { rows: [companyRow()] }
     if (normalized.includes('INSERT INTO public.radar_opportunities')) return { rows: [opportunityRow(this)] }
+    if (normalized.includes('UPDATE public.radar_opportunities SET status = CASE')) {
+      this.opportunityStatus = 'enriched'
+      return { rows: [{ ...opportunityRow(this), status: 'enriched' }] }
+    }
+    if (normalized.includes('INSERT INTO public.radar_company_enrichment')) return { rows: [] }
     if (normalized.includes('SELECT o.*, c.trade_name, c.legal_name, c.city, c.state, c.website_url')) {
       return { rows: [{ ...opportunityRow(this), ...companyJoinRow() }] }
     }
@@ -159,6 +212,7 @@ class FakeRadarPool {
     }
     if (normalized.includes('INSERT INTO public.radar_outreach_events')) return { rows: [] }
     if (normalized.includes('INSERT INTO public.radar_compliance_logs')) return { rows: [] }
+    if (normalized.includes('INSERT INTO public.radar_cost_logs')) return { rows: [] }
     if (normalized.includes('UPDATE public.radar_compliance_logs')) return { rows: [] }
     if (normalized.includes('UPDATE public.radar_message_suggestions')) return { rows: [] }
 
@@ -230,6 +284,93 @@ function companyRow() {
     dedupe_key: 'domain:boavida.com.br',
     dedupe_status: 'unique',
     record_status: 'active',
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function dataSourceRow(pool?: Pick<FakeRadarPool, 'dataSourceEnabled'>) {
+  return {
+    id: ids.dataSource,
+    organization_id: null,
+    source_key: 'jina_reader',
+    source_type: 'jina_reader',
+    display_name: 'Jina Reader',
+    enabled: pool?.dataSourceEnabled ?? false,
+    is_paid: false,
+    requires_secret: false,
+    terms_notes: 'Leitura publica provider-neutral.',
+    default_cost_per_unit: '0.000000',
+    rate_limit_per_day: 50,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function enrichmentRunRow() {
+  return {
+    id: ids.enrichmentRun,
+    organization_id: ids.org,
+    campaign_id: ids.campaign,
+    company_record_id: ids.company,
+    opportunity_id: ids.opportunity,
+    data_source_id: null,
+    agent_execution_run_id: null,
+    status: 'succeeded',
+    provider: 'manual',
+    input_payload: { sourceType: 'manual' },
+    output_payload: { accepted: true },
+    error_message: null,
+    started_at: now,
+    completed_at: now,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function candidateRow(overrides: {
+  sourceType?: string
+  title?: string
+  snippet?: string
+  dedupeKey?: string
+  status?: string
+  importedCompanyRecordId?: string
+  importedOpportunityId?: string
+} = {}) {
+  const title = overrides.title ?? 'Clinicas Londrina candidato 1'
+  return {
+    id: ids.candidate,
+    organization_id: ids.org,
+    campaign_id: ids.campaign,
+    enrichment_run_id: ids.enrichmentRun,
+    source_type: overrides.sourceType ?? 'jina_search',
+    source_url: null,
+    title,
+    snippet: overrides.snippet ?? 'Resultado assistido para clinicas',
+    raw_payload: { generated: true },
+    normalized_payload: { tradeName: title, city: 'Londrina', state: 'PR' },
+    dedupe_key: overrides.dedupeKey ?? 'search:clinicas-londrina-candidato-1',
+    status: overrides.status ?? 'pending_review',
+    imported_company_record_id: overrides.importedCompanyRecordId ?? null,
+    imported_opportunity_id: overrides.importedOpportunityId ?? null,
+    error_message: null,
+    reviewed_by: overrides.status && overrides.status !== 'pending_review' ? ids.user : null,
+    reviewed_at: overrides.status && overrides.status !== 'pending_review' ? now : null,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function duplicateRow() {
+  return {
+    id: ids.duplicate,
+    organization_id: ids.org,
+    campaign_id: ids.campaign,
+    company_record_id: ids.company,
+    duplicate_company_record_id: ids.company,
+    confidence_score: 90,
+    reason: 'Mesmo dominio',
+    status: 'pending',
     created_at: now,
     updated_at: now,
   }
@@ -395,9 +536,32 @@ describe('radar routes', () => {
     expect(listed.json()).toEqual([expect.objectContaining({ id: ids.campaign, dailyLimit: 5 })])
   })
 
-  it('adds a company to a radar campaign', async () => {
+  it('lists and updates governed radar data sources', async () => {
     const { authStore, token } = buildAuthStore()
     app = await buildServer(testEnv, { authStore, pool: new FakeRadarPool() as never, jobQueue: noopJobQueue })
+
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/radar/data-sources?organizationId=${ids.org}`,
+      headers: { cookie: sessionCookie(token) },
+    })
+    const update = await app.inject({
+      method: 'PATCH',
+      url: `/api/radar/data-sources/${ids.dataSource}`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { enabled: true, rateLimitPerDay: 10 },
+    })
+
+    expect(list.statusCode).toBe(200)
+    expect(list.json()[0]).toMatchObject({ sourceKey: 'jina_reader', enabled: false })
+    expect(update.statusCode).toBe(200)
+    expect(update.json()).toMatchObject({ sourceKey: 'jina_reader', enabled: true, rateLimitPerDay: 10 })
+  })
+
+  it('adds a company to a radar campaign', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
 
     const response = await app.inject({
       method: 'POST',
@@ -419,9 +583,178 @@ describe('radar routes', () => {
       company: { id: ids.company, dedupeKey: 'domain:boavida.com.br' },
       opportunity: { id: ids.opportunity, status: 'raw', company: { tradeName: 'Boa Vida' } },
     })
+    expect(pool.queries.some(query => query.sql.includes('INSERT INTO public.radar_enrichment_runs'))).toBe(true)
+    expect(pool.queries.some(query => query.sql.includes('INSERT INTO public.radar_cost_logs'))).toBe(true)
   })
 
-  it('lists radar opportunities and campaign metrics', async () => {
+  it('imports radar companies from a small CSV batch', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/radar/campaigns/${ids.campaign}/import-csv`,
+      headers: { cookie: sessionCookie(token) },
+      payload: {
+        organizationId: ids.org,
+        csv: 'trade_name,city,state,website_url\nBoa Vida,Londrina,PR,https://boavida.com.br\n,Londrina,PR,',
+      },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      imported: [expect.objectContaining({ id: ids.opportunity })],
+      issues: [expect.objectContaining({ code: 'missing_name_or_site' })],
+      runId: ids.enrichmentRun,
+    })
+  })
+
+  it('blocks url import when Jina Reader source is disabled', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = false
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/radar/campaigns/${ids.campaign}/import-urls`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { organizationId: ids.org, urls: ['https://boavida.com.br'] },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      imported: [],
+      issues: [expect.objectContaining({ code: 'source_disabled' })],
+      runId: ids.enrichmentRun,
+    })
+  })
+
+  it('imports urls when Jina Reader source is enabled', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = true
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/radar/campaigns/${ids.campaign}/import-urls`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { organizationId: ids.org, urls: ['https://boavida.com.br'] },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      imported: [expect.objectContaining({ id: ids.opportunity })],
+      issues: [],
+      runId: ids.enrichmentRun,
+    })
+    expect(pool.queries.some(query => query.sql.includes('INSERT INTO public.radar_company_enrichment'))).toBe(true)
+  })
+
+  it('creates pending candidates from assisted web search', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = true
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/radar/campaigns/${ids.campaign}/search-web`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { organizationId: ids.org, query: 'clinicas', city: 'Londrina', state: 'PR', sourceType: 'jina_search', limit: 2 },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      candidates: [
+        expect.objectContaining({ status: 'pending_review', sourceType: 'jina_search' }),
+        expect.objectContaining({ status: 'pending_review', sourceType: 'jina_search' }),
+      ],
+      issues: [],
+      runId: ids.enrichmentRun,
+    })
+  })
+
+  it('returns an issue when assisted search source is disabled', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = false
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/radar/campaigns/${ids.campaign}/search-web`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { organizationId: ids.org, query: 'clinicas', sourceType: 'web_search', limit: 2 },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      candidates: [],
+      issues: [expect.objectContaining({ code: 'source_disabled' })],
+      runId: ids.enrichmentRun,
+    })
+  })
+
+  it('lists imports and discards radar candidates', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const candidateList = await app.inject({
+      method: 'GET',
+      url: `/api/radar/campaigns/${ids.campaign}/candidates`,
+      headers: { cookie: sessionCookie(token) },
+    })
+    const importResponse = await app.inject({
+      method: 'POST',
+      url: `/api/radar/candidates/${ids.candidate}/import`,
+      headers: { cookie: sessionCookie(token) },
+    })
+    pool.candidateStatus = 'pending_review'
+    const discardResponse = await app.inject({
+      method: 'POST',
+      url: `/api/radar/candidates/${ids.candidate}/discard`,
+      headers: { cookie: sessionCookie(token) },
+    })
+
+    expect(candidateList.statusCode).toBe(200)
+    expect(candidateList.json()[0]).toMatchObject({ id: ids.candidate, status: 'pending_review' })
+    expect(importResponse.statusCode).toBe(200)
+    expect(importResponse.json()).toMatchObject({
+      candidate: { status: 'imported', importedOpportunityId: ids.opportunity },
+      opportunity: { id: ids.opportunity },
+    })
+    expect(discardResponse.statusCode).toBe(200)
+    expect(discardResponse.json()).toMatchObject({ status: 'discarded' })
+  })
+
+  it('lists and updates duplicate candidates', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/radar/campaigns/${ids.campaign}/duplicates`,
+      headers: { cookie: sessionCookie(token) },
+    })
+    const update = await app.inject({
+      method: 'PATCH',
+      url: `/api/radar/duplicates/${ids.duplicate}`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { status: 'dismissed' },
+    })
+
+    expect(list.statusCode).toBe(200)
+    expect(list.json()[0]).toMatchObject({ id: ids.duplicate, status: 'pending' })
+    expect(update.statusCode).toBe(200)
+    expect(update.json()).toMatchObject({ id: ids.duplicate, status: 'dismissed' })
+  })
+
+  it('lists radar opportunities campaign metrics and enrichment runs', async () => {
     const { authStore, token } = buildAuthStore()
     const pool = new FakeRadarPool()
     pool.opportunityStatus = 'review_pending'
@@ -440,6 +773,11 @@ describe('radar routes', () => {
       url: `/api/radar/campaigns/${ids.campaign}/metrics`,
       headers: { cookie: sessionCookie(token) },
     })
+    const runs = await app.inject({
+      method: 'GET',
+      url: `/api/radar/campaigns/${ids.campaign}/runs`,
+      headers: { cookie: sessionCookie(token) },
+    })
 
     expect(opportunities.statusCode).toBe(200)
     expect(opportunities.json()).toEqual([
@@ -453,7 +791,18 @@ describe('radar routes', () => {
       }),
     ])
     expect(metrics.statusCode).toBe(200)
-    expect(metrics.json()).toMatchObject({ companies: 1, opportunities: 1, reviewPending: 1, estimatedCost: 0.25 })
+    expect(metrics.json()).toMatchObject({
+      companies: 1,
+      opportunities: 1,
+      reviewPending: 1,
+      estimatedCost: 0.25,
+      sourceBreakdown: [
+        expect.objectContaining({ sourceType: 'manual', companies: 1, opportunities: 1 }),
+        expect.objectContaining({ sourceType: 'jina_search', candidates: 2 }),
+      ],
+    })
+    expect(runs.statusCode).toBe(200)
+    expect(runs.json()[0]).toMatchObject({ provider: 'manual', status: 'succeeded' })
   })
 
   it('runs provider-neutral analysis and sends the opportunity to human review', async () => {
@@ -474,6 +823,50 @@ describe('radar routes', () => {
       latestDiagnosticId: ids.diagnostic,
       latestScoreId: ids.score,
       latestMessageSuggestionId: ids.message,
+    })
+    expect(
+      pool.queries.some((query) => query.params.some((param) => String(param).includes('"canSendAutomatically":false'))),
+    ).toBe(true)
+  })
+
+  it('enforces small batch limits and enriches opportunity batches', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const tooLarge = await app.inject({
+      method: 'POST',
+      url: '/api/radar/opportunities/batch/enrich',
+      headers: { cookie: sessionCookie(token) },
+      payload: { opportunityIds: Array.from({ length: 11 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`) },
+    })
+    const success = await app.inject({
+      method: 'POST',
+      url: '/api/radar/opportunities/batch/enrich',
+      headers: { cookie: sessionCookie(token) },
+      payload: { opportunityIds: [ids.opportunity] },
+    })
+
+    expect(tooLarge.statusCode).toBe(400)
+    expect(success.statusCode).toBe(200)
+    expect(success.json()).toMatchObject({ enriched: [expect.objectContaining({ id: ids.opportunity, status: 'enriched' })] })
+  })
+
+  it('analyzes opportunity batches while preserving human review policy', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/radar/opportunities/batch/analyze',
+      headers: { cookie: sessionCookie(token) },
+      payload: { opportunityIds: [ids.opportunity] },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'review_pending' })],
     })
     expect(
       pool.queries.some((query) => query.params.some((param) => String(param).includes('"canSendAutomatically":false'))),

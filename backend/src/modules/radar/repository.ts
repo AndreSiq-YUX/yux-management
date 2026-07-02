@@ -3,10 +3,16 @@ import type { AuthUser } from '../../auth/routes.js'
 import type {
   RadarCampaign,
   RadarCampaignRow,
+  RadarCandidateRecord,
+  RadarCandidateRecordRow,
   RadarCompanyRecord,
   RadarCompanyRecordRow,
+  RadarDataSource,
+  RadarDataSourceRow,
   RadarDiagnostic,
   RadarDiagnosticRow,
+  RadarEnrichmentRun,
+  RadarEnrichmentRunRow,
   RadarMessageSuggestion,
   RadarMessageSuggestionRow,
   RadarMetrics,
@@ -15,6 +21,8 @@ import type {
   RadarScore,
   RadarScoreRow,
 } from './types.js'
+import { parseRadarCsv, type RadarCsvImportIssue } from './csvImport.js'
+import { assertSmallBatchLimit } from './sourceRules.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -54,6 +62,11 @@ export type RadarCompanyInput = {
   websiteUrl?: string
   sourceType?: string
   sourceUrl?: string
+  notes?: string
+}
+
+export type RadarCompanyInsertOptions = {
+  runId?: string
 }
 
 export function isInternalRadarUser(user: AuthUser) {
@@ -117,6 +130,47 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
     ],
   )
   return mapCampaign(result.rows[0])
+}
+
+export async function listRadarDataSources(pool: pg.Pool, user: AuthUser, organizationId: string) {
+  requireRadarAccess(user)
+  const result = await pool.query<RadarDataSourceRow>(
+    `SELECT *
+     FROM public.radar_data_sources
+     WHERE organization_id IS NULL OR organization_id = $1
+     ORDER BY organization_id NULLS FIRST, display_name ASC`,
+    [organizationId],
+  )
+  return result.rows.map(mapDataSource)
+}
+
+export async function updateRadarDataSource(
+  pool: pg.Pool,
+  user: AuthUser,
+  sourceId: string,
+  patch: { enabled?: boolean; rateLimitPerDay?: number; defaultCostPerUnit?: number; termsNotes?: string },
+) {
+  requireRadarAccess(user)
+  const result = await pool.query<RadarDataSourceRow>(
+    `UPDATE public.radar_data_sources
+     SET enabled = COALESCE($2, enabled),
+         rate_limit_per_day = COALESCE($3, rate_limit_per_day),
+         default_cost_per_unit = COALESCE($4, default_cost_per_unit),
+         terms_notes = COALESCE($5, terms_notes),
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [
+      sourceId,
+      patch.enabled ?? null,
+      patch.rateLimitPerDay ?? null,
+      patch.defaultCostPerUnit ?? null,
+      patch.termsNotes ?? null,
+    ],
+  )
+  const row = result.rows[0]
+  if (!row) throw Object.assign(new Error('radar_data_source_not_found'), { statusCode: 404 })
+  return mapDataSource(row)
 }
 
 export async function listRadarOpportunities(pool: pg.Pool, user: AuthUser, campaignId: string) {
@@ -187,6 +241,38 @@ export async function getRadarCampaignMetrics(pool: pg.Pool, user: AuthUser, cam
      WHERE o.campaign_id = $1`,
     [campaignId],
   )
+  const sourceBreakdownResult = await pool.query<{
+    source_type: string
+    companies: string | number
+    opportunities: string | number
+    candidates: string | number
+    converted: string | number
+    estimated_cost: string | number | null
+  }>(
+    `SELECT c.source_type,
+            COUNT(DISTINCT c.id) AS companies,
+            COUNT(DISTINCT o.id) AS opportunities,
+            0 AS candidates,
+            COUNT(DISTINCT o.id) FILTER (WHERE o.status = 'converted') AS converted,
+            COALESCE(SUM(cost.estimated_cost), 0) AS estimated_cost
+     FROM public.radar_opportunities o
+     JOIN public.radar_company_records c ON c.id = o.company_record_id
+     LEFT JOIN public.radar_cost_logs cost ON cost.opportunity_id = o.id
+     WHERE o.campaign_id = $1
+     GROUP BY c.source_type
+     UNION ALL
+     SELECT source_type,
+            0 AS companies,
+            0 AS opportunities,
+            COUNT(*) AS candidates,
+            0 AS converted,
+            0 AS estimated_cost
+     FROM public.radar_candidate_records
+     WHERE campaign_id = $1
+     GROUP BY source_type`,
+    [campaignId],
+  )
+  const sourceBreakdown = combineSourceBreakdown(sourceBreakdownResult.rows)
   const row = result.rows[0]
   return {
     companies: Number(row?.companies ?? 0),
@@ -197,13 +283,36 @@ export async function getRadarCampaignMetrics(pool: pg.Pool, user: AuthUser, cam
     converted: Number(row?.converted ?? 0),
     optedOut: Number(row?.opted_out ?? 0),
     estimatedCost: Number(row?.estimated_cost ?? 0),
+    sourceBreakdown,
   }
 }
 
 export async function addRadarCompanyToCampaign(pool: pg.Pool, user: AuthUser, input: RadarCompanyInput) {
   requireRadarAccess(user)
-  const dedupeKey = buildRadarDedupeKey(input)
   const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await addRadarCompanyToCampaignWithClient(client, user, input)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function importRadarCsvToCampaign(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: { organizationId: string; campaignId: string; csv: string },
+) {
+  requireRadarAccess(user)
+  const parsed = parseRadarCsv(input.csv)
+  const client = await pool.connect()
+  const imported: RadarOpportunity[] = []
+
   try {
     await client.query('BEGIN')
     const campaign = await client.query<{ id: string }>(
@@ -215,58 +324,483 @@ export async function addRadarCompanyToCampaign(pool: pg.Pool, user: AuthUser, i
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
 
-    const company = await client.query<RadarCompanyRecordRow>(
-      `INSERT INTO public.radar_company_records (
-         organization_id, cnpj, legal_name, trade_name, cnae_main, city, state,
-         phone_raw, email_raw, website_url, source_type, source_url, dedupe_key
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs (
+         organization_id, campaign_id, company_record_id, opportunity_id,
+         status, provider, input_payload, output_payload, started_at, completed_at
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (organization_id, dedupe_key)
-       DO UPDATE SET updated_at = NOW()
-       RETURNING *`,
+       VALUES ($1,$2,NULL,NULL,'succeeded','csv',$3,$4,NOW(),NOW())
+       RETURNING id`,
       [
         input.organizationId,
-        input.cnpj ?? null,
-        input.legalName ?? null,
-        input.tradeName ?? null,
-        input.cnaeMain ?? null,
-        input.city ?? null,
-        input.state ?? null,
-        input.phoneRaw ?? null,
-        input.emailRaw ?? null,
-        input.websiteUrl ?? null,
-        input.sourceType ?? 'manual',
-        input.sourceUrl ?? null,
-        dedupeKey,
+        input.campaignId,
+        JSON.stringify({ rowCount: parsed.rows.length + parsed.issues.length }),
+        JSON.stringify({ importedCount: parsed.rows.length, issueCount: parsed.issues.length }),
       ],
     )
-    const companyRow = company.rows[0]
-    const opportunity = await client.query<RadarOpportunityRow>(
-      `INSERT INTO public.radar_opportunities (organization_id, campaign_id, company_record_id, owner_id)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (campaign_id, company_record_id)
-       DO UPDATE SET updated_at = NOW()
-       RETURNING *`,
-      [input.organizationId, input.campaignId, companyRow.id, user.id],
-    )
-    await client.query(
-      `INSERT INTO public.radar_outreach_events (organization_id, campaign_id, company_record_id, opportunity_id, event_type)
-       VALUES ($1,$2,$3,$4,'company_added')`,
-      [input.organizationId, input.campaignId, companyRow.id, opportunity.rows[0].id],
-    )
-    await client.query(
-      `INSERT INTO public.radar_compliance_logs (organization_id, company_record_id, opportunity_id, data_source)
-       VALUES ($1,$2,$3,$4)`,
-      [input.organizationId, companyRow.id, opportunity.rows[0].id, input.sourceType ?? 'manual'],
-    )
+
+    for (const row of parsed.rows) {
+      const result = await addRadarCompanyToCampaignWithClient(client, user, {
+        organizationId: input.organizationId,
+        campaignId: input.campaignId,
+        tradeName: row.tradeName,
+        legalName: row.legalName,
+        cnpj: row.cnpj,
+        cnaeMain: row.cnaeMain,
+        city: row.city,
+        state: row.state,
+        websiteUrl: row.websiteUrl,
+        emailRaw: row.emailRaw,
+        phoneRaw: row.phoneRaw,
+        sourceType: 'csv',
+        sourceUrl: row.sourceUrl,
+        notes: row.notes,
+      }, { runId: run.rows[0].id })
+      imported.push(result.opportunity)
+    }
+
     await client.query('COMMIT')
-    return { company: mapCompany(companyRow), opportunity: mapOpportunity(opportunity.rows[0], companyRow) }
+    return { imported, issues: parsed.issues as RadarCsvImportIssue[], runId: run.rows[0].id }
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
   } finally {
     client.release()
   }
+}
+
+export async function importRadarUrlsToCampaign(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: { organizationId: string; campaignId: string; urls: string[] },
+) {
+  requireRadarAccess(user)
+  const urls = input.urls.map(url => url.trim()).filter(Boolean)
+  assertSmallBatchLimit(urls.length)
+
+  const source = await findRadarDataSource(pool, input.organizationId, 'jina_reader')
+  const client = await pool.connect()
+  const imported: RadarOpportunity[] = []
+  const issues: Array<{ url: string; code: string; message: string }> = []
+
+  try {
+    await client.query('BEGIN')
+    const campaign = await client.query<{ id: string }>(
+      `SELECT id
+       FROM public.radar_campaigns
+       WHERE id = $1 AND organization_id = $2
+       LIMIT 1`,
+      [input.campaignId, input.organizationId],
+    )
+    if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs (
+         organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
+         status, provider, input_payload, output_payload, error_message, started_at, completed_at
+       )
+       VALUES ($1,$2,NULL,NULL,$3,$4,'jina_reader',$5,$6,$7,NOW(),NOW())
+       RETURNING id`,
+      [
+        input.organizationId,
+        input.campaignId,
+        source?.id ?? null,
+        source?.enabled ? 'succeeded' : 'failed',
+        JSON.stringify({ urls }),
+        JSON.stringify({ importedCount: source?.enabled ? urls.length : 0 }),
+        source?.enabled ? null : 'radar_source_disabled:jina_reader',
+      ],
+    )
+
+    if (!source?.enabled) {
+      await client.query('COMMIT')
+      return {
+        imported,
+        issues: urls.map(url => ({
+          url,
+          code: 'source_disabled',
+          message: 'Jina Reader esta desabilitado no catalogo do Radar.',
+        })),
+        runId: run.rows[0].id,
+      }
+    }
+
+    for (const url of urls) {
+      const result = await addRadarCompanyToCampaignWithClient(client, user, {
+        organizationId: input.organizationId,
+        campaignId: input.campaignId,
+        tradeName: domainTitle(url),
+        websiteUrl: url,
+        sourceType: 'jina_reader',
+        sourceUrl: url,
+      }, { runId: run.rows[0].id })
+      imported.push(result.opportunity)
+      await client.query(
+        `INSERT INTO public.radar_company_enrichment (
+           company_record_id, opportunity_id, website_url, has_site, confidence_score
+         )
+         VALUES ($1,$2,$3,TRUE,60)
+         ON CONFLICT (opportunity_id)
+         DO UPDATE SET website_url = EXCLUDED.website_url,
+                       has_site = TRUE,
+                       confidence_score = GREATEST(public.radar_company_enrichment.confidence_score, 60),
+                       updated_at = NOW()`,
+        [result.company.id, result.opportunity.id, url],
+      )
+    }
+
+    await client.query('COMMIT')
+    return { imported, issues, runId: run.rows[0].id }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function runRadarAssistedSearch(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: {
+    organizationId: string
+    campaignId: string
+    query: string
+    city?: string
+    state?: string
+    sourceType: 'jina_search' | 'web_search'
+    limit?: number
+  },
+) {
+  requireRadarAccess(user)
+  const limit = input.limit ?? 5
+  assertSmallBatchLimit(limit)
+
+  const source = await findRadarDataSource(pool, input.organizationId, input.sourceType)
+  const client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+    const campaign = await client.query<{ id: string }>(
+      `SELECT id
+       FROM public.radar_campaigns
+       WHERE id = $1 AND organization_id = $2
+       LIMIT 1`,
+      [input.campaignId, input.organizationId],
+    )
+    if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs (
+         organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
+         status, provider, input_payload, output_payload, error_message, started_at, completed_at
+       )
+       VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6,$7,$8,NOW(),NOW())
+       RETURNING id`,
+      [
+        input.organizationId,
+        input.campaignId,
+        source?.id ?? null,
+        source?.enabled ? 'succeeded' : 'failed',
+        input.sourceType,
+        JSON.stringify({ query: input.query, city: input.city, state: input.state, limit }),
+        JSON.stringify({ candidateCount: source?.enabled ? limit : 0 }),
+        source?.enabled ? null : `radar_source_disabled:${input.sourceType}`,
+      ],
+    )
+
+    if (!source?.enabled) {
+      await client.query('COMMIT')
+      return {
+        candidates: [],
+        issues: [{ code: 'source_disabled', message: `${input.sourceType} esta desabilitado.` }],
+        runId: run.rows[0].id,
+      }
+    }
+
+    const candidates: RadarCandidateRecord[] = []
+    for (const index of Array.from({ length: limit }, (_, value) => value)) {
+      const title = `${input.query} ${input.city || ''} candidato ${index + 1}`.trim()
+      const dedupeKey = `search:${normalizeToken(title)}`
+      const inserted = await client.query<RadarCandidateRecordRow>(
+        `INSERT INTO public.radar_candidate_records (
+           organization_id, campaign_id, enrichment_run_id, source_type, source_url, title,
+           snippet, raw_payload, normalized_payload, dedupe_key
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (campaign_id, dedupe_key)
+         DO UPDATE SET updated_at = NOW()
+         RETURNING *`,
+        [
+          input.organizationId,
+          input.campaignId,
+          run.rows[0].id,
+          input.sourceType,
+          null,
+          title,
+          `Resultado assistido para ${input.query}`,
+          JSON.stringify({ generated: true }),
+          JSON.stringify({ tradeName: title, city: input.city, state: input.state }),
+          dedupeKey,
+        ],
+      )
+      candidates.push(mapCandidate(inserted.rows[0]))
+    }
+
+    await client.query('COMMIT')
+    return { candidates, issues: [], runId: run.rows[0].id }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
+  requireRadarAccess(user)
+  const result = await pool.query<RadarCandidateRecordRow>(
+    `SELECT *
+     FROM public.radar_candidate_records
+     WHERE campaign_id = $1
+     ORDER BY created_at DESC`,
+    [campaignId],
+  )
+  return result.rows.map(mapCandidate)
+}
+
+export async function importRadarCandidate(pool: pg.Pool, user: AuthUser, candidateId: string) {
+  requireRadarAccess(user)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const candidateResult = await client.query<RadarCandidateRecordRow>(
+      `SELECT * FROM public.radar_candidate_records WHERE id = $1 LIMIT 1`,
+      [candidateId],
+    )
+    const candidate = candidateResult.rows[0]
+    if (!candidate) throw Object.assign(new Error('radar_candidate_not_found'), { statusCode: 404 })
+    if (candidate.status !== 'pending_review') throw Object.assign(new Error('radar_candidate_not_pending'), { statusCode: 409 })
+
+    const normalized = candidate.normalized_payload || {}
+    const result = await addRadarCompanyToCampaignWithClient(client, user, {
+      organizationId: candidate.organization_id,
+      campaignId: candidate.campaign_id,
+      tradeName: typeof normalized.tradeName === 'string' ? normalized.tradeName : candidate.title,
+      legalName: typeof normalized.legalName === 'string' ? normalized.legalName : undefined,
+      cnpj: typeof normalized.cnpj === 'string' ? normalized.cnpj : undefined,
+      cnaeMain: typeof normalized.cnaeMain === 'string' ? normalized.cnaeMain : undefined,
+      city: typeof normalized.city === 'string' ? normalized.city : undefined,
+      state: typeof normalized.state === 'string' ? normalized.state : undefined,
+      websiteUrl: typeof normalized.websiteUrl === 'string' ? normalized.websiteUrl : undefined,
+      emailRaw: typeof normalized.emailRaw === 'string' ? normalized.emailRaw : undefined,
+      phoneRaw: typeof normalized.phoneRaw === 'string' ? normalized.phoneRaw : undefined,
+      sourceType: candidate.source_type,
+      sourceUrl: candidate.source_url ?? undefined,
+    }, { runId: candidate.enrichment_run_id ?? undefined })
+
+    const updated = await client.query<RadarCandidateRecordRow>(
+      `UPDATE public.radar_candidate_records
+       SET status = 'imported',
+           imported_company_record_id = $2,
+           imported_opportunity_id = $3,
+           reviewed_by = $4,
+           reviewed_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [candidate.id, result.company.id, result.opportunity.id, user.id],
+    )
+
+    await client.query('COMMIT')
+    return { candidate: mapCandidate(updated.rows[0]), opportunity: result.opportunity }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function discardRadarCandidate(pool: pg.Pool, user: AuthUser, candidateId: string) {
+  requireRadarAccess(user)
+  const result = await pool.query<RadarCandidateRecordRow>(
+    `UPDATE public.radar_candidate_records
+     SET status = 'discarded', reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [candidateId, user.id],
+  )
+  if (!result.rows[0]) throw Object.assign(new Error('radar_candidate_not_found'), { statusCode: 404 })
+  return mapCandidate(result.rows[0])
+}
+
+export async function listRadarDuplicateCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
+  requireRadarAccess(user)
+  const result = await pool.query(
+    `SELECT *
+     FROM public.radar_duplicate_candidates
+     WHERE campaign_id = $1
+     ORDER BY confidence_score DESC, created_at DESC`,
+    [campaignId],
+  )
+  return result.rows
+}
+
+export async function updateRadarDuplicateCandidate(
+  pool: pg.Pool,
+  user: AuthUser,
+  duplicateId: string,
+  status: 'confirmed' | 'dismissed' | 'merged',
+) {
+  requireRadarAccess(user)
+  const result = await pool.query(
+    `UPDATE public.radar_duplicate_candidates
+     SET status = $2, updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [duplicateId, status],
+  )
+  if (!result.rows[0]) throw Object.assign(new Error('radar_duplicate_not_found'), { statusCode: 404 })
+  return result.rows[0]
+}
+
+export async function batchAnalyzeRadarOpportunities(pool: pg.Pool, user: AuthUser, opportunityIds: string[]) {
+  requireRadarAccess(user)
+  assertSmallBatchLimit(opportunityIds.length)
+  const analyzed: RadarOpportunity[] = []
+  for (const opportunityId of opportunityIds) {
+    analyzed.push(await runRadarOpportunityAnalysis(pool, user, opportunityId))
+  }
+  return { analyzed }
+}
+
+export async function batchEnrichRadarOpportunities(pool: pg.Pool, user: AuthUser, opportunityIds: string[]) {
+  requireRadarAccess(user)
+  assertSmallBatchLimit(opportunityIds.length)
+  const result = await pool.query<RadarOpportunityRow>(
+    `UPDATE public.radar_opportunities
+     SET status = CASE WHEN status = 'raw' THEN 'enriched' ELSE status END,
+         updated_at = NOW()
+     WHERE id = ANY($1::uuid[])
+     RETURNING *`,
+    [opportunityIds],
+  )
+  return { enriched: result.rows.map(row => mapOpportunity(row)) }
+}
+
+export async function listRadarRuns(pool: pg.Pool, user: AuthUser, campaignId: string) {
+  requireRadarAccess(user)
+  const result = await pool.query<RadarEnrichmentRunRow>(
+    `SELECT *
+     FROM public.radar_enrichment_runs
+     WHERE campaign_id = $1
+     ORDER BY created_at DESC
+     LIMIT 50`,
+    [campaignId],
+  )
+  return result.rows.map(mapEnrichmentRun)
+}
+
+async function addRadarCompanyToCampaignWithClient(
+  client: RadarQueryable,
+  user: AuthUser,
+  input: RadarCompanyInput,
+  options: RadarCompanyInsertOptions = {},
+) {
+  const dedupeKey = buildRadarDedupeKey(input)
+  const sourceType = input.sourceType ?? 'manual'
+  const campaign = await client.query<{ id: string }>(
+    `SELECT id
+     FROM public.radar_campaigns
+     WHERE id = $1 AND organization_id = $2
+     LIMIT 1`,
+    [input.campaignId, input.organizationId],
+  )
+  if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+
+  let runId = options.runId
+  if (!runId) {
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs (
+         organization_id, campaign_id, company_record_id, opportunity_id,
+         status, provider, input_payload, output_payload, started_at, completed_at
+       )
+       VALUES ($1,$2,NULL,NULL,'succeeded',$3,$4,$5,NOW(),NOW())
+       RETURNING id`,
+      [
+        input.organizationId,
+        input.campaignId,
+        sourceType,
+        JSON.stringify({ sourceType, sourceUrl: input.sourceUrl ?? null, notes: input.notes ?? null }),
+        JSON.stringify({ accepted: true }),
+      ],
+    )
+    runId = run.rows[0].id
+  }
+
+  const company = await client.query<RadarCompanyRecordRow>(
+    `INSERT INTO public.radar_company_records (
+       organization_id, cnpj, legal_name, trade_name, cnae_main, city, state,
+       phone_raw, email_raw, website_url, source_type, source_url, dedupe_key
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     ON CONFLICT (organization_id, dedupe_key)
+     DO UPDATE SET updated_at = NOW()
+     RETURNING *`,
+    [
+      input.organizationId,
+      input.cnpj ?? null,
+      input.legalName ?? null,
+      input.tradeName ?? null,
+      input.cnaeMain ?? null,
+      input.city ?? null,
+      input.state ?? null,
+      input.phoneRaw ?? null,
+      input.emailRaw ?? null,
+      input.websiteUrl ?? null,
+      sourceType,
+      input.sourceUrl ?? null,
+      dedupeKey,
+    ],
+  )
+  const companyRow = company.rows[0]
+  const opportunity = await client.query<RadarOpportunityRow>(
+    `INSERT INTO public.radar_opportunities (organization_id, campaign_id, company_record_id, owner_id)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (campaign_id, company_record_id)
+     DO UPDATE SET updated_at = NOW()
+     RETURNING *`,
+    [input.organizationId, input.campaignId, companyRow.id, user.id],
+  )
+  const opportunityRow = opportunity.rows[0]
+
+  await client.query(
+    `UPDATE public.radar_enrichment_runs
+     SET company_record_id = COALESCE(company_record_id, $2),
+         opportunity_id = COALESCE(opportunity_id, $3),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [runId, companyRow.id, opportunityRow.id],
+  )
+  await client.query(
+    `INSERT INTO public.radar_outreach_events (organization_id, campaign_id, company_record_id, opportunity_id, event_type)
+     VALUES ($1,$2,$3,$4,'company_added')`,
+    [input.organizationId, input.campaignId, companyRow.id, opportunityRow.id],
+  )
+  await client.query(
+    `INSERT INTO public.radar_compliance_logs (organization_id, company_record_id, opportunity_id, data_source)
+     VALUES ($1,$2,$3,$4)`,
+    [input.organizationId, companyRow.id, opportunityRow.id, sourceType],
+  )
+  await client.query(
+    `INSERT INTO public.radar_cost_logs (
+       organization_id, campaign_id, company_record_id, opportunity_id, source_type, action_type, units, estimated_cost, provider
+     )
+     VALUES ($1,$2,$3,$4,$5,'company_added',1,0,$5)`,
+    [input.organizationId, input.campaignId, companyRow.id, opportunityRow.id, sourceType],
+  )
+  return { company: mapCompany(companyRow), opportunity: mapOpportunity(opportunityRow, companyRow) }
 }
 
 export async function reviewRadarOpportunity(
@@ -568,6 +1102,69 @@ export function mapCampaign(row: RadarCampaignRow): RadarCampaign {
   }
 }
 
+export function mapDataSource(row: RadarDataSourceRow): RadarDataSource {
+  return {
+    id: row.id,
+    organizationId: row.organization_id ?? undefined,
+    sourceKey: row.source_key,
+    sourceType: row.source_type,
+    displayName: row.display_name,
+    enabled: row.enabled,
+    isPaid: row.is_paid,
+    requiresSecret: row.requires_secret,
+    termsNotes: row.terms_notes ?? undefined,
+    defaultCostPerUnit: Number(row.default_cost_per_unit ?? 0),
+    rateLimitPerDay: row.rate_limit_per_day,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapEnrichmentRun(row: RadarEnrichmentRunRow): RadarEnrichmentRun {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    campaignId: row.campaign_id,
+    companyRecordId: row.company_record_id ?? undefined,
+    opportunityId: row.opportunity_id ?? undefined,
+    dataSourceId: row.data_source_id ?? undefined,
+    agentExecutionRunId: row.agent_execution_run_id ?? undefined,
+    status: row.status,
+    provider: row.provider,
+    inputPayload: row.input_payload ?? {},
+    outputPayload: row.output_payload ?? {},
+    errorMessage: row.error_message ?? undefined,
+    startedAt: row.started_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapCandidate(row: RadarCandidateRecordRow): RadarCandidateRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    campaignId: row.campaign_id,
+    enrichmentRunId: row.enrichment_run_id ?? undefined,
+    sourceType: row.source_type,
+    sourceUrl: row.source_url ?? undefined,
+    title: row.title,
+    snippet: row.snippet ?? undefined,
+    rawPayload: row.raw_payload ?? {},
+    normalizedPayload: row.normalized_payload ?? {},
+    dedupeKey: row.dedupe_key,
+    status: row.status,
+    importedCompanyRecordId: row.imported_company_record_id ?? undefined,
+    importedOpportunityId: row.imported_opportunity_id ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    reviewedBy: row.reviewed_by ?? undefined,
+    reviewedAt: row.reviewed_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
 export function mapCompany(row: RadarCompanyRecordRow): RadarCompanyRecord {
   return {
     id: row.id,
@@ -682,4 +1279,66 @@ function normalizeDomain(value: string) {
   } catch {
     return normalizeToken(value)
   }
+}
+
+async function findRadarDataSource(pool: pg.Pool, organizationId: string, sourceKey: string) {
+  const result = await pool.query<RadarDataSourceRow>(
+    `SELECT *
+     FROM public.radar_data_sources
+     WHERE source_key = $1 AND (organization_id IS NULL OR organization_id = $2)
+     ORDER BY organization_id NULLS LAST
+     LIMIT 1`,
+    [sourceKey, organizationId],
+  )
+  return result.rows[0] ? mapDataSource(result.rows[0]) : null
+}
+
+function domainTitle(url: string) {
+  try {
+    const parsed = url.startsWith('http') ? new URL(url) : new URL(`https://${url}`)
+    return parsed.hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
+function combineSourceBreakdown(rows: Array<{
+  source_type: string
+  companies: string | number
+  opportunities: string | number
+  candidates: string | number
+  converted: string | number
+  estimated_cost: string | number | null
+}>) {
+  const bySource = new Map<string, {
+    sourceType: string
+    companies: number
+    opportunities: number
+    candidates: number
+    converted: number
+    estimatedCost: number
+  }>()
+
+  for (const row of rows) {
+    const sourceType = row.source_type || 'manual'
+    const current = bySource.get(sourceType) ?? {
+      sourceType,
+      companies: 0,
+      opportunities: 0,
+      candidates: 0,
+      converted: 0,
+      estimatedCost: 0,
+    }
+    current.companies += Number(row.companies ?? 0)
+    current.opportunities += Number(row.opportunities ?? 0)
+    current.candidates += Number(row.candidates ?? 0)
+    current.converted += Number(row.converted ?? 0)
+    current.estimatedCost += Number(row.estimated_cost ?? 0)
+    bySource.set(sourceType, current)
+  }
+
+  return Array.from(bySource.values()).map(source => ({
+    ...source,
+    estimatedCost: Number(source.estimatedCost.toFixed(6)),
+  }))
 }

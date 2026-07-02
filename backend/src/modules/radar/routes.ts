@@ -3,19 +3,33 @@ import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import {
   addRadarCompanyToCampaign,
+  batchAnalyzeRadarOpportunities,
+  batchEnrichRadarOpportunities,
   convertRadarOpportunityToLead,
   createRadarCampaign,
+  discardRadarCandidate,
   getRadarCampaignMetrics,
+  importRadarCsvToCampaign,
+  importRadarCandidate,
+  importRadarUrlsToCampaign,
+  listRadarDataSources,
   listRadarCampaigns,
+  listRadarCandidates,
+  listRadarDuplicateCandidates,
   listRadarOpportunities,
+  listRadarRuns,
   optOutRadarOpportunity,
   reviewRadarOpportunity,
   runRadarOpportunityAnalysis,
+  runRadarAssistedSearch,
+  updateRadarDuplicateCandidate,
+  updateRadarDataSource,
 } from './repository.js'
 
 const uuid = z.string().uuid()
 
 const campaignQuerySchema = z.object({ organizationId: uuid })
+const dataSourceQuerySchema = z.object({ organizationId: uuid })
 const createCampaignSchema = z.object({
   organizationId: uuid,
   name: z.string().min(1),
@@ -41,8 +55,37 @@ const addCompanySchema = z.object({
   websiteUrl: z.string().optional(),
   sourceType: z.string().optional(),
   sourceUrl: z.string().optional(),
+  notes: z.string().optional(),
+}).refine(input => Boolean(input.tradeName || input.legalName || input.websiteUrl), {
+  message: 'radar_company_requires_name_or_site',
 })
 const reviewSchema = z.object({ status: z.enum(['approved', 'rejected']) })
+const updateDataSourceSchema = z.object({
+  enabled: z.boolean().optional(),
+  rateLimitPerDay: z.number().int().min(1).max(1000).optional(),
+  defaultCostPerUnit: z.number().min(0).optional(),
+  termsNotes: z.string().optional(),
+})
+const importCsvSchema = z.object({
+  organizationId: uuid,
+  csv: z.string().min(1),
+})
+const importUrlsSchema = z.object({
+  organizationId: uuid,
+  urls: z.array(z.string().min(1)).min(1).max(10),
+})
+const searchWebSchema = z.object({
+  organizationId: uuid,
+  query: z.string().min(1),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  sourceType: z.enum(['jina_search', 'web_search']),
+  limit: z.number().int().min(1).max(10).optional(),
+})
+const duplicateUpdateSchema = z.object({ status: z.enum(['confirmed', 'dismissed', 'merged']) })
+const batchOpportunitySchema = z.object({
+  opportunityIds: z.array(uuid).min(1).max(10),
+})
 
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
@@ -59,6 +102,23 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function registerRadarRoutes(app: FastifyInstance) {
+  app.get('/data-sources', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const parsed = dataSourceQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_radar_data_source_query' })
+    return listRadarDataSources(app.pg, user, parsed.data.organizationId)
+  })
+
+  app.patch('/data-sources/:id', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = updateDataSourceSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_data_source_payload' })
+    return updateRadarDataSource(app.pg, user, params.data.id, parsed.data)
+  })
+
   app.get('/campaigns', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
@@ -84,6 +144,74 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     return reply.code(201).send(await addRadarCompanyToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
   })
 
+  app.post('/campaigns/:id/import-csv', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = importCsvSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_csv_payload' })
+    return reply.code(201).send(await importRadarCsvToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+  })
+
+  app.post('/campaigns/:id/import-urls', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = importUrlsSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_urls_payload' })
+    return reply.code(201).send(await importRadarUrlsToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+  })
+
+  app.post('/campaigns/:id/search-web', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = searchWebSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_search_payload' })
+    return reply.code(201).send(await runRadarAssistedSearch(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+  })
+
+  app.get('/campaigns/:id/candidates', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_campaign_id' })
+    return listRadarCandidates(app.pg, user, params.data.id)
+  })
+
+  app.post('/candidates/:id/import', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_candidate_id' })
+    return importRadarCandidate(app.pg, user, params.data.id)
+  })
+
+  app.post('/candidates/:id/discard', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_candidate_id' })
+    return discardRadarCandidate(app.pg, user, params.data.id)
+  })
+
+  app.get('/campaigns/:id/duplicates', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_campaign_id' })
+    return listRadarDuplicateCandidates(app.pg, user, params.data.id)
+  })
+
+  app.patch('/duplicates/:id', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = duplicateUpdateSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_duplicate_payload' })
+    return updateRadarDuplicateCandidate(app.pg, user, params.data.id, parsed.data.status)
+  })
+
   app.get('/campaigns/:id/opportunities', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
@@ -98,6 +226,14 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_radar_campaign_id' })
     return getRadarCampaignMetrics(app.pg, user, params.data.id)
+  })
+
+  app.get('/campaigns/:id/runs', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_campaign_id' })
+    return listRadarRuns(app.pg, user, params.data.id)
   })
 
   app.patch('/opportunities/:id/review', async (request, reply) => {
@@ -123,6 +259,22 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_radar_opportunity_id' })
     return runRadarOpportunityAnalysis(app.pg, user, params.data.id)
+  })
+
+  app.post('/opportunities/batch/analyze', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const parsed = batchOpportunitySchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_radar_batch_payload' })
+    return batchAnalyzeRadarOpportunities(app.pg, user, parsed.data.opportunityIds)
+  })
+
+  app.post('/opportunities/batch/enrich', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const parsed = batchOpportunitySchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_radar_batch_payload' })
+    return batchEnrichRadarOpportunities(app.pg, user, parsed.data.opportunityIds)
   })
 
   app.post('/opportunities/:id/convert-to-lead', async (request, reply) => {

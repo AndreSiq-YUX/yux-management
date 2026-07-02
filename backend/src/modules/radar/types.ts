@@ -1,5 +1,18 @@
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 
+export type RadarSourceType =
+  | 'manual'
+  | 'csv'
+  | 'jina_reader'
+  | 'jina_search'
+  | 'web_search'
+  | 'opencnpj'
+  | 'public_registry'
+  | 'future_paid_api'
+
+export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'
+
 export type RadarOpportunityStatus =
   | 'raw'
   | 'enriching'
@@ -25,6 +38,14 @@ export type RadarMetrics = {
   converted: number
   optedOut: number
   estimatedCost: number
+  sourceBreakdown: Array<{
+    sourceType: string
+    companies: number
+    opportunities: number
+    candidates: number
+    converted: number
+    estimatedCost: number
+  }>
 }
 
 export type RadarCampaignRow = {
@@ -68,6 +89,63 @@ export type RadarCompanyRecordRow = {
   dedupe_key: string
   dedupe_status: string
   record_status: string
+  created_at: string
+  updated_at: string
+}
+
+export type RadarDataSourceRow = {
+  id: string
+  organization_id: string | null
+  source_key: string
+  source_type: RadarSourceType
+  display_name: string
+  enabled: boolean
+  is_paid: boolean
+  requires_secret: boolean
+  terms_notes: string | null
+  default_cost_per_unit: string | number
+  rate_limit_per_day: number
+  created_at: string
+  updated_at: string
+}
+
+export type RadarEnrichmentRunRow = {
+  id: string
+  organization_id: string
+  campaign_id: string
+  company_record_id: string | null
+  opportunity_id: string | null
+  data_source_id: string | null
+  agent_execution_run_id: string | null
+  status: RadarRunStatus
+  provider: string
+  input_payload: Record<string, unknown>
+  output_payload: Record<string, unknown>
+  error_message: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type RadarCandidateRecordRow = {
+  id: string
+  organization_id: string
+  campaign_id: string
+  enrichment_run_id: string | null
+  source_type: string
+  source_url: string | null
+  title: string
+  snippet: string | null
+  raw_payload: Record<string, unknown>
+  normalized_payload: Record<string, unknown>
+  dedupe_key: string
+  status: RadarCandidateStatus
+  imported_company_record_id: string | null
+  imported_opportunity_id: string | null
+  error_message: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -181,6 +259,63 @@ export interface RadarCompanyRecord {
   dedupeKey: string
   dedupeStatus: string
   recordStatus: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RadarDataSource {
+  id: string
+  organizationId?: string
+  sourceKey: string
+  sourceType: RadarSourceType
+  displayName: string
+  enabled: boolean
+  isPaid: boolean
+  requiresSecret: boolean
+  termsNotes?: string
+  defaultCostPerUnit: number
+  rateLimitPerDay: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RadarEnrichmentRun {
+  id: string
+  organizationId: string
+  campaignId: string
+  companyRecordId?: string
+  opportunityId?: string
+  dataSourceId?: string
+  agentExecutionRunId?: string
+  status: RadarRunStatus
+  provider: string
+  inputPayload: Record<string, unknown>
+  outputPayload: Record<string, unknown>
+  errorMessage?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RadarCandidateRecord {
+  id: string
+  organizationId: string
+  campaignId: string
+  enrichmentRunId?: string
+  sourceType: string
+  sourceUrl?: string
+  title: string
+  snippet?: string
+  rawPayload: Record<string, unknown>
+  normalizedPayload: Record<string, unknown>
+  dedupeKey: string
+  status: RadarCandidateStatus
+  importedCompanyRecordId?: string
+  importedOpportunityId?: string
+  errorMessage?: string
+  reviewedBy?: string
+  reviewedAt?: string
   createdAt: string
   updatedAt: string
 }
