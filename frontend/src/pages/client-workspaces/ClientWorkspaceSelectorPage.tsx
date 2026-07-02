@@ -32,7 +32,7 @@ export function ClientWorkspaceSelectorPage() {
         platformService.getContracts(),
       ])
       const clientOrganizations = organizations
-        .filter(organization => organization.clientId && (organization.kind === 'client' || organization.isInternalGrowthWorkspace))
+        .filter(organization => organization.isInternalGrowthWorkspace || (organization.clientId && organization.kind === 'client'))
         .map(organization => ({
           organization,
           contract: getActiveContractForOrganization(organization, contracts),
@@ -53,8 +53,8 @@ export function ClientWorkspaceSelectorPage() {
     void loadWorkspaces()
   }, [loadWorkspaces])
 
-  const activeOptions = useMemo(() => options.filter(option => option.contract), [options])
-  const inactiveOptions = useMemo(() => options.filter(option => !option.contract), [options])
+  const activeOptions = useMemo(() => options.filter(option => option.organization.isInternalGrowthWorkspace || option.contract), [options])
+  const inactiveOptions = useMemo(() => options.filter(option => !option.organization.isInternalGrowthWorkspace && !option.contract), [options])
   const yuxWorkspace = useMemo(() => activeOptions.find(option => option.organization.isInternalGrowthWorkspace), [activeOptions])
   const clientActiveOptions = useMemo(() => activeOptions.filter(option => !option.organization.isInternalGrowthWorkspace), [activeOptions])
 
@@ -84,7 +84,7 @@ export function ClientWorkspaceSelectorPage() {
         <article className="rounded-lg border bg-white p-4">
           <p className="text-xs font-medium uppercase text-gray-500">Workspaces operaveis</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{activeOptions.length}</p>
-          <p className="mt-1 text-sm text-gray-600">Com contrato tecnico ativo para abrir workspace.</p>
+          <p className="mt-1 text-sm text-gray-600">Clientes com contrato ativo ou workspace interno fixo.</p>
         </article>
         <article className="rounded-lg border bg-white p-4">
           <p className="text-xs font-medium uppercase text-gray-500">Sem contrato ativo</p>
@@ -110,7 +110,7 @@ export function ClientWorkspaceSelectorPage() {
                   Opera a propria YUX com CRM, Omnichannel IA, Marketing Studio e relatorios usando os Strategy Packs internos, harness e RAG aprovados no Admin.
                 </p>
                 <p className="mt-2 text-xs text-gray-600">
-                  {yuxWorkspace.contract?.package?.name || 'Pacote interno'} - {yuxWorkspace.contract?.modules.filter(module => module.enabled).length || 0} modulos ativos
+                  Modulos internos YUX liberados sem contrato de cliente
                 </p>
               </div>
             </div>

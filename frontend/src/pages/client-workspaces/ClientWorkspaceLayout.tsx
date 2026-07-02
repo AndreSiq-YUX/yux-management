@@ -50,7 +50,9 @@ export function ClientWorkspaceLayout() {
     )
   }
 
-  if (!activeContract) {
+  const isYuxGrowthWorkspace = organization.isInternalGrowthWorkspace === true
+
+  if (!activeContract && !isYuxGrowthWorkspace) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-gray-900">Cliente sem contrato ativo</h1>
@@ -69,8 +71,6 @@ export function ClientWorkspaceLayout() {
     )
   }
 
-  const isYuxGrowthWorkspace = organization.isInternalGrowthWorkspace
-
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-yux-100 bg-yux-50 p-4">
@@ -86,9 +86,15 @@ export function ClientWorkspaceLayout() {
               <h1 className="mt-1 text-xl font-semibold text-gray-900">
                 {isYuxGrowthWorkspace ? 'Crescimento YUX' : organization.name}
               </h1>
-              <p className="mt-1 text-sm text-gray-600">
-                {activeContract.name || 'Contrato ativo'} - {statusLabel(activeContract.status)}
-              </p>
+              {isYuxGrowthWorkspace ? (
+                <p className="mt-1 text-sm text-gray-600">
+                  Workspace interno fixo - modulos YUX liberados sem contrato de cliente.
+                </p>
+              ) : activeContract ? (
+                <p className="mt-1 text-sm text-gray-600">
+                  {activeContract.name || 'Contrato ativo'} - {statusLabel(activeContract.status)}
+                </p>
+              ) : null}
               {isYuxGrowthWorkspace && (
                 <p className="mt-1 max-w-3xl text-sm text-gray-700">
                   Workspace operacional interno com CRM, Atendimento & IA, Marketing Studio e relatorios conectados aos Strategy Packs, harness e RAG governados no Admin.
