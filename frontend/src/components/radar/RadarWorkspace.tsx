@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { Building2, CheckCircle2, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
+import { Building2, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,7 +15,7 @@ import {
 import { getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from '@/lib/radar/radarSourceRules'
 import { radarService } from '@/services/radarService'
 import { usePlatformContext } from '@/stores/platformStore'
-import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarEnrichmentRun, RadarMetrics, RadarOpportunity, RadarSourceType } from '@/types/radar'
+import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportSummary, RadarMetrics, RadarOpportunity, RadarSourceType } from '@/types/radar'
 
 const initialForm = {
   name: '',
@@ -115,6 +115,13 @@ const candidateStatusLabels: Record<string, string> = {
   failed: 'Falhou',
 }
 
+const duplicateStatusLabels: Record<string, string> = {
+  pending: 'Pendente',
+  confirmed: 'Confirmada',
+  dismissed: 'Ignorada',
+  merged: 'Mesclada',
+}
+
 export function RadarWorkspace() {
   const context = usePlatformContext()
   const organizationId = context.organization?.id
@@ -127,10 +134,13 @@ export function RadarWorkspace() {
   const [selectedOpportunity, setSelectedOpportunity] = useState<RadarOpportunity | null>(null)
   const [dataSources, setDataSources] = useState<RadarDataSource[]>([])
   const [candidates, setCandidates] = useState<RadarCandidateRecord[]>([])
+  const [duplicates, setDuplicates] = useState<RadarDuplicateCandidate[]>([])
   const [runs, setRuns] = useState<RadarEnrichmentRun[]>([])
   const [csvText, setCsvText] = useState('')
   const [urlText, setUrlText] = useState('')
   const [searchForm, setSearchForm] = useState(initialSearchForm)
+  const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
+  const [lastImportSummary, setLastImportSummary] = useState<RadarImportSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [addingCompany, setAddingCompany] = useState(false)
@@ -165,9 +175,10 @@ export function RadarWorkspace() {
       radarService.getOpportunities(selectedCampaignId),
       radarService.getMetrics(selectedCampaignId),
       radarService.getCandidates(selectedCampaignId),
+      radarService.getDuplicates(selectedCampaignId),
       radarService.getRuns(selectedCampaignId),
     ])
-      .then(([opportunitiesResult, metricsResult, candidatesResult, runsResult]) => {
+      .then(([opportunitiesResult, metricsResult, candidatesResult, duplicatesResult, runsResult]) => {
         if (opportunitiesResult.status === 'fulfilled') {
           setOpportunities(opportunitiesResult.value)
           setSelectedOpportunity(current => current ?? opportunitiesResult.value[0] ?? null)
@@ -182,6 +193,10 @@ export function RadarWorkspace() {
 
         if (candidatesResult.status === 'fulfilled') {
           setCandidates(candidatesResult.value)
+        }
+
+        if (duplicatesResult.status === 'fulfilled') {
+          setDuplicates(duplicatesResult.value)
         }
 
         if (runsResult.status === 'fulfilled') {
@@ -209,7 +224,10 @@ export function RadarWorkspace() {
       setMetrics(null)
       setSelectedOpportunity(null)
       setCandidates([])
+      setDuplicates([])
       setRuns([])
+      setSelectedOpportunityIds([])
+      setLastImportSummary(null)
       setForm(initialForm)
       toast.success('Campanha Radar criada')
     } catch (error) {
@@ -285,6 +303,7 @@ export function RadarWorkspace() {
     if (!selectedCampaignId) return
     radarService.getMetrics(selectedCampaignId).then(setMetrics).catch(() => undefined)
     radarService.getCandidates(selectedCampaignId).then(setCandidates).catch(() => undefined)
+    radarService.getDuplicates(selectedCampaignId).then(setDuplicates).catch(() => undefined)
     radarService.getRuns(selectedCampaignId).then(setRuns).catch(() => undefined)
   }
 
@@ -305,6 +324,14 @@ export function RadarWorkspace() {
       setOpportunities(current => mergeOpportunities(result.imported, current))
       setSelectedOpportunity(current => result.imported[0] ?? current)
       setCsvText('')
+      setLastImportSummary({
+        kind: 'csv',
+        importedCount: result.imported.length,
+        candidateCount: 0,
+        issueCount: result.issues.length,
+        issues: result.issues,
+        runId: result.runId,
+      })
       toast.success(`${result.imported.length} empresas importadas`)
       refreshCampaignSidebars()
     } catch (error) {
@@ -337,6 +364,14 @@ export function RadarWorkspace() {
       setOpportunities(current => mergeOpportunities(result.imported, current))
       setSelectedOpportunity(current => result.imported[0] ?? current)
       setUrlText('')
+      setLastImportSummary({
+        kind: 'urls',
+        importedCount: result.imported.length,
+        candidateCount: 0,
+        issueCount: result.issues.length,
+        issues: result.issues,
+        runId: result.runId,
+      })
       toast.success(`${result.imported.length} URLs processadas`)
       refreshCampaignSidebars()
     } catch (error) {
@@ -373,6 +408,14 @@ export function RadarWorkspace() {
         limit: searchForm.limit,
       })
       setCandidates(current => mergeCandidates(result.candidates, current))
+      setLastImportSummary({
+        kind: 'search',
+        importedCount: 0,
+        candidateCount: result.candidates.length,
+        issueCount: result.issues.length,
+        issues: result.issues,
+        runId: result.runId,
+      })
       toast.success(`${result.candidates.length} candidatos encontrados`)
       refreshCampaignSidebars()
     } catch (error) {
@@ -414,6 +457,55 @@ export function RadarWorkspace() {
     } catch (error) {
       console.error('Erro ao descartar candidato Radar:', error)
       toast.error('Erro ao descartar candidato')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const toggleOpportunitySelection = (opportunityId: string) => {
+    setSelectedOpportunityIds(current => {
+      if (current.includes(opportunityId)) return current.filter(id => id !== opportunityId)
+      if (current.length >= 10) {
+        toast.error('Selecione no maximo 10 oportunidades por lote.')
+        return current
+      }
+      return [...current, opportunityId]
+    })
+  }
+
+  const runBatchAction = async (mode: 'enrich' | 'analyze') => {
+    if (selectedOpportunityIds.length === 0 || actionLoading) return
+
+    try {
+      setActionLoading(`batch-${mode}`)
+      const updated: RadarOpportunity[] = mode === 'enrich'
+        ? (await radarService.batchEnrich(selectedOpportunityIds)).enriched
+        : (await radarService.batchAnalyze(selectedOpportunityIds)).analyzed
+      setOpportunities(current => mergeOpportunities(updated, current))
+      setSelectedOpportunity(current => updated.find(item => item.id === current?.id) ?? updated[0] ?? current)
+      setSelectedOpportunityIds([])
+      toast.success(mode === 'enrich' ? 'Lote enriquecido' : 'Lote analisado')
+      refreshCampaignSidebars()
+    } catch (error) {
+      console.error('Erro ao executar lote Radar:', error)
+      toast.error('Erro ao executar lote')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const updateDuplicate = async (duplicateId: string, status: 'confirmed' | 'dismissed' | 'merged') => {
+    if (actionLoading) return
+
+    try {
+      setActionLoading(`duplicate-${duplicateId}`)
+      const duplicate = await radarService.updateDuplicate(duplicateId, status)
+      setDuplicates(current => current.map(item => getDuplicateId(item) === getDuplicateId(duplicate) ? duplicate : item))
+      toast.success('Duplicidade atualizada')
+      refreshCampaignSidebars()
+    } catch (error) {
+      console.error('Erro ao atualizar duplicidade Radar:', error)
+      toast.error('Erro ao atualizar duplicidade')
     } finally {
       setActionLoading(null)
     }
@@ -506,6 +598,8 @@ export function RadarWorkspace() {
               <Button type="button" size="sm" variant={selectedCampaignId === campaign.id ? 'default' : 'outline'} onClick={() => {
                 setSelectedCampaignId(campaign.id)
                 setSelectedOpportunity(null)
+                setSelectedOpportunityIds([])
+                setLastImportSummary(null)
               }}>
                 Abrir
               </Button>
@@ -639,6 +733,33 @@ export function RadarWorkspace() {
                 </div>
               </form>
             </div>
+
+            {lastImportSummary && (
+              <div className="mt-4 rounded-md border bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-950">
+                    Resultado: {lastImportSummary.kind === 'csv' ? 'CSV' : lastImportSummary.kind === 'urls' ? 'URL/site' : 'Busca assistida'}
+                  </p>
+                  {lastImportSummary.runId && <p className="text-xs text-slate-500">Run {lastImportSummary.runId}</p>}
+                </div>
+                <div className="mt-2 grid gap-2 text-sm md:grid-cols-3">
+                  <p className="text-slate-700">Importados: {lastImportSummary.importedCount}</p>
+                  <p className="text-slate-700">Candidatos: {lastImportSummary.candidateCount}</p>
+                  <p className={lastImportSummary.issueCount > 0 ? 'text-amber-700' : 'text-emerald-700'}>Issues: {lastImportSummary.issueCount}</p>
+                </div>
+                {lastImportSummary.issues.length > 0 && (
+                  <div className="mt-2 divide-y rounded-md border bg-white">
+                    {lastImportSummary.issues.slice(0, 6).map((issue, index) => (
+                      <p key={`${issue.code}-${index}`} className="p-2 text-xs text-slate-600">
+                        {issue.rowNumber ? `Linha ${issue.rowNumber}: ` : ''}
+                        {issue.url ? `${issue.url}: ` : ''}
+                        {issue.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <section className="rounded-md border bg-white p-4">
@@ -676,27 +797,77 @@ export function RadarWorkspace() {
               </div>
 
               <div className="rounded-md border">
-                <div className="border-b p-3">
-                  <h3 className="text-sm font-semibold text-slate-950">Oportunidades</h3>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Oportunidades</h3>
+                    <p className="text-xs text-slate-500">{selectedOpportunityIds.length} selecionadas para lote</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" disabled={selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('enrich')}>
+                      {actionLoading === 'batch-enrich' ? 'Enriquecendo...' : 'Enriquecer'}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled={selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('analyze')}>
+                      {actionLoading === 'batch-analyze' ? 'Analisando...' : 'Analisar'}
+                    </Button>
+                  </div>
                 </div>
                 <div className="divide-y">
                   {opportunities.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhuma oportunidade nesta campanha.</p>}
                   {opportunities.map(opportunity => (
-                    <button
-                      key={opportunity.id}
-                      type="button"
-                      className={`flex w-full items-center justify-between gap-3 p-3 text-left text-sm hover:bg-slate-50 ${selectedOpportunity?.id === opportunity.id ? 'bg-slate-50' : ''}`}
-                      onClick={() => setSelectedOpportunity(opportunity)}
-                    >
-                      <span>
-                        <span className="block font-medium text-slate-950">{getRadarCompanyDisplayName(opportunity.company)}</span>
-                        <span className="block text-xs text-slate-500">{getRadarOpportunityStatusLabel(opportunity.status)}</span>
-                      </span>
-                      <span className="text-xs text-slate-500">Score {opportunity.latestScore?.totalScore ?? '-'}</span>
-                    </button>
+                    <div key={opportunity.id} className={`flex items-center gap-3 p-3 text-sm hover:bg-slate-50 ${selectedOpportunity?.id === opportunity.id ? 'bg-slate-50' : ''}`}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300"
+                        checked={selectedOpportunityIds.includes(opportunity.id)}
+                        onChange={() => toggleOpportunitySelection(opportunity.id)}
+                        aria-label={`Selecionar ${getRadarCompanyDisplayName(opportunity.company)}`}
+                      />
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                        onClick={() => setSelectedOpportunity(opportunity)}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-slate-950">{getRadarCompanyDisplayName(opportunity.company)}</span>
+                          <span className="block text-xs text-slate-500">{getRadarOpportunityStatusLabel(opportunity.status)}</span>
+                        </span>
+                        <span className="shrink-0 text-xs text-slate-500">Score {opportunity.latestScore?.totalScore ?? '-'}</span>
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="rounded-md border bg-white p-4">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="h-4 w-4 text-yux-700" />
+              <h2 className="text-base font-semibold text-slate-950">Duplicatas para revisao</h2>
+            </div>
+            <div className="mt-3 divide-y rounded-md border">
+              {duplicates.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhuma duplicidade pendente nesta campanha.</p>}
+              {duplicates.map(duplicate => {
+                const duplicateId = getDuplicateId(duplicate)
+                return (
+                  <div key={duplicateId} className="grid gap-3 p-3 text-sm lg:grid-cols-[1fr_220px]">
+                    <div>
+                      <p className="font-medium text-slate-950">
+                        {getDuplicateMatchType(duplicate)} - {getDuplicateConfidence(duplicate)}%
+                      </p>
+                      <p className="text-xs text-slate-500">{duplicateStatusLabels[duplicate.status] || duplicate.status}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Empresa {getDuplicateCompanyId(duplicate)} comparada com {getDuplicateOtherCompanyId(duplicate)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-start justify-end gap-2">
+                      <Button type="button" size="sm" variant="outline" disabled={duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'confirmed')}>Confirmar</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'dismissed')}>Ignorar</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'merged')}>Mesclar</Button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </section>
 
@@ -761,6 +932,26 @@ function findSource(sources: RadarDataSource[], sourceType: RadarSourceType) {
 function getSourceBlockedReason(source?: RadarDataSource) {
   if (!source) return 'Fonte ainda nao cadastrada no catalogo do Radar.'
   return getRadarSourceBlockedReason(source)
+}
+
+function getDuplicateId(duplicate: RadarDuplicateCandidate) {
+  return duplicate.id
+}
+
+function getDuplicateMatchType(duplicate: RadarDuplicateCandidate) {
+  return duplicate.matchType || duplicate.match_type || 'match'
+}
+
+function getDuplicateConfidence(duplicate: RadarDuplicateCandidate) {
+  return duplicate.confidenceScore ?? duplicate.confidence_score ?? 0
+}
+
+function getDuplicateCompanyId(duplicate: RadarDuplicateCandidate) {
+  return duplicate.companyRecordId || duplicate.company_record_id || '-'
+}
+
+function getDuplicateOtherCompanyId(duplicate: RadarDuplicateCandidate) {
+  return duplicate.duplicateCompanyRecordId || duplicate.duplicate_company_record_id || '-'
 }
 
 function mergeOpportunities(next: RadarOpportunity[], current: RadarOpportunity[]) {

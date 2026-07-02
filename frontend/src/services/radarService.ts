@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/apiClient'
-import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarEnrichmentRun, RadarMetrics, RadarOpportunity } from '@/types/radar'
+import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity } from '@/types/radar'
 
 const buildQuery = (params: Record<string, string | undefined>) => {
   const search = new URLSearchParams()
@@ -48,15 +48,15 @@ export const radarService = {
   },
 
   async importCsv(campaignId: string, input: { organizationId: string; csv: string }) {
-    return apiRequest<{ imported: RadarOpportunity[]; issues: Array<Record<string, unknown>>; runId: string }>(`/radar/campaigns/${campaignId}/import-csv`, { method: 'POST', body: input })
+    return apiRequest<{ imported: RadarOpportunity[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/import-csv`, { method: 'POST', body: input })
   },
 
   async importUrls(campaignId: string, input: { organizationId: string; urls: string[] }) {
-    return apiRequest<{ imported: RadarOpportunity[]; issues: Array<Record<string, unknown>>; runId: string }>(`/radar/campaigns/${campaignId}/import-urls`, { method: 'POST', body: input })
+    return apiRequest<{ imported: RadarOpportunity[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/import-urls`, { method: 'POST', body: input })
   },
 
   async searchWeb(campaignId: string, input: { organizationId: string; query: string; city?: string; state?: string; sourceType: 'jina_search' | 'web_search'; limit?: number }) {
-    return apiRequest<{ candidates: RadarCandidateRecord[]; issues: Array<Record<string, unknown>>; runId: string }>(`/radar/campaigns/${campaignId}/search-web`, { method: 'POST', body: input })
+    return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/search-web`, { method: 'POST', body: input })
   },
 
   async getOpportunities(campaignId: string) {
@@ -65,6 +65,14 @@ export const radarService = {
 
   async getCandidates(campaignId: string) {
     return apiRequest<RadarCandidateRecord[]>(`/radar/campaigns/${campaignId}/candidates`)
+  },
+
+  async getDuplicates(campaignId: string) {
+    return apiRequest<RadarDuplicateCandidate[]>(`/radar/campaigns/${campaignId}/duplicates`)
+  },
+
+  async updateDuplicate(duplicateId: string, status: 'confirmed' | 'dismissed' | 'merged') {
+    return apiRequest<RadarDuplicateCandidate>(`/radar/duplicates/${duplicateId}`, { method: 'PATCH', body: { status } })
   },
 
   async importCandidate(candidateId: string) {
@@ -85,6 +93,14 @@ export const radarService = {
 
   async runAnalysis(opportunityId: string) {
     return apiRequest<RadarOpportunity>(`/radar/opportunities/${opportunityId}/run-analysis`, { method: 'POST' })
+  },
+
+  async batchEnrich(opportunityIds: string[]) {
+    return apiRequest<{ enriched: RadarOpportunity[] }>('/radar/opportunities/batch/enrich', { method: 'POST', body: { opportunityIds } })
+  },
+
+  async batchAnalyze(opportunityIds: string[]) {
+    return apiRequest<{ analyzed: RadarOpportunity[] }>('/radar/opportunities/batch/analyze', { method: 'POST', body: { opportunityIds } })
   },
 
   async convertToLead(opportunityId: string) {

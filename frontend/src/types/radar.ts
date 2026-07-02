@@ -4,6 +4,7 @@ export type RadarMessageStatus = 'draft' | 'approved' | 'rejected' | 'converted'
 export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'future_paid_api'
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'
+export type RadarDuplicateStatus = 'pending' | 'confirmed' | 'dismissed' | 'merged'
 
 export interface RadarDataSource {
   id: string
@@ -60,6 +61,46 @@ export interface RadarCandidateRecord {
   reviewedAt?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface RadarDuplicateCandidate {
+  id: string
+  organization_id?: string
+  organizationId?: string
+  campaign_id?: string
+  campaignId?: string
+  company_record_id?: string
+  companyRecordId?: string
+  duplicate_company_record_id?: string
+  duplicateCompanyRecordId?: string
+  match_type?: string
+  matchType?: string
+  confidence_score?: number
+  confidenceScore?: number
+  status: RadarDuplicateStatus
+  created_at?: string
+  createdAt?: string
+  updated_at?: string
+  updatedAt?: string
+}
+
+export interface RadarImportIssue {
+  rowNumber?: number
+  url?: string
+  code: string
+  message: string
+  sourceType?: string
+  limit?: number
+  used?: number
+}
+
+export interface RadarImportSummary {
+  kind: 'csv' | 'urls' | 'search'
+  importedCount: number
+  candidateCount: number
+  issueCount: number
+  issues: RadarImportIssue[]
+  runId?: string
 }
 
 export interface RadarCampaign {
