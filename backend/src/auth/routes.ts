@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 import {
-  buildPasswordResetEmail,
   buildSetPasswordUrl,
   createInvitationToken,
   hashInvitationToken,
@@ -11,6 +10,7 @@ import {
 import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from './password.js'
 import { createSessionToken, hashSessionToken, sessionExpiry } from './session.js'
 import { sendConfiguredSmtp2GoEmail } from '../email/smtp2goConfigured.js'
+import { renderClientAccessEmail } from '../modules/workspace/clientAccessEmails.js'
 
 export type AuthUser = {
   id: string
@@ -182,9 +182,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     }
 
     if (emailPayload) {
-      const email = buildPasswordResetEmail({
+      const email = await renderClientAccessEmail(app.pg, {
+        action: 'password_reset',
         contactName: emailPayload.contactName,
-        resetUrl: emailPayload.resetUrl,
+        accessUrl: emailPayload.resetUrl,
       })
       const emailResult = await sendConfiguredSmtp2GoEmail(app.pg, app.config.SESSION_SECRET, {
         to: emailPayload.to,

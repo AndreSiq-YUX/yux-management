@@ -8,6 +8,8 @@ import {
   hashInvitationToken,
   invitationExpiry,
 } from '../../auth/invitations.js'
+import { getPublishedSystemTemplateByTrigger } from '../emailTemplates/repository.js'
+import { renderEmailTemplate } from '../emailTemplates/templateRenderer.js'
 
 export type ClientAccessEmailAction = 'client_invitation' | 'password_reset'
 
@@ -27,6 +29,13 @@ type ClientAccessEmailInput = {
   contactName: string
   companyName: string
   hasLoggedIn: boolean
+}
+
+type RenderClientAccessEmailInput = {
+  action: ClientAccessEmailAction
+  contactName: string
+  companyName?: string
+  accessUrl: string
 }
 
 export async function createClientAccessEmailToken(
@@ -53,16 +62,12 @@ export async function createClientAccessEmailToken(
     [input.userId, hashInvitationToken(token), action, invitationExpiry()],
   )
   const accessUrl = buildSetPasswordUrl(env.PUBLIC_APP_URL ?? env.CORS_ORIGIN, token)
-  const email = action === 'client_invitation'
-    ? buildClientInvitationEmail({
-        contactName: input.contactName,
-        companyName: input.companyName,
-        inviteUrl: accessUrl,
-      })
-    : buildPasswordResetEmail({
-        contactName: input.contactName,
-        resetUrl: accessUrl,
-      })
+  const email = await renderClientAccessEmail(client, {
+    action,
+    contactName: input.contactName,
+    companyName: input.companyName,
+    accessUrl,
+  })
 
   return {
     action,
@@ -72,4 +77,41 @@ export async function createClientAccessEmailToken(
     text: email.text,
     html: email.html,
   }
+}
+
+export async function renderClientAccessEmail(
+  client: Pick<pg.Pool, 'query'>,
+  input: RenderClientAccessEmailInput,
+) {
+  try {
+    const template = await getPublishedSystemTemplateByTrigger(client as pg.Pool, input.action)
+    if (template) {
+      return renderEmailTemplate({
+        subject: template.subject,
+        bodyHtml: template.bodyHtml,
+        bodyText: template.bodyText,
+        variables: {
+          contact_name: input.contactName,
+          company_name: input.companyName ?? '',
+          invite_url: input.accessUrl,
+          reset_url: input.accessUrl,
+        },
+      })
+    }
+  } catch {
+    // Template lookup/rendering must never block account access emails.
+  }
+
+  if (input.action === 'client_invitation') {
+    return buildClientInvitationEmail({
+      contactName: input.contactName,
+      companyName: input.companyName ?? 'YUX Hub',
+      inviteUrl: input.accessUrl,
+    })
+  }
+
+  return buildPasswordResetEmail({
+    contactName: input.contactName,
+    resetUrl: input.accessUrl,
+  })
 }

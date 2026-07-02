@@ -1,10 +1,16 @@
 import type { FastifyInstance } from 'fastify'
 import type { OutgoingHttpHeaders } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildSetPasswordUrl, createInvitationToken, hashInvitationToken } from '../src/auth/invitations.js'
+import {
+  buildPasswordResetEmail,
+  buildSetPasswordUrl,
+  createInvitationToken,
+  hashInvitationToken,
+} from '../src/auth/invitations.js'
 import { hashPassword, verifyPassword } from '../src/auth/password.js'
 import { type AuthStore, type AuthUser } from '../src/auth/routes.js'
 import { createSessionToken, hashSessionToken, sessionExpiry } from '../src/auth/session.js'
+import { createClientAccessEmailToken, renderClientAccessEmail } from '../src/modules/workspace/clientAccessEmails.js'
 import { buildServer } from '../src/server.js'
 
 const testEnv = {
@@ -140,6 +146,106 @@ class FakePasswordResetPool {
   }
 }
 
+class FakeClientAccessEmailClient {
+  tokenId = 'token-row-1'
+  templateQueries = 0
+
+  constructor(private readonly templateRow: Record<string, unknown> | null = null) {}
+
+  async query(sql: string, params: unknown[] = []) {
+    if (sql.startsWith('UPDATE app_password_reset_tokens')) return { rows: [], rowCount: 1 }
+    if (sql.startsWith('INSERT INTO app_password_reset_tokens')) {
+      return { rows: [{ id: this.tokenId }], rowCount: 1 }
+    }
+    if (sql.includes('FROM public.email_templates')) {
+      this.templateQueries += 1
+      return { rows: this.templateRow ? [this.templateRow] : [], rowCount: this.templateRow ? 1 : 0 }
+    }
+
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+}
+
+class FailingTemplateClient {
+  async query(sql: string) {
+    if (sql.includes('FROM public.email_templates')) {
+      throw new Error('template table unavailable')
+    }
+
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+}
+
+class FakeForgotPasswordClient {
+  tokenId = 'forgot-token-row-1'
+  committed = false
+  rolledBack = false
+  released = false
+
+  async query(sql: string, params: unknown[] = []) {
+    if (sql === 'BEGIN') return { rows: [], rowCount: null }
+    if (sql === 'COMMIT') {
+      this.committed = true
+      return { rows: [], rowCount: null }
+    }
+    if (sql === 'ROLLBACK') {
+      this.rolledBack = true
+      return { rows: [], rowCount: null }
+    }
+    if (sql.includes('FROM app_users')) {
+      return {
+        rows: [{
+          id: 'user-1',
+          email: params[0],
+          display_name: 'Andre',
+        }],
+        rowCount: 1,
+      }
+    }
+    if (sql.startsWith('UPDATE app_password_reset_tokens')) return { rows: [], rowCount: 1 }
+    if (sql.startsWith('INSERT INTO app_password_reset_tokens')) {
+      return { rows: [{ id: this.tokenId }], rowCount: 1 }
+    }
+
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+
+  release() {
+    this.released = true
+  }
+}
+
+class FakeForgotPasswordPool {
+  templateQueries = 0
+  lastTemplateTrigger: unknown = null
+
+  constructor(
+    readonly client: FakeForgotPasswordClient,
+    private readonly templateRow: Record<string, unknown> | null = null,
+  ) {}
+
+  async connect() {
+    return this.client
+  }
+
+  async query(sql: string, params: unknown[] = []) {
+    if (sql.includes('FROM public.email_templates')) {
+      this.templateQueries += 1
+      this.lastTemplateTrigger = params[0]
+      return { rows: this.templateRow ? [this.templateRow] : [], rowCount: this.templateRow ? 1 : 0 }
+    }
+    if (sql.includes('FROM public.platform_provider_connections')) {
+      return { rows: [], rowCount: 0 }
+    }
+
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+
+  async end() {
+    return undefined
+  }
+}
+
 let app: FastifyInstance | undefined
 
 afterEach(async () => {
@@ -191,6 +297,58 @@ describe('auth helpers', () => {
     expect(hash).not.toBe(token)
     expect(hashInvitationToken(token)).toBe(hash)
     expect(buildSetPasswordUrl('https://hub.yux.com.br/', token)).toBe(`https://hub.yux.com.br/auth/set-password?token=${encodeURIComponent(token)}`)
+  })
+})
+
+describe('access email templates', () => {
+  it('falls back to hardcoded password reset email when no published system template exists', async () => {
+    const client = new FakeClientAccessEmailClient()
+    const email = await renderClientAccessEmail(client as never, {
+      action: 'password_reset',
+      contactName: 'Andre',
+      accessUrl: 'https://hub.yux.com.br/auth/set-password?token=abc',
+    })
+
+    const fallback = buildPasswordResetEmail({
+      contactName: 'Andre',
+      resetUrl: 'https://hub.yux.com.br/auth/set-password?token=abc',
+    })
+    expect(email).toEqual(fallback)
+    expect(client.templateQueries).toBe(1)
+  })
+
+  it('falls back to hardcoded password reset email when template lookup fails', async () => {
+    const email = await renderClientAccessEmail(new FailingTemplateClient() as never, {
+      action: 'password_reset',
+      contactName: 'Andre',
+      accessUrl: 'https://hub.yux.com.br/auth/set-password?token=abc',
+    })
+
+    expect(email.subject).toBe('Redefina sua senha do YUX Hub')
+    expect(email.html).toContain('Redefinir senha')
+  })
+
+  it('renders client invitation tokens from a published system template', async () => {
+    const client = new FakeClientAccessEmailClient(emailTemplateRow({
+      trigger_key: 'client_invitation',
+      subject: 'Template convite {{company_name}}',
+      body_html: '<p>Ola {{contact_name}}</p><p>{{invite_url}}</p>',
+      body_text: 'Texto {{invite_url}}',
+    }))
+
+    const email = await createClientAccessEmailToken(client as never, testEnv, {
+      userId: 'user-1',
+      contactName: 'Andre',
+      companyName: 'Acme',
+      hasLoggedIn: false,
+    })
+
+    expect(email.action).toBe('client_invitation')
+    expect(email.tokenId).toBe(client.tokenId)
+    expect(email.subject).toBe('Template convite Acme')
+    expect(email.text).toBe(`Texto ${email.accessUrl}`)
+    expect(email.html).toContain(`>${email.accessUrl}</p>`)
+    expect(client.templateQueries).toBe(1)
   })
 })
 
@@ -384,4 +542,60 @@ describe('auth routes', () => {
     expect(logoutResponse.headers['set-cookie']).toEqual(expect.stringContaining('Max-Age=0'))
     expect(meResponse.statusCode).toBe(401)
   })
+
+  it('checks the published password reset template during forgot-password', async () => {
+    const client = new FakeForgotPasswordClient()
+    const pool = new FakeForgotPasswordPool(client, emailTemplateRow({
+      trigger_key: 'password_reset',
+      subject: 'Template reset {{contact_name}}',
+      body_html: '<p>{{reset_url}}</p>',
+      body_text: 'Reset: {{reset_url}}',
+    }))
+    app = await buildServer(testEnv, {
+      authStore: new FakeAuthStore(),
+      pool: pool as never,
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/forgot-password',
+      payload: {
+        email: 'andre@example.com',
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true })
+    expect(client.committed).toBe(true)
+    expect(client.released).toBe(true)
+    expect(pool.templateQueries).toBe(1)
+    expect(pool.lastTemplateTrigger).toBe('password_reset')
+  })
 })
+
+function emailTemplateRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'template-1',
+    scope: 'system',
+    organization_id: null,
+    blueprint_key: 'system.client_invitation',
+    name: 'Template',
+    description: null,
+    category: 'access',
+    email_kind: 'transactional',
+    module_key: 'auth',
+    trigger_key: 'client_invitation',
+    status: 'published',
+    subject: 'Template {{contact_name}}',
+    preheader: null,
+    body_html: '<p>{{contact_name}}</p>',
+    body_text: 'Texto {{contact_name}}',
+    variables_schema: {},
+    required_variables: [],
+    editable_by_client: false,
+    published_version_id: 'version-1',
+    created_at: new Date('2026-01-01T00:00:00.000Z'),
+    updated_at: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  }
+}
