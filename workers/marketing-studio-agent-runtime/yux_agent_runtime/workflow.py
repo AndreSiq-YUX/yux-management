@@ -5,6 +5,7 @@ from typing import Any
 
 from .autonomy import resolve_autonomy_policy
 from .harness import Harness
+from .radar import RadarCompanyInput, build_radar_workflow_spec, synthesize_radar_output
 from .runtime_store import AgentRuntimeStore
 from .trace import TraceRecorder, stable_hash
 
@@ -44,6 +45,7 @@ WORKFLOW_BY_MODE = {
     "proposal": "proposal_consultative",
     "roadmap_30_60_90": "diagnostic_48h",
     "do_not_do": "diagnostic_48h",
+    "commercial_radar_local_niche": "commercial_radar_local_niche",
 }
 
 
@@ -147,6 +149,42 @@ def synthesize_workflow_result(message: str, plan: dict[str, Any], subagent_outp
     }
 
 
+def synthesize_radar_workflow_result(message: str, plan: dict[str, Any], subagent_outputs: list[dict[str, Any]], retrieval_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    cards = _as_list((retrieval_context or {}).get("cards"))
+    chunks = _as_list((retrieval_context or {}).get("chunks"))
+    company = RadarCompanyInput(
+        name=_string((retrieval_context or {}).get("company_name")) or "oportunidade Radar",
+        segment=_string((retrieval_context or {}).get("segment")),
+        city=_string((retrieval_context or {}).get("city")),
+        state=_string((retrieval_context or {}).get("state")),
+        website_url=_string((retrieval_context or {}).get("website_url")),
+        channels=tuple(str(item) for item in _as_list((retrieval_context or {}).get("channels"))),
+        evidence=tuple(
+            str(item.get("title") or item.get("content") or item.get("id"))
+            for item in chunks + cards
+            if isinstance(item, dict) and (item.get("title") or item.get("content") or item.get("id"))
+        ),
+    )
+    radar = synthesize_radar_output(company)
+    radar.update(
+        {
+            "workflow_key": plan["workflow_key"],
+            "classification": plan["classification"],
+            "subagent_trace": [
+                {
+                    "subagent_key": item.get("subagent_key"),
+                    "profile_key": item.get("profile_key"),
+                    "verification_status": (item.get("verification") or {}).get("status"),
+                }
+                for item in subagent_outputs
+            ],
+            "supporting_cards": [card.get("id") for card in cards if isinstance(card, dict) and card.get("id")],
+            "input_hash": stable_hash({"message": message, "plan": plan, "radar": radar.get("score")}),
+        }
+    )
+    return radar
+
+
 @dataclass
 class StrategyWorkflowEngine:
     store: AgentRuntimeStore
@@ -203,8 +241,12 @@ class StrategyWorkflowEngine:
                         chunk_ids=[item.get("id") for item in _as_list(retrieval_context.get("chunks")) if isinstance(item, dict) and item.get("id")],
                     )
 
+            effective_workflow_spec = workflow_spec
+            if workflow_key == "commercial_radar_local_niche" and not workflow_spec:
+                effective_workflow_spec = build_radar_workflow_spec()
+
             with self.trace.step(run_id, "planner", "planner", {"workflow_key": workflow_key}) as step:
-                plan = build_workflow_plan(workflow_spec, classification)
+                plan = build_workflow_plan(effective_workflow_spec, classification)
                 step.succeed(plan, {"subagent_count": len(plan["subagents"])})
 
             subagent_outputs = []
@@ -213,7 +255,10 @@ class StrategyWorkflowEngine:
                 subagent_outputs.append(subagent_output)
 
             with self.trace.step(run_id, "synthesizer", "synthesizer", {"subagent_count": len(subagent_outputs)}) as step:
-                synthesis = synthesize_workflow_result(message, plan, subagent_outputs, retrieval_context)
+                if plan["workflow_key"] == "commercial_radar_local_niche":
+                    synthesis = synthesize_radar_workflow_result(message, plan, subagent_outputs, retrieval_context)
+                else:
+                    synthesis = synthesize_workflow_result(message, plan, subagent_outputs, retrieval_context)
                 step.succeed(synthesis, {"supporting_cards": synthesis["supporting_cards"]})
 
             action_key = "send_external_message" if source == "whatsapp" else "client_visible_recommendation"
