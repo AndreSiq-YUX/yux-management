@@ -31,6 +31,14 @@ describe('self-hosted portal schema bootstrap', () => {
     }
   })
 
+  it('keeps email template management schema in fresh bootstrap', () => {
+    expect(portalSchema).toContain('CREATE TABLE IF NOT EXISTS public.email_templates')
+    expect(portalSchema).toContain('CREATE TABLE IF NOT EXISTS public.email_template_versions')
+    expect(portalSchema).toContain('template_version_id UUID REFERENCES public.email_template_versions')
+    expect(portalSchema).toContain('system.client_invitation')
+    expect(portalSchema).toContain('system.password_reset')
+  })
+
   it('records omitted Supabase-specific statements for review', () => {
     expect(omittedReport).toContain('supabase rls policy')
     expect(omittedReport).toContain('supabase auth users table')

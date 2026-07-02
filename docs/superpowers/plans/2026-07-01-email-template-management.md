@@ -27,7 +27,7 @@ The SMTP2GO infrastructure page remains separate. The first implementation shoul
 
 Create:
 
-- `backend/src/db/migrations/0105_email_template_management.sql` - production migration for template tables and send request references.
+- `backend/src/db/migrations/0106_email_template_management.sql` - production migration for template tables and send request references.
 - `backend/src/modules/emailTemplates/types.ts` - backend enum/type definitions for template scopes, statuses, payloads and render output.
 - `backend/src/modules/emailTemplates/templateRules.ts` - pure validation, variable extraction, permission checks and default template definitions.
 - `backend/src/modules/emailTemplates/templateRenderer.ts` - HTML sanitization, variable rendering, text fallback generation.
@@ -63,13 +63,13 @@ Modify:
 ## Task 1: Database Schema
 
 **Files:**
-- Create: `backend/src/db/migrations/0105_email_template_management.sql`
+- Create: `backend/src/db/migrations/0106_email_template_management.sql`
 - Modify: `backend/src/db/migrations/0100_portal_schema.sql`
 - Test: `backend/tests/schema-smoke.test.ts`
 
 - [ ] **Step 1: Add migration for templates and send request references**
 
-Create `backend/src/db/migrations/0105_email_template_management.sql` with:
+Create `backend/src/db/migrations/0106_email_template_management.sql` with:
 
 ```sql
 CREATE TABLE IF NOT EXISTS public.email_templates (
@@ -214,7 +214,7 @@ Expected: schema smoke tests pass and TypeScript reports no errors.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/db/migrations/0105_email_template_management.sql backend/src/db/migrations/0100_portal_schema.sql backend/tests/schema-smoke.test.ts
+git add backend/src/db/migrations/0106_email_template_management.sql backend/src/db/migrations/0100_portal_schema.sql backend/tests/schema-smoke.test.ts
 git commit -m "feat: add email template schema"
 ```
 
