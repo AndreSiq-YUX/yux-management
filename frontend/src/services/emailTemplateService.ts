@@ -2,6 +2,7 @@ import { apiRequest } from '@/lib/apiClient'
 import type {
   EmailTemplate,
   EmailTemplateInput,
+  EmailTemplateSendRequest,
   EmailTemplateTestSendInput,
   EmailTemplateTestSendResult,
 } from '@/types/emailTemplate'
@@ -29,6 +30,10 @@ export class EmailTemplateService {
       method: 'POST',
       body: input,
     })
+  }
+
+  async listAdminSendRequests(limit = 50): Promise<EmailTemplateSendRequest[]> {
+    return apiRequest<EmailTemplateSendRequest[]>(`/email-templates/admin/send-requests?limit=${limit}`)
   }
 
   async listPortalTemplates(): Promise<EmailTemplate[]> {
@@ -59,6 +64,10 @@ export class EmailTemplateService {
     return apiRequest<EmailTemplate>(`/email-templates/portal/blueprints/${id}/clone`, {
       method: 'POST',
     })
+  }
+
+  async listPortalSendRequests(limit = 50): Promise<EmailTemplateSendRequest[]> {
+    return apiRequest<EmailTemplateSendRequest[]>(`/email-templates/portal/send-requests?limit=${limit}`)
   }
 }
 

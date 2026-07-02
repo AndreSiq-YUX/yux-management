@@ -75,12 +75,20 @@ export function AdminEmailPage() {
             SMTP2GO e infraestrutura compartilhada do YUX Hub para envios transacionais, subcontas e reputacao de email.
           </p>
         </div>
-        <Link
-          to="/admin/integrations"
-          className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Ver integracoes
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/admin/email/templates"
+            className="inline-flex items-center justify-center rounded-md border border-yux-200 bg-yux-50 px-3 py-2 text-sm font-medium text-yux-800 hover:bg-yux-100"
+          >
+            Gerir modelos
+          </Link>
+          <Link
+            to="/admin/integrations"
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Ver integracoes
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">

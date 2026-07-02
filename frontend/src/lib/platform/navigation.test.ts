@@ -284,6 +284,7 @@ describe('buildNavigationGroups', () => {
       { label: 'Strategy Engine', href: '/admin/strategy-engine' },
       { label: 'Canais', href: '/admin/channels' },
       { label: 'Email', href: '/admin/email' },
+      { label: 'Modelos de Email', href: '/admin/email/templates' },
       { label: 'Saude da Plataforma', href: '/admin/health' },
     ])
     expect(groups.find(group => group.label === 'Financeiro')?.items).toEqual([
@@ -399,6 +400,42 @@ describe('buildNavigationGroups', () => {
       { label: 'Templates', href: '/portal/automacoes/templates', moduleKey: 'automations' },
       { label: 'Execucoes', href: '/portal/automacoes/execucoes', moduleKey: 'automations' },
       { label: 'Logs', href: '/portal/automacoes/logs', moduleKey: 'automations' },
+    ])
+  })
+
+  it('adds portal email templates only to the real client portal settings', () => {
+    const portalGroups = buildNavigationGroups({
+      ...internalContext,
+      mode: 'portal',
+      role: {
+        key: 'client_admin',
+        name: 'Client Admin',
+        scope: 'client',
+        permissions: [],
+      },
+      enabledModuleKeys: [],
+    })
+    const workspaceGroups = buildNavigationGroups({
+      ...internalContext,
+      mode: 'client_workspace',
+      organization: {
+        id: 'org-client-1',
+        name: 'Empresa ABC',
+        slug: 'empresa-abc',
+        kind: 'client',
+        clientId: 'client-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      enabledModuleKeys: [],
+    })
+
+    expect(portalGroups.find(group => group.label === 'Configuracoes da Conta')?.items).toContainEqual({
+      label: 'Modelos de Email',
+      href: '/portal/configuracoes/emails',
+    })
+    expect(workspaceGroups.find(group => group.label === 'Configuracoes da Conta')?.items).toEqual([
+      { label: 'Conta', href: '/client-workspaces/org-client-1/configuracoes/conta' },
     ])
   })
 

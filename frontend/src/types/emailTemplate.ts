@@ -53,6 +53,20 @@ export interface EmailTemplateTestSendResult {
   message?: string
 }
 
+export interface EmailTemplateSendRequest {
+  id: string
+  templateId: string | null
+  templateVersionId: string | null
+  recipientEmail: string
+  emailKind: EmailTemplateKind
+  moduleKey: string
+  subject: string
+  status: 'pending' | 'queued' | 'sent' | 'failed' | 'rejected' | string
+  protectedError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type EmailTemplateDraftValidationInput = Pick<
   EmailTemplateInput,
   'subject' | 'bodyHtml' | 'requiredVariables' | 'emailKind'

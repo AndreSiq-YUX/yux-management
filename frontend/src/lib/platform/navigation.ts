@@ -63,6 +63,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
       { label: 'Strategy Engine', href: '/admin/strategy-engine' },
       { label: 'Canais', href: '/admin/channels' },
       { label: 'Email', href: '/admin/email' },
+      { label: 'Modelos de Email', href: '/admin/email/templates' },
       { label: 'Saude da Plataforma', href: '/admin/health' },
     ],
   },
@@ -170,7 +171,10 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
     },
     {
       label: 'Configuracoes da Conta',
-      items: [{ label: 'Conta', href: href('/configuracoes/conta') }],
+      items: [
+        { label: 'Conta', href: href('/configuracoes/conta') },
+        ...(context.mode === 'portal' ? [{ label: 'Modelos de Email', href: href('/configuracoes/emails') }] : []),
+      ],
     },
   ]
 

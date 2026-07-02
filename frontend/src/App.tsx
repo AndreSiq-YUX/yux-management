@@ -42,6 +42,7 @@ import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
 import { PortalAccountSettingsPage } from '@/pages/client-portal/PortalAccountSettingsPage'
 import { PortalApprovalsPage } from '@/pages/client-portal/PortalApprovalsPage'
+import { PortalEmailTemplatesPage } from '@/pages/client-portal/PortalEmailTemplatesPage'
 import { PortalSafeStatePage } from '@/pages/client-portal/PortalSafeStatePage'
 import { PortalCommercialAccountsPage } from '@/pages/client-portal/commercial/PortalCommercialAccountsPage'
 import { PortalCommercialFunnelsPage } from '@/pages/client-portal/commercial/PortalCommercialFunnelsPage'
@@ -64,6 +65,7 @@ import { AdminHubPage } from '@/pages/platform/AdminHubPage'
 import { AdminAiPage } from '@/pages/platform/AdminAiPage'
 import { AdminChannelsPage } from '@/pages/platform/AdminChannelsPage'
 import { AdminEmailPage } from '@/pages/platform/AdminEmailPage'
+import { AdminSystemEmailTemplatesPage } from '@/pages/platform/AdminSystemEmailTemplatesPage'
 import { AdminHealthPage } from '@/pages/platform/AdminHealthPage'
 import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
 import { AdminModuleGovernancePage } from '@/pages/platform/AdminModuleGovernancePage'
@@ -114,6 +116,7 @@ function App() {
             <Route path="admin/integrations" element={<AdminIntegrationsPage />} />
             <Route path="admin/channels" element={<AdminChannelsPage />} />
             <Route path="admin/email" element={<AdminEmailPage />} />
+            <Route path="admin/email/templates" element={<AdminSystemEmailTemplatesPage />} />
             <Route path="admin/ai" element={<AdminAiPage />} />
             <Route path="admin/strategy-engine" element={<StrategyEnginePage />} />
             <Route path="admin/health" element={<AdminHealthPage />} />
@@ -224,6 +227,7 @@ function App() {
             <Route path="portal/suporte" element={<PortalSupportPage />} />
             <Route path="portal/financeiro" element={<PortalFinancePage />} />
             <Route path="portal/configuracoes/conta" element={<PortalAccountSettingsPage />} />
+            <Route path="portal/configuracoes/emails" element={<PortalEmailTemplatesPage />} />
 
             <Route path="portal/projects" element={<Navigate to="/portal/projetos/projetos" replace />} />
             <Route path="portal/proposals" element={<Navigate to="/portal/projetos/aprovacoes" replace />} />
