@@ -70,6 +70,7 @@ class FakeRadarPool {
   sourceUnitsUsed = 0
   sourceCostUsed = 0
   existingDuplicateRows = false
+  lastInteractionDescription: string | null = null
   queries: Array<{ sql: string; params: unknown[] }> = []
 
   async connect() {
@@ -212,8 +213,11 @@ class FakeRadarPool {
           email_raw: 'contato@boavida.com.br',
           phone_raw: '(43) 99999-0000',
           summary: 'Analise da oportunidade para Boa Vida.',
+          evidence_json: [{ label: 'Fonte publica', value: 'https://boavida.com.br' }],
           total_score: 72,
+          score_explanation: 'Score inicial.',
           message_body: 'Mensagem aprovada.',
+          evidence_used: [{ label: 'Fonte publica', value: 'https://boavida.com.br' }],
         }],
       }
     }
@@ -221,7 +225,10 @@ class FakeRadarPool {
       return { rows: [{ pipeline_id: ids.pipeline, stage_id: ids.stage }] }
     }
     if (normalized.includes('INSERT INTO public.leads')) return { rows: [{ id: ids.lead }] }
-    if (normalized.includes('INSERT INTO public.interactions')) return { rows: [] }
+    if (normalized.includes('INSERT INTO public.interactions')) {
+      this.lastInteractionDescription = params[2] as string
+      return { rows: [] }
+    }
     if (normalized.includes("SET status = 'converted'")) {
       this.opportunityStatus = 'converted'
       this.convertedLeadId = params[1] as string
@@ -456,6 +463,8 @@ function companyJoinRow() {
     city: 'Londrina',
     state: 'PR',
     website_url: 'https://boavida.com.br',
+    source_type: 'jina_reader',
+    source_url: 'https://boavida.com.br',
   }
 }
 
@@ -652,15 +661,18 @@ describe('radar routes', () => {
       payload: {
         organizationId: ids.org,
         csv: 'trade_name,city,state,website_url\nBoa Vida,Londrina,PR,https://boavida.com.br\n,Londrina,PR,',
+        analyzeAfterImport: true,
       },
     })
 
     expect(response.statusCode).toBe(201)
     expect(response.json()).toMatchObject({
       imported: [expect.objectContaining({ id: ids.opportunity })],
+      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'review_pending' })],
       issues: [expect.objectContaining({ code: 'missing_name_or_site' })],
       runId: ids.enrichmentRun,
     })
+    expect(pool.latestDiagnosticId).toBe(ids.diagnostic)
   })
 
   it('blocks url import when Jina Reader source is disabled', async () => {
@@ -767,6 +779,7 @@ describe('radar routes', () => {
       method: 'POST',
       url: `/api/radar/candidates/${ids.candidate}/import`,
       headers: { cookie: sessionCookie(token) },
+      payload: { analyzeAfterImport: true },
     })
     pool.candidateStatus = 'pending_review'
     const discardResponse = await app.inject({
@@ -780,7 +793,8 @@ describe('radar routes', () => {
     expect(importResponse.statusCode).toBe(200)
     expect(importResponse.json()).toMatchObject({
       candidate: { status: 'imported', importedOpportunityId: ids.opportunity },
-      opportunity: { id: ids.opportunity },
+      opportunity: { id: ids.opportunity, status: 'review_pending' },
+      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'review_pending' })],
     })
     expect(discardResponse.statusCode).toBe(200)
     expect(discardResponse.json()).toMatchObject({ status: 'discarded' })
@@ -976,5 +990,19 @@ describe('radar routes', () => {
         convertedBy: ids.user,
       },
     })
+    const leadInsert = pool.queries.find(query => query.sql.includes('INSERT INTO public.leads'))
+    const attribution = JSON.parse(leadInsert?.params[8] as string)
+    expect(attribution).toMatchObject({
+      source: 'radar_comercial',
+      radarOpportunityId: ids.opportunity,
+      sourceType: 'jina_reader',
+      sourceUrl: 'https://boavida.com.br',
+      score: 72,
+      convertedBy: ids.user,
+    })
+    expect(attribution.evidence).toContain('Fonte publica: https://boavida.com.br')
+    expect(pool.lastInteractionDescription ?? '').toContain('Origem: Radar Comercial')
+    expect(pool.lastInteractionDescription ?? '').toContain('Fonte: jina_reader (https://boavida.com.br)')
+    expect(pool.lastInteractionDescription ?? '').toContain('Evidencias:')
   })
 })

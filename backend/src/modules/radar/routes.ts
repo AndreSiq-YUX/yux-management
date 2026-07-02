@@ -69,11 +69,16 @@ const updateDataSourceSchema = z.object({
 const importCsvSchema = z.object({
   organizationId: uuid,
   csv: z.string().min(1),
+  analyzeAfterImport: z.boolean().optional(),
 })
 const importUrlsSchema = z.object({
   organizationId: uuid,
   urls: z.array(z.string().min(1)).min(1).max(10),
+  analyzeAfterImport: z.boolean().optional(),
 })
+const importCandidateSchema = z.object({
+  analyzeAfterImport: z.boolean().optional(),
+}).optional()
 const searchWebSchema = z.object({
   organizationId: uuid,
   query: z.string().min(1),
@@ -183,8 +188,9 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
     const params = z.object({ id: uuid }).safeParse(request.params)
-    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_candidate_id' })
-    return importRadarCandidate(app.pg, user, params.data.id)
+    const parsed = importCandidateSchema.safeParse(request.body ?? {})
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_candidate_payload' })
+    return importRadarCandidate(app.pg, user, params.data.id, parsed.data ?? {})
   })
 
   app.post('/candidates/:id/discard', async (request, reply) => {

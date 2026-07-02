@@ -97,6 +97,7 @@ export interface RadarImportIssue {
 export interface RadarImportSummary {
   kind: 'csv' | 'urls' | 'search'
   importedCount: number
+  analyzedCount?: number
   candidateCount: number
   issueCount: number
   issues: RadarImportIssue[]

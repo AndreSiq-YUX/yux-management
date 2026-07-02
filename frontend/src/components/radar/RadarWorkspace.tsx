@@ -141,6 +141,7 @@ export function RadarWorkspace() {
   const [searchForm, setSearchForm] = useState(initialSearchForm)
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
   const [lastImportSummary, setLastImportSummary] = useState<RadarImportSummary | null>(null)
+  const [analyzeAfterImport, setAnalyzeAfterImport] = useState(false)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [addingCompany, setAddingCompany] = useState(false)
@@ -320,19 +321,21 @@ export function RadarWorkspace() {
 
     try {
       setActionLoading('csv')
-      const result = await radarService.importCsv(selectedCampaignId, { organizationId, csv: csvText })
-      setOpportunities(current => mergeOpportunities(result.imported, current))
-      setSelectedOpportunity(current => result.imported[0] ?? current)
+      const result = await radarService.importCsv(selectedCampaignId, { organizationId, csv: csvText, analyzeAfterImport })
+      const updatedOpportunities = result.analyzed?.length ? result.analyzed : result.imported
+      setOpportunities(current => mergeOpportunities(updatedOpportunities, current))
+      setSelectedOpportunity(current => updatedOpportunities[0] ?? current)
       setCsvText('')
       setLastImportSummary({
         kind: 'csv',
         importedCount: result.imported.length,
+        analyzedCount: result.analyzed?.length ?? 0,
         candidateCount: 0,
         issueCount: result.issues.length,
         issues: result.issues,
         runId: result.runId,
       })
-      toast.success(`${result.imported.length} empresas importadas`)
+      toast.success(result.analyzed?.length ? `${result.imported.length} empresas importadas e analisadas` : `${result.imported.length} empresas importadas`)
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao importar CSV Radar:', error)
@@ -360,19 +363,21 @@ export function RadarWorkspace() {
 
     try {
       setActionLoading('urls')
-      const result = await radarService.importUrls(selectedCampaignId, { organizationId, urls })
-      setOpportunities(current => mergeOpportunities(result.imported, current))
-      setSelectedOpportunity(current => result.imported[0] ?? current)
+      const result = await radarService.importUrls(selectedCampaignId, { organizationId, urls, analyzeAfterImport })
+      const updatedOpportunities = result.analyzed?.length ? result.analyzed : result.imported
+      setOpportunities(current => mergeOpportunities(updatedOpportunities, current))
+      setSelectedOpportunity(current => updatedOpportunities[0] ?? current)
       setUrlText('')
       setLastImportSummary({
         kind: 'urls',
         importedCount: result.imported.length,
+        analyzedCount: result.analyzed?.length ?? 0,
         candidateCount: 0,
         issueCount: result.issues.length,
         issues: result.issues,
         runId: result.runId,
       })
-      toast.success(`${result.imported.length} URLs processadas`)
+      toast.success(result.analyzed?.length ? `${result.imported.length} URLs processadas e analisadas` : `${result.imported.length} URLs processadas`)
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao importar URLs Radar:', error)
@@ -431,11 +436,11 @@ export function RadarWorkspace() {
 
     try {
       setActionLoading(`candidate-import-${candidateId}`)
-      const result = await radarService.importCandidate(candidateId)
+      const result = await radarService.importCandidate(candidateId, { analyzeAfterImport })
       setCandidates(current => current.map(candidate => candidate.id === candidateId ? result.candidate : candidate))
       setOpportunities(current => mergeOpportunities([result.opportunity], current))
       setSelectedOpportunity(result.opportunity)
-      toast.success('Candidato importado')
+      toast.success(result.analyzed?.length ? 'Candidato importado e analisado' : 'Candidato importado')
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao importar candidato Radar:', error)
@@ -624,6 +629,7 @@ export function RadarWorkspace() {
                     </div>
                     <p className="mt-1 text-xs text-slate-500">{blockedReason || 'Disponivel para esta campanha.'}</p>
                     <p className="mt-2 text-xs text-slate-600">Limite diario: {source.rateLimitPerDay}</p>
+                    <p className="mt-1 text-xs text-slate-600">Custo unitario: R$ {source.defaultCostPerUnit.toFixed(4)}</p>
                     {source.termsNotes && <p className="mt-1 text-xs text-slate-500">{source.termsNotes}</p>}
                   </div>
                 )
@@ -637,6 +643,18 @@ export function RadarWorkspace() {
                 <h2 className="text-base font-semibold text-slate-950">Fontes de entrada</h2>
                 <p className="text-sm text-slate-500">Importe lotes pequenos e mantenha revisao humana antes de qualquer conversao.</p>
               </div>
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300"
+                  checked={analyzeAfterImport}
+                  onChange={event => setAnalyzeAfterImport(event.target.checked)}
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">Analisar apos captar</span>
+                  <span className="block text-xs text-slate-500">Gera analise, score e mensagem em lote pequeno. Envio continua bloqueado por revisao humana.</span>
+                </span>
+              </label>
             </div>
 
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -742,8 +760,9 @@ export function RadarWorkspace() {
                   </p>
                   {lastImportSummary.runId && <p className="text-xs text-slate-500">Run {lastImportSummary.runId}</p>}
                 </div>
-                <div className="mt-2 grid gap-2 text-sm md:grid-cols-3">
+                <div className="mt-2 grid gap-2 text-sm md:grid-cols-4">
                   <p className="text-slate-700">Importados: {lastImportSummary.importedCount}</p>
+                  <p className="text-slate-700">Analisados: {lastImportSummary.analyzedCount ?? 0}</p>
                   <p className="text-slate-700">Candidatos: {lastImportSummary.candidateCount}</p>
                   <p className={lastImportSummary.issueCount > 0 ? 'text-amber-700' : 'text-emerald-700'}>Issues: {lastImportSummary.issueCount}</p>
                 </div>
