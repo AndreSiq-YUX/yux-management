@@ -25,6 +25,7 @@ export type PermissionKey =
   | 'clients.write'
   | 'crm.read'
   | 'crm.write'
+  | 'radar:manage'
   | 'leads.read'
   | 'leads.write'
   | 'landing_pages.read'

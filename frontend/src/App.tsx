@@ -47,6 +47,7 @@ import { PortalSafeStatePage } from '@/pages/client-portal/PortalSafeStatePage'
 import { PortalCommercialAccountsPage } from '@/pages/client-portal/commercial/PortalCommercialAccountsPage'
 import { PortalCommercialFunnelsPage } from '@/pages/client-portal/commercial/PortalCommercialFunnelsPage'
 import { PortalCommercialLeadsPage } from '@/pages/client-portal/commercial/PortalCommercialLeadsPage'
+import { PortalCommercialRadarPage } from '@/pages/client-portal/commercial/PortalCommercialRadarPage'
 import { PortalCommercialTasksPage } from '@/pages/client-portal/commercial/PortalCommercialTasksPage'
 import { PortalBrandVoicePage } from '@/pages/client-portal/company/PortalBrandVoicePage'
 import { PortalCompanyIntegrationsPage } from '@/pages/client-portal/company/PortalCompanyIntegrationsPage'
@@ -156,6 +157,7 @@ function App() {
               <Route path="comercial/contas" element={<PortalCommercialAccountsPage />} />
               <Route path="comercial/funis" element={<PortalCommercialFunnelsPage />} />
               <Route path="comercial/tarefas" element={<PortalCommercialTasksPage />} />
+              <Route path="comercial/radar" element={<PortalCommercialRadarPage />} />
 
               <Route path="atendimento/conversas" element={<PortalServiceConversationsPage />} />
               <Route path="atendimento/agente-ia" element={<PortalAiAgentPage />} />

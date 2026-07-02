@@ -1,4 +1,5 @@
 import { canAccessModule } from '@/lib/platform/accessControl'
+import { canShowRadarNavigation } from '@/lib/radar/radarRules'
 import { PLATFORM_MODULES } from '@/lib/platform/moduleRegistry'
 import type { PlatformContext } from '@/types/platform'
 
@@ -117,6 +118,7 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
         ...moduleItem(context, { label: 'Empresas / Contas', href: href('/comercial/contas'), moduleKey: 'crm' }),
         ...moduleItem(context, { label: 'Funis', href: href('/comercial/funis'), moduleKey: 'crm' }),
         ...moduleItem(context, { label: 'Tarefas e Follow-ups', href: href('/comercial/tarefas'), moduleKey: 'crm' }),
+        ...(canShowRadarNavigation(context) ? [{ label: 'Radar Comercial', href: href('/comercial/radar'), moduleKey: 'crm' }] : []),
       ],
     },
     {

@@ -26,7 +26,7 @@ const fallbackRole: PlatformRole = {
   key: 'yux_admin',
   name: 'YUX Admin',
   scope: 'internal',
-  permissions: ['platform.manage'],
+  permissions: ['platform.manage', 'radar:manage'],
 }
 
 const fallbackClientWorkspaceRole: PlatformRole = {
@@ -183,6 +183,23 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         item.id === organizationId
         && (item.kind === 'client' || item.isInternalGrowthWorkspace)
       )) || null
+
+      if (organization?.isInternalGrowthWorkspace) {
+        const role = roles.find(item => item.key === 'yux_admin') || fallbackRole
+        set({
+          mode: 'client_workspace',
+          organization,
+          membership: null,
+          role,
+          roles: roles.length ? roles : [fallbackRole, fallbackClientWorkspaceRole],
+          activeContract: null,
+          portalContractContext: createEmptyPortalContractContext(),
+          enabledModuleKeys: getInternalModuleKeys(),
+          error: null,
+          isLoading: false,
+        })
+        return
+      }
 
       if (!organization?.clientId) {
         set({
