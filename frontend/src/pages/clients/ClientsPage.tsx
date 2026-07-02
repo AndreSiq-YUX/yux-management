@@ -8,6 +8,17 @@ import { ClientDetailsModal } from '@/components/clients/ClientDetailsModal';
 import { ClientFilters } from '@/components/clients/ClientFilters';
 import { ClientStats } from '@/components/clients/ClientStats';
 import { ClientImportModal } from '@/components/clients/ClientImportModal';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 export function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
@@ -21,6 +32,8 @@ export function ClientsPage() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<string | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   
   // Estados dos filtros
   const [filters, setFilters] = useState<ClientFiltersType>({});
@@ -155,8 +168,15 @@ export function ClientsPage() {
   };
 
   const handleDeleteClient = async (clientId: string) => {
+    setClientToDelete(clientId);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    
     try {
-      const response = await backendDataService.deleteClient(clientId);
+      const response = await backendDataService.deleteClient(clientToDelete);
       if (response.success) {
         toast.success('Cliente excluído com sucesso!');
         fetchClients(currentPage, searchTerm);
@@ -166,6 +186,9 @@ export function ClientsPage() {
     } catch (error) {
       toast.error('Erro ao excluir cliente');
       console.error('Erro:', error);
+    } finally {
+      setShowDeleteDialog(false);
+      setClientToDelete(null);
     }
   };
 
@@ -275,20 +298,21 @@ export function ClientsPage() {
           <p className="text-gray-600">Gerencie seus clientes e relacionamentos</p>
         </div>
         <div className="flex space-x-3">
-            <button
+            <Button
               onClick={() => setShowImportModal(true)}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+              variant="outline"
+              className="flex items-center space-x-2"
             >
               <Upload className="h-4 w-4" />
               <span>Importar</span>
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleNewClient}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              className="flex items-center space-x-2"
             >
               <Plus className="h-4 w-4" />
               <span>Novo Cliente</span>
-            </button>
+            </Button>
           </div>
       </div>
 
@@ -308,27 +332,25 @@ export function ClientsPage() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-yux-500 focus:border-yux-500"
             />
           </div>
-          <button
-            type="submit"
-            className="px-4 py-2 bg-yux-600 text-white rounded-md hover:bg-yux-700"
-          >
+          <Button type="submit">
             Buscar
-          </button>
+          </Button>
           <ClientFilters
             filters={filters}
             onFiltersChange={handleFiltersChange}
             onClearFilters={handleClearFilters}
           />
           <div className="relative">
-            <button
+            <Button
               onClick={() => setShowExportDropdown(!showExportDropdown)}
               disabled={exporting}
-              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              variant="outline"
+              className="flex items-center space-x-2"
             >
               <Download className="h-4 w-4" />
               <span>{exporting ? 'Exportando...' : 'Exportar'}</span>
               <ChevronDown className="h-4 w-4" />
-            </button>
+            </Button>
             
             {showExportDropdown && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
@@ -559,6 +581,23 @@ export function ClientsPage() {
         onClose={() => setShowImportModal(false)}
         onSuccess={handleImportSuccess}
       />
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusao</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este cliente? Esta acao nao pode ser desfeita e todos os dados associados serao permanentemente removidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteClient}>
+              Excluir cliente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

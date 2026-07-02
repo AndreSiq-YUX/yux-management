@@ -1,10 +1,14 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Bell, ChevronRight, Search, Menu } from 'lucide-react'
+import { Bell, ChevronRight, Search, Menu, X } from 'lucide-react'
 import { buildBreadcrumbs } from '@/lib/platform/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { usePlatformContext } from '@/stores/platformStore'
 
-export function Header() {
+interface HeaderProps {
+  onMenuClick: () => void
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
   const { user } = useAuthStore()
   const location = useLocation()
   const platformContext = usePlatformContext()
@@ -18,7 +22,10 @@ export function Header() {
           <div className="lg:hidden">
             <button
               type="button"
-              className="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500"
+              onClick={onMenuClick}
+              aria-label="Abrir menu"
+              aria-expanded={false}
+              className="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-yux-500"
             >
               <Menu className="h-6 w-6" />
             </button>
@@ -56,12 +63,10 @@ export function Header() {
             <button
               type="button"
               title="Notificacoes"
+              aria-label="Notificacoes"
               className="relative rounded-full bg-white p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-yux-500 focus:ring-offset-2"
             >
               <Bell className="h-6 w-6" />
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
-                3
-              </span>
             </button>
 
             {/* User info */}

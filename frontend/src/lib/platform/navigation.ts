@@ -40,16 +40,13 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
     label: 'Operacao',
     items: [
       { label: 'Projetos', href: '/projects', moduleKey: 'projects' },
-      { label: 'Entregaveis', href: '/projects', moduleKey: 'projects' },
-      { label: 'Aprovacoes', href: '/projects', moduleKey: 'projects' },
       { label: 'Suporte', href: '/support', moduleKey: 'support' },
     ],
   },
   {
     label: 'Workspaces dos Clientes',
     items: [
-      { label: 'Selecionar Cliente', href: '/client-workspaces' },
-      { label: 'Crescimento YUX', href: '/client-workspaces' },
+      { label: 'Workspaces', href: '/client-workspaces' },
     ],
   },
   {
@@ -70,9 +67,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
   {
     label: 'Financeiro',
     items: [
-      { label: 'Faturas', href: '/finance', moduleKey: 'finance' },
-      { label: 'Cobrancas', href: '/finance', moduleKey: 'finance' },
-      { label: 'Receita', href: '/finance', moduleKey: 'finance' },
+      { label: 'Financeiro', href: '/finance', moduleKey: 'finance' },
     ],
   },
 ]

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 
 import { requestPasswordReset } from '@/services/backendAuthService'
 import { useAuthStore } from '@/stores/authStore'
+import { Button } from '@/components/ui/button'
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -143,10 +144,10 @@ export function LoginPage() {
       </div>
 
       <div>
-        <button
+        <Button
           type="submit"
           disabled={isLoading}
-          className="flex w-full justify-center rounded-md border border-transparent bg-yux-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-yux-700 focus:outline-none focus:ring-2 focus:ring-yux-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full"
         >
           {isLoading ? (
             <>
@@ -156,7 +157,7 @@ export function LoginPage() {
           ) : (
             'Entrar'
           )}
-        </button>
+        </Button>
       </div>
     </form>
   )

@@ -21,7 +21,7 @@ export function AuthLayout() {
         </div>
         
         <div className="text-center mt-6 text-sm text-gray-500">
-          © 2024 YUX Soluções em IA. Todos os direitos reservados.
+          © 2026 YUX Soluções em IA. Todos os direitos reservados.
         </div>
       </div>
     </div>

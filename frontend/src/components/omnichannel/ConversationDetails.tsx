@@ -341,7 +341,7 @@ export function ConversationDetails({
                 return (
                   <div key={message.id} className="max-w-[85%] mr-auto ml-2 my-2 border-2 border-violet-300 border-dashed rounded-xl bg-violet-50/95 p-3.5 shadow-sm space-y-2.5 text-xs text-violet-900">
                     <div className="flex items-center gap-1.5 font-bold text-violet-700">
-                      <Bot className="h-4 w-4 animate-bounce" />
+                      <Bot className="h-4 w-4 animate-pulse" />
                       Sugestão de resposta da IA (Aguardando Aprovação)
                     </div>
                     <p className="whitespace-pre-wrap leading-relaxed text-slate-700 italic border-l-2 border-violet-200 pl-2">

@@ -227,15 +227,15 @@ export function DashboardPage() {
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map(stat => (
-          <article key={stat.name} className="relative overflow-hidden rounded-lg border bg-white px-4 py-5 sm:px-6">
-            <div className="absolute rounded-md bg-yux-500 p-3">
-              <stat.icon className="h-6 w-6 text-white" aria-hidden="true" />
+          <article key={stat.name} className="relative overflow-hidden rounded-lg border bg-white px-5 py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <stat.icon className="h-4 w-4 text-gray-400" aria-hidden="true" />
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{stat.name}</p>
             </div>
-            <p className="ml-16 truncate text-sm font-medium text-gray-500">{stat.name}</p>
-            <p className="ml-16 mt-1 text-2xl font-semibold text-gray-900">{stat.value}</p>
-            <p className="ml-16 mt-1 text-sm text-gray-600">{stat.detail}</p>
+            <p className="text-2xl font-semibold text-gray-900 mb-1">{stat.value}</p>
+            <p className="text-sm text-gray-500">{stat.detail}</p>
           </article>
         ))}
       </section>

@@ -317,7 +317,7 @@ export function ConversationList({
               key={conversation.id}
               type="button"
               className={`flex items-start w-full gap-3 px-3 py-3.5 text-left transition-all ${
-                isSelected ? 'bg-yux-50/75 border-l-4 border-yux-600 pl-2' : 'hover:bg-slate-50/50'
+                isSelected ? 'bg-yux-50 border border-yux-200' : 'hover:bg-slate-50/50'
               }`}
               onClick={() => onSelect(conversation.id)}
             >
