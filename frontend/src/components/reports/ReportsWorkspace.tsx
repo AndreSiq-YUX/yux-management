@@ -1,10 +1,13 @@
 import type { OperationalReport } from '@/types/reports'
 import { LeadSourcesDashboard } from '@/components/crm/LeadSourcesDashboard'
+import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import { buildExecutiveCampaignMetrics, buildReportAiInsight, buildReportPresets, summarizeExecutiveCampaignMetrics } from '@/lib/reports/reportRules'
+import { usePlatformStore } from '@/stores/platformStore'
 
 const money = (value: number) => `R$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
 
 export function ReportsWorkspace({ report }: { report: OperationalReport }) {
+  const organization = usePlatformStore(state => state.organization)
   const executiveMetrics = report.executiveCampaignMetrics || buildExecutiveCampaignMetrics(report.campaignMetrics)
   const executiveSummary = report.executiveCampaignSummary || summarizeExecutiveCampaignMetrics(executiveMetrics)
   const presets = report.reportPresets || buildReportPresets()
@@ -16,6 +19,13 @@ export function ReportsWorkspace({ report }: { report: OperationalReport }) {
         <h1 className="text-2xl font-bold text-gray-900">Relatorios operacionais</h1>
         <p className="text-sm text-gray-600">Funil, campanhas, landing pages, propostas, conversas e atividades.</p>
       </header>
+      <StrategyContextPanel
+        organizationId={organization?.id}
+        moduleKey="reports"
+        recordType="operational_report"
+        recordTitle="Relatorio operacional"
+        contextSummary="Use o Metrics & Cash para transformar indicadores em diagnostico, prioridade de caixa, riscos e plano de acao 30/60/90."
+      />
       <div className="grid gap-3 md:grid-cols-4">
         <Metric title="Tempo resposta" value={`${report.responseTimeHours}h`} />
         <Metric title="Oportunidades paradas" value={String(report.stalledOpportunities)} />

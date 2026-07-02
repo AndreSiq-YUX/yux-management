@@ -7,6 +7,7 @@ import { ConversationList } from './ConversationList'
 import { OmnichannelAdminTabs } from './OmnichannelAdminTabs'
 import { omnichannelService } from '@/services/omnichannelService'
 import { aiAssistantService } from '@/services/aiAssistantService'
+import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import type { AiAssistantSettings } from '@/types/aiAssistant'
 import type {
   OmnichannelAiRunView,
@@ -188,6 +189,14 @@ export function OmnichannelWorkspace({
           Nao foi possivel carregar uma organizacao real para o Omnichannel. Verifique a sessao do usuario e o acesso a organizations antes de consultar conversas, filas e equipes.
         </section>
       )}
+
+      <StrategyContextPanel
+        organizationId={organizationId}
+        moduleKey="omnichannel"
+        recordType="conversation"
+        recordTitle={selectedConversation?.contact?.displayName || selectedConversation?.channel}
+        contextSummary="Use a IA de conversa para qualificar, revisar resposta, detectar risco de handoff e aplicar a doutrina por canal, intencao e estagio comercial."
+      />
 
       {/* Main chat layout */}
       <div className="grid min-h-[680px] overflow-hidden rounded-xl border bg-white lg:grid-cols-[340px_1fr]">

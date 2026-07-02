@@ -173,6 +173,11 @@ export interface StrategyOrganization {
   id: string
   name: string
   slug?: string
+  kind?: string
+  clientId?: string
+  isInternalGrowthWorkspace?: boolean
+  workspacePurpose?: string
+  strategyPackScope?: string
 }
 
 export interface StrategyKnowledgeStats {
@@ -319,6 +324,130 @@ export interface StrategyAgentBinding {
   workflow_key?: string
   ai_assistant_id?: string
   profile_id?: string
+}
+
+export interface StrategyPack {
+  id: string
+  packKey: string
+  name: string
+  description: string
+  scope: string
+  visibility: StrategyVisibility | string
+  sourceKind: string
+  sourceTitle: string
+  status: string
+  version: number
+  targetProfileKeys: string[]
+  targetModules: string[]
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StrategyPackInput {
+  id?: string
+  packKey: string
+  name: string
+  description?: string
+  scope?: string
+  visibility?: StrategyVisibility | string
+  sourceKind?: string
+  sourceTitle?: string
+  status?: string
+  version?: number
+  targetProfileKeys?: string[]
+  targetModules?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface StrategyPackItem {
+  id: string
+  packId: string
+  itemType: string
+  title: string
+  summary: string
+  body: string
+  profileKeys: string[]
+  stageTags: string[]
+  retrievalTags: string[]
+  sourceReference?: string
+  status: string
+  priority: number
+  payload: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StrategyPackItemInput {
+  id?: string
+  packId: string
+  itemType: string
+  title: string
+  summary?: string
+  body?: string
+  profileKeys?: string[]
+  stageTags?: string[]
+  retrievalTags?: string[]
+  sourceReference?: string
+  status?: string
+  priority?: number
+  payload?: Record<string, unknown>
+}
+
+export interface StrategyPackBinding {
+  id: string
+  packId: string
+  organizationId?: string
+  profileKey?: string
+  moduleKey?: string
+  channel?: string
+  workflowKey?: string
+  status: string
+  priority: number
+  config: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StrategyPackBindingInput {
+  id?: string
+  packId: string
+  organizationId?: string
+  profileKey?: string
+  moduleKey?: string
+  channel?: string
+  workflowKey?: string
+  status?: string
+  priority?: number
+  config?: Record<string, unknown>
+}
+
+export interface StrategyIngestionJob {
+  id: string
+  packId?: string
+  documentId?: string
+  sourceName: string
+  sourceKind: string
+  fileName?: string
+  status: string
+  currentStep: string
+  proposedCounts: Record<string, unknown>
+  errorMessage?: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StrategyIngestionJobInput {
+  packId?: string
+  documentId?: string
+  sourceName: string
+  sourceKind?: string
+  fileName?: string
+  status?: string
+  currentStep?: string
+  proposedCounts?: Record<string, unknown>
+  metadata?: Record<string, unknown>
 }
 
 export type StrategyAdminChatMode =

@@ -31,6 +31,9 @@ export type Organization = {
   slug: string
   kind: string
   clientId?: string
+  isInternalGrowthWorkspace: boolean
+  workspacePurpose: string
+  strategyPackScope: string
   createdAt: string
   updatedAt: string
 }
@@ -187,10 +190,23 @@ export async function getOrganizations(pool: pg.Pool): Promise<Organization[]> {
     slug: string
     kind: string
     client_id: string | null
+    is_internal_growth_workspace: boolean
+    workspace_purpose: string
+    strategy_pack_scope: string
     created_at: string
     updated_at: string
   }>(
-    `SELECT id, name, slug, kind, client_id, created_at, updated_at
+    `SELECT
+       id,
+       name,
+       slug,
+       kind,
+       client_id,
+       COALESCE(is_internal_growth_workspace, false) AS is_internal_growth_workspace,
+       COALESCE(workspace_purpose, 'client_delivery') AS workspace_purpose,
+       COALESCE(strategy_pack_scope, 'client') AS strategy_pack_scope,
+       created_at,
+       updated_at
      FROM public.organizations
      ORDER BY name ASC`,
   )
@@ -208,10 +224,23 @@ export async function createClientOrganization(
     slug: string
     kind: string
     client_id: string | null
+    is_internal_growth_workspace: boolean
+    workspace_purpose: string
+    strategy_pack_scope: string
     created_at: string
     updated_at: string
   }>(
-    `SELECT id, name, slug, kind, client_id, created_at, updated_at
+    `SELECT
+       id,
+       name,
+       slug,
+       kind,
+       client_id,
+       COALESCE(is_internal_growth_workspace, false) AS is_internal_growth_workspace,
+       COALESCE(workspace_purpose, 'client_delivery') AS workspace_purpose,
+       COALESCE(strategy_pack_scope, 'client') AS strategy_pack_scope,
+       created_at,
+       updated_at
      FROM public.organizations
      WHERE client_id = $1
      LIMIT 1`,
@@ -227,12 +256,25 @@ export async function createClientOrganization(
     slug: string
     kind: string
     client_id: string | null
+    is_internal_growth_workspace: boolean
+    workspace_purpose: string
+    strategy_pack_scope: string
     created_at: string
     updated_at: string
   }>(
     `INSERT INTO public.organizations (name, slug, kind, client_id)
      VALUES ($1, $2, 'client', $3)
-     RETURNING id, name, slug, kind, client_id, created_at, updated_at`,
+     RETURNING
+       id,
+       name,
+       slug,
+       kind,
+       client_id,
+       COALESCE(is_internal_growth_workspace, false) AS is_internal_growth_workspace,
+       COALESCE(workspace_purpose, 'client_delivery') AS workspace_purpose,
+       COALESCE(strategy_pack_scope, 'client') AS strategy_pack_scope,
+       created_at,
+       updated_at`,
     [input.name.trim(), `${baseSlug}-${input.clientId.slice(0, 8)}`, input.clientId],
   )
 
@@ -1506,6 +1548,9 @@ function mapOrganization(row: {
   slug: string
   kind: string
   client_id: string | null
+  is_internal_growth_workspace?: boolean
+  workspace_purpose?: string
+  strategy_pack_scope?: string
   created_at: string
   updated_at: string
 }): Organization {
@@ -1515,6 +1560,9 @@ function mapOrganization(row: {
     slug: row.slug,
     kind: row.kind,
     clientId: row.client_id ?? undefined,
+    isInternalGrowthWorkspace: row.is_internal_growth_workspace ?? false,
+    workspacePurpose: row.workspace_purpose ?? 'client_delivery',
+    strategyPackScope: row.strategy_pack_scope ?? 'client',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

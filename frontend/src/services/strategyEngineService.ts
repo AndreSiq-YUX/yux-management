@@ -25,6 +25,14 @@ import type {
   StrategyModelRouteInput,
   StrategyOrganization,
   StrategyOutcomeInput,
+  StrategyIngestionJob,
+  StrategyIngestionJobInput,
+  StrategyPack,
+  StrategyPackBinding,
+  StrategyPackBindingInput,
+  StrategyPackInput,
+  StrategyPackItem,
+  StrategyPackItemInput,
   StrategyRecommendationInput,
   StrategyRetrievalQuery,
   StrategyWorkflowSpec,
@@ -268,6 +276,81 @@ export function mapAgentShadowExperiment(row: DbRow): AgentShadowExperiment {
   }
 }
 
+export function mapStrategyPack(row: DbRow): StrategyPack {
+  return {
+    id: stringValue(row.id),
+    packKey: stringValue(row.pack_key),
+    name: stringValue(row.name),
+    description: stringValue(row.description),
+    scope: stringValue(row.scope, 'internal'),
+    visibility: stringValue(row.visibility, 'internal_only'),
+    sourceKind: stringValue(row.source_kind, 'manual'),
+    sourceTitle: stringValue(row.source_title),
+    status: stringValue(row.status, 'draft'),
+    version: numberOrDefault(row.version, 1),
+    targetProfileKeys: stringArray(row.target_profile_keys),
+    targetModules: stringArray(row.target_modules),
+    metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata as Record<string, unknown> : {},
+    createdAt: stringValue(row.created_at),
+    updatedAt: stringValue(row.updated_at),
+  }
+}
+
+export function mapStrategyPackItem(row: DbRow): StrategyPackItem {
+  return {
+    id: stringValue(row.id),
+    packId: stringValue(row.pack_id),
+    itemType: stringValue(row.item_type, 'concept_card'),
+    title: stringValue(row.title),
+    summary: stringValue(row.summary),
+    body: stringValue(row.body),
+    profileKeys: stringArray(row.profile_keys),
+    stageTags: stringArray(row.stage_tags),
+    retrievalTags: stringArray(row.retrieval_tags),
+    sourceReference: stringValue(row.source_reference) || undefined,
+    status: stringValue(row.status, 'proposed'),
+    priority: numberOrDefault(row.priority, 100),
+    payload: typeof row.payload === 'object' && row.payload !== null ? row.payload as Record<string, unknown> : {},
+    createdAt: stringValue(row.created_at),
+    updatedAt: stringValue(row.updated_at),
+  }
+}
+
+export function mapStrategyPackBinding(row: DbRow): StrategyPackBinding {
+  return {
+    id: stringValue(row.id),
+    packId: stringValue(row.pack_id),
+    organizationId: stringValue(row.organization_id) || undefined,
+    profileKey: stringValue(row.profile_key) || undefined,
+    moduleKey: stringValue(row.module_key) || undefined,
+    channel: stringValue(row.channel) || undefined,
+    workflowKey: stringValue(row.workflow_key) || undefined,
+    status: stringValue(row.status, 'active'),
+    priority: numberOrDefault(row.priority, 100),
+    config: typeof row.config === 'object' && row.config !== null ? row.config as Record<string, unknown> : {},
+    createdAt: stringValue(row.created_at),
+    updatedAt: stringValue(row.updated_at),
+  }
+}
+
+export function mapStrategyIngestionJob(row: DbRow): StrategyIngestionJob {
+  return {
+    id: stringValue(row.id),
+    packId: stringValue(row.pack_id) || undefined,
+    documentId: stringValue(row.document_id) || undefined,
+    sourceName: stringValue(row.source_name),
+    sourceKind: stringValue(row.source_kind, 'document'),
+    fileName: stringValue(row.file_name) || undefined,
+    status: stringValue(row.status, 'uploaded'),
+    currentStep: stringValue(row.current_step, 'upload'),
+    proposedCounts: typeof row.proposed_counts === 'object' && row.proposed_counts !== null ? row.proposed_counts as Record<string, unknown> : {},
+    errorMessage: stringValue(row.error_message) || undefined,
+    metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata as Record<string, unknown> : {},
+    createdAt: stringValue(row.created_at),
+    updatedAt: stringValue(row.updated_at),
+  }
+}
+
 export function buildRecommendationPayload(input: StrategyRecommendationInput) {
   return {
     organization_id: optional(input.organizationId),
@@ -385,6 +468,71 @@ export function buildAssistantRoutingRulePayload(input: StrategyAssistantRouting
   }
 }
 
+export function buildStrategyPackPayload(input: StrategyPackInput) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    pack_key: input.packKey.trim(),
+    name: input.name.trim(),
+    description: input.description?.trim() || '',
+    scope: input.scope || 'internal',
+    visibility: input.visibility || 'internal_only',
+    source_kind: input.sourceKind || 'manual',
+    source_title: input.sourceTitle?.trim() || '',
+    status: input.status || 'draft',
+    version: input.version ?? 1,
+    target_profile_keys: toArray(input.targetProfileKeys),
+    target_modules: toArray(input.targetModules),
+    metadata: input.metadata || {},
+  }
+}
+
+export function buildStrategyPackItemPayload(input: StrategyPackItemInput) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    pack_id: input.packId,
+    item_type: input.itemType || 'concept_card',
+    title: input.title.trim(),
+    summary: input.summary?.trim() || '',
+    body: input.body?.trim() || '',
+    profile_keys: toArray(input.profileKeys),
+    stage_tags: toArray(input.stageTags),
+    retrieval_tags: toArray(input.retrievalTags),
+    source_reference: optional(input.sourceReference),
+    status: input.status || 'proposed',
+    priority: input.priority ?? 100,
+    payload: input.payload || {},
+  }
+}
+
+export function buildStrategyPackBindingPayload(input: StrategyPackBindingInput) {
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    pack_id: input.packId,
+    organization_id: optional(input.organizationId),
+    profile_key: optional(input.profileKey),
+    module_key: optional(input.moduleKey),
+    channel: optional(input.channel),
+    workflow_key: optional(input.workflowKey),
+    status: input.status || 'active',
+    priority: input.priority ?? 100,
+    config: input.config || {},
+  }
+}
+
+export function buildStrategyIngestionJobPayload(input: StrategyIngestionJobInput) {
+  return {
+    pack_id: optional(input.packId),
+    document_id: optional(input.documentId),
+    source_name: input.sourceName.trim(),
+    source_kind: input.sourceKind || 'document',
+    file_name: optional(input.fileName),
+    status: input.status || 'uploaded',
+    current_step: input.currentStep || 'upload',
+    proposed_counts: input.proposedCounts || {},
+    metadata: input.metadata || {},
+  }
+}
+
 export const strategyEngineService = {
   async getAgentProfiles() {
     const data = await requireData<DbRow[]>(strategyEngineDataClient.from('yux_strategy_agent_profiles').select('*').order('profile_key'))
@@ -478,13 +626,107 @@ export const strategyEngineService = {
   },
 
   async getClientOrganizations() {
-    return requireData<StrategyOrganization[]>(
+    const data = await requireData<DbRow[]>(
       strategyEngineDataClient
         .from('organizations')
-        .select('id, name, slug')
-        .eq('kind', 'client')
+        .select('id, name, slug, kind, client_id, is_internal_growth_workspace, workspace_purpose, strategy_pack_scope')
         .order('name'),
     )
+    return data
+      .filter(row => stringValue(row.kind) === 'client' || boolValue(row.is_internal_growth_workspace))
+      .map(row => ({
+        id: stringValue(row.id),
+        name: stringValue(row.name),
+        slug: stringValue(row.slug) || undefined,
+        kind: stringValue(row.kind) || undefined,
+        clientId: stringValue(row.client_id) || undefined,
+        isInternalGrowthWorkspace: boolValue(row.is_internal_growth_workspace),
+        workspacePurpose: stringValue(row.workspace_purpose, 'client_delivery'),
+        strategyPackScope: stringValue(row.strategy_pack_scope, 'client'),
+      }))
+  },
+
+  async getStrategyPacks(filters: { status?: string; scope?: string } = {}) {
+    let query = strategyEngineDataClient.from('yux_strategy_packs').select('*').order('updated_at', { ascending: false })
+    if (filters.status) query = query.eq('status', filters.status)
+    if (filters.scope) query = query.eq('scope', filters.scope)
+    const data = await requireData<DbRow[]>(query)
+    return data.map(mapStrategyPack)
+  },
+
+  async upsertStrategyPack(input: StrategyPackInput) {
+    const payload = buildStrategyPackPayload(input)
+    const mutation = input.id
+      ? strategyEngineDataClient.from('yux_strategy_packs').update(payload).eq('id', input.id)
+      : strategyEngineDataClient.from('yux_strategy_packs').insert(payload)
+    const data = await requireData<DbRow>(mutation.select().single())
+    return mapStrategyPack(data)
+  },
+
+  async getStrategyPackItems(filters: { packId?: string; status?: string; itemType?: string } = {}) {
+    let query = strategyEngineDataClient.from('yux_strategy_pack_items').select('*').order('priority').order('updated_at', { ascending: false })
+    if (filters.packId) query = query.eq('pack_id', filters.packId)
+    if (filters.status) query = query.eq('status', filters.status)
+    if (filters.itemType) query = query.eq('item_type', filters.itemType)
+    const data = await requireData<DbRow[]>(query)
+    return data.map(mapStrategyPackItem)
+  },
+
+  async upsertStrategyPackItem(input: StrategyPackItemInput) {
+    const payload = buildStrategyPackItemPayload(input)
+    const mutation = input.id
+      ? strategyEngineDataClient.from('yux_strategy_pack_items').update(payload).eq('id', input.id)
+      : strategyEngineDataClient.from('yux_strategy_pack_items').insert(payload)
+    const data = await requireData<DbRow>(mutation.select().single())
+    return mapStrategyPackItem(data)
+  },
+
+  async updateStrategyPackItemStatus(id: string, status: string) {
+    const data = await requireData<DbRow>(
+      strategyEngineDataClient
+        .from('yux_strategy_pack_items')
+        .update({ status })
+        .eq('id', id)
+        .select()
+        .single(),
+    )
+    return mapStrategyPackItem(data)
+  },
+
+  async getStrategyPackBindings(filters: { packId?: string; organizationId?: string } = {}) {
+    let query = strategyEngineDataClient.from('yux_strategy_pack_bindings').select('*').order('priority').order('updated_at', { ascending: false })
+    if (filters.packId) query = query.eq('pack_id', filters.packId)
+    if (filters.organizationId) query = query.eq('organization_id', filters.organizationId)
+    const data = await requireData<DbRow[]>(query)
+    return data.map(mapStrategyPackBinding)
+  },
+
+  async upsertStrategyPackBinding(input: StrategyPackBindingInput) {
+    const payload = buildStrategyPackBindingPayload(input)
+    const mutation = input.id
+      ? strategyEngineDataClient.from('yux_strategy_pack_bindings').update(payload).eq('id', input.id)
+      : strategyEngineDataClient.from('yux_strategy_pack_bindings').insert(payload)
+    const data = await requireData<DbRow>(mutation.select().single())
+    return mapStrategyPackBinding(data)
+  },
+
+  async getStrategyIngestionJobs(filters: { packId?: string; status?: string } = {}) {
+    let query = strategyEngineDataClient.from('yux_strategy_ingestion_jobs').select('*').order('created_at', { ascending: false })
+    if (filters.packId) query = query.eq('pack_id', filters.packId)
+    if (filters.status) query = query.eq('status', filters.status)
+    const data = await requireData<DbRow[]>(query)
+    return data.map(mapStrategyIngestionJob)
+  },
+
+  async createStrategyIngestionJob(input: StrategyIngestionJobInput) {
+    const data = await requireData<DbRow>(
+      strategyEngineDataClient
+        .from('yux_strategy_ingestion_jobs')
+        .insert(buildStrategyIngestionJobPayload(input))
+        .select()
+        .single(),
+    )
+    return mapStrategyIngestionJob(data)
   },
 
   async getConversationAssistants(filters: { organizationId?: string } = {}) {

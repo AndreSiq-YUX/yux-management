@@ -15,6 +15,9 @@ const fallbackOrganization: Organization = {
   name: 'YUX Solucoes em IA',
   slug: 'yux',
   kind: 'yux',
+  isInternalGrowthWorkspace: true,
+  workspacePurpose: 'yux_growth',
+  strategyPackScope: 'internal',
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
 }
@@ -34,16 +37,33 @@ const fallbackClientWorkspaceRole: PlatformRole = {
     'crm.read',
     'leads.read',
     'landing_pages.read',
+    'landing_pages.write',
     'projects.read',
+    'projects.write',
     'approvals.read',
+    'approvals.write',
     'proposals.read',
+    'proposals.write',
     'campaigns.read',
+    'campaigns.write',
     'marketing_studio.read',
+    'marketing_studio.write',
+    'marketing_studio.configure',
+    'marketing_studio.supervise',
     'reports.read',
+    'reports.write',
     'automations.read',
+    'automations.write',
     'support.read',
+    'support.write',
     'omnichannel.read',
+    'omnichannel.write',
+    'omnichannel.supervise',
+    'omnichannel.configure',
     'finance.read',
+    'finance.write',
+    'blueprints.read',
+    'blueprints.write',
   ],
 }
 
@@ -60,6 +80,7 @@ const internalModuleKeys = [
   'support',
   'finance',
   'blueprints',
+  'marketing_studio',
 ] as const
 
 const getInternalModuleKeys = () => [...internalModuleKeys]
@@ -158,7 +179,10 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         platformService.getOrganizations(),
         platformService.getRoles(),
       ])
-      const organization = organizations.find(item => item.id === organizationId && item.kind === 'client') || null
+      const organization = organizations.find(item => (
+        item.id === organizationId
+        && (item.kind === 'client' || item.isInternalGrowthWorkspace)
+      )) || null
 
       if (!organization?.clientId) {
         set({
@@ -169,7 +193,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
           activeContract: null,
           portalContractContext: createEmptyPortalContractContext(),
           enabledModuleKeys: [],
-          error: 'Cliente nao encontrado para operacao assistida.',
+          error: 'Workspace operacional nao encontrado para operacao assistida.',
           isLoading: false,
         })
         return

@@ -84,7 +84,8 @@ Serve para:
 - executar CRM, marketing, atendimento, projetos e relatorios como operacao
   assistida;
 - gerenciar a propria YUX como cliente, quando a YUX quiser operar seu
-  crescimento interno usando a mesma experiencia.
+  crescimento interno usando a mesma experiencia, pelo workspace fixado
+  `Crescimento YUX`.
 
 ### Portal Do Cliente
 
@@ -213,11 +214,21 @@ Valor comercial:
 Principais capacidades:
 
 - selecao obrigatoria do cliente antes da operacao;
+- workspace interno fixado para `Crescimento YUX`;
 - menu espelhado ao Portal do Cliente;
 - operacao de CRM, atendimento, marketing, automacoes, projetos, relatorios,
   suporte e financeiro;
 - contexto de contrato e modulos ativos;
 - troca segura entre clientes.
+
+Uso pela propria YUX:
+
+- a YUX nao deve operar CRM, marketing e atendimento dentro do Admin geral;
+- o Admin governa plataforma, agentes, packs, modelos, custos e permissoes;
+- o workspace `Crescimento YUX` executa a operacao diaria da propria YUX;
+- nesse workspace, CRM, Omnichannel IA, Marketing Studio e Relatorios podem
+  acessar a inteligencia aprovada no Strategy Engine;
+- isso evita misturar configuracao da plataforma com rotina comercial interna.
 
 ### 5. Portal Do Cliente Por Jornada
 
@@ -610,6 +621,10 @@ Valor comercial:
 Principais capacidades:
 
 - Growth Strategist interno;
+- Strategy Packs;
+- ingestao guiada de conhecimento;
+- revisao e publicacao de itens curados;
+- bindings entre pack, agente, modulo, canal, workflow e workspace;
 - CRM Controller;
 - AI SDR / Comercial 1;
 - AI Closer;
@@ -625,6 +640,98 @@ Principais capacidades:
 - learning signals;
 - recommendation queue;
 - shadow experiments.
+
+### Strategy Packs
+
+Funcao:
+
+- transformar conhecimento estrategico privado, playbooks internos, materiais
+  de cliente e aprendizados da operacao em pacotes governados de inteligencia.
+
+Valor comercial:
+
+- impede que a IA dependa apenas de prompts longos ou busca textual;
+- cria uma metodologia YUX versionada, revisavel e reutilizavel;
+- permite separar conhecimento interno da YUX de conhecimento especifico de
+  clientes;
+- torna possivel usar o mesmo raciocinio em CRM, atendimento, marketing,
+  propostas e relatorios;
+- prepara a plataforma para vender consultoria high ticket com um diferencial
+  proprietario de IA.
+
+Principais capacidades:
+
+- cadastrar um pack de estrategia;
+- registrar fontes privadas ou playbooks internos;
+- criar jobs de ingestao guiada;
+- transformar fonte em concept cards, playbooks, rubricas, chunks e regras;
+- revisar itens antes de publicar;
+- aprovar ou arquivar itens;
+- publicar pack;
+- vincular pack a workspace, agente, modulo, canal ou workflow;
+- manter o conhecimento interno sem expor fonte sensivel ao cliente.
+
+Exemplos de packs:
+
+- doutrina comercial interna YUX;
+- playbook de diagnostico 48h;
+- playbook de AI SDR;
+- playbook de recuperacao de caixa;
+- playbook de CRM Controller;
+- pack de um nicho especifico;
+- pack especifico de um cliente.
+
+### Crescimento YUX
+
+Funcao:
+
+- permitir que a propria YUX use a plataforma como cliente operacional, mas com
+  acesso aos Strategy Packs internos e ao harness estrategico.
+
+Valor comercial:
+
+- a YUX pratica internamente a mesma metodologia que vende;
+- a equipe consegue usar CRM, atendimento, marketing e relatorios com a
+  inteligencia estrategica propria;
+- o Admin continua limpo como area de governanca;
+- a operacao diaria fica no mesmo padrao que sera oferecido a clientes;
+- facilita demonstracao comercial e melhoria continua da metodologia.
+
+Principais capacidades:
+
+- aparece como workspace fixado em Workspaces dos Clientes;
+- possui contrato tecnico interno e modulos habilitados;
+- usa CRM para leads e oportunidades da propria YUX;
+- usa Omnichannel IA para conversas e qualificacao;
+- usa Marketing Studio para conteudo e campanhas da YUX;
+- usa Relatorios para diagnostico, caixa, MROI e gargalos;
+- exibe paineis contextuais do Strategy Harness dentro dos modulos;
+- aponta para o chat estrategico do Admin quando a decisao exigir analise mais
+  ampla.
+
+### Paineis Contextuais Do Harness
+
+Funcao:
+
+- levar a inteligencia dos agentes para o lugar onde a operacao acontece.
+
+Valor comercial:
+
+- reduz a distancia entre estrategia e execucao;
+- evita que o usuario precise lembrar qual agente chamar;
+- ajuda cada modulo a sugerir a decisao certa;
+- torna o sistema mais parecido com uma operacao assistida por IA estrategica.
+
+Exemplos:
+
+- no CRM, o painel chama o CRM Controller para leads parados, objecoes e
+  proximas acoes;
+- no Omnichannel, chama AI SDR ou agente de conversa para qualificar,
+  revisar resposta e detectar handoff;
+- no Marketing Studio, chama Marketing Strategist para pauta, funil, conteudo
+  e criativos;
+- nos Relatorios, chama Metrics & Cash para diagnostico, prioridades de caixa e
+  plano de acao.
 
 Workflows estrategicos:
 

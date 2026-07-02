@@ -31,6 +31,7 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export function StrategyHarnessPanel({
+  view = 'all',
   runs,
   policies,
   workflows,
@@ -38,6 +39,7 @@ export function StrategyHarnessPanel({
   recommendations,
   experiments,
 }: {
+  view?: 'all' | 'traces' | 'workflows' | 'learning'
   runs: AgentExecutionRun[]
   policies: AgentAutonomyPolicy[]
   workflows: StrategyWorkflowSpec[]
@@ -49,6 +51,9 @@ export function StrategyHarnessPanel({
   const failedRuns = runs.filter(run => run.status === 'failed' || run.status === 'blocked').length
   const activePolicies = policies.filter(policy => policy.status === 'active').length
   const activeWorkflows = workflows.filter(workflow => workflow.status === 'active').length
+  const showTraces = view === 'all' || view === 'traces'
+  const showWorkflows = view === 'all' || view === 'workflows'
+  const showLearning = view === 'all' || view === 'learning'
 
   return (
     <div className="space-y-5">
@@ -61,7 +66,7 @@ export function StrategyHarnessPanel({
         <Metric label="Experimentos" value={experiments.length} detail="Shadow/offline registrados" />
       </div>
 
-      <section className="rounded-lg border bg-white p-4">
+      {showTraces && <section className="rounded-lg border bg-white p-4">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-yux-700" aria-hidden="true" />
           <h2 className="text-base font-semibold text-gray-900">Execution Trace</h2>
@@ -93,10 +98,10 @@ export function StrategyHarnessPanel({
           </table>
           {runs.length === 0 && <p className="rounded-md border border-dashed p-4 text-sm text-gray-500">Nenhuma execucao da harness registrada ainda.</p>}
         </div>
-      </section>
+      </section>}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <section className="rounded-lg border bg-white p-4">
+        {showWorkflows && <section className="rounded-lg border bg-white p-4">
           <div className="flex items-center gap-2">
             <LockKeyhole className="h-4 w-4 text-yux-700" aria-hidden="true" />
             <h2 className="text-base font-semibold text-gray-900">Autonomia por Agente</h2>
@@ -114,9 +119,9 @@ export function StrategyHarnessPanel({
               </article>
             )}
           />
-        </section>
+        </section>}
 
-        <section className="rounded-lg border bg-white p-4">
+        {showWorkflows && <section className="rounded-lg border bg-white p-4">
           <div className="flex items-center gap-2">
             <Workflow className="h-4 w-4 text-yux-700" aria-hidden="true" />
             <h2 className="text-base font-semibold text-gray-900">Workflows Estrategicos</h2>
@@ -134,9 +139,9 @@ export function StrategyHarnessPanel({
               </article>
             )}
           />
-        </section>
+        </section>}
 
-        <section className="rounded-lg border bg-white p-4">
+        {showLearning && <section className="rounded-lg border bg-white p-4">
           <div className="flex items-center gap-2">
             <Brain className="h-4 w-4 text-yux-700" aria-hidden="true" />
             <h2 className="text-base font-semibold text-gray-900">Active Learning</h2>
@@ -154,9 +159,9 @@ export function StrategyHarnessPanel({
               </article>
             )}
           />
-        </section>
+        </section>}
 
-        <section className="rounded-lg border bg-white p-4">
+        {showLearning && <section className="rounded-lg border bg-white p-4">
           <div className="flex items-center gap-2">
             <ShieldAlert className="h-4 w-4 text-yux-700" aria-hidden="true" />
             <h2 className="text-base font-semibold text-gray-900">Recommendation Queue</h2>
@@ -174,9 +179,9 @@ export function StrategyHarnessPanel({
               </article>
             )}
           />
-        </section>
+        </section>}
 
-        <section className="rounded-lg border bg-white p-4 xl:col-span-2">
+        {showLearning && <section className="rounded-lg border bg-white p-4 xl:col-span-2">
           <div className="flex items-center gap-2">
             <FlaskConical className="h-4 w-4 text-yux-700" aria-hidden="true" />
             <h2 className="text-base font-semibold text-gray-900">Shadow Experiments</h2>
@@ -198,10 +203,10 @@ export function StrategyHarnessPanel({
               </article>
             )}
           />
-        </section>
+        </section>}
       </div>
 
-      <section className="rounded-lg border border-yux-100 bg-yux-50 p-4 text-sm text-yux-900">
+      {showLearning && <section className="rounded-lg border border-yux-100 bg-yux-50 p-4 text-sm text-yux-900">
         <div className="flex items-center gap-2 font-semibold">
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           Guardrail de aprendizado ativo
@@ -209,7 +214,7 @@ export function StrategyHarnessPanel({
         <p className="mt-1">
           O sistema pode propor melhorias e rodar shadow tests, mas prompts, guardrails, autonomia, cards, playbooks, modelos e ofertas so mudam em producao apos aprovacao e promocao versionada.
         </p>
-      </section>
+      </section>}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-06-27 (runtime migrated to VPS backend/Postgres/Redis; frontend Supabase client and Edge Functions removed from active path)
+Updated: 2026-07-01 (runtime migrated to VPS backend/Postgres/Redis; Strategy Packs and internal YUX growth workspace implemented locally)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -15,9 +15,9 @@ the target VPS/Dokploy environment.
   `backendAuthService`, `backendDataService`, and module-specific services.
 - Current development branch target: active local workspace with Growth
   Workspace, Strategy Engine and Agent Harness changes.
-- Latest implementation state includes uncommitted local Strategy Engine and
-  Agent Harness files; check `git status` before using commit hashes as a
-  release boundary.
+- Latest implementation state includes local Strategy Packs, internal YUX
+  growth workspace and contextual Strategy Harness panels; check `git status`
+  before using commit hashes as a release boundary.
 - CRM-specific reference:
   `docs/crm-lead-management.md`.
 
@@ -31,7 +31,7 @@ the target VPS/Dokploy environment.
 | Lead-to-client conversion bridge | Implemented in repo | `/client-conversions` | `ClientConversionsPage`, `clientConversionService`, `platformService.createClientOrganization`, `crmService`, `backendDataService.createClient` | Converts a closed lead from a client/YUX workspace into official client, organization and contract records, optionally applying a sector model and marking the lead as converted. |
 | Portal RLS hardening | Implemented in repo | Portal routes | `20260601020000_harden_portal_rls.sql`, `20260601030000_secure_baseline_functions.sql`, `20260601040000_move_auth_trigger_private.sql` | Requires remote migration application/probes in target DB. |
 | Portal by customer journeys | Implemented in repo | `/portal`, `/portal/empresa/*`, `/portal/comercial/*`, `/portal/atendimento/*`, `/portal/marketing/*`, `/portal/automacoes/*`, `/portal/projetos/*`, `/portal/relatorios`, `/portal/suporte`, `/portal/financeiro`, `/portal/configuracoes/conta` | `App.tsx`, `navigation.ts`, `PortalJourneyPage`, portal journey pages, `PortalDashboardPage`, `PortalApprovalsPage` | Replaces legacy module-first portal navigation with customer-facing areas. Legacy portal module routes now redirect to the new journey routes. |
-| Admin assisted client workspaces | Implemented in repo | `/client-workspaces`, `/client-workspaces/:organizationId/*` | `ClientWorkspaceSelectorPage`, `ClientWorkspaceLayout`, `platformStore.initializeClientWorkspace`, `usePortalWorkspacePath`, navigation tests | Admin users must select a client before operating. The selected workspace mirrors the portal menu and loads the selected client's contract/module context. |
+| Admin assisted client workspaces | Implemented in repo | `/client-workspaces`, `/client-workspaces/:organizationId/*` | `0105_strategy_packs_yux_workspace.sql`, `ClientWorkspaceSelectorPage`, `ClientWorkspaceLayout`, `platformStore.initializeClientWorkspace`, `usePortalWorkspacePath`, navigation tests | Admin users must select a workspace before operating. `Crescimento YUX` is now a pinned internal workspace with its own client/contract/module context for the YUX operation. |
 | Portal data stabilization / phase 6 visibility | Implemented in repo | Portal and client workspace routes | `20260608095633_portal_phase6_rls_visibility.sql`, `usePortalActionSummary`, `usePortalCrmContext`, `usePortalMarketingContext`, `portalDisplay` | Stabilizes portal loading and next-action summaries across CRM, marketing, approvals, projects and finance. Target migration/probe confirmation is still required before production assumptions. |
 | Projects, tasks, deliverables, approvals | Implemented | `/projects`, `/portal/projetos/projetos`, `/portal/projetos/aprovacoes` | `20260601070000_project_delivery_approvals.sql` through `20260601100000_backfill_deliverable_approval_status.sql`, `ProjectsPage`, `PortalProjectsPage`, `PortalApprovalsPage`, project components, `approvalRules` | Includes client-visible timeline, documents and approval decisions. |
 | CRM and follow-up automation foundation | Implemented in repo | `/leads`, `/portal/comercial/leads` | `20260601105000_ensure_interactions_for_crm.sql` through `20260601140000_enable_client_crm_portal.sql`, `crmService`, `followUpRules`, `docs/crm-lead-management.md` | Provider-neutral; target Supabase must have migrations, grants, valid session, memberships and RLS applied. |
@@ -60,8 +60,8 @@ the target VPS/Dokploy environment.
 | Marketing Studio WordPress publishing | Implemented and deployed | `/marketing-studio` | `20260607150115_marketing_studio_wordpress_publishing.sql`, `execute-wordpress-publishing` Edge Function, publishing connection/run service methods, internal WordPress publishing panel | Adds multi-tenant WordPress publishing connections and idempotent publishing runs for draft creation, draft update and approval-bound publication. Migration/probe passed remotely and Edge Function deployed to `portal-yux`. Requires per-client WordPress secret references to be configured before live posting. |
 | Marketing Studio campaign creatives and drafts | Implemented | `/marketing-studio` | `20260607152544_marketing_studio_campaign_creatives.sql`, campaign creative suggestion and draft run service methods, internal campaign creative panel, worker campaign strategist helpers | Adds campaign creative suggestions for Meta/Google-style briefs, copy variations, creative concepts, targeting suggestions, approval states, landing page/campaign links and idempotent campaign draft runs. Migration and probe passed remotely. |
 | Marketing Studio native Meta/Google integrations | Implemented in repo, backend cutover in progress | `/marketing-studio`, `/campaigns`, `/api/functions/*` | `20260607175945_marketing_studio_native_integrations.sql`, `backend/src/lib/edge-compat/providerSecrets.ts`, `providerOAuth.ts`, `socialPublishingProvider.ts`, `adsProvider.ts`, backend function compatibility route, frontend provider state panels | Adds multi-tenant OAuth sessions, encrypted provider token storage patterns, Meta/Facebook/Instagram/Google Business Profile publishing helpers, Meta Ads and Google Ads request builders, provider asset/account listing and approval gates. Runtime no longer depends on Supabase Edge Functions; live provider side effects still need explicit backend handlers beyond compatibility queueing. |
-| YUX Strategy Engine | Implemented in repo, pending remote migration/probe confirmation | `/admin/strategy-engine`, affected CRM/Omnichannel/Marketing Studio surfaces | `20260611190000_yux_strategy_engine.sql`, `20260612183708_yux_strategy_admin_chat.sql`, `20260612184513_yux_strategy_growth_route_seed.sql`, `strategy-knowledge` scripts, worker `retrieval.py`/`strategy.py`, `strategyEngineService`, `StrategyEnginePage`, `StrategyAdminChatPanel`, `process-ai-message` role routing | Adds internal doctrine, skills, profile policies, knowledge ingestion, concept cards, retrieval logs, multi-assistant routing, internal Growth Strategist chat, Metrics & Cash, Objection Intelligence, CRM Controller rules, handoffs, recommendations and outcome/learning records. Target Supabase still needs migration and probe execution before production claims. |
-| YUX Agent Harness Runtime | Implemented locally, pending VPS deploy confirmation | `/admin/strategy-engine` -> `Harness & Learning`, optional runtime for `/omnichannel` and Strategy Admin chat | `20260613191046_yux_agent_harness_runtime.sql`, `workers/marketing-studio-agent-runtime/yux_agent_runtime/api.py`, `queue.py`, `workflow.py`, `trace.py`, `autonomy.py`, `runtime_store.py`, `StrategyHarnessPanel`, backend function compatibility route, `docs/yux-agent-harness-runtime.md` | Adds central event queue, execution runs/steps, context snapshots, verification results, subagent runs, autonomy policies, workflow specs, outcomes, learning signals, improvement recommendations and shadow experiments. Runtime exposes health, event ingestion, job processing and workflow execution endpoints. Backend API can call `YUX_AGENT_RUNTIME_URL`; Dokploy deploy and runtime env are still required. |
+| YUX Strategy Engine | Implemented in repo, pending VPS DB migration/probe confirmation | `/admin/strategy-engine`, `/client-workspaces`, CRM/Omnichannel/Marketing Studio/Reports surfaces | `0105_strategy_packs_yux_workspace.sql`, `strategy-knowledge` scripts, worker `retrieval.py`/`strategy.py`, `strategyEngineService`, `StrategyEnginePage`, `StrategyAdminChatPanel`, `StrategyPacksPanel`, `StrategyContextPanel`, `process-ai-message` role routing | Adds internal doctrine, skills, profile policies, Strategy Packs, guided ingestion jobs, curated pack items, pack bindings, multi-assistant routing, internal Growth Strategist chat, Metrics & Cash, Objection Intelligence, CRM Controller rules, handoffs, recommendations and outcome/learning records. Apply the backend Postgres migration before production claims. |
+| YUX Agent Harness Runtime | Implemented locally, pending VPS deploy confirmation | `/admin/strategy-engine` tabs `Execution Trace`, `Workflows`, `Learning`, optional runtime for `/omnichannel` and Strategy Admin chat | `workers/marketing-studio-agent-runtime/yux_agent_runtime/api.py`, `queue.py`, `workflow.py`, `trace.py`, `autonomy.py`, `runtime_store.py`, `StrategyHarnessPanel`, backend function compatibility route, `docs/yux-agent-harness-runtime.md` | Adds central event queue, execution runs/steps, context snapshots, verification results, subagent runs, autonomy policies, workflow specs, outcomes, learning signals, improvement recommendations and shadow experiments. Runtime exposes health, event ingestion, job processing and workflow execution endpoints. Backend API can call `YUX_AGENT_RUNTIME_URL`; Dokploy deploy and runtime env are still required. |
 | Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
 | Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, backend automation routes/jobs, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `SequencesWorkspace` timeline | Full automation workspace with visual builder, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, CRM sequences and VPS material storage. Runtime now targets backend routes/jobs instead of Edge Functions. |
 | Visual Node Editor & Materials Library | Implemented in repo | `/automations`, `/admin/limits` | `20260604220000_automation_graph_and_materials.sql`, `AutomationNodeEditor`, `NodeConfigSidebar`, `MaterialLibraryDialog`, `AdminLimitsPage`, `automationService`, `adminPlatformService` | Visual node-based automation flow editor (React Flow), branched flow traversal (parallel execution), dynamic file attachments (email/WhatsApp) integrated with multitenant Materials Library storage, and administrative interface to configure global and client limits. |
@@ -129,11 +129,12 @@ Phase-by-phase status:
   production-confirmed. The migration and probe files exist locally, but this
   status update could not verify remote migration history because the linked
   Supabase database password failed authentication in the local CLI.
-- confirm or apply/probe `20260611190000_yux_strategy_engine.sql`,
-  `20260612183708_yux_strategy_admin_chat.sql`,
-  `20260612184513_yux_strategy_growth_route_seed.sql` and
-  `20260613191046_yux_agent_harness_runtime.sql` in the target Supabase project
-  before treating Strategy Engine, Harness & Learning, workflow traces and
+- apply/probe `backend/src/db/migrations/0105_strategy_packs_yux_workspace.sql`
+  in the target VPS/Postgres database before treating Strategy Packs, the
+  pinned `Crescimento YUX` workspace and contextual harness panels as
+  production-confirmed.
+- confirm the older Strategy Engine/Harness schema already exists in the target
+  VPS/Postgres database before treating Strategy Engine, workflow traces and
   Active Learning records as production-confirmed.
 - deploy and configure the YUX Agent Harness Runtime on VPS/Dokploy before
   treating WhatsApp/Strategy Admin runtime execution as operational instead of
@@ -550,8 +551,19 @@ Not complete:
 Implemented:
 
 - internal Strategy Engine area at `/admin/strategy-engine` for platform admin
-  governance of agent profiles, skills, concept cards, retrieval, objections and
-  strategy records;
+  governance of agent profiles, skills, Strategy Packs, concept cards,
+  retrieval, objections and strategy records;
+- Strategy Packs model for internal methodology packages, including pack
+  metadata, curated items, guided ingestion jobs and bindings by organization,
+  agent profile, module, channel and workflow;
+- pinned `Crescimento YUX` workspace in `/client-workspaces`, backed by an
+  internal YUX client, active contract and all platform modules enabled through
+  `0105_strategy_packs_yux_workspace.sql`;
+- clear separation between Strategy Engine governance in Admin and daily YUX
+  operation inside the `Crescimento YUX` workspace;
+- contextual Strategy Harness panels in CRM, Marketing Studio, Omnichannel and
+  Reports, linking each module to the relevant strategic agent and Strategy
+  Packs;
 - admin-only Growth Strategist chat for initial analysis, 48h diagnosis support,
   service/package recommendation and proposal preparation;
 - Strategy Engine skill/profile layer for Growth Strategist, CRM Controller, AI
@@ -560,9 +572,9 @@ Implemented:
   style roles;
 - controlled routing from omnichannel AI processing to assistant roles and
   strategy profile policies;
-- Harness & Learning admin panel for runtime status, workflows, autonomy
-  policies, execution runs, trace steps, learning signals, improvement
-  recommendations and shadow experiments;
+- separated admin tabs for `Execution Trace`, `Workflows` and `Learning`,
+  covering runtime status, autonomy policies, execution runs, trace steps,
+  learning signals, improvement recommendations and shadow experiments;
 - Python Agent Harness runtime with API endpoints for health, event ingestion,
   job processing and workflow execution;
 - persistent event/job model for WhatsApp and strategic events, with autonomy
@@ -577,16 +589,17 @@ Implemented:
 
 Not complete:
 
-- target Supabase application/probe execution for Strategy Engine and Agent
-  Harness migrations;
+- VPS/Postgres application/probe execution for `0105_strategy_packs_yux_workspace.sql`;
+- final runtime wiring so Strategy Packs are used by every live worker response,
+  not only visible in Admin UI and contextual module panels;
 - Dokploy/VPS deployment of the Python Agent Harness runtime;
-- production runtime secrets and Edge Function environment variables;
+- production runtime secrets and backend environment variables;
 - authenticated production QA for `/admin/strategy-engine`, especially the
-  Growth Strategist chat and `Harness & Learning` tab;
+  Growth Strategist chat, Strategy Packs tab and contextual module panels;
 - live WhatsApp runtime switch from Edge Function/n8n fallback to Agent Harness
   execution;
-- full curation and approval of operational concept cards, playbooks and chunks
-  for the private strategy knowledge base.
+- full curation and approval of operational concept cards, playbooks, rubrics
+  and chunks for the private strategy knowledge base.
 
 ### Finance Basic
 

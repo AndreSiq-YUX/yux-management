@@ -12,6 +12,9 @@ export interface Organization {
   slug: string
   kind: OrganizationKind
   clientId?: string
+  isInternalGrowthWorkspace?: boolean
+  workspacePurpose?: string
+  strategyPackScope?: string
   createdAt: string
   updatedAt: string
 }

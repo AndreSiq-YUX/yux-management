@@ -31,6 +31,9 @@ function mapOrganization(row: any): Organization {
     slug: row.slug,
     kind: row.kind,
     clientId: row.client_id || undefined,
+    isInternalGrowthWorkspace: Boolean(row.is_internal_growth_workspace),
+    workspacePurpose: row.workspace_purpose || 'client_delivery',
+    strategyPackScope: row.strategy_pack_scope || 'client',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

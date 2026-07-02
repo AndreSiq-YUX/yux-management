@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Activity, Bot, BrainCircuit, Database, MessageCircle, MessageSquare, Route } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { Activity, Bot, BrainCircuit, Database, GitBranch, MessageCircle, MessageSquare, PackageCheck, Route, Workflow } from 'lucide-react'
 import { AgentHandoffPanel } from '@/components/strategy-engine/AgentHandoffPanel'
 import { AgentRecommendationPanel } from '@/components/strategy-engine/AgentRecommendationPanel'
 import { StrategyAdminChatPanel } from '@/components/strategy-engine/StrategyAdminChatPanel'
@@ -8,6 +9,7 @@ import { StrategyHarnessPanel } from '@/components/strategy-engine/StrategyHarne
 import { StrategyKnowledgePanel } from '@/components/strategy-engine/StrategyKnowledgePanel'
 import { StrategyModelRoutingPanel } from '@/components/strategy-engine/StrategyModelRoutingPanel'
 import { StrategyOverviewPanel } from '@/components/strategy-engine/StrategyOverviewPanel'
+import { StrategyPacksPanel } from '@/components/strategy-engine/StrategyPacksPanel'
 import { StrategyProfileConfigPanel } from '@/components/strategy-engine/StrategyProfileConfigPanel'
 import { strategyEngineService } from '@/services/strategyEngineService'
 import type {
@@ -21,10 +23,14 @@ import type {
   StrategyChatSession,
   StrategyConceptCard,
   StrategyConversationAssistant,
+  StrategyIngestionJob,
   StrategyKnowledgeStats,
   StrategyLlmProvider,
   StrategyModelRoute,
   StrategyOrganization,
+  StrategyPack,
+  StrategyPackBinding,
+  StrategyPackItem,
   StrategyRetrievalQuery,
   StrategySkill,
   StrategySourceDocument,
@@ -47,6 +53,10 @@ type StrategyAdminData = {
   assistants: StrategyConversationAssistant[]
   organizations: StrategyOrganization[]
   chatSessions: StrategyChatSession[]
+  strategyPacks: StrategyPack[]
+  strategyPackItems: StrategyPackItem[]
+  strategyPackBindings: StrategyPackBinding[]
+  ingestionJobs: StrategyIngestionJob[]
   knowledgeStats: StrategyKnowledgeStats
   agentRuns: AgentExecutionRun[]
   autonomyPolicies: AgentAutonomyPolicy[]
@@ -72,6 +82,10 @@ const emptyData: StrategyAdminData = {
   assistants: [],
   organizations: [],
   chatSessions: [],
+  strategyPacks: [],
+  strategyPackItems: [],
+  strategyPackBindings: [],
+  ingestionJobs: [],
   knowledgeStats: { documents: 0, chunks: 0, assets: 0, cards: 0, retrievals: 0 },
   agentRuns: [],
   autonomyPolicies: [],
@@ -84,17 +98,21 @@ const emptyData: StrategyAdminData = {
 const tabs = [
   { key: 'strategist', label: 'Estrategista YUX', icon: MessageCircle },
   { key: 'overview', label: 'Visao Geral', icon: Activity },
+  { key: 'packs', label: 'Strategy Packs', icon: PackageCheck },
+  { key: 'knowledge', label: 'Ingestao/RAG', icon: Database },
   { key: 'profiles', label: 'Perfis e Guardrails', icon: Bot },
   { key: 'models', label: 'Modelos por Agente', icon: Route },
   { key: 'assistants', label: 'IAs de Conversa', icon: MessageSquare },
-  { key: 'knowledge', label: 'Knowledge/RAG', icon: Database },
-  { key: 'harness', label: 'Harness & Learning', icon: BrainCircuit },
+  { key: 'traces', label: 'Execution Trace', icon: GitBranch },
+  { key: 'workflows', label: 'Workflows', icon: Workflow },
+  { key: 'learning', label: 'Learning', icon: BrainCircuit },
   { key: 'operations', label: 'Operacao', icon: BrainCircuit },
 ]
 
 export function StrategyEnginePage() {
   const [data, setData] = useState<StrategyAdminData>(emptyData)
-  const [activeTab, setActiveTab] = useState('strategist')
+  const location = useLocation()
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(location.search).get('tab') || 'strategist')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -117,6 +135,10 @@ export function StrategyEnginePage() {
         assistants,
         organizations,
         chatSessions,
+        strategyPacks,
+        strategyPackItems,
+        strategyPackBindings,
+        ingestionJobs,
         knowledgeStats,
         agentRuns,
         autonomyPolicies,
@@ -139,6 +161,10 @@ export function StrategyEnginePage() {
         strategyEngineService.getConversationAssistants(),
         strategyEngineService.getClientOrganizations(),
         strategyEngineService.getStrategyChatSessions(),
+        strategyEngineService.getStrategyPacks(),
+        strategyEngineService.getStrategyPackItems(),
+        strategyEngineService.getStrategyPackBindings(),
+        strategyEngineService.getStrategyIngestionJobs(),
         strategyEngineService.getKnowledgeStats(),
         strategyEngineService.getAgentExecutionRuns(),
         strategyEngineService.getAgentAutonomyPolicies(),
@@ -162,6 +188,10 @@ export function StrategyEnginePage() {
         assistants,
         organizations,
         chatSessions,
+        strategyPacks,
+        strategyPackItems,
+        strategyPackBindings,
+        ingestionJobs,
         knowledgeStats,
         agentRuns,
         autonomyPolicies,
@@ -182,6 +212,11 @@ export function StrategyEnginePage() {
   useEffect(() => {
     load()
   }, [])
+
+  useEffect(() => {
+    const tab = new URLSearchParams(location.search).get('tab')
+    if (tab && tabs.some(item => item.key === tab)) setActiveTab(tab)
+  }, [location.search])
 
   async function reloadAfter(action: () => Promise<unknown>) {
     await action()
@@ -276,11 +311,54 @@ export function StrategyEnginePage() {
           cards={data.cards}
           retrievalQueries={data.retrievalQueries}
           bindings={data.bindings}
+          packs={data.strategyPacks}
+          packItems={data.strategyPackItems}
         />
       )}
 
-      {!loading && !error && activeTab === 'harness' && (
+      {!loading && !error && activeTab === 'packs' && (
+        <StrategyPacksPanel
+          packs={data.strategyPacks}
+          items={data.strategyPackItems}
+          jobs={data.ingestionJobs}
+          bindings={data.strategyPackBindings}
+          profiles={data.profiles}
+          organizations={data.organizations}
+          onSavePack={input => reloadAfter(() => strategyEngineService.upsertStrategyPack(input))}
+          onSaveItem={input => reloadAfter(() => strategyEngineService.upsertStrategyPackItem(input))}
+          onUpdateItemStatus={(id, status) => reloadAfter(() => strategyEngineService.updateStrategyPackItemStatus(id, status))}
+          onCreateJob={input => reloadAfter(() => strategyEngineService.createStrategyIngestionJob(input))}
+          onSaveBinding={input => reloadAfter(() => strategyEngineService.upsertStrategyPackBinding(input))}
+        />
+      )}
+
+      {!loading && !error && activeTab === 'traces' && (
         <StrategyHarnessPanel
+          view="traces"
+          runs={data.agentRuns}
+          policies={data.autonomyPolicies}
+          workflows={data.workflowSpecs}
+          learningSignals={data.learningSignals}
+          recommendations={data.improvementRecommendations}
+          experiments={data.shadowExperiments}
+        />
+      )}
+
+      {!loading && !error && activeTab === 'workflows' && (
+        <StrategyHarnessPanel
+          view="workflows"
+          runs={data.agentRuns}
+          policies={data.autonomyPolicies}
+          workflows={data.workflowSpecs}
+          learningSignals={data.learningSignals}
+          recommendations={data.improvementRecommendations}
+          experiments={data.shadowExperiments}
+        />
+      )}
+
+      {!loading && !error && activeTab === 'learning' && (
+        <StrategyHarnessPanel
+          view="learning"
           runs={data.agentRuns}
           policies={data.autonomyPolicies}
           workflows={data.workflowSpecs}

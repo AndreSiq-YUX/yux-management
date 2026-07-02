@@ -127,17 +127,18 @@ flowchart TD
 
 Regras importantes:
 
-- `/client-workspaces` mostra a lista de clientes operaveis.
+- `/client-workspaces` mostra a lista de workspaces operaveis.
+- `Crescimento YUX` aparece como workspace interno fixado quando a migration
+  `0105_strategy_packs_yux_workspace.sql` foi aplicada.
 - `/client-workspaces/:organizationId` abre a visao geral daquele cliente.
 - As subrotas do workspace usam o mesmo desenho do portal, por exemplo
   `/client-workspaces/:organizationId/marketing/studio`.
 - As paginas reaproveitadas do portal convertem links internos para o prefixo
   do workspace, evitando voltar para `/portal`.
-- Se a YUX quiser operar sua propria divulgacao como cliente, o caminho
-  recomendado e criar uma organizacao cliente "YUX" e opera-la por
-  Workspaces dos Clientes. A operacao comercial, marketing e atendimento da
-  propria YUX deve acontecer em um cliente/organizacao "YUX", acessado como
-  "Crescimento YUX".
+- A operacao comercial, marketing, atendimento e relatorios da propria YUX deve
+  acontecer no workspace `Crescimento YUX`. O Admin fica reservado para
+  governanca de plataforma, Strategy Packs, agentes, modelos, custos e
+  politicas.
 
 ## 3. Area interna YUX
 
@@ -209,6 +210,7 @@ Rotas principais:
 Funcionalidades:
 
 - selecionar primeiro qual cliente sera operado;
+- acessar `Crescimento YUX` como workspace interno fixado;
 - listar clientes com contrato ativo;
 - mostrar clientes sem contrato ativo como nao liberados;
 - carregar contexto do cliente selecionado;
@@ -217,8 +219,27 @@ Funcionalidades:
 - abrir o mesmo menu do Portal do Cliente;
 - operar CRM, Conversas, Agente IA, Canais, Marketing, Projetos, Relatorios,
   Suporte e Financeiro com as permissoes e modulos daquele cliente.
-- acessar "Crescimento YUX" como atalho para operar a propria YUX usando a
-  mesma experiencia do cliente.
+- usar paineis contextuais do Strategy Harness em CRM, Atendimento & IA,
+  Marketing Studio e Relatorios.
+
+### Strategy Engine E Strategy Packs
+
+Rota principal:
+
+- `/admin/strategy-engine`
+
+Funcionalidades:
+
+- conversar com o Growth Strategist interno;
+- configurar perfis, guardrails e modelos por agente;
+- cadastrar e publicar Strategy Packs;
+- registrar jobs de ingestao guiada para fontes privadas, playbooks internos,
+  materiais de cliente e notas;
+- revisar itens curados antes de uso em runtime;
+- vincular packs por workspace, agente, modulo, canal e workflow;
+- inspecionar execution trace;
+- revisar workflows estrategicos;
+- acompanhar learning signals, recommendation queue e shadow experiments.
 
 ### Conversoes de Leads
 

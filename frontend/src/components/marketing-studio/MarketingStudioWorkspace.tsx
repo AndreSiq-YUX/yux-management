@@ -1,7 +1,9 @@
 import { BookOpen, Bot, CalendarDays, Check, Clock, FileCheck, FileText, GitBranch, Radar, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { BrandReadinessPanel } from '@/components/growth-workspace/BrandReadinessPanel'
+import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import { summarizeCampaignCreativePipeline, summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
+import { usePlatformStore } from '@/stores/platformStore'
 import type {
   MarketingAgent,
   MarketingAgentRun,
@@ -110,6 +112,7 @@ export function MarketingStudioWorkspace({
   onScheduleContent,
   onSearchKnowledge,
 }: MarketingStudioWorkspaceProps) {
+  const organization = usePlatformStore(state => state.organization)
   const pendingApprovals = contents.filter(content => content.status === 'in_review').length
   const scheduled = contents.filter(content => content.status === 'scheduled').length
   const pendingReviews = reviews.filter(review => review.status === 'pending')
@@ -167,6 +170,14 @@ export function MarketingStudioWorkspace({
         productsServices={productsServices}
         title="Prontidao da marca para geracao"
         compact
+      />
+
+      <StrategyContextPanel
+        organizationId={organization?.id}
+        moduleKey="marketing_studio"
+        recordType="marketing_studio"
+        recordTitle="Marketing Studio"
+        contextSummary="Use o Marketing Strategist para alinhar pauta, funil, conteúdo, criativos e recuperação de demanda com a doutrina comercial aprovada nos Strategy Packs."
       />
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Briefcase, Building2, RefreshCw } from 'lucide-react'
+import { ArrowRight, Briefcase, Building2, RefreshCw, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { statusLabel } from '@/lib/client-portal/portalDisplay'
 import { platformService } from '@/services/platformService'
@@ -32,11 +32,12 @@ export function ClientWorkspaceSelectorPage() {
         platformService.getContracts(),
       ])
       const clientOrganizations = organizations
-        .filter(organization => organization.kind === 'client' && organization.clientId)
+        .filter(organization => organization.clientId && (organization.kind === 'client' || organization.isInternalGrowthWorkspace))
         .map(organization => ({
           organization,
           contract: getActiveContractForOrganization(organization, contracts),
         }))
+        .sort((a, b) => Number(b.organization.isInternalGrowthWorkspace) - Number(a.organization.isInternalGrowthWorkspace) || a.organization.name.localeCompare(b.organization.name))
 
       setOptions(clientOrganizations)
     } catch (loadError) {
@@ -54,15 +55,17 @@ export function ClientWorkspaceSelectorPage() {
 
   const activeOptions = useMemo(() => options.filter(option => option.contract), [options])
   const inactiveOptions = useMemo(() => options.filter(option => !option.contract), [options])
+  const yuxWorkspace = useMemo(() => activeOptions.find(option => option.organization.isInternalGrowthWorkspace), [activeOptions])
+  const clientActiveOptions = useMemo(() => activeOptions.filter(option => !option.organization.isInternalGrowthWorkspace), [activeOptions])
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase text-yux-700">Workspaces dos Clientes</p>
+          <p className="text-xs font-medium uppercase text-yux-700">Workspaces operacionais</p>
           <h1 className="mt-1 text-2xl font-bold text-gray-900">Selecionar cliente para operar</h1>
           <p className="mt-1 max-w-3xl text-sm text-gray-600">
-            Escolha primeiro o cliente. Depois o admin acessa a mesma divisao do portal: Empresa, Comercial, Atendimento & IA, Marketing, Projetos, Relatorios, Suporte e Financeiro.
+            Escolha o workspace. A YUX usa o mesmo ambiente operacional dos clientes para CRM, Atendimento & IA, Marketing, Projetos, Relatorios, Suporte e Financeiro, com Strategy Harness e RAG internos ativos.
           </p>
         </div>
         <Button variant="outline" onClick={loadWorkspaces}>
@@ -79,9 +82,9 @@ export function ClientWorkspaceSelectorPage() {
 
       <section className="grid gap-3 md:grid-cols-3">
         <article className="rounded-lg border bg-white p-4">
-          <p className="text-xs font-medium uppercase text-gray-500">Clientes operaveis</p>
+          <p className="text-xs font-medium uppercase text-gray-500">Workspaces operaveis</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{activeOptions.length}</p>
-          <p className="mt-1 text-sm text-gray-600">Com contrato ativo para abrir workspace.</p>
+          <p className="mt-1 text-sm text-gray-600">Com contrato tecnico ativo para abrir workspace.</p>
         </article>
         <article className="rounded-lg border bg-white p-4">
           <p className="text-xs font-medium uppercase text-gray-500">Sem contrato ativo</p>
@@ -95,13 +98,39 @@ export function ClientWorkspaceSelectorPage() {
         </article>
       </section>
 
+      {yuxWorkspace && (
+        <section className="rounded-lg border border-yux-200 bg-yux-50 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <Sparkles className="mt-0.5 h-5 w-5 text-yux-700" />
+              <div>
+                <p className="text-xs font-medium uppercase text-yux-700">Workspace interno fixado</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-950">Crescimento YUX</h2>
+                <p className="mt-1 max-w-3xl text-sm text-gray-700">
+                  Opera a propria YUX com CRM, Omnichannel IA, Marketing Studio e relatorios usando os Strategy Packs internos, harness e RAG aprovados no Admin.
+                </p>
+                <p className="mt-2 text-xs text-gray-600">
+                  {yuxWorkspace.contract?.package?.name || 'Pacote interno'} - {yuxWorkspace.contract?.modules.filter(module => module.enabled).length || 0} modulos ativos
+                </p>
+              </div>
+            </div>
+            <Button asChild>
+              <Link to={`/client-workspaces/${yuxWorkspace.organization.id}`}>
+                Abrir Crescimento YUX
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </section>
+      )}
+
       <section className="rounded-lg border bg-white p-5">
         <h2 className="text-base font-semibold text-gray-900">Clientes com workspace ativo</h2>
         {loading ? (
           <p className="mt-4 text-sm text-gray-600">Carregando clientes...</p>
-        ) : activeOptions.length > 0 ? (
+        ) : clientActiveOptions.length > 0 ? (
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {activeOptions.map(option => (
+            {clientActiveOptions.map(option => (
               <Link
                 key={option.organization.id}
                 to={`/client-workspaces/${option.organization.id}`}

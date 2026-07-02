@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, Outlet, useParams } from 'react-router-dom'
-import { ArrowLeftRight, Building2 } from 'lucide-react'
+import { ArrowLeftRight, Building2, Settings2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { statusLabel } from '@/lib/client-portal/portalDisplay'
 import { usePlatformStore } from '@/stores/platformStore'
@@ -69,26 +69,49 @@ export function ClientWorkspaceLayout() {
     )
   }
 
+  const isYuxGrowthWorkspace = organization.isInternalGrowthWorkspace
+
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-yux-100 bg-yux-50 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="flex items-start gap-3">
-            <Building2 className="mt-0.5 h-5 w-5 text-yux-700" />
+            {isYuxGrowthWorkspace
+              ? <Sparkles className="mt-0.5 h-5 w-5 text-yux-700" />
+              : <Building2 className="mt-0.5 h-5 w-5 text-yux-700" />}
             <div>
-              <p className="text-xs font-medium uppercase text-yux-700">Operando como cliente</p>
-              <h1 className="mt-1 text-xl font-semibold text-gray-900">{organization.name}</h1>
+              <p className="text-xs font-medium uppercase text-yux-700">
+                {isYuxGrowthWorkspace ? 'Operando Crescimento YUX' : 'Operando como cliente'}
+              </p>
+              <h1 className="mt-1 text-xl font-semibold text-gray-900">
+                {isYuxGrowthWorkspace ? 'Crescimento YUX' : organization.name}
+              </h1>
               <p className="mt-1 text-sm text-gray-600">
                 {activeContract.name || 'Contrato ativo'} - {statusLabel(activeContract.status)}
               </p>
+              {isYuxGrowthWorkspace && (
+                <p className="mt-1 max-w-3xl text-sm text-gray-700">
+                  Workspace operacional interno com CRM, Atendimento & IA, Marketing Studio e relatorios conectados aos Strategy Packs, harness e RAG governados no Admin.
+                </p>
+              )}
             </div>
           </div>
-          <Button variant="outline" asChild>
-            <Link to="/client-workspaces">
-              <ArrowLeftRight className="mr-2 h-4 w-4" />
-              Trocar cliente
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {isYuxGrowthWorkspace && (
+              <Button variant="outline" asChild>
+                <Link to="/admin/strategy-engine">
+                  <Settings2 className="mr-2 h-4 w-4" />
+                  Governar Strategy Engine
+                </Link>
+              </Button>
+            )}
+            <Button variant="outline" asChild>
+              <Link to="/client-workspaces">
+                <ArrowLeftRight className="mr-2 h-4 w-4" />
+                Trocar workspace
+              </Link>
+            </Button>
+          </div>
         </div>
       </section>
 

@@ -22,6 +22,7 @@ import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
 import { LeadTimeline } from '@/components/crm/LeadTimeline'
 import { TodayWorkQueue } from '@/components/crm/TodayWorkQueue'
 import { LeadCommercialPanel } from '@/components/proposals/LeadCommercialPanel'
+import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import { crmConversationService } from '@/services/crmConversationService'
 import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { crmService } from '@/services/crmService'
@@ -207,6 +208,13 @@ export function CrmWorkspace() {
         <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo lead</Button>
       </div>
     </div>
+    <StrategyContextPanel
+      organizationId={organization.id}
+      moduleKey="crm"
+      recordType="pipeline"
+      recordTitle={pipeline?.name}
+      contextSummary="Acione o CRM Controller para priorizar oportunidades paradas, revisar follow-up, identificar objeções repetidas e transformar recomendações em tarefas comerciais."
+    />
     <div className="grid gap-3 md:grid-cols-4">
       <Metric label="Novos leads" value={summary.newLeads.toString()} />
       <Metric label="Leads parados" value={summary.staleLeads.toString()} />

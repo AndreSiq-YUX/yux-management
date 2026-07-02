@@ -23,6 +23,44 @@ Evento
   -> trace + learning signal
 ```
 
+## Operacao Na Plataforma
+
+- `/admin/strategy-engine`: governa Strategy Packs, perfis, modelos, workflows,
+  execution trace, learning e aprovacao de melhorias.
+- `/client-workspaces`: lista workspaces operacionais. O workspace interno
+  `Crescimento YUX` permite que a propria YUX use CRM, Atendimento & IA,
+  Marketing Studio e Relatorios com a doutrina interna aprovada.
+- CRM, Omnichannel, Marketing Studio e Relatorios exibem paineis contextuais do
+  Strategy Harness para encaminhar diagnosticos e proximas acoes ao agente
+  correto.
+
+## Strategy Packs
+
+Strategy Packs sao a unidade de governanca do conhecimento operacional.
+
+```text
+Fonte privada ou playbook
+  -> ingestion job
+  -> itens propostos
+  -> revisao humana
+  -> item aprovado
+  -> pack publicado
+  -> binding por workspace/agente/modulo/canal/workflow
+  -> uso pelo runtime
+```
+
+Itens suportados na primeira versao:
+
+- concept cards;
+- playbooks;
+- rubricas;
+- chunks;
+- prompt rules.
+
+O runtime deve priorizar itens aprovados de packs publicados. Documentos e
+chunks brutos ficam como apoio de auditoria e recuperacao, nao como substituto
+da metodologia operacional curada.
+
 ## Endpoints
 
 - `GET /health`: healthcheck.

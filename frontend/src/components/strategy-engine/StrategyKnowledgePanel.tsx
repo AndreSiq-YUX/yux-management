@@ -1,6 +1,6 @@
 import { Database, FileText, GitPullRequestArrow, Search } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { StrategyAgentBinding, StrategyConceptCard, StrategyKnowledgeStats, StrategyRetrievalQuery, StrategySourceDocument } from '@/types/strategyEngine'
+import type { StrategyAgentBinding, StrategyConceptCard, StrategyKnowledgeStats, StrategyPack, StrategyPackItem, StrategyRetrievalQuery, StrategySourceDocument } from '@/types/strategyEngine'
 
 export function StrategyKnowledgePanel({
   stats,
@@ -8,13 +8,20 @@ export function StrategyKnowledgePanel({
   cards,
   retrievalQueries,
   bindings,
+  packs = [],
+  packItems = [],
 }: {
   stats: StrategyKnowledgeStats
   documents: StrategySourceDocument[]
   cards: StrategyConceptCard[]
   retrievalQueries: StrategyRetrievalQuery[]
   bindings: StrategyAgentBinding[]
+  packs?: StrategyPack[]
+  packItems?: StrategyPackItem[]
 }) {
+  const publishedPacks = packs.filter(pack => pack.status === 'published')
+  const approvedPackItems = packItems.filter(item => item.status === 'approved')
+
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-5">
@@ -27,9 +34,21 @@ export function StrategyKnowledgePanel({
 
       {stats.cards === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          A doutrina e as skills ja estao configuradas, mas ainda nao ha concept cards importados. Na pratica, os agentes seguem regras fixas, porem o RAG estrategico ainda nao recupera conhecimento do livro.
+          A doutrina e as skills ja estao configuradas, mas os concept cards legados ainda estao vazios. Para novas ingestoes, use a aba Strategy Packs: ela organiza fonte, extracao assistida, revisao humana, publicacao e binding com agentes/modulos.
         </div>
       )}
+
+      <section className="rounded-lg border border-yux-100 bg-yux-50 p-4">
+        <h2 className="text-base font-semibold text-gray-950">RAG operacional por Strategy Pack</h2>
+        <p className="mt-1 text-sm text-gray-700">
+          O RAG operacional deve priorizar itens aprovados em packs publicados. Chunks e documentos continuam disponiveis para auditoria e busca, mas o runtime deve receber contexto com regra de decisao, sinais, perguntas, anti-patterns e metricas.
+        </p>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <SmallMetric label="Packs publicados" value={publishedPacks.length} icon={Database} />
+          <SmallMetric label="Itens aprovados" value={approvedPackItems.length} icon={Database} />
+          <SmallMetric label="Itens em revisao" value={packItems.filter(item => item.status === 'proposed' || item.status === 'review').length} icon={Database} />
+        </div>
+      </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-lg border bg-white p-4">
