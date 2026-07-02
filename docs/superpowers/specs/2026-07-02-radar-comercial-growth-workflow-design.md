@@ -8,8 +8,8 @@ governado da plataforma.
 
 O modulo deve ajudar a YUX a encontrar, qualificar e abordar empresas com
 potencial real de compra, sem criar uma ferramenta de spam ou um motor de IA
-paralelo. Toda analise, score, diagnostico e mensagem sugerida deve passar pela
-inteligencia central do sistema.
+paralelo. Toda analise da oportunidade, score e mensagem sugerida deve passar
+pela inteligencia central do sistema.
 
 ## Decisao Aprovada
 
@@ -53,10 +53,10 @@ Implementar:
 - cadastro ou importacao inicial de empresas-alvo;
 - enriquecimento controlado com fontes publicas e Jina quando configurado;
 - deduplicacao por CNPJ, dominio, telefone e nome/cidade;
-- diagnostico externo com evidencias;
+- analise externa preliminar com evidencias;
 - score justificavel de oportunidade;
 - sugestao de mensagem por canal;
-- revisao humana de diagnostico e mensagem;
+- revisao humana da analise e da mensagem;
 - aprovacao ou rejeicao de oportunidade;
 - opt-out e bloqueio de nova abordagem;
 - conversao de oportunidade aprovada em lead no CRM;
@@ -83,6 +83,18 @@ Adicionar uma area operacional no workspace do cliente:
 - visibilidade inicial: usuarios internos YUX em workspaces operacionais;
 - destaque de uso: workspace interno `Crescimento YUX`;
 - nao expor no Portal do Cliente nesta fase.
+
+Regra de navegacao:
+
+- registrar o Radar como capability interna do Growth Workspace;
+- usar `portal_visibility = false`;
+- usar `internal_workspace_visibility = true`;
+- exigir permissao minima `radar:manage`;
+- mostrar o menu apenas para `yux_admin` e `yux_operator`;
+- nao mostrar para `client_admin` nem `client_user`;
+- no workspace `Crescimento YUX`, mostrar como item principal de prospeccao;
+- em outros workspaces, manter oculto nesta fase, mesmo que a rota tecnica
+  exista protegida no backend.
 
 Telas principais:
 
@@ -114,6 +126,30 @@ O Admin nao vira tela operacional do Radar.
 
 Criar uma migration nova para as tabelas do Radar.
 
+### radar_data_sources
+
+Catalogo governado de fontes e provedores usados pelo Radar.
+
+Campos principais:
+
+- `id`;
+- `organization_id`;
+- `source_key`;
+- `source_type`: `manual`, `csv`, `jina_reader`, `jina_search`, `web_search`,
+  `opencnpj`, `public_registry`, `future_paid_api`;
+- `display_name`;
+- `enabled`;
+- `is_paid`;
+- `requires_secret`;
+- `terms_notes`;
+- `default_cost_per_unit`;
+- `rate_limit_per_day`;
+- timestamps.
+
+Esta tabela evita espalhar configuracao de fonte em runs e registros. Jina,
+OpenCNPJ, CSV manual, busca web, fontes publicas e futuras integracoes devem
+ser habilitadas, limitadas e auditadas por este catalogo.
+
 ### radar_campaigns
 
 Campanhas de prospeccao local.
@@ -141,13 +177,14 @@ Campos principais:
 
 ### radar_company_records
 
-Registro normalizado da empresa encontrada.
+Registro normalizado da empresa encontrada. Esta tabela representa a empresa
+como entidade conhecida pelo Radar, nao a oportunidade comercial especifica de
+uma campanha.
 
 Campos principais:
 
 - `id`;
 - `organization_id`;
-- `campaign_id`;
 - `cnpj`;
 - `legal_name`;
 - `trade_name`;
@@ -163,9 +200,54 @@ Campos principais:
 - `source_collected_at`;
 - `dedupe_key`;
 - `dedupe_status`;
-- `status`: `raw`, `enriching`, `enriched`, `qualified`, `discarded`,
-  `approved`, `converted`;
+- `record_status`: `active`, `duplicate_review`, `merged`, `archived`;
 - timestamps.
+
+### radar_opportunities
+
+Oportunidade comercial de uma empresa dentro de uma campanha.
+
+Campos principais:
+
+- `id`;
+- `organization_id`;
+- `campaign_id`;
+- `company_record_id`;
+- `status`: `raw`, `enriching`, `enriched`, `diagnosing`, `diagnosed`,
+  `message_drafted`, `review_pending`, `approved`, `rejected`, `discarded`,
+  `opted_out`, `converted`;
+- `owner_id`;
+- `priority`;
+- `latest_score_id`;
+- `latest_diagnostic_id`;
+- `latest_message_suggestion_id`;
+- `converted_lead_id`;
+- `converted_at`;
+- `converted_by`;
+- timestamps.
+
+Separar empresa de oportunidade permite que a mesma empresa apareca em
+campanhas diferentes, como `clinicas Londrina`, `empresas sem site` e
+`saude com WhatsApp forte`, sem duplicar o cadastro principal da empresa.
+
+### radar_duplicate_candidates
+
+Candidatos a duplicidade entre empresas ou oportunidades.
+
+Campos principais:
+
+- `id`;
+- `organization_id`;
+- `campaign_id`;
+- `company_record_id`;
+- `duplicate_company_record_id`;
+- `match_type`: `cnpj`, `domain`, `phone`, `name_city`, `manual`;
+- `confidence_score`;
+- `status`: `pending`, `confirmed`, `dismissed`, `merged`;
+- timestamps.
+
+Esta tabela preserva a trilha quando a mesma empresa aparece por CNPJ, site,
+busca web, diretorio, OpenCNPJ ou importacao manual.
 
 ### radar_enrichment_runs
 
@@ -177,6 +259,8 @@ Campos principais:
 - `organization_id`;
 - `campaign_id`;
 - `company_record_id`;
+- `opportunity_id`;
+- `data_source_id`;
 - `agent_execution_run_id`;
 - `status`;
 - `provider`: `manual`, `jina_reader`, `jina_search`, `web_search`,
@@ -196,6 +280,7 @@ Campos principais:
 
 - `id`;
 - `company_record_id`;
+- `opportunity_id`;
 - `website_url`;
 - `instagram_url`;
 - `linkedin_url`;
@@ -217,7 +302,10 @@ Campos principais:
 
 ### radar_diagnostics
 
-Diagnostico comercial externo gerado pelo harness.
+Analise comercial externa preliminar gerada pelo harness. O nome da tabela
+permanece `radar_diagnostics` por representar o artefato tecnico de analise,
+mas a interface deve apresentar isso como `Analise da oportunidade` ou
+`Diagnostico externo preliminar`.
 
 Campos principais:
 
@@ -225,6 +313,7 @@ Campos principais:
 - `organization_id`;
 - `campaign_id`;
 - `company_record_id`;
+- `opportunity_id`;
 - `agent_execution_run_id`;
 - `summary`;
 - `detected_services`;
@@ -249,6 +338,7 @@ Campos principais:
 - `organization_id`;
 - `campaign_id`;
 - `company_record_id`;
+- `opportunity_id`;
 - `total_score`;
 - `fit_score`;
 - `timing_score`;
@@ -269,6 +359,7 @@ Campos principais:
 - `organization_id`;
 - `campaign_id`;
 - `company_record_id`;
+- `opportunity_id`;
 - `agent_execution_run_id`;
 - `channel`: `email`, `linkedin`, `phone`, `whatsapp_manual`, `task`;
 - `subject`;
@@ -290,9 +381,14 @@ Campos principais:
 - `organization_id`;
 - `campaign_id`;
 - `company_record_id`;
+- `opportunity_id`;
 - `lead_id`;
 - `channel`;
-- `event_type`;
+- `event_type`: `company_added`, `company_enriched`,
+  `diagnostic_generated`, `score_generated`, `message_generated`,
+  `message_approved`, `message_rejected`, `opportunity_approved`,
+  `opportunity_rejected`, `opt_out_registered`, `converted_to_lead`,
+  `manual_note_added`;
 - `event_status`;
 - `message_id`;
 - `notes`;
@@ -307,6 +403,7 @@ Campos principais:
 - `id`;
 - `organization_id`;
 - `company_record_id`;
+- `opportunity_id`;
 - `data_source`;
 - `legal_basis`;
 - `data_categories`;
@@ -326,6 +423,8 @@ Campos principais:
 - `organization_id`;
 - `campaign_id`;
 - `company_record_id`;
+- `opportunity_id`;
+- `data_source_id`;
 - `source_type`;
 - `action_type`;
 - `units`;
@@ -343,13 +442,15 @@ Rotas recomendadas:
 - `GET /api/radar/campaigns`;
 - `POST /api/radar/campaigns`;
 - `PATCH /api/radar/campaigns/:id`;
-- `GET /api/radar/campaigns/:id/companies`;
+- `GET /api/radar/data-sources`;
+- `PATCH /api/radar/data-sources/:id`;
+- `GET /api/radar/campaigns/:id/opportunities`;
 - `POST /api/radar/campaigns/:id/companies`;
-- `POST /api/radar/companies/:id/enrich`;
-- `POST /api/radar/companies/:id/run-diagnostic`;
+- `POST /api/radar/opportunities/:id/enrich`;
+- `POST /api/radar/opportunities/:id/run-analysis`;
 - `PATCH /api/radar/messages/:id/review`;
-- `POST /api/radar/companies/:id/convert-to-lead`;
-- `POST /api/radar/companies/:id/opt-out`;
+- `POST /api/radar/opportunities/:id/convert-to-lead`;
+- `POST /api/radar/opportunities/:id/opt-out`;
 - `GET /api/radar/campaigns/:id/metrics`.
 
 Regras:
@@ -359,7 +460,7 @@ Regras:
 - permitir operacao inicial somente para usuarios internos YUX;
 - converter para lead usando o modulo CRM existente;
 - gravar `attribution_context` com dados do Radar;
-- registrar interacao inicial no lead com o resumo do diagnostico;
+- registrar interacao inicial no lead com o resumo da analise da oportunidade;
 - nunca enviar mensagem automaticamente no MVP.
 
 ## Runtime Python E Harness
@@ -407,7 +508,22 @@ Saida estruturada:
 - mensagem por canal;
 - flags de risco;
 - recomendacao de proxima acao;
-- status de politica: sempre `requires_human_approval` para mensagem.
+- `policyDecision`.
+
+`policyDecision` deve seguir o formato:
+
+```json
+{
+  "status": "requires_human_approval",
+  "canSendAutomatically": false,
+  "canConvertToLead": true,
+  "blockedReasons": [],
+  "requiredReviewFields": ["message", "evidence", "risk_flags"]
+}
+```
+
+No MVP, `canSendAutomatically` sempre deve ser `false`. A aprovacao humana
+continua obrigatoria mesmo quando `canConvertToLead` for `true`.
 
 ## RAG E Strategy Packs
 
@@ -421,7 +537,7 @@ O retrieval deve priorizar:
 - cards de oferta e conversao;
 - aprendizados aprovados de campanhas anteriores.
 
-Cada diagnostico deve registrar:
+Cada analise gerada deve registrar:
 
 - `profile_key`;
 - query usada;
@@ -446,25 +562,28 @@ Conteudo `internal_only` nunca deve ser exposto ao Portal do Cliente.
    limitada.
 2. Backend normaliza campos.
 3. Backend calcula `dedupe_key`.
-4. Duplicatas exatas sao bloqueadas; duplicatas provaveis ficam marcadas para
-   revisao.
+4. Backend cria ou reutiliza `radar_company_records`.
+5. Backend cria `radar_opportunities` para a campanha.
+6. Duplicatas exatas sao bloqueadas; duplicatas provaveis ficam marcadas em
+   `radar_duplicate_candidates` para revisao.
 
-### Enriquecer E Diagnosticar
+### Enriquecer E Analisar
 
 1. Usuario solicita enriquecimento de uma empresa ou lote pequeno.
 2. Backend cria `radar_enrichment_runs`.
 3. Runtime usa ferramentas permitidas, como Jina, quando configuradas.
 4. Backend salva fontes, evidencias e custo estimado.
 5. Runtime executa `commercial_radar_local_niche`.
-6. Resultado gera diagnostico, score e mensagem em rascunho.
+6. Resultado gera analise da oportunidade, score e mensagem em rascunho.
+7. Oportunidade passa por `diagnosed`, `message_drafted` e `review_pending`.
 
 ### Revisar E Converter
 
-1. Usuario revisa diagnostico, score, evidencias e mensagem.
+1. Usuario revisa analise da oportunidade, score, evidencias e mensagem.
 2. Usuario aprova, rejeita ou marca opt-out.
 3. Se aprovado, usuario converte para lead.
 4. Backend cria lead no CRM com origem `Radar Comercial`.
-5. Backend cria interacao inicial com diagnostico e mensagem aprovada.
+5. Backend cria interacao inicial com analise e mensagem aprovada.
 6. Lead passa a ser operado no Registro 360.
 
 ## Conversao Para CRM
@@ -476,10 +595,11 @@ O lead criado deve receber:
 - `score`: score aprovado do Radar;
 - `company`: nome fantasia ou razao social;
 - `email` e `phone` somente quando forem contatos comerciais publicos;
-- `notes`: resumo curto do diagnostico;
+- `notes`: resumo curto da analise da oportunidade;
 - `attribution_context` com:
   - `radarCampaignId`;
   - `radarCompanyRecordId`;
+  - `radarOpportunityId`;
   - `radarDiagnosticId`;
   - `radarScoreId`;
   - `radarMessageSuggestionId`;
@@ -490,8 +610,8 @@ O lead criado deve receber:
 Tambem deve criar uma interacao:
 
 - tipo `note`;
-- titulo `Diagnostico Radar Comercial`;
-- descricao com diagnostico, evidencias e mensagem aprovada.
+- titulo `Analise Radar Comercial`;
+- descricao com analise da oportunidade, evidencias e mensagem aprovada.
 
 ## UX
 
@@ -513,7 +633,7 @@ Campanha:
 - filtros por status, score, cidade, nicho, fonte e revisao;
 - tabela de empresas;
 - acao de enriquecer;
-- acao de rodar diagnostico;
+- acao de rodar analise;
 - acao de revisar mensagem;
 - acao de converter para lead.
 
@@ -521,12 +641,17 @@ Oportunidade:
 
 - perfil da empresa;
 - fontes e evidencias;
-- diagnostico;
+- analise da oportunidade;
 - score explicado;
 - mensagem sugerida;
 - compliance;
 - trace do agente;
 - botoes `Aprovar`, `Rejeitar`, `Opt-out`, `Criar lead`.
+
+Na interface, evitar chamar esta etapa de `Diagnostico YUX 48h`. O termo
+recomendado e `Analise da oportunidade` ou `Diagnostico externo preliminar`.
+`Diagnostico YUX 48h` continua reservado para a oferta comercial formal feita
+ao prospect.
 
 ## Compliance E LGPD
 
@@ -539,6 +664,11 @@ Requisitos:
 - impedir mensagem/conversao quando houver opt-out;
 - evitar CPF, dados sensiveis e dados de consumidores finais;
 - limitar volume por campanha;
+- limitar enriquecimento individual e em lote pequeno;
+- limitar lote inicial a 5 ou 10 empresas por execucao;
+- limitar custo diario por campanha;
+- limitar custo diario por fonte;
+- limitar custo diario de IA;
 - manter revisao humana obrigatoria;
 - registrar logs de automacao e custo;
 - bloquear fontes sem procedencia clara.
@@ -573,20 +703,82 @@ Metricas da campanha:
 - diagnosticos agendados, quando o CRM registrar;
 - propostas e clientes, por atribuicao posterior no CRM.
 
+## Implementacao Incremental
+
+### P0 - Foundation
+
+- criar migration das tabelas principais do Radar;
+- criar `radar_data_sources`;
+- criar `radar_opportunities`;
+- criar `radar_duplicate_candidates`;
+- criar permissoes e guardas backend;
+- registrar capability interna com `portal_visibility = false`,
+  `internal_workspace_visibility = true` e permissao `radar:manage`;
+- criar modulo backend `/api/radar`;
+- criar UI vazia do Radar no Growth Workspace;
+- criar e listar campanhas;
+- adicionar empresas manualmente ou por importacao simples;
+- executar deduplicacao basica.
+
+### P1 - Enriquecimento
+
+- criar `radar_enrichment_runs`;
+- executar Jina Reader quando houver URL e fonte habilitada;
+- criar busca assistida limitada;
+- consolidar dados em `radar_company_enrichment`;
+- criar `radar_cost_logs`;
+- aplicar limites de lote, fonte, campanha e custo.
+
+### P2 - Harness
+
+- adicionar workflow `commercial_radar_local_niche`;
+- registrar trace em `agent_execution_runs` e `agent_execution_steps`;
+- registrar retrieval em `yux_strategy_retrieval_queries` quando houver
+  contexto;
+- gerar analise da oportunidade;
+- gerar score explicado;
+- gerar mensagem sugerida;
+- retornar `policyDecision` estruturado;
+- manter `canSendAutomatically = false`.
+
+### P3 - Revisao E CRM
+
+- criar tela de oportunidade;
+- aprovar, rejeitar e registrar opt-out;
+- converter oportunidade aprovada para lead;
+- gravar `converted_lead_id`, `converted_at` e `converted_by`;
+- criar nota/interacao no CRM;
+- abrir o lead no Registro 360.
+
+### P4 - Metricas
+
+- criar dashboard do Radar;
+- exibir metricas por campanha;
+- exibir custo estimado;
+- exibir conversao para leads;
+- preparar atribuicao posterior para diagnosticos agendados, propostas e
+  clientes.
+
 ## Criterios De Aceite
 
 O MVP sera aceitavel quando:
 
 - usuario interno criar campanha local por nicho/cidade;
-- usuario adicionar empresas e ver deduplicacao basica;
+- usuario adicionar empresas, gerar oportunidades e ver deduplicacao basica;
+- Radar aparecer apenas para `yux_admin` e `yux_operator` no workspace
+  `Crescimento YUX`;
+- Radar nao aparecer no Portal do Cliente nem para `client_admin`/`client_user`;
+- fontes forem governadas por `radar_data_sources`;
 - sistema registrar fontes e compliance;
 - enriquecimento gerar dados consolidados e custo estimado;
-- workflow do harness gerar diagnostico, score e mensagem com trace;
+- workflow do harness gerar analise da oportunidade, score e mensagem com trace;
 - retrieval do Strategy Engine for registrado quando houver contexto;
+- resposta do runtime incluir `policyDecision` com envio automatico bloqueado;
 - mensagem ficar em revisao humana obrigatoria;
 - opt-out bloquear conversao e mensagem;
 - aprovacao permitir criar lead no CRM;
-- lead criado carregar origem, score, diagnostico e atribuicao do Radar;
+- lead criado carregar origem, score, analise e atribuicao do Radar;
+- oportunidade carregar `converted_lead_id`, `converted_at` e `converted_by`;
 - Registro 360 mostrar o lead convertido como parte do funil comercial;
 - testes focados de backend, runtime e frontend cobrirem o fluxo principal.
 
