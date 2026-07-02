@@ -99,3 +99,28 @@ export const jinaAiProviderDefaults: PlatformProviderConnectionInput = {
     requiredSecret: 'JINA_API_KEY',
   },
 }
+
+export const cnpjaProviderDefaults: PlatformProviderConnectionInput = {
+  providerType: 'internal_service',
+  providerKey: 'cnpja',
+  displayName: 'CNPJa',
+  environment: 'production',
+  status: 'not_configured',
+  secretReference: 'cnpja:api_key',
+  isDefault: true,
+  publicConfig: {
+    baseUrl: 'https://api.cnpja.com',
+    advancedSearchPath: '/office/search',
+    advancedSearchMethod: 'POST',
+    officeLookupPath: '/office/:taxId',
+    defaultStrategy: 'CACHE_IF_FRESH',
+    maxAgeDays: 7,
+    maxStaleDays: 30,
+    defaultResultLimit: 10,
+    advancedSearchCreditCostPerTen: 1,
+    officeLookupCreditCost: 1,
+    purpose: 'pesquisa avancada de empresas recem-abertas para Radar Comercial',
+    managedBy: 'YUX Hub Admin',
+    requiredSecret: 'cnpja:api_key',
+  },
+}

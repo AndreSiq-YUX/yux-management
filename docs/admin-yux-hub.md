@@ -208,6 +208,39 @@ O Marketing Studio usa esse provedor para Radar, leitura limpa de URLs, busca e
 grounding sob demanda. O valor real de `JINA_API_KEY` deve ser cadastrado como
 secret server-side.
 
+## CNPJa
+
+A area `/admin/integrations` tambem possui o provedor global CNPJa com
+`provider_type = internal_service` e `provider_key = cnpja`.
+
+Configuracao disponivel:
+
+- referencia segura da API key, normalmente `cnpja:api_key`;
+- endpoint base `https://api.cnpja.com`;
+- rota de consulta individual `officeLookupPath = /office/:taxId`;
+- estrategia padrao `CACHE_IF_FRESH`, com `maxAgeDays` e `maxStaleDays`;
+- rota de pesquisa avancada configuravel em `advancedSearchPath`.
+
+O Radar Comercial usa esse provedor para a captacao de empresas recem-abertas.
+A pesquisa cria candidatos em `radar_candidate_records`; a importacao para
+oportunidade e a conversao para lead continuam dependendo de revisao humana.
+
+Operacao recomendada:
+
+- cadastrar ou revisar o provedor em `/admin/integrations`;
+- salvar a API key real pelo fluxo seguro de credencial;
+- testar a conexao pelo botao do Admin;
+- validar na conta/Postman do CNPJa se `advancedSearchPath` corresponde a rota
+  liberada no plano contratado;
+- habilitar a fonte `cnpja_advanced_search` no catalogo do Radar;
+- manter limites pequenos por campanha e por fonte.
+
+Segundo a documentacao publica do CNPJa, a API publica cobre consulta individual
+por CNPJ, enquanto a API comercial adiciona maior limite, cache/tempo real e
+pesquisa avancada por data de abertura, endereco e outros filtros. O custo
+publicado para Pesquisa Avancada e de 1 credito a cada 10 resultados, e a
+consulta Receita Federal online custa 1 credito quando nao for cache.
+
 ## Governanca por Modulo
 
 A area `/admin/modules-governance` responde quais modulos possuem disponibilidade,

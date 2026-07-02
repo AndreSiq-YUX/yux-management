@@ -60,6 +60,8 @@ export function ProviderConnectionEditor({
   onSave,
   onTest,
   onSaveCredential,
+  credentialLabel,
+  credentialHelp,
 }: {
   title: string
   description: string
@@ -69,6 +71,8 @@ export function ProviderConnectionEditor({
   onSave: (input: PlatformProviderConnectionInput) => Promise<void>
   onTest?: (providerId: string) => Promise<ProviderConnectionTestResult>
   onSaveCredential?: (providerId: string, apiKey: string) => Promise<ProviderCredentialSaveResult>
+  credentialLabel?: string
+  credentialHelp?: string
 }) {
   const initialConfig = useMemo(
     () => stringifyConfig(provider?.publicConfig || defaults.publicConfig || {}),
@@ -91,8 +95,8 @@ export function ProviderConnectionEditor({
   const [credentialSaved, setCredentialSaved] = useState(false)
   const [testResult, setTestResult] = useState<ProviderConnectionTestResult | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const isLockedSmtp2GoProvider = defaults.providerKey === 'smtp2go'
-  const providerKeyValue = isLockedSmtp2GoProvider ? defaults.providerKey : providerKey
+  const isLockedProviderKey = defaults.providerKey === 'smtp2go' || defaults.providerKey === 'cnpja'
+  const providerKeyValue = isLockedProviderKey ? defaults.providerKey : providerKey
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -104,7 +108,7 @@ export function ProviderConnectionEditor({
 
     try {
       const parsedConfig = JSON.parse(publicConfig) as Record<string, unknown>
-      if (!isLockedSmtp2GoProvider && /^api[-_]/i.test(providerKey.trim())) {
+      if (!isLockedProviderKey && /^api[-_]/i.test(providerKey.trim())) {
         throw new Error('provider_key_looks_like_api_key')
       }
       await onSave({
@@ -194,7 +198,7 @@ export function ProviderConnectionEditor({
         </label>
 
         <label className="space-y-1 text-sm">
-          <FieldLabel help="Identificador interno fixo usado pelo sistema, por exemplo smtp2go. Nao cole API key neste campo.">
+          <FieldLabel help="Identificador interno fixo usado pelo sistema, por exemplo smtp2go ou cnpja. Nao cole API key neste campo.">
             Identificador interno
           </FieldLabel>
           <input
@@ -202,7 +206,7 @@ export function ProviderConnectionEditor({
             onChange={event => setProviderKey(event.target.value)}
             className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm disabled:bg-gray-50 disabled:text-gray-500"
             required
-            disabled={isLockedSmtp2GoProvider}
+            disabled={isLockedProviderKey}
           />
         </label>
 
@@ -288,8 +292,8 @@ export function ProviderConnectionEditor({
       {onSaveCredential && (
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
           <label className="block space-y-1 text-sm">
-            <FieldLabel help="Cole aqui a API key real do SMTP2GO. O backend criptografa e salva; o valor nao volta para o frontend.">
-              API key master SMTP2GO
+            <FieldLabel help={credentialHelp || `Cole aqui a API key real do ${defaults.displayName}. O backend criptografa e salva; o valor nao volta para o frontend.`}>
+              {credentialLabel || `API key ${defaults.displayName}`}
             </FieldLabel>
             <input
               type="password"

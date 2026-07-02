@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { testCnpjaProvider } from '../radar/cnpjaClient.js'
 import {
   getAdminChannelConnections,
   getAdminHubSummary,
@@ -251,12 +252,12 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
     const provider = await getProviderConnectionById(app.pg, params.data.providerId)
     if (!provider) return reply.code(404).send({ error: 'provider_not_found' })
-    if (provider.providerKey !== 'smtp2go') {
+    if (!isCredentialManagedProvider(provider.providerKey)) {
       return reply.code(400).send({ error: 'unsupported_provider_test' })
     }
 
     const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', app.config.SESSION_SECRET)
-    const result = await testSmtp2GoProvider(apiKey)
+    const result = await testProviderConnection(provider.providerKey, apiKey, provider.publicConfig)
     const updatedProvider = await updateProviderConnectionHealth(app.pg, provider.id, {
       status: result.ok ? 'active' : 'failed',
       lastError: result.ok ? null : result.message,
@@ -282,7 +283,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
     const provider = await getProviderConnectionById(app.pg, params.data.providerId)
     if (!provider) return reply.code(404).send({ error: 'provider_not_found' })
-    if (provider.providerKey !== 'smtp2go') {
+    if (!isCredentialManagedProvider(provider.providerKey)) {
       return reply.code(400).send({ error: 'unsupported_provider_credential' })
     }
 
@@ -290,7 +291,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       providerConnectionId: provider.id,
       secretKind: 'api_key',
       value: parsed.data.apiKey,
-      metadata: { provider: 'smtp2go', source: 'admin' },
+      metadata: { provider: provider.providerKey, source: 'admin' },
     }, app.config.SESSION_SECRET)
 
     const updatedProvider = await getProviderConnectionById(app.pg, provider.id)
@@ -679,6 +680,20 @@ type Smtp2GoTestResult = {
   ok: boolean
   message: string
   permissions?: string[]
+}
+
+function isCredentialManagedProvider(providerKey: string) {
+  return providerKey === 'smtp2go' || providerKey === 'cnpja'
+}
+
+async function testProviderConnection(
+  providerKey: string,
+  apiKey: string | null,
+  publicConfig?: Record<string, unknown>,
+): Promise<Smtp2GoTestResult> {
+  if (providerKey === 'smtp2go') return testSmtp2GoProvider(apiKey)
+  if (providerKey === 'cnpja') return testCnpjaProvider(apiKey, publicConfig as Parameters<typeof testCnpjaProvider>[1])
+  return { ok: false, message: 'Provedor nao suportado para teste automatico.' }
 }
 
 async function testSmtp2GoProvider(apiKey?: string | null): Promise<Smtp2GoTestResult> {

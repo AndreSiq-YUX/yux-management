@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import {
+  cnpjaProviderDefaults,
   jinaAiProviderDefaults,
   openAiDirectFallbackDefaults,
   openRouterDefaults,
@@ -43,6 +44,7 @@ export function AdminIntegrationsPage() {
   const openAiProvider = providers.find(provider => provider.providerKey === 'openai_direct')
   const smtpProvider = providers.find(provider => provider.providerKey === 'smtp2go')
   const jinaProvider = providers.find(provider => provider.providerKey === 'jina_ai')
+  const cnpjaProvider = providers.find(provider => provider.providerKey === 'cnpja')
   const fallbackProviders = providers.filter(provider => provider.providerType === 'llm' && provider.providerKey !== 'openrouter')
 
   return (
@@ -102,6 +104,24 @@ export function AdminIntegrationsPage() {
               await adminPlatformService.upsertProviderConnection(input)
               await loadProviders()
             }}
+          />
+          <ProviderConnectionEditor
+            title="CNPJa - Pesquisa de CNPJ"
+            description="Pesquisa avancada de empresas recem-abertas e consulta de CNPJ para o Radar Comercial."
+            provider={cnpjaProvider}
+            defaults={cnpjaProviderDefaults}
+            onSave={async input => {
+              await adminPlatformService.upsertProviderConnection(input)
+              await loadProviders()
+            }}
+            onTest={async providerId => {
+              return adminPlatformService.testProviderConnection(providerId)
+            }}
+            onSaveCredential={async (providerId, apiKey) => {
+              return adminPlatformService.saveProviderCredential(providerId, apiKey)
+            }}
+            credentialLabel="API key CNPJa"
+            credentialHelp="Cole aqui a API key real do CNPJa. O backend criptografa e salva; o valor nao volta para o frontend."
           />
           <div className="xl:col-span-2">
             <ProviderConnectionEditor

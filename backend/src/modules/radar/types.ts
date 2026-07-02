@@ -8,6 +8,8 @@ export type RadarSourceType =
   | 'web_search'
   | 'opencnpj'
   | 'public_registry'
+  | 'cnpja_advanced_search'
+  | 'cnpja_office_lookup'
   | 'future_paid_api'
 
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
@@ -52,7 +54,7 @@ export type RadarCampaignRow = {
   id: string
   organization_id: string
   name: string
-  campaign_type: 'local_niche'
+  campaign_type: 'local_niche' | 'recently_opened'
   target_segment: string
   target_city: string
   target_state: string
@@ -222,7 +224,7 @@ export interface RadarCampaign {
   id: string
   organizationId: string
   name: string
-  campaignType: 'local_niche'
+  campaignType: 'local_niche' | 'recently_opened'
   targetSegment: string
   targetCity: string
   targetState: string

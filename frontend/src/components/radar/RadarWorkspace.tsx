@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { Building2, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
+import { Building2, CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,7 @@ import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplica
 
 const initialForm = {
   name: '',
+  campaignType: 'local_niche' as 'local_niche' | 'recently_opened',
   targetSegment: 'Clinicas',
   targetCity: 'Londrina',
   targetState: 'PR',
@@ -45,6 +46,16 @@ const initialSearchForm = {
   city: '',
   state: '',
   sourceType: 'jina_search' as 'jina_search' | 'web_search',
+  limit: 5,
+}
+
+const initialCnpjaForm = {
+  query: '',
+  city: 'Londrina',
+  state: 'PR',
+  cnae: '',
+  openingFrom: recentDate(60),
+  openingTo: '',
   limit: 5,
 }
 
@@ -105,6 +116,20 @@ const fallbackSources: RadarDataSource[] = [
     createdAt: '',
     updatedAt: '',
   },
+  {
+    id: 'fallback-cnpja-advanced-search',
+    sourceKey: 'cnpja_advanced_search',
+    sourceType: 'cnpja_advanced_search',
+    displayName: 'CNPJa - pesquisa avancada',
+    enabled: false,
+    isPaid: true,
+    requiresSecret: true,
+    termsNotes: 'Depende da API key CNPJa cadastrada no Admin e da fonte habilitada no catalogo.',
+    defaultCostPerUnit: 0.0025,
+    rateLimitPerDay: 50,
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 const candidateStatusLabels: Record<string, string> = {
@@ -139,6 +164,7 @@ export function RadarWorkspace() {
   const [csvText, setCsvText] = useState('')
   const [urlText, setUrlText] = useState('')
   const [searchForm, setSearchForm] = useState(initialSearchForm)
+  const [cnpjaForm, setCnpjaForm] = useState(initialCnpjaForm)
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
   const [lastImportSummary, setLastImportSummary] = useState<RadarImportSummary | null>(null)
   const [analyzeAfterImport, setAnalyzeAfterImport] = useState(false)
@@ -298,6 +324,7 @@ export function RadarWorkspace() {
   const workspaceSources = mergeRadarSources(dataSources)
   const jinaReaderSource = findSource(workspaceSources, 'jina_reader')
   const searchSource = findSource(workspaceSources, searchForm.sourceType)
+  const cnpjaSource = findSource(workspaceSources, 'cnpja_advanced_search')
   const csvPreviewRows = getCsvPreviewRows(csvText, 4)
 
   const refreshCampaignSidebars = () => {
@@ -426,6 +453,52 @@ export function RadarWorkspace() {
     } catch (error) {
       console.error('Erro na busca assistida Radar:', error)
       toast.error('Erro ao executar busca assistida')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const searchCnpja = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!organizationId || !selectedCampaignId || actionLoading) return
+
+    const blockedReason = getSourceBlockedReason(cnpjaSource)
+    if (blockedReason) {
+      toast.error(blockedReason)
+      return
+    }
+
+    if (!isSmallBatch(cnpjaForm.limit)) {
+      toast.error('Use no maximo 10 resultados por pesquisa.')
+      return
+    }
+
+    try {
+      setActionLoading('cnpja')
+      const result = await radarService.searchCnpja(selectedCampaignId, {
+        organizationId,
+        query: cnpjaForm.query || undefined,
+        city: cnpjaForm.city || undefined,
+        state: cnpjaForm.state || undefined,
+        cnaes: cnpjaForm.cnae ? cnpjaForm.cnae.split(',').map(item => item.trim()).filter(Boolean) : undefined,
+        openingFrom: cnpjaForm.openingFrom || undefined,
+        openingTo: cnpjaForm.openingTo || undefined,
+        limit: cnpjaForm.limit,
+      })
+      setCandidates(current => mergeCandidates(result.candidates, current))
+      setLastImportSummary({
+        kind: 'cnpja',
+        importedCount: 0,
+        candidateCount: result.candidates.length,
+        issueCount: result.issues.length,
+        issues: result.issues,
+        runId: result.runId,
+      })
+      toast.success(`${result.candidates.length} empresas encontradas no CNPJa`)
+      refreshCampaignSidebars()
+    } catch (error) {
+      console.error('Erro na pesquisa CNPJa Radar:', error)
+      toast.error('Erro ao pesquisar no CNPJa')
     } finally {
       setActionLoading(null)
     }
@@ -563,8 +636,16 @@ export function RadarWorkspace() {
       />
 
       <section className="rounded-md border bg-white p-4">
-        <h2 className="text-base font-semibold text-slate-950">Nova campanha local por nicho</h2>
+        <h2 className="text-base font-semibold text-slate-950">Nova campanha de captacao</h2>
         <form className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
+          <select
+            className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
+            value={form.campaignType}
+            onChange={event => setForm({ ...form, campaignType: event.target.value as 'local_niche' | 'recently_opened' })}
+          >
+            <option value="local_niche">Radar local por nicho</option>
+            <option value="recently_opened">Empresas recem-abertas</option>
+          </select>
           <Input className="md:col-span-2" placeholder="Nome" value={form.name} required onChange={event => setForm({ ...form, name: event.target.value })} />
           <Input placeholder="Nicho" value={form.targetSegment} required onChange={event => setForm({ ...form, targetSegment: event.target.value })} />
           <Input placeholder="Cidade" value={form.targetCity} required onChange={event => setForm({ ...form, targetCity: event.target.value })} />
@@ -750,13 +831,41 @@ export function RadarWorkspace() {
                   </div>
                 </div>
               </form>
+
+              <form className="rounded-md border p-3" onSubmit={searchCnpja}>
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarClock className="h-4 w-4 text-yux-700" />
+                  <h3 className="text-sm font-semibold text-slate-950">Empresas recem-abertas (CNPJa)</h3>
+                </div>
+                <div className="grid gap-3 md:grid-cols-6">
+                  <Input className="md:col-span-2" placeholder="Termo opcional" value={cnpjaForm.query} onChange={event => setCnpjaForm({ ...cnpjaForm, query: event.target.value })} />
+                  <Input placeholder="Cidade" value={cnpjaForm.city} onChange={event => setCnpjaForm({ ...cnpjaForm, city: event.target.value })} />
+                  <Input placeholder="UF" value={cnpjaForm.state} maxLength={2} onChange={event => setCnpjaForm({ ...cnpjaForm, state: event.target.value.toUpperCase() })} />
+                  <Input className="md:col-span-2" placeholder="CNAEs separados por virgula" value={cnpjaForm.cnae} onChange={event => setCnpjaForm({ ...cnpjaForm, cnae: event.target.value })} />
+                  <label className="space-y-1 text-xs text-slate-500">
+                    Abertura desde
+                    <Input type="date" value={cnpjaForm.openingFrom} onChange={event => setCnpjaForm({ ...cnpjaForm, openingFrom: event.target.value })} />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-500">
+                    Abertura ate
+                    <Input type="date" value={cnpjaForm.openingTo} onChange={event => setCnpjaForm({ ...cnpjaForm, openingTo: event.target.value })} />
+                  </label>
+                  <Input type="number" min="1" max="10" value={cnpjaForm.limit} onChange={event => setCnpjaForm({ ...cnpjaForm, limit: Number(event.target.value) })} />
+                  <div className="md:col-span-3 flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-500">{getSourceBlockedReason(cnpjaSource) || 'Gera candidatos por CNPJ para revisao antes da importacao.'}</p>
+                    <Button type="submit" disabled={Boolean(getSourceBlockedReason(cnpjaSource)) || actionLoading === 'cnpja'}>
+                      {actionLoading === 'cnpja' ? 'Pesquisando...' : 'Pesquisar CNPJa'}
+                    </Button>
+                  </div>
+                </div>
+              </form>
             </div>
 
             {lastImportSummary && (
               <div className="mt-4 rounded-md border bg-slate-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-slate-950">
-                    Resultado: {lastImportSummary.kind === 'csv' ? 'CSV' : lastImportSummary.kind === 'urls' ? 'URL/site' : 'Busca assistida'}
+                    Resultado: {getImportSummaryLabel(lastImportSummary.kind)}
                   </p>
                   {lastImportSummary.runId && <p className="text-xs text-slate-500">Run {lastImportSummary.runId}</p>}
                 </div>
@@ -951,6 +1060,18 @@ function findSource(sources: RadarDataSource[], sourceType: RadarSourceType) {
 function getSourceBlockedReason(source?: RadarDataSource) {
   if (!source) return 'Fonte ainda nao cadastrada no catalogo do Radar.'
   return getRadarSourceBlockedReason(source)
+}
+
+function getImportSummaryLabel(kind: RadarImportSummary['kind']) {
+  if (kind === 'csv') return 'CSV'
+  if (kind === 'urls') return 'URL/site'
+  if (kind === 'cnpja') return 'CNPJa'
+  return 'Busca assistida'
+}
+
+function recentDate(daysAgo: number) {
+  const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
+  return date.toISOString().slice(0, 10)
 }
 
 function getDuplicateId(duplicate: RadarDuplicateCandidate) {

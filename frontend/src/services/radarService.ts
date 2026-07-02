@@ -32,7 +32,7 @@ export const radarService = {
     return apiRequest<RadarCampaign[]>(`/radar/campaigns${buildQuery({ organizationId })}`)
   },
 
-  async createCampaign(input: Pick<RadarCampaign, 'organizationId' | 'name' | 'targetSegment' | 'targetCity' | 'targetState' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & { budgetLimit?: number }) {
+  async createCampaign(input: Pick<RadarCampaign, 'organizationId' | 'name' | 'campaignType' | 'targetSegment' | 'targetCity' | 'targetState' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & { budgetLimit?: number }) {
     return apiRequest<RadarCampaign>('/radar/campaigns', { method: 'POST', body: input })
   },
 
@@ -64,6 +64,19 @@ export const radarService = {
 
   async searchWeb(campaignId: string, input: { organizationId: string; query: string; city?: string; state?: string; sourceType: 'jina_search' | 'web_search'; limit?: number }) {
     return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/search-web`, { method: 'POST', body: input })
+  },
+
+  async searchCnpja(campaignId: string, input: {
+    organizationId: string
+    query?: string
+    city?: string
+    state?: string
+    cnaes?: string[]
+    openingFrom?: string
+    openingTo?: string
+    limit?: number
+  }) {
+    return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/search-cnpja`, { method: 'POST', body: input })
   },
 
   async getOpportunities(campaignId: string) {

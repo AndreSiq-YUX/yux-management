@@ -7,6 +7,8 @@ export const radarSourceLabels: Record<string, string> = {
   jina_search: 'Busca assistida com Jina Search',
   web_search: 'Busca web assistida',
   public_registry: 'Fonte publica',
+  cnpja_advanced_search: 'CNPJa - pesquisa avancada',
+  cnpja_office_lookup: 'CNPJa - consulta CNPJ',
 }
 
 export function assertSmallBatchLimit(count: number, limit = RADAR_SMALL_BATCH_LIMIT) {

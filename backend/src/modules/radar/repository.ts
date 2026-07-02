@@ -18,13 +18,16 @@ import type {
   RadarMetrics,
   RadarOpportunity,
   RadarOpportunityRow,
+  RadarRunStatus,
   RadarScore,
   RadarScoreRow,
 } from './types.js'
 import { parseRadarCsv, type RadarCsvImportIssue } from './csvImport.js'
 import { createRadarDuplicateCandidates } from './dedupe.js'
 import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
+import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
+import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -40,6 +43,7 @@ type RadarQueryable = {
 export type RadarCampaignInput = {
   organizationId: string
   name: string
+  campaignType?: 'local_niche' | 'recently_opened'
   targetSegment: string
   targetCity: string
   targetState: string
@@ -48,6 +52,19 @@ export type RadarCampaignInput = {
   offerType: string
   budgetLimit?: number
   dailyLimit?: number
+}
+
+export type RadarCnpjaSearchInput = {
+  organizationId: string
+  campaignId: string
+  query?: string
+  city?: string
+  state?: string
+  cnaes?: string[]
+  openingFrom?: string
+  openingTo?: string
+  limit?: number
+  secretKeyMaterial: string
 }
 
 export type RadarCompanyInput = {
@@ -118,14 +135,15 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
   requireRadarAccess(user)
   const result = await pool.query<RadarCampaignRow>(
     `INSERT INTO public.radar_campaigns (
-       organization_id, name, target_segment, target_city, target_state,
+       organization_id, name, campaign_type, target_segment, target_city, target_state,
        target_keywords, target_cnaes, offer_type, budget_limit, daily_limit, created_by, owner_id
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
      RETURNING *`,
     [
       input.organizationId,
       input.name.trim(),
+      input.campaignType ?? 'local_niche',
       input.targetSegment.trim(),
       input.targetCity.trim(),
       input.targetState.trim().toUpperCase(),
@@ -622,6 +640,147 @@ export async function runRadarAssistedSearch(
       await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, candidates.length, governance.estimatedCost)
     }
 
+    await client.query('COMMIT')
+    return { candidates, issues: [], runId: run.rows[0].id }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function runRadarCnpjaAdvancedSearch(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: RadarCnpjaSearchInput,
+) {
+  requireRadarAccess(user)
+  const limit = input.limit ?? 5
+  assertSmallBatchLimit(limit)
+
+  const source = await findRadarDataSource(pool, input.organizationId, 'cnpja_advanced_search')
+  const provider = await findCnpjaProvider(pool)
+  const apiKey = provider?.status === 'active'
+    ? await loadPlatformProviderSecret(pool, provider.id, 'api_key', input.secretKeyMaterial)
+    : null
+  const providerIssue = getCnpjaProviderIssue(provider, apiKey)
+  const client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+    const campaign = await client.query<{ id: string }>(
+      `SELECT id
+       FROM public.radar_campaigns
+       WHERE id = $1 AND organization_id = $2
+       LIMIT 1`,
+      [input.campaignId, input.organizationId],
+    )
+    if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
+    const issues = [...governance.issues]
+    if (providerIssue) issues.push(providerIssue)
+
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs (
+         organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
+         status, provider, input_payload, output_payload, error_message, started_at
+       )
+       VALUES ($1,$2,NULL,NULL,$3,'running','cnpja_advanced_search',$4,'{}'::jsonb,NULL,NOW())
+       RETURNING id`,
+      [
+        input.organizationId,
+        input.campaignId,
+        source?.id ?? null,
+        JSON.stringify({
+          query: input.query,
+          city: input.city,
+          state: input.state,
+          cnaes: input.cnaes,
+          openingFrom: input.openingFrom,
+          openingTo: input.openingTo,
+          limit,
+        }),
+      ],
+    )
+
+    if (issues.length > 0) {
+      await updateRadarRunCompletion(client, run.rows[0].id, 'failed', { candidateCount: 0, estimatedCost: governance.estimatedCost, issues }, issues.map(issue => issue.message).join('; '))
+      await client.query('COMMIT')
+      return { candidates: [], issues, runId: run.rows[0].id }
+    }
+
+    let results: CnpjaCandidate[] = []
+    try {
+      results = await searchCnpjaAdvanced({
+        apiKey: apiKey as string,
+        config: provider?.publicConfig as CnpjaProviderConfig | undefined,
+        query: input.query,
+        city: input.city,
+        state: input.state,
+        cnaes: input.cnaes,
+        openingFrom: input.openingFrom,
+        openingTo: input.openingTo,
+        limit,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao executar pesquisa avancada no CNPJa.'
+      const failedIssues = [{ code: 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
+      await updateRadarRunCompletion(client, run.rows[0].id, 'failed', { candidateCount: 0, estimatedCost: governance.estimatedCost, issues: failedIssues }, message)
+      await client.query('COMMIT')
+      return { candidates: [], issues: failedIssues, runId: run.rows[0].id }
+    }
+
+    const candidates: RadarCandidateRecord[] = []
+    for (const result of results) {
+      const title = result.tradeName || result.legalName || result.taxId || 'Empresa CNPJa'
+      const dedupeKey = result.taxId
+        ? `cnpj:${result.taxId}`
+        : `cnpja:${normalizeToken(title)}:${normalizeToken(result.city || '')}:${normalizeToken(result.state || '')}`
+      const duplicateStatus = await hasExistingCompanyByCnpjaCandidate(client, input.organizationId, result)
+      const normalizedPayload = {
+        tradeName: result.tradeName,
+        legalName: result.legalName,
+        cnpj: result.taxId,
+        cnaeMain: result.cnaeMain,
+        city: result.city,
+        state: result.state,
+        emailRaw: result.email,
+        phoneRaw: result.phone,
+      }
+      const inserted = await client.query<RadarCandidateRecordRow>(
+        `INSERT INTO public.radar_candidate_records (
+           organization_id, campaign_id, enrichment_run_id, source_type, source_url, title,
+           snippet, raw_payload, normalized_payload, dedupe_key, status
+         )
+         VALUES ($1,$2,$3,'cnpja_advanced_search',$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (campaign_id, dedupe_key)
+         DO UPDATE SET updated_at = NOW(),
+                       snippet = EXCLUDED.snippet,
+                       raw_payload = EXCLUDED.raw_payload,
+                       normalized_payload = EXCLUDED.normalized_payload
+         RETURNING *`,
+        [
+          input.organizationId,
+          input.campaignId,
+          run.rows[0].id,
+          result.sourceUrl ?? null,
+          title,
+          buildCnpjaCandidateSnippet(result),
+          JSON.stringify(result.rawPayload),
+          JSON.stringify(normalizedPayload),
+          dedupeKey,
+          duplicateStatus ? 'duplicate' : 'pending_review',
+        ],
+      )
+      candidates.push(mapCandidate(inserted.rows[0]))
+    }
+
+    if (candidates.length > 0) {
+      await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, candidates.length, governance.estimatedCost)
+    }
+    await updateRadarRunCompletion(client, run.rows[0].id, 'succeeded', { candidateCount: candidates.length, estimatedCost: governance.estimatedCost }, null)
     await client.query('COMMIT')
     return { candidates, issues: [], runId: run.rows[0].id }
   } catch (error) {
@@ -1478,6 +1637,67 @@ async function findRadarDataSource(pool: pg.Pool, organizationId: string, source
   return result.rows[0] ? mapDataSource(result.rows[0]) : null
 }
 
+async function findCnpjaProvider(pool: pg.Pool) {
+  const result = await pool.query<{
+    id: string
+    status: string
+    public_config: Record<string, unknown>
+  }>(
+    `SELECT id, status, public_config
+     FROM public.platform_provider_connections
+     WHERE provider_key = 'cnpja'
+       AND environment = 'production'
+     ORDER BY is_default DESC, updated_at DESC
+     LIMIT 1`,
+  )
+  const row = result.rows[0]
+  return row ? { id: row.id, status: row.status, publicConfig: row.public_config ?? {} } : null
+}
+
+function getCnpjaProviderIssue(provider: { status: string } | null, apiKey: string | null) {
+  if (!provider) {
+    return {
+      code: 'provider_not_configured',
+      sourceType: 'cnpja_advanced_search',
+      message: 'Provedor CNPJa ainda nao foi cadastrado no Admin.',
+    }
+  }
+  if (provider.status !== 'active') {
+    return {
+      code: 'provider_not_active',
+      sourceType: 'cnpja_advanced_search',
+      message: 'Provedor CNPJa precisa estar ativo no Admin antes da pesquisa.',
+    }
+  }
+  if (!apiKey) {
+    return {
+      code: 'provider_secret_missing',
+      sourceType: 'cnpja_advanced_search',
+      message: 'API key CNPJa ainda nao foi salva no Admin.',
+    }
+  }
+  return null
+}
+
+async function updateRadarRunCompletion(
+  queryable: RadarQueryable,
+  runId: string,
+  status: RadarRunStatus,
+  output: Record<string, unknown>,
+  errorMessage: string | null,
+) {
+  await queryable.query(
+    `UPDATE public.radar_enrichment_runs
+     SET status = $2,
+         output_payload = $3::jsonb,
+         error_message = $4,
+         completed_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [runId, status, JSON.stringify(output), errorMessage],
+  )
+}
+
 async function evaluateRadarSourceGovernance(
   queryable: RadarQueryable,
   organizationId: string,
@@ -1577,6 +1797,23 @@ async function hasLikelyExistingCompany(queryable: RadarQueryable, organizationI
        )
      LIMIT 1`,
     [organizationId, domainTitle(result.url), result.emails[0] ?? null, result.phones[0] ?? null],
+  )
+  return existing.rows.length > 0
+}
+
+async function hasExistingCompanyByCnpjaCandidate(queryable: RadarQueryable, organizationId: string, candidate: CnpjaCandidate) {
+  if (!candidate.taxId && !candidate.email && !candidate.phone) return false
+  const existing = await queryable.query<{ id: string }>(
+    `SELECT id
+     FROM public.radar_company_records
+     WHERE organization_id = $1
+       AND (
+         ($2::TEXT IS NOT NULL AND cnpj = $2)
+         OR ($3::TEXT IS NOT NULL AND email_raw = $3)
+         OR ($4::TEXT IS NOT NULL AND phone_raw = $4)
+       )
+     LIMIT 1`,
+    [organizationId, candidate.taxId ?? null, candidate.email ?? null, candidate.phone ?? null],
   )
   return existing.rows.length > 0
 }

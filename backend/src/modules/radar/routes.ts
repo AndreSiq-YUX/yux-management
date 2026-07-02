@@ -20,6 +20,7 @@ import {
   listRadarRuns,
   optOutRadarOpportunity,
   reviewRadarOpportunity,
+  runRadarCnpjaAdvancedSearch,
   runRadarOpportunityAnalysis,
   runRadarAssistedSearch,
   updateRadarDuplicateCandidate,
@@ -33,6 +34,7 @@ const dataSourceQuerySchema = z.object({ organizationId: uuid })
 const createCampaignSchema = z.object({
   organizationId: uuid,
   name: z.string().min(1),
+  campaignType: z.enum(['local_niche', 'recently_opened']).optional(),
   targetSegment: z.string().min(1),
   targetCity: z.string().min(1),
   targetState: z.string().min(2).max(2),
@@ -86,6 +88,18 @@ const searchWebSchema = z.object({
   state: z.string().optional(),
   sourceType: z.enum(['jina_search', 'web_search']),
   limit: z.number().int().min(1).max(10).optional(),
+})
+const searchCnpjaSchema = z.object({
+  organizationId: uuid,
+  query: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  cnaes: z.array(z.string()).optional(),
+  openingFrom: z.string().optional(),
+  openingTo: z.string().optional(),
+  limit: z.number().int().min(1).max(10).optional(),
+}).refine(input => Boolean(input.query || input.city || input.state || input.cnaes?.length || input.openingFrom || input.openingTo), {
+  message: 'radar_cnpja_search_requires_filter',
 })
 const duplicateUpdateSchema = z.object({ status: z.enum(['confirmed', 'dismissed', 'merged']) })
 const batchOpportunitySchema = z.object({
@@ -174,6 +188,19 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const parsed = searchWebSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_search_payload' })
     return reply.code(201).send(await runRadarAssistedSearch(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+  })
+
+  app.post('/campaigns/:id/search-cnpja', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = searchCnpjaSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_cnpja_payload' })
+    return reply.code(201).send(await runRadarCnpjaAdvancedSearch(app.pg, user, {
+      ...parsed.data,
+      campaignId: params.data.id,
+      secretKeyMaterial: app.config.SESSION_SECRET,
+    }))
   })
 
   app.get('/campaigns/:id/candidates', async (request, reply) => {

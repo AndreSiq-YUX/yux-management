@@ -1,7 +1,7 @@
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 export type RadarOpportunityStatus = 'raw' | 'enriching' | 'enriched' | 'diagnosing' | 'diagnosed' | 'message_drafted' | 'review_pending' | 'approved' | 'rejected' | 'discarded' | 'opted_out' | 'converted'
 export type RadarMessageStatus = 'draft' | 'approved' | 'rejected' | 'converted'
-export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'future_paid_api'
+export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'cnpja_advanced_search' | 'cnpja_office_lookup' | 'future_paid_api'
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'
 export type RadarDuplicateStatus = 'pending' | 'confirmed' | 'dismissed' | 'merged'
@@ -95,7 +95,7 @@ export interface RadarImportIssue {
 }
 
 export interface RadarImportSummary {
-  kind: 'csv' | 'urls' | 'search'
+  kind: 'csv' | 'urls' | 'search' | 'cnpja'
   importedCount: number
   analyzedCount?: number
   candidateCount: number
@@ -108,7 +108,7 @@ export interface RadarCampaign {
   id: string
   organizationId: string
   name: string
-  campaignType: 'local_niche'
+  campaignType: 'local_niche' | 'recently_opened'
   targetSegment: string
   targetCity: string
   targetState: string
