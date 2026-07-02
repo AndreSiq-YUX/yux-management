@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AuthStore, AuthUser } from '../src/auth/routes.js'
 import { hashSessionToken } from '../src/auth/session.js'
 import type { AppJobQueue } from '../src/server.js'
@@ -67,6 +67,9 @@ class FakeRadarPool {
   convertedBy: string | null = null
   dataSourceEnabled = false
   candidateStatus = 'pending_review'
+  sourceUnitsUsed = 0
+  sourceCostUsed = 0
+  existingDuplicateRows = false
   queries: Array<{ sql: string; params: unknown[] }> = []
 
   async connect() {
@@ -81,6 +84,17 @@ class FakeRadarPool {
     if (normalized.includes('FROM public.radar_data_sources')) return { rows: [dataSourceRow(this)] }
     if (normalized.includes('UPDATE public.radar_data_sources')) {
       return { rows: [{ ...dataSourceRow(this), enabled: params[1] ?? true, rate_limit_per_day: params[2] ?? 50 }] }
+    }
+    if (normalized.includes('SELECT daily_limit, budget_limit FROM public.radar_campaigns')) {
+      return { rows: [{ daily_limit: 5, budget_limit: '100.00' }] }
+    }
+    if (normalized.includes('FROM public.radar_source_usage_counters')) {
+      return { rows: [{ units: this.sourceUnitsUsed, estimated_cost: this.sourceCostUsed }] }
+    }
+    if (normalized.includes('INSERT INTO public.radar_source_usage_counters')) {
+      this.sourceUnitsUsed += Number(params[4] ?? 0)
+      this.sourceCostUsed += Number(params[5] ?? 0)
+      return { rows: [] }
     }
     if (normalized.includes('SELECT * FROM public.radar_campaigns')) return { rows: [campaignRow()] }
     if (normalized.includes('SELECT id FROM public.radar_campaigns')) return { rows: [{ id: ids.campaign }] }
@@ -135,7 +149,7 @@ class FakeRadarPool {
     if (normalized.includes('INSERT INTO public.radar_campaigns')) return { rows: [campaignRow()] }
     if (normalized.includes('INSERT INTO public.radar_enrichment_runs')) return { rows: [{ id: ids.enrichmentRun }] }
     if (normalized.includes('UPDATE public.radar_enrichment_runs')) return { rows: [] }
-    if (normalized.includes('INSERT INTO public.radar_candidate_records')) return { rows: [candidateRow({ sourceType: params[3] as string, title: params[5] as string, snippet: params[6] as string, dedupeKey: params[9] as string })] }
+    if (normalized.includes('INSERT INTO public.radar_candidate_records')) return { rows: [candidateRow({ sourceType: params[3] as string, title: params[5] as string, snippet: params[6] as string, dedupeKey: params[9] as string, status: params[10] as string })] }
     if (normalized.includes('SELECT * FROM public.radar_candidate_records WHERE id = $1')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes('FROM public.radar_candidate_records')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes("SET status = 'imported'")) {
@@ -146,9 +160,14 @@ class FakeRadarPool {
       this.candidateStatus = 'discarded'
       return { rows: [candidateRow({ status: 'discarded' })] }
     }
+    if (normalized.includes('INSERT INTO public.radar_duplicate_candidates')) return { rows: [] }
     if (normalized.includes('FROM public.radar_duplicate_candidates')) return { rows: [duplicateRow()] }
     if (normalized.includes('UPDATE public.radar_duplicate_candidates')) return { rows: [{ ...duplicateRow(), status: params[1] }] }
     if (normalized.includes('INSERT INTO public.radar_company_records')) return { rows: [companyRow()] }
+    if (normalized.includes('FROM public.radar_company_records') && !normalized.includes('JOIN public.radar_company_records')) {
+      return { rows: this.existingDuplicateRows ? [{ ...companyRow(), id: '00000000-0000-4000-8000-000000000099' }] : [] }
+    }
+    if (normalized.includes('UPDATE public.radar_company_records SET dedupe_status')) return { rows: [] }
     if (normalized.includes('INSERT INTO public.radar_opportunities')) return { rows: [opportunityRow(this)] }
     if (normalized.includes('UPDATE public.radar_opportunities SET status = CASE')) {
       this.opportunityStatus = 'enriched'
@@ -238,7 +257,41 @@ let app: FastifyInstance | undefined
 afterEach(async () => {
   await app?.close()
   app = undefined
+  vi.unstubAllGlobals()
 })
+
+function stubRadarJinaFetch() {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+    ok: true,
+    json: async () => {
+      if (url.startsWith('https://s.jina.ai/')) {
+        return {
+          data: [
+            {
+              title: 'Clinica Boa Vida',
+              url: 'https://boavida.com.br',
+              description: 'Clinica local em Londrina com WhatsApp publico.',
+              content: 'Clinica local em Londrina. Contato contato@boavida.com.br WhatsApp (43) 99999-0000.',
+            },
+            {
+              title: 'Clinica Centro',
+              url: 'https://clinicacentro.com.br',
+              description: 'Atendimento clinico no centro.',
+              content: 'Agende consulta pelo contato@clinicacentro.com.br.',
+            },
+          ],
+        }
+      }
+      return {
+        data: {
+          title: 'Clinica Boa Vida',
+          url: 'https://boavida.com.br',
+          content: '# Clinica Boa Vida\n\nAgende consulta pelo contato@boavida.com.br ou WhatsApp (43) 99999-0000.',
+        },
+      }
+    },
+  })))
+}
 
 function campaignRow() {
   return {
@@ -633,6 +686,7 @@ describe('radar routes', () => {
 
   it('imports urls when Jina Reader source is enabled', async () => {
     const { authStore, token } = buildAuthStore()
+    stubRadarJinaFetch()
     const pool = new FakeRadarPool()
     pool.dataSourceEnabled = true
     app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
@@ -655,6 +709,7 @@ describe('radar routes', () => {
 
   it('creates pending candidates from assisted web search', async () => {
     const { authStore, token } = buildAuthStore()
+    stubRadarJinaFetch()
     const pool = new FakeRadarPool()
     pool.dataSourceEnabled = true
     app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })

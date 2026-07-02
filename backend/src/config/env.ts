@@ -29,6 +29,7 @@ const envSchema = z.object({
   SMTP2GO_SENDER_NAME: optionalString,
   YUX_AGENT_RUNTIME_URL: optionalUrl,
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
+  JINA_API_KEY: optionalString,
   N8N_CRM_WEBHOOK_URL: optionalUrl,
   OMNICHANNEL_ATTACHMENTS_DIR: z.string().optional(),
   OMNICHANNEL_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().optional(),

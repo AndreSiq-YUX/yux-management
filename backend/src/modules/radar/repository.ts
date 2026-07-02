@@ -22,7 +22,9 @@ import type {
   RadarScoreRow,
 } from './types.js'
 import { parseRadarCsv, type RadarCsvImportIssue } from './csvImport.js'
-import { assertSmallBatchLimit } from './sourceRules.js'
+import { createRadarDuplicateCandidates } from './dedupe.js'
+import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
+import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -67,6 +69,8 @@ export type RadarCompanyInput = {
 
 export type RadarCompanyInsertOptions = {
   runId?: string
+  dataSourceId?: string
+  estimatedCost?: number
 }
 
 export function isInternalRadarUser(user: AuthUser) {
@@ -394,6 +398,7 @@ export async function importRadarUrlsToCampaign(
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
 
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, urls.length)
     const run = await client.query<{ id: string }>(
       `INSERT INTO public.radar_enrichment_runs (
          organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
@@ -405,48 +410,74 @@ export async function importRadarUrlsToCampaign(
         input.organizationId,
         input.campaignId,
         source?.id ?? null,
-        source?.enabled ? 'succeeded' : 'failed',
+        governance.allowed ? 'succeeded' : 'failed',
         JSON.stringify({ urls }),
-        JSON.stringify({ importedCount: source?.enabled ? urls.length : 0 }),
-        source?.enabled ? null : 'radar_source_disabled:jina_reader',
+        JSON.stringify({ importedCount: governance.allowed ? urls.length : 0, estimatedCost: governance.estimatedCost }),
+        governance.allowed ? null : governance.issues.map(issue => issue.message).join('; '),
       ],
     )
 
-    if (!source?.enabled) {
+    if (!governance.allowed) {
       await client.query('COMMIT')
       return {
         imported,
-        issues: urls.map(url => ({
-          url,
-          code: 'source_disabled',
-          message: 'Jina Reader esta desabilitado no catalogo do Radar.',
-        })),
+        issues: governance.issues,
         runId: run.rows[0].id,
       }
     }
 
+    const perUnitCost = urls.length > 0 ? Number((governance.estimatedCost / urls.length).toFixed(6)) : 0
     for (const url of urls) {
+      let evidence: RadarJinaEvidence
+      try {
+        evidence = await readJinaUrl(url)
+      } catch (error) {
+        issues.push({
+          url,
+          code: 'provider_failed',
+          message: error instanceof Error ? error.message : 'Falha ao ler URL pela fonte Jina.',
+        })
+        continue
+      }
       const result = await addRadarCompanyToCampaignWithClient(client, user, {
         organizationId: input.organizationId,
         campaignId: input.campaignId,
-        tradeName: domainTitle(url),
-        websiteUrl: url,
+        tradeName: evidence.title || domainTitle(url),
+        websiteUrl: evidence.url || url,
+        emailRaw: evidence.emails[0],
+        phoneRaw: evidence.phones[0],
         sourceType: 'jina_reader',
         sourceUrl: url,
-      }, { runId: run.rows[0].id })
+      }, { runId: run.rows[0].id, dataSourceId: source?.id, estimatedCost: perUnitCost })
       imported.push(result.opportunity)
       await client.query(
         `INSERT INTO public.radar_company_enrichment (
-           company_record_id, opportunity_id, website_url, has_site, confidence_score
+           company_record_id, opportunity_id, website_url, public_email, public_phone,
+           has_site, has_whatsapp_cta, has_booking, confidence_score
          )
-         VALUES ($1,$2,$3,TRUE,60)
+         VALUES ($1,$2,$3,$4,$5,TRUE,$6,$7,75)
          ON CONFLICT (opportunity_id)
          DO UPDATE SET website_url = EXCLUDED.website_url,
+                       public_email = EXCLUDED.public_email,
+                       public_phone = EXCLUDED.public_phone,
                        has_site = TRUE,
-                       confidence_score = GREATEST(public.radar_company_enrichment.confidence_score, 60),
+                       has_whatsapp_cta = EXCLUDED.has_whatsapp_cta,
+                       has_booking = EXCLUDED.has_booking,
+                       confidence_score = GREATEST(public.radar_company_enrichment.confidence_score, 75),
                        updated_at = NOW()`,
-        [result.company.id, result.opportunity.id, url],
+        [
+          result.company.id,
+          result.opportunity.id,
+          evidence.url || url,
+          evidence.emails[0] ?? null,
+          evidence.phones[0] ?? null,
+          evidence.ctaTerms.includes('whatsapp'),
+          evidence.ctaTerms.some(term => term === 'agende' || term === 'consulta'),
+        ],
       )
+    }
+    if (imported.length > 0) {
+      await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, imported.length, perUnitCost * imported.length)
     }
 
     await client.query('COMMIT')
@@ -490,6 +521,7 @@ export async function runRadarAssistedSearch(
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
 
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
     const run = await client.query<{ id: string }>(
       `INSERT INTO public.radar_enrichment_runs (
          organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
@@ -501,50 +533,84 @@ export async function runRadarAssistedSearch(
         input.organizationId,
         input.campaignId,
         source?.id ?? null,
-        source?.enabled ? 'succeeded' : 'failed',
+        governance.allowed ? 'succeeded' : 'failed',
         input.sourceType,
         JSON.stringify({ query: input.query, city: input.city, state: input.state, limit }),
-        JSON.stringify({ candidateCount: source?.enabled ? limit : 0 }),
-        source?.enabled ? null : `radar_source_disabled:${input.sourceType}`,
+        JSON.stringify({ candidateCount: governance.allowed ? limit : 0, estimatedCost: governance.estimatedCost }),
+        governance.allowed ? null : governance.issues.map(issue => issue.message).join('; '),
       ],
     )
 
-    if (!source?.enabled) {
+    if (!governance.allowed) {
       await client.query('COMMIT')
       return {
         candidates: [],
-        issues: [{ code: 'source_disabled', message: `${input.sourceType} esta desabilitado.` }],
+        issues: governance.issues,
         runId: run.rows[0].id,
       }
     }
 
     const candidates: RadarCandidateRecord[] = []
-    for (const index of Array.from({ length: limit }, (_, value) => value)) {
-      const title = `${input.query} ${input.city || ''} candidato ${index + 1}`.trim()
-      const dedupeKey = `search:${normalizeToken(title)}`
+    const query = [input.query, input.city, input.state].filter(Boolean).join(' ')
+    let results: RadarJinaSearchResult[] = []
+    try {
+      results = await searchJinaWeb(query, { limit })
+    } catch (error) {
+      await client.query('COMMIT')
+      return {
+        candidates,
+        issues: [{ code: 'provider_failed', message: error instanceof Error ? error.message : 'Falha ao executar busca assistida.' }],
+        runId: run.rows[0].id,
+      }
+    }
+    for (const result of results) {
+      const title = result.title || result.url || input.query
+      const dedupeKey = `search:${normalizeToken(result.url || title)}`
+      const duplicateStatus = await hasLikelyExistingCompany(client, input.organizationId, result)
       const inserted = await client.query<RadarCandidateRecordRow>(
         `INSERT INTO public.radar_candidate_records (
            organization_id, campaign_id, enrichment_run_id, source_type, source_url, title,
-           snippet, raw_payload, normalized_payload, dedupe_key
+           snippet, raw_payload, normalized_payload, dedupe_key, status
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (campaign_id, dedupe_key)
-         DO UPDATE SET updated_at = NOW()
+         DO UPDATE SET updated_at = NOW(),
+                       snippet = EXCLUDED.snippet,
+                       raw_payload = EXCLUDED.raw_payload,
+                       normalized_payload = EXCLUDED.normalized_payload
          RETURNING *`,
         [
           input.organizationId,
           input.campaignId,
           run.rows[0].id,
           input.sourceType,
-          null,
+          result.url || null,
           title,
-          `Resultado assistido para ${input.query}`,
-          JSON.stringify({ generated: true }),
-          JSON.stringify({ tradeName: title, city: input.city, state: input.state }),
+          result.snippet,
+          JSON.stringify({
+            title: result.title,
+            url: result.url,
+            emails: result.emails,
+            phones: result.phones,
+            ctaTerms: result.ctaTerms,
+            links: result.links,
+          }),
+          JSON.stringify({
+            tradeName: title,
+            city: input.city,
+            state: input.state,
+            websiteUrl: result.url || undefined,
+            emailRaw: result.emails[0],
+            phoneRaw: result.phones[0],
+          }),
           dedupeKey,
+          duplicateStatus ? 'duplicate' : 'pending_review',
         ],
       )
       candidates.push(mapCandidate(inserted.rows[0]))
+    }
+    if (candidates.length > 0) {
+      await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, candidates.length, governance.estimatedCost)
     }
 
     await client.query('COMMIT')
@@ -765,6 +831,7 @@ async function addRadarCompanyToCampaignWithClient(
     ],
   )
   const companyRow = company.rows[0]
+  const duplicateMatches = await createRadarDuplicateCandidates(client, companyRow, input.campaignId)
   const opportunity = await client.query<RadarOpportunityRow>(
     `INSERT INTO public.radar_opportunities (organization_id, campaign_id, company_record_id, owner_id)
      VALUES ($1,$2,$3,$4)
@@ -795,12 +862,28 @@ async function addRadarCompanyToCampaignWithClient(
   )
   await client.query(
     `INSERT INTO public.radar_cost_logs (
-       organization_id, campaign_id, company_record_id, opportunity_id, source_type, action_type, units, estimated_cost, provider
+       organization_id, campaign_id, company_record_id, opportunity_id, data_source_id, source_type, action_type, units, estimated_cost, provider
      )
-     VALUES ($1,$2,$3,$4,$5,'company_added',1,0,$5)`,
-    [input.organizationId, input.campaignId, companyRow.id, opportunityRow.id, sourceType],
+     VALUES ($1,$2,$3,$4,$5,$6,'company_added',1,$7,$6)`,
+    [
+      input.organizationId,
+      input.campaignId,
+      companyRow.id,
+      opportunityRow.id,
+      options.dataSourceId ?? null,
+      sourceType,
+      options.estimatedCost ?? 0,
+    ],
   )
-  return { company: mapCompany(companyRow), opportunity: mapOpportunity(opportunityRow, companyRow) }
+  if (duplicateMatches.length > 0) {
+    await client.query(
+      `UPDATE public.radar_company_records
+       SET dedupe_status = 'duplicate_candidate', updated_at = NOW()
+       WHERE id = $1`,
+      [companyRow.id],
+    )
+  }
+  return { company: mapCompany(companyRow), opportunity: mapOpportunity(opportunityRow, companyRow), duplicateMatches }
 }
 
 export async function reviewRadarOpportunity(
@@ -1291,6 +1374,109 @@ async function findRadarDataSource(pool: pg.Pool, organizationId: string, source
     [sourceKey, organizationId],
   )
   return result.rows[0] ? mapDataSource(result.rows[0]) : null
+}
+
+async function evaluateRadarSourceGovernance(
+  queryable: RadarQueryable,
+  organizationId: string,
+  campaignId: string,
+  source: RadarDataSource | null,
+  requestedUnits: number,
+) {
+  const sourceType = source?.sourceType ?? 'unknown'
+  const estimatedCost = estimateRadarCost(requestedUnits, source?.defaultCostPerUnit ?? 0)
+  if (!source?.enabled) {
+    return {
+      allowed: false,
+      estimatedCost,
+      issues: [{ code: 'source_disabled', sourceType, message: `${sourceType} esta desabilitado no catalogo do Radar.` }],
+    }
+  }
+
+  const campaign = await queryable.query<{ daily_limit: number; budget_limit: string | number | null }>(
+    `SELECT daily_limit, budget_limit
+     FROM public.radar_campaigns
+     WHERE id = $1 AND organization_id = $2
+     LIMIT 1`,
+    [campaignId, organizationId],
+  )
+  const dailyLimit = Math.min(source.rateLimitPerDay, campaign.rows[0]?.daily_limit ?? source.rateLimitPerDay)
+  const budgetLimit = campaign.rows[0]?.budget_limit !== null && campaign.rows[0]?.budget_limit !== undefined
+    ? Number(campaign.rows[0].budget_limit)
+    : undefined
+  const usage = await queryable.query<{ units: string | number; estimated_cost: string | number }>(
+    `SELECT COALESCE(SUM(units), 0) AS units,
+            COALESCE(SUM(estimated_cost), 0) AS estimated_cost
+     FROM public.radar_source_usage_counters
+     WHERE organization_id = $1
+       AND campaign_id = $2
+       AND source_type = $3
+       AND usage_date = CURRENT_DATE`,
+    [organizationId, campaignId, sourceType],
+  )
+  const usedUnits = Number(usage.rows[0]?.units ?? 0)
+  const usedCost = Number(usage.rows[0]?.estimated_cost ?? 0)
+  const issues: Array<{ code: string; sourceType: string; message: string; limit?: number; used?: number }> = []
+
+  if (usedUnits + requestedUnits > dailyLimit) {
+    issues.push({
+      code: 'source_limit_exceeded',
+      sourceType,
+      message: `Limite diario da fonte ${sourceType} excedido.`,
+      limit: dailyLimit,
+      used: usedUnits,
+    })
+  }
+  if (budgetLimit !== undefined && usedCost + estimatedCost > budgetLimit) {
+    issues.push({
+      code: 'source_budget_exceeded',
+      sourceType,
+      message: `Orcamento diario da campanha excedido para ${sourceType}.`,
+      limit: budgetLimit,
+      used: usedCost,
+    })
+  }
+
+  return { allowed: issues.length === 0, estimatedCost, issues }
+}
+
+async function recordRadarSourceUsage(
+  queryable: RadarQueryable,
+  organizationId: string,
+  campaignId: string,
+  source: RadarDataSource | null,
+  units: number,
+  estimatedCost: number,
+) {
+  if (!source || units <= 0) return
+  await queryable.query(
+    `INSERT INTO public.radar_source_usage_counters (
+       organization_id, campaign_id, data_source_id, source_type, usage_date, units, estimated_cost
+     )
+     VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$6)
+     ON CONFLICT (organization_id, campaign_id, source_type, usage_date)
+     DO UPDATE SET units = public.radar_source_usage_counters.units + EXCLUDED.units,
+                   estimated_cost = public.radar_source_usage_counters.estimated_cost + EXCLUDED.estimated_cost,
+                   updated_at = NOW()`,
+    [organizationId, campaignId, source.id, source.sourceType, units, estimatedCost],
+  )
+}
+
+async function hasLikelyExistingCompany(queryable: RadarQueryable, organizationId: string, result: RadarJinaSearchResult) {
+  if (!result.url && result.emails.length === 0 && result.phones.length === 0) return false
+  const existing = await queryable.query<{ id: string }>(
+    `SELECT id
+     FROM public.radar_company_records
+     WHERE organization_id = $1
+       AND (
+         ($2::TEXT IS NOT NULL AND website_url ILIKE '%' || $2 || '%')
+         OR ($3::TEXT IS NOT NULL AND email_raw = $3)
+         OR ($4::TEXT IS NOT NULL AND phone_raw = $4)
+       )
+     LIMIT 1`,
+    [organizationId, domainTitle(result.url), result.emails[0] ?? null, result.phones[0] ?? null],
+  )
+  return existing.rows.length > 0
 }
 
 function domainTitle(url: string) {
