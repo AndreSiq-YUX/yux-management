@@ -1,12 +1,15 @@
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 export type RadarOpportunityStatus = 'raw' | 'enriching' | 'enriched' | 'diagnosing' | 'diagnosed' | 'message_drafted' | 'review_pending' | 'approved' | 'rejected' | 'discarded' | 'opted_out' | 'converted'
 export type RadarMessageStatus = 'draft' | 'approved' | 'rejected' | 'converted'
+export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'future_paid_api'
+export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'
 
 export interface RadarDataSource {
   id: string
   organizationId?: string
   sourceKey: string
-  sourceType: string
+  sourceType: RadarSourceType
   displayName: string
   enabled: boolean
   isPaid: boolean
@@ -14,6 +17,47 @@ export interface RadarDataSource {
   termsNotes?: string
   defaultCostPerUnit: number
   rateLimitPerDay: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RadarEnrichmentRun {
+  id: string
+  organizationId: string
+  campaignId: string
+  companyRecordId?: string
+  opportunityId?: string
+  dataSourceId?: string
+  agentExecutionRunId?: string
+  provider: string
+  status: RadarRunStatus
+  inputPayload: Record<string, unknown>
+  outputPayload: Record<string, unknown>
+  errorMessage?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RadarCandidateRecord {
+  id: string
+  organizationId: string
+  campaignId: string
+  enrichmentRunId?: string
+  sourceType: string
+  sourceUrl?: string
+  title: string
+  snippet?: string
+  rawPayload?: Record<string, unknown>
+  normalizedPayload: Record<string, unknown>
+  dedupeKey: string
+  status: RadarCandidateStatus
+  importedCompanyRecordId?: string
+  importedOpportunityId?: string
+  errorMessage?: string
+  reviewedBy?: string
+  reviewedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -144,4 +188,12 @@ export interface RadarMetrics {
   converted: number
   optedOut: number
   estimatedCost: number
+  sourceBreakdown?: Array<{
+    sourceType: string
+    companies: number
+    opportunities: number
+    candidates: number
+    converted: number
+    estimatedCost: number
+  }>
 }
