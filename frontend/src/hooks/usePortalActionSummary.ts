@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getInvoicePaymentState } from '@/lib/finance/financeRules'
 import { financeService } from '@/services/financeService'
 import { backendDataService } from '@/services/backendDataService'
@@ -49,6 +49,13 @@ export function usePortalActionSummary() {
   const crm = usePortalCrmContext()
   const marketing = usePortalMarketingContext({ includeCampaigns: true, includeOperations: true })
   const [projectState, setProjectState] = useState<ProjectActionState>(emptyProjectActionState)
+  const [projectRefreshKey, setProjectRefreshKey] = useState(0)
+
+  const reload = useCallback(() => {
+    void crm.reload()
+    void marketing.reload()
+    setProjectRefreshKey(current => current + 1)
+  }, [crm, marketing])
 
   useEffect(() => {
     let cancelled = false
@@ -105,7 +112,7 @@ export function usePortalActionSummary() {
     return () => {
       cancelled = true
     }
-  }, [activeContract, enabledModuleKeys, isPlatformLoading])
+  }, [activeContract, enabledModuleKeys, isPlatformLoading, projectRefreshKey])
 
   const actions = useMemo<PortalNextAction[]>(() => {
     const pendingProjectApprovals = projectState.approvals.filter(approval => approval.status === 'pending')
@@ -180,5 +187,8 @@ export function usePortalActionSummary() {
     projects: projectState.projects,
     approvals: projectState.approvals,
     invoices: projectState.invoices,
+    crm,
+    marketing,
+    reload,
   }
 }
