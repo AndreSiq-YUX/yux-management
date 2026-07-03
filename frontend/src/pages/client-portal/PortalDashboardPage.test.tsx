@@ -27,7 +27,6 @@ const platformState = {
   },
   enabledModuleKeys: ['crm'],
   isLoading: false,
-  mode: 'portal',
   organization: {
     id: 'org-1',
     name: 'Empresa ABC',
@@ -134,10 +133,11 @@ describe('PortalDashboardPage', () => {
 
     expect(container.innerHTML).toContain('Visao Geral do Cliente')
     expect(container.innerHTML).toContain('Pulso Executivo')
-    expect(container.innerHTML).toContain('Resolver agora')
-    expect(container.innerHTML).toContain('Aproveitar oportunidade')
-    expect(container.innerHTML).toContain('Atalhos contextuais')
-    expect(container.innerHTML).toContain('Mapa do Contrato')
+    expect(container.innerHTML).toContain('Resultado comercial')
+    expect(container.innerHTML).toContain('Pontos de atencao')
+    expect(container.innerHTML).toContain('Trabalho da YUX')
+    expect(container.innerHTML).toContain('Modulos contratados')
+    expect(container.innerHTML).toContain('Expansao recomendada')
     expect(container.innerHTML).toContain('Automacao comercial')
 
     root.unmount()
