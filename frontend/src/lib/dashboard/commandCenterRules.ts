@@ -37,6 +37,7 @@ export interface CommandCenterInput {
   adminSummary: AdminHubSummary | null
   userName?: string
   hasPartialError: boolean
+  windowLabel?: 'Hoje' | '7 dias' | '30 dias'
 }
 
 export interface PulseMetric {
@@ -371,7 +372,7 @@ export function buildCommandCenterModel(input: CommandCenterInput): CommandCente
     dataStatus,
     unavailableSources,
     generatedAtLabel: 'Atualizado agora',
-    windowLabel: '7 dias',
+    windowLabel: input.windowLabel ?? '7 dias',
     pulse: [
       { label: 'Riscos abertos', value: String(resolveNow.length), detail: `${criticalCount} criticos`, tone: criticalCount > 0 ? 'risk' : 'neutral' },
       { label: 'Oportunidades estimadas', value: String(opportunities.length), detail: opportunities[0]?.impactLabel ?? 'Sem impacto estimado', tone: 'opportunity' },

@@ -22,6 +22,7 @@ import {
   type PortfolioMapRow,
   type PulseMetric,
 } from '@/lib/dashboard/commandCenterRules'
+import yuxLogo from '@/assets/brand/yux-logo.png'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import { backendDataService } from '@/services/backendDataService'
 import { useAuthStore } from '@/stores/authStore'
@@ -36,6 +37,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [selectedWindow, setSelectedWindow] = useState<'Hoje' | '7 dias' | '30 dias'>('7 dias')
 
   useEffect(() => {
     let active = true
@@ -88,26 +90,30 @@ export function DashboardPage() {
     adminSummary,
     userName: user?.name,
     hasPartialError: Boolean(error),
-  }), [adminSummary, dashboardStats, error, user?.name])
+    windowLabel: selectedWindow,
+  }), [adminSummary, dashboardStats, error, selectedWindow, user?.name])
 
   if (loading) {
     return (
       <div className="flex min-h-96 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-800" />
+        <Loader2 className="h-8 w-8 animate-spin text-yux-600" />
       </div>
     )
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-4 bg-[#f7f6f2] px-4 py-5 text-slate-950 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-4 bg-[#f4f4f4] px-4 py-5 text-[#141821] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
       <header className="flex flex-col gap-5 border-b border-slate-200/80 pb-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="max-w-3xl">
-          <h1 className="text-[2rem] font-semibold leading-tight tracking-[-0.01em] text-slate-950">
-            Visao Geral YUX
-          </h1>
-          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-slate-700">
-            Mesa de comando para riscos, oportunidades e operacao interna.
-          </p>
+        <div className="flex max-w-3xl items-start gap-4">
+          <img src={yuxLogo} alt="YUX" className="mt-1 h-9 w-auto shrink-0" />
+          <div className="min-w-0 border-l border-slate-300 pl-4">
+            <h1 className="text-3xl font-semibold leading-tight tracking-[-0.01em] text-[#141821]">
+              Visao Geral YUX
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+              Mesa de comando para riscos, oportunidades e operacao interna.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-col items-start gap-3 xl:items-end">
@@ -129,13 +135,14 @@ export function DashboardPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex overflow-hidden rounded-sm border border-slate-300 bg-white text-sm text-slate-700">
-              {['Hoje', '7 dias', '30 dias'].map(label => (
+              {(['Hoje', '7 dias', '30 dias'] as const).map(label => (
                 <button
                   key={label}
                   type="button"
+                  onClick={() => setSelectedWindow(label)}
                   className={label === commandCenter.windowLabel
-                    ? 'min-w-20 border-x border-slate-950 bg-slate-950 px-5 py-2.5 font-medium text-white first:border-l-0'
-                    : 'min-w-20 border-r border-slate-200 px-5 py-2.5 hover:bg-slate-50 last:border-r-0'}
+                    ? 'min-w-20 border-x border-[#2563eb] bg-[#2563eb] px-5 py-2.5 font-semibold text-white first:border-l-0'
+                    : 'min-w-20 border-r border-slate-200 px-5 py-2.5 font-normal hover:bg-slate-50 last:border-r-0'}
                   aria-pressed={label === commandCenter.windowLabel}
                 >
                   {label}
@@ -145,7 +152,7 @@ export function DashboardPage() {
             <button
               type="button"
               onClick={() => setRefreshKey(key => key + 1)}
-              className="inline-flex items-center gap-2 rounded-sm border border-slate-950 bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-sm border border-[#2563eb] bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
             >
               Atualizar indicadores
               <RefreshCw className="h-4 w-4" />
@@ -255,7 +262,7 @@ function CommandLane({
   const isOpportunityLane = title === 'Aproveitar oportunidade'
 
   return (
-    <section className={`rounded-sm border border-slate-300 bg-white ${isOpportunityLane ? 'border-t-4 border-t-emerald-700' : 'border-t-4 border-t-red-600'}`}>
+    <section className={`rounded-sm border border-slate-300 bg-white ${isOpportunityLane ? 'border-t-2 border-t-emerald-700' : 'border-t-2 border-t-red-600'}`}>
       <div className="flex items-start gap-3 border-b border-slate-200 px-4 py-4">
         <span className="rounded-full border border-slate-200 bg-white p-2 text-slate-700">
           <Icon className="h-4 w-4" />
@@ -279,7 +286,7 @@ function CommandLane({
       </div>
       {items.length > 0 && (
         <div className="border-t border-slate-200 px-4 py-3">
-          <Link to={isOpportunityLane ? '/reports' : '/admin/health'} className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-950">
+          <Link to={isOpportunityLane ? '/reports' : '/admin/health'} className="inline-flex items-center gap-2 text-sm font-medium text-[#2563eb] hover:text-[#1d4ed8]">
             {isOpportunityLane ? 'Ver todas as oportunidades' : 'Ver todos os riscos'}
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -300,8 +307,8 @@ function CommandItemCard({ item }: { item: CommandCenterItem }) {
         </div>
 
         <div className="min-w-0 space-y-3">
-          <div className="grid gap-3 xl:grid-cols-[minmax(11rem,1fr)_minmax(5.75rem,.5fr)_minmax(6rem,.55fr)_minmax(7rem,.65fr)] xl:items-center">
-            <div className="min-w-0">
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(11rem,1fr)_minmax(5.75rem,.5fr)_minmax(6rem,.55fr)_minmax(7rem,.65fr)] 2xl:items-center">
+            <div className="min-w-0 md:col-span-2 2xl:col-span-1">
               <div className="mb-1.5 flex flex-wrap items-center gap-2">
                 <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${itemBadgeClass(item.tone)}`}>
                   {item.category.split(' - ')[0]}
@@ -314,7 +321,7 @@ function CommandItemCard({ item }: { item: CommandCenterItem }) {
 
             <MetricColumn label="Impacto" value={item.impactLabel} tone={item.tone} />
             <MetricColumn label={item.confidenceLabel ? 'Confianca' : 'Dono sugerido'} value={item.confidenceLabel ?? item.ownerLabel} tone="neutral" />
-            <MetricColumn label={item.confidenceLabel ? 'Dono sugerido' : 'Evidencia'} value={item.confidenceLabel ? item.ownerLabel : item.evidence} tone="neutral" />
+            <MetricColumn className="hidden 2xl:block" label={item.confidenceLabel ? 'Dono sugerido' : 'Evidencia'} value={item.confidenceLabel ? item.ownerLabel : item.evidence} tone="neutral" />
           </div>
 
           <div className="flex min-w-0 items-center justify-between gap-2 border-t border-slate-100 pt-3">
@@ -324,12 +331,7 @@ function CommandItemCard({ item }: { item: CommandCenterItem }) {
             >
               <span className="truncate">{item.actionLabel}</span>
             </Link>
-            <div className="flex shrink-0 items-center gap-1">
-              <button type="button" className="rounded-sm px-2 py-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Mais acoes">
-                ...
-              </button>
-              <ArrowRight className="h-4 w-4 text-slate-400" />
-            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
           </div>
         </div>
       </div>
@@ -337,10 +339,10 @@ function CommandItemCard({ item }: { item: CommandCenterItem }) {
   )
 }
 
-function MetricColumn({ label, value, tone }: { label: string; value: string; tone: CommandCenterItem['tone'] | 'neutral' }) {
+function MetricColumn({ label, value, tone, className = '' }: { label: string; value: string; tone: CommandCenterItem['tone'] | 'neutral'; className?: string }) {
   return (
-    <div className="min-w-0 border-t border-slate-100 pt-2 lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
-      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{label}</p>
+    <div className={`min-w-0 border-t border-slate-100 pt-2 2xl:border-l 2xl:border-t-0 2xl:pl-3 2xl:pt-0 ${className}`}>
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{label}</p>
       <p className={`mt-1 text-sm font-semibold leading-5 ${metricValueClass(tone)}`}>{value}</p>
     </div>
   )
@@ -372,8 +374,9 @@ function ContextualShortcuts({ shortcuts }: { shortcuts: ContextualShortcut[] })
             <ArrowRight className="h-4 w-4 text-slate-400" />
           </Link>
         )) : (
-          <div className="m-3 rounded-sm border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
-            Nenhum atalho contextual nesta janela.
+          <div className="m-3 flex items-start gap-3 rounded-sm border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
+            <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <span>Nenhum atalho contextual nesta janela.</span>
           </div>
         )}
       </div>
@@ -392,14 +395,14 @@ function PortfolioMap({ rows }: { rows: PortfolioMapRow[] }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <button type="button" className="rounded-sm border border-slate-300 px-3 py-2 text-slate-700 hover:bg-slate-50">Filtrar</button>
-          <button type="button" className="rounded-sm border border-slate-300 px-3 py-2 text-slate-700 hover:bg-slate-50">Todos os clientes</button>
-          <button type="button" className="rounded-sm border border-slate-300 px-3 py-2 text-slate-700 hover:bg-slate-50">Exportar</button>
+          <SoonButton label="Filtrar" />
+          <SoonButton label="Todos os clientes" />
+          <SoonButton label="Exportar" />
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[980px] w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-[#fbfaf7] text-[11px] text-slate-700">
+        <table className="w-full min-w-[900px] text-left text-sm xl:min-w-[980px]">
+          <thead className="border-b border-slate-200 bg-[#fafafa] text-[11px] text-slate-700">
             <tr>
               <th className="px-4 py-3 font-semibold">Cliente</th>
               <th className="px-3 py-3 font-semibold">Saude</th>
@@ -433,6 +436,20 @@ function PortfolioMap({ rows }: { rows: PortfolioMapRow[] }) {
   )
 }
 
+function SoonButton({ label }: { label: string }) {
+  return (
+    <button
+      type="button"
+      disabled
+      title="Em breve"
+      aria-label={`${label} - em breve`}
+      className="cursor-not-allowed rounded-sm border border-slate-300 px-3 py-2 text-slate-400"
+    >
+      {label}
+    </button>
+  )
+}
+
 function dataStatusClass(status: 'Completo' | 'Parcial' | 'Com falha') {
   if (status === 'Completo') {
     return 'inline-flex items-center gap-2 text-sm text-emerald-800 before:h-2 before:w-2 before:rounded-full before:bg-emerald-500'
@@ -447,7 +464,7 @@ function pulseIconClass(tone: PulseMetric['tone']) {
   const classes = {
     risk: 'border border-red-200 text-red-600',
     opportunity: 'border border-emerald-200 text-emerald-700',
-    neutral: 'border border-indigo-200 text-indigo-500',
+    neutral: 'border border-slate-200 text-slate-500',
     warning: 'border border-amber-200 text-amber-600',
   }
   return classes[tone]
@@ -455,11 +472,11 @@ function pulseIconClass(tone: PulseMetric['tone']) {
 
 function itemToneClass(tone: CommandCenterItem['tone']) {
   const classes = {
-    critical: 'border-l-4 border-l-red-600',
-    warning: 'border-l-4 border-l-amber-500',
-    opportunity: 'border-l-4 border-l-emerald-700',
-    efficiency: 'border-l-4 border-l-emerald-700',
-    neutral: 'border-l-4 border-l-slate-400',
+    critical: 'border-l-2 border-l-red-600',
+    warning: 'border-l-2 border-l-amber-500',
+    opportunity: 'border-l-2 border-l-emerald-700',
+    efficiency: 'border-l-2 border-l-emerald-700',
+    neutral: 'border-l-2 border-l-slate-400',
   }
   return classes[tone]
 }
