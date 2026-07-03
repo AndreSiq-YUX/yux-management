@@ -6,15 +6,16 @@ import {
   Briefcase,
   CheckCircle2,
   Clock3,
+  FileText,
   Gauge,
   LayoutGrid,
   Loader2,
   PackagePlus,
+  Phone,
   RefreshCw,
-  ShieldAlert,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
-  UserRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PortalEmptyState } from '@/components/client-portal/PortalEmptyState'
@@ -24,7 +25,6 @@ import {
   buildPortalDashboardModel,
   type PortalAttentionItem,
   type PortalDashboardDataStatus,
-  type PortalDashboardFocus,
   type PortalDashboardTone,
   type PortalDashboardWindow,
   type PortalExecutiveDashboardModel,
@@ -39,14 +39,6 @@ import { usePlatformStore } from '@/stores/platformStore'
 
 const timeWindows: PortalDashboardWindow[] = ['Hoje', '7 dias', '30 dias']
 
-const resultToneClass: Record<PortalDashboardTone, string> = {
-  critical: 'border-red-200 bg-red-50 text-red-900',
-  attention: 'border-amber-200 bg-amber-50 text-amber-900',
-  healthy: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-  neutral: 'border-slate-200 bg-[#fafafa] text-[#141821]',
-  positive: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-}
-
 const attentionClass: Record<PortalAttentionItem['priority'], string> = {
   critical: 'border-l-red-600 bg-red-50/40',
   high: 'border-l-amber-500 bg-amber-50/40',
@@ -60,11 +52,18 @@ const moduleStatusClass: Record<PortalModuleSummary['statusLabel'], string> = {
   'Em implantacao': 'border-indigo-200 bg-indigo-50 text-indigo-800',
 }
 
-const focusIcon: Record<PortalDashboardFocus, LucideIcon> = {
-  commercial: TrendingUp,
-  marketing: Sparkles,
-  delivery: Briefcase,
-  executive: Gauge,
+const moduleIcon: Record<string, LucideIcon> = {
+  automations: Sparkles,
+  bi_reports: Gauge,
+  campaigns: TrendingUp,
+  crm: Phone,
+  finance: FileText,
+  landing_pages: LayoutGrid,
+  marketing_studio: Sparkles,
+  projects: Briefcase,
+  proposals: FileText,
+  support: ShieldCheck,
+  whatsapp_ai: Phone,
 }
 
 function dataStatusClass(status: PortalDashboardDataStatus) {
@@ -77,13 +76,6 @@ function dataStatusClass(status: PortalDashboardDataStatus) {
   return 'inline-flex items-center gap-2 text-sm text-red-800 before:h-2 before:w-2 before:rounded-full before:bg-red-500'
 }
 
-function pulseIconClass(tone: PortalDashboardTone) {
-  if (tone === 'critical') return 'border border-red-200 text-red-600'
-  if (tone === 'attention') return 'border border-amber-200 text-amber-600'
-  if (tone === 'positive' || tone === 'healthy') return 'border border-emerald-200 text-emerald-700'
-  return 'border border-slate-200 text-slate-500'
-}
-
 function metricDetailClass(tone: PortalDashboardTone) {
   if (tone === 'critical') return 'text-red-600'
   if (tone === 'attention') return 'text-amber-700'
@@ -91,46 +83,79 @@ function metricDetailClass(tone: PortalDashboardTone) {
   return 'text-slate-600'
 }
 
-function PanelHeader({
-  description,
-  icon: Icon,
-  title,
-}: {
-  description: string
-  icon: LucideIcon
-  title: string
-}) {
+function pulseIcon(metric: PortalPulseMetric) {
+  if (metric.id === 'followups') return Phone
+  if (metric.id === 'proposals' || metric.id === 'approvals') return FileText
+  if (metric.id === 'conversion' || metric.id === 'mroi' || metric.id === 'result') return TrendingUp
+  if (metric.id === 'health') return ShieldCheck
+  if (metric.id === 'projects' || metric.id === 'delivery') return Briefcase
+  return Sparkles
+}
+
+function toneAccentClass(tone: PortalDashboardTone) {
+  if (tone === 'critical') return 'text-red-600'
+  if (tone === 'attention') return 'text-amber-600'
+  if (tone === 'positive' || tone === 'healthy') return 'text-[#2563EB]'
+  return 'text-slate-500'
+}
+
+function toneSoftClass(tone: PortalDashboardTone) {
+  if (tone === 'critical') return 'bg-red-100 text-red-600'
+  if (tone === 'attention') return 'bg-amber-100 text-amber-600'
+  if (tone === 'positive' || tone === 'healthy') return 'bg-emerald-100 text-emerald-700'
+  return 'bg-[#eff6ff] text-[#2563EB]'
+}
+
+function sectionTitle(title: string) {
   return (
-    <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600">
-        <Icon className="h-4 w-4" />
-      </span>
-      <div>
-        <h2 className="text-base font-semibold text-[#141821]">{title}</h2>
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">{description}</p>
-      </div>
+    <div className="border-b border-slate-200 px-4 py-3">
+      <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">{title}</h2>
     </div>
   )
 }
 
+function mainMetricParts(headline: string) {
+  const revenueMatch = headline.match(/^(R\$\s?[\d.,]+)(.*)$/)
+  if (revenueMatch) {
+    return {
+      metric: revenueMatch[1],
+      qualifier: revenueMatch[2].trim(),
+    }
+  }
+
+  const countMatch = headline.match(/^(\d+\s+\S+)(.*)$/)
+  if (countMatch) {
+    return {
+      metric: countMatch[1],
+      qualifier: countMatch[2].trim(),
+    }
+  }
+
+  return {
+    metric: headline,
+    qualifier: '',
+  }
+}
+
+function attentionActionLabel(item: PortalAttentionItem) {
+  if (item.kind === 'commercial') return 'Retomar'
+  if (item.kind === 'approval') return 'Aprovar'
+  if (item.kind === 'project' || item.kind === 'marketing') return 'Revisar'
+  if (item.kind === 'finance') return 'Abrir'
+  return item.actionLabel.replace('Abrir ', '') || 'Abrir'
+}
+
 function PulseCard({ metric, portalPath }: { metric: PortalPulseMetric; portalPath: (href?: string) => string }) {
+  const Icon = pulseIcon(metric)
   const content = (
-    <article className="flex min-h-24 items-center gap-4 px-5 py-4">
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${pulseIconClass(metric.tone)}`}>
-        {metric.tone === 'critical' ? (
-          <ShieldAlert className="h-5 w-5" />
-        ) : metric.tone === 'positive' || metric.tone === 'healthy' ? (
-          <Sparkles className="h-5 w-5" />
-        ) : metric.tone === 'attention' ? (
-          <Clock3 className="h-5 w-5" />
-        ) : (
-          <UserRound className="h-5 w-5" />
-        )}
+    <article className="flex min-h-[108px] items-center gap-5 px-5 py-5">
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center ${toneAccentClass(metric.tone)}`}>
+        <Icon className="h-6 w-6 stroke-[2.2]" />
       </span>
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
-        <p className="mt-1 text-2xl font-semibold tracking-[-0.01em] text-slate-950">{metric.value}</p>
-        <p className={`mt-0.5 text-xs ${metricDetailClass(metric.tone)}`}>{metric.detail}</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{metric.label}</p>
+        <p className="mt-2 text-[1.75rem] font-semibold leading-none tracking-[-0.01em] text-slate-950">{metric.value}</p>
+        <p className={`mt-2 text-xs font-medium ${metricDetailClass(metric.tone)}`}>{metric.detail}</p>
       </div>
     </article>
   )
@@ -145,37 +170,37 @@ function PulseCard({ metric, portalPath }: { metric: PortalPulseMetric; portalPa
 }
 
 function MainResultPanel({ result, portalPath }: { result: PortalMainResult; portalPath: (href?: string) => string }) {
-  const FocusIcon = focusIcon[result.focus]
+  const headline = mainMetricParts(result.headlineMetric)
 
   return (
     <section className="rounded-sm border border-slate-300 bg-white">
-      <PanelHeader
-        icon={FocusIcon}
-        title={result.title}
-        description={result.narrative}
-      />
-      <div className="px-5 py-5">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Resultado principal</p>
-            <p className="mt-3 text-4xl font-semibold tracking-normal text-[#050816]">{result.headlineMetric}</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{result.headlineDetail}</p>
-          </div>
+      {sectionTitle(result.title)}
+      <div className="grid gap-0 p-5 lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="flex flex-col items-start justify-center border-b border-slate-200 pb-5 pr-0 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8">
+          <p className="text-[3rem] font-semibold leading-none tracking-[-0.03em] text-[#141821]">{headline.metric}</p>
+          <p className="mt-3 text-lg font-medium text-[#141821]">{headline.qualifier || result.headlineDetail}</p>
+          {headline.qualifier && <p className="mt-1 text-sm text-slate-600">{result.headlineDetail}</p>}
+          <p className="mt-4 max-w-md text-sm leading-6 text-slate-600">{result.narrative}</p>
           <Link
             to={portalPath(result.ctaHref)}
-            className="inline-flex w-fit items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1d4ed8]"
+            className="mt-5 inline-flex items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1d4ed8]"
           >
             {result.ctaLabel}
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+        <div className="divide-y divide-slate-200 pt-2 lg:pl-6 lg:pt-0">
           {result.signals.map(signal => (
-            <div key={`${signal.label}-${signal.value}`} className={`rounded-sm border p-3 ${resultToneClass[signal.tone]}`}>
-              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{signal.label}</p>
-              <p className="mt-2 text-base font-semibold text-[#141821]">{signal.value}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">{signal.detail}</p>
+            <div key={`${signal.label}-${signal.value}`} className="grid grid-cols-[40px_1fr_auto] items-center gap-4 py-4 first:pt-0 last:pb-0">
+              <span className={`flex h-9 w-9 items-center justify-center rounded-full ${toneSoftClass(signal.tone)}`}>
+                {signal.tone === 'critical' ? <Phone className="h-4 w-4" /> : signal.tone === 'attention' ? <Clock3 className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold text-[#141821]">{signal.label} {signal.value}</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{signal.detail}</p>
+              </div>
+              <span className={`h-2 w-2 rounded-full ${signal.tone === 'critical' ? 'bg-red-500' : signal.tone === 'attention' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
             </div>
           ))}
         </div>
@@ -186,15 +211,11 @@ function MainResultPanel({ result, portalPath }: { result: PortalMainResult; por
 
 function AttentionPanel({ items, portalPath }: { items: PortalAttentionItem[]; portalPath: (href?: string) => string }) {
   return (
-    <section className="rounded-sm border border-slate-300 border-t-2 border-t-red-600 bg-white">
-      <PanelHeader
-        icon={ShieldAlert}
-        title="Pontos de atencao"
-        description="Pendencias, bloqueios e decisoes que podem afetar resultado, prazo ou operacao."
-      />
-      <div className="space-y-3 p-5">
+    <section className="rounded-sm border border-slate-300 bg-white">
+      {sectionTitle('Pontos de atencao')}
+      <div className="space-y-3 p-4">
         {items.length === 0 ? (
-          <div className="rounded-sm border border-dashed border-slate-300 bg-white p-4">
+          <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-4">
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
               <div>
@@ -204,24 +225,32 @@ function AttentionPanel({ items, portalPath }: { items: PortalAttentionItem[]; p
             </div>
           </div>
         ) : items.map(item => (
-          <article key={item.id} className={`rounded-sm border border-slate-200 border-l-2 p-4 ${attentionClass[item.priority]}`}>
-            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+          <article key={item.id} className={`rounded-sm border border-slate-200 border-l-2 ${attentionClass[item.priority]}`}>
+            <div className="grid grid-cols-[44px_1fr] gap-4 px-4 py-3 2xl:grid-cols-[44px_1fr_220px_auto] 2xl:items-center">
+              <span className={`flex h-9 w-9 items-center justify-center rounded-full border ${item.priority === 'critical' ? 'border-red-200 text-red-600' : 'border-amber-200 text-amber-600'}`}>
+                {item.kind === 'commercial' ? <Phone className="h-4 w-4" /> : item.kind === 'approval' ? <FileText className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              </span>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-sm border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-600">
-                    {item.impactLabel}
-                  </span>
-                  <span className="text-xs text-slate-500">Dono: {item.expectedOwner}</span>
+                <h3 className="text-sm font-semibold leading-5 text-[#141821]">{item.title}</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
+              </div>
+              <div className="col-span-2 grid grid-cols-2 gap-4 border-t border-slate-200 pt-3 2xl:col-span-1 2xl:border-t-0 2xl:pt-0">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Impacto</p>
+                  <p className={`mt-1 text-xs font-semibold ${item.priority === 'critical' ? 'text-red-600' : 'text-amber-700'}`}>
+                    {item.priority === 'critical' ? 'Alto' : item.priority === 'high' ? 'Medio' : 'Normal'}
+                  </p>
                 </div>
-                <h3 className="mt-3 text-sm font-semibold leading-6 text-[#050816]">{item.title}</h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{item.description}</p>
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Responsavel</p>
+                  <p className="mt-1 text-xs font-semibold text-[#141821]">{item.expectedOwner}</p>
+                </div>
               </div>
               <Link
                 to={portalPath(item.href)}
-                className="inline-flex w-fit shrink-0 items-center justify-center gap-2 rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-[#2563EB] hover:text-[#2563EB]"
+                className="col-start-2 inline-flex h-9 w-fit items-center justify-center rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-[#2563EB] hover:text-[#2563EB] 2xl:col-start-auto"
               >
-                {item.actionLabel}
-                <ArrowRight className="h-4 w-4" />
+                {attentionActionLabel(item)}
               </Link>
             </div>
           </article>
@@ -231,41 +260,78 @@ function AttentionPanel({ items, portalPath }: { items: PortalAttentionItem[]; p
   )
 }
 
-function ActivityList({
+function ActivityRow({
+  item,
+  portalPath,
+  variant,
+}: {
+  item: PortalYuxActivityItem | PortalRecommendationItem
+  portalPath: (href?: string) => string
+  variant: 'activity' | 'recommendation'
+}) {
+  const isHigh = item.impactLabel.toLowerCase().includes('alto') || item.impactLabel.toLowerCase().includes('acelera')
+
+  return (
+    <Link to={portalPath(item.href)} className="grid gap-3 px-3 py-3 transition-colors hover:bg-slate-50 sm:grid-cols-[36px_1fr_92px] sm:items-center">
+      <span className="flex h-8 w-8 items-center justify-center rounded-sm bg-[#eff6ff] text-[#2563EB]">
+        {variant === 'activity' ? <Sparkles className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+      </span>
+      <div className="min-w-0">
+        <h3 className="truncate text-sm font-semibold text-[#141821]">{item.title}</h3>
+        <p className="mt-1 truncate text-xs text-slate-500">{item.detail}</p>
+      </div>
+      <div className="sm:text-right">
+        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">{variant === 'activity' ? 'Impacto' : 'Impacto esperado'}</p>
+        <p className={`mt-1 text-xs font-semibold ${isHigh ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {item.impactLabel}
+        </p>
+      </div>
+    </Link>
+  )
+}
+
+function CompactList({
   emptyIcon: EmptyIcon,
   emptyText,
   items,
   portalPath,
+  title,
+  variant,
 }: {
   emptyIcon: LucideIcon
   emptyText: string
   items: Array<PortalYuxActivityItem | PortalRecommendationItem>
   portalPath: (href?: string) => string
+  title: string
+  variant: 'activity' | 'recommendation'
 }) {
-  if (items.length === 0) {
-    return (
-      <div className="rounded-sm border border-slate-200 bg-[#fafafa] p-4">
-        <div className="flex items-start gap-3">
-          <EmptyIcon className="mt-0.5 h-5 w-5 text-slate-500" />
-          <p className="text-sm leading-6 text-slate-600">{emptyText}</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="divide-y divide-slate-200 rounded-sm border border-slate-200">
-      {items.map(item => (
-        <Link key={item.id} to={portalPath(item.href)} className="block px-4 py-3 transition-colors hover:bg-slate-50">
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-[#141821]">{item.title}</h3>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</p>
-            </div>
-            <span className="w-fit rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700">{item.impactLabel}</span>
+    <div className="rounded-sm border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">{title}</p>
+      </div>
+      {items.length === 0 ? (
+        <div className="p-4">
+          <div className="flex items-start gap-3 rounded-sm border border-slate-200 bg-[#fafafa] p-4">
+            <EmptyIcon className="mt-0.5 h-5 w-5 text-slate-500" />
+            <p className="text-sm leading-6 text-slate-600">{emptyText}</p>
           </div>
-        </Link>
-      ))}
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-200">
+          {items.slice(0, 3).map(item => (
+            <ActivityRow key={item.id} item={item} portalPath={portalPath} variant={variant} />
+          ))}
+        </div>
+      )}
+      {items.length > 0 && (
+        <div className="border-t border-slate-200 px-4 py-3">
+          <Link to={portalPath(variant === 'activity' ? '/portal/projetos/projetos' : '/portal/relatorios')} className="inline-flex items-center gap-2 text-xs font-semibold text-[#2563EB]">
+            {variant === 'activity' ? 'Ver todas as atividades' : 'Ver todas as recomendacoes'}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
@@ -279,30 +345,24 @@ function YuxWorkPanel({
 }) {
   return (
     <section className="rounded-sm border border-slate-300 bg-white">
-      <PanelHeader
-        icon={Clock3}
-        title="Trabalho da YUX"
-        description="O que o time YUX esta conduzindo e quais oportunidades ja foram identificadas."
-      />
-      <div className="grid gap-5 p-5 xl:grid-cols-2">
-        <div>
-          <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Em andamento</p>
-          <ActivityList
-            emptyIcon={Briefcase}
-            emptyText="Nenhuma atividade recente registrada para este contrato."
-            items={model.yuxActivity}
-            portalPath={portalPath}
-          />
-        </div>
-        <div>
-          <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Insights e oportunidades</p>
-          <ActivityList
-            emptyIcon={Sparkles}
-            emptyText="Sem novas recomendacoes operacionais no momento."
-            items={model.recommendations}
-            portalPath={portalPath}
-          />
-        </div>
+      {sectionTitle('Trabalho da YUX e recomendacoes')}
+      <div className="grid gap-4 p-4 xl:grid-cols-2">
+        <CompactList
+          emptyIcon={Briefcase}
+          emptyText="Nenhuma atividade recente registrada para este contrato."
+          items={model.yuxActivity}
+          portalPath={portalPath}
+          title="Executado pela YUX"
+          variant="activity"
+        />
+        <CompactList
+          emptyIcon={Sparkles}
+          emptyText="Sem novas recomendacoes operacionais no momento."
+          items={model.recommendations}
+          portalPath={portalPath}
+          title="Recomendado agora"
+          variant="recommendation"
+        />
       </div>
     </section>
   )
@@ -318,53 +378,77 @@ function ModulesPanel({
   suggestions: PortalExpansionSuggestion[]
 }) {
   return (
-    <section className="rounded-sm border border-slate-300 bg-white">
-      <PanelHeader
-        icon={LayoutGrid}
-        title="Modulos contratados"
-        description="Leitura objetiva do que esta ativo no contrato e do que a YUX recomenda considerar em seguida."
-      />
-      <div className="grid gap-5 p-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="grid gap-3 lg:grid-cols-2">
-          {modules.map(module => (
-            <Link key={module.moduleKey} to={portalPath(module.href)} className="rounded-sm border border-slate-200 bg-white p-4 transition-colors hover:border-[#2563EB]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-[#141821]">{module.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{module.signal}</p>
-                </div>
-                <span className={`shrink-0 rounded-sm border px-2 py-1 text-xs font-medium ${moduleStatusClass[module.statusLabel]}`}>
-                  {module.statusLabel}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
+    <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+      <section className="rounded-sm border border-slate-300 bg-white">
+        {sectionTitle('Modulos contratados')}
+        <div className="grid gap-3 p-4 sm:grid-cols-2 2xl:grid-cols-4">
+          {modules.map(module => {
+            const Icon = moduleIcon[module.moduleKey] || LayoutGrid
 
-        <div className="rounded-sm border border-slate-200 bg-[#fafafa] p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <PackagePlus className="h-4 w-4 text-[#2563EB]" />
-            <h3 className="font-semibold text-[#141821]">Expansao recomendada</h3>
-          </div>
-          {suggestions.length === 0 ? (
-            <p className="text-sm leading-6 text-slate-600">Nao ha sugestao prioritaria de modulo adicional para o estado atual do contrato.</p>
-          ) : (
-            <div className="space-y-3">
-              {suggestions.map(suggestion => (
-                <Link key={suggestion.id} to={portalPath(suggestion.href)} className="block rounded-sm border border-slate-200 bg-white p-3 transition-colors hover:border-[#2563EB]">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-[#141821]">{suggestion.moduleName}</span>
-                    <span className="rounded-sm border border-[#2563EB]/20 bg-[#2563EB]/5 px-2 py-0.5 text-xs font-medium text-[#2563EB]">{suggestion.ctaLabel}</span>
+            return (
+              <Link key={module.moduleKey} to={portalPath(module.href)} className="rounded-sm border border-slate-200 bg-white p-3 transition-colors hover:border-[#2563EB]">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-[#eff6ff] text-[#2563EB]">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="truncate text-sm font-semibold text-[#141821]">{module.title}</h3>
+                      <span className={`shrink-0 rounded-sm border px-2 py-0.5 text-[10px] font-semibold ${moduleStatusClass[module.statusLabel]}`}>
+                        {module.statusLabel === 'Precisa de atencao' ? 'Atencao' : module.statusLabel}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{module.signal}</p>
+                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB]">
+                      Abrir {module.title.toLowerCase()}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{suggestion.reason}</p>
-                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{suggestion.expectedGain}</p>
-                </Link>
-              ))}
-            </div>
-          )}
+                </div>
+              </Link>
+            )
+          })}
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section className="rounded-sm border border-slate-300 bg-white">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">Expansao recomendada</h2>
+          <Link to={portalPath('/portal/suporte')} className="hidden items-center gap-2 text-xs font-semibold text-[#2563EB] sm:inline-flex">
+            Ver todas as oportunidades
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          {suggestions.length === 0 ? (
+            <div className="rounded-sm border border-slate-200 bg-[#fafafa] p-4">
+              <PackagePlus className="h-5 w-5 text-slate-500" />
+              <p className="mt-3 text-sm leading-6 text-slate-600">Nao ha sugestao prioritaria de modulo adicional para o estado atual do contrato.</p>
+            </div>
+          ) : suggestions.map(suggestion => {
+            const Icon = moduleIcon[suggestion.moduleKey] || PackagePlus
+
+            return (
+              <Link key={suggestion.id} to={portalPath(suggestion.href)} className="rounded-sm border border-slate-200 bg-white p-4 transition-colors hover:border-[#2563EB]">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-indigo-50 text-[#635BFF]">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-[#141821]">{suggestion.moduleName}</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">{suggestion.reason}</p>
+                    <p className="mt-2 text-xs font-semibold text-slate-700">{suggestion.expectedGain}</p>
+                    <span className="mt-3 inline-flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700">
+                      {suggestion.ctaLabel}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -437,55 +521,53 @@ export function PortalDashboardPage() {
           <h1 className="text-3xl font-semibold leading-tight tracking-[-0.01em] text-[#141821]">
             Visao Geral do Cliente
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
-            Painel executivo para acompanhar prioridades, resultados, trabalho da YUX e oportunidades de expansao do contrato.
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-700">
+            Saude, resultado e proximas decisoes do contrato ativo.
           </p>
-        </div>
-
-        <div className="flex flex-col items-start gap-3 xl:items-end">
-          <div className="flex flex-wrap items-center gap-4 text-sm text-slate-700">
-            <span className={dataStatusClass(model.dataStatus)}>
-              {model.dataStatus}
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <UserRound className="h-4 w-4 text-slate-900" />
-              Cliente: {model.organizationName}
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <Briefcase className="h-4 w-4 text-slate-500" />
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-700">
+            <span className="inline-flex h-8 items-center gap-2 rounded-sm border border-slate-300 bg-white px-3">
+              <Briefcase className="h-3.5 w-3.5 text-slate-500" />
               Contrato: {model.contractName}
             </span>
-            <span className="inline-flex items-center gap-2">
-              <Clock3 className="h-4 w-4 text-slate-500" />
+            <span className="text-slate-400">+</span>
+            <span className="inline-flex h-8 items-center gap-2">
+              <Gauge className="h-3.5 w-3.5 text-slate-500" />
+              {model.focusLabel}
+            </span>
+            <span className="inline-flex h-8 items-center gap-2">
+              <Clock3 className="h-3.5 w-3.5 text-slate-500" />
               {model.generatedAtLabel}
             </span>
+            <span className={`inline-flex h-8 items-center gap-2 rounded-sm border border-slate-300 bg-white px-3 ${dataStatusClass(model.dataStatus)}`}>
+              {model.dataStatus}
+            </span>
           </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex overflow-hidden rounded-sm border border-slate-300 bg-white text-sm text-slate-700">
-              {timeWindows.map(label => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => setSelectedWindow(label)}
-                  className={label === model.windowLabel
-                    ? 'min-w-20 border-x border-[#2563eb] bg-[#2563eb] px-5 py-2.5 font-semibold text-white first:border-l-0'
-                    : 'min-w-20 border-r border-slate-200 px-5 py-2.5 font-normal hover:bg-slate-50 last:border-r-0'}
-                  aria-pressed={label === model.windowLabel}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={actionSummary.reload}
-              className="inline-flex items-center gap-2 rounded-sm border border-[#2563eb] bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
-            >
-              Atualizar indicadores
-              <RefreshCw className="h-4 w-4" />
-            </button>
+        <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+          <div className="inline-flex overflow-hidden rounded-sm border border-slate-300 bg-white text-sm text-slate-700">
+            {timeWindows.map(label => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setSelectedWindow(label)}
+                className={label === model.windowLabel
+                  ? 'min-w-16 border-x border-[#050816] bg-[#050816] px-4 py-2 font-semibold text-white first:border-l-0'
+                  : 'min-w-16 border-r border-slate-200 px-4 py-2 font-normal hover:bg-slate-50 last:border-r-0'}
+                aria-pressed={label === model.windowLabel}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+          <button
+            type="button"
+            onClick={actionSummary.reload}
+            className="inline-flex items-center gap-2 rounded-sm border border-[#2563eb] bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Atualizar visao
+          </button>
         </div>
       </header>
 
