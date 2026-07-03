@@ -294,37 +294,43 @@ function CommandItemCard({ item }: { item: CommandCenterItem }) {
 
   return (
     <article className={`rounded-sm border bg-white ${itemToneClass(item.tone)}`}>
-      <div className="grid gap-3 p-3 lg:grid-cols-[3.25rem_minmax(13rem,1.05fr)_minmax(6rem,.55fr)_minmax(6rem,.55fr)_minmax(7rem,.65fr)_auto] lg:items-center">
+      <div className="grid gap-3 p-3 sm:grid-cols-[3.25rem_minmax(0,1fr)]">
         <div className={`flex h-12 w-12 items-center justify-center rounded-full border ${itemIconClass(item.tone)}`}>
           <Icon className="h-6 w-6" />
         </div>
 
-        <div className="min-w-0">
-          <div className="mb-1.5 flex flex-wrap items-center gap-2">
-            <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${itemBadgeClass(item.tone)}`}>
-              {item.category.split(' - ')[0]}
-            </span>
-            <span className="text-xs text-slate-500">{item.urgencyLabel}</span>
+        <div className="min-w-0 space-y-3">
+          <div className="grid gap-3 xl:grid-cols-[minmax(11rem,1fr)_minmax(5.75rem,.5fr)_minmax(6rem,.55fr)_minmax(7rem,.65fr)] xl:items-center">
+            <div className="min-w-0">
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${itemBadgeClass(item.tone)}`}>
+                  {item.category.split(' - ')[0]}
+                </span>
+                <span className="text-xs text-slate-500">{item.urgencyLabel}</span>
+              </div>
+              <h3 className="text-[15px] font-semibold leading-5 text-slate-950">{item.title}</h3>
+              <p className="mt-1 text-xs text-slate-500">{item.affectedEntityLabel}</p>
+            </div>
+
+            <MetricColumn label="Impacto" value={item.impactLabel} tone={item.tone} />
+            <MetricColumn label={item.confidenceLabel ? 'Confianca' : 'Dono sugerido'} value={item.confidenceLabel ?? item.ownerLabel} tone="neutral" />
+            <MetricColumn label={item.confidenceLabel ? 'Dono sugerido' : 'Evidencia'} value={item.confidenceLabel ? item.ownerLabel : item.evidence} tone="neutral" />
           </div>
-          <h3 className="text-[15px] font-semibold leading-5 text-slate-950">{item.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">{item.affectedEntityLabel}</p>
-        </div>
 
-        <MetricColumn label="Impacto" value={item.impactLabel} tone={item.tone} />
-        <MetricColumn label={item.confidenceLabel ? 'Confianca' : 'Dono sugerido'} value={item.confidenceLabel ?? item.ownerLabel} tone="neutral" />
-        <MetricColumn label={item.confidenceLabel ? 'Dono sugerido' : 'Evidencia'} value={item.confidenceLabel ? item.ownerLabel : item.evidence} tone="neutral" />
-
-        <div className="flex items-center justify-end gap-2">
-        <Link
-          to={item.href}
-            className={`inline-flex min-w-32 items-center justify-center rounded-sm border px-3 py-2 text-xs font-semibold ${itemActionClass(item.tone)}`}
-        >
-          {item.actionLabel}
-        </Link>
-          <button type="button" className="hidden rounded-sm px-2 py-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 lg:inline-flex" title="Mais acoes">
-            ...
-          </button>
-          <ArrowRight className="hidden h-4 w-4 text-slate-400 lg:block" />
+          <div className="flex min-w-0 items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <Link
+              to={item.href}
+              className={`inline-flex max-w-full items-center justify-center rounded-sm border px-3 py-2 text-xs font-semibold ${itemActionClass(item.tone)}`}
+            >
+              <span className="truncate">{item.actionLabel}</span>
+            </Link>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" className="rounded-sm px-2 py-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Mais acoes">
+                ...
+              </button>
+              <ArrowRight className="h-4 w-4 text-slate-400" />
+            </div>
+          </div>
         </div>
       </div>
     </article>
