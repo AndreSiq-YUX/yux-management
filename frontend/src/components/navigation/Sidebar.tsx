@@ -24,6 +24,7 @@ import {
   UserCog
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import yuxLogo from '@/assets/brand/yux-logo.png'
 import { buildNavigationGroups } from '@/lib/platform/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { usePlatformContext } from '@/stores/platformStore'
@@ -80,11 +81,9 @@ export function Sidebar() {
       <div className="flex h-full flex-col">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center px-6 border-b border-gray-200">
-          <div className="flex items-center">
-            <div className="w-8 h-8 bg-yux-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">YUX</span>
-            </div>
-            <span className="ml-3 truncate text-lg font-semibold text-gray-900">
+          <div className="flex min-w-0 items-center gap-3">
+            <img src={yuxLogo} alt="YUX" className="h-7 w-auto shrink-0" />
+            <span className="truncate text-sm font-semibold text-gray-900">
               {platformContext.mode === 'client_workspace'
                 ? 'Workspace Cliente'
                 : platformContext.mode === 'internal'

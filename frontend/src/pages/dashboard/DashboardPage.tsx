@@ -22,7 +22,6 @@ import {
   type PortfolioMapRow,
   type PulseMetric,
 } from '@/lib/dashboard/commandCenterRules'
-import yuxLogo from '@/assets/brand/yux-logo.png'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import { backendDataService } from '@/services/backendDataService'
 import { useAuthStore } from '@/stores/authStore'
@@ -104,16 +103,13 @@ export function DashboardPage() {
   return (
     <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-4 bg-[#f4f4f4] px-4 py-5 text-[#141821] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
       <header className="flex flex-col gap-5 border-b border-slate-200/80 pb-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex max-w-3xl items-start gap-4">
-          <img src={yuxLogo} alt="YUX" className="mt-1 h-9 w-auto shrink-0" />
-          <div className="min-w-0 border-l border-slate-300 pl-4">
-            <h1 className="text-3xl font-semibold leading-tight tracking-[-0.01em] text-[#141821]">
-              Visao Geral YUX
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
-              Mesa de comando para riscos, oportunidades e operacao interna.
-            </p>
-          </div>
+        <div className="max-w-3xl">
+          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.01em] text-[#141821]">
+            Visao Geral YUX
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+            Mesa de comando para riscos, oportunidades e operacao interna.
+          </p>
         </div>
 
         <div className="flex flex-col items-start gap-3 xl:items-end">
