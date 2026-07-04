@@ -131,6 +131,14 @@ const knowledgeMatches: MarketingKnowledgeMatch[] = [{
   rank: 1,
 }]
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver
+
 describe('PortalMarketingStudioWorkspace', () => {
   it('renders client-safe marketing data without internal technical details', () => {
     const container = document.createElement('div')
@@ -155,28 +163,26 @@ describe('PortalMarketingStudioWorkspace', () => {
 
     const html = container.innerHTML
     expect(html).toContain('Marketing Studio')
-    expect(html).toContain('Aguardando aprovacao 1')
-    expect(html).toContain('Conteudos 1')
-    expect(html).toContain('Creditos 120')
     expect(html).toContain('Estudio de Automacoes')
     expect(html).toContain('Pulso do Marketing')
-    expect(html).toContain('Mapa do fluxo')
+    expect(html).toContain('Editor de nos')
     expect(html).toContain('Estrategista de Campanha')
     expect(html).toContain('Redator Multicanal')
     expect(html).toContain('Gerador de Criativos')
     expect(html).toContain('Central de Conteudo')
     expect(html).toContain('Biblioteca de Criativos')
-    expect(html).toContain('Post para aprovacao')
-    expect(html).toContain('Calendario')
+    expect(html).toContain('Adicionar nota')
+    expect(html).toContain('Ajustar visao')
+    expect(html).toContain('Fluxos disponiveis')
+    expect(html).toContain('Creditos')
     expect(html).toContain('Aprovacoes')
-    expect(html).toContain('Revise antes de aprovar')
-    expect(html).toContain('Campanhas e criativos')
-    expect(html).toContain('Relatorios')
-    expect(html).toContain('Marca e conhecimento')
-    expect(html).toContain('Marca consultiva e direta')
-    expect(html).toContain('1 ofertas estruturadas')
-    expect(html).toContain('1 documentos publicados')
-    expect(html).toContain('A marca fala com clareza')
+    expect(html).not.toContain('Prontidao da marca')
+    expect(html).not.toContain('Marca e conhecimento')
+    expect(html).not.toContain('Nenhum conteudo aguardando aprovacao')
+    expect(html).not.toContain('Nenhum conteudo disponivel')
+    expect(html).not.toContain('Revise antes de aprovar')
+    expect(html).not.toContain('Campanhas e criativos')
+    expect(html).not.toContain('Relatorios')
     expect(html).not.toContain('internalNotes')
     expect(html).not.toContain('complianceNotes')
     expect(html).not.toContain('Custo interno')
@@ -184,10 +190,7 @@ describe('PortalMarketingStudioWorkspace', () => {
     expect(html).not.toContain('protected_error')
     expect(html).not.toContain('raw model')
 
-    act(() => {
-      container.querySelector<HTMLButtonElement>('button[title="Aprovar conteudo"]')!.click()
-    })
-    expect(onReviewDecision).toHaveBeenCalledWith({ contentItemId: 'content-1', status: 'approved' })
+    expect(onReviewDecision).not.toHaveBeenCalled()
 
     act(() => root.unmount())
   })
