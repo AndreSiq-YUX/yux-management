@@ -379,6 +379,7 @@ describe('buildNavigationGroups', () => {
       { label: 'Landing Pages', href: '/portal/marketing/landing-pages', moduleKey: 'landing_pages' },
       { label: 'Campanhas', href: '/portal/marketing/campanhas', moduleKey: 'campaigns' },
       { label: 'Marketing Studio', href: '/portal/marketing/studio', moduleKey: 'marketing_studio' },
+      { label: 'Central de Conteudo', href: '/portal/marketing/conteudo', moduleKey: 'marketing_studio' },
     ]))
   })
 

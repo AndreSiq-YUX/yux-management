@@ -34,7 +34,7 @@ export function PortalEditorialCalendarPage() {
       ]}
       primaryAction={{ label: 'Abrir Marketing Studio', href: '/portal/marketing/studio' }}
       secondaryActions={[
-        { label: 'Conteudo Organico', href: '/portal/marketing/conteudo' },
+        { label: 'Central de Conteudo', href: '/portal/marketing/conteudo' },
         { label: 'Campanhas', href: '/portal/marketing/campanhas' },
         { label: 'Aprovacoes', href: '/portal/projetos/aprovacoes' },
       ]}

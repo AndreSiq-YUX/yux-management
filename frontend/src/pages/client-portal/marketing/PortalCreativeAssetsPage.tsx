@@ -35,7 +35,7 @@ export function PortalCreativeAssetsPage() {
       primaryAction={{ label: 'Abrir Campanhas', href: '/portal/marketing/campanhas' }}
       secondaryActions={[
         { label: 'Marca e Tom de Voz', href: '/portal/empresa/marca' },
-        { label: 'Conteudo Organico', href: '/portal/marketing/conteudo' },
+        { label: 'Central de Conteudo', href: '/portal/marketing/conteudo' },
         { label: 'Landing Pages', href: '/portal/marketing/landing-pages' },
       ]}
     >
