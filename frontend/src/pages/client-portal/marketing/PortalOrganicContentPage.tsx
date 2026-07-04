@@ -371,13 +371,15 @@ export function PortalOrganicContentPage() {
           </div>
         </div>
 
-        {loading ? (
-          <p className="p-5 text-sm text-slate-600">Carregando Central de Conteudo...</p>
-        ) : error ? (
-          <p className="p-5 text-sm text-red-600">{error}</p>
-        ) : (
-          <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <div className="min-w-0 border-slate-200 xl:border-r">
+      </section>
+
+      {loading ? (
+        <section className="rounded-md border border-slate-300 bg-white p-5 text-sm text-slate-600">Carregando Central de Conteudo...</section>
+      ) : error ? (
+        <section className="rounded-md border border-red-200 bg-white p-5 text-sm text-red-600">{error}</section>
+      ) : (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="min-w-0 space-y-4">
               {view === 'gallery' && (
                 <GalleryView assets={filteredAssets} selectedId={selectedAsset?.id} onSelect={setSelectedAssetId} />
               )}
@@ -392,9 +394,8 @@ export function PortalOrganicContentPage() {
               )}
             </div>
             <AssetInspector asset={selectedAsset} onApprove={() => updateSelectedStatus('approved')} onRequestChanges={() => updateSelectedStatus('changes_requested')} />
-          </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   )
 }
@@ -403,7 +404,7 @@ function GalleryView({ assets, selectedId, onSelect }: { assets: ContentAsset[];
   if (!assets.length) return <EmptyContentState />
 
   return (
-    <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
       {assets.map(asset => (
         <AssetCard key={asset.id} asset={asset} selected={asset.id === selectedId} onSelect={() => onSelect(asset.id)} />
       ))}
@@ -415,7 +416,8 @@ function TableView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; s
   if (!assets.length) return <EmptyContentState />
 
   return (
-    <div className="overflow-auto">
+    <div className="overflow-hidden rounded-md border border-slate-300 bg-white">
+      <div className="overflow-auto">
       <table className="min-w-[980px] w-full border-collapse text-sm">
         <thead className="bg-[#f4f4f4] text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
           <tr>
@@ -445,6 +447,7 @@ function TableView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; s
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -457,7 +460,7 @@ function KanbanView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; 
     .filter(column => column.assets.length > 0)
 
   return (
-    <div className="grid min-h-[520px] auto-cols-[280px] grid-flow-col gap-3 overflow-auto p-4">
+    <div className="grid min-h-[520px] auto-cols-[280px] grid-flow-col gap-3 overflow-auto">
       {columns.map(column => (
         <section key={column.key} className="rounded-md border border-slate-200 bg-slate-50">
           <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
@@ -490,7 +493,7 @@ function CalendarView({ assets, selectedId, onSelect }: { assets: ContentAsset[]
   if (!assets.length) return <EmptyContentState />
 
   return (
-    <div className="grid gap-3 p-4 lg:grid-cols-3">
+    <div className="grid gap-4 lg:grid-cols-3">
       {['Esta semana', 'Proximos 15 dias', 'Publicados recentes'].map((period, index) => (
         <section key={period} className="rounded-md border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
@@ -550,14 +553,14 @@ function AssetCard({ asset, selected, onSelect }: { asset: ContentAsset; selecte
 function AssetInspector({ asset, onApprove, onRequestChanges }: { asset?: ContentAsset; onApprove: () => void; onRequestChanges: () => void }) {
   if (!asset) {
     return (
-      <aside className="p-5">
+      <aside className="self-start rounded-md border border-slate-300 bg-white p-5">
         <p className="text-sm text-slate-600">Selecione um ativo para ver detalhes.</p>
       </aside>
     )
   }
 
   return (
-    <aside className="self-start bg-white p-4 xl:sticky xl:top-4">
+    <aside className="self-start rounded-md border border-slate-300 bg-white p-4 xl:sticky xl:top-4">
       <div className="overflow-hidden rounded-md border border-slate-300">
         <AssetPreview asset={asset} />
       </div>
@@ -631,26 +634,31 @@ function AssetInspector({ asset, onApprove, onRequestChanges }: { asset?: Conten
 function AssetPreview({ asset, compact = false }: { asset: ContentAsset; compact?: boolean }) {
   const height = compact ? 'h-48' : 'h-64'
   const iconClass = 'h-5 w-5'
+  const outerPadding = compact ? 'p-4' : 'p-5'
+  const innerPadding = compact ? 'p-3.5' : 'p-4'
+  const headlineClass = compact ? 'text-xl leading-tight' : 'text-2xl leading-tight'
+  const metaClass = compact ? 'text-[11px] tracking-[0.16em]' : 'text-xs tracking-[0.2em]'
+  const visualBlockClass = compact ? 'h-12' : 'h-14'
 
   if (asset.preview === 'copy') {
     return (
-      <div className={`${height} bg-[#141821] p-5 text-white`}>
+      <div className={`${height} bg-[#141821] ${outerPadding} text-white`}>
         <FileText className={iconClass} />
-        <p className="mt-5 text-xs uppercase tracking-[0.2em] text-blue-200">Landing page</p>
-        <p className="mt-3 text-2xl font-semibold leading-tight">Diagnostico comercial em 48h</p>
-        <p className="mt-3 max-w-xs text-sm text-slate-300">Identifique gargalos, follow-ups perdidos e oportunidades de conversao.</p>
+        <p className={`mt-5 ${metaClass} uppercase text-blue-200`}>Landing page</p>
+        <p className={`mt-3 line-clamp-3 ${headlineClass} font-semibold`}>Diagnostico comercial em 48h</p>
+        {!compact && <p className="mt-3 max-w-xs text-sm text-slate-300">Identifique gargalos, follow-ups perdidos e oportunidades de conversao.</p>}
       </div>
     )
   }
 
   if (asset.preview === 'video') {
     return (
-      <div className={`${height} bg-slate-900 p-4 text-white`}>
-        <div className="flex h-full flex-col justify-between rounded-md border border-white/15 bg-slate-800 p-4">
+      <div className={`${height} bg-slate-900 ${outerPadding} text-white`}>
+        <div className={`flex h-full flex-col justify-between rounded-md border border-white/15 bg-slate-800 ${innerPadding}`}>
           <Video className={iconClass} />
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Roteiro Reels</p>
-            <p className="mt-2 text-xl font-semibold">Seu WhatsApp demora a responder?</p>
+            <p className={`${metaClass} uppercase text-amber-200`}>Roteiro Reels</p>
+            <p className={`mt-2 line-clamp-3 ${headlineClass} font-semibold`}>Seu WhatsApp demora a responder?</p>
           </div>
           <div className="h-2 rounded-full bg-white/20"><div className="h-2 w-2/3 rounded-full bg-amber-400" /></div>
         </div>
@@ -660,11 +668,11 @@ function AssetPreview({ asset, compact = false }: { asset: ContentAsset; compact
 
   if (asset.preview === 'email') {
     return (
-      <div className={`${height} bg-slate-100 p-5`}>
-        <div className="rounded-md border border-slate-300 bg-white p-4 shadow-sm">
+      <div className={`${height} bg-slate-100 ${outerPadding}`}>
+        <div className={`h-full rounded-md border border-slate-300 bg-white ${innerPadding} shadow-sm`}>
           <Mail className="h-5 w-5 text-blue-600" />
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Email</p>
-          <p className="mt-2 text-lg font-semibold text-[#141821]">Convite para diagnostico gratuito</p>
+          <p className={`mt-4 ${metaClass} font-semibold uppercase text-slate-500`}>Email</p>
+          <p className="mt-2 line-clamp-3 text-lg font-semibold text-[#141821]">Convite para diagnostico gratuito</p>
           <div className="mt-4 space-y-2">
             <span className="block h-2 rounded bg-slate-200" />
             <span className="block h-2 w-4/5 rounded bg-slate-200" />
@@ -677,10 +685,10 @@ function AssetPreview({ asset, compact = false }: { asset: ContentAsset; compact
 
   if (asset.preview === 'brief') {
     return (
-      <div className={`${height} bg-[#f4f4f4] p-5`}>
-        <div className="h-full rounded-md border border-slate-300 bg-white p-4">
+      <div className={`${height} bg-[#f4f4f4] ${outerPadding}`}>
+        <div className={`h-full rounded-md border border-slate-300 bg-white ${innerPadding}`}>
           <Layers3 className="h-5 w-5 text-[#B449A6]" />
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Brief designer</p>
+          <p className={`mt-4 ${metaClass} font-semibold uppercase text-slate-500`}>Brief designer</p>
           <p className="mt-2 text-lg font-semibold text-[#141821]">Kit de anuncios</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
             <span className="h-14 rounded bg-blue-100" />
@@ -700,19 +708,19 @@ function AssetPreview({ asset, compact = false }: { asset: ContentAsset; compact
   }[asset.preview] || 'from-slate-100 via-white to-blue-100'
 
   return (
-    <div className={`${height} bg-gradient-to-br ${previewStyles} p-4`}>
-      <div className="flex h-full flex-col justify-between rounded-md border border-white/40 bg-white/70 p-4 shadow-sm backdrop-blur-sm">
+    <div className={`${height} bg-gradient-to-br ${previewStyles} ${outerPadding}`}>
+      <div className={`flex h-full flex-col justify-between rounded-md border border-white/40 bg-white/70 ${innerPadding} shadow-sm backdrop-blur-sm`}>
         <div className="flex items-center justify-between">
           <span className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-blue-700">YUX</span>
           <BarChart3 className="h-5 w-5 text-blue-600" />
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{asset.channel}</p>
-          <p className="mt-2 max-w-[240px] text-2xl font-semibold leading-tight text-[#141821]">{asset.title.replace(' - ', ': ')}</p>
+          <p className={`${metaClass} font-semibold uppercase text-slate-500`}>{asset.channel}</p>
+          <p className={`mt-2 line-clamp-3 max-w-[240px] ${headlineClass} font-semibold text-[#141821]`}>{asset.title.replace(' - ', ': ')}</p>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <span className="h-14 rounded-md bg-white/80 shadow-sm" />
-          <span className="h-14 rounded-md bg-blue-600/90 shadow-sm" />
+          <span className={`${visualBlockClass} rounded-md bg-white/80 shadow-sm`} />
+          <span className={`${visualBlockClass} rounded-md bg-blue-600/90 shadow-sm`} />
         </div>
       </div>
     </div>

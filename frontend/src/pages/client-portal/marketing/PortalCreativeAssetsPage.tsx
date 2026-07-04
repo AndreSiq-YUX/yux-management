@@ -436,18 +436,20 @@ export function PortalCreativeAssetsPage() {
           ))}
         </div>
 
-        {loading ? (
-          <p className="p-5 text-sm text-slate-600">Carregando Biblioteca de Criativos e Inspiracoes...</p>
-        ) : error ? (
-          <p className="p-5 text-sm text-red-600">{error}</p>
-        ) : (
-          <div className="grid xl:grid-cols-[260px_minmax(0,1fr)_370px]">
+      </section>
+
+      {loading ? (
+        <section className="rounded-md border border-slate-300 bg-white p-5 text-sm text-slate-600">Carregando Biblioteca de Criativos e Inspiracoes...</section>
+      ) : error ? (
+        <section className="rounded-md border border-red-200 bg-white p-5 text-sm text-red-600">{error}</section>
+      ) : (
+        <section className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_370px]">
             <CompetitorRail
               competitors={competitors}
               selectedId={selectedCompetitorId}
               onSelect={setSelectedCompetitorId}
             />
-            <main className="min-w-0 border-slate-200 xl:border-l xl:border-r">
+            <main className="min-w-0 space-y-4">
               {view === 'gallery' && (
                 <GalleryView
                   inspirations={filteredInspirations}
@@ -477,9 +479,8 @@ export function PortalCreativeAssetsPage() {
               onRequestCuration={() => updateSelectedStatus('needs_curation')}
               centralHref={portalPath('/marketing/conteudo')}
             />
-          </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   )
 }
@@ -494,7 +495,7 @@ function CompetitorRail({
   onSelect: (id: string) => void
 }) {
   return (
-    <aside className="space-y-3 bg-slate-50/70 p-4">
+    <aside className="space-y-3 self-start rounded-md border border-slate-300 bg-white p-4 xl:sticky xl:top-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-[#141821]">Concorrentes</h2>
@@ -554,7 +555,7 @@ function GalleryView({
   if (!inspirations.length) return <EmptyState />
 
   return (
-    <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
       {inspirations.map(item => (
         <InspirationCard
           key={item.id}
@@ -579,7 +580,7 @@ function CompetitorsView({
   onSelect: (id: string) => void
 }) {
   return (
-    <div className="grid gap-3 p-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
       {competitors.map(competitor => {
         const related = inspirations.filter(item => item.competitorId === competitor.id)
         return (
@@ -613,7 +614,7 @@ function CompetitorsView({
 
 function CollectionsView({ collections, inspirations }: { collections: CreativeCollection[]; inspirations: InspirationItem[] }) {
   return (
-    <div className="grid gap-4 p-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       {collections.map((collection, index) => (
         <article key={collection.id} className="rounded-md border border-slate-200 bg-white p-4">
           <div className="flex items-start justify-between gap-3">
@@ -645,7 +646,7 @@ function RadarView({ inspirations, competitors }: { inspirations: InspirationIte
   ]
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-3">
       {rows.map(row => (
         <article key={row.label} className="flex items-center justify-between gap-4 rounded-md border border-slate-200 bg-white p-4">
           <div>
@@ -661,7 +662,7 @@ function RadarView({ inspirations, competitors }: { inspirations: InspirationIte
 
 function QuickCollections({ collections }: { collections: CreativeCollection[] }) {
   return (
-    <section className="border-t border-slate-200 p-4">
+    <section className="rounded-md border border-slate-300 bg-white p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-[#141821]">Colecoes rapidas</h2>
         <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700">
@@ -671,15 +672,14 @@ function QuickCollections({ collections }: { collections: CreativeCollection[] }
       </div>
       <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
         {collections.map(collection => (
-          <article key={collection.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[#141821]">{collection.title}</p>
-              <span className={`rounded-md px-2 py-1 text-[11px] font-semibold ${accentClass(collection.tone, 'soft')}`}>{collection.count}</span>
+          <article key={collection.id} className="flex min-h-[76px] items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="min-w-0">
+              <p className="line-clamp-1 text-sm font-semibold text-[#141821]">{collection.title}</p>
+              <p className="mt-1 text-xs text-slate-500">{collection.count} itens</p>
             </div>
-            <p className="mt-2 line-clamp-2 text-xs text-slate-500">{collection.description}</p>
-            <div className="mt-3 flex -space-x-2">
+            <div className="flex -space-x-2">
               {[0, 1, 2].map(index => (
-                <span key={index} className={`h-7 w-7 rounded-md border-2 border-white ${accentClass(collection.tone, index === 0 ? 'solid' : 'muted')}`} />
+                <span key={index} className={`h-9 w-11 rounded-md border-2 border-white shadow-sm ${accentClass(collection.tone, index === 0 ? 'solid' : 'muted')}`} />
               ))}
             </div>
           </article>
@@ -739,14 +739,14 @@ function InspirationInspector({
 }) {
   if (!inspiration) {
     return (
-      <aside className="p-5">
+      <aside className="self-start rounded-md border border-slate-300 bg-white p-5">
         <p className="text-sm text-slate-600">Selecione uma inspiracao para analisar.</p>
       </aside>
     )
   }
 
   return (
-    <aside className="self-start bg-white p-4 xl:sticky xl:top-4">
+    <aside className="self-start rounded-md border border-slate-300 bg-white p-4 xl:sticky xl:top-4">
       <div className="overflow-hidden rounded-md border border-slate-300">
         <CreativePreview inspiration={inspiration} />
       </div>
@@ -828,18 +828,23 @@ function InspirationInspector({
 
 function CreativePreview({ inspiration, compact = false }: { inspiration: InspirationItem; compact?: boolean }) {
   const height = compact ? 'h-24' : 'h-56'
+  const outerPadding = compact ? 'p-2' : 'p-4'
+  const innerPadding = compact ? 'p-2.5' : 'p-4'
+  const headlineClass = compact ? 'text-sm leading-tight' : 'text-xl leading-tight'
+  const metaClass = compact ? 'text-[9px] tracking-[0.12em]' : 'text-[11px] tracking-[0.18em]'
+  const visualBlockClass = compact ? 'h-8' : 'h-10'
 
   if (inspiration.variant === 'report') {
     return (
-      <div className={`${height} bg-[#10212d] p-4 text-white`}>
-        <div className="flex h-full flex-col justify-between rounded-md border border-white/10 bg-[#0b2b38] p-4">
+      <div className={`${height} bg-[#10212d] ${outerPadding} text-white`}>
+        <div className={`flex h-full flex-col justify-between rounded-md border border-white/10 bg-[#0b2b38] ${innerPadding}`}>
           <div className="flex items-center justify-between">
             <span className="rounded bg-cyan-300 px-2 py-1 text-[10px] font-bold text-[#10212d]">RELATORIO</span>
             <BarChart3 className="h-5 w-5 text-cyan-200" />
           </div>
           <div>
-            <p className="text-xl font-semibold leading-tight">Vendas e marketing 2026</p>
-            <p className="mt-2 text-xs text-cyan-100">Benchmarks, tendencias e oportunidades.</p>
+            <p className={`${headlineClass} font-semibold`}>Vendas e marketing 2026</p>
+            {!compact && <p className="mt-2 text-xs text-cyan-100">Benchmarks, tendencias e oportunidades.</p>}
           </div>
         </div>
       </div>
@@ -848,12 +853,12 @@ function CreativePreview({ inspiration, compact = false }: { inspiration: Inspir
 
   if (inspiration.variant === 'reels' || inspiration.variant === 'video') {
     return (
-      <div className={`${height} bg-slate-950 p-4 text-white`}>
-        <div className="flex h-full flex-col justify-between rounded-md border border-white/15 bg-gradient-to-br from-slate-900 to-slate-700 p-4">
+      <div className={`${height} bg-slate-950 ${outerPadding} text-white`}>
+        <div className={`flex h-full flex-col justify-between rounded-md border border-white/15 bg-gradient-to-br from-slate-900 to-slate-700 ${innerPadding}`}>
           <Video className="h-5 w-5 text-pink-300" />
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-pink-200">Reels</p>
-            <p className="mt-2 text-xl font-semibold leading-tight">Cliques nao pagam boleto.</p>
+            <p className={`${metaClass} uppercase text-pink-200`}>Reels</p>
+            <p className={`mt-2 ${headlineClass} font-semibold`}>Cliques nao pagam boleto.</p>
           </div>
           <div className="h-2 rounded-full bg-white/20">
             <div className="h-2 w-2/3 rounded-full bg-pink-400" />
@@ -865,11 +870,11 @@ function CreativePreview({ inspiration, compact = false }: { inspiration: Inspir
 
   if (inspiration.variant === 'copy') {
     return (
-      <div className={`${height} bg-white p-4`}>
-        <div className="h-full rounded-md border border-slate-300 bg-slate-50 p-4">
+      <div className={`${height} bg-white ${outerPadding}`}>
+        <div className={`h-full rounded-md border border-slate-300 bg-slate-50 ${innerPadding}`}>
           <Copy className="h-5 w-5 text-blue-600" />
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Copy Ads</p>
-          <p className="mt-2 text-xl font-semibold leading-tight text-[#141821]">A agenda esta cheia, mas o caixa nao acompanha?</p>
+          <p className={`mt-4 ${metaClass} font-semibold uppercase text-slate-500`}>Copy Ads</p>
+          <p className={`mt-2 line-clamp-3 ${headlineClass} font-semibold text-[#141821]`}>A agenda esta cheia, mas o caixa nao acompanha?</p>
         </div>
       </div>
     )
@@ -883,19 +888,19 @@ function CreativePreview({ inspiration, compact = false }: { inspiration: Inspir
   }[inspiration.variant] || 'from-slate-100 via-white to-blue-100'
 
   return (
-    <div className={`${height} bg-gradient-to-br ${style} p-4`}>
-      <div className="flex h-full flex-col justify-between rounded-md border border-white/50 bg-white/75 p-4 shadow-sm backdrop-blur-sm">
+    <div className={`${height} bg-gradient-to-br ${style} ${outerPadding}`}>
+      <div className={`flex h-full flex-col justify-between rounded-md border border-white/50 bg-white/75 ${innerPadding} shadow-sm backdrop-blur-sm`}>
         <div className="flex items-center justify-between">
           <span className="rounded-md bg-white px-2 py-1 text-[10px] font-bold text-blue-700">{inspiration.sourceName.slice(0, 3).toUpperCase()}</span>
           <Megaphone className="h-5 w-5 text-blue-600" />
         </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{inspiration.channel}</p>
-          <p className="mt-2 max-w-[240px] text-2xl font-semibold leading-tight text-[#141821]">{inspiration.hook}</p>
+          <p className={`${metaClass} font-semibold uppercase text-slate-500`}>{inspiration.channel}</p>
+          <p className={`mt-2 line-clamp-4 max-w-[240px] ${headlineClass} font-semibold text-[#141821]`}>{inspiration.hook}</p>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <span className="h-12 rounded-md bg-white/80 shadow-sm" />
-          <span className="h-12 rounded-md bg-blue-600/90 shadow-sm" />
+          <span className={`${visualBlockClass} rounded-md bg-white/80 shadow-sm`} />
+          <span className={`${visualBlockClass} rounded-md bg-blue-600/90 shadow-sm`} />
         </div>
       </div>
     </div>
