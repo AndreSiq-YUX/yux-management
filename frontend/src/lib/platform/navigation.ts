@@ -138,7 +138,7 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
         ...moduleItem(context, { label: 'Marketing Studio', href: href('/marketing/studio'), moduleKey: 'marketing_studio' }),
         ...moduleItem(context, { label: 'Central de Conteudo', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),
         ...moduleItem(context, { label: 'Calendario Editorial', href: href('/marketing/calendario'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Criativos e Assets', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Criativos e Inspiracoes', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
       ],
     },
     {

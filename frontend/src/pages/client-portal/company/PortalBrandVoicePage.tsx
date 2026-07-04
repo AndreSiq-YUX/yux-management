@@ -53,7 +53,7 @@ export function PortalBrandVoicePage() {
       secondaryActions={[
         { label: 'Base de Conhecimento', href: '/portal/empresa/conhecimento' },
         { label: 'Central de Conteudo', href: '/portal/marketing/conteudo' },
-        { label: 'Criativos e Assets', href: '/portal/marketing/criativos' },
+        { label: 'Criativos e Inspiracoes', href: '/portal/marketing/criativos' },
       ]}
     >
       <BrandReadinessPanel

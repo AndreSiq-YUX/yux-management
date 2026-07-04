@@ -380,6 +380,7 @@ describe('buildNavigationGroups', () => {
       { label: 'Campanhas', href: '/portal/marketing/campanhas', moduleKey: 'campaigns' },
       { label: 'Marketing Studio', href: '/portal/marketing/studio', moduleKey: 'marketing_studio' },
       { label: 'Central de Conteudo', href: '/portal/marketing/conteudo', moduleKey: 'marketing_studio' },
+      { label: 'Criativos e Inspiracoes', href: '/portal/marketing/criativos', moduleKey: 'marketing_studio' },
     ]))
   })
 
