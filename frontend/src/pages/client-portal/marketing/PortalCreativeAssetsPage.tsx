@@ -75,6 +75,16 @@ interface CreativeCollection {
   tone: 'blue' | 'violet' | 'magenta' | 'emerald'
 }
 
+type MarketingPulseTone = 'blue' | 'violet' | 'slate' | 'emerald' | 'amber'
+
+interface MarketingPulseMetric {
+  label: string
+  value: string | number
+  detail: string
+  icon: LucideIcon
+  tone: MarketingPulseTone
+}
+
 const competitors: CompetitorProfile[] = [
   {
     id: 'v4-company',
@@ -352,12 +362,12 @@ export function PortalCreativeAssetsPage() {
     }
   }, [filteredInspirations, selectedInspirationId])
 
-  const metrics = [
-    { label: 'Concorrentes monitorados', value: competitors.length, detail: 'Fontes acompanhadas' },
-    { label: 'Inspiracoes salvas', value: inspirationItems.length, detail: 'Biblioteca do contrato' },
-    { label: 'Anuncios analisados', value: competitors.reduce((total, competitor) => total + competitor.ads, 0), detail: 'Radar e referencias' },
-    { label: 'Oportunidades criativas', value: inspirationItems.filter(item => ['Captura', 'Oferta direta', 'Dor comercial'].includes(item.objective)).length, detail: 'Com potencial de uso' },
-    { label: 'Aguardando curadoria', value: inspirationItems.filter(item => item.status === 'needs_curation').length, detail: 'Revisar e classificar' },
+  const metrics: MarketingPulseMetric[] = [
+    { label: 'Concorrentes monitorados', value: competitors.length, detail: 'Fontes acompanhadas', icon: Building2, tone: 'blue' },
+    { label: 'Inspiracoes salvas', value: inspirationItems.length, detail: 'Biblioteca do contrato', icon: Bookmark, tone: 'violet' },
+    { label: 'Anuncios analisados', value: competitors.reduce((total, competitor) => total + competitor.ads, 0), detail: 'Radar e referencias', icon: BarChart3, tone: 'slate' },
+    { label: 'Oportunidades criativas', value: inspirationItems.filter(item => ['Captura', 'Oferta direta', 'Dor comercial'].includes(item.objective)).length, detail: 'Com potencial de uso', icon: Sparkles, tone: 'emerald' },
+    { label: 'Aguardando curadoria', value: inspirationItems.filter(item => item.status === 'needs_curation').length, detail: 'Revisar e classificar', icon: Clock3, tone: 'amber' },
   ]
 
   const updateSelectedStatus = (status: InspirationStatus) => {
@@ -366,7 +376,7 @@ export function PortalCreativeAssetsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-5 bg-[#f4f4f4] px-4 py-5 text-[#141821] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
       <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-[#141821]">Biblioteca de Criativos e Inspiracoes</h1>
@@ -390,15 +400,7 @@ export function PortalCreativeAssetsPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-5">
-        {metrics.map(metric => (
-          <article key={metric.label} className="rounded-md border border-slate-300 bg-white p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{metric.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-[#141821]">{metric.value}</p>
-            <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
-          </article>
-        ))}
-      </section>
+      <MarketingPulse metrics={metrics} />
 
       <section className="rounded-md border border-slate-300 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-4 xl:flex-row xl:items-center xl:justify-between">
@@ -482,6 +484,37 @@ export function PortalCreativeAssetsPage() {
         </section>
       )}
     </div>
+  )
+}
+
+function MarketingPulse({ metrics }: { metrics: MarketingPulseMetric[] }) {
+  return (
+    <section className="rounded-sm border border-slate-300 bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-950">Pulso Executivo</p>
+          <h2 className="sr-only">Indicadores principais da biblioteca de criativos e inspiracoes</h2>
+        </div>
+        <BarChart3 className="hidden h-5 w-5 text-slate-400 sm:block" />
+      </div>
+      <div className="grid divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
+        {metrics.map(metric => {
+          const Icon = metric.icon
+          return (
+            <article key={metric.label} className="flex min-h-[108px] items-center gap-5 px-5 py-5">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center ${marketingPulseIconClass(metric.tone)}`}>
+                <Icon className="h-6 w-6 stroke-[2.2]" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{metric.label}</p>
+                <p className="mt-2 text-[1.75rem] font-semibold leading-none tracking-[-0.01em] text-slate-950">{metric.value}</p>
+                <p className={`mt-2 text-xs font-medium ${marketingPulseDetailClass(metric.tone)}`}>{metric.detail}</p>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -739,14 +772,14 @@ function InspirationInspector({
 }) {
   if (!inspiration) {
     return (
-      <aside className="self-start rounded-md border border-slate-300 bg-white p-5">
+      <aside className="self-start rounded-sm border border-slate-300 border-l-[#2563EB] bg-white p-5 shadow-sm xl:border-l-2">
         <p className="text-sm text-slate-600">Selecione uma inspiracao para analisar.</p>
       </aside>
     )
   }
 
   return (
-    <aside className="self-start rounded-md border border-slate-300 bg-white p-4 xl:sticky xl:top-4">
+    <aside className="self-start rounded-sm border border-slate-300 border-l-[#2563EB] bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:border-l-2">
       <div className="overflow-hidden rounded-md border border-slate-300">
         <CreativePreview inspiration={inspiration} />
       </div>
@@ -1038,6 +1071,30 @@ function statusTone(status: InspirationStatus): 'blue' | 'violet' | 'magenta' | 
   if (status === 'needs_curation') return 'magenta'
   if (status === 'analyzed') return 'violet'
   return 'blue'
+}
+
+function marketingPulseIconClass(tone: MarketingPulseTone) {
+  const map: Record<MarketingPulseTone, string> = {
+    blue: 'text-[#2563EB]',
+    violet: 'text-[#635BFF]',
+    slate: 'text-slate-500',
+    emerald: 'text-emerald-600',
+    amber: 'text-amber-600',
+  }
+
+  return map[tone]
+}
+
+function marketingPulseDetailClass(tone: MarketingPulseTone) {
+  const map: Record<MarketingPulseTone, string> = {
+    blue: 'text-slate-700',
+    violet: 'text-[#635BFF]',
+    slate: 'text-slate-600',
+    emerald: 'text-emerald-700',
+    amber: 'text-amber-700',
+  }
+
+  return map[tone]
 }
 
 function accentClass(tone: 'blue' | 'violet' | 'magenta' | 'emerald', variant: 'soft' | 'solid' | 'muted') {

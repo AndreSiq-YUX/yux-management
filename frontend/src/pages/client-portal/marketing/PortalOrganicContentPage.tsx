@@ -41,6 +41,15 @@ type LibraryView = 'gallery' | 'table' | 'kanban' | 'calendar'
 type AssetStatus = MarketingContentStatus | 'waiting_approval' | 'used_in_campaign'
 type AssetKind = 'creative' | 'post' | 'ad' | 'copy' | 'brief' | 'video' | 'email' | 'landing'
 type PreviewVariant = 'diagnosis' | 'dashboard' | 'growth' | 'portrait' | 'copy' | 'video' | 'brief' | 'email'
+type MarketingPulseTone = 'blue' | 'violet' | 'slate' | 'emerald' | 'amber'
+
+interface MarketingPulseMetric {
+  label: string
+  value: string | number
+  detail: string
+  icon: LucideIcon
+  tone: MarketingPulseTone
+}
 
 interface ContentAsset {
   id: string
@@ -274,12 +283,12 @@ export function PortalOrganicContentPage() {
     }
   }, [filteredAssets, selectedAssetId])
 
-  const metrics = [
-    { label: 'Total de ativos', value: assets.length, detail: 'Biblioteca do contrato' },
-    { label: 'Aguardando aprovacao', value: assets.filter(asset => ['waiting_approval', 'in_review'].includes(asset.status)).length, detail: 'Precisam de decisao' },
-    { label: 'Aprovados', value: assets.filter(asset => asset.status === 'approved').length, detail: 'Prontos para uso' },
-    { label: 'Publicados', value: assets.filter(asset => asset.status === 'published').length, detail: 'Ja distribuidos' },
-    { label: 'Usados em campanha', value: assets.filter(asset => asset.status === 'used_in_campaign').length, detail: 'Vinculados a ads' },
+  const metrics: MarketingPulseMetric[] = [
+    { label: 'Total de ativos', value: assets.length, detail: 'Biblioteca do contrato', icon: Image, tone: 'blue' },
+    { label: 'Aguardando aprovacao', value: assets.filter(asset => ['waiting_approval', 'in_review'].includes(asset.status)).length, detail: 'Precisam de decisao', icon: Clock3, tone: 'amber' },
+    { label: 'Aprovados', value: assets.filter(asset => asset.status === 'approved').length, detail: 'Prontos para uso', icon: CheckCircle2, tone: 'emerald' },
+    { label: 'Publicados', value: assets.filter(asset => asset.status === 'published').length, detail: 'Ja distribuidos', icon: Send, tone: 'violet' },
+    { label: 'Usados em campanha', value: assets.filter(asset => asset.status === 'used_in_campaign').length, detail: 'Vinculados a ads', icon: Megaphone, tone: 'slate' },
   ]
 
   const updateSelectedStatus = (status: AssetStatus) => {
@@ -288,7 +297,7 @@ export function PortalOrganicContentPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-5 bg-[#f4f4f4] px-4 py-5 text-[#141821] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
       <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-[#141821]">Central de Conteudo</h1>
@@ -312,15 +321,7 @@ export function PortalOrganicContentPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-5">
-        {metrics.map(metric => (
-          <article key={metric.label} className="rounded-md border border-slate-300 bg-white p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{metric.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-[#141821]">{metric.value}</p>
-            <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
-          </article>
-        ))}
-      </section>
+      <MarketingPulse metrics={metrics} />
 
       <section className="rounded-md border border-slate-300 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-4 xl:flex-row xl:items-center xl:justify-between">
@@ -397,6 +398,37 @@ export function PortalOrganicContentPage() {
         </section>
       )}
     </div>
+  )
+}
+
+function MarketingPulse({ metrics }: { metrics: MarketingPulseMetric[] }) {
+  return (
+    <section className="rounded-sm border border-slate-300 bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-950">Pulso Executivo</p>
+          <h2 className="sr-only">Indicadores principais da central de conteudo</h2>
+        </div>
+        <BarChart3 className="hidden h-5 w-5 text-slate-400 sm:block" />
+      </div>
+      <div className="grid divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
+        {metrics.map(metric => {
+          const Icon = metric.icon
+          return (
+            <article key={metric.label} className="flex min-h-[108px] items-center gap-5 px-5 py-5">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center ${marketingPulseIconClass(metric.tone)}`}>
+                <Icon className="h-6 w-6 stroke-[2.2]" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{metric.label}</p>
+                <p className="mt-2 text-[1.75rem] font-semibold leading-none tracking-[-0.01em] text-slate-950">{metric.value}</p>
+                <p className={`mt-2 text-xs font-medium ${marketingPulseDetailClass(metric.tone)}`}>{metric.detail}</p>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -553,14 +585,14 @@ function AssetCard({ asset, selected, onSelect }: { asset: ContentAsset; selecte
 function AssetInspector({ asset, onApprove, onRequestChanges }: { asset?: ContentAsset; onApprove: () => void; onRequestChanges: () => void }) {
   if (!asset) {
     return (
-      <aside className="self-start rounded-md border border-slate-300 bg-white p-5">
+      <aside className="self-start rounded-sm border border-slate-300 border-l-[#2563EB] bg-white p-5 shadow-sm xl:border-l-2">
         <p className="text-sm text-slate-600">Selecione um ativo para ver detalhes.</p>
       </aside>
     )
   }
 
   return (
-    <aside className="self-start rounded-md border border-slate-300 bg-white p-4 xl:sticky xl:top-4">
+    <aside className="self-start rounded-sm border border-slate-300 border-l-[#2563EB] bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:border-l-2">
       <div className="overflow-hidden rounded-md border border-slate-300">
         <AssetPreview asset={asset} />
       </div>
@@ -725,6 +757,30 @@ function AssetPreview({ asset, compact = false }: { asset: ContentAsset; compact
       </div>
     </div>
   )
+}
+
+function marketingPulseIconClass(tone: MarketingPulseTone) {
+  const map: Record<MarketingPulseTone, string> = {
+    blue: 'text-[#2563EB]',
+    violet: 'text-[#635BFF]',
+    slate: 'text-slate-500',
+    emerald: 'text-emerald-600',
+    amber: 'text-amber-600',
+  }
+
+  return map[tone]
+}
+
+function marketingPulseDetailClass(tone: MarketingPulseTone) {
+  const map: Record<MarketingPulseTone, string> = {
+    blue: 'text-slate-700',
+    violet: 'text-[#635BFF]',
+    slate: 'text-slate-600',
+    emerald: 'text-emerald-700',
+    amber: 'text-amber-700',
+  }
+
+  return map[tone]
 }
 
 function ViewButton({ icon: Icon, label, active, onClick }: { icon: LucideIcon; label: string; active: boolean; onClick: () => void }) {
