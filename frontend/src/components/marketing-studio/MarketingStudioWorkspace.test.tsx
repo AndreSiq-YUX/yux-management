@@ -1,5 +1,6 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { MarketingStudioWorkspace } from './MarketingStudioWorkspace'
 import type {
@@ -512,39 +513,41 @@ describe('MarketingStudioWorkspace', () => {
 
     act(() => {
       root.render(
-        <MarketingStudioWorkspace
-          contents={contents}
-          settings={settings}
-          onRefresh={onRefresh}
-          reviews={reviews}
-          calendarItems={calendarItems}
-          versionsByContent={versionsByContent}
-          brandProfile={brandProfile}
-          productsServices={productsServices}
-          knowledgeDocuments={knowledgeDocuments}
-          knowledgeChunks={knowledgeChunks}
-          knowledgeMatches={knowledgeMatches}
-          agents={agents}
-          workflows={workflows}
-          workflowRuns={workflowRuns}
-          agentRuns={agentRuns}
-          toolRuns={toolRuns}
-          modelRoutes={modelRoutes}
-          toolPolicies={toolPolicies}
-          sources={sources}
-          sourceItems={sourceItems}
-          radarRuns={radarRuns}
-          ideas={ideas}
-          generationRuns={generationRuns}
-          qualityChecks={qualityChecks}
-          publishingConnections={publishingConnections}
-          publishingRuns={publishingRuns}
-          campaignCreativeSuggestions={campaignCreativeSuggestions}
-          campaignDraftRuns={campaignDraftRuns}
-          onSubmitForReview={onSubmitForReview}
-          onApproveReview={onApproveReview}
-          onSearchKnowledge={onSearchKnowledge}
-        />
+        <MemoryRouter>
+          <MarketingStudioWorkspace
+            contents={contents}
+            settings={settings}
+            onRefresh={onRefresh}
+            reviews={reviews}
+            calendarItems={calendarItems}
+            versionsByContent={versionsByContent}
+            brandProfile={brandProfile}
+            productsServices={productsServices}
+            knowledgeDocuments={knowledgeDocuments}
+            knowledgeChunks={knowledgeChunks}
+            knowledgeMatches={knowledgeMatches}
+            agents={agents}
+            workflows={workflows}
+            workflowRuns={workflowRuns}
+            agentRuns={agentRuns}
+            toolRuns={toolRuns}
+            modelRoutes={modelRoutes}
+            toolPolicies={toolPolicies}
+            sources={sources}
+            sourceItems={sourceItems}
+            radarRuns={radarRuns}
+            ideas={ideas}
+            generationRuns={generationRuns}
+            qualityChecks={qualityChecks}
+            publishingConnections={publishingConnections}
+            publishingRuns={publishingRuns}
+            campaignCreativeSuggestions={campaignCreativeSuggestions}
+            campaignDraftRuns={campaignDraftRuns}
+            onSubmitForReview={onSubmitForReview}
+            onApproveReview={onApproveReview}
+            onSearchKnowledge={onSearchKnowledge}
+          />
+        </MemoryRouter>
       )
     })
 
@@ -560,7 +563,7 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('Calendario')
     expect(html).toContain('Aprovacoes')
     expect(html).toContain('Ideias')
-    expect(html).toContain('Agentes')
+    expect(html).toContain('Estudio de Automacoes')
     expect(html).toContain('Creditos')
     expect(html).toContain('Post sobre funil')
     expect(html).toContain('Conteudo organico')
@@ -574,15 +577,14 @@ describe('MarketingStudioWorkspace', () => {
     expect(html).toContain('Validar promessa comercial')
     expect(html).toContain('managed_by_yux')
     expect(html).toContain('Custo interno R$ 12')
-    expect(html).toContain('Agentes e fluxos')
-    expect(html).toContain('LangGraph runtime')
-    expect(html).toContain('Redator do cliente')
-    expect(html).toContain('prompt v3')
-    expect(html).toContain('Use exemplos aprovados do cliente.')
-    expect(html).toContain('1 workflows / 1 execucoes recentes')
-    expect(html).toContain('queued / manual')
-    expect(html).toContain('1 agent runs / 1 tool runs')
-    expect(html).toContain('openrouter / openai/gpt-4o-mini')
+    expect(html).toContain('Estúdio de Automações')
+    expect(html).toContain('Editor de fluxo')
+    expect(html).toContain('Estrategista de Campanha')
+    expect(html).toContain('Redator Multicanal')
+    expect(html).toContain('Gerador de Criativos')
+    expect(html).toContain('Central de Conteúdo')
+    expect(html).toContain('Biblioteca de Criativos')
+    expect(html).toContain('Campaign Lab')
     expect(html).toContain('Ideias e Radar')
     expect(html).toContain('Blog do cliente')
     expect(html).toContain('1 ativas / 1 cadastradas')
@@ -637,28 +639,30 @@ describe('MarketingStudioWorkspace', () => {
 
     act(() => {
       root.render(
-        <MarketingStudioWorkspace
-          contents={[]}
-          settings={settings}
-          onRefresh={vi.fn()}
-          publishingConnections={[{
-            id: 'connection-ig',
-            organizationId: 'org-1',
-            clientId: 'client-1',
-            contractId: 'contract-1',
-            provider: 'meta_instagram',
-            name: 'Instagram Cliente',
-            status: 'needs_reauth',
-            siteUrl: '',
-            authType: 'token_reference',
-            tokenReference,
-            providerAssetName: '@cliente',
-            publicConfig: {},
-            metadata: {},
-            createdAt: '2026-06-07T10:00:00.000Z',
-            updatedAt: '2026-06-07T10:00:00.000Z',
-          }]}
-        />
+        <MemoryRouter>
+          <MarketingStudioWorkspace
+            contents={[]}
+            settings={settings}
+            onRefresh={vi.fn()}
+            publishingConnections={[{
+              id: 'connection-ig',
+              organizationId: 'org-1',
+              clientId: 'client-1',
+              contractId: 'contract-1',
+              provider: 'meta_instagram',
+              name: 'Instagram Cliente',
+              status: 'needs_reauth',
+              siteUrl: '',
+              authType: 'token_reference',
+              tokenReference,
+              providerAssetName: '@cliente',
+              publicConfig: {},
+              metadata: {},
+              createdAt: '2026-06-07T10:00:00.000Z',
+              updatedAt: '2026-06-07T10:00:00.000Z',
+            }]}
+          />
+        </MemoryRouter>
       )
     })
 
