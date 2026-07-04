@@ -1,6 +1,7 @@
 import { Check, MessageSquare, RotateCcw, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { BrandReadinessPanel } from '@/components/growth-workspace/BrandReadinessPanel'
+import { PortalMarketingAutomationStudio } from '@/components/marketing-studio/PortalMarketingAutomationStudio'
 import type {
   MarketingCalendarItem,
   MarketingContentReview,
@@ -46,6 +47,13 @@ export function PortalMarketingStudioWorkspace({
         <h1 className="text-2xl font-semibold text-slate-950">Marketing Studio</h1>
         <p className="text-sm text-slate-600">Calendario, conteudos e aprovacoes do seu contrato.</p>
       </div>
+
+      <PortalMarketingAutomationStudio
+        contents={contents}
+        settings={settings}
+        calendarItems={calendarItems}
+        reviews={reviews}
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Aguardando aprovacao" value={pending} />
