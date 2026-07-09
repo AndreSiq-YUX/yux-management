@@ -76,6 +76,9 @@ class FakeAuthStore implements AuthStore {
 }
 
 const noopPool = {
+  async query() {
+    return { rows: [] }
+  },
   async end() {
     return undefined
   },

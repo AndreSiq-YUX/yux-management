@@ -122,6 +122,9 @@ class FakeEmailTemplatePool {
   async query(sql: string, params: unknown[] = []) {
     this.queries.push({ sql, params })
 
+    if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
+    if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+
     if (sql.includes('FROM public.memberships')) {
       return {
         rows: [{

@@ -110,6 +110,8 @@ class FakeJobQueue implements AppJobQueue {
 
 class FakePool {
   async query(sql: string) {
+    if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
+    if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
     if (sql.includes('SELECT m.id, c.organization_id')) {
       return { rows: [{ id: ids.message, organization_id: ids.org }] }
     }

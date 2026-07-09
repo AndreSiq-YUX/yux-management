@@ -1,11 +1,13 @@
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import rateLimit from '@fastify/rate-limit'
 import Fastify from 'fastify'
 import type pg from 'pg'
 import { createPgAuthStore, registerAuthRoutes, type AuthStore } from './auth/routes.js'
 import { loadEnv, type AppEnv } from './config/env.js'
 import { createPool } from './db/client.js'
+import { contextPlugin } from './http/context-plugin.js'
 import { DEFAULT_QUEUE_NAME, createIdempotencyKey, createQueue, type JobName, type QueueJobData } from './jobs/queue.js'
 import { registerAiAssistantRoutes } from './modules/ai-assistant/routes.js'
 import { registerAutomationRoutes } from './modules/automations/routes.js'
@@ -67,6 +69,19 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
     origin: env.CORS_ORIGIN,
     credentials: true,
   })
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+  })
+  await app.register(contextPlugin)
+
+  app.setErrorHandler((error, request, reply) => {
+    const statusCode = getErrorStatusCode(error)
+    const errorMessage = error instanceof Error ? error.message : 'bad_request'
+    if (statusCode >= 500) request.log.error(error)
+    return reply.code(statusCode).send({ error: statusCode >= 500 ? 'internal_error' : errorMessage })
+  })
 
   await app.register(registerHealthRoutes, { prefix: '/api' })
   await app.register(registerAuthRoutes, { prefix: '/api/auth' })
@@ -92,6 +107,12 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerCampaignRoutes, { prefix: '/api/campaigns' })
 
   return app
+}
+
+function getErrorStatusCode(error: unknown) {
+  if (!error || typeof error !== 'object' || !('statusCode' in error)) return 500
+  const statusCode = Reflect.get(error, 'statusCode')
+  return typeof statusCode === 'number' ? statusCode : 500
 }
 
 function createAppJobQueue(): AppJobQueue {

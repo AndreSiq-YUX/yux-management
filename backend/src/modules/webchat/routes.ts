@@ -36,7 +36,7 @@ type SessionRow = {
 }
 
 export async function registerPublicWebchatRoutes(app: FastifyInstance) {
-  app.post('/events', async (request, reply) => {
+  app.post('/events', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = eventSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ notFound: true, error: 'invalid_webchat_event' })
 

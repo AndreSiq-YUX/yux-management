@@ -81,6 +81,9 @@ class FakeRadarPool {
     this.queries.push({ sql, params })
     const normalized = sql.replace(/\s+/g, ' ').trim()
 
+    if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
+    if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+
     if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') return { rows: [] }
     if (normalized.includes('FROM public.radar_data_sources')) return { rows: [dataSourceRow(this)] }
     if (normalized.includes('UPDATE public.radar_data_sources')) {
@@ -565,7 +568,7 @@ describe('radar routes', () => {
     })
 
     expect(response.statusCode).toBe(403)
-    expect(response.json()).toMatchObject({ message: 'radar_forbidden' })
+    expect(response.json()).toMatchObject({ error: 'radar_forbidden' })
   })
 
   it('creates and lists radar campaigns', async () => {

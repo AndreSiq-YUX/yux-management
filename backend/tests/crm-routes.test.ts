@@ -92,6 +92,8 @@ class FakeAuthStore implements AuthStore {
 
 class FakePool {
   async query(sql: string) {
+    if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
+    if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
     if (sql.includes('FROM public.crm_pipeline_stages') && sql.includes('JOIN public.crm_pipelines')) {
       return {
         rows: [{

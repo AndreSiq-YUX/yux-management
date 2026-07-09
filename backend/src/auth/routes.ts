@@ -125,7 +125,7 @@ export function createPgAuthStore(pool: pg.Pool): AuthStore {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
-  app.post('/forgot-password', async (request, reply) => {
+  app.post('/forgot-password', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = forgotPasswordSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid_forgot_password_request' })
@@ -252,7 +252,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/login', async (request, reply) => {
+  app.post('/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid_login_request' })
