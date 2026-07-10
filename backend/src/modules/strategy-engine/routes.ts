@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { hashSessionToken } from '../../auth/session.js'
+import { requireInternalRole } from '../../http/guards.js'
 import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
 
 const allowedTables = new Set([
@@ -54,6 +55,7 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 
 export async function registerStrategyEngineRoutes(app: FastifyInstance) {
   app.post('/query', async (request, reply) => {
+    requireInternalRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 

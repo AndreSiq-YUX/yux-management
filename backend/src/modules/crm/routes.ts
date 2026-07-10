@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
+import { requireAuth } from '../../http/guards.js'
+import { dataQuerySchema } from '../data/routes.js'
+import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 import {
   completeLeadTask,
   createLead,
@@ -64,6 +66,18 @@ const opsAllowedTables = new Set([
   'crm_report_exports',
   'leads',
 ])
+
+const conversationTableRules = createScopedTableRules(
+  ['leads', 'conversations', 'crm_quick_replies', 'crm_message_templates'],
+  ['lead_conversation_links', 'lead_ai_insights', 'lead_ai_field_suggestions', 'lead_response_suggestions', 'lead_sla_events', 'lead_handoff_locks'],
+)
+
+const closingTableRules = createScopedTableRules([], [...closingAllowedTables])
+
+const opsTableRules = createScopedTableRules(
+  ['crm_instances', 'lead_imports', 'lead_tags', 'lead_sources', 'lead_source_rollups', 'crm_mroi_alerts', 'campaign_crm_performance_snapshots', 'crm_report_exports', 'leads'],
+  ['crm_instance_members', 'crm_teams', 'crm_team_members', 'crm_configuration_publications', 'crm_pipeline_stages', 'lead_next_actions', 'lead_saved_views', 'lead_import_rows', 'lead_stage_history', 'lead_tag_assignments'],
+)
 
 const optionalUuid = z.string().uuid().optional()
 
@@ -174,7 +188,7 @@ export async function registerCrmRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_crm_conversation_query' })
     }
 
-    return executeDataQuery(app, parsed.data)
+    return executeScopedDataQuery(app, requireAuth(request), parsed.data, conversationTableRules)
   })
 
   app.post('/closing-query', async (request, reply) => {
@@ -186,7 +200,7 @@ export async function registerCrmRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_crm_closing_query' })
     }
 
-    return executeDataQuery(app, parsed.data)
+    return executeScopedDataQuery(app, requireAuth(request), parsed.data, closingTableRules)
   })
 
   app.post('/ops-query', async (request, reply) => {
@@ -198,7 +212,7 @@ export async function registerCrmRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_crm_ops_query' })
     }
 
-    return executeDataQuery(app, parsed.data)
+    return executeScopedDataQuery(app, requireAuth(request), parsed.data, opsTableRules)
   })
 
   app.get('/pipelines', async (request, reply) => {

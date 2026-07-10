@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { hashSessionToken } from '../../auth/session.js'
-import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
+import { requireAuth } from '../../http/guards.js'
+import { dataQuerySchema } from '../data/routes.js'
+import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 
 const allowedTables = new Set([
   'landing_pages',
@@ -11,6 +13,11 @@ const allowedTables = new Set([
   'landing_page_approvals',
   'landing_page_events',
 ])
+
+const landingPageTableRules = createScopedTableRules(
+  ['landing_pages'],
+  ['landing_page_versions', 'landing_page_forms', 'landing_page_field_mappings', 'landing_page_change_requests', 'landing_page_approvals', 'landing_page_events'],
+)
 
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
@@ -38,6 +45,6 @@ export async function registerLandingPageRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_landing_page_query' })
     }
 
-    return executeDataQuery(app, parsed.data)
+    return executeScopedDataQuery(app, requireAuth(request), parsed.data, landingPageTableRules)
   })
 }

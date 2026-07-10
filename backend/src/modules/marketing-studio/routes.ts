@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
+import { requireAuth } from '../../http/guards.js'
+import { dataQuerySchema } from '../data/routes.js'
+import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 
 const allowedTables = new Set([
   'marketing_studio_settings',
@@ -39,6 +41,46 @@ const allowedTables = new Set([
   'ai_usage_ledger',
 ])
 
+const marketingStudioTableRules = createScopedTableRules(
+  [
+    'marketing_studio_settings',
+    'content_items',
+    'editorial_calendar_items',
+    'marketing_brand_profiles',
+    'marketing_products_services',
+    'marketing_knowledge_documents',
+    'marketing_knowledge_chunks',
+    'marketing_sources',
+    'marketing_ideas',
+    'marketing_source_items',
+  ],
+  [
+    'content_versions',
+    'content_reviews',
+    'marketing_research_cache',
+    'publishing_connections',
+    'publishing_runs',
+    'marketing_campaign_creative_suggestions',
+    'marketing_campaign_draft_runs',
+    'marketing_radar_runs',
+    'marketing_content_generation_runs',
+    'marketing_content_quality_checks',
+    'marketing_agent_templates',
+    'marketing_agents',
+    'marketing_agent_global_prompts',
+    'marketing_workflows',
+    'marketing_workflow_nodes',
+    'marketing_workflow_edges',
+    'marketing_workflow_runs',
+    'marketing_agent_runs',
+    'marketing_tool_runs',
+    'agent_budget_policies',
+    'model_routing_rules',
+    'marketing_agent_tool_policies',
+    'ai_usage_ledger',
+  ],
+)
+
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
   if (!token) {
@@ -65,7 +107,7 @@ export async function registerMarketingStudioRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_marketing_studio_query' })
     }
 
-    return executeDataQuery(app, parsed.data)
+    return executeScopedDataQuery(app, requireAuth(request), parsed.data, marketingStudioTableRules)
   })
 
   app.post('/rpc', async (request, reply) => {

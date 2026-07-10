@@ -2,7 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { createReadStream } from 'node:fs'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
+import { requireAuth } from '../../http/guards.js'
+import { dataQuerySchema } from '../data/routes.js'
+import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 import {
   assignConversation,
   createMessageAttachment,
@@ -56,6 +58,8 @@ const channelConnectionsQuerySchema = z.object({
 const queryAllowedTables = new Set([
   'conversation_tags',
 ])
+
+const queryTableRules = createScopedTableRules([], ['conversation_tags'])
 
 const humanReplySchema = z.object({
   conversationId: z.string().uuid(),
@@ -206,7 +210,7 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_omnichannel_query' })
     }
 
-    return executeDataQuery(app, parsed.data)
+    return executeScopedDataQuery(app, requireAuth(request), parsed.data, queryTableRules)
   })
 
   app.get('/channel-connections', async (request, reply) => {

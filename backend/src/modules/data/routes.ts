@@ -47,7 +47,7 @@ export const dataQuerySchema = z.object({
   onConflict: z.string().optional(),
 })
 
-type DataQuery = z.infer<typeof dataQuerySchema>
+export type DataQuery = z.infer<typeof dataQuerySchema>
 type Filter = z.infer<typeof filterSchema>
 type SqlState = { values: unknown[] }
 

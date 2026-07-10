@@ -5,6 +5,7 @@ import { buildClientInvitationEmail } from '../../auth/invitations.js'
 import { hashSessionToken } from '../../auth/session.js'
 import { sendConfiguredSmtp2GoEmail } from '../../email/smtp2goConfigured.js'
 import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
+import { requireInternalRole } from '../../http/guards.js'
 import { ClientAccessError, provisionClientPortalAccess } from './clientAccess.js'
 import { createClientAccessEmailToken } from './clientAccessEmails.js'
 
@@ -395,6 +396,7 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   })
 
   app.post('/growth-query', async (request, reply) => {
+    requireInternalRole(request)
     const parsed = dataQuerySchema.safeParse(request.body)
     if (!parsed.success || !growthAllowedTables.has(parsed.data.table)) {
       return reply.code(400).send({ error: 'invalid_growth_workspace_query' })
