@@ -183,7 +183,8 @@ export const reportService = {
   },
 
   async getPortalReport(organizationId: string): Promise<PortalOperationalReport> {
-    return sanitizeReportForPortal(await this.getOperationalReport(organizationId))
+    const report = await apiRequest<PortalOperationalReport>(`/reports/portal/operational/${organizationId}`)
+    return sanitizeReportForPortal(report as unknown as OperationalReport)
   },
 
   async saveSnapshot(report: OperationalReport, scope: 'internal' | 'portal' = 'internal') {

@@ -72,6 +72,20 @@ async function readAttributionRollups(pool: pg.Pool, organizationId: string) {
   }
 }
 
+async function readPortalRows(pool: pg.Pool, organizationId: string, sql: string) {
+  try {
+    return (await pool.query(sql, [organizationId])).rows
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    if (code === '42P01' || code === '42703') return []
+    throw error
+  }
+}
+
+function ratio(entered: number, advanced: number) {
+  return entered <= 0 ? 0 : Math.round((advanced / entered) * 1000) / 10
+}
+
 export async function registerReportRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
@@ -116,6 +130,82 @@ export async function registerReportRoutes(app: FastifyInstance) {
       projects,
       attributionRollups,
       attributionAlerts,
+    }
+  })
+
+  app.get('/portal/operational/:organizationId', async (request, reply) => {
+    const params = organizationParamsSchema.safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_report_organization_id' })
+    requireMembership(request, params.data.organizationId)
+    const organizationId = params.data.organizationId
+
+    const [leads, campaigns, landingPages, proposals, conversations, projects] = await Promise.all([
+      readPortalRows(app.pg, organizationId, `SELECT source, stage, status, last_activity_at FROM public.leads WHERE organization_id = $1`),
+      readPortalRows(app.pg, organizationId, `SELECT id, name, spent, impressions, clicks, conversions, leads, attributed_revenue, cpl, mroi, provider_connection_id FROM public.campaigns WHERE organization_id = $1`),
+      readPortalRows(app.pg, organizationId, `SELECT id, name, visits, leads FROM public.landing_pages WHERE organization_id = $1`),
+      readPortalRows(app.pg, organizationId, `SELECT status FROM public.proposals WHERE organization_id = $1`),
+      readPortalRows(app.pg, organizationId, `SELECT first_response_minutes FROM public.conversations WHERE organization_id = $1`),
+      readPortalRows(app.pg, organizationId, `SELECT status FROM public.projects WHERE organization_id = $1`),
+    ])
+
+    const leadsBySource = Object.entries(leads.reduce<Record<string, number>>((acc, lead) => {
+      const source = String(lead.source || 'manual')
+      acc[source] = (acc[source] || 0) + 1
+      return acc
+    }, {})).map(([source, count]) => ({ source, leads: count }))
+    const stageCounts = leads.reduce<Record<string, number>>((acc, lead) => {
+      const stage = String(lead.stage || lead.status || 'open')
+      acc[stage] = (acc[stage] || 0) + 1
+      return acc
+    }, {})
+    const stageConversions = Object.entries(stageCounts).map(([stage, entered], index, all) => ({
+      stage,
+      entered,
+      advanced: all.slice(index + 1).reduce((sum, [, count]) => sum + count, 0),
+      conversionRate: ratio(entered, all.slice(index + 1).reduce((sum, [, count]) => sum + count, 0)),
+    }))
+    const campaignMetrics = campaigns.map(campaign => {
+      const spend = Number(campaign.spent || 0)
+      const campaignLeads = Number(campaign.leads || campaign.conversions || 0)
+      const revenue = Number(campaign.attributed_revenue || 0)
+      return {
+        campaignId: campaign.id,
+        name: campaign.name,
+        spend,
+        impressions: Number(campaign.impressions || 0),
+        clicks: Number(campaign.clicks || 0),
+        leads: campaignLeads,
+        cpl: campaignLeads ? Math.round((spend / campaignLeads) * 100) / 100 : 0,
+        opportunities: 0,
+        proposals: 0,
+        clients: 0,
+        revenue,
+        mroi: spend ? Math.round(((revenue - spend) / spend) * 10) / 10 : 0,
+        syncStatus: campaign.provider_connection_id ? 'stale' : 'not_configured',
+      }
+    })
+    const landingPageMetrics = landingPages.map(page => ({
+      landingPageId: page.id,
+      name: page.name,
+      visits: Number(page.visits || 0),
+      leads: Number(page.leads || 0),
+      conversionRate: ratio(Number(page.visits || 0), Number(page.leads || 0)),
+    }))
+    const sent = proposals.filter(proposal => ['sent', 'approved', 'signed', 'converted'].includes(String(proposal.status))).length
+    const approved = proposals.filter(proposal => ['approved', 'signed', 'converted'].includes(String(proposal.status))).length
+    const responseTimes = conversations.map(row => Number(row.first_response_minutes || 0)).filter(Boolean)
+
+    return {
+      organizationId,
+      generatedAt: new Date().toISOString(),
+      leadsBySource,
+      stageConversions,
+      responseTimeHours: responseTimes.length ? Math.round((responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length / 60) * 10) / 10 : 0,
+      stalledOpportunities: leads.filter(lead => lead.status === 'open' && lead.last_activity_at && Date.now() - new Date(String(lead.last_activity_at)).getTime() > 7 * 24 * 60 * 60 * 1000).length,
+      campaignMetrics,
+      landingPageMetrics,
+      proposalMetrics: { sent, approved, approvalRate: ratio(sent, approved) },
+      projectDelivery: [{ label: 'Projetos ativos', value: projects.filter(project => !['completed', 'cancelled'].includes(String(project.status))).length }],
     }
   })
 

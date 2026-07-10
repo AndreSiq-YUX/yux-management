@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { requireAuth } from '../../http/guards.js'
+import { getContractOrganizationId } from '../../http/contract-organization.js'
+import { requireAuth, requireMembership } from '../../http/guards.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 
@@ -17,6 +19,8 @@ const campaignTableRules = createScopedTableRules(
   ['ad_provider_connections', 'campaigns', 'ad_provider_mutation_runs'],
   ['campaign_creatives', 'campaign_recommendations', 'campaign_alerts'],
 )
+
+const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
 
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
@@ -35,6 +39,28 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function registerCampaignRoutes(app: FastifyInstance) {
+  app.get('/portal/campaigns', async (request, reply) => {
+    const parsed = portalContractQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_campaign_query' })
+
+    const organizationId = await getContractOrganizationId(app.pg, parsed.data.contractId)
+    if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
+    requireMembership(request, organizationId)
+
+    const { rows } = await app.pg.query(
+      `SELECT id, organization_id, client_id, contract_id, provider_connection_id, ad_account_id,
+              landing_page_id, pipeline_id, initial_stage_id, name, platform, status, budget,
+              spent, impressions, clicks, conversions, start_date, end_date, provider, objective,
+              lifecycle_status, daily_budget, total_budget, starts_at, ends_at, attributed_revenue,
+              leads, cpl, mroi, utm_source, utm_medium, utm_campaign, created_at, updated_at
+       FROM public.campaigns
+       WHERE contract_id = $1 AND organization_id = $2
+       ORDER BY updated_at DESC`,
+      [parsed.data.contractId, organizationId],
+    )
+    return rows
+  })
+
   app.post('/query', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply

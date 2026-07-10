@@ -1,4 +1,5 @@
 import { campaignDataClient } from '@/lib/campaignDataClient'
+import { apiRequest } from '@/lib/apiClient'
 import { invokeBackendFunction } from '@/lib/backendFunctions'
 import { sanitizeCampaignForPortal, validateBudgetChange } from '@/lib/campaigns/campaignRules'
 import type {
@@ -210,7 +211,8 @@ export const campaignService = {
   },
 
   async getPortalCampaigns(contractId: string) {
-    const campaigns = await campaignService.getCampaigns({ contractId })
+    const data = await apiRequest<any[]>(`/campaigns/portal/campaigns?contractId=${encodeURIComponent(contractId)}`)
+    const campaigns = (data || []).map(mapCampaign)
     return campaigns.map(sanitizeCampaignForPortal)
   },
 

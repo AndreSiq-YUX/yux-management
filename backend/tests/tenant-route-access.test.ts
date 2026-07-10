@@ -18,6 +18,7 @@ const testEnv = {
 const ids = {
   orgA: '00000000-0000-4000-8000-000000000001',
   orgB: '00000000-0000-4000-8000-000000000002',
+  contractA: '00000000-0000-4000-8000-000000000003',
 }
 
 class FakeAuthStore implements AuthStore {
@@ -34,6 +35,10 @@ class FakePool {
   async query(sql: string) {
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [{ organization_id: ids.orgA }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+    if (sql.includes('FROM public.contracts c') && sql.includes('organization_id')) return { rows: [{ organization_id: ids.orgA }] }
+    if (sql.includes('FROM public.campaigns') && sql.includes('WHERE contract_id')) {
+      return { rows: [{ id: 'campaign-1', organization_id: ids.orgA, name: 'Campanha segura' }] }
+    }
     if (sql.includes('FROM public.invoices')) return { rows: [] }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
@@ -100,5 +105,21 @@ describe('tenant-scoped domain routes', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual([])
+  })
+
+  it('serves portal campaign DTOs without internal execution fields', async () => {
+    const { authStore, token } = authenticatedStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/campaigns/portal/campaigns?contractId=${ids.contractA}`,
+      headers: headers(token),
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()[0]).toMatchObject({ id: 'campaign-1', name: 'Campanha segura' })
+    expect(response.json()[0]).not.toHaveProperty('protected_error')
+    expect(response.json()[0]).not.toHaveProperty('execution_logs')
   })
 })

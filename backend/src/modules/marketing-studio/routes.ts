@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { requireAuth } from '../../http/guards.js'
+import { getContractOrganizationId } from '../../http/contract-organization.js'
+import { requireAuth, requireMembership } from '../../http/guards.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 
@@ -81,6 +82,8 @@ const marketingStudioTableRules = createScopedTableRules(
   ],
 )
 
+const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
+
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
   if (!token) {
@@ -98,6 +101,26 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function registerMarketingStudioRoutes(app: FastifyInstance) {
+  app.get('/portal/contents', async (request, reply) => {
+    const parsed = portalContractQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_content_query' })
+
+    const organizationId = await getContractOrganizationId(app.pg, parsed.data.contractId)
+    if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
+    requireMembership(request, organizationId)
+
+    const { rows } = await app.pg.query(
+      `SELECT id, organization_id, client_id, contract_id, title, content_type, channel, status,
+              brief, body, cta, campaign_id, landing_page_id, source_idea_id, created_by_agent_id,
+              approved_by, scheduled_at, published_at, published_url, created_at, updated_at
+       FROM public.content_items
+       WHERE contract_id = $1 AND organization_id = $2
+       ORDER BY updated_at DESC`,
+      [parsed.data.contractId, organizationId],
+    )
+    return rows
+  })
+
   app.post('/query', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply

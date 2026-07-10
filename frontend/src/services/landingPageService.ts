@@ -1,4 +1,5 @@
 import { landingPageDataClient } from '@/lib/landingPageDataClient'
+import { apiRequest } from '@/lib/apiClient'
 import { sanitizeLandingPageForPortal } from '@/lib/landing-pages/landingPageRules'
 import type {
   CreateLandingPageInput,
@@ -194,7 +195,8 @@ export const landingPageService = {
   },
 
   async getPortalLandingPages(contractId: string) {
-    const pages = await landingPageService.getLandingPages({ contractId })
+    const data = await apiRequest<any[]>(`/landing-pages/portal/landing-pages?contractId=${encodeURIComponent(contractId)}`)
+    const pages = (data || []).map(mapLandingPage)
     return pages.map(sanitizeLandingPageForPortal)
   },
 

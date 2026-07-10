@@ -1,4 +1,5 @@
 import { invokeBackendFunction } from '@/lib/backendFunctions'
+import { apiRequest } from '@/lib/apiClient'
 import { marketingStudioDataClient } from '@/lib/marketingStudioDataClient'
 import { sanitizeMarketingContentForPortal } from '@/lib/marketing-studio/marketingStudioRules'
 import type {
@@ -1578,7 +1579,8 @@ export const marketingStudioService = {
   },
 
   async getPortalContents(contractId: string): Promise<PortalMarketingContentItem[]> {
-    const contents = await marketingStudioService.getContents({ contractId })
+    const data = await apiRequest<any[]>(`/marketing-studio/portal/contents?contractId=${encodeURIComponent(contractId)}`)
+    const contents = (data || []).map(mapMarketingContent)
     return contents.map(sanitizeMarketingContentForPortal)
   },
 
