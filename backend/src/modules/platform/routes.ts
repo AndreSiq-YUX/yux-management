@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { forbidden } from '../../http/errors.js'
+import { requireAdminRole, requireAuth } from '../../http/guards.js'
 import { testCnpjaProvider } from '../radar/cnpjaClient.js'
 import {
   getAdminChannelConnections,
@@ -33,7 +35,6 @@ import {
   getActiveContractForClient,
   getClientForUser,
   getContractById,
-  getContractModules,
   getContractsForClient,
   getMembershipsForUser,
   getOrganizations,
@@ -227,6 +228,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/provider-connections', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -234,6 +236,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/provider-connections', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -244,6 +247,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/provider-connections/:providerId/test', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -273,6 +277,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/provider-connections/:providerId/credential', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -304,6 +309,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/email-provider-connections', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -311,6 +317,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/email-provider-connections', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -321,6 +328,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/smtp2go-subaccounts', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -328,6 +336,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/smtp2go-subaccounts', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -338,6 +347,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/client-module-limits', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -348,6 +358,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/client-module-limits', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -358,6 +369,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/usage-counters', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -368,6 +380,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/audit-events', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -378,6 +391,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/admin/audit-events', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -388,6 +402,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/channel-connections', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -395,6 +410,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/hub-summary', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -402,6 +418,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/smtp2go-summary', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -409,6 +426,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/upload-limit/global', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -416,6 +434,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.put('/admin/upload-limit/global', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -427,6 +446,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/admin/upload-limit/organizations', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -434,6 +454,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.put('/admin/upload-limit/organizations/:organizationId', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -447,6 +468,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/modules/upsert', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -457,13 +479,14 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/organizations', async (request, reply) => {
-    const user = await getAuthenticatedUser(request, reply)
-    if (!user) return reply
-
-    return getOrganizations(app.pg)
+    const ctx = requireAuth(request)
+    const organizations = await getOrganizations(app.pg)
+    if (ctx.role === 'yux_admin' || ctx.role === 'yux_operator') return organizations
+    return organizations.filter((organization) => ctx.organizationIds.includes(organization.id))
   })
 
   app.post('/organizations/client', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -481,21 +504,19 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.get('/users/:userId/memberships', async (request, reply) => {
-    const user = await getAuthenticatedUser(request, reply)
-    if (!user) return reply
-
     const params = userParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
+    const ctx = requireAuth(request)
+    if (ctx.userId !== params.data.userId && ctx.role !== 'yux_admin' && ctx.role !== 'yux_operator') throw forbidden()
 
     return getMembershipsForUser(app.pg, params.data.userId)
   })
 
   app.get('/users/:userId/client', async (request, reply) => {
-    const user = await getAuthenticatedUser(request, reply)
-    if (!user) return reply
-
     const params = userParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
+    const ctx = requireAuth(request)
+    if (ctx.userId !== params.data.userId && ctx.role !== 'yux_admin' && ctx.role !== 'yux_operator') throw forbidden()
 
     return getClientForUser(app.pg, params.data.userId)
   })
@@ -506,6 +527,8 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
     const params = userParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
+    const ctx = requireAuth(request)
+    if (ctx.userId !== params.data.userId && ctx.role !== 'yux_admin' && ctx.role !== 'yux_operator') throw forbidden()
 
     return getPortalContractContextForUser(app.pg, user, params.data.userId)
   })
@@ -518,6 +541,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/packages/upsert', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -540,6 +564,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.put('/packages/:packageId/modules', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -559,6 +584,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/contracts', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -575,10 +601,13 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     const params = contractParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
 
-    return getContractModules(app.pg, params.data.contractId)
+    const contract = await getContractById(app.pg, user, params.data.contractId)
+    if (!contract) return reply.code(404).send({ error: 'contract_not_found' })
+    return contract.modules
   })
 
   app.put('/contracts/:contractId/modules/:moduleKey', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -603,6 +632,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.patch('/contracts/:contractId', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
@@ -654,6 +684,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
   })
 
   app.post('/blueprints/apply', async (request, reply) => {
+    requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
