@@ -729,15 +729,12 @@ function mapAuditEvent(row: any) {
   }
 }
 
-function deriveSecretKey(keyMaterial: string) {
+function deriveSecretKey(_legacyKeyMaterial: string) {
   const explicitKey = process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
-  if (explicitKey) {
-    const decoded = Buffer.from(explicitKey, 'base64')
-    if (decoded.length !== 32) throw new Error('PROVIDER_SECRET_ENCRYPTION_KEY_B64 must decode to 32 bytes')
-    return decoded
-  }
-
-  return createHash('sha256').update(keyMaterial).digest()
+  if (!explicitKey) throw new Error('PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required for provider secrets')
+  const decoded = Buffer.from(explicitKey, 'base64')
+  if (decoded.length !== 32) throw new Error('PROVIDER_SECRET_ENCRYPTION_KEY_B64 must decode to 32 bytes')
+  return decoded
 }
 
 function encryptSecretValue(value: string, keyMaterial: string) {
@@ -764,4 +761,25 @@ function decryptSecretValue(input: { ciphertext: string; nonce: string; authTag:
   ])
 
   return plaintext.toString('utf8')
+}
+
+export async function reencryptPlatformProviderSecrets(pool: Pick<pg.Pool, 'query'>, legacySessionSecret: string) {
+  if (!legacySessionSecret.trim()) throw new Error('OLD_SESSION_SECRET is required')
+  const legacyKey = createHash('sha256').update(legacySessionSecret).digest()
+  const secrets = await pool.query<{ id: string; ciphertext: string; nonce: string; auth_tag: string }>(
+    'SELECT id, ciphertext, nonce, auth_tag FROM public.platform_provider_secrets',
+  )
+  for (const secret of secrets.rows) {
+    const decipher = createDecipheriv(aesAlgorithm, legacyKey, Buffer.from(secret.nonce, 'base64'))
+    decipher.setAuthTag(Buffer.from(secret.auth_tag, 'base64'))
+    const value = Buffer.concat([decipher.update(Buffer.from(secret.ciphertext, 'base64')), decipher.final()]).toString('utf8')
+    const encrypted = encryptSecretValue(value, '')
+    await pool.query(
+      `UPDATE public.platform_provider_secrets
+       SET ciphertext = $2, nonce = $3, auth_tag = $4, updated_at = NOW()
+       WHERE id = $1`,
+      [secret.id, encrypted.ciphertext, encrypted.nonce, encrypted.authTag],
+    )
+  }
+  return { reencrypted: secrets.rows.length }
 }
