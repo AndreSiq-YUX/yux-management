@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import Fastify from 'fastify'
+import { Redis } from 'ioredis'
 import type pg from 'pg'
 import { createPgAuthStore, registerAuthRoutes, type AuthStore } from './auth/routes.js'
 import { loadEnv, type AppEnv } from './config/env.js'
@@ -36,6 +37,7 @@ declare module 'fastify' {
     config: AppEnv
     pg: pg.Pool
     jobQueue: AppJobQueue
+    redisPing: () => Promise<string>
   }
 }
 
@@ -48,16 +50,18 @@ type BuildServerOptions = {
   authStore?: AuthStore
   pool?: pg.Pool
   jobQueue?: AppJobQueue
+  redisPing?: () => Promise<string>
 }
 
 export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerOptions = {}) {
-  const app = Fastify({ logger: env.NODE_ENV !== 'test', bodyLimit: 25 * 1024 * 1024 })
+  const app = Fastify({ logger: env.NODE_ENV !== 'test', bodyLimit: 1 * 1024 * 1024 })
   const pool = options.pool ?? createPool(env.DATABASE_URL)
   const queue = options.jobQueue ?? createAppJobQueue()
 
   app.decorate('config', env)
   app.decorate('pg', pool)
   app.decorate('jobQueue', queue)
+  app.decorate('redisPing', options.redisPing ?? (() => pingRedis(env.REDIS_URL)))
   app.decorate('authStore', options.authStore ?? createPgAuthStore(pool))
   app.addHook('onClose', async () => {
     await pool.end()
@@ -109,6 +113,16 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerCampaignRoutes, { prefix: '/api/campaigns' })
 
   return app
+}
+
+async function pingRedis(redisUrl: string) {
+  const client = new Redis(redisUrl, { lazyConnect: true, connectTimeout: 1_000, maxRetriesPerRequest: 1 })
+  try {
+    await client.connect()
+    return await client.ping()
+  } finally {
+    client.disconnect()
+  }
 }
 
 function getErrorStatusCode(error: unknown) {

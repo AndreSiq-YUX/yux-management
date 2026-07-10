@@ -21,7 +21,8 @@ services:
       NODE_ENV: production
       PORT: 4000
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      REDIS_URL: ${REDIS_URL:-redis://yux-redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-yux_session}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
@@ -41,6 +42,7 @@ services:
       GOOGLE_ADS_DEVELOPER_TOKEN: ${GOOGLE_ADS_DEVELOPER_TOKEN:-}
       N8N_CRM_WEBHOOK_URL: ${N8N_CRM_WEBHOOK_URL:-}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      SMTP2GO_WEBHOOK_SECRET: ${SMTP2GO_WEBHOOK_SECRET:-}
       MATERIALS_STORAGE_DIR: ${MATERIALS_STORAGE_DIR:-/app/storage/materials}
       OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
       OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
@@ -61,7 +63,8 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      REDIS_URL: ${REDIS_URL:-redis://yux-redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
       YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
@@ -92,7 +95,7 @@ services:
 
   yux-redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes:
       - yux_redis_data:/data
     restart: unless-stopped

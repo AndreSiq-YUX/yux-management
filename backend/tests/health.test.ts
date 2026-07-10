@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../src/server.js'
+import type { AppJobQueue } from '../src/server.js'
 
 const testEnv = {
   NODE_ENV: 'test' as const,
@@ -13,6 +14,8 @@ const testEnv = {
 }
 
 let app: FastifyInstance | undefined
+const pool = { query: async () => ({ rows: [{ ok: 1 }] }), end: async () => undefined }
+const queue: AppJobQueue = { add: async () => ({ id: 'job-1' }), close: async () => undefined }
 
 afterEach(async () => {
   await app?.close()
@@ -21,7 +24,7 @@ afterEach(async () => {
 
 describe('health routes', () => {
   it('returns health status', async () => {
-    app = await buildServer(testEnv)
+    app = await buildServer(testEnv, { pool: pool as never, jobQueue: queue, redisPing: async () => 'PONG' })
 
     const response = await app.inject({ method: 'GET', url: '/api/health' })
 
@@ -30,7 +33,7 @@ describe('health routes', () => {
   })
 
   it('returns readiness status', async () => {
-    app = await buildServer(testEnv)
+    app = await buildServer(testEnv, { pool: pool as never, jobQueue: queue, redisPing: async () => 'PONG' })
 
     const response = await app.inject({ method: 'GET', url: '/api/ready' })
 

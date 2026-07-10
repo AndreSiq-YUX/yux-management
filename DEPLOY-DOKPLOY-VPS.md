@@ -113,6 +113,7 @@ POSTGRES_USER=yux_app
 POSTGRES_PASSWORD=<senha-forte-do-postgres>
 DATABASE_URL=postgresql://yux_app:<senha-forte-do-postgres>@yux-postgres:5432/yux_hub
 REDIS_URL=redis://yux-redis:6379
+REDIS_PASSWORD=<senha-forte-para-redis>
 
 SESSION_COOKIE_NAME=yux_session
 SESSION_SECRET=<64-ou-mais-caracteres-aleatorios>
@@ -130,6 +131,7 @@ OPENROUTER_API_KEY=<valor-se-usar>
 JINA_API_KEY=<valor-se-usar>
 N8N_CRM_WEBHOOK_URL=
 N8N_WEBHOOK_SECRET=<segredo-compartilhado-com-n8n>
+SMTP2GO_WEBHOOK_SECRET=<segredo-compartilhado-com-smtp2go>
 
 META_APP_ID=
 META_APP_SECRET=
