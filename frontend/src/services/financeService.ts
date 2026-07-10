@@ -88,7 +88,8 @@ export class FinanceService {
   }
 
   async getPortalInvoices(contractId: string): Promise<PortalFinanceInvoice[]> {
-    const invoices = await this.getInvoices({ contractId })
+    const data = await apiRequest<any[]>(`/finance/portal/invoices?contractId=${encodeURIComponent(contractId)}`)
+    const invoices = (data || []).map(mapInvoiceRow)
     return invoices.map(sanitizeInvoiceForPortal)
   }
 

@@ -2,10 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { requireOrganizationScope } from '../../http/guards.js'
+import { getContractOrganizationId } from '../../http/contract-organization.js'
+import { requireMembership, requireOrganizationScope } from '../../http/guards.js'
 
 const optionalUuid = z.string().uuid().optional()
 const ticketParamsSchema = z.object({ ticketId: z.string().uuid() })
+const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
 
 const ticketQuerySchema = z.object({
   organizationId: optionalUuid,
@@ -119,6 +121,37 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     addFilter(state, 't.category', parsed.data.category)
 
     const { rows } = await app.pg.query(`${ticketSql(whereSql(state))} ORDER BY t.updated_at DESC`, state.values)
+    return rows
+  })
+
+  app.get('/portal/tickets', async (request, reply) => {
+    const parsed = portalContractQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_ticket_query' })
+    const organizationId = await getContractOrganizationId(app.pg, parsed.data.contractId)
+    if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
+    requireMembership(request, organizationId)
+
+    const { rows } = await app.pg.query(
+      `SELECT t.id, t.organization_id, t.client_id, t.contract_id, t.project_id, t.subject,
+              t.category, t.priority, t.status, t.sla_due_at, t.last_message_at, t.resolved_at,
+              t.closed_at, t.created_at, t.updated_at,
+              jsonb_build_object('company_name', c.company_name) AS clients,
+              jsonb_build_object('name', co.name) AS contracts,
+              CASE WHEN p.id IS NULL THEN NULL ELSE jsonb_build_object('name', p.name) END AS projects,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'id', m.id, 'ticket_id', m.ticket_id, 'author_type', m.author_type,
+                'author_name', m.author_name, 'body', m.body, 'is_internal', m.is_internal,
+                'created_at', m.created_at, 'updated_at', m.updated_at
+              ) ORDER BY m.created_at ASC)
+              FROM public.support_messages m WHERE m.ticket_id = t.id AND m.is_internal = FALSE), '[]'::jsonb) AS support_messages
+       FROM public.support_tickets t
+       JOIN public.clients c ON c.id = t.client_id
+       JOIN public.contracts co ON co.id = t.contract_id
+       LEFT JOIN public.projects p ON p.id = t.project_id
+       WHERE t.contract_id = $1 AND t.organization_id = $2
+       ORDER BY t.updated_at DESC`,
+      [parsed.data.contractId, organizationId],
+    )
     return rows
   })
 

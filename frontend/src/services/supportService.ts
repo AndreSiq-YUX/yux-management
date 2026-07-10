@@ -138,7 +138,8 @@ export class SupportService {
   }
 
   async getPortalTickets(contractId: string): Promise<PortalSupportTicket[]> {
-    const tickets = await this.getTickets({ contractId })
+    const data = await apiRequest<any[]>(`/support/portal/tickets?contractId=${encodeURIComponent(contractId)}`)
+    const tickets = (data || []).map(mapSupportTicketRow)
     return tickets.map(sanitizeTicketForPortal)
   }
 

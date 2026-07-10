@@ -2,10 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { requireAdminRole, requireOrganizationScope } from '../../http/guards.js'
+import { getContractOrganizationId } from '../../http/contract-organization.js'
+import { requireAdminRole, requireMembership, requireOrganizationScope } from '../../http/guards.js'
 
 const optionalUuid = z.string().uuid().optional()
 const invoiceParamsSchema = z.object({ invoiceId: z.string().uuid() })
+const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
 
 const invoiceQuerySchema = z.object({
   organizationId: optionalUuid,
@@ -113,6 +115,31 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     addFilter(state, 'i.due_date', parsed.data.dueTo, '<=')
 
     const { rows } = await app.pg.query(`${invoiceSql(whereSql(state))} ORDER BY i.due_date ASC`, state.values)
+    return rows
+  })
+
+  app.get('/portal/invoices', async (request, reply) => {
+    const parsed = portalContractQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_invoice_query' })
+    const organizationId = await getContractOrganizationId(app.pg, parsed.data.contractId)
+    if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
+    requireMembership(request, organizationId)
+
+    const { rows } = await app.pg.query(
+      `SELECT i.id, i.organization_id, i.client_id, i.contract_id, i.invoice_number, i.status,
+              i.issue_date, i.due_date, i.period_start, i.period_end, i.currency, i.subtotal,
+              i.adjustments, i.total_amount, i.paid_amount, i.paid_at, i.notes, i.created_at, i.updated_at,
+              jsonb_build_object('company_name', c.company_name) AS clients,
+              jsonb_build_object('name', co.name, 'billing_cycle', co.billing_cycle) AS contracts,
+              COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.created_at ASC)
+                        FROM public.billing_items b WHERE b.invoice_id = i.id), '[]'::jsonb) AS billing_items
+       FROM public.invoices i
+       JOIN public.clients c ON c.id = i.client_id
+       JOIN public.contracts co ON co.id = i.contract_id
+       WHERE i.contract_id = $1 AND i.organization_id = $2
+       ORDER BY i.due_date ASC`,
+      [parsed.data.contractId, organizationId],
+    )
     return rows
   })
 
