@@ -14,77 +14,47 @@ jobs:
     defaults:
       run:
         working-directory: frontend
-    env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://example.supabase.co' }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || 'ci-placeholder-key' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run type-check
+      - run: npm run build
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      - name: Type check
-        run: npm run type-check
-
-      - name: Build
-        run: npm run build
-
-  edge-functions:
-    name: Supabase Edge Functions
+  backend:
+    name: Backend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          deno-version: v2.x
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm test
 
-      - name: Test shared modules
-        run: deno test supabase/functions/_shared
-
-      - name: Check Edge Function entrypoints
-        run: |
-          deno check supabase/functions/receive-channel-event/index.ts
-          deno check supabase/functions/simulate-channel-event/index.ts
-          deno check supabase/functions/process-ai-message/index.ts
-          deno check supabase/functions/dispatch-outbound-message/index.ts
-          deno check supabase/functions/retry-outbound-message/index.ts
-          deno check supabase/functions/request-scheduling/index.ts
-          deno check supabase/functions/submit-webchat-event/index.ts
-
-  supabase-metadata:
-    name: Supabase Metadata
+  agent-runtime:
+    name: Agent Runtime
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/marketing-studio-agent-runtime
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Ensure omnichannel probes exist
-        shell: bash
-        run: |
-          test -f supabase/probes/20260601190000_omnichannel_ai_core.sql
-          test -f supabase/probes/20260601200000_omnichannel_crm_sync.sql
-
-      - name: Ensure deployed function folders exist
-        shell: bash
-        run: |
-          test -f supabase/functions/receive-channel-event/index.ts
-          test -f supabase/functions/simulate-channel-event/index.ts
-          test -f supabase/functions/process-ai-message/index.ts
-          test -f supabase/functions/dispatch-outbound-message/index.ts
-          test -f supabase/functions/retry-outbound-message/index.ts
-          test -f supabase/functions/request-scheduling/index.ts
-          test -f supabase/functions/submit-webchat-event/index.ts
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: workers/marketing-studio-agent-runtime/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests

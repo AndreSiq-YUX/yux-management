@@ -78,7 +78,12 @@ describe('migration runner', () => {
     await applyMigrations(pool, migrationsDir, { log: (message) => logs.push(String(message)) })
 
     expect(pool.appliedVersions).toEqual(new Set(['0001_first', '0002_second']))
-    expect(logs).toEqual(['applied 0001_first', 'applied 0002_second'])
+    expect(logs).toEqual([
+      'applying 0001_first from 0001_first.sql (9 chars)',
+      'applied 0001_first',
+      'applying 0002_second from 0002_second.sql (9 chars)',
+      'applied 0002_second',
+    ])
     expect(pool.calls.map((call) => call.sql)).toEqual([
       expect.stringContaining('CREATE TABLE IF NOT EXISTS schema_migrations'),
       'SELECT 1 FROM schema_migrations WHERE version = $1',
