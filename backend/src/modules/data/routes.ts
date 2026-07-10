@@ -1,6 +1,24 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { requireAdminRole } from '../../http/guards.js'
+
+export const INTERNAL_QUERY_TABLES = new Set([
+  'organizations',
+  'clients',
+  'contracts',
+  'contract_modules',
+  'packages',
+  'package_modules',
+  'platform_modules',
+  'platform_provider_connections',
+  'platform_admin_audit_events',
+  'platform_module_limits',
+  'platform_usage_counters',
+  'smtp2go_subaccounts',
+])
+
+const restrictedTableName = /(hash|token|secret)/i
 
 const filterSchema = z.object({
   op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'is', 'in', 'contains', 'overlaps', 'ilike', 'like', 'or']),
@@ -51,12 +69,14 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 
 export async function registerDataRoutes(app: FastifyInstance) {
   app.post('/query', async (request, reply) => {
-    const user = await getAuthenticatedUser(request, reply)
-    if (!user) return reply
+    requireAdminRole(request)
 
     const parsed = dataQuerySchema.safeParse(request.body)
     if (!parsed.success || !isIdentifier(parsed.data.table)) {
       return reply.code(400).send({ error: 'invalid_data_query' })
+    }
+    if (!isInternalQueryTable(parsed.data.table)) {
+      return reply.code(403).send({ error: 'data_query_table_forbidden' })
     }
 
     return executeDataQuery(app, parsed.data)
@@ -80,6 +100,10 @@ export async function registerDataRoutes(app: FastifyInstance) {
 
     return reply.code(404).send({ error: 'rpc_not_implemented' })
   })
+}
+
+function isInternalQueryTable(table: string) {
+  return INTERNAL_QUERY_TABLES.has(table) && !restrictedTableName.test(table)
 }
 
 export async function executeDataQuery(app: FastifyInstance, query: DataQuery) {
