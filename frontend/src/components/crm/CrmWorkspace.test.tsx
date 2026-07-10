@@ -1,5 +1,6 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CrmWorkspace } from './CrmWorkspace'
 import { crmGovernanceService } from '@/services/crmGovernanceService'
@@ -114,7 +115,7 @@ describe('CrmWorkspace', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<CrmWorkspace />)
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
       await flush()
       await flush()
       await flush()
@@ -151,7 +152,7 @@ describe('CrmWorkspace', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<CrmWorkspace />)
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
       await flush()
       await flush()
     })
@@ -184,7 +185,7 @@ describe('CrmWorkspace', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<CrmWorkspace />)
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
       await flush()
       await flush()
     })
@@ -248,7 +249,7 @@ describe('CrmWorkspace', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<CrmWorkspace />)
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
       await flush()
       await flush()
       await flush()
@@ -313,7 +314,7 @@ describe('CrmWorkspace', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<CrmWorkspace />)
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
       await flush()
       await flush()
       await flush()

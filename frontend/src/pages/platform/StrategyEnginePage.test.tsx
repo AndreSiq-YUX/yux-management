@@ -1,5 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrategyEnginePage } from './StrategyEnginePage'
 
@@ -27,6 +28,10 @@ vi.mock('@/services/strategyEngineService', () => ({
     getClientOrganizations: vi.fn(async () => [{ id: 'org-1', name: 'Cliente Demo' }]),
     getStrategyChatSessions: vi.fn(async () => [{ id: 'chat-1', title: 'Diagnostico demo', mode: 'diagnostic_48h', profileKey: 'growth_strategist', status: 'active', contextSnapshot: {}, lastMessageAt: '2026-06-12T10:00:00.000Z', createdAt: '2026-06-12T10:00:00.000Z' }]),
     getStrategyChatMessages: vi.fn(async () => [{ id: 'msg-1', sessionId: 'chat-1', role: 'assistant', content: 'Plano inicial', status: 'completed', inputTokens: 0, outputTokens: 0, safeContext: {}, toolResults: [], createdAt: '2026-06-12T10:01:00.000Z' }]),
+    getStrategyPacks: vi.fn(async () => []),
+    getStrategyPackItems: vi.fn(async () => []),
+    getStrategyPackBindings: vi.fn(async () => []),
+    getStrategyIngestionJobs: vi.fn(async () => []),
     runStrategyAdminChat: vi.fn(),
     updateAgentProfile: vi.fn(),
     upsertModelRoute: vi.fn(),
@@ -51,7 +56,7 @@ describe('StrategyEnginePage', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<StrategyEnginePage />)
+      root.render(<MemoryRouter><StrategyEnginePage /></MemoryRouter>)
     })
 
     expect(container.textContent).toContain('YUX Strategy Engine')

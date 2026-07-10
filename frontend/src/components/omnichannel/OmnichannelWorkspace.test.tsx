@@ -1,5 +1,6 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { OmnichannelWorkspace } from './OmnichannelWorkspace'
@@ -151,7 +152,7 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof OmnichannelWor
 
   act(() => {
     root.render(
-      <OmnichannelWorkspace
+      <MemoryRouter><OmnichannelWorkspace
         organizationId={organizationId}
         conversations={[conversation]}
         messagesByConversation={{ 'conversation-1': messages }}
@@ -161,7 +162,7 @@ function renderWorkspace(overrides: Partial<ComponentProps<typeof OmnichannelWor
         users={[{ id: 'user-1', name: 'Ana YUX' }]}
         {...handlers}
         {...overrides}
-      />,
+      /></MemoryRouter>,
     )
   })
 
@@ -176,7 +177,7 @@ describe('OmnichannelWorkspace', () => {
     const root = createRoot(container)
 
     act(() => {
-      root.render(<OmnichannelWorkspace organizationId="local-yux" />)
+      root.render(<MemoryRouter><OmnichannelWorkspace organizationId="local-yux" /></MemoryRouter>)
     })
 
     const html = container.textContent || ''

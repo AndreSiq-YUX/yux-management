@@ -1,5 +1,6 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { ReportsWorkspace } from './ReportsWorkspace'
 import { PortalReportsWorkspace } from './PortalReportsWorkspace'
@@ -37,7 +38,7 @@ describe('ReportsWorkspace', () => {
   it('renders operational report metrics for internal users', () => {
     const container = document.createElement('div')
     const root = createRoot(container)
-    act(() => root.render(<ReportsWorkspace report={report} />))
+    act(() => root.render(<MemoryRouter><ReportsWorkspace report={report} /></MemoryRouter>))
     const html = container.innerHTML
 
     expect(html).toContain('Relatorios operacionais')
@@ -59,7 +60,7 @@ describe('ReportsWorkspace', () => {
   it('renders client-safe portal report without owner activity', () => {
     const container = document.createElement('div')
     const root = createRoot(container)
-    act(() => root.render(<PortalReportsWorkspace report={report} />))
+    act(() => root.render(<MemoryRouter><PortalReportsWorkspace report={report} /></MemoryRouter>))
     const html = container.innerHTML
 
     expect(html).toContain('Relatorios do contrato')

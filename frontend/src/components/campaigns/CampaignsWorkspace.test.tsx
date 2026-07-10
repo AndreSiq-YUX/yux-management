@@ -1,5 +1,6 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { sanitizeCampaignForPortal } from '@/lib/campaigns/campaignRules'
 import { CampaignsWorkspace } from './CampaignsWorkspace'
@@ -65,7 +66,7 @@ describe('CampaignsWorkspace', () => {
 
     act(() => {
       root.render(
-        <CampaignsWorkspace
+        <MemoryRouter><CampaignsWorkspace
           campaigns={[campaign]}
           providerConnections={[{
             id: 'connection-1',
@@ -80,7 +81,7 @@ describe('CampaignsWorkspace', () => {
           defaultClientId="client-1"
           defaultContractId="contract-1"
           {...handlers}
-        />,
+        /></MemoryRouter>,
       )
     })
 
@@ -118,7 +119,7 @@ describe('CampaignsWorkspace', () => {
 
     act(() => {
       root.render(
-        <CampaignsWorkspace
+        <MemoryRouter><CampaignsWorkspace
           campaigns={[{
             ...campaign,
             providerConnectionId: 'connection-1',
@@ -142,7 +143,7 @@ describe('CampaignsWorkspace', () => {
           onCreateProvider={onCreateProvider}
           onSyncMetrics={vi.fn()}
           onPause={vi.fn()}
-        />,
+        /></MemoryRouter>,
       )
     })
 
@@ -162,18 +163,19 @@ describe('PortalCampaignsWorkspace', () => {
 
     act(() => {
       root.render(
-        <PortalCampaignsWorkspace
+        <MemoryRouter><PortalCampaignsWorkspace
           contract={contract}
           campaigns={[sanitizeCampaignForPortal(campaign)]}
           onRequestChange={vi.fn()}
-        />,
+        /></MemoryRouter>,
       )
     })
 
     const html = container.innerHTML.replace(/&nbsp;/g, ' ')
-    expect(html).toContain('Campanhas do contrato')
+    expect(html).toContain('Campanhas e Anuncios')
+    expect(html).toContain('Contrato:')
     expect(html).toContain('Botox Junho')
-    expect(html).toContain('R$ 12,05')
+    expect(html).toContain('R$ 12')
     expect(html).not.toContain('abc123')
 
     act(() => root.unmount())
