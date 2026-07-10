@@ -17,6 +17,29 @@ def stable_hash(payload: Any) -> str:
     return sha256(repr(_sort_nested(payload)).encode("utf-8")).hexdigest()
 
 
+_CONTENT_KEYS = {"message", "body", "content", "content_text", "user_input", "text"}
+
+
+def _redact_text(value: str) -> str:
+    import re
+
+    value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[email redacted]", value, flags=re.IGNORECASE)
+    return re.sub(r"(?<!\w)\+?\d[\d\s().-]{7,}\d", "[phone redacted]", value)
+
+
+def sanitize_trace_payload(value: Any, key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {str(item_key): sanitize_trace_payload(item_value, str(item_key)) for item_key, item_value in value.items()}
+    if isinstance(value, list):
+        return [sanitize_trace_payload(item, key) for item in value]
+    if isinstance(value, str):
+        redacted = _redact_text(value)
+        if key.lower() in _CONTENT_KEYS:
+            return {"preview": redacted[:240], "content_hash": sha256(value.encode("utf-8")).hexdigest()}
+        return redacted[:240]
+    return value
+
+
 def _sort_nested(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _sort_nested(value[key]) for key in sorted(value)}
@@ -35,7 +58,7 @@ class TraceRecorder:
             {
                 "status": "running",
                 "started_at": now_iso(),
-                "input_payload": payload.get("input_payload") or {},
+                "input_payload": sanitize_trace_payload(payload.get("input_payload") or {}),
                 "output_payload": {},
                 **payload,
             },
@@ -78,7 +101,7 @@ class TraceRecorder:
                 "step_id": step_id,
                 "profile_key": profile_key,
                 "context_kind": context_kind,
-                "safe_context": safe_context,
+                "safe_context": sanitize_trace_payload(safe_context),
                 "card_ids": card_ids or [],
                 "chunk_ids": chunk_ids or [],
                 "asset_ids": asset_ids or [],
@@ -190,7 +213,7 @@ class TraceStep:
                 "step_key": self.step_key,
                 "step_type": self.step_type,
                 "status": "running",
-                "input_payload": self.input_payload,
+                "input_payload": sanitize_trace_payload(self.input_payload),
                 "started_at": self.started_at,
             }
         )
@@ -214,8 +237,8 @@ class TraceStep:
             self.record["id"],
             {
                 "status": status,
-                "output_payload": output_payload,
-                "decision": decision,
+                "output_payload": sanitize_trace_payload(output_payload),
+                "decision": sanitize_trace_payload(decision),
                 "latency_ms": latency_ms,
                 "completed_at": now_iso(),
             },

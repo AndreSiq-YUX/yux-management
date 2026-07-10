@@ -3,10 +3,16 @@ import unittest
 from yux_agent_runtime.autonomy import resolve_autonomy_policy
 from yux_agent_runtime.queue import AgentEventQueue, normalize_inbound_event
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
+from yux_agent_runtime.trace import sanitize_trace_payload
 from yux_agent_runtime.workflow import StrategyWorkflowEngine, build_workflow_plan, classify_intent_and_stage, verify_output
 
 
 class AgentHarnessRuntimeTest(unittest.TestCase):
+    def test_trace_payload_masks_pii_and_hashes_full_message(self):
+        safe = sanitize_trace_payload({"message": "Fale com ana@example.com pelo +55 11 99999-0000"})
+        self.assertEqual(safe["message"]["preview"], "Fale com [email redacted] pelo [phone redacted]")
+        self.assertIn("content_hash", safe["message"])
+
     def test_normalize_inbound_event_extracts_text_and_media_summary(self):
         normalized = normalize_inbound_event({"body": "Oi, quero orçamento", "attachments": [{"type": "audio"}], "phone": "5599"})
 

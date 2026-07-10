@@ -18,6 +18,7 @@ export const JOB_NAMES = [
   'email.send',
   'strategy.adminChat',
   'proposal.convert',
+  'maintenance.purgeExpiredTraces',
 ] as const
 
 export type JobName = (typeof JOB_NAMES)[number]
