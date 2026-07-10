@@ -1,9 +1,11 @@
 import type pg from 'pg'
+import { createHmac } from 'node:crypto'
 
 export type CrmSequenceSchedulerOptions = {
   now?: Date
   limit?: number
   crmWebhookUrl?: string
+  crmWebhookSecret?: string
   fetchImpl?: typeof fetch
 }
 
@@ -176,22 +178,28 @@ async function executeSequenceAction(client: pg.PoolClient, execution: Execution
   if (!webhookUrl) {
     throw new Error('N8N_CRM_WEBHOOK_URL is not configured')
   }
+  const webhookSecret = options.crmWebhookSecret ?? process.env.N8N_WEBHOOK_SECRET
+  if (!webhookSecret) throw new Error('N8N_WEBHOOK_SECRET is not configured')
 
   const fetchImpl = options.fetchImpl ?? fetch
+  const body = JSON.stringify({
+    executionId: execution.id,
+    actionType: execution.action_type,
+    lead: {
+      id: execution.lead_id,
+      name: execution.lead_name,
+      email: execution.lead_email,
+      phone: execution.lead_phone,
+    },
+    payload: execution.payload,
+  })
   const response = await fetchImpl(webhookUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      executionId: execution.id,
-      actionType: execution.action_type,
-      lead: {
-        id: execution.lead_id,
-        name: execution.lead_name,
-        email: execution.lead_email,
-        phone: execution.lead_phone,
-      },
-      payload: execution.payload,
-    }),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-YUX-Signature': `sha256=${createHmac('sha256', webhookSecret).update(body).digest('hex')}`,
+    },
+    body,
   })
 
   if (!response.ok) {

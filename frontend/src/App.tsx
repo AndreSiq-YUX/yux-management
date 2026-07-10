@@ -101,7 +101,7 @@ function App() {
         <Route index element={<Navigate to="/auth/login" replace />} />
       </Route>
       <Route path="/proposal/review/:token" element={<PublicProposalPage />} />
-      <Route path="/webchat/session/:sessionToken" element={<WebchatWidgetPage />} />
+      <Route path="/webchat/session" element={<WebchatWidgetPage />} />
 
       {/* Protected routes */}
       <Route 

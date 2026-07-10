@@ -14,6 +14,8 @@ const ids = {
 class FakeClient {
   queries: Array<{ sql: string; values?: unknown[] }> = []
 
+  constructor(private readonly actionType = 'internal_task') {}
+
   async query(sql: string, values?: unknown[]) {
     this.queries.push({ sql, values })
     if (sql.includes('FROM public.automation_executions x')) {
@@ -24,7 +26,7 @@ class FakeClient {
           lead_id: ids.lead,
           enrollment_id: ids.enrollment,
           step_id: ids.step,
-          action_type: 'internal_task',
+          action_type: this.actionType,
           payload: { subject: 'Ligar para o lead', body: 'Confirmar disponibilidade' },
           status: 'pending',
           attempt_count: 0,
@@ -71,8 +73,12 @@ class FakeClient {
 }
 
 class FakePool {
-  client = new FakeClient()
+  client: FakeClient
   failedQueries: Array<{ sql: string; values?: unknown[] }> = []
+
+  constructor(actionType = 'internal_task') {
+    this.client = new FakeClient(actionType)
+  }
 
   async connect() {
     return this.client
@@ -115,5 +121,27 @@ describe('crm sequence scheduler', () => {
       '2026-06-27T12:15:00.000Z',
     ])
     expect(pool.failedQueries).toEqual([])
+  })
+
+  it('signs external n8n sequence payloads and rejects an unsigned configuration', async () => {
+    const pool = new FakePool('email')
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl: typeof fetch = async (url, init) => {
+      fetchCalls.push({ url: String(url), init })
+      return new Response('', { status: 200 })
+    }
+
+    await processSequenceExecution(pool as never, ids.execution, {
+      now: new Date('2026-06-27T12:00:00.000Z'),
+      crmWebhookUrl: 'https://n8n.example/webhook/crm',
+      crmWebhookSecret: 'shared-secret',
+      fetchImpl,
+    })
+
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0].init?.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      'X-YUX-Signature': expect.stringMatching(/^sha256=[a-f0-9]{64}$/),
+    })
   })
 })

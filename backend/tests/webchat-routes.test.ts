@@ -69,18 +69,31 @@ describe('public webchat routes', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/public/webchat/events',
+      headers: { origin: 'https://site.example' },
       payload: {
         action: 'bootstrap_widget',
         publicToken: 'public-token',
-        origin: 'https://site.example',
       },
     })
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual(expect.objectContaining({
       sessionId: ids.session,
-      iframeUrl: expect.stringMatching(/^\/webchat\/session\//),
+      iframeUrl: '/webchat/session',
       sessionToken: expect.any(String),
     }))
+  })
+
+  it('rejects an event without a browser Origin header', async () => {
+    app = await buildServer(testEnv, { pool: new FakePool() as never, jobQueue: new FakeJobQueue() })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/public/webchat/events',
+      payload: { action: 'bootstrap_widget', publicToken: 'public-token', origin: 'https://attacker.example' },
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toMatchObject({ error: 'webchat_origin_required' })
   })
 })

@@ -6,7 +6,7 @@ const sessionTtlMs = 1000 * 60 * 60 * 8
 
 const eventSchema = z.object({
   action: z.string().min(1),
-  origin: z.string().url(),
+  origin: z.string().url().optional(),
   publicToken: z.string().optional(),
   sessionToken: z.string().optional(),
   body: z.string().optional(),
@@ -39,16 +39,18 @@ export async function registerPublicWebchatRoutes(app: FastifyInstance) {
   app.post('/events', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = eventSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ notFound: true, error: 'invalid_webchat_event' })
+    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : ''
+    if (!origin) return reply.code(403).send({ notFound: true, error: 'webchat_origin_required' })
 
     try {
-      return await handleWebchatEvent(app, parsed.data)
+      return await handleWebchatEvent(app, { ...parsed.data, origin })
     } catch (error) {
       return reply.code(400).send({ notFound: true, error: sanitizeError(error) })
     }
   })
 }
 
-async function handleWebchatEvent(app: FastifyInstance, input: z.infer<typeof eventSchema>) {
+async function handleWebchatEvent(app: FastifyInstance, input: z.infer<typeof eventSchema> & { origin: string }) {
   if (input.action === 'bootstrap_widget') {
     if (!input.publicToken) throw new Error('missing_public_token')
     return bootstrapWidget(app, input.publicToken, input.origin)
@@ -106,7 +108,7 @@ async function bootstrapWidget(app: FastifyInstance, publicToken: string, origin
     sessionId: sessionResult.rows[0].id,
     sessionToken,
     expiresAt,
-    iframeUrl: `/webchat/session/${sessionToken}`,
+    iframeUrl: '/webchat/session',
   }
 }
 

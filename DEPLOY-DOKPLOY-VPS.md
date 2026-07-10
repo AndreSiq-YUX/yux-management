@@ -55,6 +55,12 @@ openssl rand -base64 48
 
 Use um valor para `SESSION_SECRET` e outro para `YUX_AGENT_RUNTIME_TOKEN`.
 
+Gere tambem a chave AES-256 que cifra tokens de providers no Postgres:
+
+```bash
+openssl rand -base64 32
+```
+
 Crie tambem uma senha forte para o Postgres:
 
 ```bash
@@ -119,9 +125,18 @@ OMNICHANNEL_ATTACHMENT_MAX_MB=25
 
 YUX_AGENT_RUNTIME_URL=http://yux-agent-harness-runtime:8080
 YUX_AGENT_RUNTIME_TOKEN=<token-longo-aleatorio>
+PROVIDER_SECRET_ENCRYPTION_KEY_B64=<resultado-de-openssl-rand-base64-32>
 OPENROUTER_API_KEY=<valor-se-usar>
 JINA_API_KEY=<valor-se-usar>
 N8N_CRM_WEBHOOK_URL=
+N8N_WEBHOOK_SECRET=<segredo-compartilhado-com-n8n>
+
+META_APP_ID=
+META_APP_SECRET=
+META_MARKETING_OAUTH_REDIRECT_URI=https://hub.yux.com.br/oauth/meta/callback
+META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID=
+META_WEBHOOK_VERIFY_TOKEN=<token-de-verificacao-da-Meta>
+OAUTH_ALLOWED_REDIRECT_URIS=https://hub.yux.com.br/oauth/meta/callback
 ```
 
 Regras importantes:
@@ -135,6 +150,15 @@ Regras importantes:
 - O compose nao publica portas no host da VPS. O acesso externo deve passar
   pelos dominios do Dokploy/Traefik usando as portas internas dos containers.
 - Nao configure Supabase nem Vercel como dependencia de producao.
+- O webhook Meta deve apontar para `https://hub.yux.com.br/api/webhooks/meta/channel-event`.
+  Configure o mesmo `META_WEBHOOK_VERIFY_TOKEN` no painel Meta; o backend valida
+  o `X-Hub-Signature-256` com `META_APP_SECRET` antes de enfileirar eventos.
+- O n8n deve verificar `X-YUX-Signature: sha256=<hmac>` usando
+  `N8N_WEBHOOK_SECRET`; recusas de assinatura nao devem ser tratadas como sucesso.
+- O Webchat publico aceita somente o header HTTP `Origin` que constar em
+  `webchat_widgets.allowed_origins`. O token de sessao nao pode ser colocado na
+  URL do iframe: entregue-o ao iframe em `postMessage` com o tipo
+  `yux_webchat_bootstrap` depois que ele emitir `yux_webchat_ready`.
 
 ## 7. Configurar Dominios
 

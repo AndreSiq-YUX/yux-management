@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import { requireAuth, requireInternalRole, requireMembership } from '../../http/guards.js'
 import type { JobName } from '../../jobs/queue.js'
+import { completeMetaChannelOAuth, disconnectMetaChannel, refreshMetaChannelHealth, startMetaChannelOAuth, testMetaChannel } from '../../lib/meta-channel-oauth.js'
 
 type FunctionPolicy = {
   minRole: 'internal' | 'client_admin'
@@ -93,6 +94,21 @@ export async function registerFunctionRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_function_organization' })
     }
     if (organizationId) requireMembership(request, organizationId)
+
+    // OAuth state and code exchange must be performed synchronously: the browser
+    // needs the authorization URL and no credential may ever enter a BullMQ job.
+    if (params.data.name === 'start-meta-channel-connect') {
+      return startMetaChannelOAuth(app.pg, app.config, { organizationId: organizationId!, userId: ctx.userId, channel: body.channel })
+    }
+    if (params.data.name === 'complete-meta-channel-connect') {
+      return completeMetaChannelOAuth(app.pg, app.config, {
+        organizationId: organizationId!, userId: ctx.userId, channel: body.channel,
+        state: body.state, code: body.code, assets: body.assets,
+      })
+    }
+    if (params.data.name === 'disconnect-meta-channel') return disconnectMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
+    if (params.data.name === 'refresh-meta-channel-health') return refreshMetaChannelHealth(app.pg, organizationId!, String(body.connectionId || ''))
+    if (params.data.name === 'send-meta-channel-test') return testMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
 
     const job = await app.jobQueue.add(functionJobName(params.data.name), {
       requestedBy: ctx.userId,
