@@ -6,6 +6,7 @@ import {
   buildInstagramPublishRequest,
   executeSocialPublishingAction,
 } from '../../src/lib/edge-compat/socialPublishingProvider.js'
+import { assertPublicHttpsUrl } from '../../src/lib/ssrf-guard.js'
 
 function assert(condition: unknown, message = 'Assertion failed') {
   if (!condition) throw new Error(message)
@@ -92,4 +93,16 @@ it('executes Instagram publishing with container then publish call', async () =>
   assertEquals(calls.map(url => url.split('/').pop()), ['media', 'media_publish'])
   assertEquals(result.providerPostId, 'media-1')
   assert(!JSON.stringify(result.responsePayload).includes('secret-token'), 'response leaked access token')
+})
+
+it('blocks private or insecure WordPress targets before publishing', async () => {
+  await assertPublicHttpsUrl('https://public.example', async () => [{ address: '93.184.216.34' }])
+  await Promise.all([
+    assertPublicHttpsUrl('http://public.example', async () => [{ address: '93.184.216.34' }]),
+    assertPublicHttpsUrl('https://metadata.example', async () => [{ address: '169.254.169.254' }]),
+  ].map(async (request) => {
+    let rejected = false
+    try { await request } catch { rejected = true }
+    assert(rejected, 'Expected private or insecure URL to be rejected')
+  }))
 })

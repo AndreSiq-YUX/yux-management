@@ -1,4 +1,5 @@
 export type SocialPublishingProvider = 'wordpress' | 'meta_facebook' | 'meta_instagram' | 'google_business_profile'
+import { assertPublicHttpsUrl } from '../ssrf-guard.js'
 export type SocialPublishingAction = 'create_draft' | 'update_draft' | 'publish'
 export type ProviderBodyMode = 'form' | 'json'
 
@@ -280,8 +281,10 @@ async function executeWordPress(input: {
 }): Promise<SocialPublishingResult> {
   const action = requireString(input.run.action, 'action') as SocialPublishingAction
   const providerPostId = optionalString(safeRecord(input.run.request_payload).providerPostId) || optionalString(input.run.provider_post_id)
+  const siteUrl = requireString(input.connection.site_url, 'site_url')
+  await assertPublicHttpsUrl(siteUrl)
   const request = buildWordPressPostRequest({
-    siteUrl: requireString(input.connection.site_url, 'site_url'),
+    siteUrl,
     username: requireString(input.connection.username, 'username'),
     token: input.accessToken,
     title: requireString(input.content.title, 'title'),
