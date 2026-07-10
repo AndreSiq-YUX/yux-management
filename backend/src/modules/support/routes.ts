@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { requireOrganizationScope } from '../../http/guards.js'
 
 const optionalUuid = z.string().uuid().optional()
 const ticketParamsSchema = z.object({ ticketId: z.string().uuid() })
@@ -106,6 +107,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
   app.get('/tickets', async (request, reply) => {
     const parsed = ticketQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_support_ticket_query' })
+    requireOrganizationScope(request, parsed.data.organizationId)
 
     const state: SqlState = { values: [], where: [] }
     addFilter(state, 't.organization_id', parsed.data.organizationId)
@@ -123,6 +125,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
   app.post('/tickets', async (request, reply) => {
     const parsed = createTicketSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_support_ticket_payload' })
+    requireOrganizationScope(request, parsed.data.organizationId)
 
     const input = parsed.data
     const { rows } = await app.pg.query<{ id: string }>(

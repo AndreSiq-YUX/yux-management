@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { requireAdminRole, requireMembership } from '../../http/guards.js'
 
 const organizationParamsSchema = z.object({ organizationId: z.string().uuid() })
 
@@ -80,6 +81,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
   app.get('/operational-data/:organizationId', async (request, reply) => {
     const params = organizationParamsSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_report_organization_id' })
+    requireMembership(request, params.data.organizationId)
 
     const organizationId = params.data.organizationId
     const [
@@ -118,6 +120,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
   })
 
   app.post('/snapshots', async (request, reply) => {
+    requireAdminRole(request)
     const parsed = snapshotSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_report_snapshot_payload' })
 

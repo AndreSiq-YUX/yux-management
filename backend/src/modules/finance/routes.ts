@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { requireAdminRole, requireOrganizationScope } from '../../http/guards.js'
 
 const optionalUuid = z.string().uuid().optional()
 const invoiceParamsSchema = z.object({ invoiceId: z.string().uuid() })
@@ -101,6 +102,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
   app.get('/invoices', async (request, reply) => {
     const parsed = invoiceQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_invoice_query' })
+    requireOrganizationScope(request, parsed.data.organizationId)
 
     const state: SqlState = { values: [], where: [] }
     addFilter(state, 'i.organization_id', parsed.data.organizationId)
@@ -115,6 +117,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
   })
 
   app.post('/invoices', async (request, reply) => {
+    requireAdminRole(request)
     const parsed = createInvoiceSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_invoice_payload' })
 
@@ -144,6 +147,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
   })
 
   app.patch('/invoices/:invoiceId/status', async (request, reply) => {
+    requireAdminRole(request)
     const params = invoiceParamsSchema.safeParse(request.params)
     const parsed = updateInvoiceStatusSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_invoice_status_patch' })
@@ -164,6 +168,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
   })
 
   app.post('/billing-items', async (request, reply) => {
+    requireAdminRole(request)
     const parsed = createBillingItemSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_billing_item_payload' })
 
