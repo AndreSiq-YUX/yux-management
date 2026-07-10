@@ -5,6 +5,7 @@ import { LeadProposalLauncher } from '@/components/crm/LeadProposalLauncher'
 import { ProposalEventTimeline } from '@/components/crm/ProposalEventTimeline'
 import { ProposalRecommendationPanel } from '@/components/crm/ProposalRecommendationPanel'
 import { crmClosingService } from '@/services/crmClosingService'
+import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { proposalService } from '@/services/proposalService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { CrmLead } from '@/types/crm'
@@ -39,7 +40,18 @@ export function LeadCommercialPanel({ lead }: { lead: CrmLead }) {
   useEffect(() => { refresh() }, [lead.id])
   const create = async () => {
     if (!packageId) return
-    const proposal = await crmClosingService.createProposalFromLead({ lead, packages, packageId })
+    if (!lead.crmInstanceId) throw new Error('Instancia CRM nao encontrada para esta proposta.')
+    const governance = await crmGovernanceService.getGovernanceContext(lead.crmInstanceId)
+    const approvalConfirmed = window.confirm('Confirmar a criacao desta proposta comercial?')
+    if (!approvalConfirmed) return
+    const proposal = await crmClosingService.createProposalFromLead({
+      lead,
+      packages,
+      packageId,
+      currentMember: governance.currentMember,
+      teamMemberships: governance.teamMemberships,
+      approvalConfirmed,
+    })
     toast.success('Proposta criada')
     window.location.assign(`/proposals?proposal=${proposal.id}`)
   }

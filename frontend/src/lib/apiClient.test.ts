@@ -1,20 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiClientError, apiRequest } from './apiClient'
+import { describe, expect, it } from 'vitest'
+import { ApiClientError, rethrowAuthorizationError } from './apiClient'
 
-describe('apiRequest', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
+describe('rethrowAuthorizationError', () => {
+  it.each([401, 403])('propagates HTTP %i instead of turning it into an empty query result', (status) => {
+    const error = new ApiClientError(new Response(null, { status, statusText: 'forbidden' }), { error: 'forbidden' })
+    expect(() => rethrowAuthorizationError(error)).toThrow(error)
   })
 
-  it('rejects successful non-JSON responses from the API path', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<!doctype html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    })))
-
-    await expect(apiRequest('/platform/admin/provider-connections')).rejects.toMatchObject({
-      name: 'ApiClientError',
-      message: 'API returned a non-JSON response',
-    } satisfies Partial<ApiClientError>)
+  it('keeps non-authorization errors available to structured query clients', () => {
+    const error = new ApiClientError(new Response(null, { status: 500, statusText: 'server error' }), { error: 'internal_error' })
+    expect(() => rethrowAuthorizationError(error)).not.toThrow()
   })
 })

@@ -1,4 +1,4 @@
-import { apiRequest } from '@/lib/apiClient'
+import { apiRequest, rethrowAuthorizationError } from '@/lib/apiClient'
 
 type QueryResult<T = any> = {
   data: T
@@ -139,6 +139,7 @@ class CrmConversationQueryBuilder<T = any[]> implements PromiseLike<QueryResult<
       })
       return response
     } catch (error) {
+      rethrowAuthorizationError(error)
       return { data: null as T, error, count: null }
     }
   }

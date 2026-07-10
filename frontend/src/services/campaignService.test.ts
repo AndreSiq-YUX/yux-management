@@ -81,6 +81,8 @@ describe('campaignService payload builders', () => {
       action: 'create_campaign',
       campaignId: 'campaign-1',
       providerConnectionId: 'connection-1',
+      lifecycleStatus: 'approved',
+      providerStatus: 'connected',
       explicitApproval: true,
       requestPayload: { landingPageUrl: 'https://example.com' },
     })

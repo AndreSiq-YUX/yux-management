@@ -10,12 +10,14 @@ export function DashboardLayout() {
   const { user } = useAuthStore()
   const initializeForUser = usePlatformStore(state => state.initializeForUser)
   const setMode = usePlatformStore(state => state.setMode)
+  const platformError = usePlatformStore(state => state.error)
+  const platformLoading = usePlatformStore(state => state.isLoading)
 
   useEffect(() => {
     if (user?.id) {
-      initializeForUser(user.id)
+      initializeForUser(user.id, user.role)
     }
-  }, [initializeForUser, user?.id])
+  }, [initializeForUser, location.pathname, user?.id, user?.role])
 
   useLayoutEffect(() => {
     const isSelectedClientWorkspace = /^\/client-workspaces\/[^/]+/.test(location.pathname)
@@ -27,6 +29,20 @@ export function DashboardLayout() {
 
     setMode(mode)
   }, [location.pathname, setMode])
+
+  if (platformError && !platformLoading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-gray-50 p-6">
+        <section className="max-w-md space-y-4 rounded-lg border bg-white p-6 shadow-sm">
+          <h1 className="text-xl font-semibold text-gray-900">Contexto da plataforma indisponível</h1>
+          <p className="text-sm text-gray-600">{platformError}</p>
+          <button className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white" onClick={() => user && initializeForUser(user.id, user.role)}>
+            Tentar novamente
+          </button>
+        </section>
+      </main>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

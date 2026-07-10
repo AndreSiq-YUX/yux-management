@@ -1,7 +1,7 @@
 import { crmClosingDataClient } from '@/lib/crmClosingDataClient'
-import { buildConversionPlan, buildProposalFromLeadDraft, recommendPackageForLead } from '@/lib/crm/closingRules'
+import { buildConversionPlan, buildProposalFromLeadDraft, canCreateProposalFromLead, recommendPackageForLead, requiresClosingApproval } from '@/lib/crm/closingRules'
 import { proposalService } from '@/services/proposalService'
-import type { CrmLead } from '@/types/crm'
+import type { CrmInstanceMember, CrmLead, CrmTeamMember } from '@/types/crm'
 import type {
   ClientOnboardingChecklist,
   ClientOnboardingTask,
@@ -32,6 +32,9 @@ export interface CreateProposalFromLeadInput {
   lead: CrmLead
   packages: PackageDefinition[]
   packageId?: string
+  currentMember?: CrmInstanceMember
+  teamMemberships?: CrmTeamMember[]
+  approvalConfirmed?: boolean
 }
 
 export interface ProposalEventInput {
@@ -279,6 +282,8 @@ export const crmClosingService = {
   },
 
   async createProposalFromLead(input: CreateProposalFromLeadInput) {
+    const access = canCreateProposalFromLead(input.currentMember, input.lead, input.teamMemberships)
+    if (!access.allowed) throw new Error(`proposal_creation_${access.reason}`)
     const recommendation = input.packageId
       ? {
         package: input.packages.find(item => item.id === input.packageId) || input.packages[0],
@@ -296,6 +301,13 @@ export const crmClosingService = {
     }
 
     const draft: ProposalFromLeadDraft = buildProposalFromLeadDraft(input.lead, recommendation)
+    const approval = requiresClosingApproval({
+      finalValue: input.lead.value || 0,
+      selectedModuleKeys: draft.selectedModuleKeys,
+    })
+    if (approval.required && !input.approvalConfirmed) {
+      throw new Error(`proposal_approval_required:${approval.reasons.join(',')}`)
+    }
     const proposal = await proposalService.createDraft({
       organizationId: draft.organizationId,
       leadId: draft.leadId,

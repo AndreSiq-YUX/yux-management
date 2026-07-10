@@ -107,20 +107,20 @@ interface PlatformState extends PlatformContext {
   activeContract: ContractDetails | null
   portalContractContext: PortalContractContext
   setMode: (mode: PlatformMode) => void
-  initializeForUser: (userId: string) => Promise<void>
+  initializeForUser: (userId: string, authenticatedRole?: 'admin' | 'manager' | 'client') => Promise<void>
   initializeClientWorkspace: (organizationId: string) => Promise<void>
   setEnabledModuleKeys: (moduleKeys: string[]) => void
 }
 
 export const usePlatformStore = create<PlatformState>((set, get) => ({
   mode: 'internal',
-  organization: fallbackOrganization,
+  organization: null,
   membership: null,
-  role: fallbackRole,
-  enabledModuleKeys: getInternalModuleKeys(),
+  role: null,
+  enabledModuleKeys: [],
   isLoading: false,
   error: null,
-  roles: [fallbackRole],
+  roles: [],
   packages: [],
   activeContract: null,
   portalContractContext: createEmptyPortalContractContext(),
@@ -131,12 +131,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
 
       return {
         mode,
-        organization: fallbackOrganization,
-        membership: null,
-        role: fallbackRole,
-        activeContract: null,
-        portalContractContext: createEmptyPortalContractContext(),
-        enabledModuleKeys: getInternalModuleKeys(),
+        ...createSafePortalState(),
       }
     }
 
@@ -147,7 +142,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         mode,
         organization: null,
         membership: null,
-        role: fallbackClientWorkspaceRole,
+        role: null,
         activeContract: null,
         portalContractContext: createEmptyPortalContractContext(),
         enabledModuleKeys: [],
@@ -160,7 +155,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
       state.mode !== 'portal'
       && (!state.organization || state.organization.id === fallbackOrganization.id)
 
-    return shouldClearFallbackContext
+    return shouldClearFallbackContext || mode === 'portal'
       ? { mode, ...createSafePortalState() }
       : { mode }
   }),
@@ -185,13 +180,14 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
       )) || null
 
       if (organization?.isInternalGrowthWorkspace) {
-        const role = roles.find(item => item.key === 'yux_admin') || fallbackRole
+        const role = roles.find(item => item.key === 'yux_admin') || null
+        if (!role) throw new Error('workspace_role_unavailable')
         set({
           mode: 'client_workspace',
           organization,
           membership: null,
           role,
-          roles: roles.length ? roles : [fallbackRole, fallbackClientWorkspaceRole],
+          roles,
           activeContract: null,
           portalContractContext: createEmptyPortalContractContext(),
           enabledModuleKeys: getInternalModuleKeys(),
@@ -206,7 +202,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
           mode: 'client_workspace',
           organization: null,
           membership: null,
-          role: fallbackClientWorkspaceRole,
+          role: null,
           activeContract: null,
           portalContractContext: createEmptyPortalContractContext(),
           enabledModuleKeys: [],
@@ -221,14 +217,15 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         ...portalContractContext,
         enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
       }
-      const role = roles.find(item => item.key === 'client_admin') || fallbackClientWorkspaceRole
+      const role = roles.find(item => item.key === 'client_admin') || null
+      if (!role) throw new Error('workspace_role_unavailable')
 
       set({
         mode: 'client_workspace',
         organization,
         membership: null,
         role,
-        roles: roles.length ? roles : [fallbackRole, fallbackClientWorkspaceRole],
+        roles,
         activeContract: portalContractContextState.contract,
         portalContractContext: portalContractContextState,
         enabledModuleKeys: portalContractContextState.enabledModuleKeys,
@@ -241,7 +238,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         mode: 'client_workspace',
         organization: null,
         membership: null,
-        role: fallbackClientWorkspaceRole,
+        role: null,
         activeContract: null,
         portalContractContext: createEmptyPortalContractContext(),
         enabledModuleKeys: [],
@@ -251,7 +248,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
     }
   },
 
-  initializeForUser: async (userId: string) => {
+  initializeForUser: async (userId: string, authenticatedRole) => {
     const isPortalPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')
 
     set({
@@ -278,11 +275,17 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
 
       const membership = memberships[0] || null
       const organization = membership
-        ? organizations.find(item => item.id === membership.organizationId) || fallbackOrganization
-        : organizations.find(item => item.kind === 'yux') || fallbackOrganization
+        ? organizations.find(item => item.id === membership.organizationId) || null
+        : authenticatedRole === 'admin' || authenticatedRole === 'manager'
+          ? organizations.find(item => item.kind === 'yux') || null
+          : null
+      const internalRoleKey = authenticatedRole === 'admin' ? 'yux_admin' : 'yux_operator'
       const role = membership
-        ? roles.find(item => item.key === membership.roleKey) || fallbackRole
-        : roles.find(item => item.key === 'yux_admin') || fallbackRole
+        ? roles.find(item => item.key === membership.roleKey) || null
+        : authenticatedRole === 'admin' || authenticatedRole === 'manager'
+          ? roles.find(item => item.key === internalRoleKey) || null
+          : null
+      if (!organization || !role) throw new Error('platform_context_unavailable')
       const portalContractContextState = {
         ...portalContractContext,
         enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
@@ -295,7 +298,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         organization,
         membership,
         role,
-        roles: roles.length ? roles : [fallbackRole],
+        roles,
         packages,
         activeContract: portalContractContextState.contract,
         portalContractContext: portalContractContextState,
@@ -304,29 +307,11 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
       })
     } catch (error) {
       console.error('Platform initialization error:', error)
-      const isPortalMode = get().mode === 'portal' || isPortalPath
-
-      if (isPortalMode) {
-        set({
-          ...createSafePortalState(),
-          roles: [fallbackRole],
-          packages: [],
-          error: 'Erro ao carregar contexto da plataforma.',
-          isLoading: false,
-        })
-        return
-      }
-
       set({
-        organization: fallbackOrganization,
-        membership: null,
-        role: fallbackRole,
-        roles: [fallbackRole],
+        ...createSafePortalState(),
+        roles: [],
         packages: [],
-        activeContract: null,
-        portalContractContext: createEmptyPortalContractContext(),
-        error: 'Erro ao carregar contexto da plataforma; usando contexto local.',
-        enabledModuleKeys: getInternalModuleKeys(),
+        error: 'Não foi possível carregar o contexto da plataforma. Tente novamente.',
         isLoading: false,
       })
     }

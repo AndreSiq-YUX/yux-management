@@ -1,7 +1,7 @@
 import { campaignDataClient } from '@/lib/campaignDataClient'
 import { apiRequest } from '@/lib/apiClient'
 import { invokeBackendFunction } from '@/lib/backendFunctions'
-import { sanitizeCampaignForPortal, validateBudgetChange } from '@/lib/campaigns/campaignRules'
+import { canExecuteProviderMutation, sanitizeCampaignForPortal, validateBudgetChange } from '@/lib/campaigns/campaignRules'
 import type {
   AdProviderConnection,
   Campaign,
@@ -260,10 +260,19 @@ export const campaignService = {
     action: ProviderMutationAction
     campaignId: string
     providerConnectionId: string
+    lifecycleStatus: CampaignLifecycleStatus
+    providerStatus: AdProviderConnection['status']
     explicitApproval?: boolean
     activateProvider?: boolean
     requestPayload?: Record<string, unknown>
   }) {
+    const guard = canExecuteProviderMutation({
+      lifecycleStatus: input.lifecycleStatus,
+      providerStatus: input.providerStatus,
+      action: input.action,
+      explicitApproval: input.explicitApproval,
+    })
+    if (!guard.ok) throw new Error(guard.reason)
     return invokeBackendFunction<{ success?: boolean; run?: unknown; error?: string }>('execute-ad-provider-mutation', {
         organizationId: input.organizationId,
         provider: input.provider,
@@ -280,17 +289,21 @@ export const campaignService = {
     return invokeBackendFunction<{ success?: boolean; run?: unknown; error?: string }>('sync-ad-metrics', { campaignId })
   },
 
-  async pauseCampaign(campaignId: string) {
+  async pauseCampaign(campaignId: string, explicitApproval = false) {
     const campaign = (await campaignService.getCampaigns()).find(item => item.id === campaignId)
     if (!campaign) throw new Error('Campaign not found')
     if (!campaign.providerConnectionId) throw new Error('Provider connection not configured')
+    const connection = (await campaignService.getProviderConnections()).find(item => item.id === campaign.providerConnectionId)
+    if (!connection) throw new Error('Provider connection not found')
     return campaignService.executeProviderMutation({
       organizationId: campaign.organizationId,
       provider: campaign.provider,
       action: 'pause_campaign',
       campaignId,
       providerConnectionId: campaign.providerConnectionId,
-      explicitApproval: true,
+      lifecycleStatus: campaign.lifecycleStatus,
+      providerStatus: connection.status,
+      explicitApproval,
     })
   },
 

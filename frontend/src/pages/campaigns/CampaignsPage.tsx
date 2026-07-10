@@ -107,7 +107,10 @@ export function CampaignsPage() {
       onSubmitApproval={campaignId => withToast(() => campaignService.submitCampaignForApproval(campaignId), 'Campanha enviada para aprovacao')}
       onApprove={campaignId => withToast(() => campaignService.approveCampaign(campaignId), 'Campanha aprovada')}
       onSyncMetrics={campaignId => withToast(() => campaignService.syncCampaignMetrics(campaignId), 'Sincronizacao enfileirada')}
-      onPause={campaignId => withToast(() => campaignService.pauseCampaign(campaignId), 'Pausa enfileirada')}
+      onPause={campaignId => {
+        if (!window.confirm('Confirmar a pausa desta campanha no provedor?')) return
+        return withToast(() => campaignService.pauseCampaign(campaignId, true), 'Pausa enfileirada')
+      }}
     />
   )
 }

@@ -12,6 +12,10 @@ export class ApiClientError extends Error {
   }
 }
 
+export function rethrowAuthorizationError(error: unknown): void {
+  if (error instanceof ApiClientError && (error.status === 401 || error.status === 403)) throw error
+}
+
 type ApiRequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown
 }

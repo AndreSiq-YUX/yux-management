@@ -1,4 +1,5 @@
 import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
+import { canAddCrmMember } from '@/lib/crm/governanceRules'
 import { backendMe } from '@/services/backendAuthService'
 import type {
   CrmAssignmentMode,
@@ -203,6 +204,9 @@ export const crmGovernanceService = {
   },
 
   async inviteMember(input: InviteCrmMemberInput) {
+    const governance = await crmGovernanceService.getGovernanceContext(input.crmInstanceId)
+    const seat = canAddCrmMember(governance.instance, governance.members || [], input.role)
+    if (!seat.allowed) throw new Error(`crm_member_limit_${seat.reason}`)
     const { data, error } = await crmOpsDataClient
       .from('crm_instance_members')
       .insert(buildCrmMemberInvitePayload(input))

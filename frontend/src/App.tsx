@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 // Layout components
@@ -79,6 +80,12 @@ import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
 import { ModulesPage } from '@/pages/platform/ModulesPage'
 import { PackagesPage } from '@/pages/platform/PackagesPage'
 
+function RequireRole({ roles, children }: { roles: Array<'admin' | 'manager' | 'client'>; children: ReactNode }) {
+  const { user } = useAuthStore()
+  if (!user || !roles.includes(user.role)) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 function App() {
   const { isAuthenticated, user } = useAuthStore()
   const safePortalPage = (title: string, description: string, capabilities: string[]) => (
@@ -110,24 +117,24 @@ function App() {
         <Route index element={<Navigate to={user?.role === 'client' ? '/portal' : '/dashboard'} replace />} />
         
         {/* Admin/Manager routes */}
-        {user?.role !== 'client' && (
+        {['admin', 'manager'].includes(user?.role || '') && (
           <>
             <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="admin" element={<AdminHubPage />} />
-            <Route path="admin/integrations" element={<AdminIntegrationsPage />} />
-            <Route path="admin/channels" element={<AdminChannelsPage />} />
-            <Route path="admin/email" element={<AdminEmailPage />} />
-            <Route path="admin/email/templates" element={<AdminSystemEmailTemplatesPage />} />
-            <Route path="admin/ai" element={<AdminAiPage />} />
-            <Route path="admin/strategy-engine" element={<StrategyEnginePage />} />
-            <Route path="admin/health" element={<AdminHealthPage />} />
-            <Route path="admin/modules-governance" element={<AdminModuleGovernancePage />} />
-            <Route path="admin/limits" element={<AdminLimitsPage />} />
-            <Route path="contracts" element={<ContractsPage />} />
-            <Route path="client-conversions" element={<ClientConversionsPage />} />
-            <Route path="packages" element={<PackagesPage />} />
-            <Route path="modules" element={<ModulesPage />} />
-            <Route path="crm-governance" element={<CrmGovernancePage />} />
+            <Route path="admin" element={<RequireRole roles={['admin']}><AdminHubPage /></RequireRole>} />
+            <Route path="admin/integrations" element={<RequireRole roles={['admin']}><AdminIntegrationsPage /></RequireRole>} />
+            <Route path="admin/channels" element={<RequireRole roles={['admin']}><AdminChannelsPage /></RequireRole>} />
+            <Route path="admin/email" element={<RequireRole roles={['admin']}><AdminEmailPage /></RequireRole>} />
+            <Route path="admin/email/templates" element={<RequireRole roles={['admin']}><AdminSystemEmailTemplatesPage /></RequireRole>} />
+            <Route path="admin/ai" element={<RequireRole roles={['admin']}><AdminAiPage /></RequireRole>} />
+            <Route path="admin/strategy-engine" element={<RequireRole roles={['admin']}><StrategyEnginePage /></RequireRole>} />
+            <Route path="admin/health" element={<RequireRole roles={['admin']}><AdminHealthPage /></RequireRole>} />
+            <Route path="admin/modules-governance" element={<RequireRole roles={['admin']}><AdminModuleGovernancePage /></RequireRole>} />
+            <Route path="admin/limits" element={<RequireRole roles={['admin']}><AdminLimitsPage /></RequireRole>} />
+            <Route path="contracts" element={<RequireRole roles={['admin']}><ContractsPage /></RequireRole>} />
+            <Route path="client-conversions" element={<RequireRole roles={['admin']}><ClientConversionsPage /></RequireRole>} />
+            <Route path="packages" element={<RequireRole roles={['admin']}><PackagesPage /></RequireRole>} />
+            <Route path="modules" element={<RequireRole roles={['admin']}><ModulesPage /></RequireRole>} />
+            <Route path="crm-governance" element={<RequireRole roles={['admin']}><CrmGovernancePage /></RequireRole>} />
             <Route path="clients" element={<ClientsPage />} />
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
@@ -141,7 +148,7 @@ function App() {
             <Route path="automations" element={<AutomationsPage />} />
             <Route path="support" element={<SupportPage />} />
             <Route path="finance" element={<FinancePage />} />
-            <Route path="blueprints" element={<BlueprintsPage />} />
+            <Route path="blueprints" element={<RequireRole roles={['admin']}><BlueprintsPage /></RequireRole>} />
 
             <Route path="client-workspaces" element={<ClientWorkspaceSelectorPage />} />
             <Route path="client-workspaces/:organizationId" element={<ClientWorkspaceLayout />}>
