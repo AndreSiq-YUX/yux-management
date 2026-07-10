@@ -168,6 +168,20 @@ describe('tenant-scoped module queries', () => {
     expect(response.json()).toEqual({ error: 'forbidden' })
   })
 
+  it.each([
+    ['GET', '/api/workspace/dashboard/stats', undefined],
+    ['GET', '/api/workspace/clients', undefined],
+    ['POST', '/api/workspace/growth-query', { table: 'growth_campaign_plans', operation: 'select' }],
+  ])('rejects client access to internal workspace route %s %s', async (method, url, payload) => {
+    const { authStore, token } = authenticatedStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({ method: method as 'GET' | 'POST', url, headers: headers(token), payload })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'forbidden' })
+  })
+
   it('rejects client access to the internal strategy engine', async () => {
     const { authStore, token } = authenticatedStore('client_admin')
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })

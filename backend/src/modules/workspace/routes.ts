@@ -390,9 +390,8 @@ async function loadProject(pool: pg.Pool, id: string) {
 }
 
 export async function registerWorkspaceRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', async (request, reply) => {
-    const user = await getAuthenticatedUser(request, reply)
-    if (!user) return reply
+  app.addHook('preHandler', async (request) => {
+    requireInternalRole(request)
   })
 
   app.post('/growth-query', async (request, reply) => {
