@@ -99,6 +99,9 @@ class AgentEventQueue:
         return job
 
     def claim_next_job(self, worker_id: str, queue_name: str = "agent.whatsapp") -> dict[str, Any] | None:
+        database_claim = getattr(self.store, "claim_next_job", None)
+        if callable(database_claim):
+            return database_claim(worker_id, queue_name)
         jobs = sorted(
             self.store.list("agent_queue_jobs", {"status": "queued", "queue_name": queue_name}),
             key=lambda item: (int(item.get("priority") or 100), str(item.get("created_at") or "")),

@@ -49,7 +49,8 @@ class HarnessTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(prompt["system_prompt"], "System prompt global da YUX.")
+        self.assertIn("System prompt global da YUX.", prompt["system_prompt"])
+        self.assertIn("<user_message>", prompt["system_prompt"])
         self.assertEqual(prompt["agent_prompt"], "Use exemplos aprovados do cliente.")
         self.assertIn("Marca consultiva", prompt["context_block"])
         self.assertEqual(prompt["prompt_config"]["minimumQualityScore"], 80)

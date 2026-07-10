@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .queue import AgentEventQueue
-from .runtime_store import InMemoryAgentRuntimeStore
+from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .workflow import StrategyWorkflowEngine
 
 
@@ -31,12 +31,14 @@ class ExecuteWorkflowRequest(BaseModel):
     source: str = "strategy_admin"
     organization_id: str | None = None
     client_id: str | None = None
+    contract_id: str | None = None
     conversation_id: str | None = None
     assistant_id: str | None = None
     mode: str | None = None
     workflow_spec: dict[str, Any] | None = None
     retrieval_context: dict[str, Any] | None = None
     autonomy_policies: list[dict[str, Any]] = Field(default_factory=list)
+    estimated_credits: int = Field(default=0, ge=0)
 
 
 def _runtime_token() -> str:
@@ -45,17 +47,24 @@ def _runtime_token() -> str:
 
 def require_runtime_token(authorization: str | None = Header(default=None)) -> None:
     configured = _runtime_token()
-    if not configured:
-        return
-    if authorization != f"Bearer {configured}":
+    if not configured or authorization != f"Bearer {configured}":
         raise HTTPException(status_code=401, detail="invalid runtime token")
 
 
-def create_app(store: InMemoryAgentRuntimeStore | None = None) -> FastAPI:
+def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
+    if not _runtime_token():
+        raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
     app = FastAPI(title="YUX Agent Harness Runtime", version="1.0.0")
-    runtime_store = store or InMemoryAgentRuntimeStore()
+    runtime_store = store or PostgresAgentRuntimeStore()
     queue = AgentEventQueue(runtime_store)
     engine = StrategyWorkflowEngine(runtime_store)
+
+    def validate_tenant(organization_id: str | None, client_id: str | None = None, contract_id: str | None = None) -> None:
+        if not organization_id:
+            raise HTTPException(status_code=422, detail="organization_id is required")
+        checker = getattr(runtime_store, "validate_tenant", None)
+        if callable(checker) and not checker(organization_id, client_id, contract_id):
+            raise HTTPException(status_code=403, detail="invalid tenant context")
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -63,12 +72,30 @@ def create_app(store: InMemoryAgentRuntimeStore | None = None) -> FastAPI:
 
     @app.post("/events/ingest", dependencies=[Depends(require_runtime_token)])
     def ingest_event(request: IngestEventRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id)
         payload = {**request.payload, **request.model_dump(exclude={"payload"})}
         return queue.ingest_event(payload)
 
     @app.post("/workflows/execute", dependencies=[Depends(require_runtime_token)])
     def execute_workflow(request: ExecuteWorkflowRequest) -> dict[str, Any]:
-        return engine.execute(**request.model_dump())
+        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        reserve = getattr(runtime_store, "reserve_credits", None)
+        credits = None
+        if request.estimated_credits:
+            if not request.client_id or not request.contract_id or not callable(reserve):
+                raise HTTPException(status_code=422, detail="client_id and contract_id are required for credit consumption")
+            try:
+                credits = reserve(
+                    organization_id=request.organization_id,
+                    client_id=request.client_id,
+                    contract_id=request.contract_id,
+                    credits=request.estimated_credits,
+                    action="agent_runtime_workflow",
+                )
+            except RuntimeError as error:
+                raise HTTPException(status_code=402, detail=str(error)) from error
+        result = engine.execute(**request.model_dump(exclude={"estimated_credits"}))
+        return {**result, "credits": credits}
 
     @app.post("/jobs/process-next", dependencies=[Depends(require_runtime_token)])
     def process_next_job(worker_id: str = "api-worker") -> dict[str, Any]:
@@ -77,6 +104,7 @@ def create_app(store: InMemoryAgentRuntimeStore | None = None) -> FastAPI:
             return {"processed": False, "reason": "empty_queue"}
         payload = job.get("payload") or {}
         try:
+            validate_tenant(job.get("organization_id"), job.get("client_id"), job.get("contract_id"))
             result = engine.execute(
                 message=str(payload.get("message") or ""),
                 profile_key=str(payload.get("profile_key") or "ai_sdr_comercial_1"),

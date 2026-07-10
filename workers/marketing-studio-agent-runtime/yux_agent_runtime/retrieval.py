@@ -295,9 +295,15 @@ class StrategyRetrievalService:
             "include_images": include_images,
         }
 
+        tenant_visible = lambda records: self._filter_tenant_records(
+            records,
+            organization_id=organization_id,
+            client_id=client_id,
+        )
+
         ranked_cards = self._rank_records(
             "card",
-            self.store.list_cards(),
+            tenant_visible(self.store.list_cards()),
             profile_key=profile_key,
             stage=stage,
             query_tokens=query_tokens,
@@ -306,7 +312,7 @@ class StrategyRetrievalService:
         )[: max(0, max_cards)]
         ranked_chunks = self._rank_records(
             "chunk",
-            self.store.list_chunks(),
+            tenant_visible(self.store.list_chunks()),
             profile_key=profile_key,
             stage=stage,
             query_tokens=query_tokens,
@@ -317,7 +323,7 @@ class StrategyRetrievalService:
         if include_images:
             ranked_assets = self._rank_records(
                 "asset",
-                self.store.list_assets(),
+                tenant_visible(self.store.list_assets()),
                 profile_key=profile_key,
                 stage=stage,
                 query_tokens=query_tokens,
@@ -369,6 +375,25 @@ class StrategyRetrievalService:
             "context_text": context_text,
             "retrieval_log": retrieval_log,
         }
+
+    @staticmethod
+    def _filter_tenant_records(
+        records: list[dict[str, Any]],
+        *,
+        organization_id: str | None,
+        client_id: str | None,
+    ) -> list[dict[str, Any]]:
+        """Global doctrine is reusable; tenant-scoped records are not."""
+        result: list[dict[str, Any]] = []
+        for record in records:
+            record_organization = record.get("organization_id") or record.get("organizationId")
+            record_client = record.get("client_id") or record.get("clientId")
+            if record_organization and record_organization != organization_id:
+                continue
+            if record_client and record_client != client_id:
+                continue
+            result.append(record)
+        return result
 
     def _rank_records(
         self,

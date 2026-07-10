@@ -245,6 +245,30 @@ class RetrievalTest(unittest.TestCase):
 
         self.assertEqual(result["cards"][0]["id"], "card-support")
 
+    def test_tenant_scoped_records_never_cross_organization_boundaries(self):
+        cards = [
+            *CARDS,
+            {
+                **CARDS[1],
+                "id": "card-org-b",
+                "organization_id": "org-b",
+                "client_id": "client-b",
+                "retrieval_tags": ["spin", "segredo"],
+            },
+        ]
+        service = StrategyRetrievalService(InMemoryStrategyKnowledgeStore(cards=cards, chunks=CHUNKS))
+        result = service.retrieve_strategy_context(
+            profile_key="ai_sdr_comercial_1",
+            organization_id="org-a",
+            client_id="client-a",
+            intent="qualification",
+            stage="raised_hand",
+            query="spin segredo",
+            max_cards=5,
+            max_chunks=5,
+        )
+        self.assertNotIn("card-org-b", {item["id"] for item in result["cards"]})
+
 
 if __name__ == "__main__":
     unittest.main()

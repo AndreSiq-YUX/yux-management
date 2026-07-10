@@ -68,13 +68,20 @@ da metodologia operacional curada.
 - `POST /jobs/process-next`: processa o proximo job da fila local.
 - `POST /workflows/execute`: executa workflow estrategico diretamente.
 
-Quando `YUX_AGENT_RUNTIME_TOKEN` estiver configurado, os endpoints mutaveis exigem `Authorization: Bearer <token>`.
+Os endpoints mutaveis exigem `Authorization: Bearer <token>`. O processo nao
+inicia sem `YUX_AGENT_RUNTIME_TOKEN`, nem sem `DATABASE_URL`: o Postgres da
+plataforma e a unica persistencia de producao da runtime.
+
+Cada chamada mutavel exige `organization_id`; quando `client_id` ou
+`contract_id` forem informados, a runtime confirma que pertencem a essa
+organizacao antes de ler ou gravar dados. Jobs concorrentes sao reivindicados
+com `FOR UPDATE SKIP LOCKED`. Consumo de credito usa update condicional da
+wallet e ledger na mesma transacao.
 
 ## Variaveis
 
 - `YUX_AGENT_RUNTIME_TOKEN`: token interno para chamadas do Portal/Edge.
-- `SUPABASE_URL`: URL do projeto Supabase.
-- `SUPABASE_SERVICE_ROLE_KEY`: chave server-side para persistencia operacional.
+- `DATABASE_URL`: conexao interna com o Postgres do Portal YUX.
 - `OPENROUTER_API_KEY`: modelos LLM via OpenRouter.
 - `JINA_API_KEY`: leitura, busca e grounding.
 
@@ -109,3 +116,7 @@ Mudancas proibidas sem aprovacao:
 - cards/playbooks publicados;
 - modelo padrao de agente;
 - ofertas, descontos ou termos comerciais.
+
+O runtime nunca envia mensagens ou altera providers diretamente. Ele apenas
+produz uma decisao rastreada; efeitos externos passam pelo worker TypeScript e
+so sao despachados quando a politica de autonomia permitir ou houver aprovacao.
