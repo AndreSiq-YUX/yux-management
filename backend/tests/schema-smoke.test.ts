@@ -7,6 +7,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url))
 const migrationsDir = path.resolve(dirname, '../src/db/migrations')
 const portalSchema = readFileSync(path.join(migrationsDir, '0100_portal_schema.sql'), 'utf8')
 const omittedReport = readFileSync(path.join(migrationsDir, '0100_portal_schema.omitted.md'), 'utf8')
+const rlsSafetyNet = readFileSync(path.join(migrationsDir, '0111_rls_safety_net.sql'), 'utf8')
 
 describe('self-hosted portal schema bootstrap', () => {
   it('does not keep executable Supabase-only dependencies', () => {
@@ -43,5 +44,13 @@ describe('self-hosted portal schema bootstrap', () => {
     expect(omittedReport).toContain('supabase rls policy')
     expect(omittedReport).toContain('supabase auth users table')
     expect(omittedReport).toContain('supabase storage dependency')
+  })
+
+  it('adds a forced RLS safety net for sensitive tenant and secret tables', () => {
+    for (const table of ['leads', 'conversations', 'messages', 'invoices', 'support_tickets', 'platform_provider_secrets', 'provider_integration_secrets']) {
+      expect(rlsSafetyNet).toContain(`ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY`)
+      expect(rlsSafetyNet).toContain(`ALTER TABLE public.${table} FORCE ROW LEVEL SECURITY`)
+    }
+    expect(rlsSafetyNet).toContain("current_setting('app.current_orgs', true)")
   })
 })

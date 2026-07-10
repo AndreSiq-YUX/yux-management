@@ -1,5 +1,6 @@
 import fp from 'fastify-plugin'
 import { hashSessionToken } from '../auth/session.js'
+import { enterDatabaseRequestContext } from '../db/request-context.js'
 import type { RequestContext, UserRole } from './request-context.js'
 
 declare module 'fastify' {
@@ -44,5 +45,9 @@ export const contextPlugin = fp(async (app) => {
       organizationIds: memberships.rows.map((row) => row.organization_id),
       enabledModuleKeys: modules.rows.map((row) => row.module_key),
     }
+    enterDatabaseRequestContext({
+      role: request.ctx.role,
+      organizationIds: request.ctx.organizationIds,
+    })
   })
 })
