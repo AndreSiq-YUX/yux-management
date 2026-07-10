@@ -182,6 +182,13 @@ class FakePool {
   }
 }
 
+class ForeignOrganizationPool extends FakePool {
+  override async query(sql: string) {
+    if (sql.includes('FROM public.memberships') && sql.includes('WHERE user_id = $1')) return { rows: [] }
+    return super.query(sql)
+  }
+}
+
 let app: FastifyInstance | undefined
 
 afterEach(async () => {
@@ -198,6 +205,19 @@ function buildAuthenticatedAuthStore() {
     email: 'admin@yux.com.br',
     name: 'Admin YUX',
     role: 'yux_admin',
+  }
+  return { authStore, token }
+}
+
+function buildClientAuthStore() {
+  const token = 'client-session-token'
+  const authStore = new FakeAuthStore()
+  authStore.sessionHash = hashSessionToken(token)
+  authStore.user = {
+    id: ids.user,
+    email: 'client@yux.com.br',
+    name: 'Cliente YUX',
+    role: 'client_admin',
   }
   return { authStore, token }
 }
@@ -234,6 +254,20 @@ describe('omnichannel routes', () => {
         tags: ['vip'],
       }),
     ])
+  })
+
+  it('rejects a client reading channel connections from another organization', async () => {
+    const { authStore, token } = buildClientAuthStore()
+    app = await buildServer(testEnv, { authStore, pool: new ForeignOrganizationPool() as never, jobQueue: new FakeJobQueue() })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/omnichannel/channel-connections?organizationId=${ids.org}`,
+      headers: { cookie: sessionCookie(token) },
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'organization_forbidden' })
   })
 
   it('creates human replies and queues outbound dispatch', async () => {

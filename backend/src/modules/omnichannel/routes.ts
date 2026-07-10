@@ -26,6 +26,7 @@ import {
   listQueues,
   listTeamMembers,
   listWebhookEvents,
+  requireOrganizationAccess,
   updateConversationStatus,
   updateRowById,
   type ConversationFilters,
@@ -219,6 +220,7 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
 
     const parsed = channelConnectionsQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_channel_connections_query' })
+    await requireOrganizationAccess(app.pg, user, parsed.data.organizationId)
 
     const channels = (parsed.data.channels || '')
       .split(',')

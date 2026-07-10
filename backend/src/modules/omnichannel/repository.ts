@@ -458,7 +458,7 @@ async function getRowById(pool: pg.Pool, table: string, id: string) {
   return result.rows[0]
 }
 
-async function requireOrganizationAccess(pool: pg.Pool, user: AuthUser, organizationId: string) {
+export async function requireOrganizationAccess(pool: pg.Pool, user: AuthUser, organizationId: string) {
   if (isInternal(user)) return
   const result = await pool.query<{ ok: number }>(
     `SELECT 1 AS ok
