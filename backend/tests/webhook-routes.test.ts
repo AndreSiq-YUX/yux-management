@@ -14,11 +14,13 @@ const env = {
   CORS_ORIGIN: 'http://localhost:3000',
   META_APP_SECRET: 'meta-app-secret',
   META_WEBHOOK_VERIFY_TOKEN: 'verify-token',
+  SMTP2GO_WEBHOOK_SECRET: 'smtp-webhook-secret',
 }
 
 class FakePool {
   async query(sql: string) {
     if (sql.includes('WHERE phone_number_id')) return { rows: [] }
+    if (sql.includes('email_suppression_entries')) return { rows: [] }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
   async end() { return undefined }
@@ -57,5 +59,16 @@ describe('Meta webhook routes', () => {
     })
     expect(response.statusCode).toBe(401)
     expect(response.json()).toEqual({ error: 'invalid_webhook_signature' })
+  })
+
+  it('stores SMTP2GO bounce events only with its webhook secret', async () => {
+    app = await buildServer(env, { pool: new FakePool() as never, jobQueue })
+    const response = await app.inject({
+      method: 'POST', url: '/api/webhooks/smtp2go',
+      headers: { 'content-type': 'application/json', 'x-yux-webhook-secret': env.SMTP2GO_WEBHOOK_SECRET },
+      payload: { organizationId: '00000000-0000-4000-8000-000000000001', event: 'bounce', email: 'bounced@example.com' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ accepted: true, suppressed: true })
   })
 })

@@ -418,6 +418,7 @@ async function sendTemplateTest(
   variables: Record<string, string | number | boolean | null>,
   senderScope: 'system' | 'organization',
 ) {
+  const organizationId = template.organizationId ?? (await firstOrganizationIdForUser(app, user.id))
   const rendered = renderEmailTemplate({
     subject: template.subject,
     bodyHtml: template.bodyHtml,
@@ -425,6 +426,9 @@ async function sendTemplateTest(
     variables,
   })
   const emailResult = await sendConfiguredSmtp2GoEmail(app.pg, app.config.SESSION_SECRET, {
+    organizationId,
+    emailCategory: template.emailKind,
+    recipientOptIn: template.emailKind !== 'marketing',
     to,
     subject: rendered.subject,
     textBody: rendered.text,
@@ -432,7 +436,6 @@ async function sendTemplateTest(
     customHeaders: [{ header: 'X-YUX-Template-ID', value: template.id }],
   })
 
-  const organizationId = template.organizationId ?? (await firstOrganizationIdForUser(app, user.id))
   if (organizationId) {
     await recordEmailTemplateSendRequest(app.pg, {
       organizationId,

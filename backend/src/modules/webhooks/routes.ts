@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { normalizeWhatsAppInbound, validateWhatsAppSignature } from '../../lib/edge-compat/whatsappProvider.js'
+import { z } from 'zod'
 
 function queryString(value: unknown) {
   return typeof value === 'string' ? value : ''
@@ -75,5 +76,34 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       request.log.warn(error, 'meta webhook payload ignored')
       return reply.code(200).send({ accepted: true, ignored: 'unsupported_payload' })
     }
+  })
+
+  app.post('/smtp2go', {
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    if (!app.config.SMTP2GO_WEBHOOK_SECRET) return reply.code(503).send({ error: 'webhook_not_configured' })
+    const supplied = request.headers['x-yux-webhook-secret']
+    if (typeof supplied !== 'string' || supplied !== app.config.SMTP2GO_WEBHOOK_SECRET) return reply.code(401).send({ error: 'invalid_webhook_secret' })
+    const raw = request.body
+    if (!Buffer.isBuffer(raw)) return reply.code(400).send({ error: 'invalid_smtp2go_payload' })
+    let payload: unknown
+    try { payload = JSON.parse(raw.toString('utf8')) } catch { return reply.code(400).send({ error: 'invalid_smtp2go_payload' }) }
+    const parsed = z.object({
+      organizationId: z.string().uuid(),
+      event: z.string().optional(), event_type: z.string().optional(),
+      email: z.string().email().optional(), recipient: z.string().email().optional(),
+    }).safeParse(payload)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_smtp2go_payload' })
+    const event = (parsed.data.event_type || parsed.data.event || '').toLowerCase()
+    const reason = event.includes('unsubscribe') ? 'unsubscribe' : event.includes('complaint') || event.includes('spam') ? 'spam' : event.includes('bounce') ? 'bounce' : null
+    const email = parsed.data.email || parsed.data.recipient
+    if (!reason || !email) return reply.code(200).send({ accepted: true, ignored: 'event_not_suppressible' })
+    await app.pg.query(
+      `INSERT INTO public.email_suppression_entries (organization_id, email, reason, source)
+       VALUES ($1, lower($2), $3, 'smtp2go')
+       ON CONFLICT (organization_id, email) DO UPDATE SET reason = EXCLUDED.reason, source = EXCLUDED.source`,
+      [parsed.data.organizationId, email, reason],
+    )
+    return { accepted: true, suppressed: true }
   })
 }
