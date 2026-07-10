@@ -282,7 +282,7 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     return reply.code(201).send(message)
   })
 
-  app.post('/attachments', async (request, reply) => {
+  app.post('/attachments', { bodyLimit: 25 * 1024 * 1024 }, async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
     const parsed = attachmentUploadSchema.safeParse(request.body)

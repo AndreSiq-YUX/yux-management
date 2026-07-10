@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import { fileTypeFromBuffer } from 'file-type'
 import { randomUUID } from 'node:crypto'
 import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -666,6 +667,7 @@ export async function createMaterial(pool: pg.Pool, user: AuthUser, input: Mater
   if (content.byteLength !== input.byteSize) {
     throw Object.assign(new Error('invalid_material_size'), { statusCode: 400 })
   }
+  await assertAllowedMaterialFile(content, input.fileType)
 
   await mkdir(path.dirname(absolutePath), { recursive: true })
   await writeFile(absolutePath, content)
@@ -934,7 +936,9 @@ async function getMaterialRow(pool: pg.Pool, user: AuthUser, materialId: string)
 }
 
 async function findMaterialFile(material: MaterialRow) {
-  const directory = materialPath(material.organization_id)
+  const basePath = materialPath()
+  const directory = resolveMaterialStoragePath(basePath, material.organization_id)
+  if (!directory) return null
   const filePrefix = `${material.id}-`
   const { readdir } = await import('node:fs/promises')
   const files = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
@@ -942,11 +946,35 @@ async function findMaterialFile(material: MaterialRow) {
     throw error
   })
   const file = files.find((candidate) => candidate.startsWith(filePrefix))
-  return file ? path.join(directory, file) : null
+  return file ? resolveMaterialStoragePath(directory, file) : null
 }
 
 function materialPath(...parts: string[]) {
   return path.resolve(process.env.MATERIALS_STORAGE_DIR ?? path.join(process.cwd(), 'storage', 'materials'), ...parts)
+}
+
+const allowedMaterialMimeTypes = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'audio/mpeg', 'audio/wav', 'audio/ogg',
+  'video/mp4', 'video/webm',
+])
+
+export async function assertAllowedMaterialFile(content: Buffer, declaredMimeType: string) {
+  const detected = await fileTypeFromBuffer(content)
+  if (!detected || !allowedMaterialMimeTypes.has(detected.mime) || detected.mime !== declaredMimeType) {
+    throw Object.assign(new Error('invalid_material_file_type'), { statusCode: 400 })
+  }
+  return detected.mime
+}
+
+export function resolveMaterialStoragePath(basePath: string, candidate: string) {
+  const base = path.resolve(basePath)
+  const resolved = path.resolve(base, candidate)
+  return resolved.startsWith(`${base}${path.sep}`) ? resolved : null
 }
 
 function sanitizeFileName(name: string) {

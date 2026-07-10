@@ -452,7 +452,7 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
     return { limitMb: await getUploadLimitMb(app.pg, user, query.data.organizationId) }
   })
 
-  app.post('/materials', async (request, reply) => {
+  app.post('/materials', { bodyLimit: 25 * 1024 * 1024 }, async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
 
