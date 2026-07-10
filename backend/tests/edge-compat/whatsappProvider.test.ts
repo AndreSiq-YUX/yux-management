@@ -78,4 +78,5 @@ it('validates x-hub-signature-256 signatures when app secret is configured', asy
     rawBody,
     signatureHeader: 'sha256=bad',
   }), false)
+  assertEquals(await validateWhatsAppSignature({ rawBody, signatureHeader: `sha256=${signature}` }), false)
 })

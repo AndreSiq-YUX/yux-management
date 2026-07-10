@@ -1,3 +1,5 @@
+import type pg from 'pg'
+
 export type SecretProvider = 'meta_social' | 'google_business_profile' | 'meta_ads' | 'google_ads' | 'wordpress'
 export type SecretTargetKind = 'publishing' | 'ads'
 export type SecretConnectionTable = 'publishing_connections' | 'ad_provider_connections' | 'channel_connections'
@@ -187,4 +189,66 @@ export async function loadProviderSecret(admin: any, reference: string, rawKey =
     expired: isProviderSecretExpired(data.expires_at),
     metadata: safeMetadata(data.metadata),
   }
+}
+
+/**
+ * PostgreSQL counterpart of loadProviderSecret. Workers run outside the legacy
+ * Supabase-shaped client and must never receive a plaintext secret in a job.
+ */
+export async function loadProviderSecretFromPool(
+  pool: Pick<pg.Pool, 'query'>,
+  reference: string,
+  rawKey = decodeProviderSecretEncryptionKey(),
+): Promise<LoadedProviderSecret> {
+  const secretReference = requireString(reference, 'reference')
+  const result = await pool.query<{
+    reference: string
+    ciphertext: string
+    nonce: string
+    expires_at: string | null
+    metadata: Record<string, unknown> | null
+  }>(
+    `SELECT reference, ciphertext, nonce, expires_at, metadata
+     FROM public.provider_integration_secrets
+     WHERE reference = $1
+     LIMIT 1`,
+    [secretReference],
+  )
+  const data = result.rows[0]
+  if (!data) throw new Error('provider_secret_not_found')
+
+  return {
+    reference: data.reference,
+    value: await decryptProviderSecretValue({ ciphertext: data.ciphertext, nonce: data.nonce }, rawKey),
+    expiresAt: data.expires_at || null,
+    expired: isProviderSecretExpired(data.expires_at),
+    metadata: safeMetadata(data.metadata),
+  }
+}
+/** PostgreSQL writer used by the API/worker runtime; plaintext never leaves this module. */
+export async function storeProviderSecretToPool(
+  pool: Pick<pg.Pool, 'query'>,
+  input: StoreProviderSecretInput,
+  rawKey = decodeProviderSecretEncryptionKey(),
+) {
+  const reference = getProviderSecretReference(input)
+  const encrypted = await encryptProviderSecretValue(input.value, rawKey)
+  const result = await pool.query<{ reference: string; expires_at: string | null; metadata: Record<string, unknown> | null }>(
+    `INSERT INTO public.provider_integration_secrets (
+       organization_id, client_id, contract_id, provider, target_kind, connection_table,
+       connection_id, secret_kind, reference, ciphertext, nonce, expires_at, metadata
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+     ON CONFLICT (reference) DO UPDATE SET
+       ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, expires_at = EXCLUDED.expires_at,
+       metadata = EXCLUDED.metadata, updated_at = NOW()
+     RETURNING reference, expires_at, metadata`,
+    [
+      requireString(input.organizationId, 'organizationId'), input.clientId || null, input.contractId || null,
+      input.provider, input.targetKind, input.connectionTable, requireString(input.connectionId, 'connectionId'),
+      input.secretKind, reference, encrypted.ciphertext, encrypted.nonce, input.expiresAt || null,
+      JSON.stringify(safeMetadata(input.metadata)),
+    ],
+  )
+  const data = result.rows[0]
+  return { reference: data?.reference || reference, expiresAt: data?.expires_at || input.expiresAt || null, metadata: safeMetadata(data?.metadata || input.metadata) }
 }

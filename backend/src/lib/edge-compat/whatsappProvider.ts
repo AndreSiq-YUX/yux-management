@@ -169,7 +169,7 @@ export async function validateWhatsAppSignature(input: {
   rawBody: string
   signatureHeader?: string | null
 }) {
-  if (!input.appSecret) return true
+  if (!input.appSecret) return false
   const signature = stringValue(input.signatureHeader)?.replace(/^sha256=/, '')
   if (!signature) return false
 

@@ -3,6 +3,10 @@ import { DEFAULT_QUEUE_NAME, createWorker, isJobName, type QueueJobData } from '
 import { createPool } from './db/client.js'
 import { loadEnv } from './config/env.js'
 import { processSequenceExecution, runCrmSequenceScheduler } from './modules/crm/scheduler.js'
+import { handleInboundMessage, handleOutboundMessage } from './jobs/handlers/omnichannel.js'
+import { handleProposalConversion } from './jobs/handlers/proposals.js'
+import { handleProviderFunction } from './jobs/handlers/providers.js'
+import { handleStrategyAdminChat } from './jobs/handlers/strategy.js'
 
 type WorkerResult = {
   ok: true
@@ -14,21 +18,24 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   }
 
   if (job.name === 'crm.sequence.dispatchDue') {
-    await runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL })
+    await runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })
     return { ok: true }
   }
 
   if (job.name === 'crm.sequence.processExecution') {
     const executionId = job.data.executionId
     if (typeof executionId !== 'string') throw new Error('executionId is required')
-    await processSequenceExecution(pool, executionId, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL })
+    await processSequenceExecution(pool, executionId, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })
     return { ok: true }
   }
 
-  if (job.name === 'proposal.convert') return { ok: true }
-  if (job.name.startsWith('omnichannel.')) return { ok: true }
+  if (job.name === 'proposal.convert') { await handleProposalConversion(pool, job.data.proposalId); return { ok: true } }
+  if (job.name === 'provider.functionInvoke') { await handleProviderFunction(pool, job.data); return { ok: true } }
+  if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data); return { ok: true } }
+  if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }
+  if (job.name === 'strategy.adminChat') { await handleStrategyAdminChat(pool, env, job.data); return { ok: true } }
 
-  return { ok: true }
+  throw new Error(`No handler registered for ${job.name}`)
 }
 
 const env = loadEnv()
@@ -37,7 +44,7 @@ const worker = createWorker(DEFAULT_QUEUE_NAME, processJob)
 const schedulerIntervalMs = Number(process.env.CRM_SEQUENCE_SCHEDULER_INTERVAL_MS || 60_000)
 
 const scheduler = setInterval(() => {
-  void runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL }).catch((error) => {
+  void runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET }).catch((error) => {
     console.error('[worker] crm sequence scheduler failed', error)
   })
 }, schedulerIntervalMs)
