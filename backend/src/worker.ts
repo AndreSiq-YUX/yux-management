@@ -9,6 +9,7 @@ import { handleProposalConversion } from './jobs/handlers/proposals.js'
 import { handleProviderFunction } from './jobs/handlers/providers.js'
 import { handleStrategyAdminChat } from './jobs/handlers/strategy.js'
 import { purgeExpiredTraces } from './jobs/handlers/maintenance.js'
+import { refreshExpiringGoogleTokens } from './jobs/handlers/google-token-refresh.js'
 
 type WorkerResult = {
   ok: true
@@ -38,6 +39,7 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }
   if (job.name === 'strategy.adminChat') { await handleStrategyAdminChat(pool, env, job.data); return { ok: true } }
   if (job.name === 'maintenance.purgeExpiredTraces') { await purgeExpiredTraces(pool); return { ok: true } }
+  if (job.name === 'maintenance.refreshGoogleTokens') { await refreshExpiringGoogleTokens(pool, env); return { ok: true } }
 
   throw new Error(`No handler registered for ${job.name}`)
   })
@@ -66,6 +68,19 @@ const maintenanceScheduler = setInterval(() => {
   void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))
 }, maintenanceIntervalMs)
 
+const googleTokenRefreshIntervalMs = Number(process.env.GOOGLE_TOKEN_REFRESH_INTERVAL_MS || 30 * 60 * 1_000)
+
+function scheduleGoogleTokenRefresh() {
+  // One job per interval window keeps the schedule idempotent across restarts.
+  const window = Math.floor(Date.now() / googleTokenRefreshIntervalMs)
+  return maintenanceQueue.add('maintenance.refreshGoogleTokens', { window }, { jobId: `maintenance-google-token-refresh:${window}` })
+}
+
+void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
+const googleTokenRefreshScheduler = setInterval(() => {
+  void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
+}, googleTokenRefreshIntervalMs)
+
 worker.on('completed', (job) => {
   console.log(`[worker] completed ${job.name}#${job.id ?? 'unknown'}`)
 })
@@ -78,6 +93,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`[worker] received ${signal}, shutting down`)
   clearInterval(scheduler)
   clearInterval(maintenanceScheduler)
+  clearInterval(googleTokenRefreshScheduler)
   await worker.close()
   await maintenanceQueue.close()
   await pool.end()

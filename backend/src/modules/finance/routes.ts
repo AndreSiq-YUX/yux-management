@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import { getContractOrganizationId } from '../../http/contract-organization.js'
-import { requireAdminRole, requireMembership, requireOrganizationScope } from '../../http/guards.js'
+import { requireAdminRole, requireInternalRole, requireMembership } from '../../http/guards.js'
 
 const optionalUuid = z.string().uuid().optional()
 const invoiceParamsSchema = z.object({ invoiceId: z.string().uuid() })
@@ -104,7 +104,8 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
   app.get('/invoices', async (request, reply) => {
     const parsed = invoiceQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_invoice_query' })
-    requireOrganizationScope(request, parsed.data.organizationId)
+    // Full invoice payload includes internal_notes; clients use /portal/invoices.
+    requireInternalRole(request)
 
     const state: SqlState = { values: [], where: [] }
     addFilter(state, 'i.organization_id', parsed.data.organizationId)

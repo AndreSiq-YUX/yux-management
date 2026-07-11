@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from .queue import AgentEventQueue
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
-from .workflow import StrategyWorkflowEngine
+from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
 
 
 class IngestEventRequest(BaseModel):
@@ -38,6 +38,8 @@ class ExecuteWorkflowRequest(BaseModel):
     workflow_spec: dict[str, Any] | None = None
     retrieval_context: dict[str, Any] | None = None
     autonomy_policies: list[dict[str, Any]] = Field(default_factory=list)
+    # Accepted for backward compatibility but ignored: credits are always
+    # estimated server-side (see workflow.estimate_workflow_credits).
     estimated_credits: int = Field(default=0, ge=0)
 
 
@@ -66,6 +68,29 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
         if callable(checker) and not checker(organization_id, client_id, contract_id):
             raise HTTPException(status_code=403, detail="invalid tenant context")
 
+    def reserve_billable_credits(
+        *,
+        organization_id: str | None,
+        client_id: str | None,
+        contract_id: str | None,
+        credits: int,
+        action: str,
+    ) -> dict[str, Any] | None:
+        """Debit the client wallet when the run is attributed to a client contract.
+
+        Runs without client/contract context (internal admin usage) are not billed.
+        """
+        reserve = getattr(runtime_store, "reserve_credits", None)
+        if credits <= 0 or not client_id or not contract_id or not callable(reserve):
+            return None
+        return reserve(
+            organization_id=organization_id,
+            client_id=client_id,
+            contract_id=contract_id,
+            credits=credits,
+            action=action,
+        )
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {"status": "ok", "service": "yux-agent-harness-runtime"}
@@ -79,22 +104,20 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
     @app.post("/workflows/execute", dependencies=[Depends(require_runtime_token)])
     def execute_workflow(request: ExecuteWorkflowRequest) -> dict[str, Any]:
         validate_tenant(request.organization_id, request.client_id, request.contract_id)
-        reserve = getattr(runtime_store, "reserve_credits", None)
-        credits = None
-        if request.estimated_credits:
-            if not request.client_id or not request.contract_id or not callable(reserve):
-                raise HTTPException(status_code=422, detail="client_id and contract_id are required for credit consumption")
-            try:
-                credits = reserve(
-                    organization_id=request.organization_id,
-                    client_id=request.client_id,
-                    contract_id=request.contract_id,
-                    credits=request.estimated_credits,
-                    action="agent_runtime_workflow",
-                )
-            except RuntimeError as error:
-                raise HTTPException(status_code=402, detail=str(error)) from error
-        result = engine.execute(**request.model_dump(exclude={"estimated_credits"}))
+        credits_required = estimate_workflow_credits(request.workflow_spec, request.mode, request.source)
+        try:
+            credits = reserve_billable_credits(
+                organization_id=request.organization_id,
+                client_id=request.client_id,
+                contract_id=request.contract_id,
+                credits=credits_required,
+                action="agent_runtime_workflow",
+            )
+        except RuntimeError as error:
+            raise HTTPException(status_code=402, detail=str(error)) from error
+        # contract_id is used for tenant validation and billing only; the
+        # workflow engine does not accept it.
+        result = engine.execute(**request.model_dump(exclude={"estimated_credits", "contract_id"}))
         return {**result, "credits": credits}
 
     @app.post("/jobs/process-next", dependencies=[Depends(require_runtime_token)])
@@ -105,6 +128,18 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
         payload = job.get("payload") or {}
         try:
             validate_tenant(job.get("organization_id"), job.get("client_id"), job.get("contract_id"))
+            try:
+                credits = reserve_billable_credits(
+                    organization_id=job.get("organization_id"),
+                    client_id=job.get("client_id"),
+                    contract_id=job.get("contract_id"),
+                    credits=estimate_workflow_credits(None, "conversation_turn", "whatsapp"),
+                    action="agent_runtime_conversation_turn",
+                )
+            except RuntimeError as error:
+                # Insufficient balance is terminal for the job: retrying will not help.
+                runtime_store.update("agent_queue_jobs", job["id"], {"status": "dead_letter", "last_error": str(error)})
+                return {"processed": False, "reason": "insufficient_credits", "job_id": job["id"]}
             result = engine.execute(
                 message=str(payload.get("message") or ""),
                 profile_key=str(payload.get("profile_key") or "ai_sdr_comercial_1"),
@@ -117,7 +152,7 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
                 autonomy_policies=payload.get("autonomy_policies") or [],
             )
             queue.complete_job(job["id"], result)
-            return {"processed": True, "job": job, "result": result}
+            return {"processed": True, "job": job, "result": result, "credits": credits}
         except Exception as error:
             queue.fail_job(job["id"], str(error))
             raise

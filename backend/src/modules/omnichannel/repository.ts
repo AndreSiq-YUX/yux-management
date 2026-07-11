@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AuthUser } from '../../auth/routes.js'
+import { assertAllowedMaterialFile } from '../automations/repository.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -308,6 +309,8 @@ export async function createMessageAttachment(pool: pg.Pool, user: AuthUser, inp
   if (content.byteLength !== input.byteSize) {
     throw Object.assign(new Error('invalid_attachment_size'), { statusCode: 400 })
   }
+  // Validate magic bytes against the declared MIME type before persisting.
+  await assertAllowedMaterialFile(content, input.mimeType)
 
   const id = randomUUID()
   const safeName = sanitizeFileName(input.filename)
@@ -490,7 +493,7 @@ async function requireConversationAccess(pool: pg.Pool, user: AuthUser, conversa
   return conversation
 }
 
-async function requireMessageAccess(pool: pg.Pool, user: AuthUser, messageId: string) {
+export async function requireMessageAccess(pool: pg.Pool, user: AuthUser, messageId: string) {
   const result = await pool.query<{ id: string; organization_id: string }>(
     `SELECT m.id, c.organization_id
      FROM public.messages m

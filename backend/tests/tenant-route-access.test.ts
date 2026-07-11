@@ -19,6 +19,7 @@ const ids = {
   orgA: '00000000-0000-4000-8000-000000000001',
   orgB: '00000000-0000-4000-8000-000000000002',
   contractA: '00000000-0000-4000-8000-000000000003',
+  ticketB: '00000000-0000-4000-8000-000000000004',
 }
 
 class FakeAuthStore implements AuthStore {
@@ -35,6 +36,7 @@ class FakePool {
   async query(sql: string) {
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [{ organization_id: ids.orgA }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+    if (sql.includes('FROM public.support_tickets WHERE id')) return { rows: [{ organization_id: ids.orgB }] }
     if (sql.includes('FROM public.contracts c') && sql.includes('organization_id')) return { rows: [{ organization_id: ids.orgA }] }
     if (sql.includes('FROM public.campaigns') && sql.includes('WHERE contract_id')) {
       return { rows: [{ id: 'campaign-1', organization_id: ids.orgA, name: 'Campanha segura' }] }
@@ -71,27 +73,47 @@ function headers(token: string) {
 
 describe('tenant-scoped domain routes', () => {
   it.each([
-    ['/api/finance/invoices', 'organizationId'],
-    ['/api/support/tickets', 'organizationId'],
-  ])('requires %s clients to provide %s', async (url) => {
-    const { authStore, token } = authenticatedStore('client_admin')
-    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
-
-    const response = await app.inject({ method: 'GET', url, headers: headers(token) })
-
-    expect(response.statusCode).toBe(400)
-    expect(response.json()).toEqual({ error: 'organization_id_required' })
-  })
-
-  it.each([
-    ['/api/finance/invoices', `?organizationId=${ids.orgB}`],
-    ['/api/support/tickets', `?organizationId=${ids.orgB}`],
+    ['/api/finance/invoices', ''],
+    ['/api/finance/invoices', `?organizationId=${ids.orgA}`],
+    ['/api/support/tickets', ''],
+    ['/api/support/tickets', `?organizationId=${ids.orgA}`],
     [`/api/reports/operational-data/${ids.orgB}`, ''],
-  ])('rejects a client attempting to read another organization from %s', async (path, query) => {
+    [`/api/reports/operational-data/${ids.orgA}`, ''],
+  ])('rejects client access to the internal listing %s%s', async (path, query) => {
     const { authStore, token } = authenticatedStore('client_admin')
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
 
     const response = await app.inject({ method: 'GET', url: `${path}${query}`, headers: headers(token) })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'forbidden' })
+  })
+
+  it('rejects a client posting a support message on a ticket from another organization', async () => {
+    const { authStore, token } = authenticatedStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/support/messages',
+      headers: headers(token),
+      payload: { ticketId: ids.ticketB, authorType: 'client', body: 'tentativa cross-tenant' },
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'forbidden' })
+  })
+
+  it('rejects a client updating support ticket management fields', async () => {
+    const { authStore, token } = authenticatedStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/support/tickets/${ids.ticketB}`,
+      headers: headers(token),
+      payload: { status: 'closed', internalNotes: 'não deveria passar' },
+    })
 
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ error: 'forbidden' })

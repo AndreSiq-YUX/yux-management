@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import { getContractOrganizationId } from '../../http/contract-organization.js'
-import { requireMembership, requireOrganizationScope } from '../../http/guards.js'
+import { requireInternalRole, requireMembership, requireOrganizationScope } from '../../http/guards.js'
 
 const optionalUuid = z.string().uuid().optional()
 const ticketParamsSchema = z.object({ ticketId: z.string().uuid() })
@@ -80,6 +80,18 @@ async function loadTicket(pool: pg.Pool, ticketId: string) {
   return rows[0]
 }
 
+async function getTicketOrganizationId(pool: pg.Pool, ticketId: string) {
+  const { rows } = await pool.query<{ organization_id: string }>(
+    'SELECT organization_id FROM public.support_tickets WHERE id = $1 LIMIT 1',
+    [ticketId],
+  )
+  return rows[0]?.organization_id ?? null
+}
+
+function isInternalRole(role: string) {
+  return role === 'yux_admin' || role === 'yux_operator'
+}
+
 function ticketSql(where = '') {
   return `
     SELECT
@@ -109,7 +121,9 @@ export async function registerSupportRoutes(app: FastifyInstance) {
   app.get('/tickets', async (request, reply) => {
     const parsed = ticketQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_support_ticket_query' })
-    requireOrganizationScope(request, parsed.data.organizationId)
+    // Full ticket payload includes internal_notes and internal messages;
+    // client roles must use /portal/tickets, which projects a safe DTO.
+    requireInternalRole(request)
 
     const state: SqlState = { values: [], where: [] }
     addFilter(state, 't.organization_id', parsed.data.organizationId)
@@ -188,16 +202,25 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_support_message_payload' })
 
     const input = parsed.data
+    const organizationId = await getTicketOrganizationId(app.pg, input.ticketId)
+    if (!organizationId) return reply.code(404).send({ error: 'support_ticket_not_found' })
+    const ctx = requireMembership(request, organizationId)
+
+    // Client roles can only reply as themselves with public messages.
+    const clientCaller = !isInternalRole(ctx.role)
+    const authorType = clientCaller ? 'client' : input.authorType
+    const isInternal = clientCaller ? false : Boolean(input.isInternal)
+
     const { rows } = await app.pg.query(
       `INSERT INTO public.support_messages (ticket_id, author_type, author_name, body, is_internal)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
         input.ticketId,
-        input.authorType,
+        authorType,
         input.authorName || null,
         input.body,
-        Boolean(input.isInternal),
+        isInternal,
       ],
     )
     return reply.code(201).send(rows[0])
@@ -207,6 +230,8 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     const params = ticketParamsSchema.safeParse(request.params)
     const parsed = updateTicketSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_support_ticket_patch' })
+    // Ticket management (status, SLA, internal notes) is an internal queue operation.
+    requireInternalRole(request)
 
     const fields: Array<[string, unknown]> = [
       ['status', parsed.data.status],

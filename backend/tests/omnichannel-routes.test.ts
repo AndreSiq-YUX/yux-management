@@ -128,7 +128,7 @@ class FakePool {
           storage_path: `${ids.org}/${ids.message}/${ids.attachment}-briefing.pdf`,
           filename: 'briefing.pdf',
           mime_type: 'application/pdf',
-          byte_size: 7,
+          byte_size: 9,
           retention_deadline_at: null,
           created_at: '2026-01-01T00:02:00.000Z',
           updated_at: '2026-01-01T00:02:00.000Z',
@@ -185,6 +185,13 @@ class FakePool {
 class ForeignOrganizationPool extends FakePool {
   override async query(sql: string) {
     if (sql.includes('FROM public.memberships') && sql.includes('WHERE user_id = $1')) return { rows: [] }
+    return super.query(sql)
+  }
+}
+
+class NoMessageAccessPool extends FakePool {
+  override async query(sql: string) {
+    if (sql.includes('SELECT m.id, c.organization_id')) return { rows: [] }
     return super.query(sql)
   }
 }
@@ -287,6 +294,52 @@ describe('omnichannel routes', () => {
     expect(jobQueue.jobs).toEqual([{ name: 'omnichannel.dispatchOutbound', data: { messageId: ids.message } }])
   })
 
+  it('queues outbound dispatch on approve after proving message access', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore()
+    const jobQueue = new FakeJobQueue()
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/omnichannel/messages/${ids.message}/approve`,
+      headers: { cookie: sessionCookie(token) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(jobQueue.jobs).toEqual([{ name: 'omnichannel.dispatchOutbound', data: { messageId: ids.message, requestedBy: ids.user } }])
+  })
+
+  it.each(['approve', 'retry'])('rejects %s of a message outside the caller organizations', async (action) => {
+    const { authStore, token } = buildClientAuthStore()
+    const jobQueue = new FakeJobQueue()
+    app = await buildServer(testEnv, { authStore, pool: new NoMessageAccessPool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/omnichannel/messages/${ids.message}/${action}`,
+      headers: { cookie: sessionCookie(token) },
+    })
+
+    expect(response.statusCode).toBe(404)
+    expect(jobQueue.jobs).toEqual([])
+  })
+
+  it('rejects client roles on the channel event simulator', async () => {
+    const { authStore, token } = buildClientAuthStore()
+    const jobQueue = new FakeJobQueue()
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/omnichannel/simulate-channel-event',
+      headers: { cookie: sessionCookie(token) },
+      payload: { channel: 'whatsapp', text: 'evento falso' },
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(jobQueue.jobs).toEqual([])
+  })
+
   it('stores message attachments through the backend API', async () => {
     const previousDir = process.env.OMNICHANNEL_ATTACHMENTS_DIR
     const tempDir = await mkdtemp(path.join(tmpdir(), 'yux-attachments-'))
@@ -295,6 +348,7 @@ describe('omnichannel routes', () => {
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue: new FakeJobQueue() })
 
     try {
+      const pdfContent = Buffer.from('%PDF-1.4\n')
       const response = await app.inject({
         method: 'POST',
         url: '/api/omnichannel/attachments',
@@ -303,8 +357,8 @@ describe('omnichannel routes', () => {
           messageId: ids.message,
           filename: 'briefing.pdf',
           mimeType: 'application/pdf',
-          byteSize: 7,
-          contentBase64: Buffer.from('arquivo').toString('base64'),
+          byteSize: pdfContent.byteLength,
+          contentBase64: pdfContent.toString('base64'),
         },
       })
 
@@ -314,7 +368,7 @@ describe('omnichannel routes', () => {
         messageId: ids.message,
         filename: 'briefing.pdf',
         mimeType: 'application/pdf',
-        byteSize: 7,
+        byteSize: 9,
         fileUrl: `/api/omnichannel/attachments/${ids.attachment}/file`,
       })
     } finally {
@@ -322,6 +376,27 @@ describe('omnichannel routes', () => {
       else process.env.OMNICHANNEL_ATTACHMENTS_DIR = previousDir
       await rm(tempDir, { recursive: true, force: true })
     }
+  })
+
+  it('rejects attachments whose magic bytes do not match the declared MIME type', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore()
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue: new FakeJobQueue() })
+
+    const fakePdf = Buffer.from('apenas texto disfarçado')
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/omnichannel/attachments',
+      headers: { cookie: sessionCookie(token) },
+      payload: {
+        messageId: ids.message,
+        filename: 'malicioso.pdf',
+        mimeType: 'application/pdf',
+        byteSize: fakePdf.byteLength,
+        contentBase64: fakePdf.toString('base64'),
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
   })
 
   it('creates scheduling requests and queues scheduling jobs', async () => {

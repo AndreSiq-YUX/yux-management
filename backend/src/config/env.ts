@@ -54,6 +54,9 @@ const envSchema = z.object({
   if (env.NODE_ENV === 'production' && !env.REDIS_PASSWORD) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['REDIS_PASSWORD'], message: 'REDIS_PASSWORD is required in production' })
   }
+  if (env.N8N_CRM_WEBHOOK_URL && !env.N8N_WEBHOOK_SECRET) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['N8N_WEBHOOK_SECRET'], message: 'N8N_WEBHOOK_SECRET is required when N8N_CRM_WEBHOOK_URL is configured' })
+  }
 })
 
 export type AppEnv = z.infer<typeof envSchema>

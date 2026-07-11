@@ -7,7 +7,7 @@ from .autonomy import resolve_autonomy_policy
 from .harness import Harness
 from .radar import RadarCompanyInput, build_radar_workflow_spec, synthesize_radar_output
 from .runtime_store import AgentRuntimeStore
-from .trace import TraceRecorder, stable_hash
+from .trace import TraceRecorder, sanitize_trace_payload, stable_hash
 
 
 DEFAULT_SUBAGENTS = [
@@ -65,6 +65,28 @@ def choose_workflow_key(mode: str | None, source: str) -> str:
     if source == "whatsapp":
         return "whatsapp_conversation_turn"
     return WORKFLOW_BY_MODE.get(mode or "", "diagnostic_48h")
+
+
+CREDITS_BASE_PER_RUN = 1
+
+
+def estimate_workflow_credits(
+    workflow_spec: dict[str, Any] | None = None,
+    mode: str | None = None,
+    source: str = "strategy_admin",
+) -> int:
+    """Server-side credit estimate: base cost plus one credit per planned subagent.
+
+    Never trust caller-provided estimates; this is the single source of truth
+    for how much a workflow run debits from the client wallet.
+    """
+    workflow_key = (workflow_spec or {}).get("workflow_key") or choose_workflow_key(mode, source)
+    if workflow_key == "whatsapp_conversation_turn":
+        return CREDITS_BASE_PER_RUN
+    configured = _as_list((workflow_spec or {}).get("subagent_specs"))
+    subagents = configured or DEFAULT_SUBAGENTS
+    limit = int((workflow_spec or {}).get("max_subagents") or len(subagents))
+    return CREDITS_BASE_PER_RUN + len(subagents[: max(0, limit)])
 
 
 def classify_intent_and_stage(message: str, source: str = "strategy_admin") -> dict[str, Any]:
@@ -351,11 +373,11 @@ class StrategyWorkflowEngine:
                 "subagent_key": key,
                 "profile_key": profile_key,
                 "objective": objective,
-                "context_summary": str(retrieval_context or {})[:600],
+                "context_summary": str(sanitize_trace_payload(retrieval_context or {}))[:600],
                 "allowed_tools": _as_list(subagent.get("allowed_tools")),
                 "rubric": {"required_terms": _as_list(subagent.get("required_terms"))},
                 "status": "succeeded" if verification["status"] == "passed" else "failed",
-                "output_payload": output,
+                "output_payload": sanitize_trace_payload(output),
                 "verification_result_id": verification_record["id"],
             },
         )

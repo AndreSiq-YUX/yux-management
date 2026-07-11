@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { createReadStream } from 'node:fs'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
-import { requireAuth } from '../../http/guards.js'
+import { requireAuth, requireInternalRole } from '../../http/guards.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 import {
@@ -26,6 +26,7 @@ import {
   listQueues,
   listTeamMembers,
   listWebhookEvents,
+  requireMessageAccess,
   requireOrganizationAccess,
   updateConversationStatus,
   updateRowById,
@@ -306,6 +307,8 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     if (!user) return reply
     const params = idParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_message_id' })
+    // Dispatch runs in the worker with elevated context; access must be proven here.
+    await requireMessageAccess(app.pg, user, params.data.id)
     const job = await app.jobQueue.add('omnichannel.dispatchOutbound', { messageId: params.data.id, requestedBy: user.id })
     return { success: true, dispatch: { pending: true, jobId: job.id } }
   })
@@ -315,6 +318,7 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     if (!user) return reply
     const params = idParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_message_id' })
+    await requireMessageAccess(app.pg, user, params.data.id)
     const job = await app.jobQueue.add('omnichannel.retryOutbound', { messageId: params.data.id, requestedBy: user.id })
     return { success: true, retry: { pending: true, jobId: job.id } }
   })
@@ -556,6 +560,9 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
   app.post('/simulate-channel-event', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
+    // Channel simulator is an internal admin tool; arbitrary payloads must not
+    // be queueable by client tenants.
+    requireInternalRole(request)
     const job = await app.jobQueue.add('omnichannel.simulateChannelEvent', { body: request.body as Record<string, unknown>, requestedBy: user.id })
     return { success: true, event: { pending: true, jobId: job.id } }
   })

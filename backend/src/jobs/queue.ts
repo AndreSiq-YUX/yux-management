@@ -19,6 +19,7 @@ export const JOB_NAMES = [
   'strategy.adminChat',
   'proposal.convert',
   'maintenance.purgeExpiredTraces',
+  'maintenance.refreshGoogleTokens',
 ] as const
 
 export type JobName = (typeof JOB_NAMES)[number]

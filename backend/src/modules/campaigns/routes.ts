@@ -15,9 +15,11 @@ const allowedTables = new Set([
   'ad_provider_mutation_runs',
 ])
 
+// ad_provider_* expose provider credentials references and mutation controls;
+// clients only consume campaigns through /portal/campaigns.
 const campaignTableRules = createScopedTableRules(
-  ['ad_provider_connections', 'campaigns', 'ad_provider_mutation_runs'],
-  ['campaign_creatives', 'campaign_recommendations', 'campaign_alerts'],
+  ['campaigns'],
+  ['ad_provider_connections', 'ad_provider_mutation_runs', 'campaign_creatives', 'campaign_recommendations', 'campaign_alerts'],
 )
 
 const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })

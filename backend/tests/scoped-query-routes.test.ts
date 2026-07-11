@@ -153,6 +153,24 @@ describe('tenant-scoped module queries', () => {
     expect(pool.dataQuery?.params).toEqual([[ids.orgA]])
   })
 
+  it.each(['ad_provider_connections', 'ad_provider_mutation_runs'])(
+    'rejects a client query on the internal-only campaign table %s',
+    async (table) => {
+      const { authStore, token } = authenticatedStore('client_admin')
+      app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/campaigns/query',
+        headers: headers(token),
+        payload: { table, operation: 'select' },
+      })
+
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toEqual({ error: 'forbidden' })
+    },
+  )
+
   it('rejects a client query on an indirect omnichannel table', async () => {
     const { authStore, token } = authenticatedStore('client_admin')
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
