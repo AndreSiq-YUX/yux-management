@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 // Layout components
@@ -87,7 +87,22 @@ function RequireRole({ roles, children }: { roles: Array<'admin' | 'manager' | '
 }
 
 function App() {
-  const { isAuthenticated, user } = useAuthStore()
+  const { isAuthenticated, user, isSessionResolved, initialize } = useAuthStore()
+
+  useEffect(() => {
+    if (!isSessionResolved) {
+      void initialize()
+    }
+  }, [initialize, isSessionResolved])
+
+  if (!isSessionResolved) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-gray-50 p-6" aria-live="polite">
+        <p className="text-sm text-gray-600">Validando sessao...</p>
+      </main>
+    )
+  }
+
   const safePortalPage = (title: string, description: string, capabilities: string[]) => (
     <PortalSafeStatePage title={title} description={description} capabilities={capabilities} />
   )

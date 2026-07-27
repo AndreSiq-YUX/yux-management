@@ -49,6 +49,7 @@ interface AuthState {
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
+  isSessionResolved: boolean
 }
 
 interface AuthActions {
@@ -69,6 +70,7 @@ export const useAuthStore = create<AuthStore>()(
       token: null,
       isAuthenticated: false,
       isLoading: false,
+      isSessionResolved: false,
 
       // Actions
       login: async (email: string, password: string) => {
@@ -82,6 +84,7 @@ export const useAuthStore = create<AuthStore>()(
               token: authData.token,
               isAuthenticated: true,
               isLoading: false,
+              isSessionResolved: true,
             })
           } catch (error) {
             const demoUser = getDemoUser(email, password)
@@ -91,6 +94,7 @@ export const useAuthStore = create<AuthStore>()(
                 token: 'demo-token',
                 isAuthenticated: true,
                 isLoading: false,
+                isSessionResolved: true,
               })
               return
             }
@@ -111,6 +115,7 @@ export const useAuthStore = create<AuthStore>()(
             token: null,
             isAuthenticated: false,
             isLoading: false,
+            isSessionResolved: true,
           })
         } catch (error) {
           console.error('Logout error:', error)
@@ -120,6 +125,7 @@ export const useAuthStore = create<AuthStore>()(
             token: null,
             isAuthenticated: false,
             isLoading: false,
+            isSessionResolved: true,
           })
         }
       },
@@ -147,6 +153,7 @@ export const useAuthStore = create<AuthStore>()(
             token: authData.token,
             isAuthenticated: true,
             isLoading: false,
+            isSessionResolved: true,
           })
         } catch (error) {
           if (!isNotAuthenticatedError(error)) {
@@ -157,6 +164,7 @@ export const useAuthStore = create<AuthStore>()(
             token: null,
             isAuthenticated: false,
             isLoading: false,
+            isSessionResolved: true,
           })
         }
       },
