@@ -10,6 +10,7 @@ import { handleProviderFunction } from './jobs/handlers/providers.js'
 import { handleStrategyAdminChat } from './jobs/handlers/strategy.js'
 import { purgeExpiredTraces } from './jobs/handlers/maintenance.js'
 import { refreshExpiringGoogleTokens } from './jobs/handlers/google-token-refresh.js'
+import { handleAutomationDispatch } from './jobs/handlers/automation.js'
 
 type WorkerResult = {
   ok: true
@@ -34,6 +35,7 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   }
 
   if (job.name === 'proposal.convert') { await handleProposalConversion(pool, job.data.proposalId); return { ok: true } }
+  if (job.name === 'automation.dispatch') { await handleAutomationDispatch(pool, env, job.data); return { ok: true } }
   if (job.name === 'provider.functionInvoke') { await handleProviderFunction(pool, job.data); return { ok: true } }
   if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data); return { ok: true } }
   if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }

@@ -21,6 +21,17 @@ export interface LandingPageForm {
   name: string
   submitLabel: string
   successMessage: string
+  metadata?: Record<string, unknown>
+  isActive: boolean
+  allowedOrigins: string[]
+  hasPublicToken: boolean
+  publicTokenRotatedAt?: string
+  submissionCount: number
+  lastSubmissionAt?: string
+  publicEndpoint?: string
+  publicToken?: string
+  mappings: LandingPageFieldMapping[]
+  recentSubmissions: LandingPageFormSubmission[]
   createdAt: string
   updatedAt: string
 }
@@ -33,6 +44,33 @@ export interface LandingPageFieldMapping {
   required: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface LandingPageFormSubmission {
+  id: string
+  leadId?: string
+  name?: string
+  email?: string
+  phone?: string
+  status: string
+  source?: string
+  pageUrl?: string
+  language?: string
+  referrer?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmContent?: string
+  utmTerm?: string
+  consentCode?: string
+  consentVersion?: string
+  privacyPolicyVersion?: string
+  profile?: string
+  country?: string
+  fitScore?: number
+  intentScore?: number
+  crmContactId?: string
+  createdAt: string
 }
 
 export interface LandingPageChangeRequest {

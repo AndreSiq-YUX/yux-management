@@ -11,6 +11,14 @@ export function PortalLandingPagesPage() {
   const [pages, setPages] = useState<PortalLandingPage[]>([])
   const [loading, setLoading] = useState(true)
 
+  const mergeForm = useCallback((form: any) => {
+    setPages(current => current.map(page => {
+      if (page.id !== form.landingPageId) return page
+      const nextForms = (page.forms || []).filter(existing => existing.id !== form.id)
+      return { ...page, forms: [...nextForms, form] }
+    }))
+  }, [])
+
   const load = useCallback(async () => {
     if (isPlatformLoading) {
       setLoading(true)
@@ -62,6 +70,43 @@ export function PortalLandingPagesPage() {
         await landingPageService.approveLandingPage({ landingPageId, status: 'approved', comment: 'Aprovado pelo portal.' })
         toast.success('Publicacao aprovada')
         load()
+      }}
+      onCreateLeadForm={async landingPageId => {
+        const form = await landingPageService.createPublicLeadForm({ landingPageId })
+        mergeForm(form)
+        toast.success('Endpoint de captura gerado')
+        return form
+      }}
+      onRotateLeadFormToken={async formId => {
+        const form = await landingPageService.rotatePublicLeadFormToken(formId)
+        mergeForm(form)
+        toast.success('Novo endpoint gerado')
+        return form
+      }}
+      onToggleLeadForm={async (formId, isActive) => {
+        const form = await landingPageService.updatePublicLeadForm(formId, { isActive })
+        const currentPage = pages.find(page => page.forms?.some(existing => existing.id === formId))
+        const currentForm = currentPage?.forms?.find(existing => existing.id === formId)
+        mergeForm({
+          ...currentForm,
+          ...form,
+          publicEndpoint: form.publicEndpoint || currentForm?.publicEndpoint,
+          publicToken: form.publicToken || currentForm?.publicToken,
+        })
+        toast.success(isActive ? 'Captura ativada' : 'Captura pausada')
+        return form
+      }}
+      onUpdateLeadFormFields={async (formId, fields) => {
+        const form = await landingPageService.replacePublicLeadFormFields(formId, fields)
+        const currentPage = pages.find(page => page.forms?.some(existing => existing.id === formId))
+        const currentForm = currentPage?.forms?.find(existing => existing.id === formId)
+        mergeForm({
+          ...currentForm,
+          ...form,
+          publicEndpoint: currentForm?.publicEndpoint,
+          publicToken: currentForm?.publicToken,
+        })
+        return form
       }}
     />
   )

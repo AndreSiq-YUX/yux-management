@@ -20,6 +20,7 @@ import { registerFunctionRoutes } from './modules/functions/routes.js'
 import { registerFinanceRoutes } from './modules/finance/routes.js'
 import { registerHealthRoutes } from './modules/health/routes.js'
 import { registerLandingPageRoutes } from './modules/landing-pages/routes.js'
+import { registerPublicLeadFormRoutes } from './modules/lead-forms/routes.js'
 import { registerMarketingStudioRoutes } from './modules/marketing-studio/routes.js'
 import { registerOmnichannelRoutes } from './modules/omnichannel/routes.js'
 import { registerPlatformRoutes } from './modules/platform/routes.js'
@@ -100,6 +101,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerProposalRoutes, { prefix: '/api/proposals' })
   await app.register(registerPublicProposalRoutes, { prefix: '/api/public/proposals' })
   await app.register(registerPublicWebchatRoutes, { prefix: '/api/public/webchat' })
+  await app.register(registerPublicLeadFormRoutes, { prefix: '/api/public/lead-forms' })
   await app.register(registerWebhookRoutes, { prefix: '/api/webhooks' })
   await app.register(registerOmnichannelRoutes, { prefix: '/api/omnichannel' })
   await app.register(registerWorkspaceRoutes, { prefix: '/api/workspace' })

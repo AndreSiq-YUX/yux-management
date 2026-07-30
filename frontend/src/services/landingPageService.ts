@@ -47,6 +47,54 @@ function mapLandingPage(row: any): LandingPage {
       name: form.name,
       submitLabel: form.submit_label,
       successMessage: form.success_message,
+      metadata: form.metadata || {},
+      isActive: form.is_active !== false,
+      allowedOrigins: form.allowed_origins || [],
+      hasPublicToken: Boolean(form.has_public_token),
+      publicTokenRotatedAt: form.public_token_rotated_at || undefined,
+      submissionCount: Number(form.submission_count || 0),
+      lastSubmissionAt: form.last_submission_at || undefined,
+      publicEndpoint: form.public_endpoint || undefined,
+      publicToken: form.public_token || undefined,
+      mappings: Array.isArray(form.landing_page_field_mappings)
+        ? form.landing_page_field_mappings.map((mapping: any) => ({
+          id: mapping.id,
+          formId: mapping.form_id,
+          fieldName: mapping.field_name,
+          crmFieldKey: mapping.crm_field_key,
+          required: mapping.required,
+          createdAt: mapping.created_at,
+          updatedAt: mapping.updated_at,
+        }))
+        : [],
+      recentSubmissions: Array.isArray(form.recent_submissions)
+        ? form.recent_submissions.map((submission: any) => ({
+          id: submission.id,
+          leadId: submission.lead_id || undefined,
+          name: submission.name || undefined,
+          email: submission.email || undefined,
+          phone: submission.phone || undefined,
+          status: submission.status,
+          source: submission.source || undefined,
+          pageUrl: submission.page_url || undefined,
+          language: submission.language || undefined,
+          referrer: submission.referrer || undefined,
+          utmSource: submission.utm_source || undefined,
+          utmMedium: submission.utm_medium || undefined,
+          utmCampaign: submission.utm_campaign || undefined,
+          utmContent: submission.utm_content || undefined,
+          utmTerm: submission.utm_term || undefined,
+          consentCode: submission.consent_code || undefined,
+          consentVersion: submission.consent_version || undefined,
+          privacyPolicyVersion: submission.privacy_policy_version || undefined,
+          profile: submission.profile || undefined,
+          country: submission.country || undefined,
+          fitScore: submission.fit_score == null ? undefined : Number(submission.fit_score),
+          intentScore: submission.intent_score == null ? undefined : Number(submission.intent_score),
+          crmContactId: submission.crm_contact_id || undefined,
+          createdAt: submission.created_at,
+        }))
+        : [],
       createdAt: form.created_at,
       updatedAt: form.updated_at,
     }))
@@ -198,6 +246,54 @@ export const landingPageService = {
     const data = await apiRequest<any[]>(`/landing-pages/portal/landing-pages?contractId=${encodeURIComponent(contractId)}`)
     const pages = (data || []).map(mapLandingPage)
     return pages.map(sanitizeLandingPageForPortal)
+  },
+
+  async createPublicLeadForm(input: {
+    landingPageId: string
+    name?: string
+    submitLabel?: string
+    successMessage?: string
+    consentCode?: string
+    consentVersion?: string
+    privacyPolicyVersion?: string
+    allowedOrigins?: string[]
+    fields?: Array<{ fieldName: string; crmFieldKey: string; required?: boolean }>
+  }) {
+    return apiRequest<any>('/landing-pages/forms', {
+      method: 'POST',
+      body: {
+        landingPageId: input.landingPageId,
+        name: input.name || 'Formulário principal',
+        submitLabel: input.submitLabel,
+        successMessage: input.successMessage,
+        consentCode: input.consentCode || 'lead_capture',
+        consentVersion: input.consentVersion || '1.0',
+        privacyPolicyVersion: input.privacyPolicyVersion || '1.0',
+        allowedOrigins: input.allowedOrigins,
+        fields: input.fields,
+      },
+    })
+  },
+
+  async rotatePublicLeadFormToken(formId: string) {
+    return apiRequest<any>(`/landing-pages/forms/${formId}/rotate-token`, { method: 'POST' })
+  },
+
+  async updatePublicLeadForm(formId: string, input: { isActive?: boolean; allowedOrigins?: string[] }) {
+    return apiRequest<any>(`/landing-pages/forms/${formId}`, {
+      method: 'PATCH',
+      body: input,
+    })
+  },
+
+  async replacePublicLeadFormFields(
+    formId: string,
+    fields: Array<{ fieldName: string; crmFieldKey: string; required?: boolean }>,
+  ) {
+    return apiRequest<any>(`/landing-pages/forms/${formId}/fields`, {
+      method: 'PUT',
+      body: { fields },
+    })
   },
 
   async createLandingPage(input: CreateLandingPageInput) {
