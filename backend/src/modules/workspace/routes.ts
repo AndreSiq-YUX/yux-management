@@ -626,7 +626,12 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
     })
     if (!emailResult.sent) {
       app.log.warn(
-        { reason: emailResult.reason, error: emailResult.error, clientId: row.id },
+        {
+          reason: emailResult.reason,
+          error: emailResult.error,
+          err: emailResult.diagnosticError,
+          clientId: row.id,
+        },
         'client invitation email was not sent',
       )
     }
@@ -725,7 +730,13 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
 
     if (!emailResult.sent) {
       app.log.warn(
-        { reason: emailResult.reason, error: emailResult.error, clientId: row.id, action: tokenEmail.action },
+        {
+          reason: emailResult.reason,
+          error: emailResult.error,
+          err: emailResult.diagnosticError,
+          clientId: row.id,
+          action: tokenEmail.action,
+        },
         'client access email was not sent',
       )
     }

@@ -11,7 +11,12 @@ export type Smtp2GoSendInput = {
 
 export type EmailSendResult =
   | { sent: true; providerMessageId?: string }
-  | { sent: false; reason: 'smtp2go_not_configured' | 'smtp2go_rejected' | 'smtp2go_request_failed'; error?: string }
+  | {
+      sent: false
+      reason: 'smtp2go_not_configured' | 'smtp2go_rejected' | 'smtp2go_request_failed'
+      error?: string
+      diagnosticError?: unknown
+    }
 
 export async function sendSmtp2GoEmail(input: Smtp2GoSendInput): Promise<EmailSendResult> {
   if (!input.apiKey || !input.senderEmail) {

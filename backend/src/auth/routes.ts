@@ -197,7 +197,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
       if (!emailResult.sent) {
         app.log.warn(
-          { reason: emailResult.reason, error: emailResult.error, email: emailPayload.to },
+          {
+            reason: emailResult.reason,
+            error: emailResult.error,
+            err: emailResult.diagnosticError,
+            email: emailPayload.to,
+          },
           'password reset email was not sent',
         )
       }
