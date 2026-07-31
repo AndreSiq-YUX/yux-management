@@ -8,6 +8,7 @@ import { dataQuerySchema, executeDataQuery } from '../data/routes.js'
 import { requireInternalRole } from '../../http/guards.js'
 import { ClientAccessError, provisionClientPortalAccess } from './clientAccess.js'
 import { createClientAccessEmailToken } from './clientAccessEmails.js'
+import { syncClientPortalIdentity } from './clientIdentity.js'
 
 type SqlState = {
   values: unknown[]
@@ -281,8 +282,8 @@ function projectRow(row: any) {
 function clientPayload(input: Record<string, unknown>) {
   return {
     company_name: input.companyName,
-    contact_name: input.contactName,
-    email: input.email,
+    contact_name: typeof input.contactName === 'string' ? input.contactName.trim() : input.contactName,
+    email: typeof input.email === 'string' ? input.email.trim() : input.email,
     phone: input.phone,
     website: input.website,
     sector: input.sector,
@@ -698,6 +699,11 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
           }),
         }
       } else {
+        await syncClientPortalIdentity(db, {
+          userId: row.portal_user_id,
+          email: row.email,
+          displayName: row.contact_name,
+        })
         tokenEmail = await createClientAccessEmailToken(db, app.config, {
           userId: row.portal_user_id,
           contactName: row.contact_name,
@@ -757,9 +763,55 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.patch('/clients/:id', async (request, reply) => {
     const params = idParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_client_id' })
-    const row = await updateReturning(app.pg, 'clients', params.data.id, clientPayload(request.body as Record<string, unknown>))
-    const client = clientRow({ ...row, projects: [] })
-    return { success: true, data: client, client }
+
+    const db = await app.pg.connect()
+
+    try {
+      await db.query('BEGIN')
+      const currentResult = await db.query(
+        `SELECT c.*, au.id AS portal_user_id
+         FROM public.clients c
+         LEFT JOIN app_users au ON au.id = c.user_id
+         WHERE c.id = $1
+         FOR UPDATE OF c`,
+        [params.data.id],
+      )
+      const current = currentResult.rows[0]
+
+      if (!current) {
+        await db.query('ROLLBACK')
+        return reply.code(404).send({ success: false, error: 'client_not_found' })
+      }
+
+      const payload = clientPayload(request.body as Record<string, unknown>)
+      const nextEmail = typeof payload.email === 'string' ? payload.email : current.email
+      const nextContactName = typeof payload.contact_name === 'string' ? payload.contact_name : current.contact_name
+
+      if (current.portal_user_id) {
+        await syncClientPortalIdentity(db, {
+          userId: current.portal_user_id,
+          email: nextEmail,
+          displayName: nextContactName,
+        })
+      }
+
+      const row = await updateReturning(db, 'clients', params.data.id, payload)
+      await db.query('COMMIT')
+
+      const client = clientRow({ ...row, projects: [] })
+      return { success: true, data: client, client }
+    } catch (error) {
+      await db.query('ROLLBACK')
+      if (error instanceof ClientAccessError) {
+        return reply.code(error.statusCode).send({ success: false, error: error.message })
+      }
+      if (error && typeof error === 'object' && Reflect.get(error, 'code') === '23505') {
+        return reply.code(409).send({ success: false, error: 'client_login_email_already_exists' })
+      }
+      throw error
+    } finally {
+      db.release()
+    }
   })
 
   app.delete('/clients/:id', async (request, reply) => {
