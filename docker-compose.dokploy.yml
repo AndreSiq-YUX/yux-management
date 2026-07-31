@@ -1,0 +1,120 @@
+services:
+  yux-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    expose:
+      - "80"
+    depends_on:
+      - yux-backend-api
+    restart: unless-stopped
+
+  yux-backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    expose:
+      - "4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-yux_session}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://hub.yux.com.br}
+      YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
+      YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+      PROVIDER_SECRET_ENCRYPTION_KEY_B64: ${PROVIDER_SECRET_ENCRYPTION_KEY_B64:?PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_MARKETING_OAUTH_REDIRECT_URI: ${META_MARKETING_OAUTH_REDIRECT_URI:-}
+      META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: ${META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      OAUTH_ALLOWED_REDIRECT_URIS: ${OAUTH_ALLOWED_REDIRECT_URIS:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_MARKETING_OAUTH_REDIRECT_URI: ${GOOGLE_MARKETING_OAUTH_REDIRECT_URI:-}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      N8N_CRM_WEBHOOK_URL: ${N8N_CRM_WEBHOOK_URL:-}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      SMTP2GO_WEBHOOK_SECRET: ${SMTP2GO_WEBHOOK_SECRET:-}
+      MATERIALS_STORAGE_DIR: ${MATERIALS_STORAGE_DIR:-/app/storage/materials}
+      OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
+      OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
+    volumes:
+      - yux_materials_data:/app/storage/materials
+      - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
+    depends_on:
+      - yux-postgres
+      - yux-redis
+      - yux-agent-harness-runtime
+    restart: unless-stopped
+
+  yux-backend-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["node", "dist/src/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://hub.yux.com.br}
+      YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
+      YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+      PROVIDER_SECRET_ENCRYPTION_KEY_B64: ${PROVIDER_SECRET_ENCRYPTION_KEY_B64:?PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
+      OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
+      N8N_CRM_WEBHOOK_URL: ${N8N_CRM_WEBHOOK_URL:-}
+    volumes:
+      - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
+    depends_on:
+      - yux-postgres
+      - yux-redis
+      - yux-agent-harness-runtime
+    restart: unless-stopped
+
+  yux-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-yux_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-yux_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - yux_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  yux-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    volumes:
+      - yux_redis_data:/data
+    restart: unless-stopped
+
+  yux-agent-harness-runtime:
+    build:
+      context: ./workers/marketing-studio-agent-runtime
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    environment:
+      YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JINA_API_KEY: ${JINA_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  yux_postgres_data:
+  yux_redis_data:
+  yux_materials_data:
+  yux_omnichannel_attachments_data:

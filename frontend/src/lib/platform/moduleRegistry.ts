@@ -1,0 +1,112 @@
+import type { PlatformModule } from '@/types/platform'
+
+export const PLATFORM_MODULES: PlatformModule[] = [
+  {
+    key: 'clients',
+    name: 'Clientes',
+    base: true,
+    internalRoute: '/clients',
+    portalRoute: null,
+    requiredPermissions: ['clients.read'],
+  },
+  {
+    key: 'crm',
+    name: 'CRM & Funis',
+    base: false,
+    internalRoute: '/leads',
+    portalRoute: '/portal/comercial/leads',
+    requiredPermissions: ['crm.read', 'leads.read'],
+  },
+  {
+    key: 'projects',
+    name: 'Projetos e Entregas',
+    base: true,
+    internalRoute: '/projects',
+    portalRoute: '/portal/projetos/projetos',
+    requiredPermissions: ['projects.read'],
+  },
+  {
+    key: 'proposals',
+    name: 'Propostas',
+    base: false,
+    internalRoute: '/proposals',
+    portalRoute: '/portal/projetos/aprovacoes',
+    requiredPermissions: ['proposals.read'],
+  },
+  {
+    key: 'whatsapp_ai',
+    name: 'Conversas IA',
+    base: false,
+    internalRoute: '/omnichannel',
+    portalRoute: '/portal/atendimento/conversas',
+    requiredPermissions: ['omnichannel.read'],
+  },
+  {
+    key: 'landing_pages',
+    name: 'Landing Pages',
+    base: false,
+    internalRoute: '/landing-pages',
+    portalRoute: '/portal/marketing/landing-pages',
+    requiredPermissions: ['landing_pages.read'],
+  },
+  {
+    key: 'campaigns',
+    name: 'Campanhas',
+    base: false,
+    internalRoute: '/campaigns',
+    portalRoute: '/portal/marketing/campanhas',
+    requiredPermissions: ['campaigns.read'],
+  },
+  {
+    key: 'marketing_studio',
+    name: 'Marketing Studio',
+    base: false,
+    internalRoute: '/marketing-studio',
+    portalRoute: '/portal/marketing/studio',
+    requiredPermissions: ['marketing_studio.read'],
+  },
+  {
+    key: 'bi_reports',
+    name: 'Relatorios & ROI',
+    base: false,
+    internalRoute: '/reports',
+    portalRoute: '/portal/relatorios',
+    requiredPermissions: ['reports.read'],
+  },
+  {
+    key: 'automations',
+    name: 'Automacoes',
+    base: false,
+    internalRoute: '/automations',
+    portalRoute: '/portal/automacoes/fluxos',
+    requiredPermissions: ['automations.read'],
+  },
+  {
+    key: 'support',
+    name: 'Suporte',
+    base: true,
+    internalRoute: '/support',
+    portalRoute: '/portal/suporte',
+    requiredPermissions: ['support.read'],
+  },
+  {
+    key: 'finance',
+    name: 'Financeiro',
+    base: false,
+    internalRoute: '/finance',
+    portalRoute: '/portal/financeiro',
+    requiredPermissions: ['finance.read'],
+  },
+  {
+    key: 'blueprints',
+    name: 'Modelos Setoriais',
+    base: false,
+    internalRoute: '/blueprints',
+    portalRoute: null,
+    requiredPermissions: ['blueprints.read'],
+  },
+]
+
+export function getPlatformModule(key: string) {
+  return PLATFORM_MODULES.find(module => module.key === key)
+}

@@ -1,0 +1,203 @@
+import { apiRequest } from '@/lib/apiClient'
+import {
+  buildExecutiveCampaignMetrics,
+  buildReportAiInsight,
+  buildReportPresets,
+  calculateCpl,
+  calculateMroi,
+  calculateStageConversion,
+  sanitizeReportForPortal,
+  summarizeExecutiveCampaignMetrics,
+} from '@/lib/reports/reportRules'
+import { buildAttributionDashboard, mapLeadSourceRollup, mapMroiAlert } from '@/services/crmAttributionService'
+import type {
+  CampaignReportMetric,
+  LandingPageReportMetric,
+  OperationalReport,
+  OwnerActivityMetric,
+  PortalOperationalReport,
+  SourceBreakdown,
+  StageConversion,
+} from '@/types/reports'
+
+type Row = Record<string, any>
+
+export function buildOperationalReport(input: {
+  organizationId: string
+  leads?: Row[]
+  campaigns?: Row[]
+  landingPages?: Row[]
+  proposals?: Row[]
+  conversations?: Row[]
+  interactions?: Row[]
+  projects?: Row[]
+  attributionRollups?: Row[]
+  attributionAlerts?: Row[]
+}): OperationalReport {
+  const leads = input.leads || []
+  const campaigns = input.campaigns || []
+  const landingPages = input.landingPages || []
+  const proposals = input.proposals || []
+  const conversations = input.conversations || []
+  const interactions = input.interactions || []
+  const projects = input.projects || []
+  const attributionRollups = input.attributionRollups || []
+  const attributionAlerts = input.attributionAlerts || []
+
+  const leadsBySource = Object.entries(leads.reduce<Record<string, number>>((acc, lead) => {
+    const source = lead.source_kind || lead.source || 'manual'
+    acc[source] = (acc[source] || 0) + 1
+    return acc
+  }, {})).map(([source, count]) => ({ source, leads: count } satisfies SourceBreakdown))
+
+  const stageCounts = leads.reduce<Record<string, number>>((acc, lead) => {
+    const stage = lead.stage || lead.status || 'open'
+    acc[stage] = (acc[stage] || 0) + 1
+    return acc
+  }, {})
+  const stageConversions: StageConversion[] = Object.entries(stageCounts).map(([stage, entered], index, all) => {
+    const advanced = all.slice(index + 1).reduce((sum, [, count]) => sum + count, 0)
+    return { stage, entered, advanced, conversionRate: calculateStageConversion({ entered, advanced }) }
+  })
+
+  const campaignMetrics: CampaignReportMetric[] = campaigns.map(campaign => {
+    const spend = Number(campaign.spend || 0)
+    const leads = Number(campaign.leads || campaign.conversions || 0)
+    return {
+      campaignId: campaign.id,
+      name: campaign.name,
+      spend,
+      impressions: Number(campaign.impressions || 0),
+      clicks: Number(campaign.clicks || 0),
+      leads,
+      cpl: calculateCpl({ spend, leads }),
+      opportunities: Number(campaign.opportunities || campaign.opportunity_count || 0),
+      proposals: Number(campaign.proposals || campaign.proposal_count || 0),
+      clients: Number(campaign.clients || campaign.client_count || 0),
+      revenue: Number(campaign.attributed_revenue || campaign.attributedRevenue || 0),
+      mroi: calculateMroi({ spend, attributedRevenue: Number(campaign.attributed_revenue || campaign.attributedRevenue || 0) }),
+      syncStatus: campaign.sync_status || campaign.provider_sync_status || campaign.provider_status || (campaign.provider_connection_id ? 'stale' : 'not_configured'),
+      aiRecommendation: campaign.ai_recommendation || campaign.recommendation || undefined,
+    }
+  })
+  const executiveCampaignMetrics = buildExecutiveCampaignMetrics(campaignMetrics)
+
+  const landingPageMetrics: LandingPageReportMetric[] = landingPages.map(page => {
+    const visits = Number(page.visits || 0)
+    const leads = Number(page.leads || 0)
+    return {
+      landingPageId: page.id,
+      name: page.name,
+      visits,
+      leads,
+      conversionRate: calculateStageConversion({ entered: visits, advanced: leads }),
+    }
+  })
+
+  const sent = proposals.filter(proposal => ['sent', 'approved', 'signed', 'converted'].includes(proposal.status)).length
+  const approved = proposals.filter(proposal => ['approved', 'signed', 'converted'].includes(proposal.status)).length
+  const responseTimes = conversations.map(conversation => Number(conversation.first_response_minutes || 0)).filter(Boolean)
+
+  const ownerActivity = Object.entries(interactions.reduce<Record<string, number>>((acc, interaction) => {
+    const owner = interaction.owner_name || interaction.owner || 'Sem responsavel'
+    acc[owner] = (acc[owner] || 0) + 1
+    return acc
+  }, {})).map(([owner, activities]) => ({ owner, activities } satisfies OwnerActivityMetric))
+
+  const report: OperationalReport = {
+    organizationId: input.organizationId,
+    generatedAt: new Date().toISOString(),
+    leadsBySource,
+    stageConversions,
+    responseTimeHours: responseTimes.length ? Math.round((responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length / 60) * 10) / 10 : 0,
+    stalledOpportunities: leads.filter(lead => lead.status === 'open' && lead.last_activity_at && Date.now() - new Date(lead.last_activity_at).getTime() > 7 * 24 * 60 * 60 * 1000).length,
+    campaignMetrics,
+    landingPageMetrics,
+    proposalMetrics: { sent, approved, approvalRate: calculateStageConversion({ entered: sent, advanced: approved }) },
+    ownerActivity,
+    projectDelivery: [{ label: 'Projetos ativos', value: projects.filter(project => project.status !== 'completed' && project.status !== 'cancelled').length }],
+    executiveCampaignMetrics,
+    executiveCampaignSummary: summarizeExecutiveCampaignMetrics(executiveCampaignMetrics),
+    reportPresets: buildReportPresets(),
+  }
+
+  if (attributionRollups.length > 0) {
+    report.crmAttribution = buildAttributionDashboard({
+      organizationId: input.organizationId,
+      periodStart: String(attributionRollups[0].period_start),
+      periodEnd: String(attributionRollups[0].period_end),
+      rollups: attributionRollups.map(mapLeadSourceRollup),
+      alerts: attributionAlerts.map(mapMroiAlert),
+    })
+  }
+
+  report.aiInsight = buildReportAiInsight(report)
+
+  return report
+}
+
+export function mapReportSnapshot(row: Row) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    scope: row.scope,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    generatedAt: row.generated_at,
+    metrics: row.metrics || {},
+  }
+}
+
+export const buildMetricCachePayload = (input: { organizationId: string; metricKey: string; value: number; dimensions?: Record<string, unknown> }) => ({
+  organization_id: input.organizationId,
+  metric_key: input.metricKey,
+  metric_value: input.value,
+  dimensions: input.dimensions || {},
+})
+
+export const reportService = {
+  async getOperationalReport(organizationId: string): Promise<OperationalReport> {
+    const {
+      leads,
+      campaigns,
+      landingPages,
+      proposals,
+      conversations,
+      interactions,
+      projects,
+      attributionRollups,
+      attributionAlerts,
+    } = await apiRequest<{
+      leads: Row[]
+      campaigns: Row[]
+      landingPages: Row[]
+      proposals: Row[]
+      conversations: Row[]
+      interactions: Row[]
+      projects: Row[]
+      attributionRollups: Row[]
+      attributionAlerts: Row[]
+    }>(`/reports/operational-data/${organizationId}`)
+
+    return buildOperationalReport({ organizationId, leads, campaigns, landingPages, proposals, conversations, interactions, projects, attributionRollups, attributionAlerts })
+  },
+
+  async getPortalReport(organizationId: string): Promise<PortalOperationalReport> {
+    const report = await apiRequest<PortalOperationalReport>(`/reports/portal/operational/${organizationId}`)
+    return sanitizeReportForPortal(report as unknown as OperationalReport)
+  },
+
+  async saveSnapshot(report: OperationalReport, scope: 'internal' | 'portal' = 'internal') {
+    const data = await apiRequest<Row>('/reports/snapshots', {
+      method: 'POST',
+      body: {
+      organizationId: report.organizationId,
+      scope,
+      metrics: report,
+      periodStart: new Date().toISOString().slice(0, 10),
+      periodEnd: new Date().toISOString().slice(0, 10),
+      },
+    })
+    return mapReportSnapshot(data)
+  },
+}

@@ -1,0 +1,162 @@
+[
+  {
+    "concept": "Comercial 2",
+    "category": "recorrencia_ltv",
+    "sourceScope": "internal",
+    "visibility": "internal_only",
+    "problemSolved": "Clientes compram uma vez e desaparecem sem uma rotina de carteira, segunda venda e relacionamento.",
+    "triggerSignals": [
+      "cliente sem compra recente",
+      "sem cadencia pos-venda",
+      "sem oferta de continuidade"
+    ],
+    "diagnosisQuestions": [
+      "Quando foi a ultima compra?",
+      "Existe responsavel pela carteira?",
+      "Existe produto de segunda venda?"
+    ],
+    "decisionRules": [
+      "avaliar recorrencia e carteira antes de aumentar aquisicao fria",
+      "priorizar cadencia simples antes de automacao complexa"
+    ],
+    "antiPatterns": [
+      "buscar mais leads enquanto clientes atuais nao recebem follow-up"
+    ],
+    "recommendedActions": [
+      "segmentar clientes por ultima compra",
+      "criar tarefa de relacionamento",
+      "sugerir oferta de continuidade"
+    ],
+    "allowedAgentProfileKeys": [
+      "growth_strategist",
+      "customer_growth_comercial_2",
+      "revenue_recovery"
+    ],
+    "stageTags": [
+      "first_purchase_customer",
+      "recurring_customer",
+      "ex_customer"
+    ],
+    "retrievalTags": [
+      "recorrencia",
+      "ltv",
+      "carteira",
+      "upsell"
+    ],
+    "yuxModules": [
+      "CRM",
+      "Omnichannel",
+      "Automacoes",
+      "Relatorios"
+    ],
+    "requiresHumanReview": true
+  },
+  {
+    "concept": "Objection Intelligence",
+    "category": "oferta_copy_vendas",
+    "sourceScope": "internal",
+    "visibility": "internal_only",
+    "problemSolved": "Objecoes comerciais ficam presas em conversas e nao voltam para oferta, copy, scripts e conteudo.",
+    "triggerSignals": [
+      "perda por preco",
+      "lead pediu para pensar",
+      "proposta sem resposta",
+      "duvida repetida no WhatsApp"
+    ],
+    "diagnosisQuestions": [
+      "Qual objecao apareceu?",
+      "Ela e de preco, confianca, timing, autoridade ou valor percebido?",
+      "A landing page responde essa objecao?"
+    ],
+    "decisionRules": [
+      "registrar toda objecao relevante como dado estruturado",
+      "objecao repetida deve gerar melhoria de playbook ou oferta"
+    ],
+    "antiPatterns": [
+      "tratar objecao apenas como problema do vendedor"
+    ],
+    "recommendedActions": [
+      "classificar objecao",
+      "criar resposta de follow-up",
+      "gerar sugestao de melhoria de copy",
+      "alimentar Marketing Studio"
+    ],
+    "allowedAgentProfileKeys": [
+      "ai_closer",
+      "offer_conversion",
+      "marketing_strategist",
+      "crm_controller"
+    ],
+    "stageTags": [
+      "raised_hand",
+      "qualified_opportunity",
+      "almost_customer",
+      "non_customer"
+    ],
+    "retrievalTags": [
+      "objecao",
+      "copy",
+      "oferta",
+      "proposta"
+    ],
+    "yuxModules": [
+      "CRM",
+      "Proposals",
+      "Marketing Studio",
+      "Landing Pages"
+    ],
+    "requiresHumanReview": true
+  },
+  {
+    "concept": "Lead Follow-up Leakage",
+    "category": "crm_follow_up",
+    "sourceScope": "internal",
+    "visibility": "internal_only",
+    "problemSolved": "Oportunidades esfriam porque nao existe proxima acao clara, responsavel e prazo.",
+    "triggerSignals": [
+      "lead sem next_follow_up_at",
+      "levantada de mao sem tarefa",
+      "proposta enviada sem retorno programado"
+    ],
+    "diagnosisQuestions": [
+      "Existe proxima acao definida?",
+      "Quem e o responsavel?",
+      "O contato ja levantou a mao?"
+    ],
+    "decisionRules": [
+      "toda oportunidade qualificada precisa de proxima acao",
+      "lead frio nao deve receber pressao de fechamento"
+    ],
+    "antiPatterns": [
+      "deixar CRM virar apenas cadastro"
+    ],
+    "recommendedActions": [
+      "criar tarefa de follow-up",
+      "ajustar estagio comercial",
+      "registrar risco de perda",
+      "acionar CRM Controller"
+    ],
+    "allowedAgentProfileKeys": [
+      "crm_controller",
+      "ai_sdr_comercial_1",
+      "ai_closer"
+    ],
+    "stageTags": [
+      "lead_warm",
+      "raised_hand",
+      "qualified_opportunity",
+      "almost_customer"
+    ],
+    "retrievalTags": [
+      "follow-up",
+      "crm",
+      "next-best-action"
+    ],
+    "yuxModules": [
+      "CRM",
+      "Omnichannel",
+      "Automacoes"
+    ],
+    "requiresHumanReview": true
+  }
+]

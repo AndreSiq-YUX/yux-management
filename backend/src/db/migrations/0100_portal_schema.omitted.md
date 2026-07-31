@@ -1,0 +1,1365 @@
+﻿# Omitted Supabase-Specific SQL
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.project_phases ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.project_tasks ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.interactions ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.memberships ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.platform_modules ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.packages ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.package_modules ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.contracts ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.contract_modules ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.blueprints ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls enablement - ALTER TABLE public.blueprint_modules ENABLE ROW LEVEL SECURITY;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase rls policy - DO $$
+- `20260531000000_yux_os_clean_baseline.sql`: supabase auth users table - DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+- `20260531000000_yux_os_clean_baseline.sql`: supabase auth users table - CREATE TRIGGER on_auth_user_created
+- `20260531000000_yux_os_clean_baseline.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601000000_contracts_modules_portal.sql`: supabase auth users table - -- Link the demo portal user only when the auth user exists.
+- `20260601000000_contracts_modules_portal.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601010000_contract_rls_policies.sql`: supabase auth context - -- Restrict contract data so clients only read their own active contract data.
+- `20260601010000_contract_rls_policies.sql`: supabase auth context - CREATE OR REPLACE FUNCTION public.can_read_contract(contract_client_id UUID)
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read contracts" ON public.contracts;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write contracts" ON public.contracts;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage contracts" ON public.contracts;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Contract owners can read contracts" ON public.contracts;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - CREATE POLICY "Internal users can manage contracts"
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - CREATE POLICY "Contract owners can read contracts"
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read contract_modules" ON public.contract_modules;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write contract_modules" ON public.contract_modules;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage contract_modules" ON public.contract_modules;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - DROP POLICY IF EXISTS "Contract owners can read contract_modules" ON public.contract_modules;
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - CREATE POLICY "Internal users can manage contract_modules"
+- `20260601010000_contract_rls_policies.sql`: supabase rls policy - CREATE POLICY "Contract owners can read contract_modules"
+- `20260601010000_contract_rls_policies.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601020000_harden_portal_rls.sql`: supabase role grant - GRANT USAGE ON SCHEMA private TO authenticated;
+- `20260601020000_harden_portal_rls.sql`: supabase auth users table - INSERT INTO public.memberships (user_id, organization_id, role_key)
+- `20260601020000_harden_portal_rls.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.is_internal_user()
+- `20260601020000_harden_portal_rls.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.can_access_client(target_client_id UUID)
+- `20260601020000_harden_portal_rls.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.is_internal_user() TO authenticated;
+- `20260601020000_harden_portal_rls.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_client(UUID) TO authenticated;
+- `20260601020000_harden_portal_rls.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_project(UUID) TO authenticated;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read users" ON public.users;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write users" ON public.users;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage users" ON public.users
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Users can read own profile" ON public.users
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read clients" ON public.clients;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write clients" ON public.clients;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage clients" ON public.clients
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Client members can read clients" ON public.clients
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read projects" ON public.projects;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write projects" ON public.projects;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage projects" ON public.projects
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Client members can read projects" ON public.projects
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read project_phases" ON public.project_phases;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write project_phases" ON public.project_phases;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage project_phases" ON public.project_phases
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Client members can read project_phases" ON public.project_phases
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read project_tasks" ON public.project_tasks;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write project_tasks" ON public.project_tasks;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage project_tasks" ON public.project_tasks
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Client members can read project_tasks" ON public.project_tasks
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read organizations" ON public.organizations;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write organizations" ON public.organizations;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage organizations" ON public.organizations
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Members can read organizations" ON public.organizations
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read memberships" ON public.memberships;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write memberships" ON public.memberships;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage memberships" ON public.memberships
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Users can read own memberships" ON public.memberships
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write roles" ON public.roles;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write role_permissions" ON public.role_permissions;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage roles" ON public.roles
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage role_permissions" ON public.role_permissions
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write platform_modules" ON public.platform_modules;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write packages" ON public.packages;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write package_modules" ON public.package_modules;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write blueprints" ON public.blueprints;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write blueprint_modules" ON public.blueprint_modules;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage platform_modules" ON public.platform_modules
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage packages" ON public.packages
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage package_modules" ON public.package_modules
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage blueprints" ON public.blueprints
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage blueprint_modules" ON public.blueprint_modules
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read campaigns" ON public.campaigns;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write campaigns" ON public.campaigns;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can read leads" ON public.leads;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Authenticated users can write leads" ON public.leads;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage campaigns" ON public.campaigns
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage leads" ON public.leads
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DO $$
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage contracts" ON public.contracts;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Contract owners can read contracts" ON public.contracts;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage contracts" ON public.contracts
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Contract owners can read active contracts" ON public.contracts
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage contract_modules" ON public.contract_modules;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - DROP POLICY IF EXISTS "Contract owners can read contract_modules" ON public.contract_modules;
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Internal users can manage contract_modules" ON public.contract_modules
+- `20260601020000_harden_portal_rls.sql`: supabase rls policy - CREATE POLICY "Contract owners can read active contract_modules" ON public.contract_modules
+- `20260601020000_harden_portal_rls.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601030000_secure_baseline_functions.sql`: supabase role revoke - REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+- `20260601040000_move_auth_trigger_private.sql`: supabase role revoke - REVOKE ALL ON FUNCTION private.handle_new_user() FROM PUBLIC, anon, authenticated;
+- `20260601040000_move_auth_trigger_private.sql`: supabase auth users table - DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+- `20260601040000_move_auth_trigger_private.sql`: supabase auth users table - CREATE TRIGGER on_auth_user_created
+- `20260601040000_move_auth_trigger_private.sql`: function hardening tied to omitted supabase roles - ALTER FUNCTION private.is_internal_user() SET search_path = '';
+- `20260601040000_move_auth_trigger_private.sql`: function hardening tied to omitted supabase roles - ALTER FUNCTION private.can_access_client(UUID) SET search_path = '';
+- `20260601040000_move_auth_trigger_private.sql`: function hardening tied to omitted supabase roles - ALTER FUNCTION private.can_access_project(UUID) SET search_path = '';
+- `20260601040000_move_auth_trigger_private.sql`: supabase role revoke - REVOKE EXECUTE ON FUNCTION public.update_updated_at_column() FROM PUBLIC, anon, authenticated;
+- `20260601040000_move_auth_trigger_private.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.is_platform_admin()
+- `20260601040000_move_auth_trigger_private.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.is_platform_admin() TO authenticated;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage memberships" ON public.memberships;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - CREATE POLICY "Internal users can manage memberships" ON public.memberships
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage roles" ON public.roles;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - CREATE POLICY "Internal users can manage roles" ON public.roles
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage role_permissions" ON public.role_permissions;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - CREATE POLICY "Internal users can manage role_permissions" ON public.role_permissions
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage platform_modules" ON public.platform_modules;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - CREATE POLICY "Internal users can manage platform_modules" ON public.platform_modules
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage packages" ON public.packages;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - CREATE POLICY "Internal users can manage packages" ON public.packages
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage package_modules" ON public.package_modules;
+- `20260601040000_move_auth_trigger_private.sql`: supabase rls policy - CREATE POLICY "Internal users can manage package_modules" ON public.package_modules
+- `20260601070000_project_delivery_approvals.sql`: supabase rls enablement - ALTER TABLE public.project_deliverables ENABLE ROW LEVEL SECURITY;
+- `20260601070000_project_delivery_approvals.sql`: supabase rls enablement - ALTER TABLE public.approval_requests ENABLE ROW LEVEL SECURITY;
+- `20260601070000_project_delivery_approvals.sql`: supabase rls enablement - ALTER TABLE public.approval_decisions ENABLE ROW LEVEL SECURITY;
+- `20260601070000_project_delivery_approvals.sql`: supabase rls enablement - ALTER TABLE public.project_timeline_entries ENABLE ROW LEVEL SECURITY;
+- `20260601070000_project_delivery_approvals.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_approval_request(UUID) TO authenticated;
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - DROP POLICY IF EXISTS "Client members can read project_tasks" ON public.project_tasks;
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can read visible project_tasks" ON public.project_tasks
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Internal users can manage project_deliverables" ON public.project_deliverables
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can read visible project_deliverables" ON public.project_deliverables
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Internal users can manage approval_requests" ON public.approval_requests
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can read visible approval_requests" ON public.approval_requests
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Internal users can manage approval_decisions" ON public.approval_decisions
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can read approval_decisions" ON public.approval_decisions
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can create approval_decisions" ON public.approval_decisions
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Internal users can manage project_timeline_entries" ON public.project_timeline_entries
+- `20260601070000_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can read visible project_timeline_entries" ON public.project_timeline_entries
+- `20260601070000_project_delivery_approvals.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.record_deliverable_created()
+- `20260601070000_project_delivery_approvals.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.record_approval_requested()
+- `20260601070000_project_delivery_approvals.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.project_deliverables TO authenticated;
+- `20260601070000_project_delivery_approvals.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.approval_requests TO authenticated;
+- `20260601070000_project_delivery_approvals.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.approval_decisions TO authenticated;
+- `20260601070000_project_delivery_approvals.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.project_timeline_entries TO authenticated;
+- `20260601070000_project_delivery_approvals.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601080000_optimize_project_delivery_approvals.sql`: supabase auth context - -- Index new foreign keys and avoid per-row auth.uid() evaluation in approval inserts.
+- `20260601080000_optimize_project_delivery_approvals.sql`: supabase rls policy - DROP POLICY IF EXISTS "Client members can create approval_decisions" ON public.approval_decisions;
+- `20260601080000_optimize_project_delivery_approvals.sql`: supabase rls policy - CREATE POLICY "Client members can create approval_decisions" ON public.approval_decisions
+- `20260601105000_ensure_interactions_for_crm.sql`: supabase rls enablement - ALTER TABLE public.interactions ENABLE ROW LEVEL SECURITY;
+- `20260601105000_ensure_interactions_for_crm.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.interactions TO authenticated;
+- `20260601105000_ensure_interactions_for_crm.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.crm_pipelines ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.crm_pipeline_stages ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.interactions ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.crm_sequences ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.crm_sequence_steps ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.crm_sequence_enrollments ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.crm_tasks ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls enablement - ALTER TABLE public.automation_executions ENABLE ROW LEVEL SECURITY;
+- `20260601110000_multitenant_crm_automation.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.can_access_crm_organization(target_organization_id UUID)
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_organization(UUID) TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_pipeline(UUID) TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_lead(UUID) TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage leads" ON public.leads;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage leads" ON public.leads
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage interactions" ON public.interactions;
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage interactions" ON public.interactions
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage pipelines" ON public.crm_pipelines
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage stages" ON public.crm_pipeline_stages
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage sequences" ON public.crm_sequences
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage sequence steps" ON public.crm_sequence_steps
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage enrollments" ON public.crm_sequence_enrollments
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can manage tasks" ON public.crm_tasks
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can read executions" ON public.automation_executions
+- `20260601110000_multitenant_crm_automation.sql`: supabase rls policy - CREATE POLICY "CRM organization members can create executions" ON public.automation_executions
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_pipelines TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_pipeline_stages TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_sequences TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_sequence_steps TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_sequence_enrollments TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_tasks TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: supabase role grant - GRANT SELECT, INSERT ON public.automation_executions TO authenticated;
+- `20260601110000_multitenant_crm_automation.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601130000_enqueue_crm_follow_up.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601150000_commercial_proposals_conversion.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.can_access_portal_proposal(target_proposal_id UUID)
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_proposal_organization(UUID) TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_portal_proposal(UUID) TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_portal_proposal_version(UUID) TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls enablement - DO $$
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage commercial diagnostics" ON public.commercial_diagnostics
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposal templates" ON public.proposal_templates
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposal price rules" ON public.proposal_price_rules
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposals" ON public.proposals
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Portal users read own proposals" ON public.proposals
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposal items" ON public.proposal_items
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposal versions" ON public.proposal_versions
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Portal users read own proposal versions" ON public.proposal_versions
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposal decisions" ON public.proposal_decisions
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Portal users read own proposal decisions" ON public.proposal_decisions
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Portal users decide current proposal version" ON public.proposal_decisions
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage proposal tokens" ON public.proposal_access_tokens
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users read generation runs" ON public.ai_generation_runs
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users read conversion runs" ON public.proposal_conversion_runs
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage package presets" ON public.package_project_presets
+- `20260601150000_commercial_proposals_conversion.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint presets" ON public.blueprint_project_presets
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.commercial_diagnostics TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_templates TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_price_rules TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposals TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_items TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_versions TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_decisions TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_access_tokens TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT ON public.ai_generation_runs TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT ON public.proposal_conversion_runs TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.package_project_presets TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_project_presets TO authenticated;
+- `20260601150000_commercial_proposals_conversion.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601160000_proposal_conversion_transaction.sql`: supabase role revoke - REVOKE ALL ON FUNCTION private.convert_approved_proposal(UUID) FROM authenticated;
+- `20260601160000_proposal_conversion_transaction.sql`: supabase role revoke - REVOKE ALL ON FUNCTION public.convert_approved_proposal_service(UUID) FROM anon;
+- `20260601160000_proposal_conversion_transaction.sql`: supabase role revoke - REVOKE ALL ON FUNCTION public.convert_approved_proposal_service(UUID) FROM authenticated;
+- `20260601160000_proposal_conversion_transaction.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.convert_approved_proposal(UUID) TO service_role;
+- `20260601160000_proposal_conversion_transaction.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION public.convert_approved_proposal_service(UUID) TO service_role;
+- `20260601160000_proposal_conversion_transaction.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601170000_enable_client_proposals_portal.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT USAGE ON SCHEMA private TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.has_active_omnichannel_contract(target_organization_id UUID)
+- `20260601190000_omnichannel_ai_core.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.has_omnichannel_permission(target_organization_id UUID, target_permission TEXT)
+- `20260601190000_omnichannel_ai_core.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.can_supervise_omnichannel()
+- `20260601190000_omnichannel_ai_core.sql`: supabase storage dependency - CREATE OR REPLACE FUNCTION private.can_access_omnichannel_storage_object(object_name TEXT, target_action TEXT)
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON TABLE private.webchat_widget_tokens FROM PUBLIC, anon, authenticated;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE private.webchat_widget_tokens TO service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.has_active_omnichannel_contract(UUID) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.has_omnichannel_permission(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_supervise_omnichannel() TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_organization(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_conversation(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_message(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_knowledge(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_queue(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_team(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_widget(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.is_allowed_widget_origin(UUID, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.find_active_webchat_widget_by_token_hash(TEXT, TEXT) TO service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.verify_webchat_session(UUID, TEXT, TEXT) TO service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_omnichannel_storage_object(TEXT, TEXT) TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.omnichannel_teams ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.omnichannel_team_members ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.conversation_queues ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.channel_connections ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.omnichannel_contacts ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.message_attachments ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.conversation_tags ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.conversation_assignments ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.handoff_rules ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.handoff_events ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.channel_webhook_events ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.outbound_message_runs ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.scheduling_requests ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.ai_message_runs ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.crm_sync_runs ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.knowledge_sources ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.knowledge_entries ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.knowledge_publications ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.omnichannel_settings ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.webchat_widgets ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls enablement - ALTER TABLE public.webchat_sessions ENABLE ROW LEVEL SECURITY;
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Internal users supervise channel connections" ON public.channel_connections
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read contacts" ON public.omnichannel_contacts
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users write contacts" ON public.omnichannel_contacts
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read conversations" ON public.conversations
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users write conversations" ON public.conversations
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read messages" ON public.messages
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users write messages" ON public.messages
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read message attachments" ON public.message_attachments
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users write message attachments" ON public.message_attachments
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read tags" ON public.conversation_tags
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users write tags" ON public.conversation_tags
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read assignments" ON public.conversation_assignments
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel supervisors insert assignments" ON public.conversation_assignments
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read teams" ON public.omnichannel_teams
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage teams" ON public.omnichannel_teams
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read team members" ON public.omnichannel_team_members
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage team members" ON public.omnichannel_team_members
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read queues" ON public.conversation_queues
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage queues" ON public.conversation_queues
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read handoff rules" ON public.handoff_rules
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage handoff rules" ON public.handoff_rules
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read handoff events" ON public.handoff_events
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel supervisors insert handoff events" ON public.handoff_events
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Internal users supervise webhook events" ON public.channel_webhook_events
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Internal users supervise outbound runs" ON public.outbound_message_runs
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read scheduling requests" ON public.scheduling_requests
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users write scheduling requests" ON public.scheduling_requests
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Internal users supervise ai runs" ON public.ai_message_runs
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Internal users supervise crm sync runs" ON public.crm_sync_runs
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read knowledge sources" ON public.knowledge_sources
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage knowledge sources" ON public.knowledge_sources
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read knowledge entries" ON public.knowledge_entries
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage knowledge entries" ON public.knowledge_entries
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read knowledge publications" ON public.knowledge_publications
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators insert knowledge publications" ON public.knowledge_publications
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read settings" ON public.omnichannel_settings
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage settings" ON public.omnichannel_settings
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read widgets" ON public.webchat_widgets
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage widgets" ON public.webchat_widgets
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Internal users supervise webchat sessions" ON public.webchat_sessions
+- `20260601190000_omnichannel_ai_core.sql`: supabase storage dependency - INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel attachment readers" ON storage.objects
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel attachment uploaders" ON storage.objects
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel attachment editors" ON storage.objects
+- `20260601190000_omnichannel_ai_core.sql`: supabase rls policy - CREATE POLICY "Omnichannel attachment deleters" ON storage.objects
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.omnichannel_teams FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.omnichannel_team_members FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.conversation_queues FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.channel_connections FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.omnichannel_contacts FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.conversations FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.messages FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.message_attachments FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.conversation_tags FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.conversation_assignments FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.handoff_rules FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.handoff_events FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.channel_webhook_events FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.outbound_message_runs FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.scheduling_requests FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.ai_message_runs FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.crm_sync_runs FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.knowledge_sources FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.knowledge_entries FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.knowledge_publications FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.omnichannel_settings FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.webchat_widgets FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role revoke - REVOKE ALL ON public.webchat_sessions FROM anon;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.omnichannel_teams TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.omnichannel_team_members TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_queues TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.channel_connections TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.omnichannel_contacts TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversations TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.messages TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.message_attachments TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_tags TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT ON public.conversation_assignments TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.handoff_rules TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT ON public.handoff_events TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.channel_webhook_events TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.outbound_message_runs TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.scheduling_requests TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_message_runs TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_sync_runs TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.knowledge_sources TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.knowledge_entries TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT ON public.knowledge_publications TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.omnichannel_settings TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.webchat_widgets TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.webchat_sessions TO authenticated, service_role;
+- `20260601190000_omnichannel_ai_core.sql`: supabase storage dependency - DO $$
+- `20260601190000_omnichannel_ai_core.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601200000_omnichannel_crm_sync.sql`: supabase role revoke - REVOKE ALL ON FUNCTION public.sync_omnichannel_crm_service(UUID, JSONB) FROM PUBLIC, anon, authenticated;
+- `20260601200000_omnichannel_crm_sync.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.sync_omnichannel_crm(UUID, JSONB) TO service_role;
+- `20260601200000_omnichannel_crm_sync.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION public.sync_omnichannel_crm_service(UUID, JSONB) TO service_role;
+- `20260601200000_omnichannel_crm_sync.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260601210000_omnichannel_webchat_widget_service.sql`: supabase role revoke - REVOKE ALL ON FUNCTION public.resolve_webchat_widget_service(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+- `20260601210000_omnichannel_webchat_widget_service.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION public.resolve_webchat_widget_service(TEXT, TEXT) TO service_role;
+- `20260603215652_expose_platform_base_tables_to_data_api.sql`: supabase role grant - -- Explicit Data API grants for base platform and CRM tables.
+- `20260603215652_expose_platform_base_tables_to_data_api.sql`: supabase role grant - DO $$
+- `20260604131024_basic_finance.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_read_finance_contract(UUID) TO authenticated;
+- `20260604131024_basic_finance.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_finance_organization(UUID) TO authenticated;
+- `20260604131024_basic_finance.sql`: supabase rls enablement - ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+- `20260604131024_basic_finance.sql`: supabase rls enablement - ALTER TABLE public.billing_items ENABLE ROW LEVEL SECURITY;
+- `20260604131024_basic_finance.sql`: supabase rls policy - CREATE POLICY "Internal users manage invoices" ON public.invoices
+- `20260604131024_basic_finance.sql`: supabase rls policy - CREATE POLICY "Portal users read finance invoices" ON public.invoices
+- `20260604131024_basic_finance.sql`: supabase rls policy - CREATE POLICY "Internal users manage billing items" ON public.billing_items
+- `20260604131024_basic_finance.sql`: supabase rls policy - CREATE POLICY "Portal users read finance billing items" ON public.billing_items
+- `20260604131024_basic_finance.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.invoices TO authenticated;
+- `20260604131024_basic_finance.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.billing_items TO authenticated;
+- `20260604131024_basic_finance.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604131248_basic_support.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_read_support_contract(UUID) TO authenticated;
+- `20260604131248_basic_support.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_create_support_ticket(UUID, UUID) TO authenticated;
+- `20260604131248_basic_support.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_support_organization(UUID) TO authenticated;
+- `20260604131248_basic_support.sql`: supabase rls enablement - ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
+- `20260604131248_basic_support.sql`: supabase rls enablement - ALTER TABLE public.support_messages ENABLE ROW LEVEL SECURITY;
+- `20260604131248_basic_support.sql`: supabase rls policy - CREATE POLICY "Internal users manage support tickets" ON public.support_tickets
+- `20260604131248_basic_support.sql`: supabase rls policy - CREATE POLICY "Portal users read support tickets" ON public.support_tickets
+- `20260604131248_basic_support.sql`: supabase rls policy - CREATE POLICY "Portal users create support tickets" ON public.support_tickets
+- `20260604131248_basic_support.sql`: supabase rls policy - CREATE POLICY "Internal users manage support messages" ON public.support_messages
+- `20260604131248_basic_support.sql`: supabase rls policy - CREATE POLICY "Portal users read public support messages" ON public.support_messages
+- `20260604131248_basic_support.sql`: supabase rls policy - CREATE POLICY "Portal users create public support messages" ON public.support_messages
+- `20260604131248_basic_support.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.support_tickets TO authenticated;
+- `20260604131248_basic_support.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.support_messages TO authenticated;
+- `20260604131248_basic_support.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_flows ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_triggers ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_conditions ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_actions ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_execution_runs ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_execution_steps ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls enablement - ALTER TABLE public.automation_templates ENABLE ROW LEVEL SECURITY;
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read automation flows" ON public.automation_flows
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation flows" ON public.automation_flows
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read automation triggers" ON public.automation_triggers
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation triggers" ON public.automation_triggers
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read automation conditions" ON public.automation_conditions
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation conditions" ON public.automation_conditions
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read automation actions" ON public.automation_actions
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation actions" ON public.automation_actions
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Internal users supervise automation runs" ON public.automation_execution_runs
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Internal users supervise automation steps" ON public.automation_execution_steps
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read automation templates" ON public.automation_templates
+- `20260604131353_flow_builder_lite.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation templates" ON public.automation_templates
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_flows FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_triggers FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_conditions FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_actions FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_execution_runs FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_execution_steps FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role revoke - REVOKE ALL ON public.automation_templates FROM anon;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_flows TO authenticated, service_role;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_triggers TO authenticated, service_role;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_conditions TO authenticated, service_role;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_actions TO authenticated, service_role;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_execution_runs TO authenticated, service_role;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_execution_steps TO authenticated, service_role;
+- `20260604131353_flow_builder_lite.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_templates TO authenticated, service_role;
+- `20260604131435_intelligent_automations_foundation.sql`: supabase rls enablement - ALTER TABLE public.automation_flow_versions ENABLE ROW LEVEL SECURITY;
+- `20260604131435_intelligent_automations_foundation.sql`: supabase rls enablement - ALTER TABLE public.automation_simulation_runs ENABLE ROW LEVEL SECURITY;
+- `20260604131435_intelligent_automations_foundation.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read automation flow versions" ON public.automation_flow_versions
+- `20260604131435_intelligent_automations_foundation.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation flow versions" ON public.automation_flow_versions
+- `20260604131435_intelligent_automations_foundation.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage automation simulations" ON public.automation_simulation_runs
+- `20260604131435_intelligent_automations_foundation.sql`: supabase role revoke - REVOKE ALL ON public.automation_flow_versions FROM anon;
+- `20260604131435_intelligent_automations_foundation.sql`: supabase role revoke - REVOKE ALL ON public.automation_simulation_runs FROM anon;
+- `20260604131435_intelligent_automations_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_flow_versions TO authenticated, service_role;
+- `20260604131435_intelligent_automations_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_simulation_runs TO authenticated, service_role;
+- `20260604131435_intelligent_automations_foundation.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604131459_automation_sequences.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls enablement - ALTER TABLE public.email_provider_connections ENABLE ROW LEVEL SECURITY;
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls enablement - ALTER TABLE public.smtp2go_subaccounts ENABLE ROW LEVEL SECURITY;
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls enablement - ALTER TABLE public.email_send_requests ENABLE ROW LEVEL SECURITY;
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls enablement - ALTER TABLE public.email_send_events ENABLE ROW LEVEL SECURITY;
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls enablement - ALTER TABLE public.email_suppression_entries ENABLE ROW LEVEL SECURITY;
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls enablement - ALTER TABLE public.email_usage_counters ENABLE ROW LEVEL SECURITY;
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage email provider connections" ON public.email_provider_connections
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage smtp2go subaccounts" ON public.smtp2go_subaccounts
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email send requests" ON public.email_send_requests
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel writers create email send requests" ON public.email_send_requests
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators update email send requests" ON public.email_send_requests
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email send events" ON public.email_send_events
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email suppressions" ON public.email_suppression_entries
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage email suppressions" ON public.email_suppression_entries
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email usage counters" ON public.email_usage_counters
+- `20260604131559_smtp2go_email_hub.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage email usage counters" ON public.email_usage_counters
+- `20260604131559_smtp2go_email_hub.sql`: supabase role revoke - REVOKE ALL ON public.email_provider_connections FROM anon;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role revoke - REVOKE ALL ON public.smtp2go_subaccounts FROM anon;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role revoke - REVOKE ALL ON public.email_send_requests FROM anon;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role revoke - REVOKE ALL ON public.email_send_events FROM anon;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role revoke - REVOKE ALL ON public.email_suppression_entries FROM anon;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role revoke - REVOKE ALL ON public.email_usage_counters FROM anon;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_provider_connections TO authenticated, service_role;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.smtp2go_subaccounts TO authenticated, service_role;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_send_requests TO authenticated, service_role;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_send_events TO authenticated, service_role;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_suppression_entries TO authenticated, service_role;
+- `20260604131559_smtp2go_email_hub.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_usage_counters TO authenticated, service_role;
+- `20260604131559_smtp2go_email_hub.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604131631_automation_sector_templates.sql`: supabase rls enablement - ALTER TABLE public.automation_sector_template_catalog ENABLE ROW LEVEL SECURITY;
+- `20260604131631_automation_sector_templates.sql`: supabase rls policy - CREATE POLICY "Authenticated users read active automation sector templates" ON public.automation_sector_template_catalog
+- `20260604131631_automation_sector_templates.sql`: supabase rls policy - CREATE POLICY "Internal users manage automation sector templates" ON public.automation_sector_template_catalog
+- `20260604131631_automation_sector_templates.sql`: supabase role revoke - REVOKE ALL ON public.automation_sector_template_catalog FROM anon;
+- `20260604131631_automation_sector_templates.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.automation_sector_template_catalog TO authenticated, service_role;
+- `20260604131631_automation_sector_templates.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls enablement - ALTER TABLE public.client_module_limits ENABLE ROW LEVEL SECURITY;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls enablement - ALTER TABLE public.platform_provider_connections ENABLE ROW LEVEL SECURITY;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls enablement - ALTER TABLE public.client_provider_settings ENABLE ROW LEVEL SECURITY;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls enablement - ALTER TABLE public.platform_usage_counters ENABLE ROW LEVEL SECURITY;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls enablement - ALTER TABLE public.platform_admin_audit_events ENABLE ROW LEVEL SECURITY;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - DROP POLICY IF EXISTS "Platform admins manage client module limits" ON public.client_module_limits;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - CREATE POLICY "Platform admins manage client module limits" ON public.client_module_limits
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - DROP POLICY IF EXISTS "Platform admins manage provider connections" ON public.platform_provider_connections;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - CREATE POLICY "Platform admins manage provider connections" ON public.platform_provider_connections
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - DROP POLICY IF EXISTS "Platform admins manage client provider settings" ON public.client_provider_settings;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - CREATE POLICY "Platform admins manage client provider settings" ON public.client_provider_settings
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - DROP POLICY IF EXISTS "Platform admins manage usage counters" ON public.platform_usage_counters;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - CREATE POLICY "Platform admins manage usage counters" ON public.platform_usage_counters
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - DROP POLICY IF EXISTS "Platform admins read audit events" ON public.platform_admin_audit_events;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - CREATE POLICY "Platform admins read audit events" ON public.platform_admin_audit_events
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - DROP POLICY IF EXISTS "Platform admins insert audit events" ON public.platform_admin_audit_events;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase rls policy - CREATE POLICY "Platform admins insert audit events" ON public.platform_admin_audit_events
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE ALL ON public.client_module_limits FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE ALL ON public.platform_provider_connections FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE ALL ON public.client_provider_settings FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE ALL ON public.platform_usage_counters FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE ALL ON public.platform_admin_audit_events FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE USAGE ON TYPE public.platform_provider_type FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role revoke - REVOKE USAGE ON TYPE public.platform_provider_status FROM anon;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.client_module_limits TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.platform_provider_connections TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.client_provider_settings TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.platform_usage_counters TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT SELECT, INSERT ON public.platform_admin_audit_events TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT USAGE ON TYPE public.platform_provider_type TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: supabase role grant - GRANT USAGE ON TYPE public.platform_provider_status TO authenticated, service_role;
+- `20260604221919_yux_hub_admin_platform.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators manage email provider connections" ON public.email_provider_connections;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage email provider connections" ON public.email_provider_connections
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators manage smtp2go subaccounts" ON public.smtp2go_subaccounts;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage smtp2go subaccounts" ON public.smtp2go_subaccounts
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel users read email send requests" ON public.email_send_requests;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email send requests" ON public.email_send_requests
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators update email send requests" ON public.email_send_requests;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators update email send requests" ON public.email_send_requests
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel users read email suppressions" ON public.email_suppression_entries;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email suppressions" ON public.email_suppression_entries
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators manage email suppressions" ON public.email_suppression_entries;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage email suppressions" ON public.email_suppression_entries
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel users read email usage counters" ON public.email_usage_counters;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read email usage counters" ON public.email_usage_counters
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators manage email usage counters" ON public.email_usage_counters;
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage email usage counters" ON public.email_usage_counters
+- `20260604225834_yux_hub_admin_provider_defaults.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605113540_meta_channel_connectors.sql`: supabase rls enablement - ALTER TABLE public.meta_oauth_sessions ENABLE ROW LEVEL SECURITY;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls enablement - ALTER TABLE public.channel_connection_audit_events ENABLE ROW LEVEL SECURITY;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls enablement - ALTER TABLE public.channel_health_checks ENABLE ROW LEVEL SECURITY;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators manage meta oauth sessions" ON public.meta_oauth_sessions;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage meta oauth sessions" ON public.meta_oauth_sessions
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel users read channel audit" ON public.channel_connection_audit_events;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read channel audit" ON public.channel_connection_audit_events
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators insert channel audit" ON public.channel_connection_audit_events;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators insert channel audit" ON public.channel_connection_audit_events
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel users read channel health checks" ON public.channel_health_checks;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read channel health checks" ON public.channel_health_checks
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators insert channel health checks" ON public.channel_health_checks;
+- `20260605113540_meta_channel_connectors.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators insert channel health checks" ON public.channel_health_checks
+- `20260605113540_meta_channel_connectors.sql`: supabase role revoke - REVOKE ALL ON public.meta_oauth_sessions FROM anon;
+- `20260605113540_meta_channel_connectors.sql`: supabase role revoke - REVOKE ALL ON public.channel_connection_audit_events FROM anon;
+- `20260605113540_meta_channel_connectors.sql`: supabase role revoke - REVOKE ALL ON public.channel_health_checks FROM anon;
+- `20260605113540_meta_channel_connectors.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.meta_oauth_sessions TO authenticated, service_role;
+- `20260605113540_meta_channel_connectors.sql`: supabase role grant - GRANT SELECT, INSERT ON public.channel_connection_audit_events TO authenticated, service_role;
+- `20260605113540_meta_channel_connectors.sql`: supabase role grant - GRANT SELECT, INSERT ON public.channel_health_checks TO authenticated, service_role;
+- `20260605113540_meta_channel_connectors.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls enablement - -- Enable RLS
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - -- Row Level Security policies
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read organization materials" ON public.organization_materials
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel configurators manage organization materials" ON public.organization_materials;
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage organization materials" ON public.organization_materials
+- `20260605153435_automation_graph_and_materials.sql`: supabase role revoke - -- Revoke anon and grant to authenticated/service_role
+- `20260605153435_automation_graph_and_materials.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.organization_materials TO authenticated, service_role;
+- `20260605153435_automation_graph_and_materials.sql`: supabase storage dependency - -- 5. Create storage bucket for materials
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - -- Storage policies
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - CREATE POLICY "Materials readers" ON storage.objects
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - DROP POLICY IF EXISTS "Materials uploaders" ON storage.objects;
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - CREATE POLICY "Materials uploaders" ON storage.objects
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - DROP POLICY IF EXISTS "Materials editors" ON storage.objects;
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - CREATE POLICY "Materials editors" ON storage.objects
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - DROP POLICY IF EXISTS "Materials deleters" ON storage.objects;
+- `20260605153435_automation_graph_and_materials.sql`: supabase rls policy - CREATE POLICY "Materials deleters" ON storage.objects
+- `20260605153435_automation_graph_and_materials.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605154338_commercial_module_registry.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_pipeline_templates ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_pipeline_stages ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_custom_fields ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_message_templates ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_automation_templates ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_report_presets ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls enablement - ALTER TABLE public.blueprint_application_runs ENABLE ROW LEVEL SECURITY;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint pipeline templates" ON public.blueprint_pipeline_templates
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint pipeline stages" ON public.blueprint_pipeline_stages
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint custom fields" ON public.blueprint_custom_fields
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint message templates" ON public.blueprint_message_templates
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint automation templates" ON public.blueprint_automation_templates
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint report presets" ON public.blueprint_report_presets
+- `20260605154538_sector_funnel_blueprints.sql`: supabase rls policy - CREATE POLICY "Internal users manage blueprint application runs" ON public.blueprint_application_runs
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_pipeline_templates TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_pipeline_stages TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_custom_fields TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_message_templates TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_automation_templates TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_report_presets TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.blueprint_application_runs TO authenticated;
+- `20260605154538_sector_funnel_blueprints.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_read_landing_page_contract(UUID) TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_landing_page_organization(UUID) TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_pages ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_page_versions ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_page_forms ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_page_field_mappings ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_page_events ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_page_change_requests ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls enablement - ALTER TABLE public.landing_page_approvals ENABLE ROW LEVEL SECURITY;
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing pages" ON public.landing_pages
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users read landing pages" ON public.landing_pages
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing page versions" ON public.landing_page_versions
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users read public landing page versions" ON public.landing_page_versions
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing page forms" ON public.landing_page_forms
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users read landing page forms" ON public.landing_page_forms
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing page mappings" ON public.landing_page_field_mappings
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users read landing page mappings" ON public.landing_page_field_mappings
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing page events" ON public.landing_page_events
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users create landing page events" ON public.landing_page_events
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing page change requests" ON public.landing_page_change_requests
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users create landing page change requests" ON public.landing_page_change_requests
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Internal users manage landing page approvals" ON public.landing_page_approvals
+- `20260605154759_landing_pages.sql`: supabase rls policy - CREATE POLICY "Portal users create landing page approvals" ON public.landing_page_approvals
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_pages TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_page_versions TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_page_forms TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_page_field_mappings TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_page_events TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_page_change_requests TO authenticated;
+- `20260605154759_landing_pages.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.landing_page_approvals TO authenticated;
+- `20260605154759_landing_pages.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605154917_ai_assistant_settings.sql`: supabase rls enablement - ALTER TABLE public.ai_assistants ENABLE ROW LEVEL SECURITY;
+- `20260605154917_ai_assistant_settings.sql`: supabase rls enablement - ALTER TABLE public.ai_assistant_objectives ENABLE ROW LEVEL SECURITY;
+- `20260605154917_ai_assistant_settings.sql`: supabase rls enablement - ALTER TABLE public.ai_assistant_required_fields ENABLE ROW LEVEL SECURITY;
+- `20260605154917_ai_assistant_settings.sql`: supabase rls enablement - ALTER TABLE public.ai_assistant_handoff_rules ENABLE ROW LEVEL SECURITY;
+- `20260605154917_ai_assistant_settings.sql`: supabase rls enablement - ALTER TABLE public.ai_assistant_safety_rules ENABLE ROW LEVEL SECURITY;
+- `20260605154917_ai_assistant_settings.sql`: supabase rls enablement - ALTER TABLE public.ai_assistant_knowledge_links ENABLE ROW LEVEL SECURITY;
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read ai assistants" ON public.ai_assistants
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage ai assistants" ON public.ai_assistants
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read ai assistant objectives" ON public.ai_assistant_objectives
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage ai assistant objectives" ON public.ai_assistant_objectives
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read ai assistant required fields" ON public.ai_assistant_required_fields
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage ai assistant required fields" ON public.ai_assistant_required_fields
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read ai assistant handoff rules" ON public.ai_assistant_handoff_rules
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage ai assistant handoff rules" ON public.ai_assistant_handoff_rules
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read ai assistant safety rules" ON public.ai_assistant_safety_rules
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage ai assistant safety rules" ON public.ai_assistant_safety_rules
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read ai assistant knowledge links" ON public.ai_assistant_knowledge_links
+- `20260605154917_ai_assistant_settings.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage ai assistant knowledge links" ON public.ai_assistant_knowledge_links
+- `20260605154917_ai_assistant_settings.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistants FROM anon;
+- `20260605154917_ai_assistant_settings.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistant_objectives FROM anon;
+- `20260605154917_ai_assistant_settings.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistant_required_fields FROM anon;
+- `20260605154917_ai_assistant_settings.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistant_handoff_rules FROM anon;
+- `20260605154917_ai_assistant_settings.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistant_safety_rules FROM anon;
+- `20260605154917_ai_assistant_settings.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistant_knowledge_links FROM anon;
+- `20260605154917_ai_assistant_settings.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistants TO authenticated, service_role;
+- `20260605154917_ai_assistant_settings.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistant_objectives TO authenticated, service_role;
+- `20260605154917_ai_assistant_settings.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistant_required_fields TO authenticated, service_role;
+- `20260605154917_ai_assistant_settings.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistant_handoff_rules TO authenticated, service_role;
+- `20260605154917_ai_assistant_settings.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistant_safety_rules TO authenticated, service_role;
+- `20260605154917_ai_assistant_settings.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistant_knowledge_links TO authenticated, service_role;
+- `20260605154949_operational_reports.sql`: supabase rls enablement - ALTER TABLE public.report_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260605154949_operational_reports.sql`: supabase rls enablement - ALTER TABLE public.report_widgets ENABLE ROW LEVEL SECURITY;
+- `20260605154949_operational_reports.sql`: supabase rls enablement - ALTER TABLE public.report_metric_cache ENABLE ROW LEVEL SECURITY;
+- `20260605154949_operational_reports.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read report snapshots" ON public.report_snapshots
+- `20260605154949_operational_reports.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage report snapshots" ON public.report_snapshots
+- `20260605154949_operational_reports.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read report widgets" ON public.report_widgets
+- `20260605154949_operational_reports.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage report widgets" ON public.report_widgets
+- `20260605154949_operational_reports.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read report metric cache" ON public.report_metric_cache
+- `20260605154949_operational_reports.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage report metric cache" ON public.report_metric_cache
+- `20260605154949_operational_reports.sql`: supabase role revoke - REVOKE ALL ON public.report_snapshots FROM anon;
+- `20260605154949_operational_reports.sql`: supabase role revoke - REVOKE ALL ON public.report_widgets FROM anon;
+- `20260605154949_operational_reports.sql`: supabase role revoke - REVOKE ALL ON public.report_metric_cache FROM anon;
+- `20260605154949_operational_reports.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.report_snapshots TO authenticated, service_role;
+- `20260605154949_operational_reports.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.report_widgets TO authenticated, service_role;
+- `20260605154949_operational_reports.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.report_metric_cache TO authenticated, service_role;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_read_campaign_contract(UUID) TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_campaign_organization(UUID) TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.ad_provider_connections ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.ad_accounts ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.campaign_ad_sets ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.campaign_ads ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.campaign_creatives ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.campaign_metric_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.campaign_recommendations ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.campaign_alerts ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls enablement - ALTER TABLE public.ad_provider_mutation_runs ENABLE ROW LEVEL SECURITY;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users can manage campaigns" ON public.campaigns;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaigns" ON public.campaigns
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Portal users read campaigns" ON public.campaigns
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage ad provider connections" ON public.ad_provider_connections
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage ad accounts" ON public.ad_accounts
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaign ad sets" ON public.campaign_ad_sets
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaign ads" ON public.campaign_ads
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaign creatives" ON public.campaign_creatives
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Portal users read campaign creatives" ON public.campaign_creatives
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaign snapshots" ON public.campaign_metric_snapshots
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Portal users read campaign snapshots" ON public.campaign_metric_snapshots
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaign recommendations" ON public.campaign_recommendations
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Portal users read campaign recommendations" ON public.campaign_recommendations
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage campaign alerts" ON public.campaign_alerts
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Portal users read campaign alerts" ON public.campaign_alerts
+- `20260605155123_campaigns_ads_api_core.sql`: supabase rls policy - CREATE POLICY "Internal users manage ad provider mutation runs" ON public.ad_provider_mutation_runs
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ad_provider_connections TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ad_accounts TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaigns TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_ad_sets TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_ads TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_creatives TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_metric_snapshots TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_recommendations TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_alerts TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ad_provider_mutation_runs TO authenticated;
+- `20260605155123_campaigns_ads_api_core.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls enablement - ALTER TABLE public.pipeline_templates ENABLE ROW LEVEL SECURITY;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls enablement - ALTER TABLE public.pipeline_template_stages ENABLE ROW LEVEL SECURITY;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls enablement - ALTER TABLE public.lead_custom_field_values ENABLE ROW LEVEL SECURITY;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls enablement - ALTER TABLE public.lead_tasks ENABLE ROW LEVEL SECURITY;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls policy - CREATE POLICY "CRM members read pipeline templates" ON public.pipeline_templates
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls policy - CREATE POLICY "Internal users manage pipeline templates" ON public.pipeline_templates
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls policy - CREATE POLICY "CRM members read pipeline template stages" ON public.pipeline_template_stages
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls policy - CREATE POLICY "Internal users manage pipeline template stages" ON public.pipeline_template_stages
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls policy - CREATE POLICY "CRM members manage lead custom fields" ON public.lead_custom_field_values
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase rls policy - CREATE POLICY "CRM members manage lead tasks" ON public.lead_tasks
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.pipeline_templates TO authenticated;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.pipeline_template_stages TO authenticated;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_custom_field_values TO authenticated;
+- `20260605155240_crm_cockpit_upgrade.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_tasks TO authenticated;
+- `20260605155240_crm_cockpit_upgrade.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605155502_crm_governance_by_contract.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.can_access_crm_instance(target_instance_id UUID)
+- `20260605155502_crm_governance_by_contract.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.crm_member_role(target_instance_id UUID)
+- `20260605155502_crm_governance_by_contract.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.current_crm_member_id(target_instance_id UUID)
+- `20260605155502_crm_governance_by_contract.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.can_manage_crm_instance(target_instance_id UUID)
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_instances ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_instance_members ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_teams ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_team_members ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_pipeline_versions ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_stage_versions ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_custom_field_definitions ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_categories ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_tags ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_loss_reasons ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_configuration_drafts ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_configuration_publications ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_configuration_migration_runs ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls enablement - ALTER TABLE public.crm_audit_events ENABLE ROW LEVEL SECURITY;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_instances_select_accessible" ON public.crm_instances;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_instances_select_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_instances_insert_internal" ON public.crm_instances;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_instances_insert_internal"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_instances_update_manageable" ON public.crm_instances;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_instances_update_manageable"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_instance_members_select_accessible" ON public.crm_instance_members;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_instance_members_select_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_instance_members_manageable" ON public.crm_instance_members;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_instance_members_manageable"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_teams_select_accessible" ON public.crm_teams;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_teams_select_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_teams_manageable" ON public.crm_teams;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_teams_manageable"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_team_members_accessible" ON public.crm_team_members;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_team_members_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_pipeline_versions_accessible" ON public.crm_pipeline_versions;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_pipeline_versions_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_stage_versions_accessible" ON public.crm_stage_versions;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_stage_versions_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DO $$
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_audit_events_accessible" ON public.crm_audit_events;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_audit_events_accessible"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_audit_events_insert_internal" ON public.crm_audit_events;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "crm_audit_events_insert_internal"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "CRM governance can read leads" ON public.leads;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "CRM governance can read leads"
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - DROP POLICY IF EXISTS "CRM governance can update leads" ON public.leads;
+- `20260605155502_crm_governance_by_contract.sql`: supabase rls policy - CREATE POLICY "CRM governance can update leads"
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_instances TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_instance_members TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_teams TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_team_members TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_pipeline_versions TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_stage_versions TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_custom_field_definitions TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_categories TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_tags TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_loss_reasons TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_configuration_drafts TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_configuration_publications TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_configuration_migration_runs TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT SELECT, INSERT ON public.crm_audit_events TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_instance(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.crm_member_role(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.current_crm_member_id(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_crm_instance(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_crm_members(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_team(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_lead_v2(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_update_crm_lead_v2(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_publish_crm_configuration(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.crm_instance_for_contract(UUID) TO authenticated;
+- `20260605155502_crm_governance_by_contract.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_stage_history ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_tags ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_tag_assignments ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_loss_reasons ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_duplicates ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_saved_views ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_imports ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_import_rows ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.lead_next_actions ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls enablement - ALTER TABLE public.crm_activity_calendar_entries ENABLE ROW LEVEL SECURITY;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase rls policy - DO $$
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_stage_history TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_tags TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_tag_assignments TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_loss_reasons TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_duplicates TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_saved_views TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_imports TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_import_rows TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_next_actions TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_activity_calendar_entries TO authenticated;
+- `20260605155606_crm_commercial_cockpit.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.lead_conversation_links ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.lead_ai_insights ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.lead_ai_field_suggestions ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.lead_response_suggestions ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.lead_sla_events ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.lead_handoff_locks ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.crm_quick_replies ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls enablement - ALTER TABLE public.crm_message_templates ENABLE ROW LEVEL SECURITY;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - DO $$
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_quick_replies_select_accessible" ON public.crm_quick_replies;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - CREATE POLICY "crm_quick_replies_select_accessible"
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_quick_replies_manageable" ON public.crm_quick_replies;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - CREATE POLICY "crm_quick_replies_manageable"
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_message_templates_select_accessible" ON public.crm_message_templates;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - CREATE POLICY "crm_message_templates_select_accessible"
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - DROP POLICY IF EXISTS "crm_message_templates_manageable" ON public.crm_message_templates;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase rls policy - CREATE POLICY "crm_message_templates_manageable"
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_conversation_links TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_ai_insights TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_ai_field_suggestions TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_response_suggestions TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_sla_events TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_handoff_locks TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_quick_replies TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_message_templates TO authenticated;
+- `20260605155729_crm_whatsapp_ai.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.lead_proposal_recommendations ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.proposal_view_events ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.proposal_follow_up_tasks ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.proposal_objections ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.proposal_closing_checklists ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.client_onboarding_checklists ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls enablement - ALTER TABLE public.client_onboarding_tasks ENABLE ROW LEVEL SECURITY;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DO $$
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DROP POLICY IF EXISTS "proposal_conversion_runs_select_accessible" ON public.proposal_conversion_runs;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - CREATE POLICY "proposal_conversion_runs_select_accessible"
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DROP POLICY IF EXISTS "proposal_conversion_runs_manageable" ON public.proposal_conversion_runs;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - CREATE POLICY "proposal_conversion_runs_manageable"
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DROP POLICY IF EXISTS "client_onboarding_checklists_select_accessible" ON public.client_onboarding_checklists;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - CREATE POLICY "client_onboarding_checklists_select_accessible"
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DROP POLICY IF EXISTS "client_onboarding_checklists_manageable" ON public.client_onboarding_checklists;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - CREATE POLICY "client_onboarding_checklists_manageable"
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DROP POLICY IF EXISTS "client_onboarding_tasks_select_accessible" ON public.client_onboarding_tasks;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - CREATE POLICY "client_onboarding_tasks_select_accessible"
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - DROP POLICY IF EXISTS "client_onboarding_tasks_manageable" ON public.client_onboarding_tasks;
+- `20260605155846_crm_proposals_closing.sql`: supabase rls policy - CREATE POLICY "client_onboarding_tasks_manageable"
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_proposal_recommendations TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_view_events TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_follow_up_tasks TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_objections TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_closing_checklists TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.proposal_conversion_runs TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.client_onboarding_checklists TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.client_onboarding_tasks TO authenticated;
+- `20260605155846_crm_proposals_closing.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_crm_attribution(UUID, UUID) TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_manage_crm_attribution(UUID, UUID) TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.lead_sources ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.lead_attribution_events ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.lead_source_rollups ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.campaign_crm_performance_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.crm_revenue_attribution ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.crm_mroi_alerts ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls enablement - ALTER TABLE public.crm_report_exports ENABLE ROW LEVEL SECURITY;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - DO $$
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - DROP POLICY IF EXISTS "lead_attribution_events_select_accessible" ON public.lead_attribution_events;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - CREATE POLICY "lead_attribution_events_select_accessible"
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - DROP POLICY IF EXISTS "lead_attribution_events_insert_accessible" ON public.lead_attribution_events;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - CREATE POLICY "lead_attribution_events_insert_accessible"
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - DROP POLICY IF EXISTS "lead_attribution_events_manageable" ON public.lead_attribution_events;
+- `20260605160028_crm_attribution_mroi.sql`: supabase rls policy - CREATE POLICY "lead_attribution_events_manageable"
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_sources TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_attribution_events TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.lead_source_rollups TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_crm_performance_snapshots TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_revenue_attribution TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_mroi_alerts TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_report_exports TO authenticated;
+- `20260605160028_crm_attribution_mroi.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260605160400_remove_second_cleanup_marker_from_history.sql`: supabase migration history mutation - -- Cleanup for an accidental no-op validation migration registered through MCP.
+- `20260605220328_marketing_studio_foundation.sql`: supabase auth context - CREATE OR REPLACE FUNCTION private.has_marketing_studio_permission(target_organization_id UUID, target_permission TEXT)
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.has_active_marketing_studio_contract(UUID) TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.has_marketing_studio_permission(UUID, TEXT) TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.can_access_marketing_studio_organization(UUID, TEXT) TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.marketing_studio_settings ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.marketing_agent_templates ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.marketing_agents ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.marketing_sources ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.marketing_ideas ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.content_items ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.content_versions ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.content_reviews ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.editorial_calendar_items ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.ai_credit_wallets ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls enablement - ALTER TABLE public.ai_usage_ledger ENABLE ROW LEVEL SECURITY;
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read settings" ON public.marketing_studio_settings
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage settings" ON public.marketing_studio_settings
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Authenticated users read marketing agent templates" ON public.marketing_agent_templates
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Internal users manage marketing agent templates" ON public.marketing_agent_templates
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read agents" ON public.marketing_agents
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage agents" ON public.marketing_agents
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read sources" ON public.marketing_sources
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage sources" ON public.marketing_sources
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read ideas" ON public.marketing_ideas
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage ideas" ON public.marketing_ideas
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read content" ON public.content_items
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage content" ON public.content_items
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read content versions" ON public.content_versions
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage content versions" ON public.content_versions
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read content reviews" ON public.content_reviews
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage content reviews" ON public.content_reviews
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read calendar" ON public.editorial_calendar_items
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage calendar" ON public.editorial_calendar_items
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read credit wallets" ON public.ai_credit_wallets
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage credit wallets" ON public.ai_credit_wallets
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing users read usage ledger" ON public.ai_usage_ledger
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing writers create usage ledger" ON public.ai_usage_ledger
+- `20260605220328_marketing_studio_foundation.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors update usage ledger" ON public.ai_usage_ledger
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.marketing_studio_settings FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.marketing_agent_templates FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.marketing_agents FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.marketing_sources FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.marketing_ideas FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.content_items FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.content_versions FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.content_reviews FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.editorial_calendar_items FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.ai_credit_wallets FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role revoke - REVOKE ALL ON public.ai_usage_ledger FROM anon;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_studio_settings TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_agent_templates TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_agents TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_sources TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_ideas TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.content_items TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.content_versions TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.content_reviews TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.editorial_calendar_items TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_credit_wallets TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_usage_ledger TO authenticated, service_role;
+- `20260605220328_marketing_studio_foundation.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls enablement - ALTER TABLE public.marketing_brand_profiles ENABLE ROW LEVEL SECURITY;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls enablement - ALTER TABLE public.marketing_products_services ENABLE ROW LEVEL SECURITY;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls enablement - ALTER TABLE public.marketing_knowledge_documents ENABLE ROW LEVEL SECURITY;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls enablement - ALTER TABLE public.marketing_knowledge_chunks ENABLE ROW LEVEL SECURITY;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing users read brand profiles" ON public.marketing_brand_profiles
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage brand profiles" ON public.marketing_brand_profiles
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing users read products services" ON public.marketing_products_services
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage products services" ON public.marketing_products_services
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing users read knowledge documents" ON public.marketing_knowledge_documents
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage knowledge documents" ON public.marketing_knowledge_documents
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing users read knowledge chunks" ON public.marketing_knowledge_chunks
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage knowledge chunks" ON public.marketing_knowledge_chunks
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role revoke - REVOKE ALL ON public.marketing_brand_profiles FROM anon;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role revoke - REVOKE ALL ON public.marketing_products_services FROM anon;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role revoke - REVOKE ALL ON public.marketing_knowledge_documents FROM anon;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role revoke - REVOKE ALL ON public.marketing_knowledge_chunks FROM anon;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_brand_profiles TO authenticated, service_role;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_products_services TO authenticated, service_role;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_knowledge_documents TO authenticated, service_role;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_knowledge_chunks TO authenticated, service_role;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION public.match_marketing_knowledge(UUID, TEXT, INTEGER) TO authenticated, service_role;
+- `20260606233110_marketing_studio_knowledge_rag.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_agent_global_prompts ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_workflows ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_workflow_nodes ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_workflow_edges ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_workflow_runs ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_agent_runs ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_tool_runs ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.agent_budget_policies ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.model_routing_rules ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls enablement - ALTER TABLE public.marketing_agent_tool_policies ENABLE ROW LEVEL SECURITY;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Internal users manage marketing global prompts" ON public.marketing_agent_global_prompts
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read workflows" ON public.marketing_workflows
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage workflows" ON public.marketing_workflows
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read workflow nodes" ON public.marketing_workflow_nodes
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage workflow nodes" ON public.marketing_workflow_nodes
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read workflow edges" ON public.marketing_workflow_edges
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage workflow edges" ON public.marketing_workflow_edges
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing users read workflow runs" ON public.marketing_workflow_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing writers create workflow runs" ON public.marketing_workflow_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors update workflow runs" ON public.marketing_workflow_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read agent runs" ON public.marketing_agent_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors manage agent runs" ON public.marketing_agent_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read tool runs" ON public.marketing_tool_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors manage tool runs" ON public.marketing_tool_runs
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read budget policies" ON public.agent_budget_policies
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage budget policies" ON public.agent_budget_policies
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read model routing" ON public.model_routing_rules
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage model routing" ON public.model_routing_rules
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read tool policies" ON public.marketing_agent_tool_policies
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage tool policies" ON public.marketing_agent_tool_policies
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_agent_global_prompts FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_workflows FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_workflow_nodes FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_workflow_edges FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_workflow_runs FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_agent_runs FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_tool_runs FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.agent_budget_policies FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.model_routing_rules FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role revoke - REVOKE ALL ON public.marketing_agent_tool_policies FROM anon;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_agent_global_prompts TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_workflows TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_workflow_nodes TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_workflow_edges TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_workflow_runs TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_agent_runs TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_tool_runs TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_budget_policies TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.model_routing_rules TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_agent_tool_policies TO authenticated, service_role;
+- `20260607000807_yux_agent_harness_langgraph.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls enablement - ALTER TABLE public.marketing_source_items ENABLE ROW LEVEL SECURITY;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls enablement - ALTER TABLE public.marketing_research_cache ENABLE ROW LEVEL SECURITY;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls enablement - ALTER TABLE public.marketing_radar_runs ENABLE ROW LEVEL SECURITY;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing users read source items" ON public.marketing_source_items
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage source items" ON public.marketing_source_items
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing configurators read research cache" ON public.marketing_research_cache
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors manage research cache" ON public.marketing_research_cache
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing users read radar runs" ON public.marketing_radar_runs
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing writers create radar runs" ON public.marketing_radar_runs
+- `20260607003007_marketing_studio_radar_research.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors update radar runs" ON public.marketing_radar_runs
+- `20260607003007_marketing_studio_radar_research.sql`: supabase role revoke - REVOKE ALL ON public.marketing_source_items FROM anon;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase role revoke - REVOKE ALL ON public.marketing_research_cache FROM anon;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase role revoke - REVOKE ALL ON public.marketing_radar_runs FROM anon;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_source_items TO authenticated, service_role;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_research_cache TO authenticated, service_role;
+- `20260607003007_marketing_studio_radar_research.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_radar_runs TO authenticated, service_role;
+- `20260607003007_marketing_studio_radar_research.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607003928_yux_hub_jina_provider_defaults.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls enablement - ALTER TABLE public.marketing_content_generation_runs ENABLE ROW LEVEL SECURITY;
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls enablement - ALTER TABLE public.marketing_content_quality_checks ENABLE ROW LEVEL SECURITY;
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing users read content generation runs" ON public.marketing_content_generation_runs
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing writers create content generation runs" ON public.marketing_content_generation_runs
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors update content generation runs" ON public.marketing_content_generation_runs
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors delete content generation runs" ON public.marketing_content_generation_runs
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing users read content quality checks" ON public.marketing_content_quality_checks
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing writers create content quality checks" ON public.marketing_content_quality_checks
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors update content quality checks" ON public.marketing_content_quality_checks
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors delete content quality checks" ON public.marketing_content_quality_checks
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase role revoke - REVOKE ALL ON public.marketing_content_generation_runs FROM anon;
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase role revoke - REVOKE ALL ON public.marketing_content_quality_checks FROM anon;
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_content_generation_runs TO authenticated, service_role;
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_content_quality_checks TO authenticated, service_role;
+- `20260607141134_marketing_studio_writing_review_grounding.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls enablement - ALTER TABLE public.publishing_connections ENABLE ROW LEVEL SECURITY;
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls enablement - ALTER TABLE public.publishing_runs ENABLE ROW LEVEL SECURITY;
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls policy - CREATE POLICY "Marketing users read publishing connections" ON public.publishing_connections
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage publishing connections" ON public.publishing_connections
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls policy - CREATE POLICY "Marketing users read publishing runs" ON public.publishing_runs
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls policy - CREATE POLICY "Marketing writers create publishing runs" ON public.publishing_runs
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors update publishing runs" ON public.publishing_runs
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase role revoke - REVOKE ALL ON public.publishing_connections FROM anon;
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase role revoke - REVOKE ALL ON public.publishing_runs FROM anon;
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.publishing_connections TO authenticated, service_role;
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.publishing_runs TO authenticated, service_role;
+- `20260607150115_marketing_studio_wordpress_publishing.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase rls enablement - ALTER TABLE public.marketing_campaign_creative_suggestions ENABLE ROW LEVEL SECURITY;
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase rls enablement - ALTER TABLE public.marketing_campaign_draft_runs ENABLE ROW LEVEL SECURITY;
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase rls policy - CREATE POLICY "Marketing users read campaign creative suggestions" ON public.marketing_campaign_creative_suggestions
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase rls policy - CREATE POLICY "Marketing writers manage campaign creative suggestions" ON public.marketing_campaign_creative_suggestions
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase rls policy - CREATE POLICY "Marketing users read campaign draft runs" ON public.marketing_campaign_draft_runs
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase rls policy - CREATE POLICY "Marketing supervisors manage campaign draft runs" ON public.marketing_campaign_draft_runs
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase role revoke - REVOKE ALL ON public.marketing_campaign_creative_suggestions FROM anon;
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase role revoke - REVOKE ALL ON public.marketing_campaign_draft_runs FROM anon;
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_campaign_creative_suggestions TO authenticated, service_role;
+- `20260607152544_marketing_studio_campaign_creatives.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_campaign_draft_runs TO authenticated, service_role;
+- `20260607152544_marketing_studio_campaign_creatives.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase rls enablement - ALTER TABLE public.provider_oauth_sessions ENABLE ROW LEVEL SECURITY;
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase rls enablement - ALTER TABLE public.provider_integration_secrets ENABLE ROW LEVEL SECURITY;
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase rls policy - CREATE POLICY "Marketing configurators manage provider oauth sessions" ON public.provider_oauth_sessions
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase role revoke - REVOKE ALL ON public.provider_oauth_sessions FROM anon;
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase role revoke - REVOKE ALL ON public.provider_integration_secrets FROM anon;
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase role revoke - REVOKE ALL ON public.provider_integration_secrets FROM authenticated;
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.provider_oauth_sessions TO authenticated, service_role;
+- `20260607175945_marketing_studio_native_integrations.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.provider_integration_secrets TO service_role;
+- `20260607175945_marketing_studio_native_integrations.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260608095633_portal_phase6_rls_visibility.sql`: supabase role grant - GRANT EXECUTE ON FUNCTION private.has_active_marketing_studio_contract(UUID) TO authenticated, service_role;
+- `20260608095633_portal_phase6_rls_visibility.sql`: supabase rls policy - DROP POLICY IF EXISTS "Omnichannel users read channel connections" ON public.channel_connections;
+- `20260608095633_portal_phase6_rls_visibility.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read channel connections"
+- `20260608095633_portal_phase6_rls_visibility.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls enablement - ALTER TABLE public.growth_campaign_plans ENABLE ROW LEVEL SECURITY;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls enablement - ALTER TABLE public.growth_campaign_plan_steps ENABLE ROW LEVEL SECURITY;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls enablement - ALTER TABLE public.growth_smart_segments ENABLE ROW LEVEL SECURITY;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls enablement - ALTER TABLE public.growth_onboarding_checklists ENABLE ROW LEVEL SECURITY;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls enablement - ALTER TABLE public.growth_onboarding_steps ENABLE ROW LEVEL SECURITY;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Growth users can manage campaign plans" ON public.growth_campaign_plans;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - CREATE POLICY "Growth users can manage campaign plans" ON public.growth_campaign_plans
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Growth users can manage campaign plan steps" ON public.growth_campaign_plan_steps;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - CREATE POLICY "Growth users can manage campaign plan steps" ON public.growth_campaign_plan_steps
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Growth users can manage smart segments" ON public.growth_smart_segments;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - CREATE POLICY "Growth users can manage smart segments" ON public.growth_smart_segments
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Growth users can manage onboarding checklists" ON public.growth_onboarding_checklists;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - CREATE POLICY "Growth users can manage onboarding checklists" ON public.growth_onboarding_checklists
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - DROP POLICY IF EXISTS "Growth users can manage onboarding steps" ON public.growth_onboarding_steps;
+- `20260608130000_growth_workspace_foundation.sql`: supabase rls policy - CREATE POLICY "Growth users can manage onboarding steps" ON public.growth_onboarding_steps
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_doctrines ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_skills ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_skill_sections ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_agent_profiles ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_agent_profile_skills ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_agent_bindings ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_profile_tool_policies ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_profile_action_policies ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_commercial_stage_definitions ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_contact_stage_events ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.ai_assistant_routing_rules ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_source_documents ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_source_pages ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_source_chunks ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_source_assets ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_concept_cards ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_card_embeddings ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_chunk_embeddings ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_asset_embeddings ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_retrieval_queries ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_metrics_cash_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_metrics_funnel_stage_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_metrics_channel_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_metrics_recovery_opportunities ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_objection_categories ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_objection_events ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_objection_playbook_items ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_offer_improvement_suggestions ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_agent_handoffs ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_agent_recommendations ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_outcome_events ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_learning_signals ENABLE ROW LEVEL SECURITY;
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy doctrines" ON public.yux_strategy_doctrines
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy doctrines are readable" ON public.yux_strategy_doctrines
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy skills" ON public.yux_strategy_skills
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy skills are readable" ON public.yux_strategy_skills
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy skill sections" ON public.yux_strategy_skill_sections
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy skill sections are readable" ON public.yux_strategy_skill_sections
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy profiles" ON public.yux_strategy_agent_profiles
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Authenticated users read active strategy profiles" ON public.yux_strategy_agent_profiles
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage profile skills" ON public.yux_strategy_agent_profile_skills
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Authenticated users read profile skills" ON public.yux_strategy_agent_profile_skills
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy bindings" ON public.yux_strategy_agent_bindings
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users read tool policies" ON public.yux_strategy_profile_tool_policies
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage tool policies" ON public.yux_strategy_profile_tool_policies
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users read action policies" ON public.yux_strategy_profile_action_policies
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage action policies" ON public.yux_strategy_profile_action_policies
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Authenticated users read commercial stages" ON public.yux_commercial_stage_definitions
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage commercial stages" ON public.yux_commercial_stage_definitions
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "CRM users read contact stage events" ON public.yux_contact_stage_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "CRM users create contact stage events" ON public.yux_contact_stage_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage contact stage events" ON public.yux_contact_stage_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Omnichannel users read assistant routing rules" ON public.ai_assistant_routing_rules
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Omnichannel configurators manage assistant routing rules" ON public.ai_assistant_routing_rules
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy source documents" ON public.yux_strategy_source_documents
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy source documents are readable" ON public.yux_strategy_source_documents
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy source pages" ON public.yux_strategy_source_pages
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy source pages are readable" ON public.yux_strategy_source_pages
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy source chunks" ON public.yux_strategy_source_chunks
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy source chunks are readable" ON public.yux_strategy_source_chunks
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy source assets" ON public.yux_strategy_source_assets
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy source assets are readable" ON public.yux_strategy_source_assets
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy concept cards" ON public.yux_strategy_concept_cards
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe strategy concept cards are readable" ON public.yux_strategy_concept_cards
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy card embeddings" ON public.yux_strategy_card_embeddings
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy chunk embeddings" ON public.yux_strategy_chunk_embeddings
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy asset embeddings" ON public.yux_strategy_asset_embeddings
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users read strategy retrieval queries" ON public.yux_strategy_retrieval_queries
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy retrieval queries" ON public.yux_strategy_retrieval_queries
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy metrics cash" ON public.yux_metrics_cash_snapshots
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy metrics cash" ON public.yux_metrics_cash_snapshots
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy funnel metrics" ON public.yux_metrics_funnel_stage_snapshots
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy funnel metrics" ON public.yux_metrics_funnel_stage_snapshots
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy channel metrics" ON public.yux_metrics_channel_snapshots
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy channel metrics" ON public.yux_metrics_channel_snapshots
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage recovery opportunities" ON public.yux_metrics_recovery_opportunities
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages recovery opportunities" ON public.yux_metrics_recovery_opportunities
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage objection categories" ON public.yux_objection_categories
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Authenticated users read active objection categories" ON public.yux_objection_categories
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage objection events" ON public.yux_objection_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages objection events" ON public.yux_objection_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage objection playbooks" ON public.yux_objection_playbook_items
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Client safe objection playbooks are readable" ON public.yux_objection_playbook_items
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage offer improvement suggestions" ON public.yux_offer_improvement_suggestions
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages offer improvement suggestions" ON public.yux_offer_improvement_suggestions
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy handoffs" ON public.yux_strategy_agent_handoffs
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy handoffs" ON public.yux_strategy_agent_handoffs
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy recommendations" ON public.yux_strategy_agent_recommendations
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy recommendations" ON public.yux_strategy_agent_recommendations
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users read strategy outcomes" ON public.yux_strategy_outcome_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy outcomes" ON public.yux_strategy_outcome_events
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Internal users read strategy learning signals" ON public.yux_strategy_learning_signals
+- `20260611190000_yux_strategy_engine.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy learning signals" ON public.yux_strategy_learning_signals
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_doctrines FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_skills FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_skill_sections FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_agent_profiles FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_agent_profile_skills FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_agent_bindings FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_profile_tool_policies FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_profile_action_policies FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_commercial_stage_definitions FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_contact_stage_events FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.ai_assistant_routing_rules FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_source_documents FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_source_pages FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_source_chunks FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_source_assets FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_concept_cards FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_card_embeddings FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_chunk_embeddings FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_asset_embeddings FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_retrieval_queries FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_metrics_cash_snapshots FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_metrics_funnel_stage_snapshots FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_metrics_channel_snapshots FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_metrics_recovery_opportunities FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_objection_categories FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_objection_events FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_objection_playbook_items FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_offer_improvement_suggestions FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_agent_handoffs FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_agent_recommendations FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_outcome_events FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_learning_signals FROM anon;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_doctrines TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_skills TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_skill_sections TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_agent_profiles TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_agent_profile_skills TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_agent_bindings TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_profile_tool_policies TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_profile_action_policies TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_commercial_stage_definitions TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT ON public.yux_contact_stage_events TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT UPDATE, DELETE ON public.yux_contact_stage_events TO service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_assistant_routing_rules TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_source_documents TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_source_pages TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_source_chunks TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_source_assets TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_concept_cards TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_card_embeddings TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_chunk_embeddings TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_asset_embeddings TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_retrieval_queries TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_metrics_cash_snapshots TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_metrics_funnel_stage_snapshots TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_metrics_channel_snapshots TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_metrics_recovery_opportunities TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_objection_categories TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_objection_events TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_objection_playbook_items TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_offer_improvement_suggestions TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_agent_handoffs TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_agent_recommendations TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_outcome_events TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_learning_signals TO authenticated, service_role;
+- `20260611190000_yux_strategy_engine.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_chat_sessions ENABLE ROW LEVEL SECURITY;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls enablement - ALTER TABLE public.yux_strategy_chat_messages ENABLE ROW LEVEL SECURITY;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users manage strategy chat sessions" ON public.yux_strategy_chat_sessions;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy chat sessions" ON public.yux_strategy_chat_sessions
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - DROP POLICY IF EXISTS "Internal users manage strategy chat messages" ON public.yux_strategy_chat_messages;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy chat messages" ON public.yux_strategy_chat_messages
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - DROP POLICY IF EXISTS "Service role manages strategy chat sessions" ON public.yux_strategy_chat_sessions;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy chat sessions" ON public.yux_strategy_chat_sessions
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - DROP POLICY IF EXISTS "Service role manages strategy chat messages" ON public.yux_strategy_chat_messages;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy chat messages" ON public.yux_strategy_chat_messages
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_chat_sessions FROM anon;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase role revoke - REVOKE ALL ON public.yux_strategy_chat_messages FROM anon;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_chat_sessions TO authenticated, service_role;
+- `20260612183708_yux_strategy_admin_chat.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.yux_strategy_chat_messages TO authenticated, service_role;
+- `20260612183708_yux_strategy_admin_chat.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260612184513_yux_strategy_growth_route_seed.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_events ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_queue_jobs ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_autonomy_policies ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.strategy_workflow_specs ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_execution_runs ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_execution_steps ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_context_snapshots ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_verification_results ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.strategy_subagent_runs ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_outcomes ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_learning_signals ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_improvement_recommendations ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls enablement - ALTER TABLE public.agent_shadow_experiments ENABLE ROW LEVEL SECURITY;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent events" ON public.agent_events
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent events" ON public.agent_events
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent queue jobs" ON public.agent_queue_jobs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent queue jobs" ON public.agent_queue_jobs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users manage agent autonomy policies" ON public.agent_autonomy_policies
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent autonomy policies" ON public.agent_autonomy_policies
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users manage strategy workflow specs" ON public.strategy_workflow_specs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy workflow specs" ON public.strategy_workflow_specs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent execution runs" ON public.agent_execution_runs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent execution runs" ON public.agent_execution_runs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent execution steps" ON public.agent_execution_steps
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent execution steps" ON public.agent_execution_steps
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent context snapshots" ON public.agent_context_snapshots
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent context snapshots" ON public.agent_context_snapshots
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent verification results" ON public.agent_verification_results
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent verification results" ON public.agent_verification_results
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read strategy subagent runs" ON public.strategy_subagent_runs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages strategy subagent runs" ON public.strategy_subagent_runs
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent outcomes" ON public.agent_outcomes
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent outcomes" ON public.agent_outcomes
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users read agent learning signals" ON public.agent_learning_signals
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent learning signals" ON public.agent_learning_signals
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users manage agent improvement recommendations" ON public.agent_improvement_recommendations
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent improvement recommendations" ON public.agent_improvement_recommendations
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Internal users manage agent shadow experiments" ON public.agent_shadow_experiments
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase rls policy - CREATE POLICY "Service role manages agent shadow experiments" ON public.agent_shadow_experiments
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_events FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_queue_jobs FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_autonomy_policies FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.strategy_workflow_specs FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_execution_runs FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_execution_steps FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_context_snapshots FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_verification_results FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.strategy_subagent_runs FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_outcomes FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_learning_signals FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_improvement_recommendations FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role revoke - REVOKE ALL ON public.agent_shadow_experiments FROM anon;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_events TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_queue_jobs TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_autonomy_policies TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.strategy_workflow_specs TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_execution_runs TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_execution_steps TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_context_snapshots TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_verification_results TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.strategy_subagent_runs TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_outcomes TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT ON public.agent_learning_signals TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_improvement_recommendations TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_shadow_experiments TO authenticated;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_events TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_queue_jobs TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_autonomy_policies TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.strategy_workflow_specs TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_execution_runs TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_execution_steps TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_context_snapshots TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_verification_results TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.strategy_subagent_runs TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_outcomes TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_learning_signals TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_improvement_recommendations TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: supabase role grant - GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_shadow_experiments TO service_role;
+- `20260613191046_yux_agent_harness_runtime.sql`: postgrest schema reload - NOTIFY pgrst, 'reload schema';

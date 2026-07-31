@@ -1,0 +1,679 @@
+import { act } from 'react-dom/test-utils'
+import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
+import { describe, expect, it, vi } from 'vitest'
+import { MarketingStudioWorkspace } from './MarketingStudioWorkspace'
+import type {
+  MarketingAgent,
+  MarketingAgentRun,
+  MarketingAgentToolPolicy,
+  MarketingCalendarItem,
+  MarketingBrandProfile,
+  MarketingCampaignCreativeSuggestion,
+  MarketingCampaignDraftRun,
+  MarketingContentItem,
+  MarketingContentGenerationRun,
+  MarketingContentQualityCheck,
+  MarketingContentReview,
+  MarketingContentVersion,
+  MarketingKnowledgeChunk,
+  MarketingKnowledgeDocument,
+  MarketingKnowledgeMatch,
+  MarketingIdea,
+  MarketingProductService,
+  MarketingPublishingConnection,
+  MarketingPublishingRun,
+  MarketingRadarRun,
+  MarketingSource,
+  MarketingSourceItem,
+  MarketingStudioSettings,
+  MarketingToolRun,
+  MarketingWorkflow,
+  MarketingWorkflowRun,
+  ModelRoutingRule,
+} from '@/types/marketingStudio'
+
+const settings: MarketingStudioSettings = {
+  id: 'settings-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  operationMode: 'managed_by_yux',
+  monthlyCreditLimit: 500,
+  currentCreditBalance: 120,
+  approvalPolicy: {
+    publishSocial: true,
+    publishWordPress: true,
+    paidCampaignDraft: true,
+    premiumImage: true,
+    regulatedContent: true,
+  },
+  allowedChannels: ['linkedin', 'instagram', 'blog'],
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}
+
+const contents: MarketingContentItem[] = [
+  {
+    id: 'content-1',
+    organizationId: 'org-1',
+    clientId: 'client-1',
+    contractId: 'contract-1',
+    title: 'Post sobre funil',
+    contentType: 'social_post',
+    channel: 'linkedin',
+    status: 'in_review',
+    body: 'Texto',
+    internalNotes: 'Custo interno R$ 12',
+    createdAt: '2026-06-05T12:00:00.000Z',
+    updatedAt: '2026-06-05T12:00:00.000Z',
+  },
+  {
+    id: 'content-2',
+    organizationId: 'org-1',
+    clientId: 'client-1',
+    contractId: 'contract-1',
+    title: 'Artigo mensal',
+    contentType: 'blog_article',
+    channel: 'blog',
+    status: 'scheduled',
+    createdAt: '2026-06-05T12:00:00.000Z',
+    updatedAt: '2026-06-05T12:00:00.000Z',
+  },
+]
+
+const reviews: MarketingContentReview[] = [
+  {
+    id: 'review-1',
+    contentItemId: 'content-1',
+    status: 'pending',
+    comments: 'Validar promessa comercial',
+    checklist: { cta: true },
+    createdAt: '2026-06-05T12:00:00.000Z',
+    updatedAt: '2026-06-05T12:00:00.000Z',
+  },
+]
+
+const calendarItems: MarketingCalendarItem[] = [
+  {
+    id: 'calendar-1',
+    organizationId: 'org-1',
+    clientId: 'client-1',
+    contractId: 'contract-1',
+    contentItemId: 'content-2',
+    title: 'Artigo mensal',
+    channel: 'blog',
+    status: 'scheduled',
+    startsAt: '2026-06-10T12:00:00.000Z',
+    metadata: {},
+    createdAt: '2026-06-05T12:00:00.000Z',
+    updatedAt: '2026-06-05T12:00:00.000Z',
+  },
+]
+
+const versionsByContent: Record<string, MarketingContentVersion[]> = {
+  'content-1': [
+    {
+      id: 'version-1',
+      contentItemId: 'content-1',
+      versionNumber: 1,
+      title: 'Post sobre funil',
+      body: 'Texto',
+      createdAt: '2026-06-05T12:00:00.000Z',
+    },
+  ],
+}
+
+const brandProfile: MarketingBrandProfile = {
+  id: 'brand-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  toneOfVoice: 'consultivo',
+  persona: 'especialista',
+  brandVoiceSummary: 'Marca consultiva e direta para PMEs.',
+  vocabularyDo: [],
+  vocabularyDont: [],
+  forbiddenTopics: [],
+  priorityTopics: [],
+  complianceNotes: 'Sem promessas garantidas',
+  status: 'active',
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}
+
+const productsServices: MarketingProductService[] = [{
+  id: 'product-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  name: 'CRM YUX',
+  description: 'CRM comercial',
+  valueProposition: 'Organizar pipeline',
+  proofPoints: [],
+  objections: [],
+  status: 'active',
+  metadata: {},
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}]
+
+const knowledgeDocuments: MarketingKnowledgeDocument[] = [{
+  id: 'doc-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  title: 'Guia da marca',
+  documentType: 'brand',
+  status: 'published',
+  metadata: {},
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}]
+
+const knowledgeChunks: MarketingKnowledgeChunk[] = [{
+  id: 'chunk-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  documentId: 'doc-1',
+  chunkIndex: 0,
+  title: 'Guia da marca',
+  body: 'A marca fala com clareza.',
+  tokenCount: 8,
+  metadata: {},
+  createdAt: '2026-06-05T12:00:00.000Z',
+  updatedAt: '2026-06-05T12:00:00.000Z',
+}]
+
+const knowledgeMatches: MarketingKnowledgeMatch[] = [{
+  chunkId: 'chunk-1',
+  documentId: 'doc-1',
+  title: 'Guia da marca',
+  body: 'A marca fala com clareza.',
+  rank: 1,
+}]
+
+const agents: MarketingAgent[] = [{
+  id: 'agent-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  name: 'Redator do cliente',
+  agentType: 'multichannel_writer',
+  description: 'Agente de escrita',
+  status: 'active',
+  defaultModel: 'openai/gpt-4o-mini',
+  allowedTools: ['rag_search'],
+  requiresHumanApproval: true,
+  basePrompt: 'Use exemplos aprovados do cliente.',
+  promptConfig: { channel: 'linkedin' },
+  contextPolicy: { includeProducts: true },
+  qualityGates: { minimumQualityScore: 80 },
+  modelParameters: { temperature: 0.6 },
+  promptVersion: 3,
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const workflows: MarketingWorkflow[] = [{
+  id: 'workflow-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  workflowKey: 'post_creation',
+  name: 'Criacao de post',
+  description: 'Fluxo provider-neutral',
+  status: 'active',
+  triggerType: 'manual',
+  config: {},
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const workflowRuns: MarketingWorkflowRun[] = [{
+  id: 'run-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  workflowId: 'workflow-1',
+  status: 'queued',
+  runType: 'manual',
+  inputPayload: { topic: 'CRM' },
+  contextSnapshot: {},
+  resultPayload: {},
+  creditDebit: 5,
+  rawCostEstimate: 0.1,
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const agentRuns: MarketingAgentRun[] = [{
+  id: 'agent-run-1',
+  workflowRunId: 'run-1',
+  agentId: 'agent-1',
+  agentType: 'multichannel_writer',
+  status: 'succeeded',
+  promptConfigSnapshot: { channel: 'linkedin' },
+  inputPayload: {},
+  outputPayload: { title: 'Post' },
+  qualityScore: 82,
+  inputTokens: 100,
+  outputTokens: 50,
+  rawCostEstimate: 0.02,
+  creditsCharged: 5,
+  createdAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const toolRuns: MarketingToolRun[] = [{
+  id: 'tool-run-1',
+  workflowRunId: 'run-1',
+  agentRunId: 'agent-run-1',
+  toolKey: 'rag_search',
+  status: 'succeeded',
+  inputPayload: {},
+  outputPayload: {},
+  rawCostEstimate: 0,
+  creditsCharged: 1,
+  createdAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const modelRoutes: ModelRoutingRule[] = [{
+  id: 'route-1',
+  agentType: 'multichannel_writer',
+  routingTier: 'default',
+  provider: 'openrouter',
+  modelName: 'openai/gpt-4o-mini',
+  maxInputTokens: 12000,
+  maxOutputTokens: 2200,
+  temperature: 0.7,
+  maxCostPerRun: 0,
+  status: 'active',
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const toolPolicies: MarketingAgentToolPolicy[] = [{
+  id: 'policy-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  agentType: 'multichannel_writer',
+  toolKey: 'rag_search',
+  enabled: true,
+  requiresHumanApproval: false,
+  maxCallsPerRun: 3,
+  config: {},
+  createdAt: '2026-06-06T12:00:00.000Z',
+  updatedAt: '2026-06-06T12:00:00.000Z',
+}]
+
+const sources: MarketingSource[] = [{
+  id: 'source-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  sourceType: 'blog',
+  name: 'Blog do cliente',
+  sourceUrl: 'https://example.com',
+  status: 'active',
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const sourceItems: MarketingSourceItem[] = [{
+  id: 'source-item-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  sourceId: 'source-1',
+  itemType: 'article',
+  title: 'Tendencia de CRM para PMEs',
+  sourceUrl: 'https://example.com/crm',
+  normalizedUrl: 'https://example.com/crm',
+  summary: 'Resumo da tendencia',
+  language: 'pt',
+  contentHash: 'hash',
+  dedupeKey: 'https://example.com/crm',
+  relevanceScore: 90,
+  noveltyScore: 70,
+  commercialScore: 80,
+  status: 'captured',
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const radarRuns: MarketingRadarRun[] = [{
+  id: 'radar-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  status: 'completed',
+  query: 'crm para pmes',
+  sourceCount: 1,
+  itemCount: 1,
+  ideaCount: 1,
+  rejectedCount: 0,
+  summary: 'Radar semanal',
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const ideas: MarketingIdea[] = [{
+  id: 'idea-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  title: 'Post sobre CRM para PMEs',
+  summary: 'Ideia gerada pelo Radar',
+  status: 'curated',
+  sourceType: 'radar',
+  sourceItemId: 'source-item-1',
+  radarRunId: 'radar-1',
+  priority: 'high',
+  opportunityScore: 82,
+  suggestedChannel: 'linkedin',
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const generationRuns: MarketingContentGenerationRun[] = [{
+  id: 'generation-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  contentItemId: 'content-1',
+  status: 'waiting_approval',
+  contentType: 'social_post',
+  channel: 'linkedin',
+  briefSnapshot: 'Criar post sobre CRM para PMEs',
+  contextSummary: 'Marca consultiva e CRM YUX',
+  outputTitle: 'Post sobre CRM para PMEs',
+  outputBody: 'Texto gerado pelo redator.',
+  outputCta: 'Fale com a YUX',
+  variationCount: 1,
+  qualityScore: 82,
+  requiresGrounding: true,
+  groundingStatus: 'required',
+  checklist: { hasCta: true },
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const qualityChecks: MarketingContentQualityCheck[] = [{
+  id: 'quality-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  contentItemId: 'content-1',
+  generationRunId: 'generation-1',
+  status: 'passed',
+  qualityScore: 82,
+  checklist: { hasCta: true, matchesBrandTone: true },
+  riskFlags: ['factual_claim'],
+  groundingRequired: true,
+  groundingSummary: 'Validar dado citado antes de aprovar.',
+  comments: 'Bom alinhamento com a marca.',
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const publishingConnections: MarketingPublishingConnection[] = [{
+  id: 'publishing-connection-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  provider: 'wordpress',
+  name: 'Blog institucional',
+  status: 'connected',
+  siteUrl: 'https://example.com',
+  username: 'editor',
+  authType: 'token_reference',
+  tokenReference: 'WP_CLIENT_EXAMPLE_APP_PASSWORD',
+  publicConfig: {},
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const publishingRuns: MarketingPublishingRun[] = [{
+  id: 'publishing-run-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  connectionId: 'publishing-connection-1',
+  contentItemId: 'content-1',
+  action: 'publish',
+  status: 'succeeded',
+  providerPostId: '123',
+  publishedUrl: 'https://example.com/post-sobre-funil',
+  idempotencyKey: 'publishing-connection-1:content-1:publish:latest',
+  requestPayload: {},
+  responsePayload: { id: 123 },
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const campaignCreativeSuggestions: MarketingCampaignCreativeSuggestion[] = [{
+  id: 'campaign-suggestion-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  status: 'approved',
+  provider: 'meta',
+  objective: 'lead_generation',
+  title: 'Campanha CRM',
+  campaignName: 'CRM para PMEs',
+  angle: 'Mostrar como CRM reduz retrabalho comercial',
+  targetAudience: 'Donos de PMEs',
+  funnelStage: 'consideration',
+  cta: 'Fale com a YUX',
+  dailyBudget: 80,
+  totalBudget: 1200,
+  utmSource: 'meta',
+  utmMedium: 'paid',
+  utmCampaign: 'crm_para_pmes',
+  copyVariations: [{ headline: 'CRM sem bagunca', body: 'Organize leads e follow-ups com a YUX.' }],
+  creativeConcepts: [{ name: 'Dashboard limpo', format: 'image' }],
+  targetingSuggestions: { interests: ['crm'] },
+  qualityScore: 84,
+  riskFlags: [],
+  approvalRequired: true,
+  metadata: {},
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+const campaignDraftRuns: MarketingCampaignDraftRun[] = [{
+  id: 'campaign-draft-run-1',
+  organizationId: 'org-1',
+  clientId: 'client-1',
+  contractId: 'contract-1',
+  suggestionId: 'campaign-suggestion-1',
+  campaignId: 'campaign-1',
+  status: 'succeeded',
+  idempotencyKey: 'campaign-suggestion-1:new_campaign:latest',
+  requestPayload: {},
+  responsePayload: { campaignId: 'campaign-1' },
+  createdAt: '2026-06-07T12:00:00.000Z',
+  updatedAt: '2026-06-07T12:00:00.000Z',
+}]
+
+describe('MarketingStudioWorkspace', () => {
+  it('renders internal metrics, tabs, content, and internal operational details', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const onRefresh = vi.fn()
+    const onSubmitForReview = vi.fn()
+    const onApproveReview = vi.fn()
+    const onSearchKnowledge = vi.fn()
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <MarketingStudioWorkspace
+            contents={contents}
+            settings={settings}
+            onRefresh={onRefresh}
+            reviews={reviews}
+            calendarItems={calendarItems}
+            versionsByContent={versionsByContent}
+            brandProfile={brandProfile}
+            productsServices={productsServices}
+            knowledgeDocuments={knowledgeDocuments}
+            knowledgeChunks={knowledgeChunks}
+            knowledgeMatches={knowledgeMatches}
+            agents={agents}
+            workflows={workflows}
+            workflowRuns={workflowRuns}
+            agentRuns={agentRuns}
+            toolRuns={toolRuns}
+            modelRoutes={modelRoutes}
+            toolPolicies={toolPolicies}
+            sources={sources}
+            sourceItems={sourceItems}
+            radarRuns={radarRuns}
+            ideas={ideas}
+            generationRuns={generationRuns}
+            qualityChecks={qualityChecks}
+            publishingConnections={publishingConnections}
+            publishingRuns={publishingRuns}
+            campaignCreativeSuggestions={campaignCreativeSuggestions}
+            campaignDraftRuns={campaignDraftRuns}
+            onSubmitForReview={onSubmitForReview}
+            onApproveReview={onApproveReview}
+            onSearchKnowledge={onSearchKnowledge}
+          />
+        </MemoryRouter>
+      )
+    })
+
+    const html = container.innerHTML
+    expect(html).toContain('Marketing Studio')
+    expect(html).toContain('Conteudos 2')
+    expect(html).toContain('Aprovacoes 1')
+    expect(html).toContain('Agendados 1')
+    expect(html).toContain('Creditos 120')
+    expect(html).toContain('Agentes 1')
+    expect(html).toContain('Visao geral')
+    expect(html).toContain('Conteudo')
+    expect(html).toContain('Calendario')
+    expect(html).toContain('Aprovacoes')
+    expect(html).toContain('Ideias')
+    expect(html).toContain('Estudio de Automacoes')
+    expect(html).toContain('Creditos')
+    expect(html).toContain('Post sobre funil')
+    expect(html).toContain('Conteudo organico')
+    expect(html).toContain('Fila de aprovacao')
+    expect(html).toContain('Calendario editorial')
+    expect(html).toContain('Base de conhecimento e tom de voz')
+    expect(html).toContain('Marca consultiva e direta')
+    expect(html).toContain('CRM YUX')
+    expect(html).toContain('1 documentos / 1 chunks')
+    expect(html).toContain('Versoes 1')
+    expect(html).toContain('Validar promessa comercial')
+    expect(html).toContain('managed_by_yux')
+    expect(html).toContain('Custo interno R$ 12')
+    expect(html).toContain('Estúdio de Automações')
+    expect(html).toContain('Editor de fluxo')
+    expect(html).toContain('Estrategista de Campanha')
+    expect(html).toContain('Redator Multicanal')
+    expect(html).toContain('Gerador de Criativos')
+    expect(html).toContain('Central de Conteúdo')
+    expect(html).toContain('Biblioteca de Criativos')
+    expect(html).toContain('Campaign Lab')
+    expect(html).toContain('Ideias e Radar')
+    expect(html).toContain('Blog do cliente')
+    expect(html).toContain('1 ativas / 1 cadastradas')
+    expect(html).toContain('Tendencia de CRM para PMEs')
+    expect(html).toContain('score 90/70/80')
+    expect(html).toContain('completed / 1 ideias')
+    expect(html).toContain('crm para pmes')
+    expect(html).toContain('Redacao, revisao e grounding')
+    expect(html).toContain('Geracoes 1')
+    expect(html).toContain('Esteira de escrita')
+    expect(html).toContain('0 ativas / 1 aguardando aprovacao')
+    expect(html).toContain('Checklist de qualidade')
+    expect(html).toContain('Score medio 82')
+    expect(html).toContain('factual_claim')
+    expect(html).toContain('Grounding controlado')
+    expect(html).toContain('1 geracoes exigem grounding')
+    expect(html).toContain('WordPress e publicacao controlada')
+    expect(html).toContain('Blog institucional')
+    expect(html).toContain('1 conectadas / 1 cadastradas')
+    expect(html).toContain('publish / succeeded')
+    expect(html).toContain('https://example.com/post-sobre-funil')
+    expect(html).toContain('Campanhas e criativos')
+    expect(html).toContain('CRM para PMEs')
+    expect(html).toContain('1 aprovadas / 0 convertidas')
+    expect(html).toContain('CRM sem bagunca')
+    expect(html).toContain('1 runs recentes / 0 falhas')
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[title="Atualizar Marketing Studio"]')!.click()
+    })
+    expect(onRefresh).toHaveBeenCalled()
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[title="Enviar para revisao"]')!.click()
+    })
+    expect(onSubmitForReview).toHaveBeenCalledWith('content-1')
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[title="Aprovar revisao"]')!.click()
+    })
+    expect(onApproveReview).toHaveBeenCalledWith('review-1')
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[title="Buscar conhecimento"]')!.click()
+    })
+    expect(onSearchKnowledge).toHaveBeenCalledWith('marca produto servico')
+
+    act(() => root.unmount())
+  })
+
+  it('renders native publishing provider states without exposing token references', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const tokenReference = 'meta_social:publishing:publishing_connections:connection-ig:access_token'
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <MarketingStudioWorkspace
+            contents={[]}
+            settings={settings}
+            onRefresh={vi.fn()}
+            publishingConnections={[{
+              id: 'connection-ig',
+              organizationId: 'org-1',
+              clientId: 'client-1',
+              contractId: 'contract-1',
+              provider: 'meta_instagram',
+              name: 'Instagram Cliente',
+              status: 'needs_reauth',
+              siteUrl: '',
+              authType: 'token_reference',
+              tokenReference,
+              providerAssetName: '@cliente',
+              publicConfig: {},
+              metadata: {},
+              createdAt: '2026-06-07T10:00:00.000Z',
+              updatedAt: '2026-06-07T10:00:00.000Z',
+            }]}
+          />
+        </MemoryRouter>
+      )
+    })
+
+    const html = container.innerHTML
+    expect(html).toContain('Instagram Cliente')
+    expect(html).toContain('@cliente')
+    expect(html).toContain('needs_reauth')
+    expect(html).toContain('credencial configurada')
+    expect(html).toContain('reautenticacao necessaria')
+    expect(html).not.toContain(tokenReference)
+
+    act(() => root.unmount())
+  })
+})
