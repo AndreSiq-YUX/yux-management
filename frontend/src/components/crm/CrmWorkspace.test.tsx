@@ -104,6 +104,7 @@ describe('CrmWorkspace', () => {
       },
       isLoading: false,
       error: null,
+      enabledModuleKeys: [],
     })
   })
 
@@ -166,7 +167,7 @@ describe('CrmWorkspace', () => {
     act(() => root.unmount())
   })
 
-  it('shows contracted CRM unavailable state when no active crm instance exists', async () => {
+  it('shows CRM implementation pending when the module is contracted without an active instance', async () => {
     usePlatformStore.setState({
       organization: {
         id: pipeline.organizationId,
@@ -178,6 +179,7 @@ describe('CrmWorkspace', () => {
       },
       isLoading: false,
       error: null,
+      enabledModuleKeys: ['crm'],
     })
     vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(null)
 
@@ -190,7 +192,40 @@ describe('CrmWorkspace', () => {
       await flush()
     })
 
-    expect(container.innerHTML).toContain('CRM nao contratado ou inativo')
+    expect(container.innerHTML).toContain('Implantacao do CRM pendente')
+    expect(container.innerHTML).toContain('O CRM esta contratado')
+    expect(crmService.getPipelines).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+  })
+
+  it('shows CRM not contracted when the module is not enabled', async () => {
+    usePlatformStore.setState({
+      organization: {
+        id: pipeline.organizationId,
+        name: 'Cliente ABC',
+        slug: 'cliente-abc',
+        kind: 'client',
+        createdAt: '2026-06-03T10:00:00.000Z',
+        updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      isLoading: false,
+      error: null,
+      enabledModuleKeys: [],
+    })
+    vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(null)
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
+      await flush()
+      await flush()
+    })
+
+    expect(container.innerHTML).toContain('CRM nao contratado')
+    expect(container.innerHTML).not.toContain('Implantacao do CRM pendente')
     expect(crmService.getPipelines).not.toHaveBeenCalled()
 
     act(() => root.unmount())

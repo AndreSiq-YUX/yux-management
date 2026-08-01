@@ -102,6 +102,8 @@ export type PortalContractContext = {
   enabledModuleKeys: string[]
 }
 
+type SqlExecutor = Pick<pg.PoolClient, 'query'>
+
 export type Blueprint = {
   id: string
   key: string
@@ -684,21 +686,112 @@ export async function setContractModule(
   moduleKey: string,
   enabled: boolean,
 ): Promise<ContractModule> {
-  const result = await pool.query<{ contract_id: string; module_key: string; enabled: boolean }>(
-    `INSERT INTO public.contract_modules (contract_id, module_key, enabled, updated_at)
-     VALUES ($1, $2, $3, NOW())
-     ON CONFLICT (contract_id, module_key) DO UPDATE SET
-       enabled = EXCLUDED.enabled,
-       updated_at = NOW()
-     RETURNING contract_id, module_key, enabled`,
-    [contractId, moduleKey, enabled],
-  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query<{ contract_id: string; module_key: string; enabled: boolean }>(
+      `INSERT INTO public.contract_modules (contract_id, module_key, enabled, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (contract_id, module_key) DO UPDATE SET
+         enabled = EXCLUDED.enabled,
+         updated_at = NOW()
+       RETURNING contract_id, module_key, enabled`,
+      [contractId, moduleKey, enabled],
+    )
 
-  return {
-    contractId: result.rows[0].contract_id,
-    moduleKey: result.rows[0].module_key,
-    enabled: result.rows[0].enabled,
+    if (moduleKey === 'crm') {
+      await syncCrmInstanceEntitlement(client, contractId, enabled)
+    }
+
+    await client.query('COMMIT')
+    return {
+      contractId: result.rows[0].contract_id,
+      moduleKey: result.rows[0].module_key,
+      enabled: result.rows[0].enabled,
+    }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
   }
+}
+
+export async function syncCrmInstanceEntitlement(
+  executor: SqlExecutor,
+  contractId: string,
+  enabled: boolean,
+) {
+  if (!enabled) {
+    return executor.query(
+      `UPDATE public.crm_instances
+       SET status = CASE WHEN status = 'archived' THEN status ELSE 'paused' END,
+           updated_at = NOW()
+       WHERE contract_id = $1`,
+      [contractId],
+    )
+  }
+
+  return executor.query(
+    `INSERT INTO public.crm_instances (organization_id, contract_id, status)
+     SELECT target_organization.id, target_contract.id, 'draft'
+     FROM public.contracts target_contract
+     JOIN LATERAL (
+       SELECT candidate.id
+       FROM public.organizations candidate
+       WHERE candidate.client_id = target_contract.client_id
+         AND candidate.kind = 'client'
+       ORDER BY candidate.created_at ASC
+       LIMIT 1
+     ) target_organization ON TRUE
+     WHERE target_contract.id = $1
+     ON CONFLICT (contract_id) DO UPDATE SET
+       organization_id = EXCLUDED.organization_id,
+       status = CASE
+         WHEN crm_instances.status = 'archived' THEN crm_instances.status
+         WHEN crm_instances.blueprint_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM public.crm_pipelines pipeline
+             WHERE pipeline.crm_instance_id = crm_instances.id
+               AND pipeline.is_active = TRUE
+           ) THEN 'active'
+         ELSE 'draft'
+       END,
+       updated_at = NOW()`,
+    [contractId],
+  )
+}
+
+export async function activateProvisionedCrmInstance(
+  executor: SqlExecutor,
+  crmInstanceId: string,
+  updatedBy: string,
+) {
+  return executor.query(
+    `UPDATE public.crm_instances target_instance
+     SET status = 'active',
+         updated_by = $2,
+         updated_at = NOW()
+     WHERE target_instance.id = $1
+       AND EXISTS (
+         SELECT 1
+         FROM public.contracts target_contract
+         JOIN public.contract_modules target_module
+           ON target_module.contract_id = target_contract.id
+          AND target_module.module_key = 'crm'
+          AND target_module.enabled = TRUE
+         WHERE target_contract.id = target_instance.contract_id
+           AND target_contract.status = 'active'
+       )
+       AND EXISTS (
+         SELECT 1
+         FROM public.crm_pipelines target_pipeline
+         WHERE target_pipeline.crm_instance_id = target_instance.id
+           AND target_pipeline.is_active = TRUE
+       )`,
+    [crmInstanceId, updatedBy],
+  )
 }
 
 export async function getContractsForClient(pool: pg.Pool, user: AuthUser, clientId: string): Promise<Contract[]> {
@@ -1231,6 +1324,10 @@ export async function applyBlueprintToContract(
     }
 
     await ensureOnboardingChecklist(client, input.organizationId, input.contractId, blueprint)
+
+    if (crmInstanceId) {
+      await activateProvisionedCrmInstance(client, crmInstanceId, user.id)
+    }
 
     const completedSummary = {
       ...summary,

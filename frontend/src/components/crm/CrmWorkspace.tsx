@@ -16,7 +16,6 @@ import { LeadAdvancedFilters } from '@/components/crm/LeadAdvancedFilters'
 import { LeadCsvImportPanel } from '@/components/crm/LeadCsvImportPanel'
 import { Lead360Panel } from '@/components/crm/Lead360Panel'
 import { LeadSourcesDashboard } from '@/components/crm/LeadSourcesDashboard'
-import { LeadDetailPanel } from '@/components/crm/LeadDetailPanel'
 import { LeadKanbanBoard } from '@/components/crm/LeadKanbanBoard'
 import { LeadTaskPanel } from '@/components/crm/LeadTaskPanel'
 import { LeadTimeline } from '@/components/crm/LeadTimeline'
@@ -37,6 +36,7 @@ const initialLeadForm = { name: '', email: '', phone: '', company: '', source: '
 
 export function CrmWorkspace() {
   const organization = usePlatformStore(state => state.organization)
+  const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
   const platformLoading = usePlatformStore(state => state.isLoading)
   const platformError = usePlatformStore(state => state.error)
   const [pipelines, setPipelines] = useState<CrmPipeline[]>([])
@@ -188,7 +188,9 @@ export function CrmWorkspace() {
   }
   if (loading) return <p className="text-sm text-gray-600">Carregando pipeline...</p>
   if (loadError) return <CrmNotice title="Erro ao carregar CRM" description={loadError} onRetry={loadPipelines} />
-  if (crmUnavailable) return <CrmNotice title="CRM nao contratado ou inativo" description="Este contrato nao possui uma instancia CRM ativa. Fale com a YUX para habilitar ou revisar a implantacao do modulo." />
+  if (crmUnavailable) return enabledModuleKeys.includes('crm')
+    ? <CrmNotice title="Implantacao do CRM pendente" description="O CRM esta contratado, mas a configuracao inicial ainda nao foi publicada. Fale com a YUX para concluir a implantacao do modulo." />
+    : <CrmNotice title="CRM nao contratado" description="O contrato atual nao possui o modulo CRM habilitado. Fale com a YUX para revisar os modulos contratados." />
   if (pipelines.length === 0) return <CrmNotice title="Nenhum pipeline configurado" description="A organizacao atual nao possui pipeline comercial ativo." />
 
   const workspaceTitle = governance?.currentMember?.role === 'seller'
