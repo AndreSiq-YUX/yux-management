@@ -1,3 +1,6 @@
+-- Reconcile client contact emails with their linked portal identities.
+-- Ambiguous or conflicting relationships are intentionally left unchanged.
+
 WITH single_client_users AS (
   SELECT user_id
   FROM public.clients
