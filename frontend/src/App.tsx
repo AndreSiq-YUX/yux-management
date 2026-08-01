@@ -38,6 +38,7 @@ import { PortalConnectedChannelsPage } from '@/pages/client-portal/PortalConnect
 import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
 import { PortalFinancePage } from '@/pages/client-portal/PortalFinancePage'
 import { PortalLandingPagesPage } from '@/pages/client-portal/PortalLandingPagesPage'
+import { PortalExternalLeadFormsPage } from '@/pages/client-portal/PortalExternalLeadFormsPage'
 import { PortalMarketingStudioPage } from '@/pages/client-portal/PortalMarketingStudioPage'
 import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
@@ -187,6 +188,7 @@ function App() {
               <Route path="atendimento/filas-handoff" element={<PortalHandoffQueuesPage />} />
 
               <Route path="marketing/landing-pages" element={<PortalLandingPagesPage />} />
+              <Route path="marketing/formularios" element={<PortalExternalLeadFormsPage />} />
               <Route path="marketing/campanhas" element={<PortalCampaignsPage />} />
               <Route path="marketing/studio" element={<PortalMarketingStudioPage />} />
               <Route path="marketing/conteudo" element={<PortalOrganicContentPage />} />
@@ -232,6 +234,7 @@ function App() {
             <Route path="portal/atendimento/filas-handoff" element={<PortalHandoffQueuesPage />} />
 
             <Route path="portal/marketing/landing-pages" element={<PortalLandingPagesPage />} />
+            <Route path="portal/marketing/formularios" element={<PortalExternalLeadFormsPage />} />
             <Route path="portal/marketing/campanhas" element={<PortalCampaignsPage />} />
             <Route path="portal/marketing/studio" element={<PortalMarketingStudioPage />} />
             <Route path="portal/marketing/conteudo" element={<PortalOrganicContentPage />} />

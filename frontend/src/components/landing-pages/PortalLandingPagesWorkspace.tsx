@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { calculateLandingPageMetrics } from '@/lib/landing-pages/landingPageRules'
-import type { PortalLandingPage } from '@/types/landingPage'
+import type { LandingPageForm, PortalLandingPage } from '@/types/landingPage'
 import type { ContractDetails } from '@/types/platform'
 
 interface PortalLandingPagesWorkspaceProps {
@@ -15,6 +15,7 @@ interface PortalLandingPagesWorkspaceProps {
   onCreateLeadForm?: (landingPageId: string) => Promise<unknown>
   onRotateLeadFormToken?: (formId: string) => Promise<unknown>
   onToggleLeadForm?: (formId: string, isActive: boolean) => Promise<unknown>
+  onUpdateLeadFormOrigins?: (formId: string, allowedOrigins: string[]) => Promise<unknown>
   onUpdateLeadFormFields?: (
     formId: string,
     fields: Array<{ fieldName: string; crmFieldKey: string; required: boolean }>,
@@ -36,6 +37,7 @@ export function PortalLandingPagesWorkspace({
   onCreateLeadForm = async () => undefined,
   onRotateLeadFormToken = async () => undefined,
   onToggleLeadForm = async () => undefined,
+  onUpdateLeadFormOrigins = async () => undefined,
   onUpdateLeadFormFields = async () => undefined,
 }: PortalLandingPagesWorkspaceProps) {
   return (
@@ -85,11 +87,12 @@ export function PortalLandingPagesWorkspace({
                     Aprovar
                   </Button>
                 </div>
-                <LeadFormCaptureCard
-                  page={page}
-                  onCreate={onCreateLeadForm}
+                <LeadFormManagementCard
+                  form={page.forms?.[0]}
+                  onCreate={() => onCreateLeadForm(page.id)}
                   onRotate={onRotateLeadFormToken}
                   onToggle={onToggleLeadForm}
+                  onUpdateOrigins={onUpdateLeadFormOrigins}
                   onUpdateFields={onUpdateLeadFormFields}
                 />
               </div>
@@ -101,25 +104,28 @@ export function PortalLandingPagesWorkspace({
   )
 }
 
-function LeadFormCaptureCard({
-  page,
+export function LeadFormManagementCard({
+  form,
   onCreate,
   onRotate,
   onToggle,
+  onUpdateOrigins = async () => undefined,
   onUpdateFields,
 }: {
-  page: PortalLandingPage
-  onCreate: (landingPageId: string) => Promise<unknown>
+  form?: LandingPageForm
+  onCreate: () => Promise<unknown>
   onRotate: (formId: string) => Promise<unknown>
   onToggle: (formId: string, isActive: boolean) => Promise<unknown>
+  onUpdateOrigins?: (formId: string, allowedOrigins: string[]) => Promise<unknown>
   onUpdateFields: (
     formId: string,
     fields: Array<{ fieldName: string; crmFieldKey: string; required: boolean }>,
   ) => Promise<unknown>
 }) {
-  const form = page.forms?.[0]
   const [isEditingFields, setIsEditingFields] = useState(false)
   const [draftFields, setDraftFields] = useState<LeadFormDraftField[]>([])
+  const [isEditingOrigins, setIsEditingOrigins] = useState(false)
+  const [originsDraft, setOriginsDraft] = useState('')
 
   const copyEndpoint = async (endpoint?: string) => {
     if (!endpoint) return
@@ -176,7 +182,7 @@ function LeadFormCaptureCard({
       </div>
 
       {!form ? (
-        <Button type="button" size="sm" onClick={() => onCreate(page.id)}>
+        <Button type="button" size="sm" onClick={onCreate}>
           Ativar captura de leads
         </Button>
       ) : (
@@ -286,6 +292,54 @@ function LeadFormCaptureCard({
               <p className="mt-1 text-[11px] text-slate-500">Use este endereço no seu formulário. O token é exibido apenas quando gerado ou renovado.</p>
             </div>
           )}
+
+          <div className="rounded border bg-white p-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-slate-600">Origens permitidas</p>
+                <p className="text-[11px] text-slate-500">
+                  {form.allowedOrigins.length > 0 ? form.allowedOrigins.join(', ') : 'Qualquer origem (não recomendado em produção)'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setOriginsDraft(form.allowedOrigins.join('\n'))
+                  setIsEditingOrigins(true)
+                }}
+              >
+                Configurar origens
+              </Button>
+            </div>
+            {isEditingOrigins && (
+              <div className="mt-2 space-y-2">
+                <textarea
+                  aria-label="Origens permitidas"
+                  className="min-h-20 w-full rounded border px-2 py-1.5 text-xs"
+                  value={originsDraft}
+                  placeholder={'https://www.seusite.com.br\nhttps://landing.seusite.com.br'}
+                  onChange={event => setOriginsDraft(event.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={async () => {
+                      const origins = originsDraft.split(/[\n,]/).map(value => value.trim()).filter(Boolean)
+                      await onUpdateOrigins(form.id, origins)
+                      setIsEditingOrigins(false)
+                      toast.success('Origens atualizadas')
+                    }}
+                  >
+                    Salvar origens
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditingOrigins(false)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {form.recentSubmissions.length > 0 && (
             <div className="rounded border bg-white p-2">

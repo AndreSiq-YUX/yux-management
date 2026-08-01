@@ -2,17 +2,18 @@
 
 ## O que foi criado
 
-Cada landing page pode ter um formulário público com token próprio. O endpoint recebe JSON ou `application/x-www-form-urlencoded`, cria ou identifica o lead dentro da organização e registra a origem como `landing_page`.
+Cada contrato pode ter formulários públicos independentes com token próprio. Formulários já vinculados a uma landing page continuam funcionando. O endpoint recebe JSON ou `application/x-www-form-urlencoded`, cria ou identifica o lead dentro da organização e registra a origem da captura.
 
 O token completo aparece somente ao ativar o formulário ou ao rotacionar o endpoint. No banco fica apenas o hash do token.
 
 ## Ativação no painel do cliente
 
-1. Abra o contrato e acesse **Landing pages**.
-2. No card da landing page, clique em **Ativar captura de leads**.
-3. O sistema cria o formulário com o mapeamento padrão de nome, e-mail, telefone e empresa.
-4. Copie o endpoint exibido e configure-o no formulário ou provedor externo.
-5. Se o endpoint for exposto ou substituído, use **Gerar novo endpoint**; o token anterior deixa de funcionar.
+1. Abra o contrato e acesse **Marketing → Formulários externos**.
+2. Clique em **Novo formulário**; não é necessário ter uma landing page cadastrada na YUX.
+3. Informe nome, origens permitidas e versões de consentimento e política.
+4. O sistema cria o formulário com o mapeamento padrão de identidade, contato, perfil e scores.
+5. Copie o endpoint exibido e configure-o no formulário ou provedor externo.
+6. Se o endpoint for exposto ou substituído, use **Gerar novo endpoint**; o token anterior deixa de funcionar.
 
 O formulário começa ativo. **Pausar captura** interrompe novas submissões sem excluir os leads já recebidos.
 
@@ -82,13 +83,13 @@ O header `Idempotency-Key` deve ser estável para a mesma submissão. Se não fo
 - `201`: lead novo criado; o job `lead.created` é enviado para automações.
 - `200`: submissão repetida ou lead já existente; não cria um novo lead.
 - `403`: a origem não está na lista permitida.
-- `409`: a landing page não tem pipeline e estágio válidos.
+- `409`: a organização não tem pipeline e estágio válidos para receber o lead.
 - `422`: falta nome, e-mail ou consentimento.
 - `503`: o lead foi salvo, mas a fila estava temporariamente indisponível; repita a chamada com a mesma `Idempotency-Key` para reenviar a automação sem duplicar o lead.
 
 ## Automação
 
-Crie ou edite um fluxo publicado com gatilho **Lead criado**. A entrada pelo formulário dispara esse mesmo evento e mantém no contexto `formId`, `landingPageId`, origem, UTM e campos personalizados.
+Crie ou edite um fluxo publicado com gatilho **Lead criado**. A entrada pelo formulário dispara esse mesmo evento e mantém no contexto `formId`, origem, UTM e campos personalizados. `landingPageId` também é informado quando o formulário estiver vinculado a uma landing page.
 
 As ações CRM executadas pelo worker incluem criação de tarefa, registro de atividade, mudança de estágio, atribuição de responsável e atualização de campos. Ações externas continuam usando `N8N_CRM_WEBHOOK_URL` e o segredo configurado para o webhook.
 
@@ -96,6 +97,7 @@ As ações CRM executadas pelo worker incluem criação de tarefa, registro de a
 
 - Aplicar a migration `0113_external_lead_forms.sql`.
 - Aplicar também a migration `0114_lead_identity_consent_and_scoring.sql`.
+- Aplicar a migration `0117_standalone_external_lead_forms.sql` para liberar formulários independentes por contrato.
 - Garantir que o worker e a fila estejam ativos.
 - Configurar `PUBLIC_APP_URL` para que o painel mostre uma URL pública completa.
 - Para submissões feitas por JavaScript em outro domínio, configurar `CORS_ORIGIN` com a origem do site externo. Submissões server-to-server ou HTML tradicional não dependem dessa configuração de navegador.

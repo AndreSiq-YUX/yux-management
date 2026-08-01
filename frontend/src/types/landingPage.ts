@@ -17,7 +17,10 @@ export interface LandingPageVersion {
 
 export interface LandingPageForm {
   id: string
-  landingPageId: string
+  landingPageId?: string
+  landingPageName?: string
+  organizationId?: string
+  contractId?: string
   name: string
   submitLabel: string
   successMessage: string

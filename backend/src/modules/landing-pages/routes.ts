@@ -7,6 +7,7 @@ import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 import {
   createLeadForm,
+  listLeadFormsForContract,
   replaceLeadFormMappings,
   rotateLeadFormToken,
   updateLeadForm,
@@ -30,8 +31,10 @@ const landingPageTableRules = createScopedTableRules(
 
 const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
 const formParamsSchema = z.object({ id: z.string().uuid() })
+const formListQuerySchema = z.object({ contractId: z.string().uuid() })
 const formCreateSchema = z.object({
-  landingPageId: z.string().uuid(),
+  landingPageId: z.string().uuid().optional(),
+  contractId: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(120),
   submitLabel: z.string().trim().min(1).max(80).optional(),
   successMessage: z.string().trim().min(1).max(240).optional(),
@@ -44,6 +47,8 @@ const formCreateSchema = z.object({
     crmFieldKey: z.string().trim().min(1).max(100),
     required: z.boolean().optional(),
   })).max(30).optional(),
+}).refine(input => Boolean(input.landingPageId) !== Boolean(input.contractId), {
+  message: 'Provide either landingPageId or contractId',
 })
 const formPatchSchema = z.object({
   isActive: z.boolean().optional(),
@@ -158,7 +163,8 @@ export async function registerLandingPageRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_lead_form_payload' })
 
     const form = await createLeadForm(app.pg, user, parsed.data as {
-      landingPageId: string
+      landingPageId?: string
+      contractId?: string
       name: string
       submitLabel?: string
       successMessage?: string
@@ -169,6 +175,16 @@ export async function registerLandingPageRoutes(app: FastifyInstance) {
       fields?: LeadFormFieldInput[]
     }, resolvePublicBaseUrl(request, app.config.PUBLIC_APP_URL))
     return reply.code(201).send(form)
+  })
+
+  app.get('/forms', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+
+    const parsed = formListQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_lead_form_query' })
+
+    return listLeadFormsForContract(app.pg, user, parsed.data.contractId)
   })
 
   app.post('/forms/:id/rotate-token', async (request, reply) => {

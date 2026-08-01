@@ -5,6 +5,7 @@ import type {
   CreateLandingPageInput,
   LandingPage,
   LandingPageApprovalStatus,
+  LandingPageForm,
   LandingPageStatus,
 } from '@/types/landingPage'
 
@@ -249,7 +250,8 @@ export const landingPageService = {
   },
 
   async createPublicLeadForm(input: {
-    landingPageId: string
+    landingPageId?: string
+    contractId?: string
     name?: string
     submitLabel?: string
     successMessage?: string
@@ -263,6 +265,7 @@ export const landingPageService = {
       method: 'POST',
       body: {
         landingPageId: input.landingPageId,
+        contractId: input.contractId,
         name: input.name || 'Formulário principal',
         submitLabel: input.submitLabel,
         successMessage: input.successMessage,
@@ -273,6 +276,10 @@ export const landingPageService = {
         fields: input.fields,
       },
     })
+  },
+
+  async getPublicLeadForms(contractId: string) {
+    return apiRequest<LandingPageForm[]>(`/landing-pages/forms?contractId=${encodeURIComponent(contractId)}`)
   },
 
   async rotatePublicLeadFormToken(formId: string) {

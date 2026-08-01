@@ -134,6 +134,7 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
       label: 'Marketing',
       items: [
         ...moduleItem(context, { label: 'Landing Pages', href: href('/marketing/landing-pages'), moduleKey: 'landing_pages' }),
+        ...moduleItem(context, { label: 'Formulários externos', href: href('/marketing/formularios'), moduleKey: 'landing_pages' }),
         ...moduleItem(context, { label: 'Campanhas', href: href('/marketing/campanhas'), moduleKey: 'campaigns' }),
         ...moduleItem(context, { label: 'Marketing Studio', href: href('/marketing/studio'), moduleKey: 'marketing_studio' }),
         ...moduleItem(context, { label: 'Central de Conteudo', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),

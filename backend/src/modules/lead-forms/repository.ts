@@ -27,7 +27,8 @@ export type LeadFormFieldInput = {
 }
 
 export type LeadFormCreateInput = {
-  landingPageId: string
+  landingPageId?: string
+  contractId?: string
   name: string
   submitLabel?: string
   successMessage?: string
@@ -54,8 +55,11 @@ type LandingPageRow = {
 
 type FormRow = {
   id: string
-  landing_page_id: string
+  landing_page_id: string | null
   organization_id: string
+  contract_id: string
+  pipeline_id: string | null
+  initial_stage_id: string | null
   name: string
   submit_label: string
   success_message: string
@@ -81,9 +85,37 @@ type FormMappingRow = {
 }
 
 type PublicFormRow = FormRow & LandingPageRow & {
-  landing_page_name: string
-  landing_page_slug: string
+  landing_page_name: string | null
+  landing_page_slug: string | null
   crm_source_id: string | null
+}
+
+type RecentSubmissionRow = {
+  id: string
+  form_id: string
+  lead_id: string | null
+  name: string | null
+  email: string | null
+  phone: string | null
+  status: string
+  source: string | null
+  page_url: string | null
+  language: string | null
+  referrer: string | null
+  utm_source: string | null
+  utm_medium: string | null
+  utm_campaign: string | null
+  utm_content: string | null
+  utm_term: string | null
+  consent_code: string | null
+  consent_version: string | null
+  privacy_policy_version: string | null
+  profile: string | null
+  country: string | null
+  fit_score: number | null
+  intent_score: number | null
+  crm_contact_id: string | null
+  created_at: string
 }
 
 type PublicFormSubmission = {
@@ -109,19 +141,26 @@ export function buildLeadFormEndpoint(baseUrl: string | undefined, token: string
 }
 
 export async function createLeadForm(pool: pg.Pool, user: AuthUser, input: LeadFormCreateInput, publicBaseUrl?: string) {
-  const page = await getLandingPageForAccess(pool, user, input.landingPageId)
+  const scope = input.landingPageId
+    ? await getLandingPageForAccess(pool, user, input.landingPageId)
+    : await getContractForAccess(pool, user, input.contractId || '')
   const token = generateLeadFormToken()
   const fields = normalizeFieldMappings(input.fields?.length ? input.fields : DEFAULT_FIELDS)
   requireIdentityMappings(fields)
   const result = await pool.query<FormRow>(
     `INSERT INTO public.landing_page_forms (
-       landing_page_id, name, submit_label, success_message, metadata,
+       landing_page_id, organization_id, contract_id, pipeline_id, initial_stage_id,
+       name, submit_label, success_message, metadata,
        public_token_hash, is_active, allowed_origins, public_token_rotated_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, NOW())
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11, NOW())
      RETURNING *`,
     [
-      page.id,
+      input.landingPageId ? scope.id : null,
+      scope.organization_id,
+      scope.contract_id,
+      scope.pipeline_id,
+      scope.initial_stage_id,
       input.name.trim(),
       input.submitLabel?.trim() || 'Enviar',
       input.successMessage?.trim() || 'Recebemos seus dados.',
@@ -147,6 +186,55 @@ export async function createLeadForm(pool: pg.Pool, user: AuthUser, input: LeadF
   }
 
   return mapLeadForm(form, await listFormMappings(pool, form.id), publicBaseUrl, token)
+}
+
+export async function listLeadFormsForContract(pool: pg.Pool, user: AuthUser, contractId: string) {
+  const scope = await getContractForAccess(pool, user, contractId)
+  const formsResult = await pool.query<FormRow & { landing_page_name: string | null }>(
+    `SELECT f.*, lp.name AS landing_page_name
+     FROM public.landing_page_forms f
+     LEFT JOIN public.landing_pages lp ON lp.id = f.landing_page_id
+     WHERE f.contract_id = $1 AND f.organization_id = $2
+     ORDER BY f.updated_at DESC`,
+    [scope.contract_id, scope.organization_id],
+  )
+  const formIds = formsResult.rows.map(form => form.id)
+  if (formIds.length === 0) return []
+
+  const [mappingsResult, submissionsResult] = await Promise.all([
+    pool.query<FormMappingRow>(
+      `SELECT id, form_id, field_name, crm_field_key, required, created_at, updated_at
+       FROM public.landing_page_field_mappings
+       WHERE form_id = ANY($1::uuid[])
+       ORDER BY created_at ASC`,
+      [formIds],
+    ),
+    pool.query<RecentSubmissionRow>(
+      `SELECT * FROM (
+         SELECT s.id, s.form_id, s.lead_id, l.name, l.email, l.phone, s.status,
+                s.source, s.page_url, s.language, s.referrer,
+                s.utm_source, s.utm_medium, s.utm_campaign, s.utm_content, s.utm_term,
+                s.consent_code, s.consent_version, s.privacy_policy_version,
+                s.profile, s.country, s.fit_score, s.intent_score, s.crm_contact_id,
+                s.created_at,
+                ROW_NUMBER() OVER (PARTITION BY s.form_id ORDER BY s.created_at DESC) AS position
+         FROM public.landing_page_form_submissions s
+         LEFT JOIN public.leads l ON l.id = s.lead_id
+         WHERE s.form_id = ANY($1::uuid[])
+       ) recent
+       WHERE recent.position <= 5
+       ORDER BY recent.created_at DESC`,
+      [formIds],
+    ),
+  ])
+
+  return formsResult.rows.map(form => ({
+    ...mapLeadForm(form, mappingsResult.rows.filter(mapping => mapping.form_id === form.id)),
+    landingPageName: form.landing_page_name || undefined,
+    recentSubmissions: submissionsResult.rows
+      .filter(submission => submission.form_id === form.id)
+      .map(mapRecentSubmission),
+  }))
 }
 
 export async function rotateLeadFormToken(pool: pg.Pool, user: AuthUser, formId: string, publicBaseUrl?: string) {
@@ -223,18 +311,19 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
   try {
     await client.query('BEGIN')
     const formResult = await client.query<PublicFormRow>(
-      `SELECT f.id, f.landing_page_id, lp.organization_id, f.name, f.submit_label,
+      `SELECT f.id, f.landing_page_id, f.organization_id, f.contract_id,
+              f.pipeline_id, f.initial_stage_id, f.name, f.submit_label,
               f.success_message, f.metadata, f.public_token_hash, f.is_active,
               f.allowed_origins, f.public_token_rotated_at, f.submission_count,
               f.last_submission_at, f.created_at, f.updated_at,
-              lp.contract_id, lp.pipeline_id, lp.initial_stage_id, lp.status,
+              COALESCE(lp.status, 'active') AS status,
               lp.name AS landing_page_name, lp.slug AS landing_page_slug,
               lp.crm_source_id
        FROM public.landing_page_forms f
-       JOIN public.landing_pages lp ON lp.id = f.landing_page_id
+       LEFT JOIN public.landing_pages lp ON lp.id = f.landing_page_id
        WHERE f.public_token_hash = $1
          AND f.is_active = TRUE
-         AND lp.status = 'active'
+         AND (lp.id IS NULL OR lp.status = 'active')
        LIMIT 1
        FOR UPDATE`,
       [hashLeadFormToken(token)],
@@ -325,7 +414,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
     if (!sourceId) {
       const sourceResult = await client.query<{ id: string }>(
         `SELECT id FROM public.lead_sources
-         WHERE organization_id = $1 AND landing_page_id = $2 AND key = $3
+         WHERE organization_id = $1 AND landing_page_id IS NOT DISTINCT FROM $2 AND key = $3
          ORDER BY created_at ASC LIMIT 1`,
         [form.organization_id, form.landing_page_id, `form_${form.id}`],
       )
@@ -451,11 +540,13 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
       ],
     )
 
-    await client.query(
-      `INSERT INTO public.landing_page_events (landing_page_id, event_type, lead_id, metadata)
-       VALUES ($1, 'form_submit', $2, $3)`,
-      [form.landing_page_id, leadId, { formId: form.id, duplicate: !created }],
-    )
+    if (form.landing_page_id) {
+      await client.query(
+        `INSERT INTO public.landing_page_events (landing_page_id, event_type, lead_id, metadata)
+         VALUES ($1, 'form_submit', $2, $3)`,
+        [form.landing_page_id, leadId, { formId: form.id, duplicate: !created }],
+      )
+    }
     await client.query(
       `INSERT INTO public.lead_attribution_events (
          organization_id, lead_id, source_id, event_kind, landing_page_id,
@@ -490,12 +581,14 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
        WHERE id = $1`,
       [form.id],
     )
-    await client.query(
-      `UPDATE public.landing_pages
-       SET leads = leads + CASE WHEN $2::boolean THEN 1 ELSE 0 END, updated_at = NOW()
-       WHERE id = $1`,
-      [form.landing_page_id, created],
-    )
+    if (form.landing_page_id) {
+      await client.query(
+        `UPDATE public.landing_pages
+         SET leads = leads + CASE WHEN $2::boolean THEN 1 ELSE 0 END, updated_at = NOW()
+         WHERE id = $1`,
+        [form.landing_page_id, created],
+      )
+    }
 
     await client.query('COMMIT')
     return {
@@ -715,15 +808,33 @@ async function getLandingPageForAccess(pool: pg.Pool, user: AuthUser, landingPag
   return page
 }
 
+async function getContractForAccess(pool: pg.Pool, user: AuthUser, contractId: string) {
+  const result = await pool.query<LandingPageRow>(
+    `SELECT c.id, o.id AS organization_id, c.id AS contract_id,
+            NULL::uuid AS pipeline_id, NULL::uuid AS initial_stage_id, c.status
+     FROM public.contracts c
+     JOIN public.organizations o ON o.client_id = c.client_id
+     WHERE c.id = $2
+       AND ($3::boolean = TRUE OR EXISTS (
+         SELECT 1 FROM public.memberships m
+         WHERE m.user_id = $1 AND m.organization_id = o.id
+       ))
+     LIMIT 1`,
+    [user.id, contractId, isInternal(user)],
+  )
+  const contract = result.rows[0]
+  if (!contract) throw httpError(404, 'contract_not_found')
+  return contract
+}
+
 async function getLeadFormForAccess(pool: pg.Pool, user: AuthUser, formId: string) {
   const result = await pool.query<FormRow & { organization_id: string }>(
-    `SELECT f.*, lp.organization_id
+    `SELECT f.*
      FROM public.landing_page_forms f
-     JOIN public.landing_pages lp ON lp.id = f.landing_page_id
      WHERE f.id = $2
        AND ($3::boolean = TRUE OR EXISTS (
          SELECT 1 FROM public.memberships m
-         WHERE m.user_id = $1 AND m.organization_id = lp.organization_id
+         WHERE m.user_id = $1 AND m.organization_id = f.organization_id
        ))
      LIMIT 1`,
     [user.id, formId, isInternal(user)],
@@ -745,7 +856,9 @@ async function listFormMappings(pool: pg.Pool, formId: string) {
 function mapLeadForm(form: FormRow, mappings: FormMappingRow[], publicBaseUrl?: string, token?: string) {
   return {
     id: form.id,
-    landingPageId: form.landing_page_id,
+    landingPageId: form.landing_page_id || undefined,
+    organizationId: form.organization_id,
+    contractId: form.contract_id,
     name: form.name,
     submitLabel: form.submit_label,
     successMessage: form.success_message,
@@ -769,6 +882,35 @@ function mapLeadForm(form: FormRow, mappings: FormMappingRow[], publicBaseUrl?: 
     })),
     createdAt: form.created_at,
     updatedAt: form.updated_at,
+  }
+}
+
+function mapRecentSubmission(submission: RecentSubmissionRow) {
+  return {
+    id: submission.id,
+    leadId: submission.lead_id || undefined,
+    name: submission.name || undefined,
+    email: submission.email || undefined,
+    phone: submission.phone || undefined,
+    status: submission.status,
+    source: submission.source || undefined,
+    pageUrl: submission.page_url || undefined,
+    language: submission.language || undefined,
+    referrer: submission.referrer || undefined,
+    utmSource: submission.utm_source || undefined,
+    utmMedium: submission.utm_medium || undefined,
+    utmCampaign: submission.utm_campaign || undefined,
+    utmContent: submission.utm_content || undefined,
+    utmTerm: submission.utm_term || undefined,
+    consentCode: submission.consent_code || undefined,
+    consentVersion: submission.consent_version || undefined,
+    privacyPolicyVersion: submission.privacy_policy_version || undefined,
+    profile: submission.profile || undefined,
+    country: submission.country || undefined,
+    fitScore: submission.fit_score == null ? undefined : Number(submission.fit_score),
+    intentScore: submission.intent_score == null ? undefined : Number(submission.intent_score),
+    crmContactId: submission.crm_contact_id || undefined,
+    createdAt: submission.created_at,
   }
 }
 

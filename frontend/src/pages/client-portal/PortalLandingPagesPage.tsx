@@ -96,6 +96,13 @@ export function PortalLandingPagesPage() {
         toast.success(isActive ? 'Captura ativada' : 'Captura pausada')
         return form
       }}
+      onUpdateLeadFormOrigins={async (formId, allowedOrigins) => {
+        const form = await landingPageService.updatePublicLeadForm(formId, { allowedOrigins })
+        const currentPage = pages.find(page => page.forms?.some(existing => existing.id === formId))
+        const currentForm = currentPage?.forms?.find(existing => existing.id === formId)
+        mergeForm({ ...currentForm, ...form, publicEndpoint: currentForm?.publicEndpoint, publicToken: currentForm?.publicToken })
+        return form
+      }}
       onUpdateLeadFormFields={async (formId, fields) => {
         const form = await landingPageService.replacePublicLeadFormFields(formId, fields)
         const currentPage = pages.find(page => page.forms?.some(existing => existing.id === formId))
