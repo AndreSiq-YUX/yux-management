@@ -26,6 +26,12 @@ const ids = {
   sequenceStep: '00000000-0000-4000-8000-000000000009',
   enrollment: '00000000-0000-4000-8000-000000000010',
   execution: '00000000-0000-4000-8000-000000000011',
+  crmInstance: '00000000-0000-4000-8000-000000000012',
+  crmMember: '00000000-0000-4000-8000-000000000013',
+  crmTeam: '00000000-0000-4000-8000-000000000014',
+  crmTeamMember: '00000000-0000-4000-8000-000000000015',
+  otherUser: '00000000-0000-4000-8000-000000000016',
+  otherOrg: '00000000-0000-4000-8000-000000000017',
 }
 
 const leadRow = {
@@ -324,6 +330,92 @@ class FakePool {
   }
 }
 
+class FakeGovernancePool {
+  async query(sql: string, params: unknown[] = []) {
+    if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) {
+      return { rows: [{ organization_id: params[0] === ids.user ? ids.org : ids.otherOrg }] }
+    }
+    if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+
+    if (sql.includes('FROM public.crm_instances ci')) {
+      const [crmInstanceId, userId, internal] = params
+      if (crmInstanceId !== ids.crmInstance || (!internal && userId !== ids.user)) return { rows: [] }
+      return {
+        rows: [{
+          id: ids.crmInstance,
+          organization_id: ids.org,
+          contract_id: '00000000-0000-4000-8000-000000000018',
+          status: 'active',
+          sector_key: 'technology',
+          blueprint_id: null,
+          blueprint_application_run_id: null,
+          seller_seat_limit: 5,
+          manager_seat_limit: 1,
+          admin_seat_limit: 1,
+          max_pipeline_count: 3,
+          max_custom_field_count: 20,
+          max_automation_count: 5,
+          allow_client_pipeline_customization: true,
+          allow_client_field_customization: true,
+          allow_client_category_customization: true,
+          default_assignment_mode: 'queue',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        }],
+      }
+    }
+
+    if (sql.includes('FROM public.crm_instance_members')) {
+      return {
+        rows: [{
+          id: ids.crmMember,
+          crm_instance_id: ids.crmInstance,
+          user_id: ids.user,
+          role: 'client_admin',
+          status: 'active',
+          display_name: 'Cliente YUXQuant',
+          email: 'support@yuxquant.com',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        }],
+      }
+    }
+
+    if (sql.includes('FROM public.crm_teams') && !sql.includes('crm_team_members')) {
+      return {
+        rows: [{
+          id: ids.crmTeam,
+          crm_instance_id: ids.crmInstance,
+          name: 'Comercial',
+          description: null,
+          assignment_mode: 'queue',
+          is_active: true,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        }],
+      }
+    }
+
+    if (sql.includes('FROM public.crm_team_members')) {
+      return {
+        rows: [{
+          id: ids.crmTeamMember,
+          team_id: ids.crmTeam,
+          member_id: ids.crmMember,
+          role: 'manager',
+          created_at: '2026-01-01T00:00:00.000Z',
+        }],
+      }
+    }
+
+    throw new Error(`Unexpected SQL: ${sql}`)
+  }
+
+  async end() {
+    return undefined
+  }
+}
+
 let app: FastifyInstance | undefined
 
 afterEach(async () => {
@@ -331,15 +423,15 @@ afterEach(async () => {
   app = undefined
 })
 
-function buildAuthenticatedAuthStore() {
-  const token = 'session-token'
+function buildAuthenticatedAuthStore(role: AuthUser['role'] = 'yux_admin', userId = ids.user) {
+  const token = `session-${role}-${userId}`
   const authStore = new FakeAuthStore()
   authStore.sessionHash = hashSessionToken(token)
   authStore.user = {
-    id: ids.user,
-    email: 'admin@yux.com.br',
-    name: 'Admin YUX',
-    role: 'yux_admin',
+    id: userId,
+    email: role.startsWith('client_') ? 'support@yuxquant.com' : 'admin@yux.com.br',
+    name: role.startsWith('client_') ? 'Cliente YUXQuant' : 'Admin YUX',
+    role,
   }
 
   return { authStore, token }
@@ -380,6 +472,40 @@ describe('crm routes', () => {
         value: 1200,
       }),
     ])
+  })
+
+  it('returns the CRM governance context to a member of the instance organization', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakeGovernancePool() as never })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/crm/governance-context?crmInstanceId=${ids.crmInstance}`,
+      headers: { cookie: sessionCookie(token) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      instance: expect.objectContaining({ id: ids.crmInstance, organizationId: ids.org, status: 'active' }),
+      currentMember: expect.objectContaining({ id: ids.crmMember, userId: ids.user, role: 'client_admin' }),
+      members: [expect.objectContaining({ id: ids.crmMember, crmInstanceId: ids.crmInstance })],
+      teams: [expect.objectContaining({ id: ids.crmTeam, crmInstanceId: ids.crmInstance, name: 'Comercial' })],
+      teamMemberships: [expect.objectContaining({ id: ids.crmTeamMember, teamId: ids.crmTeam })],
+    })
+  })
+
+  it('does not expose CRM governance data to a user from another organization', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore('client_admin', ids.otherUser)
+    app = await buildServer(testEnv, { authStore, pool: new FakeGovernancePool() as never })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/crm/governance-context?crmInstanceId=${ids.crmInstance}`,
+      headers: { cookie: sessionCookie(token) },
+    })
+
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toEqual({ error: 'crm_instance_not_found' })
   })
 
   it('creates lead interactions and tasks', async () => {

@@ -1,9 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiRequest } from '@/lib/apiClient'
 import {
   buildCrmInstanceInsertPayload,
   buildCrmMemberInvitePayload,
   buildCrmPublicationPayload,
+  crmGovernanceService,
 } from './crmGovernanceService'
+
+vi.mock('@/lib/apiClient', () => ({
+  apiRequest: vi.fn(),
+  rethrowAuthorizationError: vi.fn(),
+}))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('crmGovernanceService payload builders', () => {
   it('builds contracted instance payload with safe defaults', () => {
@@ -64,5 +75,18 @@ describe('crmGovernanceService payload builders', () => {
       migration_strategy: 'mapped_stages',
       impact_summary: { impactedOpenLeadCount: 12 },
     })
+  })
+
+  it('loads the CRM governance context through the tenant-scoped endpoint', async () => {
+    const context = {
+      instance: { id: 'crm-instance-1' },
+      members: [],
+      teams: [],
+      teamMemberships: [],
+    }
+    vi.mocked(apiRequest).mockResolvedValue(context)
+
+    await expect(crmGovernanceService.getGovernanceContext('crm-instance-1')).resolves.toBe(context)
+    expect(apiRequest).toHaveBeenCalledWith('/crm/governance-context?crmInstanceId=crm-instance-1')
   })
 })

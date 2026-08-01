@@ -159,6 +159,118 @@ type ExecutionRow = {
   completed_at: string | null
 }
 
+type CrmInstanceRow = {
+  id: string
+  organization_id: string
+  contract_id: string
+  status: string
+  sector_key: string | null
+  blueprint_id: string | null
+  blueprint_application_run_id: string | null
+  seller_seat_limit: number
+  manager_seat_limit: number
+  admin_seat_limit: number
+  max_pipeline_count: number
+  max_custom_field_count: number
+  max_automation_count: number
+  allow_client_pipeline_customization: boolean
+  allow_client_field_customization: boolean
+  allow_client_category_customization: boolean
+  default_assignment_mode: string
+  created_at: string
+  updated_at: string
+}
+
+type CrmInstanceMemberRow = {
+  id: string
+  crm_instance_id: string
+  user_id: string
+  role: string
+  status: string
+  display_name: string | null
+  email: string | null
+  created_at: string
+  updated_at: string
+}
+
+type CrmTeamRow = {
+  id: string
+  crm_instance_id: string
+  name: string
+  description: string | null
+  assignment_mode: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+type CrmTeamMemberRow = {
+  id: string
+  team_id: string
+  member_id: string
+  role: string
+  created_at: string
+}
+
+export async function getCrmGovernanceContext(pool: pg.Pool, user: AuthUser, crmInstanceId: string) {
+  const instanceResult = await pool.query<CrmInstanceRow>(
+    `SELECT ci.*
+     FROM public.crm_instances ci
+     WHERE ci.id = $1
+       AND (
+         $3::boolean = TRUE
+         OR EXISTS (
+           SELECT 1
+           FROM public.memberships m
+           WHERE m.user_id = $2
+             AND m.organization_id = ci.organization_id
+         )
+       )
+     LIMIT 1`,
+    [crmInstanceId, user.id, isInternal(user)],
+  )
+
+  const instance = instanceResult.rows[0]
+  if (!instance) throw Object.assign(new Error('crm_instance_not_found'), { statusCode: 404 })
+
+  const [membersResult, teamsResult, teamMembershipsResult] = await Promise.all([
+    pool.query<CrmInstanceMemberRow>(
+      `SELECT id, crm_instance_id, user_id, role, status, display_name, email, created_at, updated_at
+       FROM public.crm_instance_members
+       WHERE crm_instance_id = $1
+       ORDER BY created_at ASC`,
+      [crmInstanceId],
+    ),
+    pool.query<CrmTeamRow>(
+      `SELECT id, crm_instance_id, name, description, assignment_mode, is_active, created_at, updated_at
+       FROM public.crm_teams
+       WHERE crm_instance_id = $1
+         AND is_active = TRUE
+       ORDER BY name ASC`,
+      [crmInstanceId],
+    ),
+    pool.query<CrmTeamMemberRow>(
+      `SELECT ctm.id, ctm.team_id, ctm.member_id, ctm.role, ctm.created_at
+       FROM public.crm_team_members ctm
+       JOIN public.crm_teams ct ON ct.id = ctm.team_id
+       WHERE ct.crm_instance_id = $1
+         AND ct.is_active = TRUE
+       ORDER BY ctm.created_at ASC`,
+      [crmInstanceId],
+    ),
+  ])
+
+  const members = membersResult.rows.map(mapCrmInstanceMember)
+
+  return {
+    instance: mapCrmInstance(instance),
+    currentMember: members.find((member) => member.userId === user.id),
+    members,
+    teams: teamsResult.rows.map(mapCrmTeam),
+    teamMemberships: teamMembershipsResult.rows.map(mapCrmTeamMember),
+  }
+}
+
 export async function listLeads(
   pool: pg.Pool,
   user: AuthUser,
@@ -536,6 +648,67 @@ async function getStageForAccess(pool: pg.Pool, user: AuthUser, stageId: string)
 
 function isInternal(user: AuthUser) {
   return user.role === 'yux_admin' || user.role === 'yux_operator'
+}
+
+function mapCrmInstance(row: CrmInstanceRow) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    contractId: row.contract_id,
+    status: row.status,
+    sectorKey: row.sector_key ?? undefined,
+    blueprintId: row.blueprint_id ?? undefined,
+    blueprintApplicationRunId: row.blueprint_application_run_id ?? undefined,
+    sellerSeatLimit: row.seller_seat_limit,
+    managerSeatLimit: row.manager_seat_limit,
+    adminSeatLimit: row.admin_seat_limit,
+    maxPipelineCount: row.max_pipeline_count,
+    maxCustomFieldCount: row.max_custom_field_count,
+    maxAutomationCount: row.max_automation_count,
+    allowClientPipelineCustomization: row.allow_client_pipeline_customization,
+    allowClientFieldCustomization: row.allow_client_field_customization,
+    allowClientCategoryCustomization: row.allow_client_category_customization,
+    defaultAssignmentMode: row.default_assignment_mode,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapCrmInstanceMember(row: CrmInstanceMemberRow) {
+  return {
+    id: row.id,
+    crmInstanceId: row.crm_instance_id,
+    userId: row.user_id,
+    role: row.role,
+    status: row.status,
+    displayName: row.display_name ?? undefined,
+    email: row.email ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapCrmTeam(row: CrmTeamRow) {
+  return {
+    id: row.id,
+    crmInstanceId: row.crm_instance_id,
+    name: row.name,
+    description: row.description ?? undefined,
+    assignmentMode: row.assignment_mode,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapCrmTeamMember(row: CrmTeamMemberRow) {
+  return {
+    id: row.id,
+    teamId: row.team_id,
+    memberId: row.member_id,
+    role: row.role,
+    createdAt: row.created_at,
+  }
 }
 
 function toLegacyStage(stage: Pick<StageRow, 'key' | 'is_won' | 'is_lost'>) {

@@ -1,6 +1,6 @@
 import { crmOpsDataClient } from '@/lib/crmOpsDataClient'
+import { apiRequest } from '@/lib/apiClient'
 import { canAddCrmMember } from '@/lib/crm/governanceRules'
-import { backendMe } from '@/services/backendAuthService'
 import type {
   CrmAssignmentMode,
   CrmGovernanceContext,
@@ -8,8 +8,6 @@ import type {
   CrmInstanceMember,
   CrmInstanceRole,
   CrmMigrationStrategy,
-  CrmTeam,
-  CrmTeamMember,
 } from '@/types/crm'
 
 export interface CreateCrmInstanceInput {
@@ -115,25 +113,6 @@ const mapMember = (row: any): CrmInstanceMember => ({
   updatedAt: row.updated_at,
 })
 
-const mapTeam = (row: any): CrmTeam => ({
-  id: row.id,
-  crmInstanceId: row.crm_instance_id,
-  name: row.name,
-  description: row.description || undefined,
-  assignmentMode: row.assignment_mode,
-  isActive: row.is_active,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-})
-
-const mapTeamMember = (row: any): CrmTeamMember => ({
-  id: row.id,
-  teamId: row.team_id,
-  memberId: row.member_id,
-  role: row.role,
-  createdAt: row.created_at,
-})
-
 export const crmGovernanceService = {
   async getInstanceByContract(contractId: string) {
     const { data, error } = await crmOpsDataClient
@@ -172,35 +151,9 @@ export const crmGovernanceService = {
   },
 
   async getGovernanceContext(crmInstanceId: string): Promise<CrmGovernanceContext> {
-    const userResult = await backendMe()
-    const currentUserId = userResult.user.id
-
-    const [{ data: instance, error: instanceError }, { data: members, error: membersError }, { data: teams, error: teamsError }] = await Promise.all([
-      crmOpsDataClient.from('crm_instances').select('*').eq('id', crmInstanceId).single(),
-      crmOpsDataClient.from('crm_instance_members').select('*').eq('crm_instance_id', crmInstanceId),
-      crmOpsDataClient.from('crm_teams').select('*').eq('crm_instance_id', crmInstanceId).eq('is_active', true),
-    ])
-
-    if (instanceError) throw instanceError
-    if (membersError) throw membersError
-    if (teamsError) throw teamsError
-
-    const teamIds = (teams || []).map((team: any) => team.id)
-    const { data: teamMembers, error: teamMembersError } = teamIds.length
-      ? await crmOpsDataClient.from('crm_team_members').select('*').in('team_id', teamIds)
-      : { data: [], error: null }
-
-    if (teamMembersError) throw teamMembersError
-
-    const mappedMembers = (members || []).map(mapMember)
-
-    return {
-      instance: mapInstance(instance),
-      currentMember: mappedMembers.find(member => member.userId === currentUserId),
-      members: mappedMembers,
-      teams: (teams || []).map(mapTeam),
-      teamMemberships: (teamMembers || []).map(mapTeamMember),
-    }
+    return apiRequest<CrmGovernanceContext>(
+      `/crm/governance-context?crmInstanceId=${encodeURIComponent(crmInstanceId)}`,
+    )
   },
 
   async inviteMember(input: InviteCrmMemberInput) {

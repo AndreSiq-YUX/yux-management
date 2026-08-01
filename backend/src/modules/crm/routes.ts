@@ -10,6 +10,7 @@ import {
   createLeadInteraction,
   createLeadTask,
   enrollLeadInSequence,
+  getCrmGovernanceContext,
   listLeadInteractions,
   listCrmSequences,
   listLeadEnrollments,
@@ -158,6 +159,10 @@ const pipelineQuerySchema = z.object({
   organizationId: z.string().uuid(),
 })
 
+const governanceContextQuerySchema = z.object({
+  crmInstanceId: z.string().uuid(),
+})
+
 const leadStagePatchSchema = z.object({
   stageId: z.string().uuid(),
 })
@@ -223,6 +228,16 @@ export async function registerCrmRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_pipeline_query' })
 
     return listPipelines(app.pg, user, parsed.data.organizationId)
+  })
+
+  app.get('/governance-context', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+
+    const parsed = governanceContextQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_crm_governance_query' })
+
+    return getCrmGovernanceContext(app.pg, user, parsed.data.crmInstanceId)
   })
 
   app.get('/sequences', async (request, reply) => {
