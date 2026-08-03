@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Este plano consome `enqueueCrmDomainEvent` criado no plano de Funis.
+- Executar primeiro `2026-08-03-orquestracao-integrada-de-leads.md` e o plano de Funis; este plano consome os comandos CRM e `recordDomainEvent` da Fase 0.
 - Toda lista é filtrada por organização e instância CRM do usuário.
 - Paginação padrão: 50 itens; máximo: 100.
 - Datas são armazenadas em UTC e exibidas no fuso do navegador.
@@ -21,7 +21,7 @@
 
 ## File Structure
 
-- Create: `backend/src/db/migrations/0120_crm_task_center.sql` — auditoria e índices da central.
+- Create: `backend/src/db/migrations/0121_crm_task_center.sql` — auditoria e índices da central.
 - Create: `backend/src/modules/crm/task-repository.ts` — listagem agregada e mutations.
 - Modify: `backend/src/modules/crm/routes.ts` — endpoint global e PATCH de tarefa.
 - Modify: `backend/tests/crm-routes.test.ts` — filtros, autorização e eventos.
@@ -37,7 +37,7 @@
 ### Task 1: Índices e auditoria de tarefas
 
 **Files:**
-- Create: `backend/src/db/migrations/0120_crm_task_center.sql`
+- Create: `backend/src/db/migrations/0121_crm_task_center.sql`
 - Test: `backend/tests/schema-smoke.test.ts`
 
 **Interfaces:**
@@ -85,7 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_lead_tasks_assigned_status_due
 Run: `cd backend && npm test -- --run tests/schema-smoke.test.ts tests/migration-runner.test.ts`
 
 ```bash
-git add backend/src/db/migrations/0120_crm_task_center.sql backend/tests/schema-smoke.test.ts
+git add backend/src/db/migrations/0121_crm_task_center.sql backend/tests/schema-smoke.test.ts
 git commit -m "feat: add CRM task center indexes"
 ```
 

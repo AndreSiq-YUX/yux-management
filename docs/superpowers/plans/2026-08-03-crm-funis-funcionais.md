@@ -10,6 +10,7 @@
 
 ## Global Constraints
 
+- Executar primeiro `2026-08-03-orquestracao-integrada-de-leads.md`; este plano consome `recordDomainEvent` e os comandos de CRM definidos na Fase 0.
 - Manter isolamento por `organization_id` e `crm_instance_id` em todas as consultas.
 - Cliente só altera funis quando `allow_client_pipeline_customization = TRUE` e seu papel CRM é `client_admin` ou `manager`.
 - `seller` pode visualizar e mover leads, mas não alterar a estrutura do funil.
@@ -22,9 +23,9 @@
 
 ## File Structure
 
-- Create: `backend/src/db/migrations/0119_crm_pipeline_management.sql` — unicidade do funil padrão e índices de histórico.
+- Create: `backend/src/db/migrations/0120_crm_pipeline_management.sql` — unicidade do funil padrão e índices de histórico.
 - Create: `backend/src/modules/crm/pipeline-repository.ts` — consultas e mutations de funis/etapas.
-- Create: `backend/src/modules/crm/domain-events.ts` — contrato e enfileiramento de eventos CRM.
+- Modify: `backend/src/modules/crm/commands.ts` — comandos manuais reutilizam o outbox da Fase 0.
 - Modify: `backend/src/modules/crm/routes.ts` — rotas validadas de configuração e movimentação.
 - Modify: `backend/src/modules/crm/repository.ts` — mover lead transacionalmente e registrar histórico.
 - Modify: `backend/tests/crm-routes.test.ts` — autorização, CRUD, reordenação e histórico.
@@ -39,7 +40,7 @@
 ### Task 1: Garantias de banco para configuração de funis
 
 **Files:**
-- Create: `backend/src/db/migrations/0119_crm_pipeline_management.sql`
+- Create: `backend/src/db/migrations/0120_crm_pipeline_management.sql`
 - Test: `backend/tests/schema-smoke.test.ts`
 
 **Interfaces:**
@@ -48,7 +49,7 @@
 - [ ] **Step 1: Write the failing migration contract test**
 
 ```ts
-const pipelineManagement = readFileSync(path.join(migrationsDir, '0119_crm_pipeline_management.sql'), 'utf8')
+const pipelineManagement = readFileSync(path.join(migrationsDir, '0120_crm_pipeline_management.sql'), 'utf8')
 expect(pipelineManagement).toContain('idx_crm_pipelines_one_default_per_instance')
 expect(pipelineManagement).toContain('idx_lead_stage_history_lead_changed')
 ```
@@ -93,7 +94,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/db/migrations/0119_crm_pipeline_management.sql backend/tests/schema-smoke.test.ts
+git add backend/src/db/migrations/0120_crm_pipeline_management.sql backend/tests/schema-smoke.test.ts
 git commit -m "feat: add pipeline management constraints"
 ```
 
@@ -187,13 +188,13 @@ git commit -m "feat: add CRM pipeline management API"
 ### Task 3: Histórico e evento de mudança de etapa
 
 **Files:**
-- Create: `backend/src/modules/crm/domain-events.ts`
+- Modify: `backend/src/modules/crm/commands.ts`
 - Modify: `backend/src/modules/crm/repository.ts`
 - Modify: `backend/src/modules/crm/routes.ts`
 - Test: `backend/tests/crm-routes.test.ts`
 
 **Interfaces:**
-- Produces: `enqueueCrmDomainEvent(jobQueue, event)`.
+- Consumes: `recordDomainEvent(client, event)` da Fase 0.
 - Produces event `lead.stage_changed` com `eventId`, `organizationId`, `leadId`, `fromStageId`, `stageId`, `pipelineId`.
 
 - [ ] **Step 1: Write the failing transition test**
@@ -219,23 +220,22 @@ INSERT INTO public.lead_stage_history
 VALUES ($1, $2, $3, $4, $5, NOW());
 ```
 
-Retorne `{ record, event }`; só enfileire o evento após `COMMIT`.
+Retorne `{ record, event }` após persistir tanto a mudança quanto o evento na mesma transação.
 
-- [ ] **Step 4: Dispatch the automation event**
+- [ ] **Step 4: Persist the event in the outbox**
 
 ```ts
-await enqueueCrmDomainEvent(app.jobQueue, result.event)
-return result.record
+await recordDomainEvent(client, result.event)
 ```
 
-Se a fila falhar, registre erro e retorne `503 crm_event_dispatch_unavailable` com o `leadId`; a mudança já persistida deve ser idempotente na repetição.
+O evento é inserido antes do `COMMIT` da mudança de etapa. A rota retorna o lead atualizado sem acessar Redis; o dispatcher da Fase 0 entrega o evento posteriormente para todas as automações e para scoring.
 
 - [ ] **Step 5: Run backend checks and commit**
 
 Run: `cd backend && npm test -- --run tests/crm-routes.test.ts tests/automation-dispatch.test.ts && npm run type-check`
 
 ```bash
-git add backend/src/modules/crm/domain-events.ts backend/src/modules/crm/repository.ts backend/src/modules/crm/routes.ts backend/tests/crm-routes.test.ts
+git add backend/src/modules/crm/commands.ts backend/src/modules/crm/repository.ts backend/src/modules/crm/routes.ts backend/tests/crm-routes.test.ts
 git commit -m "feat: record and dispatch lead stage changes"
 ```
 

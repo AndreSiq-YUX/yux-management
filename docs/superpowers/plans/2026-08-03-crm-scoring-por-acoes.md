@@ -4,13 +4,13 @@
 
 **Goal:** Permitir que cada cliente configure pontos positivos ou negativos ligados a ações e atributos do lead, mantendo score de fit separado do score de intenção, score combinado e histórico auditável.
 
-**Architecture:** Cada instância CRM possui um modelo ativo com pesos e regras. Eventos de domínio (`lead.created`, `landing_page.form_submitted`, `lead.stage_changed`, eventos de tarefas e `lead.interaction_recorded`) entram em um job idempotente `crm.score-event`. O worker avalia regras, grava eventos append-only e recalcula `fit_score`, `intent_score` e `score` sob lock transacional.
+**Architecture:** Cada instância CRM possui um modelo ativo com pesos e regras. Eventos normalizados (`lead.created`, `form.submitted`, `lead.stage_changed`, eventos de tarefas/e-mail e `lead.interaction_recorded`) chegam pelo consumidor idempotente `events.consume.scoring` da Fase 0. O worker avalia regras, grava eventos append-only, recalcula `fit_score`, `intent_score` e `score` sob lock transacional e publica `lead.score_changed`/`lead.score_threshold_reached` no mesmo outbox para novas automações.
 
 **Tech Stack:** React 18, TypeScript, Tailwind/shadcn, Fastify, BullMQ/job queue existente, PostgreSQL, Vitest.
 
 ## Global Constraints
 
-- Este plano consome os eventos e helper dos planos de Funis e Tarefas.
+- Executar primeiro o plano de Orquestração Integrada, Funis e Tarefas; este plano consome o outbox e os eventos normalizados dessas fases.
 - `fit_score` e `intent_score` permanecem separados, ambos entre 0 e 100.
 - `score` é o valor combinado arredondado: `(fit * fit_weight + intent * intent_weight) / 100`.
 - Pesos devem ser inteiros entre 0 e 100 e somar exatamente 100.
@@ -24,15 +24,12 @@
 
 ## File Structure
 
-- Create: `backend/src/db/migrations/0121_lead_scoring_rules.sql` — modelos, regras, eventos e índices.
+- Create: `backend/src/db/migrations/0122_lead_scoring_rules.sql` — modelos, regras, eventos e índices.
 - Create: `backend/src/modules/crm/scoring-repository.ts` — CRUD e leitura do histórico.
 - Create: `backend/src/modules/crm/scoring-engine.ts` — avaliação determinística e transacional.
-- Create: `backend/src/jobs/handlers/crm-scoring.ts` — consumidor de eventos.
-- Modify: `backend/src/jobs/queue.ts` — nome `crm.score-event`.
-- Modify: `backend/src/worker.ts` — registro do handler.
+- Modify: `backend/src/jobs/handlers/crm-scoring.ts` — ativar o consumidor criado na Fase 0.
 - Modify: `backend/src/modules/crm/routes.ts` — configuração, simulação, ajuste manual e histórico.
-- Modify: `backend/src/modules/crm/repository.ts` — publicar `lead.interaction_recorded`.
-- Modify: `backend/src/modules/lead-forms/routes.ts` — publicar `landing_page.form_submitted`.
+- Modify: `backend/src/modules/events/dispatcher.ts` — catálogo de eventos que interessam ao scoring.
 - Modify: `backend/tests/crm-scoring.test.ts` — engine e idempotência.
 - Modify: `backend/tests/crm-routes.test.ts` — API e autorização.
 - Modify: `frontend/src/types/crm.ts` — fit, intenção, modelo, regra e evento.
@@ -48,7 +45,7 @@
 ### Task 1: Modelo de dados e backfill
 
 **Files:**
-- Create: `backend/src/db/migrations/0121_lead_scoring_rules.sql`
+- Create: `backend/src/db/migrations/0122_lead_scoring_rules.sql`
 - Test: `backend/tests/schema-smoke.test.ts`
 
 **Interfaces:**
@@ -134,7 +131,7 @@ Ative `ENABLE ROW LEVEL SECURITY` e `FORCE ROW LEVEL SECURITY` nas três tabelas
 Run: `cd backend && npm test -- --run tests/schema-smoke.test.ts tests/migration-runner.test.ts`
 
 ```bash
-git add backend/src/db/migrations/0121_lead_scoring_rules.sql backend/tests/schema-smoke.test.ts
+git add backend/src/db/migrations/0122_lead_scoring_rules.sql backend/tests/schema-smoke.test.ts
 git commit -m "feat: add lead scoring model"
 ```
 
@@ -190,52 +187,42 @@ git add backend/src/modules/crm/scoring-engine.ts backend/tests/crm-scoring.test
 git commit -m "feat: add idempotent lead scoring engine"
 ```
 
-### Task 3: Job de scoring e publicação dos eventos restantes
+### Task 3: Ativação do consumidor de scoring e eventos derivados
 
 **Files:**
-- Create: `backend/src/jobs/handlers/crm-scoring.ts`
-- Modify: `backend/src/jobs/queue.ts`
-- Modify: `backend/src/worker.ts`
-- Modify: `backend/src/modules/crm/domain-events.ts`
-- Modify: `backend/src/modules/crm/repository.ts`
+- Modify: `backend/src/jobs/handlers/crm-scoring.ts`
+- Modify: `backend/src/modules/events/dispatcher.ts`
 - Test: `backend/tests/crm-scoring.test.ts`
-- Test: `backend/tests/crm-routes.test.ts`
 
 **Interfaces:**
-- Consumes: eventos de Funis e Tarefas.
-- Produces: job `crm.score-event` e evento `lead.interaction_recorded`.
+- Consumes: deliveries `events.consume.scoring` e eventos de formulários, Funis, Tarefas, interações e e-mail.
+- Produces: `lead.score_changed` e `lead.score_threshold_reached` no outbox.
 
 - [ ] **Step 1: Write failing queue tests**
 
 ```ts
-expect(jobQueue.jobs.map(job => job.name)).toContain('crm.score-event')
-expect(jobQueue.jobs.at(-1)?.data.event.type).toBe('lead.interaction_recorded')
+expect(await handleCrmScoringDelivery(pool, { eventId: ids.emailOpened })).toMatchObject({ appliedRules: 1 })
+expect(outboxEvents.map(event => event.event_type)).toContain('lead.score_changed')
 ```
 
 - [ ] **Step 2: Run tests to verify failure**
 
-Run: `cd backend && npm test -- --run tests/crm-scoring.test.ts tests/crm-routes.test.ts`
+Run: `cd backend && npm test -- --run tests/crm-scoring.test.ts`
 
 - [ ] **Step 3: Register job and handler**
 
-```ts
-if (job.name === 'crm.score-event') {
-  return handleCrmScoring(pool, job.data)
-}
-```
+Substitua o consumidor passivo da Fase 0 por `handleCrmScoringDelivery`. Ele carrega o envelope pelo `eventId`, chama `applyLeadScoringEvent` e só então marca a delivery `completed`. Eventos sem regras retornam `{ appliedRules: 0 }` sem falha.
 
-O helper `enqueueCrmDomainEvent` deve enviar o mesmo evento para `automation.dispatch` e `crm.score-event`, cada consumidor com idempotência própria.
+- [ ] **Step 4: Publish derived score events**
 
-- [ ] **Step 4: Publish interaction events**
-
-Ao criar um lead manualmente, publique `lead.created`. Ao criar `call`, `email`, `meeting` ou `note`, publique `lead.interaction_recorded` com `interactionId`, `interactionType`, `leadId` e `eventId = interactionId`. Ao aceitar formulário externo, publique também `landing_page.form_submitted` com `eventId = ${formId}:${idempotencyKey}`; mantenha o `lead.created` já existente apenas para leads novos. Preserve as respostas HTTP atuais.
+Quando um score mudar, grave `lead.score_changed` na mesma transação com valores anteriores/novos e regras aplicadas. Quando cruzar uma faixa configurada pela primeira vez na direção atual, grave `lead.score_threshold_reached`. Herde correlation/causation/depth do evento consumido para que automações possam mover o lead sem perder a proteção contra loops.
 
 - [ ] **Step 5: Run tests and commit**
 
-Run: `cd backend && npm test -- --run tests/crm-scoring.test.ts tests/crm-routes.test.ts tests/automation-dispatch.test.ts && npm run type-check`
+Run: `cd backend && npm test -- --run tests/crm-scoring.test.ts tests/automation-orchestration.test.ts && npm run type-check`
 
 ```bash
-git add backend/src/jobs backend/src/worker.ts backend/src/modules/crm/domain-events.ts backend/src/modules/crm/repository.ts backend/src/modules/lead-forms/routes.ts backend/tests
+git add backend/src/jobs/handlers/crm-scoring.ts backend/src/modules/events/dispatcher.ts backend/tests/crm-scoring.test.ts
 git commit -m "feat: score leads from CRM domain events"
 ```
 
