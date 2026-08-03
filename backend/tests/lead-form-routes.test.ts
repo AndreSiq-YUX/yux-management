@@ -42,10 +42,14 @@ class FakeClient {
   leadInsertCount = 0
   lastSubmissionParams: unknown[] = []
   customFieldUpserts: unknown[][] = []
+  publicFormQuerySql = ''
+  failPublicFormQuery = false
 
   async query(sql: string, params: unknown[] = []) {
     this.queryCount += 1
     if (sql.includes('FROM public.landing_page_forms f') && sql.includes('public_token_hash')) {
+      this.publicFormQuerySql = sql
+      if (this.failPublicFormQuery) throw new Error('sensitive database detail')
       return {
         rows: [{
           id: ids.form,
@@ -227,6 +231,7 @@ describe('public lead form routes', () => {
     expect(pool.client.lastSubmissionParams[20]).toBe('2026-07')
     expect(pool.client.customFieldUpserts).toHaveLength(1)
     expect(pool.client.customFieldUpserts[0].slice(2, 4)).toEqual(['specialty', 'especialidade'])
+    expect(pool.client.publicFormQuerySql).toContain('FOR UPDATE OF f')
   })
 
   it('rejects submissions from an origin not configured for the form', async () => {
@@ -242,6 +247,22 @@ describe('public lead form routes', () => {
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ accepted: false, error: 'lead_form_origin_not_allowed' })
     expect(jobQueue.jobs).toHaveLength(0)
+  })
+
+  it('does not expose internal database errors in the public response', async () => {
+    const pool = new FakePool()
+    pool.client.failPublicFormQuery = true
+    app = await buildServer(env, { pool: pool as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/public/lead-forms/${token}/submissions`,
+      headers: { origin: 'https://cliente.test', 'content-type': 'application/json' },
+      payload: { name: 'Ana', email: 'ana@example.com', consent_lgpd: true },
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({ accepted: false, error: 'lead_form_submission_failed' })
   })
 
   it('re-dispatches a processed idempotent submission after a temporary queue failure', async () => {

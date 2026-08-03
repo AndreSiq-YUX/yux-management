@@ -68,7 +68,10 @@ export async function registerPublicLeadFormRoutes(app: FastifyInstance) {
       const statusCode = getStatusCode(error)
       const message = error instanceof Error ? error.message : 'lead_form_submission_failed'
       if (statusCode >= 500) request.log.error(error, 'lead form submission failed')
-      return reply.code(statusCode).send({ accepted: false, error: message })
+      return reply.code(statusCode).send({
+        accepted: false,
+        error: statusCode >= 500 ? 'lead_form_submission_failed' : message,
+      })
     }
   })
 }

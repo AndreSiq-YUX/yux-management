@@ -325,7 +325,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
          AND f.is_active = TRUE
          AND (lp.id IS NULL OR lp.status = 'active')
        LIMIT 1
-       FOR UPDATE`,
+       FOR UPDATE OF f`,
       [hashLeadFormToken(token)],
     )
     const form = formResult.rows[0]
