@@ -24,6 +24,7 @@ const ids = {
   source: '00000000-0000-4000-8000-000000000007',
   lead: '00000000-0000-4000-8000-000000000008',
   submission: '00000000-0000-4000-8000-000000000009',
+  crmInstance: '00000000-0000-4000-8000-000000000011',
 }
 
 const token = 'lead-form-public-token-000000000000000000000000000000'
@@ -43,6 +44,11 @@ class FakeClient {
   lastSubmissionParams: unknown[] = []
   customFieldUpserts: unknown[][] = []
   publicFormQuerySql = ''
+  leadInsertSql = ''
+  lastLeadInsertParams: unknown[] = []
+  stageResolutionSql = ''
+  formPipelineId: string | null = ids.pipeline
+  formLandingPageId: string | null = ids.page
   failPublicFormQuery = false
 
   async query(sql: string, params: unknown[] = []) {
@@ -53,7 +59,7 @@ class FakeClient {
       return {
         rows: [{
           id: ids.form,
-          landing_page_id: ids.page,
+          landing_page_id: this.formLandingPageId,
           organization_id: ids.org,
           name: 'Formulário principal',
           submit_label: 'Enviar',
@@ -68,7 +74,7 @@ class FakeClient {
           created_at: '2026-07-30T00:00:00.000Z',
           updated_at: '2026-07-30T00:00:00.000Z',
           contract_id: '00000000-0000-4000-8000-000000000010',
-          pipeline_id: ids.pipeline,
+          pipeline_id: this.formPipelineId,
           initial_stage_id: ids.stage,
           status: 'active',
           landing_page_name: 'Página de campanha',
@@ -94,9 +100,14 @@ class FakeClient {
     if (sql.includes('FROM public.leads')) return { rows: [] }
     if (sql.includes('FROM public.lead_sources')) return { rows: [] }
     if (sql.includes('INSERT INTO public.lead_sources')) return { rows: [{ id: ids.source }] }
-    if (sql.includes('FROM public.crm_pipelines p')) return { rows: [{ pipeline_id: ids.pipeline, stage_id: ids.stage }] }
+    if (sql.includes('FROM public.crm_pipelines p')) {
+      this.stageResolutionSql = sql
+      return { rows: [{ pipeline_id: ids.pipeline, stage_id: ids.stage, crm_instance_id: ids.crmInstance, assignment_mode: 'queue' }] }
+    }
     if (sql.includes('INSERT INTO public.leads')) {
       this.leadInsertCount += 1
+      this.leadInsertSql = sql
+      this.lastLeadInsertParams = params
       return { rows: [{ id: ids.lead }] }
     }
     if (sql.includes('INSERT INTO public.lead_custom_field_values')) {
@@ -232,6 +243,9 @@ describe('public lead form routes', () => {
     expect(pool.client.customFieldUpserts).toHaveLength(1)
     expect(pool.client.customFieldUpserts[0].slice(2, 4)).toEqual(['specialty', 'especialidade'])
     expect(pool.client.publicFormQuerySql).toContain('FOR UPDATE OF f')
+    expect(pool.client.leadInsertSql).toContain('organization_id, crm_instance_id, pipeline_id')
+    expect(pool.client.lastLeadInsertParams[1]).toBe(ids.crmInstance)
+    expect(pool.client.lastLeadInsertParams.at(-1)).toBe('queue')
   })
 
   it('rejects submissions from an origin not configured for the form', async () => {
@@ -247,6 +261,28 @@ describe('public lead form routes', () => {
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ accepted: false, error: 'lead_form_origin_not_allowed' })
     expect(jobQueue.jobs).toHaveLength(0)
+  })
+
+  it('links standalone form leads to the CRM instance selected with the fallback pipeline', async () => {
+    const pool = new FakePool()
+    pool.client.formPipelineId = null
+    pool.client.formLandingPageId = null
+    app = await buildServer(env, { pool: pool as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/public/lead-forms/${token}/submissions`,
+      headers: {
+        origin: 'https://cliente.test',
+        'idempotency-key': 'standalone-form-1',
+        'content-type': 'application/json',
+      },
+      payload: { full_name: 'Lead externo', email_address: 'lead@example.com', consent_lgpd: true },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(pool.client.stageResolutionSql).toContain('ci.contract_id = $2')
+    expect(pool.client.lastLeadInsertParams[1]).toBe(ids.crmInstance)
   })
 
   it('does not expose internal database errors in the public response', async () => {

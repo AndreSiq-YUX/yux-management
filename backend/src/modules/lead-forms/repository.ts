@@ -436,16 +436,19 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
       if (!stage) throw httpError(409, 'lead_form_pipeline_not_configured')
       const leadResult = await client.query<{ id: string }>(
         `INSERT INTO public.leads (
-           organization_id, pipeline_id, stage_id, name, email, phone, company,
+           organization_id, crm_instance_id, pipeline_id, stage_id, name, email, phone, company,
            source, source_kind, status, score, notes, last_activity_at,
            attribution_context, stage, primary_source_id, source_confidence,
-           consent_lgpd, profile, country, fit_score, intent_score, crm_contact_id
+           consent_lgpd, profile, country, fit_score, intent_score, crm_contact_id,
+           assignment_state, assignment_mode
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'landing_page', 'open', 0, $9,
-                 NOW(), $10, 'NEW', $11, 'high', TRUE, $12, $13, $14, $15, $16)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'landing_page', 'open', 0, $10,
+                 NOW(), $11, 'NEW', $12, 'high', TRUE, $13, $14, $15, $16, $17,
+                 'in_queue', $18)
          RETURNING id`,
         [
           form.organization_id,
+          stage.crm_instance_id,
           stage.pipeline_id,
           stage.stage_id,
           mapped.name,
@@ -461,6 +464,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
           snapshot.fitScore,
           snapshot.intentScore,
           snapshot.crmContactId,
+          stage.assignment_mode,
         ],
       )
       leadId = leadResult.rows[0]?.id
@@ -767,10 +771,18 @@ async function persistMappedCustomFieldValues(
 
 async function resolveInitialStage(client: pg.PoolClient, form: PublicFormRow) {
   if (form.pipeline_id) {
-    const selected = await client.query<{ pipeline_id: string; stage_id: string }>(
-      `SELECT p.id AS pipeline_id, s.id AS stage_id
+    const selected = await client.query<{
+      pipeline_id: string
+      stage_id: string
+      crm_instance_id: string | null
+      assignment_mode: string
+    }>(
+      `SELECT p.id AS pipeline_id, s.id AS stage_id,
+              p.crm_instance_id,
+              COALESCE(ci.default_assignment_mode, 'queue'::public.crm_assignment_mode) AS assignment_mode
        FROM public.crm_pipelines p
        JOIN public.crm_pipeline_stages s ON s.pipeline_id = p.id
+       LEFT JOIN public.crm_instances ci ON ci.id = p.crm_instance_id
        WHERE p.id = $1 AND p.organization_id = $2 AND p.is_active = TRUE
          AND s.is_active = TRUE AND ($3::uuid IS NULL OR s.id = $3)
        ORDER BY (s.id = $3) DESC, s.order_index ASC
@@ -779,14 +791,24 @@ async function resolveInitialStage(client: pg.PoolClient, form: PublicFormRow) {
     )
     if (selected.rows[0]) return selected.rows[0]
   }
-  const fallback = await client.query<{ pipeline_id: string; stage_id: string }>(
-    `SELECT p.id AS pipeline_id, s.id AS stage_id
+  const fallback = await client.query<{
+    pipeline_id: string
+    stage_id: string
+    crm_instance_id: string | null
+    assignment_mode: string
+  }>(
+    `SELECT p.id AS pipeline_id, s.id AS stage_id,
+            p.crm_instance_id,
+            COALESCE(ci.default_assignment_mode, 'queue'::public.crm_assignment_mode) AS assignment_mode
      FROM public.crm_pipelines p
      JOIN public.crm_pipeline_stages s ON s.pipeline_id = p.id
+     LEFT JOIN public.crm_instances ci ON ci.id = p.crm_instance_id
      WHERE p.organization_id = $1 AND p.is_active = TRUE AND s.is_active = TRUE
-     ORDER BY p.is_default DESC, p.created_at ASC, s.order_index ASC
+     ORDER BY (ci.contract_id = $2) DESC NULLS LAST,
+              (ci.status = 'active') DESC NULLS LAST,
+              p.is_default DESC, p.created_at ASC, s.order_index ASC
      LIMIT 1`,
-    [form.organization_id],
+    [form.organization_id, form.contract_id],
   )
   return fallback.rows[0] || null
 }
