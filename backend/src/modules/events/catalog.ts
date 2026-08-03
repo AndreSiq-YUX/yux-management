@@ -1,0 +1,37 @@
+export const DOMAIN_EVENT_TYPES = [
+  'lead.created',
+  'form.submitted',
+  'lead.pipeline_changed',
+  'lead.stage_changed',
+  'lead.owner_changed',
+  'lead.task_created',
+  'lead.task_completed',
+  'lead.task_cancelled',
+  'lead.interaction_recorded',
+  'lead.sequence_enrolled',
+  'lead.sequence_completed',
+  'email.queued',
+  'email.sent',
+  'email.failed',
+  'email.delivered',
+  'email.opened',
+  'email.clicked',
+  'email.bounced',
+  'email.complained',
+  'email.unsubscribed',
+  'lead.score_changed',
+  'lead.score_threshold_reached',
+] as const
+
+export type DomainEventType = (typeof DOMAIN_EVENT_TYPES)[number]
+
+const domainEventTypeSet = new Set<string>(DOMAIN_EVENT_TYPES)
+
+export function isDomainEventType(value: string): value is DomainEventType {
+  return domainEventTypeSet.has(value)
+}
+export function assertDomainEventType(value: string): asserts value is DomainEventType {
+  if (!isDomainEventType(value)) {
+    throw new Error(`domain_event_type_not_supported:${value}`)
+  }
+}

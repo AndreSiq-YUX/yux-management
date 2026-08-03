@@ -17,10 +17,28 @@ const env = {
   SMTP2GO_WEBHOOK_SECRET: 'smtp-webhook-secret',
 }
 
+const emailIds = {
+  organization: '00000000-0000-4000-8000-000000000001',
+  request: '00000000-0000-4000-8000-000000000002',
+  lead: '00000000-0000-4000-8000-000000000003',
+}
+
 class FakePool {
+  emailEventSeen = false
+
   async query(sql: string) {
     if (sql.includes('WHERE phone_number_id')) return { rows: [] }
     if (sql.includes('email_suppression_entries')) return { rows: [] }
+    if (sql.includes('FROM public.email_send_requests')) return {
+      rows: [{ id: emailIds.request, organization_id: emailIds.organization, lead_id: emailIds.lead, provider_message_id: 'provider-1', metadata: { correlationId: emailIds.request } }],
+    }
+    if (sql.includes('INSERT INTO public.email_send_events')) {
+      if (this.emailEventSeen) return { rows: [] }
+      this.emailEventSeen = true
+      return { rows: [{ id: '00000000-0000-4000-8000-000000000004' }] }
+    }
+    if (sql.includes('INSERT INTO public.domain_events')) return { rows: [{ id: '00000000-0000-4000-8000-000000000005' }] }
+    if (sql.includes('UPDATE public.email_send_requests')) return { rows: [] }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
   async end() { return undefined }
@@ -70,5 +88,29 @@ describe('Meta webhook routes', () => {
     })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ accepted: true, suppressed: true })
+  })
+
+  it('normalizes engagement events once and emits an automation event for the lead', async () => {
+    const pool = new FakePool()
+    app = await buildServer(env, { pool: pool as never, jobQueue })
+    const request = {
+      method: 'POST' as const,
+      url: '/api/webhooks/smtp2go',
+      headers: { 'content-type': 'application/json', 'x-yux-webhook-secret': env.SMTP2GO_WEBHOOK_SECRET },
+      payload: {
+        organizationId: emailIds.organization,
+        event: 'open',
+        event_id: 'event-open-1',
+        message_id: 'provider-1',
+        email: 'lead@example.com',
+      },
+    }
+
+    const first = await app.inject(request)
+    const second = await app.inject(request)
+
+    expect(first.statusCode).toBe(200)
+    expect(first.json()).toEqual({ accepted: true, duplicate: false, event: 'opened' })
+    expect(second.json()).toEqual({ accepted: true, duplicate: true, event: 'opened' })
   })
 })

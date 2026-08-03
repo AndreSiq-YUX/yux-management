@@ -43,6 +43,7 @@ class FakeClient {
   leadInsertCount = 0
   lastSubmissionParams: unknown[] = []
   customFieldUpserts: unknown[][] = []
+  domainEvents: Array<Record<string, unknown>> = []
   publicFormQuerySql = ''
   leadInsertSql = ''
   lastLeadInsertParams: unknown[] = []
@@ -97,6 +98,18 @@ class FakeClient {
       }
     }
     if (sql.includes('pg_advisory_xact_lock')) return { rows: [] }
+    if (sql.includes('INSERT INTO public.domain_events')) {
+      const row = {
+        id: String(params[0]), organization_id: String(params[1]), crm_instance_id: params[2] ?? null,
+        event_type: String(params[3]), schema_version: 1, aggregate_type: String(params[5]), aggregate_id: String(params[6]),
+        lead_id: params[7] ?? null, correlation_id: String(params[8]), causation_id: params[9] ?? null,
+        depth: Number(params[10] ?? 0), actor: params[11] ?? { type: 'system' }, occurred_at: params[12] ?? new Date().toISOString(),
+        automation_trace: params[13] ?? [], payload: params[14] ?? {}, dispatch_status: 'pending', attempt_count: 0,
+        available_at: new Date().toISOString(), dispatched_at: null, last_error: null, created_at: new Date().toISOString(),
+      }
+      this.domainEvents.push(row)
+      return { rows: [row] }
+    }
     if (sql.includes('FROM public.leads')) return { rows: [] }
     if (sql.includes('FROM public.lead_sources')) return { rows: [] }
     if (sql.includes('INSERT INTO public.lead_sources')) return { rows: [{ id: ids.source }] }
@@ -125,7 +138,7 @@ class FakeClient {
         lead_phone: null,
         lead_company: null,
       })
-      return { rows: [] }
+      return { rows: [{ id: ids.submission }] }
     }
     if (sql.includes('INSERT INTO public.landing_page_events')) return { rows: [] }
     if (sql.includes('INSERT INTO public.lead_attribution_events')) return { rows: [] }
@@ -183,7 +196,7 @@ afterEach(async () => {
 })
 
 describe('public lead form routes', () => {
-  it('creates a lead, records the form submission and dispatches lead.created', async () => {
+  it('creates a lead and records lead.created/form.submitted in the outbox', async () => {
     const pool = new FakePool()
     app = await buildServer(env, { pool: pool as never, jobQueue })
 
@@ -224,16 +237,11 @@ describe('public lead form routes', () => {
       leadId: ids.lead,
       formId: ids.form,
     })
-    expect(jobQueue.jobs).toHaveLength(1)
-    expect(jobQueue.jobs[0].name).toBe('automation.dispatch')
-    expect(jobQueue.jobs[0].data.event.type).toBe('lead.created')
-    expect(jobQueue.jobs[0].data.event.payload).toMatchObject({
-      profile: 'decisor',
-      country: 'BR',
-      fitScore: 82,
-      intentScore: 67,
-      crmContactId: 'crm-ana-123',
-      consentVersion: '2.1',
+    expect(jobQueue.jobs).toHaveLength(0)
+    expect(pool.client.domainEvents.map((event) => event.event_type)).toEqual(['lead.created', 'form.submitted'])
+    expect(pool.client.domainEvents[1]?.payload).toMatchObject({
+      profile: 'decisor', country: 'BR', fitScore: 82, intentScore: 67,
+      crmContactId: 'crm-ana-123', consent: { version: '2.1' },
     })
     expect(pool.client.lastSubmissionParams[10]).toBe('pt-BR')
     expect(pool.client.lastSubmissionParams[11]).toBe('https://cliente.test/campanha')
@@ -301,7 +309,7 @@ describe('public lead form routes', () => {
     expect(response.json()).toEqual({ accepted: false, error: 'lead_form_submission_failed' })
   })
 
-  it('re-dispatches a processed idempotent submission after a temporary queue failure', async () => {
+  it('keeps the public response independent from queue availability', async () => {
     const pool = new FakePool()
     jobQueue.failNext = true
     app = await buildServer(env, { pool: pool as never, jobQueue })
@@ -317,14 +325,14 @@ describe('public lead form routes', () => {
     }
 
     const firstResponse = await app.inject(request)
-    expect(firstResponse.statusCode).toBe(503)
+    expect(firstResponse.statusCode).toBe(201)
     expect(pool.client.leadInsertCount).toBe(1)
 
     const retryResponse = await app.inject(request)
     expect(retryResponse.statusCode).toBe(200)
     expect(retryResponse.json().duplicate).toBe(true)
     expect(pool.client.leadInsertCount).toBe(1)
-    expect(jobQueue.jobs).toHaveLength(1)
-    expect(jobQueue.jobs[0].data.event.eventId).toBe(`${ids.form}:external-retry-1`)
+    expect(jobQueue.jobs).toHaveLength(0)
+    expect(pool.client.domainEvents.map((event) => event.event_type)).toEqual(['lead.created', 'form.submitted'])
   })
 })

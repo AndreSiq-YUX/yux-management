@@ -10,11 +10,20 @@ type CreateExternalFormInput = {
   consentCode: string
   consentVersion: string
   privacyPolicyVersion: string
+  pipelineId?: string
+  initialStageId?: string
+}
+
+type FormPipelineOption = {
+  id: string
+  name: string
+  stages?: Array<{ id: string; name: string; isActive?: boolean }>
 }
 
 interface ExternalLeadFormsWorkspaceProps {
   contractName: string
   forms: LandingPageForm[]
+  pipelines?: FormPipelineOption[]
   onCreate: (input: CreateExternalFormInput) => Promise<unknown>
   onRotate: (formId: string) => Promise<unknown>
   onToggle: (formId: string, isActive: boolean) => Promise<unknown>
@@ -28,6 +37,7 @@ interface ExternalLeadFormsWorkspaceProps {
 export function ExternalLeadFormsWorkspace({
   contractName,
   forms,
+  pipelines = [],
   onCreate,
   onRotate,
   onToggle,
@@ -41,21 +51,30 @@ export function ExternalLeadFormsWorkspace({
   const [consentCode, setConsentCode] = useState('lead_capture')
   const [consentVersion, setConsentVersion] = useState('1.0')
   const [privacyPolicyVersion, setPrivacyPolicyVersion] = useState('1.0')
+  const [pipelineId, setPipelineId] = useState('')
+  const [initialStageId, setInitialStageId] = useState('')
+  const selectedPipeline = pipelines.find(pipeline => pipeline.id === pipelineId)
+  const availableStages = (selectedPipeline?.stages || []).filter(stage => stage.isActive !== false)
 
   const create = async () => {
     if (!name.trim()) return
     setSubmitting(true)
     try {
-      await onCreate({
+      const input: CreateExternalFormInput = {
         name: name.trim(),
         allowedOrigins: origins.split(/[\n,]/).map(value => value.trim()).filter(Boolean),
         consentCode: consentCode.trim() || 'lead_capture',
         consentVersion: consentVersion.trim() || '1.0',
         privacyPolicyVersion: privacyPolicyVersion.trim() || '1.0',
-      })
+      }
+      if (pipelineId) input.pipelineId = pipelineId
+      if (initialStageId) input.initialStageId = initialStageId
+      await onCreate(input)
       setShowCreate(false)
       setName('Formulário do site')
       setOrigins('')
+      setPipelineId('')
+      setInitialStageId('')
     } finally {
       setSubmitting(false)
     }
@@ -109,7 +128,35 @@ export function ExternalLeadFormsWorkspace({
               Versão da política de privacidade
               <input className="w-full rounded border px-3 py-2 text-sm font-normal" value={privacyPolicyVersion} onChange={event => setPrivacyPolicyVersion(event.target.value)} />
             </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              Funil inicial
+              <select
+                aria-label="Funil inicial"
+                className="w-full rounded border px-3 py-2 text-sm font-normal"
+                value={pipelineId}
+                onChange={event => { setPipelineId(event.target.value); setInitialStageId('') }}
+              >
+                <option value="">Usar configuração padrão</option>
+                {pipelines.map(pipeline => <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-700">
+              Etapa inicial
+              <select
+                aria-label="Etapa inicial"
+                className="w-full rounded border px-3 py-2 text-sm font-normal"
+                value={initialStageId}
+                disabled={!pipelineId}
+                onChange={event => setInitialStageId(event.target.value)}
+              >
+                <option value="">Primeira etapa ativa</option>
+                {availableStages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+              </select>
+            </label>
           </div>
+          <p className="text-xs text-slate-500">
+            Automações disparadas por <code>form.submitted</code> podem substituir esta rota e iniciar várias sequências ao mesmo tempo.
+          </p>
           <Button type="button" disabled={submitting || !name.trim()} onClick={create}>
             {submitting ? 'Criando...' : 'Criar formulário e gerar endpoint'}
           </Button>

@@ -64,6 +64,19 @@ class FakeClient {
         }],
       }
     }
+    if (sql.includes('INSERT INTO public.email_send_requests')) {
+      return {
+        rows: [{
+          id: '00000000-0000-4000-8000-000000000008', organization_id: ids.org, lead_id: ids.lead,
+          template_id: null, template_version_id: null, email_kind: 'operational',
+          recipient_email: 'lead@yux.com.br', recipient_opt_in: true, subject: 'Ligar para o lead',
+          body_html: '<p>Confirmar disponibilidade</p>', body_text: 'Confirmar disponibilidade',
+          rendered_variables: {}, status: 'queued', provider_message_id: null,
+          idempotency_key: `${ids.execution}:email`, metadata: {},
+        }],
+      }
+    }
+    if (sql.includes('INSERT INTO public.email_send_events')) return { rows: [{ id: '00000000-0000-4000-8000-000000000009' }] }
     return { rows: [], rowCount: 0 }
   }
 
@@ -108,7 +121,8 @@ describe('crm sequence scheduler', () => {
       'Ligar para o lead',
       'Confirmar disponibilidade',
       now.toISOString(),
-      { source: 'crm_sequence_scheduler', executionId: ids.execution, enrollmentId: ids.enrollment },
+      JSON.stringify({ source: 'crm_sequence_scheduler', executionId: ids.execution, enrollmentId: ids.enrollment }),
+      ids.execution,
     ])
     const nextExecutionInsert = pool.client.queries.find((query) => query.sql.includes('INSERT INTO public.automation_executions'))
     expect(nextExecutionInsert?.values).toEqual([
@@ -117,13 +131,13 @@ describe('crm sequence scheduler', () => {
       ids.enrollment,
       ids.nextStep,
       'email',
-      { subject: 'Proxima mensagem', body: 'Enviar proposta' },
+      JSON.stringify({ subject: 'Proxima mensagem', body: 'Enviar proposta' }),
       '2026-06-27T12:15:00.000Z',
     ])
     expect(pool.failedQueries).toEqual([])
   })
 
-  it('signs external n8n sequence payloads and rejects an unsigned configuration', async () => {
+  it('queues sequence emails through the internal email delivery request', async () => {
     const pool = new FakePool('email')
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = []
     const fetchImpl: typeof fetch = async (url, init) => {
@@ -138,10 +152,8 @@ describe('crm sequence scheduler', () => {
       fetchImpl,
     })
 
-    expect(fetchCalls).toHaveLength(1)
-    expect(fetchCalls[0].init?.headers).toMatchObject({
-      'Content-Type': 'application/json',
-      'X-YUX-Signature': expect.stringMatching(/^sha256=[a-f0-9]{64}$/),
-    })
+    expect(fetchCalls).toHaveLength(0)
+    const emailRequest = pool.client.queries.find((query) => query.sql.includes('INSERT INTO public.email_send_requests'))
+    expect(emailRequest?.values).toEqual(expect.arrayContaining([ids.org, ids.lead, 'operational', 'lead@yux.com.br', 'Ligar para o lead']))
   })
 })

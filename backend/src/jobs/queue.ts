@@ -6,6 +6,10 @@ export const DEFAULT_QUEUE_NAME = 'yux-jobs'
 
 export const JOB_NAMES = [
   'automation.dispatch',
+  'automation.executeRun',
+  'events.dispatchPending',
+  'events.consume.automation',
+  'events.consume.scoring',
   'crm.sequence.dispatchDue',
   'crm.sequence.processExecution',
   'omnichannel.processMessage',

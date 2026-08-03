@@ -35,6 +35,8 @@ const formListQuerySchema = z.object({ contractId: z.string().uuid() })
 const formCreateSchema = z.object({
   landingPageId: z.string().uuid().optional(),
   contractId: z.string().uuid().optional(),
+  pipelineId: z.string().uuid().nullable().optional(),
+  initialStageId: z.string().uuid().nullable().optional(),
   name: z.string().trim().min(1).max(120),
   submitLabel: z.string().trim().min(1).max(80).optional(),
   successMessage: z.string().trim().min(1).max(240).optional(),
@@ -53,6 +55,8 @@ const formCreateSchema = z.object({
 const formPatchSchema = z.object({
   isActive: z.boolean().optional(),
   allowedOrigins: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
+  pipelineId: z.string().uuid().nullable().optional(),
+  initialStageId: z.string().uuid().nullable().optional(),
 })
 const formFieldsSchema = z.object({
   fields: z.array(z.object({
@@ -101,6 +105,7 @@ export async function registerLandingPageRoutes(app: FastifyInstance) {
               WHERE v.landing_page_id = lp.id AND v.internal_only = FALSE), '[]'::jsonb) AS landing_page_versions
               ,COALESCE((SELECT jsonb_agg(jsonb_build_object(
                 'id', f.id, 'landing_page_id', f.landing_page_id, 'name', f.name,
+                'pipeline_id', f.pipeline_id, 'initial_stage_id', f.initial_stage_id,
                 'submit_label', f.submit_label, 'success_message', f.success_message,
                 'metadata', f.metadata, 'is_active', f.is_active,
                 'allowed_origins', f.allowed_origins,
@@ -165,6 +170,8 @@ export async function registerLandingPageRoutes(app: FastifyInstance) {
     const form = await createLeadForm(app.pg, user, parsed.data as {
       landingPageId?: string
       contractId?: string
+      pipelineId?: string | null
+      initialStageId?: string | null
       name: string
       submitLabel?: string
       successMessage?: string

@@ -45,6 +45,8 @@ function mapLandingPage(row: any): LandingPage {
     ? row.landing_page_forms.map((form: any) => ({
       id: form.id,
       landingPageId: form.landing_page_id,
+      pipelineId: form.pipeline_id || undefined,
+      initialStageId: form.initial_stage_id || undefined,
       name: form.name,
       submitLabel: form.submit_label,
       successMessage: form.success_message,
@@ -252,6 +254,8 @@ export const landingPageService = {
   async createPublicLeadForm(input: {
     landingPageId?: string
     contractId?: string
+    pipelineId?: string
+    initialStageId?: string
     name?: string
     submitLabel?: string
     successMessage?: string
@@ -266,6 +270,8 @@ export const landingPageService = {
       body: {
         landingPageId: input.landingPageId,
         contractId: input.contractId,
+        pipelineId: input.pipelineId,
+        initialStageId: input.initialStageId,
         name: input.name || 'Formulário principal',
         submitLabel: input.submitLabel,
         successMessage: input.successMessage,

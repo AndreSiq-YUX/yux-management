@@ -10,7 +10,9 @@ import { handleProviderFunction } from './jobs/handlers/providers.js'
 import { handleStrategyAdminChat } from './jobs/handlers/strategy.js'
 import { purgeExpiredTraces } from './jobs/handlers/maintenance.js'
 import { refreshExpiringGoogleTokens } from './jobs/handlers/google-token-refresh.js'
-import { handleAutomationDispatch } from './jobs/handlers/automation.js'
+import { handleAutomationDispatch, handleAutomationRun } from './jobs/handlers/automation.js'
+import { handleEmailSend } from './jobs/handlers/email.js'
+import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 
 type WorkerResult = {
   ok: true
@@ -36,6 +38,13 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
 
   if (job.name === 'proposal.convert') { await handleProposalConversion(pool, job.data.proposalId); return { ok: true } }
   if (job.name === 'automation.dispatch') { await handleAutomationDispatch(pool, env, job.data); return { ok: true } }
+  if (job.name === 'events.dispatchPending') { await handleDomainEventDispatch(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring') {
+    await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
+    return { ok: true }
+  }
+  if (job.name === 'automation.executeRun') { await handleAutomationRun(pool, env, job.data); return { ok: true } }
+  if (job.name === 'email.send') { await handleEmailSend(pool, job.data); return { ok: true } }
   if (job.name === 'provider.functionInvoke') { await handleProviderFunction(pool, job.data); return { ok: true } }
   if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data); return { ok: true } }
   if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }
@@ -53,6 +62,7 @@ const worker = createWorker(DEFAULT_QUEUE_NAME, processJob)
 const maintenanceQueue = createQueue(DEFAULT_QUEUE_NAME)
 const schedulerIntervalMs = Number(process.env.CRM_SEQUENCE_SCHEDULER_INTERVAL_MS || 60_000)
 const maintenanceIntervalMs = Number(process.env.TRACE_RETENTION_PURGE_INTERVAL_MS || 24 * 60 * 60 * 1_000)
+const domainEventDispatchIntervalMs = Number(process.env.DOMAIN_EVENT_DISPATCH_INTERVAL_MS || 5_000)
 
 const scheduler = setInterval(() => {
   void runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })).catch((error) => {
@@ -83,6 +93,16 @@ const googleTokenRefreshScheduler = setInterval(() => {
   void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
 }, googleTokenRefreshIntervalMs)
 
+function scheduleDomainEventDispatch() {
+  const window = Math.floor(Date.now() / domainEventDispatchIntervalMs)
+  return maintenanceQueue.add('events.dispatchPending', { window, limit: 100 }, { jobId: `events-dispatch:${window}` })
+}
+
+void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
+const domainEventDispatchScheduler = setInterval(() => {
+  void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
+}, domainEventDispatchIntervalMs)
+
 worker.on('completed', (job) => {
   console.log(`[worker] completed ${job.name}#${job.id ?? 'unknown'}`)
 })
@@ -96,6 +116,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   clearInterval(scheduler)
   clearInterval(maintenanceScheduler)
   clearInterval(googleTokenRefreshScheduler)
+  clearInterval(domainEventDispatchScheduler)
   await worker.close()
   await maintenanceQueue.close()
   await pool.end()

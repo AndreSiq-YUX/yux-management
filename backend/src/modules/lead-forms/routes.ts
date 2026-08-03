@@ -22,9 +22,9 @@ export async function registerPublicLeadFormRoutes(app: FastifyInstance) {
       return reply.code(400).send({ accepted: false, error: 'invalid_lead_form_payload' })
     }
 
-    const idempotencyKey = headerString(request.headers['idempotency-key'])
+    const idempotencyKey = normalizeHeader(request.headers['idempotency-key'], 200)
       || stablePayloadHash(payload)
-    const externalSubmissionId = headerString(request.headers['x-external-submission-id'])
+    const externalSubmissionId = normalizeHeader(request.headers['x-external-submission-id'], 200) || undefined
 
     try {
       const result = await runWithDatabaseRequestContext(
@@ -33,30 +33,11 @@ export async function registerPublicLeadFormRoutes(app: FastifyInstance) {
           payload,
           idempotencyKey,
           externalSubmissionId,
-          origin: headerString(request.headers.origin),
-          language: headerString(request.headers['accept-language']),
-          referrer: headerString(request.headers.referer),
+          origin: normalizeHeader(request.headers.origin, 300) || undefined,
+          language: normalizeHeader(request.headers['accept-language'], 100) || undefined,
+          referrer: normalizeHeader(request.headers.referer, 2_000) || undefined,
         }, params.data.token),
       )
-
-      if (result.event) {
-        try {
-          await app.jobQueue.add('automation.dispatch', {
-            requestedBy: 'public-lead-form',
-            event: {
-              ...result.event,
-              eventId: `${result.formId}:${idempotencyKey}`,
-            },
-          })
-        } catch (error) {
-          request.log.error(error, 'lead form automation dispatch failed')
-          return reply.code(503).send({
-            accepted: false,
-            error: 'lead_created_automation_unavailable',
-            leadId: result.leadId,
-          })
-        }
-      }
 
       return reply.code(result.duplicate ? 200 : 201).send({
         accepted: true,
@@ -87,6 +68,10 @@ function normalizePayload(body: unknown): Record<string, unknown> | null {
 
 function headerString(value: string | string[] | undefined) {
   return typeof value === 'string' ? value.trim() : Array.isArray(value) ? value[0]?.trim() : ''
+}
+
+function normalizeHeader(value: string | string[] | undefined, maxLength: number) {
+  return headerString(value).slice(0, maxLength)
 }
 
 function stablePayloadHash(payload: Record<string, unknown>) {

@@ -431,13 +431,40 @@ export async function createFlowVersion(
 ) {
   await getAutomationFlow(pool, user, input.flowId)
   const publishedAt = input.status === 'published' ? new Date().toISOString() : null
-  const result = await pool.query(
-    `INSERT INTO public.automation_flow_versions (flow_id, version_number, snapshot, status, published_by, published_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING *`,
-    [input.flowId, input.versionNumber, input.snapshot, input.status ?? 'draft', user.id, publishedAt],
-  )
-  return result.rows[0]
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(
+      `INSERT INTO public.automation_flow_versions (flow_id, version_number, snapshot, status, published_by, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [input.flowId, input.versionNumber, input.snapshot, input.status ?? 'draft', user.id, publishedAt],
+    )
+    const version = result.rows[0]
+    if (!version) throw new Error('automation_flow_version_not_created')
+    if (input.status === 'published') {
+      await client.query(
+        `UPDATE public.automation_flow_versions
+         SET status = 'archived'
+         WHERE flow_id = $1 AND id <> $2 AND status = 'published'`,
+        [input.flowId, version.id],
+      )
+      await client.query(
+        `UPDATE public.automation_flows
+         SET status = 'published', is_enabled = TRUE,
+             active_version_id = $2, published_version = $3, updated_at = NOW()
+         WHERE id = $1`,
+        [input.flowId, version.id, input.versionNumber],
+      )
+    }
+    await client.query('COMMIT')
+    return version
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 export async function listSequences(pool: pg.Pool, user: AuthUser, organizationId: string) {

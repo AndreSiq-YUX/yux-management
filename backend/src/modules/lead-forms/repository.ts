@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
+import { recordDomainEvent } from '../events/repository.js'
 
 const DEFAULT_FIELDS = [
   { fieldName: 'name', crmFieldKey: 'name', required: true },
@@ -17,7 +18,12 @@ const DEFAULT_FIELDS = [
 const STRUCTURED_LEAD_FIELDS = new Set([
   'name', 'email', 'phone', 'company', 'notes', 'profile', 'country',
   'fit_score', 'intent_score', 'crm_contact_id', 'consent_lgpd',
-  'consentAccepted', 'consent',
+  'consentAccepted', 'consent', 'consent_code', 'consentCode',
+  'consent_version', 'consentVersion', 'privacy_policy_version', 'privacyPolicyVersion',
+  'source', 'lead_source', 'leadSource', 'origin', 'page_url', 'pageUrl', 'url',
+  'language', 'lang', 'idioma', 'referrer', 'http_referrer', 'referer',
+  'utm_source', 'utmSource', 'utm_medium', 'utmMedium', 'utm_campaign', 'utmCampaign',
+  'utm_content', 'utmContent', 'utm_term', 'utmTerm',
 ])
 
 export type LeadFormFieldInput = {
@@ -29,6 +35,8 @@ export type LeadFormFieldInput = {
 export type LeadFormCreateInput = {
   landingPageId?: string
   contractId?: string
+  pipelineId?: string | null
+  initialStageId?: string | null
   name: string
   submitLabel?: string
   successMessage?: string
@@ -42,6 +50,8 @@ export type LeadFormCreateInput = {
 export type LeadFormPatchInput = {
   isActive?: boolean
   allowedOrigins?: string[]
+  pipelineId?: string | null
+  initialStageId?: string | null
 }
 
 type LandingPageRow = {
@@ -144,6 +154,7 @@ export async function createLeadForm(pool: pg.Pool, user: AuthUser, input: LeadF
   const scope = input.landingPageId
     ? await getLandingPageForAccess(pool, user, input.landingPageId)
     : await getContractForAccess(pool, user, input.contractId || '')
+  const routing = await resolveFormRouting(pool, scope, input.pipelineId, input.initialStageId)
   const token = generateLeadFormToken()
   const fields = normalizeFieldMappings(input.fields?.length ? input.fields : DEFAULT_FIELDS)
   requireIdentityMappings(fields)
@@ -159,8 +170,8 @@ export async function createLeadForm(pool: pg.Pool, user: AuthUser, input: LeadF
       input.landingPageId ? scope.id : null,
       scope.organization_id,
       scope.contract_id,
-      scope.pipeline_id,
-      scope.initial_stage_id,
+      routing.pipelineId,
+      routing.initialStageId,
       input.name.trim(),
       input.submitLabel?.trim() || 'Enviar',
       input.successMessage?.trim() || 'Recebemos seus dados.',
@@ -262,6 +273,11 @@ export async function updateLeadForm(pool: pg.Pool, user: AuthUser, formId: stri
     columns.push('allowed_origins')
     values.push(normalizeOrigins(input.allowedOrigins))
   }
+  if (input.pipelineId !== undefined || input.initialStageId !== undefined) {
+    const routing = await resolveFormRouting(pool, form, input.pipelineId, input.initialStageId)
+    columns.push('pipeline_id', 'initial_stage_id')
+    values.push(routing.pipelineId, routing.initialStageId)
+  }
   if (columns.length > 0) {
     const assignments = columns.map((column, index) => `${column} = $${index + 2}`)
     await pool.query(
@@ -359,23 +375,6 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
         leadId: previousSubmission.lead_id,
         formId: form.id,
         organizationId: form.organization_id,
-        event: previousSubmission.status === 'processed' && previousSubmission.lead_id ? {
-          type: 'lead.created',
-          organizationId: form.organization_id,
-          leadId: previousSubmission.lead_id,
-          source: 'landing_page',
-          payload: {
-            leadId: previousSubmission.lead_id,
-            formId: form.id,
-            landingPageId: form.landing_page_id,
-            source: 'landing_page',
-            sourceKind: 'landing_page',
-            name: previousSubmission.lead_name || undefined,
-            email: previousSubmission.lead_email || undefined,
-            phone: previousSubmission.lead_phone || undefined,
-            company: previousSubmission.lead_company || undefined,
-          },
-        } : null,
       }
     }
 
@@ -387,14 +386,16 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
       [form.id],
     )
     const mapped = mapSubmission(input.payload, mappings.rows)
+    mapped.email = normalizeEmail(mapped.email)
     validateSubmission(form, mapped, mappings.rows)
-    const snapshot = buildSubmissionSnapshot(form, input, mapped)
+    const sanitizedPayload = sanitizePayload(input.payload)
+    const snapshot = buildSubmissionSnapshot(form, { ...input, payload: sanitizedPayload }, mapped)
 
     const lockKey = `${form.organization_id}:${String(mapped.email || '').toLowerCase()}:${String(mapped.phone || '')}:${snapshot.crmContactId || ''}`
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [lockKey])
 
-    const existingLead = await client.query<{ id: string }>(
-      `SELECT id
+    const existingLead = await client.query<{ id: string; crm_instance_id: string | null }>(
+      `SELECT id, crm_instance_id
        FROM public.leads
        WHERE organization_id = $1
          AND (
@@ -409,8 +410,10 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
     )
 
     let leadId = existingLead.rows[0]?.id
+    let crmInstanceId = existingLead.rows[0]?.crm_instance_id || null
     let created = false
     let sourceId: string | null = form.crm_source_id
+    let stage: Awaited<ReturnType<typeof resolveInitialStage>> | null = null
     if (!sourceId) {
       const sourceResult = await client.query<{ id: string }>(
         `SELECT id FROM public.lead_sources
@@ -432,7 +435,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
 
     const attributionContext = buildAttributionContext(form, mapped, input.externalSubmissionId, snapshot)
     if (!leadId) {
-      const stage = await resolveInitialStage(client, form)
+      stage = await resolveInitialStage(client, form)
       if (!stage) throw httpError(409, 'lead_form_pipeline_not_configured')
       const leadResult = await client.query<{ id: string }>(
         `INSERT INTO public.leads (
@@ -469,6 +472,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
       )
       leadId = leadResult.rows[0]?.id
       created = Boolean(leadId)
+      crmInstanceId = stage.crm_instance_id
     } else {
       await client.query(
         `UPDATE public.leads
@@ -497,7 +501,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
     if (!leadId) throw new Error('lead_creation_failed')
     await persistMappedCustomFieldValues(client, form.organization_id, leadId, mappings.rows, mapped)
 
-    await client.query(
+    const submissionResult = await client.query<{ id: string }>(
       `INSERT INTO public.landing_page_form_submissions (
          organization_id, landing_page_id, form_id, idempotency_key,
          external_submission_id, status, lead_id, payload, processed_at,
@@ -512,7 +516,8 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
          $14, $15, $16, $17, $18,
          $19, $20, $21, $22,
          $23, $24, $25, $26, $27
-       )`,
+       )
+       RETURNING id`,
       [
         form.organization_id,
         form.landing_page_id,
@@ -521,7 +526,7 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
         input.externalSubmissionId || null,
         created ? 'processed' : 'duplicate',
         leadId,
-        input.payload,
+        sanitizedPayload,
         snapshot.source,
         snapshot.pageUrl,
         snapshot.language,
@@ -543,6 +548,8 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
         snapshot.crmContactId,
       ],
     )
+    const submissionId = submissionResult.rows[0]?.id
+    if (!submissionId) throw new Error('lead_form_submission_id_missing')
 
     if (form.landing_page_id) {
       await client.query(
@@ -594,28 +601,34 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
       )
     }
 
-    await client.query('COMMIT')
-    return {
-      accepted: true,
-      duplicate: !created,
+    const formSubmittedPayload = buildFormSubmittedEventPayload(
+      form,
+      submissionId,
       leadId,
-      formId: form.id,
-      organizationId: form.organization_id,
-      event: created ? {
-        type: 'lead.created',
+      input.externalSubmissionId,
+      snapshot,
+      mapped,
+      created,
+    )
+    if (created) {
+      await recordDomainEvent(client, {
+        eventType: 'lead.created',
         organizationId: form.organization_id,
+        crmInstanceId: crmInstanceId || undefined,
+        aggregateType: 'lead',
+        aggregateId: leadId,
         leadId,
-        source: 'landing_page',
+        actor: { type: 'system' },
         payload: {
           leadId,
           formId: form.id,
           landingPageId: form.landing_page_id,
-          source: 'landing_page',
+          source: snapshot.source,
           sourceKind: 'landing_page',
-          name: mapped.name,
-          email: mapped.email,
-          phone: mapped.phone || undefined,
-          company: mapped.company || undefined,
+          name: valueAsString(mapped.name),
+          email: valueAsString(mapped.email),
+          phone: valueAsString(mapped.phone) || undefined,
+          company: valueAsString(mapped.company) || undefined,
           profile: snapshot.profile || undefined,
           country: snapshot.country || undefined,
           fitScore: snapshot.fitScore ?? undefined,
@@ -626,7 +639,26 @@ export async function submitLeadForm(pool: pg.Pool, input: PublicFormSubmission,
           privacyPolicyVersion: snapshot.privacyPolicyVersion,
           attributionContext,
         },
-      } : null,
+      })
+    }
+    await recordDomainEvent(client, {
+      eventType: 'form.submitted',
+      organizationId: form.organization_id,
+      crmInstanceId: crmInstanceId || undefined,
+      aggregateType: 'form_submission',
+      aggregateId: submissionId,
+      leadId,
+      actor: { type: 'system' },
+      payload: formSubmittedPayload,
+    })
+
+    await client.query('COMMIT')
+    return {
+      accepted: true,
+      duplicate: !created,
+      leadId,
+      formId: form.id,
+      organizationId: form.organization_id,
     }
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined)
@@ -701,8 +733,83 @@ function buildAttributionContext(
     consentCode: snapshot.consentCode,
     consentVersion: snapshot.consentVersion,
     privacyPolicyVersion: snapshot.privacyPolicyVersion,
-    customFields: Object.fromEntries(Object.entries(mapped).filter(([key]) => !STRUCTURED_LEAD_FIELDS.has(key))),
+    customFields: buildCustomFieldSnapshot(mapped),
   }
+}
+
+function buildFormSubmittedEventPayload(
+  form: PublicFormRow,
+  submissionId: string,
+  leadId: string,
+  externalSubmissionId: string | undefined,
+  snapshot: ReturnType<typeof buildSubmissionSnapshot>,
+  mapped: Record<string, unknown>,
+  isNewLead: boolean,
+) {
+  return {
+    formId: form.id,
+    submissionId,
+    leadId,
+    landingPageId: form.landing_page_id,
+    externalSubmissionId: externalSubmissionId || undefined,
+    isNewLead,
+    source: snapshot.source,
+    pageUrl: snapshot.pageUrl,
+    language: snapshot.language,
+    referrer: snapshot.referrer,
+    requestOrigin: snapshot.requestOrigin,
+    utms: {
+      source: snapshot.utmSource,
+      medium: snapshot.utmMedium,
+      campaign: snapshot.utmCampaign,
+      content: snapshot.utmContent,
+      term: snapshot.utmTerm,
+    },
+    profile: snapshot.profile,
+    country: snapshot.country,
+    fitScore: snapshot.fitScore,
+    intentScore: snapshot.intentScore,
+    crmContactId: snapshot.crmContactId,
+    consent: {
+      accepted: true,
+      code: snapshot.consentCode,
+      version: snapshot.consentVersion,
+      privacyPolicyVersion: snapshot.privacyPolicyVersion,
+    },
+    customFields: buildCustomFieldSnapshot(mapped),
+  }
+}
+
+function buildCustomFieldSnapshot(mapped: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(mapped)
+      .filter(([key, value]) => !STRUCTURED_LEAD_FIELDS.has(key) && hasSubmissionValue(value))
+      .map(([key, value]) => [key, sanitizeValue(value)]),
+  )
+}
+
+function sanitizePayload(payload: Record<string, unknown>) {
+  const sanitized = sanitizeValue(payload)
+  return sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)
+    ? sanitized as Record<string, unknown>
+    : {}
+}
+
+function sanitizeValue(value: unknown, depth = 0): unknown {
+  if (depth > 4) return undefined
+  if (typeof value === 'string') return value.slice(0, 4_000)
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (Array.isArray(value)) return value.slice(0, 50).map(item => sanitizeValue(item, depth + 1)).filter(item => item !== undefined)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, 100)
+        .filter(([key]) => !/(token|secret|password|authorization|cookie)/i.test(key))
+        .map(([key, item]) => [key.slice(0, 100), sanitizeValue(item, depth + 1)])
+        .filter(([, item]) => item !== undefined),
+    )
+  }
+  return undefined
 }
 
 function buildSubmissionSnapshot(form: PublicFormRow, input: PublicFormSubmission, mapped: Record<string, unknown>) {
@@ -813,6 +920,35 @@ async function resolveInitialStage(client: pg.PoolClient, form: PublicFormRow) {
   return fallback.rows[0] || null
 }
 
+async function resolveFormRouting(
+  pool: pg.Pool,
+  scope: Pick<LandingPageRow, 'organization_id' | 'pipeline_id' | 'initial_stage_id'>,
+  requestedPipelineId?: string | null,
+  requestedStageId?: string | null,
+) {
+  const pipelineId = requestedPipelineId === undefined ? scope.pipeline_id : requestedPipelineId
+  const stageId = requestedStageId === undefined ? scope.initial_stage_id : requestedStageId
+
+  if (!pipelineId && stageId) throw httpError(422, 'lead_form_pipeline_required_for_stage')
+  if (!pipelineId) return { pipelineId: null, initialStageId: null }
+
+  const result = await pool.query<{ pipeline_id: string; stage_id: string }>(
+    `SELECT p.id AS pipeline_id, s.id AS stage_id
+     FROM public.crm_pipelines p
+     JOIN public.crm_pipeline_stages s ON s.pipeline_id = p.id
+     WHERE p.id = $1 AND p.organization_id = $2 AND p.is_active = TRUE
+       AND s.is_active = TRUE AND ($3::uuid IS NULL OR s.id = $3)
+     ORDER BY (s.id = $3) DESC, s.order_index ASC
+     LIMIT 1`,
+    [pipelineId, scope.organization_id, stageId || null],
+  )
+  const routing = result.rows[0]
+  if (!routing) {
+    throw httpError(stageId ? 422 : 404, stageId ? 'lead_form_stage_not_in_pipeline' : 'lead_form_pipeline_not_found')
+  }
+  return { pipelineId: routing.pipeline_id, initialStageId: routing.stage_id }
+}
+
 async function getLandingPageForAccess(pool: pg.Pool, user: AuthUser, landingPageId: string) {
   const result = await pool.query<LandingPageRow>(
     `SELECT id, organization_id, contract_id, pipeline_id, initial_stage_id, status
@@ -881,6 +1017,8 @@ function mapLeadForm(form: FormRow, mappings: FormMappingRow[], publicBaseUrl?: 
     landingPageId: form.landing_page_id || undefined,
     organizationId: form.organization_id,
     contractId: form.contract_id,
+    pipelineId: form.pipeline_id || undefined,
+    initialStageId: form.initial_stage_id || undefined,
     name: form.name,
     submitLabel: form.submit_label,
     successMessage: form.success_message,
@@ -942,6 +1080,10 @@ function firstValue(source: Record<string, unknown>, keys: string[]) {
     if (value) return value
   }
   return ''
+}
+
+function normalizeEmail(value: unknown) {
+  return valueAsString(value).toLowerCase()
 }
 
 function valueAsString(value: unknown) {

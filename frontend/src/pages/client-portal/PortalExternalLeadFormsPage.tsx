@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { ExternalLeadFormsWorkspace } from '@/components/landing-pages/ExternalLeadFormsWorkspace'
+import { crmService } from '@/services/crmService'
 import { landingPageService } from '@/services/landingPageService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { LandingPageForm } from '@/types/landingPage'
+import type { CrmPipeline } from '@/types/crm'
 
 export function PortalExternalLeadFormsPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
+  const organization = usePlatformStore(state => state.organization)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [forms, setForms] = useState<LandingPageForm[]>([])
+  const [pipelines, setPipelines] = useState<CrmPipeline[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -20,6 +24,15 @@ export function PortalExternalLeadFormsPage() {
     setLoading(true)
     try {
       setForms(await landingPageService.getPublicLeadForms(activeContract.id))
+      const organizationId = organization?.id || activeContract.clientId
+      if (organizationId) {
+        try {
+          setPipelines(await crmService.getPipelines(organizationId))
+        } catch (error) {
+          console.error('Erro ao carregar funis para formulários externos:', error)
+          setPipelines([])
+        }
+      }
     } catch (error) {
       console.error('Erro ao carregar formulários externos:', error)
       toast.error('Erro ao carregar formulários externos')
@@ -27,7 +40,7 @@ export function PortalExternalLeadFormsPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeContract, isPlatformLoading])
+  }, [activeContract, isPlatformLoading, organization?.id])
 
   useEffect(() => { void load() }, [load])
 
@@ -47,6 +60,7 @@ export function PortalExternalLeadFormsPage() {
     <ExternalLeadFormsWorkspace
       contractName={activeContract.name || activeContract.id}
       forms={forms}
+      pipelines={pipelines}
       onCreate={async input => {
         const form = await landingPageService.createPublicLeadForm({ contractId: activeContract.id, ...input })
         mergeForm({ ...form, recentSubmissions: form.recentSubmissions || [] })

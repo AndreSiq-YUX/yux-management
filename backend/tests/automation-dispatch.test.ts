@@ -15,6 +15,7 @@ const ids = {
   org: '00000000-0000-4000-8000-000000000001',
   flow: '00000000-0000-4000-8000-000000000002',
   lead: '00000000-0000-4000-8000-000000000003',
+  event: '00000000-0000-4000-8000-000000000008',
   action: '00000000-0000-4000-8000-000000000004',
   run: '00000000-0000-4000-8000-000000000005',
   step: '00000000-0000-4000-8000-000000000006',
@@ -35,9 +36,32 @@ class FakePool {
     }
     if (sql.includes('FROM public.automation_conditions')) return { rows: [] }
     if (sql.includes('FROM public.automation_actions')) return { rows: [{ id: ids.action, action_type: 'create_task', order_index: 1, payload: { title: 'Responder lead novo' } }] }
-    if (sql.includes("event_payload->>'eventId'")) return { rows: this.duplicateRunId ? [{ id: this.duplicateRunId, status: 'completed' }] : [] }
+    if (sql.includes('SELECT id, status FROM public.automation_execution_runs')) return { rows: this.duplicateRunId ? [{ id: this.duplicateRunId, status: 'completed' }] : [] }
     if (sql.includes('automation_execution_runs') && sql.includes('COUNT')) return { rows: [{ count: 0 }] }
-    if (sql.includes('INSERT INTO public.automation_execution_runs')) return { rows: [{ id: ids.run }] }
+    if (sql.includes('INSERT INTO public.automation_execution_runs')) return { rows: this.duplicateRunId ? [] : [{ id: ids.run }] }
+    if (sql.includes('INSERT INTO public.domain_events')) return { rows: [{
+      id: ids.event,
+      organization_id: ids.org,
+      crm_instance_id: null,
+      event_type: 'lead.task_created',
+      schema_version: 1,
+      aggregate_type: 'lead',
+      aggregate_id: ids.lead,
+      lead_id: ids.lead,
+      correlation_id: ids.event,
+      causation_id: null,
+      depth: 1,
+      actor: { type: 'system' },
+      occurred_at: new Date().toISOString(),
+      automation_trace: [ids.flow],
+      payload: {},
+      dispatch_status: 'pending',
+      attempt_count: 0,
+      available_at: new Date().toISOString(),
+      dispatched_at: null,
+      last_error: null,
+      created_at: new Date().toISOString(),
+    }] }
     if (sql.includes('INSERT INTO public.automation_execution_steps')) return { rows: [{ id: ids.step }] }
     if (sql.includes('INSERT INTO public.lead_tasks')) return { rows: [{ id: ids.task }] }
     return { rows: [] }
