@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .queue import AgentEventQueue
+from .runtime_factory import build_strategy_workflow_engine
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
 
@@ -37,7 +38,7 @@ class ExecuteWorkflowRequest(BaseModel):
     mode: str | None = None
     workflow_spec: dict[str, Any] | None = None
     retrieval_context: dict[str, Any] | None = None
-    autonomy_policies: list[dict[str, Any]] = Field(default_factory=list)
+    autonomy_policies: list[dict[str, Any]] | None = None
     # Accepted for backward compatibility but ignored: credits are always
     # estimated server-side (see workflow.estimate_workflow_credits).
     estimated_credits: int = Field(default=0, ge=0)
@@ -59,7 +60,15 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
     app = FastAPI(title="YUX Agent Harness Runtime", version="1.0.0")
     runtime_store = store or PostgresAgentRuntimeStore()
     queue = AgentEventQueue(runtime_store)
-    engine = StrategyWorkflowEngine(runtime_store)
+    # Tests may inject an isolated store. Production configuration is loaded
+    # lazily from Postgres so health checks do not depend on OpenRouter or RAG.
+    engine: StrategyWorkflowEngine | None = StrategyWorkflowEngine(runtime_store) if store is not None else None
+
+    def workflow_engine() -> StrategyWorkflowEngine:
+        nonlocal engine
+        if engine is None:
+            engine = build_strategy_workflow_engine(runtime_store)
+        return engine
 
     def validate_tenant(organization_id: str | None, client_id: str | None = None, contract_id: str | None = None) -> None:
         if not organization_id:
@@ -115,9 +124,7 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
             )
         except RuntimeError as error:
             raise HTTPException(status_code=402, detail=str(error)) from error
-        # contract_id is used for tenant validation and billing only; the
-        # workflow engine does not accept it.
-        result = engine.execute(**request.model_dump(exclude={"estimated_credits", "contract_id"}))
+        result = workflow_engine().execute(**request.model_dump(exclude={"estimated_credits"}))
         return {**result, "credits": credits}
 
     @app.post("/jobs/process-next", dependencies=[Depends(require_runtime_token)])
@@ -140,16 +147,17 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
                 # Insufficient balance is terminal for the job: retrying will not help.
                 runtime_store.update("agent_queue_jobs", job["id"], {"status": "dead_letter", "last_error": str(error)})
                 return {"processed": False, "reason": "insufficient_credits", "job_id": job["id"]}
-            result = engine.execute(
+            result = workflow_engine().execute(
                 message=str(payload.get("message") or ""),
                 profile_key=str(payload.get("profile_key") or "ai_sdr_comercial_1"),
                 source="whatsapp",
                 organization_id=job.get("organization_id"),
                 client_id=job.get("client_id"),
+                contract_id=job.get("contract_id"),
                 conversation_id=job.get("conversation_id"),
                 assistant_id=payload.get("assistant_id"),
                 mode="conversation_turn",
-                autonomy_policies=payload.get("autonomy_policies") or [],
+                autonomy_policies=payload.get("autonomy_policies"),
             )
             queue.complete_job(job["id"], result)
             return {"processed": True, "job": job, "result": result, "credits": credits}

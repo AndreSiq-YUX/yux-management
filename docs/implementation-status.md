@@ -1,7 +1,7 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-08-04 (audited from the previous documentation commit
-`a8728d0` through implementation commit `34b3af4`)
+Updated: 2026-08-04 (repository audit plus the local active-prospecting
+implementation; the uncommitted delivery is identified explicitly below)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -28,6 +28,19 @@ the target VPS/Dokploy environment.
   outage does not roll back or lose an accepted submission.
 - The CRM scoring consumer now evaluates governed fit/intent rules, persists an
   append-only score history and emits score-change/threshold events.
+- The internal YUX active-prospecting path is now connected in the repository:
+  Radar analysis runs asynchronously through the Agent Harness, an approved
+  opportunity can create a governed prospecting plan, CRM sequences dispatch
+  native SMTP2GO e-mail or Meta WhatsApp jobs, and inbound WhatsApp messages can
+  produce an AI suggestion, automatic low-risk response or human handoff.
+  This is locally validated code, not a claim that production providers are
+  already configured or enabled.
+- Company Intelligence is now editable end to end: Crescimento YUX resolves its
+  own active contract, Company Profile and Brand/Voice persist through the VPS
+  API, and the Knowledge Base accepts text, URL, PDF, DOCX, TXT and Markdown
+  with review and explicit publication. The Agent Harness uses the published
+  organization context for Marketing, Radar, automation AI actions and
+  WhatsApp; external messages also receive a deterministic brand-rule check.
 - CRM-specific reference:
   `docs/crm-lead-management.md`.
 
@@ -61,11 +74,13 @@ the target VPS/Dokploy environment.
 | Standalone external lead forms | Implemented and locally validated | `/portal/marketing/formularios`, `/client-workspaces/:organizationId/marketing/formularios`, public `POST /api/public/lead-forms/:token/submissions` | `0113_external_lead_forms.sql`, `0114_lead_identity_consent_and_scoring.sql`, `0117_standalone_external_lead_forms.sql`, `0118_external_lead_form_crm_visibility.sql`, lead-form repository/routes, portal workspace and `docs/external-lead-forms.md` | Supports hashed/rotatable tokens, custom field mappings, allowed origins, consent/UTM snapshots, idempotency, CRM routing and forms independent of YUX landing pages. Apply migrations and smoke-test the public domain before production use. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/marketing/campanhas` | `20260601290000_campaigns_ads_api_core.sql`, backend function compatibility route, campaign service/workspaces, `backend/src/lib/edge-compat/adsProvider.ts` | API-first campaign draft/provider mutation path now routes through the VPS backend; provider side-effect handlers still need explicit domain hardening beyond compatibility jobs. |
 | Real WhatsApp provider path | Implemented and locally validated | `/omnichannel`, `/portal/atendimento/conversas` | Backend webhook route, worker handlers and `backend/src/lib/edge-compat/whatsappProvider.ts` | Meta HMAC validation, tenant lookup, idempotency and official outbound dispatch now run through the Fastify/worker path. Provider credentials and Meta production verification remain operational setup. |
+| Internal YUX active prospecting | Implemented and locally validated; production activation pending | Internal Radar workspace, `/api/prospecting/*`, CRM sequences and `/omnichannel` | `0123_active_prospecting_orchestration.sql`, prospecting repository/service/routes, asynchronous Radar worker, Agent Harness live workflow contracts, `ProspectingPlanPanel`, native SMTP2GO/Meta dispatch and WhatsApp AI loop | First contact remains human-approved and WhatsApp requires recorded permission, an active Meta connection and approved template. Apply migration `0123`, configure runtime/provider secrets and pass the staged production smoke test before enabling real outreach. |
 | Meta channel connectors | Implemented in repo | `/portal/atendimento/canais`, `/admin/channels` | `20260605110828_meta_channel_connectors.sql`, backend compatibility function route, `metaChannelService`, connected-channel workspaces, `backend/src/lib/edge-compat/metaChannel.ts` | Requires Meta App configuration, App Review permissions, runtime secrets and authenticated production QA. Edge Function source was removed from active code. |
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
+| Company Intelligence hub | Implemented and locally validated; production activation pending | `/portal/empresa/perfil`, `/portal/empresa/conhecimento`, `/portal/empresa/marca`, equivalent Crescimento YUX workspace routes and `/api/company-intelligence/*` | `0125_company_intelligence_hub.sql`, company-intelligence backend module/worker, profile/brand forms, knowledge library, `CustomerContextService`, WhatsApp guardrail and `docs/company-intelligence-operations.md` | Supports editable company/brand data, manual text, URL and PDF/DOCX/TXT/MD ingestion, explicit publication, visibility and agent profile rules. Apply migration `0125`, deploy the shared persistent volume and execute the authenticated/provider smoke test. |
 | Marketing Studio foundation | Implemented | `/marketing-studio`, `/portal/marketing/studio` | `20260605220328_marketing_studio_foundation.sql`, `marketingStudioService`, `MarketingStudioWorkspace`, `PortalMarketingStudioWorkspace`, Marketing Studio domain rules | Adds module shell, navigation, settings, agent templates, ideas, content/version/review workflow, editorial calendar, AI credits and usage ledger. Migration and probe passed remotely on `portal-yux`. |
 | Marketing Studio organic content and calendar | Implemented in repo | `/marketing-studio`, `/portal/marketing/studio`, `/portal/marketing/conteudo`, `/portal/marketing/calendario` | `2026-06-06-yux-marketing-studio-organic-calendar.md`, expanded `marketingStudioService`, organic content workspace, portal approval surface, calendar/review/version rules | Adds manual organic content operations, version tracking, review decisions, approval actions and editorial calendar surfaces. LangGraph, RAG, Radar, WordPress publishing and AI generation remain follow-up phases. |
-| Marketing Studio knowledge and RAG | Implemented and locally validated | `/marketing-studio`, `/portal/marketing/studio`, `/portal/empresa/conhecimento`, `/portal/empresa/marca` | Backend RPC with contract membership enforcement, Python retrieval service and Strategy Packs | `match_marketing_knowledge` is live in the backend path and retrieval filters organization/client scope before ranking. Production embedding/provider readiness still requires VPS configuration. |
+| Marketing Studio knowledge and RAG | Implemented and locally validated | `/marketing-studio`, `/portal/marketing/studio`, `/portal/empresa/conhecimento`, `/portal/empresa/marca` | Company Intelligence API/worker, linked knowledge and Marketing schemas, Python `CustomerContextService`, retrieval service and Strategy Packs | Published organization knowledge is tenant-filtered and merged centrally with Strategy Packs for agent workflows. Text search is active; vector embeddings remain optional until pgvector is enabled. VPS migration, shared storage and provider smoke tests remain required. |
 | Marketing Studio LangGraph runtime and harness | Implemented | `/marketing-studio` | `20260607000807_yux_agent_harness_langgraph.sql`, `2026-06-06-yux-agent-harness-langgraph.md`, worker `workers/marketing-studio-agent-runtime`, Marketing Studio agent/workflow service methods, internal harness panel | Adds YUX-admin global system prompts, client/YUX editable agent prompts/defaults, workflow definitions, workflow/agent/tool run logs, budget policies, model routing and tool policies. Migration and probe passed remotely. Runtime is now extended by the broader YUX Agent Harness Runtime for central trace, autonomy, workflows and learning. |
 | Marketing Studio Radar and research | Implemented | `/marketing-studio`, `/admin/integrations` | `20260607003007_marketing_studio_radar_research.sql`, `20260607003928_yux_hub_jina_provider_defaults.sql`, `2026-06-07-yux-marketing-studio-radar-research.md`, worker Jina Reader/Search request builders, source item/radar service methods, internal Radar panel, Jina AI global provider defaults | Adds controlled source items, research cache, Radar runs, dedupe keys, opportunity scores, typed conversion from captured source item to idea, and Admin YUX global Jina configuration fields. Radar and Jina provider migrations/probes passed remotely. Live scheduled jobs and provider credentials remain follow-up operational work. |
 | Marketing Studio writing, review and grounding | Implemented | `/marketing-studio` | `20260607141134_marketing_studio_writing_review_grounding.sql`, `2026-06-07-yux-marketing-studio-writing-review-grounding.md`, worker writing/review contracts, generation run and quality check service methods, internal writing/review/grounding panel, worker `OpenRouterClient` and `JinaClient` | Adds Redator Multicanal and Revisor de Marca contracts, generated draft logs, quality checklist, risk flags, grounding-required state and internal pipeline visibility. Migration and probe passed remotely. Worker now supports native OpenRouter chat completion and Jina Reader/Search/Grounding using server-side secrets. |
@@ -157,11 +172,76 @@ Implemented in migration `0119` and the Fastify/BullMQ worker:
   maximum depth, automation trace and idempotent action effects;
 - native CRM commands for pipeline/stage moves, owner assignment, tasks,
   activities, allowed field updates, sequence enrollment/pause, tags and manual
-  score adjustment; external/AI/WhatsApp actions remain behind the signed n8n
-  adapter when selected;
+  score adjustment; core CRM sequence e-mail and WhatsApp delivery now use the
+  native SMTP2GO and Omnichannel/Meta workers. The signed n8n adapter remains
+  only for explicit custom integration actions;
 - CRM sequence execution with idempotent tasks, published e-mail templates,
   server-side suppression/quota checks, SMTP2GO sending and signed delivery,
   open, click, bounce, complaint and unsubscribe webhook events.
+
+### Internal YUX Active Prospecting
+
+Implemented in the current local delivery:
+
+- migration `0123_active_prospecting_orchestration.sql` adds the internal,
+  forced-RLS prospecting policy, channel-permission ledger and prospecting-plan
+  state, while extending the existing Radar and CRM sequence structures;
+- policy resolution rechecks the kill switch, legal-review gate, quiet hours,
+  opt-out, daily/per-lead attempt limits, recorded channel permission and active
+  WhatsApp connection before approval, start and every outbound sequence step;
+- the Radar no longer presents the fixed score/diagnostic as a successful AI
+  analysis: it creates an idempotent asynchronous analysis run, invokes the
+  tenant-scoped Agent Harness and persists only schema-validated results and
+  trace identifiers;
+- the Python runtime now builds its Harness from PostgreSQL configuration,
+  applies tenant-scoped profiles, prompts, routes, tool/budget policies and RAG,
+  calls OpenRouter for Radar and conversation contracts, and does not replace a
+  provider failure with a canned successful analysis;
+- a converted Radar opportunity can be turned into one governed plan, explicitly
+  approved by a YUX operator and enrolled once in an existing CRM sequence;
+- CRM sequence e-mail remains native through SMTP2GO and WhatsApp now creates an
+  Omnichannel message/job for the Meta Cloud API, including approved template
+  name, language and components instead of using n8n for the core path;
+- inbound WhatsApp persistence invokes the conversation workflow in the retryable
+  worker, stores the AI response with classification, qualification, policy and
+  runtime trace metadata, queues only approved automatic decisions and sends
+  blocked/high-risk decisions to the human handoff queue. Conversations in
+  assisted mode always wait for human approval even if the agent recommends
+  auto-send, and runtime unavailability also forces handoff;
+- the Radar frontend polls asynchronous analysis state and exposes the policy,
+  permission evidence, sequence choice, plan approval and start controls without
+  enabling silent first-contact auto-send.
+
+Repository limitations that still prevent a production-operational claim:
+
+- migration `0123` was not applied to a live/local Postgres instance in this
+  session because Docker was unavailable;
+- no live OpenRouter, SMTP2GO or Meta WhatsApp request was made with production
+  credentials, and no approved Meta test template/recipient was exercised;
+- deployment health, worker scheduling, webhook callbacks and a canary with real
+  provider delivery remain mandatory before outreach is enabled;
+- advanced prospecting operations reporting, automatic retention/deletion of
+  cold-prospect source data and a dedicated cross-module journey timeline remain
+  follow-up hardening, not prerequisites silently reported as complete.
+
+### Final Compatibility Audit: Funis, Tasks And Scoring
+
+These modules were implemented in a separate workstream and were not modified by
+the active-prospecting delivery. The final read-only compatibility audit found:
+
+- Funis: backend create/update/stage/reorder routes, role/customization guards,
+  portal page, editor and summary board are connected to `crmService`;
+- Central de Tarefas: aggregate listing/filtering, create/update, explicit
+  complete/cancel/reopen transitions, lead next-action refresh and portal page
+  are connected;
+- Scoring: fit/intent model, editable event rules, append-only score history,
+  simulation, manual adjustment and outbox consumer are connected to the portal;
+- the focused backend audit passed `31/31` tests and the focused frontend audit
+  passed `40/40` tests. No compatibility defect with prospecting was found.
+
+This confirms repository integration. Migration `0120` through `0122` and an
+authenticated browser/database smoke test are still required before calling the
+three modules operational in the target VPS.
 
 Not implemented in this phase:
 
@@ -182,7 +262,8 @@ Implemented and locally validated through Phase 7:
   preview the expected implementation work.
 - Central da Marca: brand readiness and knowledge readiness are visible in the
   company/marketing journey and surface gaps for Marketing Studio, IA,
-  campaigns and landing pages.
+  campaigns and landing pages. Company Profile, Brand/Voice and the Knowledge
+  Base now also provide edit, import/upload, review and publication operations.
 - Template library: templates are filterable by sector, objective, module,
   channel, required module, portal visibility and campaign step.
 - Smart segments: CRM/leads can build source/stage/status/owner/activity/
@@ -799,13 +880,29 @@ Not complete:
 
 ## Current Validation Evidence
 
-Repository-wide validation rerun for this documentation audit on 2026-08-04:
+Repository-wide validation rerun after the active-prospecting implementation on
+2026-08-04:
 
-- backend `npm test`: 55 test files, 246 tests passed;
+- backend `npm test`: 60 test files, 268 tests passed;
 - backend `npm run type-check`: passed;
-- frontend `npm test`: 95 test files, 460 tests passed;
+- backend `npm run build`: passed;
+- frontend `npm test`: 97 test files, 466 tests passed;
 - frontend `npm run type-check`: passed;
-- `python -m pytest tests` in the Agent Harness runtime: 66 tests passed.
+- frontend `npm run build`: passed with the existing Browserslist age and large
+  bundle warnings;
+- focused ESLint for the active-prospecting Radar files: passed with zero
+  warnings;
+- `python -m pytest tests` in the Agent Harness runtime: 69 tests passed.
+
+Focused Funis, Tasks and Scoring compatibility audit:
+
+- backend CRM routes, scoring, schema, outbox and automation dispatch: 5 files,
+  31 tests passed;
+- frontend funil page/editor, pipeline rules, CRM service and navigation: 5
+  files, 40 tests passed;
+- direct Task Center and Scoring page component tests are not present; their
+  TypeScript integration is covered by the full build graph, while authenticated
+  behavior remains part of the deployment smoke test.
 
 The frontend total includes the router-context regression fixtures added for
 Campaigns, CRM, Omnichannel, Reports and Strategy Engine workspace tests after
@@ -910,6 +1007,12 @@ Known validation limitation:
   Postgres at `127.0.0.1:54322` refused connection.
 - Docker/Dokploy compose validation for the Agent Harness runtime could not run
   because Docker was not available in this Windows session.
+- For the same reason, migrations `0120` through `0123` were not applied to a
+  disposable database and the active-prospecting journey could not be exercised
+  against real Postgres/Redis/provider containers.
+- repository-wide frontend lint is not currently a green gate: it reports 585
+  pre-existing issues across legacy modules, including the parallel CRM work.
+  The active-prospecting frontend files pass their focused zero-warning lint.
 
 ## Pending Operational Work
 
@@ -927,6 +1030,11 @@ steps still required before treating the app as live-ready:
   - `0117_standalone_external_lead_forms.sql`;
   - `0118_external_lead_form_crm_visibility.sql`;
   - `0119_lead_orchestration_foundation.sql`;
+  - `0120_crm_pipeline_management.sql`;
+  - `0121_crm_task_center.sql`;
+  - `0122_lead_scoring_rules.sql`;
+  - `0123_active_prospecting_orchestration.sql`;
+  - `0125_company_intelligence_hub.sql`;
 - keep the Fastify API, Redis and BullMQ worker healthy; confirm the five-second
   outbox dispatcher, automation deliveries, sequence scheduler and retries are
   operating after deployment;
@@ -943,9 +1051,20 @@ steps still required before treating the app as live-ready:
 - deploy `workers/marketing-studio-agent-runtime` to VPS/Dokploy and configure
   `YUX_AGENT_RUNTIME_URL` plus `YUX_AGENT_RUNTIME_TOKEN` in the backend when the
   runtime should process Strategy Admin or WhatsApp jobs;
+- configure `KNOWLEDGE_STORAGE_DIR=/app/storage/company-knowledge` and confirm
+  that API and worker mount the same persistent `yux_company_knowledge_data`
+  volume before uploading documents;
 - configure runtime/provider secrets such as the Postgres connection,
   `OPENROUTER_API_KEY`, `JINA_API_KEY`, Meta/Google credentials and provider
   encryption keys only in server-side/Dokploy environments;
+- for internal YUX prospecting, configure `YUX_AGENT_RUNTIME_TOKEN`, an active
+  Meta WhatsApp connection/access-token reference and phone-number ID, and an
+  approved Meta template whose name/language/components are stored on the first
+  WhatsApp sequence step;
+- activate the organization prospecting policy only after the legal/process
+  review, record channel permission evidence per address, and start with a small
+  human-approved canary; keep the kill switch on until Radar-only validation and
+  native e-mail/Meta sandbox delivery pass;
 - run authenticated QA for `/admin/strategy-engine`, especially the
   `Harness & Learning` tab, after target migration application;
 - verify the Agent Harness runtime health endpoint and job execution in the
@@ -958,8 +1077,9 @@ steps still required before treating the app as live-ready:
 ## Recommended Next Product Focus
 
 The 2026-08-03 lead-orchestration plan and its first functional CRM expansion
-are implemented locally. The following documents remain as implementation
-contracts and acceptance checklists:
+are implemented locally. Funis, Tasks and Scoring passed the final repository
+compatibility audit and retain these documents as production acceptance
+checklists:
 
 - `docs/superpowers/plans/2026-08-03-crm-funis-funcionais.md`;
 - `docs/superpowers/plans/2026-08-03-crm-central-tarefas.md`;
@@ -967,11 +1087,19 @@ contracts and acceptance checklists:
 
 Recommended order:
 
-1. apply migrations `0119` through `0122` and validate the outbox/automation
-   path in the VPS;
-2. run the authenticated client smoke test for funis, tarefas and scoring;
-3. add the outbox/dead-letter operations surface and deeper scoring analytics
-   when operational volume justifies it.
+1. apply migrations `0119` through `0123` and validate Postgres, Redis/BullMQ,
+   outbox, Agent Harness and native delivery health in the VPS; also apply
+   `0125` before using Company Intelligence;
+2. run the active-prospecting canary in gates: Radar without outbound, approved
+   e-mail/task cadence, Meta test template, then assisted AI replies;
+3. rerun the authenticated client smoke test for Funis, Tasks and Scoring after
+   the parallel workstream is deployed;
+4. execute the Company Intelligence smoke test in
+   `docs/company-intelligence-operations.md`, including cross-organization
+   isolation and a forbidden-claim WhatsApp handoff;
+5. add the outbox/dead-letter operations surface, deeper scoring analytics and
+   advanced prospecting operations/retention controls when operational volume
+   justifies them.
 
 Finance and support should stay basic unless a real client forces deeper
 requirements.

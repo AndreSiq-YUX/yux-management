@@ -115,6 +115,7 @@ class FakePool {
     if (sql.includes('SELECT m.id, c.organization_id')) {
       return { rows: [{ id: ids.message, organization_id: ids.org }] }
     }
+    if (sql.includes('UPDATE public.messages') && sql.includes('metadata = metadata')) return { rows: [] }
 
     if (sql.includes('FROM public.omnichannel_settings')) {
       return { rows: [{ max_upload_size_mb: 10 }] }

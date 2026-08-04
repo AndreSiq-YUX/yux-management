@@ -1,9 +1,10 @@
 import { apiRequest } from '@/lib/apiClient'
-import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity } from '@/types/radar'
+import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity } from '@/types/radar'
 
 type RadarImportResponse = {
   imported: RadarOpportunity[]
   analyzed?: RadarOpportunity[]
+  analysisRequests?: RadarAnalysisRequest[]
   issues: RadarImportIssue[]
   runId: string
 }
@@ -96,7 +97,7 @@ export const radarService = {
   },
 
   async importCandidate(candidateId: string, input: { analyzeAfterImport?: boolean } = {}) {
-    return apiRequest<{ candidate: RadarCandidateRecord; opportunity: RadarOpportunity; analyzed?: RadarOpportunity[] }>(`/radar/candidates/${candidateId}/import`, { method: 'POST', body: input })
+    return apiRequest<{ candidate: RadarCandidateRecord; opportunity: RadarOpportunity; analyzed?: RadarOpportunity[]; analysisRequests?: RadarAnalysisRequest[] }>(`/radar/candidates/${candidateId}/import`, { method: 'POST', body: input })
   },
 
   async discardCandidate(candidateId: string) {
@@ -112,7 +113,7 @@ export const radarService = {
   },
 
   async runAnalysis(opportunityId: string) {
-    return apiRequest<RadarOpportunity>(`/radar/opportunities/${opportunityId}/run-analysis`, { method: 'POST' })
+    return apiRequest<RadarAnalysisRequest>(`/radar/opportunities/${opportunityId}/run-analysis`, { method: 'POST' })
   },
 
   async batchEnrich(opportunityIds: string[]) {
@@ -120,7 +121,7 @@ export const radarService = {
   },
 
   async batchAnalyze(opportunityIds: string[]) {
-    return apiRequest<{ analyzed: RadarOpportunity[] }>('/radar/opportunities/batch/analyze', { method: 'POST', body: { opportunityIds } })
+    return apiRequest<{ analyzed: RadarOpportunity[]; requests: RadarAnalysisRequest[] }>('/radar/opportunities/batch/analyze', { method: 'POST', body: { opportunityIds } })
   },
 
   async convertToLead(opportunityId: string) {

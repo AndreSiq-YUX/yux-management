@@ -22,51 +22,6 @@ const fallbackOrganization: Organization = {
   updatedAt: new Date(0).toISOString(),
 }
 
-const fallbackRole: PlatformRole = {
-  key: 'yux_admin',
-  name: 'YUX Admin',
-  scope: 'internal',
-  permissions: ['platform.manage', 'radar:manage'],
-}
-
-const fallbackClientWorkspaceRole: PlatformRole = {
-  key: 'client_admin',
-  name: 'Client Admin',
-  scope: 'client',
-  permissions: [
-    'crm.read',
-    'leads.read',
-    'landing_pages.read',
-    'landing_pages.write',
-    'projects.read',
-    'projects.write',
-    'approvals.read',
-    'approvals.write',
-    'proposals.read',
-    'proposals.write',
-    'campaigns.read',
-    'campaigns.write',
-    'marketing_studio.read',
-    'marketing_studio.write',
-    'marketing_studio.configure',
-    'marketing_studio.supervise',
-    'reports.read',
-    'reports.write',
-    'automations.read',
-    'automations.write',
-    'support.read',
-    'support.write',
-    'omnichannel.read',
-    'omnichannel.write',
-    'omnichannel.supervise',
-    'omnichannel.configure',
-    'finance.read',
-    'finance.write',
-    'blueprints.read',
-    'blueprints.write',
-  ],
-}
-
 const internalModuleKeys = [
   'clients',
   'crm',
@@ -182,14 +137,21 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
       if (organization?.isInternalGrowthWorkspace) {
         const role = roles.find(item => item.key === 'yux_admin') || null
         if (!role) throw new Error('workspace_role_unavailable')
+        const portalContractContext = organization.clientId
+          ? await platformService.getPortalContractContextForClient(organization.clientId)
+          : createEmptyPortalContractContext()
+        const portalContractContextState = {
+          ...portalContractContext,
+          enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
+        }
         set({
           mode: 'client_workspace',
           organization,
           membership: null,
           role,
           roles,
-          activeContract: null,
-          portalContractContext: createEmptyPortalContractContext(),
+          activeContract: portalContractContextState.contract,
+          portalContractContext: portalContractContextState,
           enabledModuleKeys: getInternalModuleKeys(),
           error: null,
           isLoading: false,

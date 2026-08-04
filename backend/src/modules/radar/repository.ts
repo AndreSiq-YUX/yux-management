@@ -94,6 +94,14 @@ type RadarPostCaptureOptions = {
   analyzeAfterImport?: boolean
 }
 
+export type RadarAnalysisRequest = {
+  runId: string
+  opportunityId: string
+  status: 'pending' | 'running'
+  reused: boolean
+  opportunity: RadarOpportunity
+}
+
 export function isInternalRadarUser(user: AuthUser) {
   return user.role === 'yux_admin' || user.role === 'yux_operator'
 }
@@ -867,7 +875,7 @@ export async function importRadarCandidate(
   if (!importedCandidate || !importedOpportunity) throw Object.assign(new Error('radar_candidate_import_failed'), { statusCode: 500 })
   return {
     candidate: importedCandidate,
-    opportunity: analyzed[0] ?? importedOpportunity,
+    opportunity: analyzed[0]?.opportunity ?? importedOpportunity,
     analyzed,
   }
 }
@@ -918,11 +926,11 @@ export async function updateRadarDuplicateCandidate(
 export async function batchAnalyzeRadarOpportunities(pool: pg.Pool, user: AuthUser, opportunityIds: string[]) {
   requireRadarAccess(user)
   assertSmallBatchLimit(opportunityIds.length)
-  const analyzed: RadarOpportunity[] = []
+  const requests: RadarAnalysisRequest[] = []
   for (const opportunityId of opportunityIds) {
-    analyzed.push(await runRadarOpportunityAnalysis(pool, user, opportunityId))
+    requests.push(await runRadarOpportunityAnalysis(pool, user, opportunityId))
   }
-  return { analyzed }
+  return { requests }
 }
 
 async function analyzeCapturedRadarOpportunities(
@@ -934,7 +942,7 @@ async function analyzeCapturedRadarOpportunities(
   if (!options.analyzeAfterImport || opportunities.length === 0) return []
 
   assertSmallBatchLimit(opportunities.length)
-  const analyzed: RadarOpportunity[] = []
+  const analyzed: RadarAnalysisRequest[] = []
   for (const opportunity of opportunities) {
     analyzed.push(await runRadarOpportunityAnalysis(pool, user, opportunity.id))
   }
@@ -1165,103 +1173,76 @@ export async function runRadarOpportunityAnalysis(pool: pg.Pool, user: AuthUser,
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const opportunityResult = await client.query<RadarOpportunityRow & {
-      trade_name: string | null
-      legal_name: string | null
-      city: string | null
-      state: string | null
-      website_url: string | null
-    }>(
-      `SELECT o.*, c.trade_name, c.legal_name, c.city, c.state, c.website_url
-       FROM public.radar_opportunities o
-       JOIN public.radar_company_records c ON c.id = o.company_record_id
-       WHERE o.id = $1
-       LIMIT 1`,
+    const opportunityResult = await client.query<RadarOpportunityRow>(
+      `SELECT *
+       FROM public.radar_opportunities
+       WHERE id = $1
+       FOR UPDATE`,
       [opportunityId],
     )
     const opportunity = opportunityResult.rows[0]
     if (!opportunity) throw Object.assign(new Error('radar_opportunity_not_found'), { statusCode: 404 })
+    if (opportunity.status === 'opted_out') throw Object.assign(new Error('radar_opportunity_opted_out'), { statusCode: 409 })
+    if (opportunity.status === 'converted') throw Object.assign(new Error('radar_opportunity_already_converted'), { statusCode: 409 })
 
-    const companyName = opportunity.trade_name || opportunity.legal_name || 'empresa'
-    const evidence = [{ label: 'Fonte publica', value: opportunity.website_url || `${opportunity.city}/${opportunity.state}` }]
-    const diagnostic = await client.query<{ id: string }>(
-      `INSERT INTO public.radar_diagnostics (
-         organization_id, campaign_id, company_record_id, opportunity_id, summary,
-         pain_hypotheses, recommended_offer, evidence_json, risk_flags, strategy_profile_key
-       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ai_sdr_comercial_1')
-       RETURNING id`,
-      [
-        opportunity.organization_id,
-        opportunity.campaign_id,
-        opportunity.company_record_id,
-        opportunity.id,
-        `Analise da oportunidade para ${companyName}.`,
-        ['Possivel perda de oportunidades por baixa estrutura de captura e follow-up.'],
-        'Diagnostico YUX 48h',
-        JSON.stringify(evidence),
-        [],
-      ],
+    const active = await client.query<{ id: string; status: 'pending' | 'running' }>(
+      `SELECT id, status
+       FROM public.radar_enrichment_runs
+       WHERE opportunity_id = $1
+         AND run_kind = 'analysis'
+         AND status IN ('pending', 'running')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [opportunity.id],
     )
-    const score = await client.query<{ id: string }>(
-      `INSERT INTO public.radar_scores (
+    if (active.rows[0]) {
+      await client.query('COMMIT')
+      const detail = await fetchRadarOpportunityDetail(client, opportunity.id) ?? mapOpportunity(opportunity)
+      return {
+        runId: active.rows[0].id,
+        opportunityId: opportunity.id,
+        status: active.rows[0].status,
+        reused: true,
+        opportunity: detail,
+      } satisfies RadarAnalysisRequest
+    }
+
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs (
          organization_id, campaign_id, company_record_id, opportunity_id,
-         total_score, fit_score, timing_score, pain_score, contactability_score,
-         budget_score, personalization_score, explanation
+         run_kind, status, provider, input_payload, output_payload
        )
-       VALUES ($1,$2,$3,$4,72,75,65,70,70,60,80,$5)
+       VALUES ($1,$2,$3,$4,'analysis','pending','yux_agent_runtime',$5,'{}'::JSONB)
        RETURNING id`,
       [
         opportunity.organization_id,
         opportunity.campaign_id,
         opportunity.company_record_id,
         opportunity.id,
-        'Score inicial calculado por fit, dor aparente, contato publico e personalizacao disponivel.',
+        JSON.stringify({ opportunityId: opportunity.id, requestedBy: user.id }),
       ],
-    )
-    const message = await client.query<{ id: string }>(
-      `INSERT INTO public.radar_message_suggestions (
-         organization_id, campaign_id, company_record_id, opportunity_id,
-         channel, subject, body, personalization_notes, evidence_used, policy_decision
-       )
-       VALUES ($1,$2,$3,$4,'email',$5,$6,$7,$8,$9)
-       RETURNING id`,
-      [
-        opportunity.organization_id,
-        opportunity.campaign_id,
-        opportunity.company_record_id,
-        opportunity.id,
-        `Analise rapida para ${companyName}`,
-        `Analisei sinais publicos da ${companyName} e identifiquei oportunidades de melhoria comercial. Posso te enviar 3 ideias praticas?`,
-        'Revisao humana obrigatoria antes de qualquer envio.',
-        JSON.stringify(evidence),
-        JSON.stringify({
-          status: 'requires_human_approval',
-          canSendAutomatically: false,
-          canConvertToLead: true,
-          blockedReasons: [],
-          requiredReviewFields: ['message', 'evidence', 'risk_flags'],
-        }),
-      ],
-    )
-    const updated = await client.query<RadarOpportunityRow>(
-      `UPDATE public.radar_opportunities
-       SET status = 'review_pending',
-           latest_diagnostic_id = $2,
-           latest_score_id = $3,
-           latest_message_suggestion_id = $4,
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [opportunity.id, diagnostic.rows[0].id, score.rows[0].id, message.rows[0].id],
     )
     await client.query(
-      `INSERT INTO public.radar_outreach_events (organization_id, campaign_id, company_record_id, opportunity_id, event_type)
-       VALUES ($1,$2,$3,$4,'diagnostic_generated'), ($1,$2,$3,$4,'score_generated'), ($1,$2,$3,$4,'message_generated')`,
-      [opportunity.organization_id, opportunity.campaign_id, opportunity.company_record_id, opportunity.id],
+      `UPDATE public.radar_opportunities
+       SET status = 'diagnosing', updated_at = NOW()
+       WHERE id = $1`,
+      [opportunity.id],
+    )
+    await client.query(
+      `INSERT INTO public.radar_outreach_events (
+         organization_id, campaign_id, company_record_id, opportunity_id, event_type, notes
+       ) VALUES ($1,$2,$3,$4,'analysis_requested',$5)`,
+      [opportunity.organization_id, opportunity.campaign_id, opportunity.company_record_id, opportunity.id, `run:${run.rows[0].id}`],
     )
     await client.query('COMMIT')
-    return await fetchRadarOpportunityDetail(client, updated.rows[0].id) ?? mapOpportunity(updated.rows[0])
+    const detail = await fetchRadarOpportunityDetail(client, opportunity.id) ?? mapOpportunity({ ...opportunity, status: 'diagnosing' })
+    return {
+      runId: run.rows[0].id,
+      opportunityId: opportunity.id,
+      status: 'pending',
+      reused: false,
+      opportunity: detail,
+    } satisfies RadarAnalysisRequest
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
@@ -1474,6 +1455,7 @@ export function mapEnrichmentRun(row: RadarEnrichmentRunRow): RadarEnrichmentRun
     dataSourceId: row.data_source_id ?? undefined,
     agentExecutionRunId: row.agent_execution_run_id ?? undefined,
     status: row.status,
+    runKind: row.run_kind ?? 'enrichment',
     provider: row.provider,
     inputPayload: row.input_payload ?? {},
     outputPayload: row.output_payload ?? {},

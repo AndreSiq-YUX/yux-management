@@ -77,10 +77,19 @@ class SupabaseAgentRuntimeStore:
 class PostgresAgentRuntimeStore:
     """Durable store used in production; InMemory remains test-only."""
 
-    allowed_tables = {
+    writable_tables = {
         "agent_events", "agent_queue_jobs", "agent_execution_runs", "agent_execution_steps",
         "agent_context_snapshots", "agent_verification_results", "strategy_subagent_runs",
-        "agent_outcomes", "agent_learning_signals",
+        "agent_outcomes", "agent_learning_signals", "yux_strategy_retrieval_queries",
+    }
+    readable_tables = writable_tables | {
+        "yux_strategy_agent_profiles", "marketing_agent_global_prompts", "model_routing_rules",
+        "marketing_agent_tool_policies", "agent_budget_policies", "strategy_workflow_specs",
+        "agent_autonomy_policies", "yux_strategy_concept_cards", "yux_strategy_source_chunks",
+        "yux_strategy_source_assets", "yux_strategy_profile_tool_policies",
+        "organization_company_profiles", "marketing_brand_profiles", "marketing_products_services",
+        "knowledge_sources", "knowledge_entries", "ai_assistant_knowledge_links",
+        "ai_assistant_safety_rules",
     }
 
     def __init__(self, database_url: str | None = None):
@@ -99,8 +108,9 @@ class PostgresAgentRuntimeStore:
 
         return dict_row
 
-    def _table(self, table: str) -> str:
-        if table not in self.allowed_tables:
+    def _table(self, table: str, *, write: bool = False) -> str:
+        allowed = self.writable_tables if write else self.readable_tables
+        if table not in allowed:
             raise ValueError(f"unsupported_runtime_table:{table}")
         return table
 
@@ -121,7 +131,7 @@ class PostgresAgentRuntimeStore:
         return row
 
     def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
-        table = self._table(table)
+        table = self._table(table, write=True)
         columns = list(payload.keys())
         values = [self._value(payload[column]) for column in columns]
         placeholders = ", ".join(["%s"] * len(columns))
@@ -133,7 +143,7 @@ class PostgresAgentRuntimeStore:
             return self._row(dict(cursor.fetchone()))
 
     def update(self, table: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        table = self._table(table)
+        table = self._table(table, write=True)
         columns = list(payload.keys())
         assignments = ", ".join(f"{column} = %s" for column in columns)
         values = [self._value(payload[column]) for column in columns] + [record_id]

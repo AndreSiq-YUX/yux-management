@@ -32,6 +32,7 @@ export interface RadarEnrichmentRun {
   agentExecutionRunId?: string
   provider: string
   status: RadarRunStatus
+  runKind: 'discovery' | 'enrichment' | 'analysis'
   inputPayload: Record<string, unknown>
   outputPayload: Record<string, unknown>
   errorMessage?: string
@@ -39,6 +40,15 @@ export interface RadarEnrichmentRun {
   completedAt?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface RadarAnalysisRequest {
+  runId: string
+  opportunityId: string
+  status: 'pending' | 'running'
+  reused: boolean
+  jobId?: string | number
+  opportunity: RadarOpportunity
 }
 
 export interface RadarCandidateRecord {

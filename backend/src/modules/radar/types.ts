@@ -120,6 +120,7 @@ export type RadarEnrichmentRunRow = {
   data_source_id: string | null
   agent_execution_run_id: string | null
   status: RadarRunStatus
+  run_kind: 'discovery' | 'enrichment' | 'analysis'
   provider: string
   input_payload: Record<string, unknown>
   output_payload: Record<string, unknown>
@@ -290,6 +291,7 @@ export interface RadarEnrichmentRun {
   dataSourceId?: string
   agentExecutionRunId?: string
   status: RadarRunStatus
+  runKind: 'discovery' | 'enrichment' | 'analysis'
   provider: string
   inputPayload: Record<string, unknown>
   outputPayload: Record<string, unknown>

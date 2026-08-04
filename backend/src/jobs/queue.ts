@@ -21,6 +21,8 @@ export const JOB_NAMES = [
   'provider.syncMetrics',
   'email.send',
   'strategy.adminChat',
+  'radar.analyzeOpportunity',
+  'company-intelligence.indexKnowledge',
   'proposal.convert',
   'maintenance.purgeExpiredTraces',
   'maintenance.refreshGoogleTokens',

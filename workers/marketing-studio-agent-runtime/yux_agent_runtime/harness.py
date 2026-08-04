@@ -95,6 +95,22 @@ def compose_prompt(global_prompt: dict[str, Any], agent: dict[str, Any], context
         context_lines.append("Produtos: " + "; ".join(context["products"]))
     if context.get("knowledge_snippets"):
         context_lines.append("Conhecimento: " + " | ".join(context["knowledge_snippets"]))
+    brand_rules = context.get("brand_rules")
+    if isinstance(brand_rules, dict):
+        required = _string_list(brand_rules.get("vocabulary_do"))
+        forbidden_vocabulary = _string_list(brand_rules.get("vocabulary_dont"))
+        forbidden_topics = _string_list(brand_rules.get("forbidden_topics"))
+        safety_rules = _string_list(brand_rules.get("assistant_safety_rules"))
+        if required:
+            context_lines.append("Vocabulário recomendado: " + "; ".join(required))
+        if forbidden_vocabulary:
+            context_lines.append("Guardrails obrigatórios — não usar: " + "; ".join(forbidden_vocabulary))
+        if forbidden_topics:
+            context_lines.append("Guardrails obrigatórios — não abordar: " + "; ".join(forbidden_topics))
+        if brand_rules.get("compliance_notes"):
+            context_lines.append(f"Compliance obrigatório: {brand_rules['compliance_notes']}")
+        for rule in safety_rules:
+            context_lines.append(f"Regra obrigatória do assistente: {rule}")
 
     prompt_config = {
         **global_prompt.get("default_context_policy", {}),
@@ -129,8 +145,30 @@ def estimate_prompt_hash(system_prompt: str, agent_prompt: str, context_block: s
     return sha256(payload.encode("utf-8")).hexdigest()
 
 
-def select_model_route(agent: dict[str, Any], routes: list[dict[str, Any]], tier: str = "default") -> dict[str, Any]:
-    active_routes = [route for route in routes if route.get("status", "active") == "active"]
+def _scope_matches(record: dict[str, Any], context: dict[str, Any] | None) -> bool:
+    context = context or {}
+    for key in ("organization_id", "client_id", "contract_id"):
+        expected = record.get(key)
+        if expected not in (None, "") and str(expected) != str(context.get(key) or ""):
+            return False
+    return True
+
+
+def _scope_specificity(record: dict[str, Any]) -> int:
+    return sum(1 for key in ("organization_id", "client_id", "contract_id") if record.get(key) not in (None, ""))
+
+
+def select_model_route(
+    agent: dict[str, Any],
+    routes: list[dict[str, Any]],
+    tier: str = "default",
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    active_routes = [
+        route for route in routes
+        if route.get("status", "active") == "active" and _scope_matches(route, context)
+    ]
+    active_routes.sort(key=_scope_specificity, reverse=True)
     for predicate in (
         lambda route: route.get("agent_id") == agent.get("id") and route.get("routing_tier") == tier,
         lambda route: route.get("agent_type") == agent.get("agent_type") and route.get("routing_tier") == tier,
@@ -153,7 +191,11 @@ def select_model_route(agent: dict[str, Any], routes: list[dict[str, Any]], tier
     }
 
 
-def filter_allowed_tools(agent: dict[str, Any], policies: list[dict[str, Any]]) -> list[str]:
+def filter_allowed_tools(
+    agent: dict[str, Any],
+    policies: list[dict[str, Any]],
+    context: dict[str, Any] | None = None,
+) -> list[str]:
     allowed_tools = agent.get("allowed_tools", [])
     filtered = []
     for tool in allowed_tools:
@@ -161,6 +203,7 @@ def filter_allowed_tools(agent: dict[str, Any], policies: list[dict[str, Any]]) 
             (
                 item
                 for item in policies
+                if _scope_matches(item, context)
                 if (item.get("agent_id") == agent.get("id") or item.get("agent_type") == agent.get("agent_type"))
                 and item.get("tool_key") == tool
             ),
@@ -194,9 +237,9 @@ class Harness:
         agent = state["agent"]
         global_prompt = self.global_prompts[agent["agent_type"]]
         prompt = compose_prompt(global_prompt, agent, state.get("context", {}))
-        route = select_model_route(agent, self.routes, state.get("routing_tier", "default"))
-        tools = filter_allowed_tools(agent, self.tool_policies)
-        budget = self._find_budget(agent)
+        route = select_model_route(agent, self.routes, state.get("routing_tier", "default"), state)
+        tools = filter_allowed_tools(agent, self.tool_policies, state)
+        budget = self._find_budget(agent, state)
 
         estimated_credits = int(state.get("estimated_credits", 0))
         estimated_cost = float(state.get("estimated_cost", 0))
@@ -236,15 +279,15 @@ class Harness:
             "agent_runs": [*state.get("agent_runs", []), agent_run],
         }
 
-    def _find_budget(self, agent: dict[str, Any]) -> dict[str, Any] | None:
-        return next(
-            (
-                policy
-                for policy in self.budget_policies
-                if policy.get("agent_id") == agent.get("id") or policy.get("agent_type") == agent.get("agent_type")
-            ),
-            None,
-        )
+    def _find_budget(self, agent: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        matching = [
+            policy
+            for policy in self.budget_policies
+            if _scope_matches(policy, context)
+            and (policy.get("agent_id") == agent.get("id") or policy.get("agent_type") == agent.get("agent_type"))
+        ]
+        matching.sort(key=_scope_specificity, reverse=True)
+        return matching[0] if matching else None
 
     def _execute_llm_if_configured(
         self,

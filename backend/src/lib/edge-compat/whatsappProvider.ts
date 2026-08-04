@@ -20,6 +20,20 @@ export interface WhatsAppSendInput extends WhatsAppTextInput {
   fetchFn?: typeof fetch
 }
 
+export interface WhatsAppTemplateInput {
+  to: string
+  templateName: string
+  languageCode?: string
+  components?: JsonRecord[]
+}
+
+export interface WhatsAppTemplateSendInput extends WhatsAppTemplateInput {
+  phoneNumberId?: string | null
+  accessToken?: string | null
+  graphVersion?: string
+  fetchFn?: typeof fetch
+}
+
 export type NormalizedWhatsAppInboundEvent = NormalizedInboundEvent & {
   externalMessageId: string
   phoneNumberId: string
@@ -151,6 +165,20 @@ export function buildWhatsAppTextPayload(input: WhatsAppTextInput) {
   }
 }
 
+export function buildWhatsAppTemplatePayload(input: WhatsAppTemplateInput) {
+  return {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: requiredString(input.to, 'to'),
+    type: 'template',
+    template: {
+      name: requiredString(input.templateName, 'templateName'),
+      language: { code: input.languageCode || 'pt_BR' },
+      ...(input.components?.length ? { components: input.components } : {}),
+    },
+  }
+}
+
 export function buildWhatsAppMessagesUrl(phoneNumberId: string, graphVersion = 'v20.0') {
   return `https://graph.facebook.com/${graphVersion}/${requiredString(phoneNumberId, 'phoneNumberId')}/messages`
 }
@@ -220,5 +248,24 @@ export async function sendWhatsAppTextMessage(input: WhatsAppSendInput) {
       status: 0,
       error: sanitizeProtectedError(error).message,
     }
+  }
+}
+
+export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateSendInput) {
+  if (!input.phoneNumberId || !input.accessToken) {
+    return { configured: false, ok: false, status: 0, error: 'WhatsApp access token or phone number id is not configured' }
+  }
+  const payload = buildWhatsAppTemplatePayload(input)
+  const request = input.fetchFn || fetch
+  try {
+    const response = await request(buildWhatsAppMessagesUrl(input.phoneNumberId, input.graphVersion), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${input.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await response.json().catch(() => ({}))
+    return { configured: true, ok: response.ok, status: response.status, data: sanitizeWebhookMetadata(data) }
+  } catch (error) {
+    return { configured: true, ok: false, status: 0, error: sanitizeProtectedError(error).message }
   }
 }

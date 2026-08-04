@@ -25,6 +25,7 @@ import {
   runRadarAssistedSearch,
   updateRadarDuplicateCandidate,
   updateRadarDataSource,
+  type RadarAnalysisRequest,
 } from './repository.js'
 
 const uuid = z.string().uuid()
@@ -120,6 +121,16 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
   return user
 }
 
+async function enqueueRadarAnalysis(app: FastifyInstance, requests: RadarAnalysisRequest[]) {
+  return Promise.all(requests.map(async analysis => {
+    const job = await app.jobQueue.add('radar.analyzeOpportunity', {
+      runId: analysis.runId,
+      opportunityId: analysis.opportunityId,
+    })
+    return { ...analysis, jobId: job.id }
+  }))
+}
+
 export async function registerRadarRoutes(app: FastifyInstance) {
   app.get('/data-sources', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
@@ -169,7 +180,9 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     const parsed = importCsvSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_csv_payload' })
-    return reply.code(201).send(await importRadarCsvToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+    const result = await importRadarCsvToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id })
+    const analysisRequests = await enqueueRadarAnalysis(app, result.analyzed)
+    return reply.code(201).send({ ...result, analyzed: analysisRequests.map(item => item.opportunity), analysisRequests })
   })
 
   app.post('/campaigns/:id/import-urls', async (request, reply) => {
@@ -178,7 +191,9 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     const parsed = importUrlsSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_urls_payload' })
-    return reply.code(201).send(await importRadarUrlsToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+    const result = await importRadarUrlsToCampaign(app.pg, user, { ...parsed.data, campaignId: params.data.id })
+    const analysisRequests = await enqueueRadarAnalysis(app, result.analyzed)
+    return reply.code(201).send({ ...result, analyzed: analysisRequests.map(item => item.opportunity), analysisRequests })
   })
 
   app.post('/campaigns/:id/search-web', async (request, reply) => {
@@ -217,7 +232,9 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     const parsed = importCandidateSchema.safeParse(request.body ?? {})
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_candidate_payload' })
-    return importRadarCandidate(app.pg, user, params.data.id, parsed.data ?? {})
+    const result = await importRadarCandidate(app.pg, user, params.data.id, parsed.data ?? {})
+    const analysisRequests = await enqueueRadarAnalysis(app, result.analyzed)
+    return { ...result, analyzed: analysisRequests.map(item => item.opportunity), analysisRequests }
   })
 
   app.post('/candidates/:id/discard', async (request, reply) => {
@@ -291,7 +308,9 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     if (!user) return reply
     const params = z.object({ id: uuid }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_radar_opportunity_id' })
-    return runRadarOpportunityAnalysis(app.pg, user, params.data.id)
+    const analysis = await runRadarOpportunityAnalysis(app.pg, user, params.data.id)
+    const [queued] = await enqueueRadarAnalysis(app, [analysis])
+    return reply.code(202).send(queued)
   })
 
   app.post('/opportunities/batch/analyze', async (request, reply) => {
@@ -299,7 +318,9 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     if (!user) return reply
     const parsed = batchOpportunitySchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_radar_batch_payload' })
-    return batchAnalyzeRadarOpportunities(app.pg, user, parsed.data.opportunityIds)
+    const result = await batchAnalyzeRadarOpportunities(app.pg, user, parsed.data.opportunityIds)
+    const requests = await enqueueRadarAnalysis(app, result.requests)
+    return reply.code(202).send({ requests, analyzed: requests.map(item => item.opportunity) })
   })
 
   app.post('/opportunities/batch/enrich', async (request, reply) => {

@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import type pg from 'pg'
 import { queueEmailRequest, sendEmailRequest } from '../email-delivery/service.js'
+import { resolveProspectingEligibility } from '../prospecting/repository.js'
 
 export type CrmSequenceSchedulerOptions = {
   now?: Date
@@ -11,6 +12,9 @@ export type CrmSequenceSchedulerOptions = {
   emailKeyMaterial?: string
   emailJobQueue?: {
     add(name: 'email.send', data: Record<string, unknown>): Promise<unknown>
+  }
+  whatsappJobQueue?: {
+    add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>): Promise<unknown>
   }
 }
 
@@ -35,6 +39,7 @@ type StepRow = {
   body: string
   order_index: number
   is_active: boolean
+  metadata: Record<string, unknown>
 }
 
 type EnrollmentDatabaseRow = {
@@ -73,7 +78,7 @@ export async function enqueueMissingDueExecutions(pool: pg.Pool, options: CrmSeq
   const limit = options.limit ?? 100
   const result = await pool.query(
     `WITH due AS (
-       SELECT e.id AS enrollment_id, e.organization_id, e.lead_id, e.sequence_id, e.current_step_index, e.next_execution_at
+       SELECT e.id AS enrollment_id, e.organization_id, e.lead_id, e.sequence_id, e.current_step_index, e.next_execution_at, e.manual_note
        FROM public.crm_sequence_enrollments e
        WHERE e.status = 'active'
          AND e.next_execution_at IS NOT NULL
@@ -96,7 +101,7 @@ export async function enqueueMissingDueExecutions(pool: pg.Pool, options: CrmSeq
        LIMIT $2
      ),
      next_steps AS (
-       SELECT due.*, s.id AS step_id, s.action_type, s.subject, s.body, s.order_index
+       SELECT due.*, s.id AS step_id, s.action_type, s.subject, s.body, s.order_index, s.metadata
        FROM due
        JOIN LATERAL (
          SELECT *
@@ -112,7 +117,11 @@ export async function enqueueMissingDueExecutions(pool: pg.Pool, options: CrmSeq
        organization_id, lead_id, enrollment_id, step_id, action_type, payload, scheduled_at
      )
      SELECT organization_id, lead_id, enrollment_id, step_id, action_type,
-       jsonb_build_object('subject', subject, 'body', body), next_execution_at
+       jsonb_build_object(
+         'subject', subject,
+         'body', body,
+         'prospectingPlanId', CASE WHEN manual_note LIKE 'prospecting-plan:%' THEN split_part(manual_note, ':', 2) ELSE NULL END
+       ) || COALESCE(metadata, '{}'::jsonb), next_execution_at
      FROM next_steps
      RETURNING id`,
     [now.toISOString(), limit],
@@ -144,6 +153,7 @@ export async function processDueExecutions(pool: pg.Pool, options: CrmSequenceSc
 export async function processSequenceExecution(pool: pg.Pool, executionId: string, options: CrmSequenceSchedulerOptions = {}) {
   const client = await pool.connect()
   let emailRequestId: string | null = null
+  let whatsappMessageId: string | null = null
   try {
     await client.query('BEGIN')
     const result = await client.query<ExecutionRow & { lead_name: string | null; lead_email: string | null; lead_phone: string | null }>(
@@ -172,8 +182,20 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
       [executionId],
     )
 
+    await enforceProspectingExecutionPolicy(client, execution)
     const actionResult = await executeSequenceAction(client, execution, options)
     emailRequestId = actionResult?.emailRequestId ?? null
+    whatsappMessageId = actionResult?.whatsappMessageId ?? null
+    if (textValue(execution.payload.prospectingPlanId) && (emailRequestId || whatsappMessageId)) {
+      await client.query(
+        `INSERT INTO public.radar_outreach_events (
+           organization_id, opportunity_id, lead_id, channel, event_type, notes
+         )
+         SELECT plan.organization_id, plan.radar_opportunity_id, plan.lead_id, $2, 'contact_queued', $3
+         FROM public.prospecting_plans plan WHERE plan.id = $1`,
+        [textValue(execution.payload.prospectingPlanId), execution.action_type, `execution:${execution.id}`],
+      )
+    }
     await client.query(
       `UPDATE public.automation_executions
        SET status = 'completed', completed_at = $2
@@ -185,13 +207,16 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
     if (emailRequestId && options.emailJobQueue) {
       await options.emailJobQueue.add('email.send', { requestId: emailRequestId })
     }
+    if (whatsappMessageId && options.whatsappJobQueue) {
+      await options.whatsappJobQueue.add('omnichannel.dispatchOutbound', { messageId: whatsappMessageId })
+    }
     await client.query('COMMIT')
 
     if (emailRequestId && !options.emailJobQueue) {
       const keyMaterial = options.emailKeyMaterial ?? process.env.SESSION_SECRET
       if (keyMaterial) await sendEmailRequest(pool, emailRequestId, keyMaterial)
     }
-    return { success: true, emailRequestId }
+    return { success: true, emailRequestId, whatsappMessageId }
   } catch (error) {
     await client.query('ROLLBACK')
     const message = error instanceof Error ? error.message : 'unknown_sequence_error'
@@ -262,6 +287,7 @@ async function executeSequenceAction(
         enrollmentId: execution.enrollment_id,
         correlationId: textValue(payload.correlationId) || execution.id,
         unsubscribeUrl: textValue(payload.unsubscribeUrl) || null,
+        prospectingPlanId: textValue(payload.prospectingPlanId) || null,
       },
       correlationId: textValue(payload.correlationId) || execution.id,
       causationId: textValue(payload.causationId),
@@ -273,7 +299,67 @@ async function executeSequenceAction(
     return { emailRequestId: request.id }
   }
 
-  // WhatsApp remains on the existing signed adapter until its internal service exists.
+  if (execution.action_type === 'whatsapp') {
+    if (!execution.lead_phone) throw new Error('whatsapp_recipient_phone_required')
+    const payload = execution.payload
+    const connection = await client.query<{ id: string }>(
+      `SELECT id FROM public.channel_connections
+       WHERE organization_id = $1 AND channel = 'whatsapp' AND is_active = TRUE
+         AND ($2::uuid IS NULL OR id = $2)
+       ORDER BY updated_at DESC LIMIT 1`,
+      [execution.organization_id, textValue(payload.connectionId) || null],
+    )
+    if (!connection.rows[0]) throw new Error('whatsapp_connection_required')
+    const existingContact = await client.query<{ id: string }>(
+      `SELECT id FROM public.omnichannel_contacts
+       WHERE organization_id = $1 AND (lead_id = $2 OR phone = $3)
+       ORDER BY updated_at DESC LIMIT 1`,
+      [execution.organization_id, execution.lead_id, execution.lead_phone],
+    )
+    const contactId = existingContact.rows[0]?.id || (await client.query<{ id: string }>(
+      `INSERT INTO public.omnichannel_contacts (organization_id, display_name, phone, lead_id, external_identities)
+       VALUES ($1,$2,$3,$4,jsonb_build_object('source','crm_sequence'))
+       RETURNING id`,
+      [execution.organization_id, execution.lead_name || execution.lead_phone, execution.lead_phone, execution.lead_id],
+    )).rows[0]?.id
+    if (!contactId) throw new Error('whatsapp_contact_required')
+    const conversation = await client.query<{ id: string }>(
+      `SELECT id FROM public.conversations
+       WHERE organization_id = $1 AND contact_id = $2 AND connection_id = $3 AND status <> 'resolved'
+       ORDER BY updated_at DESC LIMIT 1`,
+      [execution.organization_id, contactId, connection.rows[0].id],
+    )
+    const conversationId = conversation.rows[0]?.id || (await client.query<{ id: string }>(
+      `INSERT INTO public.conversations (
+         organization_id, contact_id, connection_id, channel, status, response_mode, lead_id, last_message_at
+       ) VALUES ($1,$2,$3,'whatsapp','open','assisted',$4,NOW()) RETURNING id`,
+      [execution.organization_id, contactId, connection.rows[0].id, execution.lead_id],
+    )).rows[0]?.id
+    if (!conversationId) throw new Error('whatsapp_conversation_required')
+    const templateName = textValue(payload.templateName)
+    const message = await client.query<{ id: string }>(
+      `INSERT INTO public.messages (
+         conversation_id, connection_id, direction, author_type, content_type, body, delivery_status, metadata
+       ) VALUES ($1,$2,'outbound','system',$3,$4,'queued',$5::jsonb)
+       RETURNING id`,
+      [
+        conversationId,
+        connection.rows[0].id,
+        templateName ? 'template' : 'text',
+        textValue(payload.body) || '',
+        JSON.stringify({
+          source: 'crm_sequence', executionId: execution.id, enrollmentId: execution.enrollment_id,
+          prospectingPlanId: textValue(payload.prospectingPlanId) || undefined,
+          approvalStatus: 'approved', templateName: templateName || undefined,
+          languageCode: textValue(payload.languageCode) || 'pt_BR',
+          components: Array.isArray(payload.components) ? payload.components : undefined,
+        }),
+      ],
+    )
+    return { whatsappMessageId: message.rows[0]?.id ?? null }
+  }
+
+  // Unknown legacy actions remain on the signed adapter during migration.
   const webhookUrl = options.crmWebhookUrl ?? process.env.N8N_CRM_WEBHOOK_URL
   if (!webhookUrl) throw new Error('N8N_CRM_WEBHOOK_URL is not configured')
   const webhookSecret = options.crmWebhookSecret ?? process.env.N8N_WEBHOOK_SECRET
@@ -336,7 +422,7 @@ async function resolveEmailTemplate(client: pg.PoolClient, organizationId: strin
 async function enqueueNextStep(client: pg.PoolClient, execution: ExecutionRow, now: Date) {
   if (!execution.enrollment_id || !execution.step_id) return
   const currentStepResult = await client.query<StepRow>(
-    `SELECT id, sequence_id, action_type, delay_minutes, subject, body, order_index, is_active
+    `SELECT id, sequence_id, action_type, delay_minutes, subject, body, order_index, is_active, metadata
      FROM public.crm_sequence_steps WHERE id = $1 LIMIT 1`,
     [execution.step_id],
   )
@@ -344,7 +430,7 @@ async function enqueueNextStep(client: pg.PoolClient, execution: ExecutionRow, n
   if (!currentStep) return
 
   const nextStepResult = await client.query<StepRow>(
-    `SELECT id, sequence_id, action_type, delay_minutes, subject, body, order_index, is_active
+    `SELECT id, sequence_id, action_type, delay_minutes, subject, body, order_index, is_active, metadata
      FROM public.crm_sequence_steps
      WHERE sequence_id = $1 AND is_active = TRUE AND order_index > $2
      ORDER BY order_index ASC LIMIT 1`,
@@ -390,10 +476,40 @@ async function enqueueNextStep(client: pg.PoolClient, execution: ExecutionRow, n
       execution.enrollment_id,
       nextStep.id,
       nextStep.action_type,
-      JSON.stringify({ subject: nextStep.subject, body: nextStep.body }),
+      JSON.stringify({
+        subject: nextStep.subject,
+        body: nextStep.body,
+        ...(nextStep.metadata || {}),
+        ...(textValue(execution.payload.prospectingPlanId) ? { prospectingPlanId: textValue(execution.payload.prospectingPlanId) } : {}),
+      }),
       scheduledAt.toISOString(),
     ],
   )
+}
+
+async function enforceProspectingExecutionPolicy(client: pg.PoolClient, execution: ExecutionRow & { lead_email: string | null; lead_phone: string | null }) {
+  const planId = textValue(execution.payload.prospectingPlanId)
+  if (!planId || (execution.action_type !== 'email' && execution.action_type !== 'whatsapp')) return
+  const plan = await client.query<{ organization_id: string; radar_opportunity_id: string; primary_channel: 'email' | 'whatsapp' }>(
+    `SELECT organization_id, radar_opportunity_id, primary_channel
+     FROM public.prospecting_plans WHERE id = $1 AND status = 'active' LIMIT 1`,
+    [planId],
+  )
+  if (!plan.rows[0]) throw new Error('active_prospecting_plan_required')
+  const eligibility = await resolveProspectingEligibility(client, {
+    organizationId: plan.rows[0].organization_id,
+    leadId: execution.lead_id,
+    opportunityId: plan.rows[0].radar_opportunity_id,
+    channel: execution.action_type,
+    address: execution.action_type === 'email' ? execution.lead_email : execution.lead_phone,
+  })
+  if (!eligibility.allowed) {
+    await client.query(
+      `UPDATE public.prospecting_plans SET status = 'blocked', blocked_reasons = $2, updated_at = NOW() WHERE id = $1`,
+      [planId, eligibility.blockedReasons],
+    )
+    throw new Error(eligibility.blockedReasons.join(','))
+  }
 }
 
 export async function enrollLeadInSequence(pool: pg.Pool, input: EnrollLeadInSequenceInput) {

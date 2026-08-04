@@ -46,9 +46,11 @@ services:
       MATERIALS_STORAGE_DIR: ${MATERIALS_STORAGE_DIR:-/app/storage/materials}
       OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
       OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
+      KNOWLEDGE_STORAGE_DIR: ${KNOWLEDGE_STORAGE_DIR:-/app/storage/company-knowledge}
     volumes:
       - yux_materials_data:/app/storage/materials
       - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
+      - yux_company_knowledge_data:/app/storage/company-knowledge
     depends_on:
       - yux-postgres
       - yux-redis
@@ -74,9 +76,11 @@ services:
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
       OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
       OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
+      KNOWLEDGE_STORAGE_DIR: ${KNOWLEDGE_STORAGE_DIR:-/app/storage/company-knowledge}
       N8N_CRM_WEBHOOK_URL: ${N8N_CRM_WEBHOOK_URL:-}
     volumes:
       - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
+      - yux_company_knowledge_data:/app/storage/company-knowledge
     depends_on:
       - yux-postgres
       - yux-redis
@@ -118,3 +122,4 @@ volumes:
   yux_redis_data:
   yux_materials_data:
   yux_omnichannel_attachments_data:
+  yux_company_knowledge_data:

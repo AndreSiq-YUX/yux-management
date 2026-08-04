@@ -197,6 +197,16 @@ export async function sendEmailRequest(
       },
       correlationId: correlationFromRequest(request),
     })
+    if (typeof request.metadata.prospectingPlanId === 'string') {
+      await pool.query(
+        `INSERT INTO public.radar_outreach_events (
+           organization_id, opportunity_id, lead_id, channel, event_type, notes
+         )
+         SELECT organization_id, radar_opportunity_id, lead_id, 'email', 'contact_sent', $2
+         FROM public.prospecting_plans WHERE id = $1`,
+        [request.metadata.prospectingPlanId, `email_request:${request.id}`],
+      )
+    }
     return { success: true, requestId: request.id, status: 'sent', providerMessageId: providerResult.providerMessageId }
   }
 

@@ -1,10 +1,19 @@
-import { BookOpen } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { BookOpen, Plus, RefreshCw } from 'lucide-react'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { KnowledgeCreateDialog } from '@/components/company-intelligence/KnowledgeCreateDialog'
+import { KnowledgeLibrary } from '@/components/company-intelligence/KnowledgeLibrary'
 import { KnowledgeReadinessPanel } from '@/components/growth-workspace/KnowledgeReadinessPanel'
+import { Button } from '@/components/ui/button'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
-import { countItems, formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { countItems } from '@/lib/client-portal/portalDisplay'
+import { companyIntelligenceService } from '@/services/companyIntelligenceService'
+import { usePlatformStore } from '@/stores/platformStore'
+import type { CompanyKnowledgeDocument } from '@/types/companyIntelligence'
 
 export function PortalKnowledgeBasePage() {
+  const organization = usePlatformStore(state => state.organization)
+  const activeContract = usePlatformStore(state => state.activeContract)
   const {
     loading,
     error,
@@ -14,9 +23,38 @@ export function PortalKnowledgeBasePage() {
     productsServices,
     settings,
   } = usePortalMarketingContext()
+  const [documents, setDocuments] = useState<CompanyKnowledgeDocument[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
 
-  const publishedCount = countItems(knowledgeDocuments, document => document.status === 'published')
-  const indexedCount = countItems(knowledgeDocuments, document => document.status === 'indexed')
+  const loadLibrary = useCallback(async (quiet = false) => {
+    if (!organization?.id) return
+    if (!quiet) setLibraryLoading(true)
+    try {
+      setDocuments(await companyIntelligenceService.listKnowledge(organization.id))
+    } catch (error) {
+      console.error('Falha ao carregar base editável:', error)
+    } finally {
+      if (!quiet) setLibraryLoading(false)
+    }
+  }, [organization?.id])
+
+  useEffect(() => { void loadLibrary() }, [loadLibrary])
+  useEffect(() => {
+    if (!documents.some(document => document.status === 'indexing')) return
+    const interval = window.setInterval(() => { void loadLibrary(true) }, 5_000)
+    return () => window.clearInterval(interval)
+  }, [documents, loadLibrary])
+
+  const replaceDocument = (changed: CompanyKnowledgeDocument) => {
+    setDocuments(current => current.some(item => item.id === changed.id)
+      ? current.map(item => item.id === changed.id ? changed : item)
+      : [changed, ...current])
+  }
+
+  const effectiveDocuments = documents.length ? documents : knowledgeDocuments
+  const publishedCount = countItems(effectiveDocuments, document => document.status === 'published')
+  const indexedCount = countItems(effectiveDocuments, document => document.status === 'indexed')
   const activeProducts = productsServices.filter(product => product.status === 'active')
   const brandReadinessProfile = brandProfile || (settings ? {
     toneOfVoice: settings.toneOfVoice || '',
@@ -35,7 +73,7 @@ export function PortalKnowledgeBasePage() {
       description="Fonte compartilhada da empresa para IA, marketing, respostas sugeridas, campanhas, landing pages, FAQ e suporte."
       icon={BookOpen}
       metrics={[
-        { label: 'Documentos', value: String(knowledgeDocuments.length), detail: `${publishedCount} publicados e ${indexedCount} indexados.` },
+        { label: 'Documentos', value: String(effectiveDocuments.length), detail: `${publishedCount} publicados e ${indexedCount} prontos para publicar.` },
         { label: 'Ofertas', value: String(activeProducts.length), detail: 'Produtos e servicos ativos para contexto comercial.' },
         { label: 'Busca IA', value: String(knowledgeMatches.length), detail: 'Trechos recuperados pela busca semantica.' },
       ]}
@@ -58,56 +96,15 @@ export function PortalKnowledgeBasePage() {
         productsServices={productsServices}
         knowledgeMatches={knowledgeMatches}
       />
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-lg border bg-white p-5">
-          <h2 className="text-base font-semibold text-gray-900">Documentos recentes</h2>
-          {loading ? (
-            <p className="mt-3 text-sm text-gray-600">Carregando base de conhecimento...</p>
-          ) : error ? (
-            <p className="mt-3 text-sm text-red-600">{error}</p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {knowledgeDocuments.slice(0, 6).map(document => (
-                <div key={document.id} className="rounded-md border bg-gray-50 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">{document.title}</p>
-                    <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(document.status)}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {statusLabel(document.documentType)} - atualizado em {formatPortalDate(document.updatedAt)}
-                  </p>
-                  {document.summary && <p className="mt-2 line-clamp-2 text-xs text-gray-600">{document.summary}</p>}
-                </div>
-              ))}
-              {!knowledgeDocuments.length && (
-                <p className="text-sm text-gray-600">Nenhum documento de conhecimento cadastrado para este contrato.</p>
-              )}
-            </div>
-          )}
-        </article>
-
-        <article className="rounded-lg border bg-white p-5">
-          <h2 className="text-base font-semibold text-gray-900">Alimenta outras areas</h2>
-          <div className="mt-4 grid gap-2 text-sm text-gray-700">
-            {['Agente IA', 'Marketing Studio', 'Respostas sugeridas', 'Campanhas', 'Landing pages', 'FAQ e suporte'].map(area => (
-              <div key={area} className="rounded-md border bg-gray-50 px-3 py-2">{area}</div>
-            ))}
-          </div>
-          {knowledgeMatches.length > 0 && (
-            <div className="mt-5">
-              <h3 className="text-sm font-semibold text-gray-900">Trechos encontrados pela IA</h3>
-              <div className="mt-3 space-y-2">
-                {knowledgeMatches.map(match => (
-                  <p key={match.chunkId} className="rounded-md bg-yux-50 p-3 text-xs text-yux-900">
-                    {match.title ? `${match.title}: ` : ''}{match.body}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
-        </article>
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-4">
+          <div><h2 className="font-semibold text-gray-950">Biblioteca da empresa</h2><p className="text-sm text-gray-600">Escreva conteúdo, importe páginas do site ou envie documentos para revisão.</p></div>
+          <div className="flex gap-2"><Button variant="outline" onClick={() => void loadLibrary()} disabled={libraryLoading}><RefreshCw className="mr-2 h-4 w-4" />Atualizar</Button><Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Adicionar conhecimento</Button></div>
+        </div>
+        {error && <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+        <KnowledgeLibrary documents={documents} loading={libraryLoading || loading && documents.length === 0} onChanged={replaceDocument} />
       </section>
+      {organization?.id && <KnowledgeCreateDialog open={createOpen} onOpenChange={setCreateOpen} organizationId={organization.id} contractId={activeContract?.id} onCreated={created => created.forEach(replaceDocument)} />}
     </PortalJourneyPage>
   )
 }

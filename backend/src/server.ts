@@ -13,6 +13,7 @@ import { DEFAULT_QUEUE_NAME, createIdempotencyKey, createQueue, type JobName, ty
 import { registerAiAssistantRoutes } from './modules/ai-assistant/routes.js'
 import { registerAutomationRoutes } from './modules/automations/routes.js'
 import { registerCampaignRoutes } from './modules/campaigns/routes.js'
+import { registerCompanyIntelligenceRoutes } from './modules/company-intelligence/routes.js'
 import { registerCrmRoutes } from './modules/crm/routes.js'
 import { registerDataRoutes } from './modules/data/routes.js'
 import { registerEmailTemplateRoutes } from './modules/emailTemplates/routes.js'
@@ -25,6 +26,7 @@ import { registerMarketingStudioRoutes } from './modules/marketing-studio/routes
 import { registerOmnichannelRoutes } from './modules/omnichannel/routes.js'
 import { registerPlatformRoutes } from './modules/platform/routes.js'
 import { registerProposalRoutes, registerPublicProposalRoutes } from './modules/proposals/routes.js'
+import { registerProspectingRoutes } from './modules/prospecting/routes.js'
 import { registerRadarRoutes } from './modules/radar/routes.js'
 import { registerReportRoutes } from './modules/reports/routes.js'
 import { registerStrategyEngineRoutes } from './modules/strategy-engine/routes.js'
@@ -97,6 +99,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerFunctionRoutes, { prefix: '/api/functions' })
   await app.register(registerCrmRoutes, { prefix: '/api/crm' })
   await app.register(registerRadarRoutes, { prefix: '/api/radar' })
+  await app.register(registerProspectingRoutes, { prefix: '/api/prospecting' })
   await app.register(registerAutomationRoutes, { prefix: '/api/automations' })
   await app.register(registerProposalRoutes, { prefix: '/api/proposals' })
   await app.register(registerPublicProposalRoutes, { prefix: '/api/public/proposals' })
@@ -113,6 +116,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerAiAssistantRoutes, { prefix: '/api/ai-assistant' })
   await app.register(registerLandingPageRoutes, { prefix: '/api/landing-pages' })
   await app.register(registerCampaignRoutes, { prefix: '/api/campaigns' })
+  await app.register(registerCompanyIntelligenceRoutes, { prefix: '/api/company-intelligence' })
 
   return app
 }

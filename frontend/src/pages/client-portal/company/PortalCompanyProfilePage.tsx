@@ -1,7 +1,12 @@
+import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 import { Building2 } from 'lucide-react'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { CompanyProfileForm } from '@/components/company-intelligence/CompanyProfileForm'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
 import { formatPortalCurrency, formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { companyIntelligenceService } from '@/services/companyIntelligenceService'
+import type { CompanyProfile, CompanyProfileInput } from '@/types/companyIntelligence'
 
 export function PortalCompanyProfilePage() {
   const {
@@ -13,6 +18,37 @@ export function PortalCompanyProfilePage() {
     knowledgeDocuments,
     settings,
   } = usePortalMarketingContext()
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!organization?.id) return
+    setProfileLoading(true)
+    companyIntelligenceService.getProfile(organization.id)
+      .then(setCompanyProfile)
+      .catch(error => {
+        console.error(error)
+        toast.error('Não foi possível carregar as informações da empresa.')
+      })
+      .finally(() => setProfileLoading(false))
+  }, [organization?.id])
+
+  const saveProfile = async (input: CompanyProfileInput) => {
+    if (!organization?.id) return
+    setSaving(true)
+    try {
+      const saved = await companyIntelligenceService.updateProfile(organization.id, input)
+      setCompanyProfile(saved)
+      toast.success('Informações da empresa salvas.')
+    } catch (error) {
+      console.error(error)
+      toast.error('Não foi possível salvar as informações da empresa.')
+      throw error
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const activeProducts = productsServices.filter(product => product.status === 'active')
   const publishedDocuments = knowledgeDocuments.filter(document => document.status === 'published')
@@ -41,6 +77,9 @@ export function PortalCompanyProfilePage() {
       ]}
       note="Nesta fase, esta pagina define a responsabilidade de produto e evita misturar dados da empresa com Configuracoes da Conta."
     >
+      {profileLoading && <p className="rounded-lg border bg-white p-5 text-sm text-gray-600">Carregando informações editáveis...</p>}
+      {!profileLoading && companyProfile && <CompanyProfileForm profile={companyProfile} saving={saving} onSave={saveProfile} />}
+
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-lg border bg-white p-5">
           <h2 className="text-base font-semibold text-gray-900">Contexto carregado</h2>

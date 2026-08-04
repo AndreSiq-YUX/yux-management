@@ -309,6 +309,12 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: 'invalid_message_id' })
     // Dispatch runs in the worker with elevated context; access must be proven here.
     await requireMessageAccess(app.pg, user, params.data.id)
+    await app.pg.query(
+      `UPDATE public.messages
+       SET metadata = metadata || $2::jsonb, updated_at = NOW()
+       WHERE id = $1 AND direction = 'outbound'`,
+      [params.data.id, JSON.stringify({ approvalStatus: 'approved', approvedBy: user.id, approvedAt: new Date().toISOString() })],
+    )
     const job = await app.jobQueue.add('omnichannel.dispatchOutbound', { messageId: params.data.id, requestedBy: user.id })
     return { success: true, dispatch: { pending: true, jobId: job.id } }
   })

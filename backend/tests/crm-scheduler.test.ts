@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { processSequenceExecution } from '../src/modules/crm/scheduler.js'
 
 const ids = {
@@ -32,7 +32,7 @@ class FakeClient {
           attempt_count: 0,
           lead_name: 'Lead Teste',
           lead_email: 'lead@yux.com.br',
-          lead_phone: null,
+          lead_phone: this.actionType === 'whatsapp' ? '+5543999990000' : null,
         }],
       }
     }
@@ -77,6 +77,10 @@ class FakeClient {
       }
     }
     if (sql.includes('INSERT INTO public.email_send_events')) return { rows: [{ id: '00000000-0000-4000-8000-000000000009' }] }
+    if (sql.includes('FROM public.channel_connections')) return { rows: [{ id: 'connection-1' }] }
+    if (sql.includes('FROM public.omnichannel_contacts')) return { rows: [{ id: 'contact-1' }] }
+    if (sql.includes('FROM public.conversations')) return { rows: [{ id: 'conversation-1' }] }
+    if (sql.includes('INSERT INTO public.messages')) return { rows: [{ id: 'message-1' }] }
     return { rows: [], rowCount: 0 }
   }
 
@@ -155,5 +159,20 @@ describe('crm sequence scheduler', () => {
     expect(fetchCalls).toHaveLength(0)
     const emailRequest = pool.client.queries.find((query) => query.sql.includes('INSERT INTO public.email_send_requests'))
     expect(emailRequest?.values).toEqual(expect.arrayContaining([ids.org, ids.lead, 'operational', 'lead@yux.com.br', 'Ligar para o lead']))
+  })
+
+  it('queues WhatsApp sequence messages through native Omnichannel', async () => {
+    const pool = new FakePool('whatsapp')
+    const add = vi.fn(async () => ({}))
+
+    const result = await processSequenceExecution(pool as never, ids.execution, {
+      now: new Date('2026-06-27T12:00:00.000Z'),
+      whatsappJobQueue: { add },
+    })
+
+    expect(result).toMatchObject({ whatsappMessageId: 'message-1' })
+    expect(add).toHaveBeenCalledWith('omnichannel.dispatchOutbound', { messageId: 'message-1' })
+    expect(pool.client.queries.some(query => query.sql.includes('INSERT INTO public.messages'))).toBe(true)
+    expect(pool.client.queries.some(query => query.sql.includes('N8N'))).toBe(false)
   })
 })

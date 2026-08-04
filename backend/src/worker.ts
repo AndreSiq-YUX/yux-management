@@ -13,6 +13,8 @@ import { refreshExpiringGoogleTokens } from './jobs/handlers/google-token-refres
 import { handleAutomationDispatch, handleAutomationRun } from './jobs/handlers/automation.js'
 import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
+import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
+import { handleKnowledgeIndexing } from './jobs/handlers/company-intelligence.js'
 
 type WorkerResult = {
   ok: true
@@ -32,7 +34,12 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'crm.sequence.processExecution') {
     const executionId = job.data.executionId
     if (typeof executionId !== 'string') throw new Error('executionId is required')
-    await processSequenceExecution(pool, executionId, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })
+    await processSequenceExecution(pool, executionId, {
+      crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL,
+      crmWebhookSecret: env.N8N_WEBHOOK_SECRET,
+      emailJobQueue: maintenanceQueue,
+      whatsappJobQueue: maintenanceQueue,
+    })
     return { ok: true }
   }
 
@@ -46,9 +53,11 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'automation.executeRun') { await handleAutomationRun(pool, env, job.data); return { ok: true } }
   if (job.name === 'email.send') { await handleEmailSend(pool, job.data); return { ok: true } }
   if (job.name === 'provider.functionInvoke') { await handleProviderFunction(pool, job.data); return { ok: true } }
-  if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data); return { ok: true } }
+  if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data, maintenanceQueue); return { ok: true } }
   if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }
   if (job.name === 'strategy.adminChat') { await handleStrategyAdminChat(pool, env, job.data); return { ok: true } }
+  if (job.name === 'radar.analyzeOpportunity') { await handleRadarOpportunityAnalysis(pool, env, job.data); return { ok: true } }
+  if (job.name === 'company-intelligence.indexKnowledge') { await handleKnowledgeIndexing(pool, job.data); return { ok: true } }
   if (job.name === 'maintenance.purgeExpiredTraces') { await purgeExpiredTraces(pool); return { ok: true } }
   if (job.name === 'maintenance.refreshGoogleTokens') { await refreshExpiringGoogleTokens(pool, env); return { ok: true } }
 

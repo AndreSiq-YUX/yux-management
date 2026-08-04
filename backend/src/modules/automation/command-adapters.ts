@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import type { AppEnv } from '../../config/env.js'
+import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import type { DomainEventEnvelope, LeadCommandContext, Queryable } from './types.js'
 import type { AutomationActionResult, AutomationCommandServices, AutomationLead } from './action-handlers.js'
 
@@ -30,10 +31,10 @@ export function createDefaultAutomationCommandServices(
     enrollLeadInSequence: (context, input) => enrollLeadInSequence(pool, context, input),
     pauseLeadSequence: (context, input) => pauseLeadSequence(pool, context, input),
     addLeadTag: (context, input) => addLeadTag(pool, context, input),
-    sendEmail: (context, input, lead, event) => dispatchExternal(env, context, 'send_email', input, lead, event),
-    sendWhatsapp: (context, input, lead, event) => dispatchExternal(env, context, 'send_whatsapp', input, lead, event),
+    sendEmail: (context, input, lead, event) => dispatchExternal(pool, env, context, 'send_email', input, lead, event),
+    sendWhatsapp: (context, input, lead, event) => dispatchExternal(pool, env, context, 'send_whatsapp', input, lead, event),
     adjustScore: (context, input) => adjustLeadScore(pool, context, input),
-    dispatchExternal: (context, actionType, input, lead, event) => dispatchExternal(env, context, actionType, input, lead, event),
+    dispatchExternal: (context, actionType, input, lead, event) => dispatchExternal(pool, env, context, actionType, input, lead, event),
   }
 }
 
@@ -261,6 +262,7 @@ async function addLeadTag(pool: Queryable, context: LeadCommandContext, input: {
 }
 
 async function dispatchExternal(
+  pool: Queryable,
   env: AppEnv | undefined,
   context: LeadCommandContext,
   actionType: string,
@@ -268,6 +270,9 @@ async function dispatchExternal(
   lead?: AutomationLead | null,
   event?: DomainEventEnvelope,
 ): Promise<AutomationActionResult> {
+  if (actionType.startsWith('ai_')) {
+    return dispatchAgentRuntime(pool, env, context, actionType, input, lead, event)
+  }
   if (!env?.N8N_CRM_WEBHOOK_URL || !env.N8N_WEBHOOK_SECRET) {
     throw new Error('automation_external_adapter_required')
   }
@@ -290,6 +295,73 @@ async function dispatchExternal(
   })
   if (!response.ok) throw new Error(`automation_external_dispatch_failed:${response.status}`)
   return { dispatched: true, actionType }
+}
+
+async function dispatchAgentRuntime(
+  pool: Queryable,
+  env: AppEnv | undefined,
+  context: LeadCommandContext,
+  actionType: string,
+  input: Record<string, unknown>,
+  lead?: AutomationLead | null,
+  event?: DomainEventEnvelope,
+): Promise<AutomationActionResult> {
+  if (!env?.YUX_AGENT_RUNTIME_URL) throw new Error('automation_agent_runtime_required')
+  const scope = await pool.query<{ client_id: string | null; contract_id: string | null }>(
+    `SELECT organization.client_id,
+            active_contract.id AS contract_id
+       FROM public.organizations organization
+       LEFT JOIN LATERAL (
+         SELECT contract.id
+           FROM public.contracts contract
+          WHERE contract.client_id = organization.client_id AND contract.status = 'active'
+          ORDER BY contract.starts_at DESC NULLS LAST, contract.created_at DESC
+          LIMIT 1
+       ) active_contract ON TRUE
+      WHERE organization.id = $1
+      LIMIT 1`,
+    [context.organizationId],
+  )
+  const profileKey = typeof input.profileKey === 'string' && input.profileKey.trim()
+    ? input.profileKey.trim()
+    : 'ai_sdr_comercial_1'
+  const prompt = typeof input.prompt === 'string' && input.prompt.trim()
+    ? input.prompt.trim()
+    : buildAutomationAgentPrompt(actionType, lead, input)
+  const runtime = await invokeAgentRuntime<Record<string, unknown>>(env, '/workflows/execute', {
+    organization_id: context.organizationId,
+    client_id: scope.rows[0]?.client_id || undefined,
+    contract_id: scope.rows[0]?.contract_id || undefined,
+    lead_id: context.leadId,
+    profile_key: profileKey,
+    source: 'automation',
+    mode: actionType,
+    message: prompt,
+    retrieval_context: {
+      lead: lead ? sanitize(lead) : null,
+      payload: sanitize(input),
+      event: event ? sanitize(event) : null,
+      delivery_channel: typeof input.channel === 'string' ? input.channel : null,
+    },
+  })
+  return { generated: true, actionType, profileKey, runtime }
+}
+
+function buildAutomationAgentPrompt(
+  actionType: string,
+  lead: AutomationLead | null | undefined,
+  input: Record<string, unknown>,
+) {
+  const objective = actionType === 'ai_classify_lead'
+    ? 'Classifique o lead e indique a próxima ação.'
+    : actionType === 'ai_generate_proposal'
+      ? 'Gere uma proposta comercial adequada ao contexto e às regras da marca.'
+      : 'Gere a mensagem solicitada respeitando o contexto e as regras da marca.'
+  return [
+    objective,
+    lead ? `Lead: ${JSON.stringify(sanitize(lead))}` : '',
+    `Instruções: ${JSON.stringify(sanitize(input))}`,
+  ].filter(Boolean).join('\n')
 }
 
 async function firstStageForPipeline(pool: Queryable, pipelineId: string) {

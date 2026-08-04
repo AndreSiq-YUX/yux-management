@@ -102,6 +102,7 @@ class FakeRadarPool {
     }
     if (normalized.includes('SELECT * FROM public.radar_campaigns')) return { rows: [campaignRow()] }
     if (normalized.includes('SELECT id FROM public.radar_campaigns')) return { rows: [{ id: ids.campaign }] }
+    if (normalized.includes("run_kind = 'analysis'") && normalized.includes("status IN ('pending', 'running')")) return { rows: [] }
     if (normalized.includes('FROM public.radar_enrichment_runs')) return { rows: [enrichmentRunRow()] }
     if (normalized.includes('row_to_json(c)::jsonb AS company')) {
       return {
@@ -173,6 +174,13 @@ class FakeRadarPool {
     }
     if (normalized.includes('UPDATE public.radar_company_records SET dedupe_status')) return { rows: [] }
     if (normalized.includes('INSERT INTO public.radar_opportunities')) return { rows: [opportunityRow(this)] }
+    if (normalized.includes('SELECT * FROM public.radar_opportunities') && normalized.includes('FOR UPDATE')) {
+      return { rows: [opportunityRow(this)] }
+    }
+    if (normalized.includes("SET status = 'diagnosing'")) {
+      this.opportunityStatus = 'diagnosing'
+      return { rows: [] }
+    }
     if (normalized.includes('UPDATE public.radar_opportunities SET status = CASE')) {
       this.opportunityStatus = 'enriched'
       return { rows: [{ ...opportunityRow(this), status: 'enriched' }] }
@@ -671,11 +679,12 @@ describe('radar routes', () => {
     expect(response.statusCode).toBe(201)
     expect(response.json()).toMatchObject({
       imported: [expect.objectContaining({ id: ids.opportunity })],
-      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'review_pending' })],
+      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'diagnosing' })],
+      analysisRequests: [expect.objectContaining({ runId: ids.enrichmentRun, opportunityId: ids.opportunity })],
       issues: [expect.objectContaining({ code: 'missing_name_or_site' })],
       runId: ids.enrichmentRun,
     })
-    expect(pool.latestDiagnosticId).toBe(ids.diagnostic)
+    expect(pool.queries.some(query => query.sql.includes("'analysis','pending','yux_agent_runtime'"))).toBe(true)
   })
 
   it('blocks url import when Jina Reader source is disabled', async () => {
@@ -796,8 +805,9 @@ describe('radar routes', () => {
     expect(importResponse.statusCode).toBe(200)
     expect(importResponse.json()).toMatchObject({
       candidate: { status: 'imported', importedOpportunityId: ids.opportunity },
-      opportunity: { id: ids.opportunity, status: 'review_pending' },
-      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'review_pending' })],
+      opportunity: { id: ids.opportunity, status: 'diagnosing' },
+      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'diagnosing' })],
+      analysisRequests: [expect.objectContaining({ runId: ids.enrichmentRun })],
     })
     expect(discardResponse.statusCode).toBe(200)
     expect(discardResponse.json()).toMatchObject({ status: 'discarded' })
@@ -877,7 +887,7 @@ describe('radar routes', () => {
     expect(runs.json()[0]).toMatchObject({ provider: 'manual', status: 'succeeded' })
   })
 
-  it('runs provider-neutral analysis and sends the opportunity to human review', async () => {
+  it('queues provider-neutral analysis and marks the opportunity as diagnosing', async () => {
     const { authStore, token } = buildAuthStore()
     const pool = new FakeRadarPool()
     app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
@@ -888,16 +898,15 @@ describe('radar routes', () => {
       headers: { cookie: sessionCookie(token) },
     })
 
-    expect(response.statusCode).toBe(200)
+    expect(response.statusCode).toBe(202)
     expect(response.json()).toMatchObject({
-      id: ids.opportunity,
-      status: 'review_pending',
-      latestDiagnosticId: ids.diagnostic,
-      latestScoreId: ids.score,
-      latestMessageSuggestionId: ids.message,
+      runId: ids.enrichmentRun,
+      opportunityId: ids.opportunity,
+      status: 'pending',
+      opportunity: { id: ids.opportunity, status: 'diagnosing' },
     })
     expect(
-      pool.queries.some((query) => query.params.some((param) => String(param).includes('"canSendAutomatically":false'))),
+      pool.queries.some((query) => query.sql.includes("'analysis','pending','yux_agent_runtime'")),
     ).toBe(true)
   })
 
@@ -924,7 +933,7 @@ describe('radar routes', () => {
     expect(success.json()).toMatchObject({ enriched: [expect.objectContaining({ id: ids.opportunity, status: 'enriched' })] })
   })
 
-  it('analyzes opportunity batches while preserving human review policy', async () => {
+  it('queues opportunity batches while preserving the analysis ledger', async () => {
     const { authStore, token } = buildAuthStore()
     const pool = new FakeRadarPool()
     app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
@@ -936,12 +945,13 @@ describe('radar routes', () => {
       payload: { opportunityIds: [ids.opportunity] },
     })
 
-    expect(response.statusCode).toBe(200)
+    expect(response.statusCode).toBe(202)
     expect(response.json()).toMatchObject({
-      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'review_pending' })],
+      analyzed: [expect.objectContaining({ id: ids.opportunity, status: 'diagnosing' })],
+      requests: [expect.objectContaining({ runId: ids.enrichmentRun, opportunityId: ids.opportunity })],
     })
     expect(
-      pool.queries.some((query) => query.params.some((param) => String(param).includes('"canSendAutomatically":false'))),
+      pool.queries.some((query) => query.sql.includes("'analysis','pending','yux_agent_runtime'")),
     ).toBe(true)
   })
 

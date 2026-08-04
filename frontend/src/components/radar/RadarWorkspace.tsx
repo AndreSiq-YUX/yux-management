@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
+import { ProspectingPlanPanel } from '@/components/radar/ProspectingPlanPanel'
 import {
   canConvertRadarOpportunity,
   canShowRadarNavigation,
@@ -174,6 +175,7 @@ export function RadarWorkspace() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const canAccess = canShowRadarNavigation(context)
+  const hasPendingAnalysis = opportunities.some(opportunity => opportunity.status === 'diagnosing')
 
   useEffect(() => {
     if (!organizationId || !canAccess) return
@@ -231,6 +233,26 @@ export function RadarWorkspace() {
         }
       })
   }, [selectedCampaignId, canAccess])
+
+  useEffect(() => {
+    if (!selectedCampaignId || !canAccess || !hasPendingAnalysis) return
+
+    const refreshAnalysis = () => {
+      Promise.all([
+        radarService.getOpportunities(selectedCampaignId),
+        radarService.getRuns(selectedCampaignId),
+      ]).then(([nextOpportunities, nextRuns]) => {
+        setOpportunities(nextOpportunities)
+        setRuns(nextRuns)
+        setSelectedOpportunity(current => (
+          current ? nextOpportunities.find(item => item.id === current.id) ?? current : nextOpportunities[0] ?? null
+        ))
+      }).catch(error => console.error('Erro ao acompanhar analise Radar:', error))
+    }
+
+    const interval = window.setInterval(refreshAnalysis, 3_000)
+    return () => window.clearInterval(interval)
+  }, [selectedCampaignId, canAccess, hasPendingAnalysis])
 
   const createCampaign = async (event: FormEvent) => {
     event.preventDefault()
@@ -321,6 +343,24 @@ export function RadarWorkspace() {
     }
   }
 
+  const queueOpportunityAnalysis = async (opportunity: RadarOpportunity) => {
+    if (actionLoading || opportunity.status === 'diagnosing') return
+
+    try {
+      setActionLoading('analysis')
+      const request = await radarService.runAnalysis(opportunity.id)
+      setSelectedOpportunity(request.opportunity)
+      setOpportunities(current => current.map(item => item.id === request.opportunity.id ? request.opportunity : item))
+      toast.success(request.reused ? 'Analise ja estava em processamento' : 'Analise enviada para processamento')
+      refreshCampaignSidebars()
+    } catch (error) {
+      console.error('Erro ao iniciar analise Radar:', error)
+      toast.error('Erro ao iniciar analise')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const workspaceSources = mergeRadarSources(dataSources)
   const jinaReaderSource = findSource(workspaceSources, 'jina_reader')
   const searchSource = findSource(workspaceSources, searchForm.sourceType)
@@ -362,7 +402,7 @@ export function RadarWorkspace() {
         issues: result.issues,
         runId: result.runId,
       })
-      toast.success(result.analyzed?.length ? `${result.imported.length} empresas importadas e analisadas` : `${result.imported.length} empresas importadas`)
+      toast.success(result.analysisRequests?.length ? `${result.imported.length} empresas importadas; analises em processamento` : `${result.imported.length} empresas importadas`)
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao importar CSV Radar:', error)
@@ -404,7 +444,7 @@ export function RadarWorkspace() {
         issues: result.issues,
         runId: result.runId,
       })
-      toast.success(result.analyzed?.length ? `${result.imported.length} URLs processadas e analisadas` : `${result.imported.length} URLs processadas`)
+      toast.success(result.analysisRequests?.length ? `${result.imported.length} URLs processadas; analises em processamento` : `${result.imported.length} URLs processadas`)
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao importar URLs Radar:', error)
@@ -513,7 +553,7 @@ export function RadarWorkspace() {
       setCandidates(current => current.map(candidate => candidate.id === candidateId ? result.candidate : candidate))
       setOpportunities(current => mergeOpportunities([result.opportunity], current))
       setSelectedOpportunity(result.opportunity)
-      toast.success(result.analyzed?.length ? 'Candidato importado e analisado' : 'Candidato importado')
+      toast.success(result.analysisRequests?.length ? 'Candidato importado; analise em processamento' : 'Candidato importado')
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao importar candidato Radar:', error)
@@ -562,7 +602,7 @@ export function RadarWorkspace() {
       setOpportunities(current => mergeOpportunities(updated, current))
       setSelectedOpportunity(current => updated.find(item => item.id === current?.id) ?? updated[0] ?? current)
       setSelectedOpportunityIds([])
-      toast.success(mode === 'enrich' ? 'Lote enriquecido' : 'Lote analisado')
+      toast.success(mode === 'enrich' ? 'Lote enriquecido' : 'Lote enviado para analise')
       refreshCampaignSidebars()
     } catch (error) {
       console.error('Erro ao executar lote Radar:', error)
@@ -1022,7 +1062,7 @@ export function RadarWorkspace() {
                 {runs.length === 0 && <p className="text-sm text-slate-500">Nenhum run registrado nesta campanha.</p>}
                 {runs.slice(0, 5).map(run => (
                   <div key={run.id} className="rounded-md border p-3">
-                    <p className="text-sm font-medium text-slate-950">{run.provider} - {run.status}</p>
+                    <p className="text-sm font-medium text-slate-950">{run.runKind === 'analysis' ? 'Analise IA' : run.provider} - {run.status}</p>
                     <p className="text-xs text-slate-500">{new Date(run.createdAt).toLocaleString('pt-BR')}</p>
                     {run.errorMessage && <p className="mt-1 text-xs text-red-600">{run.errorMessage}</p>}
                   </div>
@@ -1036,12 +1076,13 @@ export function RadarWorkspace() {
       <OpportunityReviewPanel
         opportunity={selectedOpportunity}
         actionLoading={actionLoading}
-        onRunAnalysis={opportunity => runOpportunityAction('analysis', () => radarService.runAnalysis(opportunity.id), 'Analise da oportunidade gerada')}
+        onRunAnalysis={queueOpportunityAnalysis}
         onApprove={opportunity => runOpportunityAction('approve', () => radarService.reviewOpportunity(opportunity.id, 'approved'), 'Oportunidade aprovada')}
         onReject={opportunity => runOpportunityAction('reject', () => radarService.reviewOpportunity(opportunity.id, 'rejected'), 'Oportunidade rejeitada')}
         onOptOut={opportunity => runOpportunityAction('opt-out', () => radarService.optOutOpportunity(opportunity.id), 'Opt-out registrado')}
         onConvert={convertSelectedOpportunity}
       />
+      <ProspectingPlanPanel organizationId={organizationId} opportunity={selectedOpportunity} />
     </div>
   )
 }
@@ -1138,6 +1179,8 @@ function OpportunityReviewPanel({
         ? 'text-red-700'
         : 'text-slate-500'
   const canConvert = opportunity ? canConvertRadarOpportunity(opportunity) : false
+  const isAnalyzing = opportunity?.status === 'diagnosing'
+  const canReview = opportunity?.status === 'review_pending'
 
   return (
     <section className="rounded-md border bg-white p-4">
@@ -1161,13 +1204,13 @@ function OpportunityReviewPanel({
             {opportunity.latestMessageSuggestion?.body || 'Mensagem ainda nao gerada.'}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading)} onClick={() => onRunAnalysis(opportunity)}>
-              {actionLoading === 'analysis' ? 'Rodando...' : 'Rodar analise'}
+            <Button type="button" variant="outline" disabled={Boolean(actionLoading) || isAnalyzing} onClick={() => onRunAnalysis(opportunity)}>
+              {isAnalyzing ? 'Analise em andamento' : actionLoading === 'analysis' ? 'Enviando...' : 'Rodar analise'}
             </Button>
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading)} onClick={() => onApprove(opportunity)}>
+            <Button type="button" variant="outline" disabled={Boolean(actionLoading) || !canReview} onClick={() => onApprove(opportunity)}>
               Aprovar
             </Button>
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading)} onClick={() => onReject(opportunity)}>
+            <Button type="button" variant="outline" disabled={Boolean(actionLoading) || !canReview} onClick={() => onReject(opportunity)}>
               Rejeitar
             </Button>
             <Button type="button" variant="outline" disabled={Boolean(actionLoading)} onClick={() => onOptOut(opportunity)}>

@@ -4,6 +4,7 @@ function assertEquals(actual: unknown, expected: unknown) {
   expect(actual).toEqual(expected)
 }
 import {
+  buildWhatsAppTemplatePayload,
   buildWhatsAppTextPayload,
   normalizeWhatsAppInbound,
   validateWhatsAppSignature,
@@ -79,4 +80,23 @@ it('validates x-hub-signature-256 signatures when app secret is configured', asy
     signatureHeader: 'sha256=bad',
   }), false)
   assertEquals(await validateWhatsAppSignature({ rawBody, signatureHeader: `sha256=${signature}` }), false)
+})
+
+it('builds approved Meta WhatsApp template payloads for first contact', () => {
+  const payload = buildWhatsAppTemplatePayload({
+    to: '+5543999999999',
+    templateName: 'yux_primeiro_contato',
+    languageCode: 'pt_BR',
+    components: [{ type: 'body', parameters: [{ type: 'text', text: 'Ana' }] }],
+  })
+
+  expect(payload).toMatchObject({
+    messaging_product: 'whatsapp',
+    type: 'template',
+    template: {
+      name: 'yux_primeiro_contato',
+      language: { code: 'pt_BR' },
+      components: [{ type: 'body' }],
+    },
+  })
 })
