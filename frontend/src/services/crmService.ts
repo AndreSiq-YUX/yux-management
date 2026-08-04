@@ -5,10 +5,17 @@ import type {
   CrmInteraction,
   CrmLead,
   CrmPipeline,
+  CrmPipelineCreateInput,
+  CrmPipelinePatch,
+  CrmPipelineStageCreateInput,
+  CrmPipelineStagePatch,
   CrmPipelineStage,
   CrmSequence,
   CrmSequenceEnrollment,
   CrmTask,
+  CrmTaskFilters,
+  CrmTaskPage,
+  CrmTaskPatch,
   MarkLeadLostInput,
   MarkLeadWonInput,
   RecordLeadActivityInput,
@@ -37,6 +44,8 @@ type LeadRow = {
   source_kind?: CrmLead['sourceKind'] | null
   status?: CrmLead['status'] | null
   score?: number | null
+  fit_score?: number | null
+  intent_score?: number | null
   value?: number | string | null
   notes?: string | null
   owner_id?: string | null
@@ -118,6 +127,8 @@ const mapLead = (row: LeadRow): CrmLead => ({
   sourceKind: row.source_kind || undefined,
   status: row.status || 'open',
   score: row.score || 0,
+  fitScore: row.fit_score ?? undefined,
+  intentScore: row.intent_score ?? undefined,
   value: row.value !== null && row.value !== undefined ? Number(row.value) : undefined,
   notes: row.notes || undefined,
   ownerId: row.owner_id || undefined,
@@ -315,6 +326,40 @@ export const buildLeadLostPayload = (input: MarkLeadLostInput) => ({
   won_at: null,
 })
 
+export const buildPipelinePayload = (input: CrmPipelineCreateInput) => ({
+  organizationId: input.organizationId,
+  crmInstanceId: input.crmInstanceId,
+  name: input.name.trim(),
+  description: input.description?.trim() || undefined,
+  isDefault: input.isDefault ?? false,
+  isActive: input.isActive ?? true,
+})
+
+export const buildPipelinePatchPayload = (input: CrmPipelinePatch) => ({
+  ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+  ...(input.description !== undefined ? { description: input.description.trim() } : {}),
+  ...(input.isDefault !== undefined ? { isDefault: input.isDefault } : {}),
+  ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+})
+
+export const buildPipelineStagePayload = (input: CrmPipelineStageCreateInput) => ({
+  name: input.name.trim(),
+  key: input.key.trim(),
+  color: input.color,
+  isWon: input.isWon ?? false,
+  isLost: input.isLost ?? false,
+  isActive: input.isActive ?? true,
+})
+
+export const buildPipelineStagePatchPayload = (input: CrmPipelineStagePatch) => ({
+  ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+  ...(input.key !== undefined ? { key: input.key.trim() } : {}),
+  ...(input.color !== undefined ? { color: input.color } : {}),
+  ...(input.isWon !== undefined ? { isWon: input.isWon } : {}),
+  ...(input.isLost !== undefined ? { isLost: input.isLost } : {}),
+  ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+})
+
 export const crmService = {
   async getPipelines(organizationId: string) {
     return apiRequest<CrmPipeline[]>(`/crm/pipelines?organizationId=${encodeURIComponent(organizationId)}`)
@@ -322,6 +367,41 @@ export const crmService = {
 
   async getPipelinesForOrganization(organizationId: string) {
     return crmService.getPipelines(organizationId)
+  },
+
+  async createPipeline(input: CrmPipelineCreateInput) {
+    return apiRequest<CrmPipeline>('/crm/pipelines', {
+      method: 'POST',
+      body: buildPipelinePayload(input),
+    })
+  },
+
+  async updatePipeline(id: string, patch: CrmPipelinePatch) {
+    return apiRequest<CrmPipeline>(`/crm/pipelines/${id}`, {
+      method: 'PATCH',
+      body: buildPipelinePatchPayload(patch),
+    })
+  },
+
+  async createPipelineStage(input: CrmPipelineStageCreateInput) {
+    return apiRequest<CrmPipelineStage>(`/crm/pipelines/${input.pipelineId}/stages`, {
+      method: 'POST',
+      body: buildPipelineStagePayload(input),
+    })
+  },
+
+  async updatePipelineStage(id: string, patch: CrmPipelineStagePatch) {
+    return apiRequest<CrmPipelineStage>(`/crm/pipeline-stages/${id}`, {
+      method: 'PATCH',
+      body: buildPipelineStagePatchPayload(patch),
+    })
+  },
+
+  async reorderPipelineStages(pipelineId: string, stageIds: string[]) {
+    return apiRequest<CrmPipeline>(`/crm/pipelines/${pipelineId}/stages/order`, {
+      method: 'PUT',
+      body: { stageIds },
+    })
   },
 
   async getLeads(organizationId: string, pipelineId: string) {
@@ -426,6 +506,28 @@ export const crmService = {
 
   async getTasks(leadId: string) {
     return apiRequest<CrmTask[]>(`/crm/leads/${leadId}/tasks`)
+  },
+
+  async getTaskPage(filters: CrmTaskFilters) {
+    return apiRequest<CrmTaskPage>(`/crm/tasks${buildQuery({
+      organizationId: filters.organizationId,
+      crmInstanceId: filters.crmInstanceId,
+      status: filters.status,
+      priority: filters.priority,
+      assignedTo: filters.assignedTo,
+      leadId: filters.leadId,
+      due: filters.due,
+      search: filters.search,
+      cursor: filters.cursor,
+      limit: filters.limit ? String(filters.limit) : undefined,
+    })}`)
+  },
+
+  async patchTask(taskId: string, patch: CrmTaskPatch) {
+    return apiRequest<CrmTask>(`/crm/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: patch,
+    })
   },
 
   async createTask(organizationId: string, leadId: string, title: string, dueAt: string) {

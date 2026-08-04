@@ -9,6 +9,9 @@ const portalSchema = readFileSync(path.join(migrationsDir, '0100_portal_schema.s
 const omittedReport = readFileSync(path.join(migrationsDir, '0100_portal_schema.omitted.md'), 'utf8')
 const rlsSafetyNet = readFileSync(path.join(migrationsDir, '0111_rls_safety_net.sql'), 'utf8')
 const orchestrationMigration = readFileSync(path.join(migrationsDir, '0119_lead_orchestration_foundation.sql'), 'utf8')
+const scoringMigration = readFileSync(path.join(migrationsDir, '0122_lead_scoring_rules.sql'), 'utf8')
+const pipelineManagementMigration = readFileSync(path.join(migrationsDir, '0120_crm_pipeline_management.sql'), 'utf8')
+const taskCenterMigration = readFileSync(path.join(migrationsDir, '0121_crm_task_center.sql'), 'utf8')
 
 describe('self-hosted portal schema bootstrap', () => {
   it('does not keep executable Supabase-only dependencies', () => {
@@ -64,5 +67,27 @@ describe('self-hosted portal schema bootstrap', () => {
     expect(orchestrationMigration).toContain('provider_event_id TEXT')
     expect(orchestrationMigration).toContain('ALTER TABLE public.domain_events FORCE ROW LEVEL SECURITY')
     expect(orchestrationMigration).toContain('private.rls_can_access_organization')
+  })
+
+  it('adds CRM pipeline management indexes and the one-default invariant', () => {
+    expect(pipelineManagementMigration).toContain('idx_crm_pipelines_one_default_per_instance')
+    expect(pipelineManagementMigration).toContain('idx_lead_stage_history_lead_changed')
+    expect(pipelineManagementMigration).toContain('ROW_NUMBER() OVER')
+  })
+
+  it('adds configurable append-only lead scoring schema', () => {
+    expect(scoringMigration).toContain('CREATE TABLE IF NOT EXISTS public.lead_scoring_models')
+    expect(scoringMigration).toContain('CREATE TABLE IF NOT EXISTS public.lead_scoring_rules')
+    expect(scoringMigration).toContain('CREATE TABLE IF NOT EXISTS public.lead_score_events')
+    expect(scoringMigration).toContain('UNIQUE (rule_id, event_key)')
+    expect(scoringMigration).toContain('fit_weight + intent_weight = 100')
+    expect(scoringMigration).toContain('ALTER TABLE public.lead_score_events FORCE ROW LEVEL SECURITY')
+  })
+
+  it('adds the aggregated CRM task center lifecycle fields and indexes', () => {
+    expect(taskCenterMigration).toContain('ALTER TABLE public.lead_tasks')
+    expect(taskCenterMigration).toContain('cancelled_at')
+    expect(taskCenterMigration).toContain('updated_by')
+    expect(taskCenterMigration).toContain('idx_lead_tasks_org_status_due')
   })
 })

@@ -7,6 +7,7 @@ export const DOMAIN_EVENT_TYPES = [
   'lead.task_created',
   'lead.task_completed',
   'lead.task_cancelled',
+  'lead.task_reopened',
   'lead.interaction_recorded',
   'lead.sequence_enrolled',
   'lead.sequence_completed',
@@ -21,6 +22,7 @@ export const DOMAIN_EVENT_TYPES = [
   'email.unsubscribed',
   'lead.score_changed',
   'lead.score_threshold_reached',
+  'lead.score_manual_adjustment',
 ] as const
 
 export type DomainEventType = (typeof DOMAIN_EVENT_TYPES)[number]

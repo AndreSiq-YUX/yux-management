@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { crmService } from '@/services/crmService'
 import { usePlatformStore } from '@/stores/platformStore'
-import type { CrmLead, CrmPipeline, CrmTask } from '@/types/crm'
+import type { CrmLead, CrmPipeline, CrmTaskListItem } from '@/types/crm'
 
 interface PortalCrmContextState {
   pipelines: CrmPipeline[]
   leads: CrmLead[]
-  tasks: CrmTask[]
+  tasks: CrmTaskListItem[]
 }
 
 const emptyState: PortalCrmContextState = {
@@ -48,12 +48,17 @@ export function usePortalCrmContext() {
           : crmService.getLeads(organization.id, pipeline.id)
       )))
       const leads = leadGroups.flat()
-      const taskGroups = await Promise.all(leads.slice(0, 50).map(lead => crmService.getTasks(lead.id)))
+      const crmInstanceIds = [...new Set(pipelines.map(pipeline => pipeline.crmInstanceId).filter((id): id is string => Boolean(id)))]
+      const taskPages = await Promise.all(crmInstanceIds.map(crmInstanceId => crmService.getTaskPage({
+        organizationId: organization.id,
+        crmInstanceId,
+        limit: 100,
+      })))
 
       setState({
         pipelines,
         leads,
-        tasks: taskGroups.flat(),
+        tasks: taskPages.flatMap(page => page.items),
       })
     } catch (loadError) {
       console.error('Erro ao carregar CRM do portal:', loadError)

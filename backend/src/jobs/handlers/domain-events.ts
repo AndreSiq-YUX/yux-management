@@ -61,7 +61,7 @@ export async function handleDomainEventDelivery(
 
   try {
     const result = consumerKey === 'scoring'
-      ? await handleCrmScoringEvent(event)
+      ? await handleCrmScoringEvent(event, pool)
       : await handleAutomationDispatch(pool, env, {
         event: {
           ...event,

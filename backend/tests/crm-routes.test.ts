@@ -32,6 +32,10 @@ const ids = {
   crmTeamMember: '00000000-0000-4000-8000-000000000015',
   otherUser: '00000000-0000-4000-8000-000000000016',
   otherOrg: '00000000-0000-4000-8000-000000000017',
+  pipelineTwo: '00000000-0000-4000-8000-000000000018',
+  stageQualified: '00000000-0000-4000-8000-000000000019',
+  stageWon: '00000000-0000-4000-8000-000000000020',
+  stageLost: '00000000-0000-4000-8000-000000000021',
 }
 
 const leadRow = {
@@ -97,13 +101,17 @@ class FakeAuthStore implements AuthStore {
 }
 
 class FakePool {
-  async query(sql: string) {
+  queries: string[] = []
+
+  async query(sql: string, _params: unknown[] = []) {
+    this.queries.push(sql)
+    if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] }
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
     if (sql.includes('FROM public.crm_pipeline_stages') && sql.includes('JOIN public.crm_pipelines')) {
       return {
         rows: [{
-          id: ids.stage,
+          id: ids.stageWon,
           pipeline_id: ids.pipeline,
           key: 'won',
           name: 'Ganho',
@@ -113,6 +121,7 @@ class FakePool {
           is_lost: false,
           is_active: true,
           organization_id: ids.org,
+          crm_instance_id: ids.crmInstance,
         }],
       }
     }
@@ -229,7 +238,40 @@ class FakePool {
     }
 
     if (sql.includes('UPDATE public.leads') && sql.includes('RETURNING *')) {
-      return { rows: [{ ...leadRow, score: 80, status: 'won', stage: 'WON', won_at: '2026-01-04T00:00:00.000Z' }] }
+      return { rows: [{ ...leadRow, stage_id: ids.stageWon, pipeline_id: ids.pipeline, crm_instance_id: ids.crmInstance, score: 80, status: 'won', stage: 'WON', won_at: '2026-01-04T00:00:00.000Z' }] }
+    }
+
+    if (sql.includes('INSERT INTO public.lead_stage_history')) {
+      return { rows: [{ id: '00000000-0000-4000-8000-000000000022' }] }
+    }
+
+    if (sql.includes('INSERT INTO public.domain_events')) {
+      const eventId = _params[0] as string
+      return {
+        rows: [{
+          id: eventId,
+          organization_id: ids.org,
+          crm_instance_id: ids.crmInstance,
+          event_type: 'lead.stage_changed',
+          schema_version: 1,
+          aggregate_type: 'lead',
+          aggregate_id: ids.lead,
+          lead_id: ids.lead,
+          correlation_id: eventId,
+          causation_id: null,
+          depth: 0,
+          actor: { type: 'user', id: ids.user },
+          occurred_at: '2026-01-04T00:00:00.000Z',
+          automation_trace: [],
+          payload: {},
+          dispatch_status: 'pending',
+          attempt_count: 0,
+          available_at: '2026-01-04T00:00:00.000Z',
+          dispatched_at: null,
+          last_error: null,
+          created_at: '2026-01-04T00:00:00.000Z',
+        }],
+      }
     }
 
     if (sql.includes('UPDATE public.leads')) {
@@ -328,10 +370,15 @@ class FakePool {
   async end() {
     return undefined
   }
+
+  async connect() {
+    return { query: this.query.bind(this), release: () => undefined }
+  }
 }
 
 class FakeGovernancePool {
   async query(sql: string, params: unknown[] = []) {
+    console.log('pipeline-sql-debug', sql.slice(0, 80))
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) {
       return { rows: [{ organization_id: params[0] === ids.user ? ids.org : ids.otherOrg }] }
     }
@@ -413,6 +460,105 @@ class FakeGovernancePool {
 
   async end() {
     return undefined
+  }
+
+  async connect() {
+    return { query: this.query.bind(this), release: () => undefined }
+  }
+}
+
+class FakePipelinePool {
+  memberRole = 'client_admin'
+  customizationAllowed = true
+  pipelineCount = 1
+
+  async query(sql: string, params: unknown[] = []) {
+    if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [{ organization_id: ids.org }] }
+    if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+    if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] }
+    if (sql.includes('FROM public.crm_instances ci')) {
+      return {
+        rows: [{
+          id: ids.crmInstance,
+          organization_id: ids.org,
+          allow_client_pipeline_customization: this.customizationAllowed,
+          max_pipeline_count: 3,
+          member_role: this.memberRole,
+          member_status: 'active',
+        }],
+      }
+    }
+    if (sql.includes('COUNT(*)::int AS pipeline_count')) return { rows: [{ pipeline_count: this.pipelineCount }] }
+    if (sql.includes('SELECT id FROM public.crm_pipelines') && sql.includes('name =')) return { rows: [] }
+    if (sql.includes('INSERT INTO public.crm_pipelines')) {
+      return {
+        rows: [{
+          id: ids.pipelineTwo,
+          organization_id: ids.org,
+          crm_instance_id: ids.crmInstance,
+          name: 'Novos negócios',
+          description: null,
+          is_default: false,
+          is_active: true,
+        }],
+      }
+    }
+    if (sql.includes('FROM public.crm_pipelines') && sql.includes('WHERE p.id')) {
+      return {
+        rows: [{
+          id: ids.pipeline,
+          organization_id: ids.org,
+          crm_instance_id: ids.crmInstance,
+          name: 'Comercial',
+          description: null,
+          is_default: true,
+          is_active: true,
+          instance_id: ids.crmInstance,
+          allow_client_pipeline_customization: this.customizationAllowed,
+          max_pipeline_count: 3,
+          member_role: this.memberRole,
+          member_status: 'active',
+        }],
+      }
+    }
+    if (sql.includes('FROM public.crm_pipelines') && sql.includes('WHERE id = $1')) {
+      return {
+        rows: [{
+          id: ids.pipeline,
+          organization_id: ids.org,
+          crm_instance_id: ids.crmInstance,
+          name: 'Comercial',
+          description: null,
+          is_default: true,
+          is_active: true,
+        }],
+      }
+    }
+    if (sql.includes('FROM public.crm_pipeline_stages')) {
+      return {
+        rows: [
+          { id: ids.stage, pipeline_id: ids.pipeline, key: 'qualified', name: 'Qualificado', color: '#2563eb', order_index: 0, is_won: false, is_lost: false, is_active: true, organization_id: ids.org, crm_instance_id: ids.crmInstance, allow_client_pipeline_customization: this.customizationAllowed, max_pipeline_count: 3, member_role: this.memberRole, member_status: 'active' },
+          { id: ids.stageWon, pipeline_id: ids.pipeline, key: 'won', name: 'Ganho', color: '#16a34a', order_index: 1, is_won: true, is_lost: false, is_active: true, organization_id: ids.org, crm_instance_id: ids.crmInstance, allow_client_pipeline_customization: this.customizationAllowed, max_pipeline_count: 3, member_role: this.memberRole, member_status: 'active' },
+        ],
+      }
+    }
+    if (sql.includes('INSERT INTO public.crm_pipeline_stages')) {
+      return {
+        rows: [{ id: ids.stageQualified, pipeline_id: ids.pipelineTwo, key: 'new', name: 'Novo', color: '#64748b', order_index: 0, is_won: false, is_lost: false, is_active: true }],
+      }
+    }
+    if (sql.includes('UPDATE public.crm_pipeline_stages')) return { rows: [] }
+    if (sql.includes('UPDATE public.crm_pipelines')) return { rows: [] }
+    if (sql.includes('MAX(order_index)')) return { rows: [{ max_order: 1 }] }
+    throw new Error(`Unexpected pipeline SQL: ${sql}`)
+  }
+
+  async end() {
+    return undefined
+  }
+
+  async connect() {
+    return { query: this.query.bind(this), release: () => undefined }
   }
 }
 
@@ -542,7 +688,8 @@ describe('crm routes', () => {
 
   it('returns pipelines, moves leads between stages and completes tasks through backend routes', async () => {
     const { authStore, token } = buildAuthenticatedAuthStore()
-    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never })
+    const pool = new FakePool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never })
 
     const pipelines = await app.inject({
       method: 'GET',
@@ -571,6 +718,8 @@ describe('crm routes', () => {
     ])
     expect(movedLead.statusCode).toBe(200)
     expect(movedLead.json()).toMatchObject({ id: ids.lead, status: 'won', wonAt: expect.any(String) })
+    expect(pool.queries.some((sql) => sql.includes('INSERT INTO public.lead_stage_history'))).toBe(true)
+    expect(pool.queries.some((sql) => sql.includes('INSERT INTO public.domain_events'))).toBe(true)
     expect(completedTask.statusCode).toBe(200)
     expect(completedTask.json()).toMatchObject({ id: ids.task, status: 'completed', completedAt: expect.any(String) })
   })
@@ -610,5 +759,61 @@ describe('crm routes', () => {
     expect(executions.json()).toEqual([
       expect.objectContaining({ id: ids.execution, leadId: ids.lead, actionType: 'whatsapp' }),
     ])
+  })
+
+  it('creates a pipeline and stage through authorized management routes', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore('client_admin')
+    const pool = new FakePipelinePool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never })
+
+    const pipeline = await app.inject({
+      method: 'POST',
+      url: '/api/crm/pipelines',
+      headers: { cookie: sessionCookie(token) },
+      payload: { organizationId: ids.org, crmInstanceId: ids.crmInstance, name: 'Novos negócios' },
+    })
+    const stage = await app.inject({
+      method: 'POST',
+      url: `/api/crm/pipelines/${ids.pipeline}/stages`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { name: 'Novo', key: 'new', color: '#64748b' },
+    })
+
+    expect(pipeline.statusCode).toBe(201)
+    expect(pipeline.json()).toMatchObject({ id: ids.pipelineTwo, organizationId: ids.org, crmInstanceId: ids.crmInstance, name: 'Novos negócios' })
+    expect(stage.statusCode).toBe(201)
+    expect(stage.json()).toMatchObject({ pipelineId: ids.pipelineTwo, key: 'new', name: 'Novo' })
+  })
+
+  it('blocks pipeline structure mutations for sellers and when customization is disabled', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore('client_user')
+    const pool = new FakePipelinePool()
+    pool.memberRole = 'seller'
+    app = await buildServer(testEnv, { authStore, pool: pool as never })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/crm/pipelines',
+      headers: { cookie: sessionCookie(token) },
+      payload: { organizationId: ids.org, crmInstanceId: ids.crmInstance, name: 'Sem acesso' },
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'pipeline_customization_forbidden' })
+  })
+
+  it('reorders stages only within the selected pipeline', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePipelinePool() as never })
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/crm/pipelines/${ids.pipeline}/stages/order`,
+      headers: { cookie: sessionCookie(token) },
+      payload: { stageIds: [ids.stageWon, ids.stage] },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual(expect.objectContaining({ id: ids.pipeline }))
   })
 })

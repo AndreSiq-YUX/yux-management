@@ -1,5 +1,6 @@
 import type pg from 'pg'
 import type { AuthUser } from '../../auth/routes.js'
+import { recordDomainEvent } from '../events/repository.js'
 
 export type CrmLeadInput = {
   organizationId: string
@@ -97,6 +98,8 @@ type LeadRow = {
   source_kind: string | null
   status: string | null
   score: number | null
+  fit_score: number | null
+  intent_score: number | null
   value: string | number | null
   notes: string | null
   owner_id: string | null
@@ -378,31 +381,115 @@ export async function patchLead(pool: pg.Pool, user: AuthUser, leadId: string, p
 }
 
 export async function moveLeadToStage(pool: pg.Pool, user: AuthUser, leadId: string, stageId: string) {
-  await getLeadForAccess(pool, user, leadId)
-  const stage = await getStageForAccess(pool, user, stageId)
-  const result = await pool.query<LeadRow>(
-    `UPDATE public.leads
-     SET stage_id = $2,
-         stage = $3,
-         status = $4,
-         won_at = $5,
-         lost_at = $6,
-         last_activity_at = $7,
-         updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [
-      leadId,
-      stage.id,
-      toLegacyStage(stage),
-      stage.is_won ? 'won' : stage.is_lost ? 'lost' : 'open',
-      stage.is_won ? new Date().toISOString() : null,
-      stage.is_lost ? new Date().toISOString() : null,
-      new Date().toISOString(),
-    ],
-  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const leadResult = await client.query<LeadRow>(
+      `SELECT *
+       FROM public.leads l
+       WHERE l.id = $2
+         AND (
+           $3::boolean = TRUE
+           OR EXISTS (
+             SELECT 1 FROM public.memberships m
+             WHERE m.user_id = $1 AND m.organization_id = l.organization_id
+           )
+         )
+       LIMIT 1
+       FOR UPDATE`,
+      [user.id, leadId, isInternal(user)],
+    )
+    const lead = leadResult.rows[0]
+    if (!lead) throw Object.assign(new Error('lead_not_found'), { statusCode: 404 })
 
-  return mapLead(result.rows[0])
+    const stageResult = await client.query<StageRow & { organization_id: string; crm_instance_id: string | null }>(
+      `SELECT s.id, s.pipeline_id, s.key, s.name, s.color, s.order_index, s.is_won, s.is_lost, s.is_active,
+              p.organization_id, p.crm_instance_id
+       FROM public.crm_pipeline_stages s
+       JOIN public.crm_pipelines p ON p.id = s.pipeline_id
+       WHERE s.id = $1
+         AND s.is_active = TRUE
+         AND p.is_active = TRUE
+         AND p.organization_id = $2
+         AND (
+           $3::boolean = TRUE
+           OR EXISTS (
+             SELECT 1 FROM public.memberships m
+             WHERE m.user_id = $4 AND m.organization_id = p.organization_id
+           )
+         )
+       LIMIT 1`,
+      [stageId, lead.organization_id, isInternal(user), user.id],
+    )
+    const stage = stageResult.rows[0]
+    if (!stage) throw Object.assign(new Error('stage_not_found'), { statusCode: 404 })
+    if (stage.crm_instance_id && lead.crm_instance_id && stage.crm_instance_id !== lead.crm_instance_id) {
+      throw Object.assign(new Error('crm_instance_mismatch'), { statusCode: 409 })
+    }
+    if (!stage.crm_instance_id) throw Object.assign(new Error('crm_instance_required'), { statusCode: 409 })
+
+    const now = new Date().toISOString()
+    const result = await client.query<LeadRow>(
+      `UPDATE public.leads
+       SET crm_instance_id = $2,
+           pipeline_id = $3,
+           stage_id = $4,
+           stage = $5,
+           status = $6,
+           won_at = $7,
+           lost_at = $8,
+           last_activity_at = $9,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [
+        leadId,
+        stage.crm_instance_id,
+        stage.pipeline_id,
+        stage.id,
+        toLegacyStage(stage),
+        stage.is_won ? 'won' : stage.is_lost ? 'lost' : 'open',
+        stage.is_won ? now : null,
+        stage.is_lost ? now : null,
+        now,
+      ],
+    )
+    const updatedLead = result.rows[0]
+    if (!updatedLead) throw Object.assign(new Error('lead_update_failed'), { statusCode: 500 })
+
+    await client.query(
+      `INSERT INTO public.lead_stage_history (
+         crm_instance_id, lead_id, from_stage_id, to_stage_id, changed_by, changed_at
+       ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [stage.crm_instance_id, leadId, lead.stage_id, stage.id, user.id, now],
+    )
+
+    await recordDomainEvent(client, {
+      eventType: 'lead.stage_changed',
+      organizationId: lead.organization_id,
+      crmInstanceId: stage.crm_instance_id,
+      aggregateType: 'lead',
+      aggregateId: leadId,
+      leadId,
+      actor: { type: 'user', id: user.id },
+      payload: {
+        leadId,
+        pipelineId: stage.pipeline_id,
+        fromStageId: lead.stage_id,
+        stageId: stage.id,
+        toStageId: stage.id,
+        status: updatedLead.status,
+      },
+    })
+
+    await client.query('COMMIT')
+    return mapLead(updatedLead)
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 export async function listLeadInteractions(pool: pg.Pool, user: AuthUser, leadId: string) {
@@ -453,24 +540,51 @@ export async function listLeadTasks(pool: pg.Pool, user: AuthUser, leadId: strin
 
 export async function createLeadTask(pool: pg.Pool, user: AuthUser, leadId: string, input: CrmTaskInput) {
   await requireOrganizationAccess(pool, user, input.organizationId)
-  await getLeadForAccess(pool, user, leadId)
-  const result = await pool.query<TaskRow>(
-    `INSERT INTO public.lead_tasks (organization_id, lead_id, title, description, due_at, assigned_to, priority, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id, organization_id, lead_id, enrollment_id, title, description, status, priority, due_at, completed_at, assigned_to`,
-    [
-      input.organizationId,
+  const lead = await getLeadForAccess(pool, user, leadId)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query<TaskRow>(
+      `INSERT INTO public.lead_tasks (organization_id, lead_id, title, description, due_at, assigned_to, priority, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, organization_id, lead_id, enrollment_id, title, description, status, priority, due_at, completed_at, assigned_to`,
+      [
+        input.organizationId,
+        leadId,
+        input.title.trim(),
+        input.description?.trim() || null,
+        input.dueAt,
+        input.assignedTo ?? null,
+        input.priority ?? 'medium',
+        user.id,
+      ],
+    )
+    const task = result.rows[0]
+    if (!task) throw Object.assign(new Error('task_create_failed'), { statusCode: 500 })
+    await client.query(
+      `UPDATE public.leads
+       SET next_follow_up_at = LEAST(COALESCE(next_follow_up_at, $2), $2), updated_at = NOW()
+       WHERE id = $1`,
+      [leadId, input.dueAt],
+    )
+    await recordDomainEvent(client, {
+      eventType: 'lead.task_created',
+      organizationId: lead.organization_id,
+      crmInstanceId: lead.crm_instance_id ?? undefined,
+      aggregateType: 'task',
+      aggregateId: task.id,
       leadId,
-      input.title.trim(),
-      input.description?.trim() || null,
-      input.dueAt,
-      input.assignedTo ?? null,
-      input.priority ?? 'medium',
-      user.id,
-    ],
-  )
-
-  return mapTask(result.rows[0])
+      actor: { type: 'user', id: user.id },
+      payload: { taskId: task.id, leadId, dueAt: task.due_at, priority: task.priority, assignedTo: task.assigned_to },
+    })
+    await client.query('COMMIT')
+    return mapTask(task)
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 export async function completeLeadTask(pool: pg.Pool, user: AuthUser, taskId: string) {
@@ -796,6 +910,8 @@ function mapLead(row: LeadRow) {
     sourceKind: row.source_kind ?? undefined,
     status: row.status ?? 'open',
     score: row.score ?? 0,
+    fitScore: row.fit_score ?? undefined,
+    intentScore: row.intent_score ?? undefined,
     value: row.value !== null && row.value !== undefined ? Number(row.value) : undefined,
     notes: row.notes ?? undefined,
     ownerId: row.owner_id ?? undefined,

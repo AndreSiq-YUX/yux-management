@@ -35,11 +35,13 @@ export function LeadDetailPanel({ lead, onMarkWon, onMarkLost }: LeadDetailPanel
         </Badge>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-6">
         <Info icon={Mail} label="Email" value={lead.email} />
         <Info icon={MessageCircle} label="Telefone" value={lead.phone || 'Nao informado'} />
         <Info icon={CircleDollarSign} label="Valor" value={formatCurrency(lead.value)} />
         <Info icon={Trophy} label="Score" value={`${lead.score}/100`} />
+        <Info icon={Trophy} label="Fit" value={`${lead.fitScore ?? 0}/100`} />
+        <Info icon={Trophy} label="Intenção" value={`${lead.intentScore ?? 0}/100`} />
       </div>
 
       <div className="grid gap-3 rounded-md border bg-slate-50 p-3 md:grid-cols-3">

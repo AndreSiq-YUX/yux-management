@@ -118,6 +118,7 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
         ...moduleItem(context, { label: 'Empresas / Contas', href: href('/comercial/contas'), moduleKey: 'crm' }),
         ...moduleItem(context, { label: 'Funis', href: href('/comercial/funis'), moduleKey: 'crm' }),
         ...moduleItem(context, { label: 'Tarefas e Follow-ups', href: href('/comercial/tarefas'), moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Pontuação de leads', href: href('/comercial/scoring'), moduleKey: 'crm' }),
         ...(canShowRadarNavigation(context) ? [{ label: 'Radar Comercial', href: href('/comercial/radar'), moduleKey: 'crm' }] : []),
       ],
     },

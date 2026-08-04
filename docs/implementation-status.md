@@ -1,6 +1,7 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-07-01 (runtime migrated to VPS backend/Postgres/Redis; Strategy Packs and internal YUX growth workspace implemented locally)
+Updated: 2026-08-04 (audited from the previous documentation commit
+`a8728d0` through implementation commit `34b3af4`)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -19,11 +20,14 @@ the target VPS/Dokploy environment.
 > dependency or a claim of current deployment status.
 - Active frontend data layer: `/api/*` through `apiClient`, `backendDataClient`,
   `backendAuthService`, `backendDataService`, and module-specific services.
-- Current development branch target: active local workspace with Growth
-  Workspace, Strategy Engine and Agent Harness changes.
-- Latest implementation state includes local Strategy Packs, internal YUX
-  growth workspace and contextual Strategy Harness panels; check `git status`
-  before using commit hashes as a release boundary.
+- Current implementation boundary: committed `main` at `34b3af4`, including
+  standalone external lead forms, CRM/client access stabilization and the
+  transactional lead-orchestration foundation.
+- Redis/BullMQ executes asynchronous deliveries, but new lead/form events are
+  first committed to the Postgres transactional outbox so a temporary queue
+  outage does not roll back or lose an accepted submission.
+- The CRM scoring consumer now evaluates governed fit/intent rules, persists an
+  append-only score history and emits score-change/threshold events.
 - CRM-specific reference:
   `docs/crm-lead-management.md`.
 
@@ -31,8 +35,8 @@ the target VPS/Dokploy environment.
 
 | Area | Status | Main Routes | Main Repo Evidence | Operational Notes |
 | --- | --- | --- | --- | --- |
-| Platform foundation | Implemented | `/dashboard`, platform shell | `20260531000000_yux_os_clean_baseline.sql`, `platformService`, module registry, platform store | Remote Supabase state must be checked before assuming all migrations are applied. |
-| Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/channels`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | `20260604203319_yux_hub_admin_platform.sql`, `adminPlatformService`, grouped navigation, Admin Hub pages, `docs/admin-yux-hub.md` | Target Supabase still needs the admin platform migration applied before live data loads through the Data API. |
+| Platform foundation | Implemented | `/dashboard`, platform shell | Platform schema lineage, Fastify/Postgres repositories, `platformService`, module registry and platform store | Confirm the complete backend migration history and authenticated platform bootstrap in the target VPS. |
+| Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/channels`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | Admin platform schema lineage, backend admin routes/repositories, `adminPlatformService`, grouped navigation, Admin Hub pages and `docs/admin-yux-hub.md` | Active reads use the VPS API/Postgres path; production credentials and authenticated Admin QA remain required. |
 | Contracts, packages, modules, portal context | Implemented | `/contracts`, `/packages`, `/modules`, `/portal` | `20260601000000_contracts_modules_portal.sql`, `20260601010000_contract_rls_policies.sql`, `ContractsPage`, `PackagesPage`, `ModulesPage`, `PortalDashboardPage` | Portal access derives from active contract and enabled modules. |
 | Lead-to-client conversion bridge | Implemented in repo | `/client-conversions` | `ClientConversionsPage`, `clientConversionService`, `platformService.createClientOrganization`, `crmService`, `backendDataService.createClient` | Converts a closed lead from a client/YUX workspace into official client, organization and contract records, optionally applying a sector model and marking the lead as converted. |
 | Portal RLS hardening | Implemented in repo | Portal routes | `20260601020000_harden_portal_rls.sql`, `20260601030000_secure_baseline_functions.sql`, `20260601040000_move_auth_trigger_private.sql` | Requires remote migration application/probes in target DB. |
@@ -40,19 +44,21 @@ the target VPS/Dokploy environment.
 | Admin assisted client workspaces | Implemented in repo | `/client-workspaces`, `/client-workspaces/:organizationId/*` | `0105_strategy_packs_yux_workspace.sql`, `ClientWorkspaceSelectorPage`, `ClientWorkspaceLayout`, `platformStore.initializeClientWorkspace`, `usePortalWorkspacePath`, navigation tests | Admin users must select a workspace before operating. `Crescimento YUX` is now a pinned internal workspace with its own client/contract/module context for the YUX operation. |
 | Portal data stabilization / phase 6 visibility | Implemented in repo | Portal and client workspace routes | `20260608095633_portal_phase6_rls_visibility.sql`, `usePortalActionSummary`, `usePortalCrmContext`, `usePortalMarketingContext`, `portalDisplay` | Stabilizes portal loading and next-action summaries across CRM, marketing, approvals, projects and finance. Target migration/probe confirmation is still required before production assumptions. |
 | Projects, tasks, deliverables, approvals | Implemented | `/projects`, `/portal/projetos/projetos`, `/portal/projetos/aprovacoes` | `20260601070000_project_delivery_approvals.sql` through `20260601100000_backfill_deliverable_approval_status.sql`, `ProjectsPage`, `PortalProjectsPage`, `PortalApprovalsPage`, project components, `approvalRules` | Includes client-visible timeline, documents and approval decisions. |
-| CRM and follow-up automation foundation | Implemented in repo | `/leads`, `/portal/comercial/leads` | `20260601105000_ensure_interactions_for_crm.sql` through `20260601140000_enable_client_crm_portal.sql`, `crmService`, `followUpRules`, `docs/crm-lead-management.md` | Provider-neutral; target Supabase must have migrations, grants, valid session, memberships and RLS applied. |
-| CRM governed by contract | Implemented in repo | `/crm-governance`, `/portal/comercial/leads`, `/portal/empresa/usuarios` | `20260603230000_crm_governance_by_contract.sql`, `crmGovernanceService`, `governanceRules`, CRM governance UI, scoped CRM workspace | Local Supabase reset/probe could not run because Docker was unavailable in this Windows session. Target Supabase still needs migration and probe execution. |
+| CRM and follow-up automation foundation | Implemented in repo | `/leads`, `/portal/comercial/leads` | CRM Postgres migrations/repositories, `crmService`, sequence scheduler, follow-up rules and `docs/crm-lead-management.md` | Provider-neutral CRM core now runs through the VPS backend. Provider credentials, worker availability and production smoke tests remain operational requirements. |
+| CRM governed by contract | Implemented and locally validated | `/crm-governance`, `/portal/comercial/leads`, `/portal/empresa/usuarios` | CRM governance schema, backend `governance-context`, `crmGovernanceService`, governance rules/UI and `0116_reconcile_crm_instances.sql` | Contract membership and module entitlement are enforced in the backend; target Postgres migration history and authenticated QA still need confirmation. |
+| Client access and CRM provisioning stabilization | Implemented and locally validated | `/clients`, `/crm-governance`, portal/client workspace routes | `0115_reconcile_client_portal_emails.sql`, `0116_reconcile_crm_instances.sql`, `clientIdentity`, workspace/CRM repositories and regression tests | Revalidates persisted sessions, reports invitation-delivery failures, safely synchronizes portal e-mail identities and reconciles CRM instances from active contracts/modules. Production migration and authenticated smoke tests remain required. |
 | Commercial proposals and conversion | Implemented | `/proposals`, `/portal/projetos/aprovacoes`, `/proposal/review/:token` | `20260601150000_commercial_proposals_conversion.sql` through `20260601180000_enable_client_proposal_permissions.sql`, `proposalService`, `ProposalEditor`, `PublicProposalPage`, `PortalApprovalsPage` | AI draft generation is provider-neutral with fallback behavior; production provider credentials are not part of this status. |
 | Omnichannel AI base | Implemented as provider-neutral base | `/omnichannel`, `/portal/atendimento/conversas`, `/portal/atendimento/canais`, `/webchat/session/:sessionToken` | `20260601190000_omnichannel_ai_core.sql`, `20260601200000_omnichannel_crm_sync.sql`, `20260601210000_omnichannel_webchat_widget_service.sql`, `omnichannelService`, omnichannel components, `frontend/public/yux-webchat.js` | Live WhatsApp/Instagram/email provider credentials are deferred. Webchat uses short-lived session tokens. |
 | Finance basic | Implemented in repo | `/finance`, `/portal/financeiro` | `20260601220000_basic_finance.sql`, `financeService`, `FinanceWorkspace`, `PortalFinanceWorkspace`, `financeRules` | Accounts receivable only. No payment gateway, fiscal issuance, bank reconciliation, or automated billing. Migration/probes still need target DB execution. |
 | Support basic | Implemented in repo | `/support`, `/portal/suporte` | `20260601230000_basic_support.sql`, `supportService`, `SupportWorkspace`, `PortalSupportWorkspace`, `supportRules` | Contract-based tickets and messages only. No omnichannel ticket conversion, attachments, FAQ/knowledge base, or advanced SLA calendar. Migration/probes still need target DB execution. |
 | CRM Cockpit commercial upgrade | Implemented in repo | `/leads`, `/portal/comercial/leads` | `20260601260000_crm_cockpit_upgrade.sql`, CRM service/UI upgrades, `20260603215128_expose_platform_base_tables_to_data_api.sql` | Adds owner/source/stage commercial cockpit primitives and portal-safe CRM continuation. Loading fallback fixed after `organizations` 401 report. |
-| CRM ideal phase 1 commercial cockpit | Implemented in repo | `/leads`, `/portal/comercial/leads` | `20260604010000_crm_commercial_cockpit.sql`, `crmCockpitService`, `cockpitRules`, `CockpitTabs`, `TodayWorkQueue`, `Lead360Panel`, `LeadCsvImportPanel` | Adds tabs, filters, Today queue, calendar, sources, CSV preview, tags/import/action schema. Supabase migration/probe still need target execution. |
-| CRM ideal phase 2 WhatsApp AI | Implemented in repo | `/leads`, `/portal/comercial/leads`, `/portal/atendimento/conversas`, `/omnichannel` | `20260604020000_crm_whatsapp_ai.sql`, `crmConversationService`, `conversationRules`, `LeadConversationPanel`, `LeadAiInsightPanel`, `LeadResponseComposer`, `process-ai-message` | Links leads to conversations, stores CRM AI insights, tracks SLA/handoff, supports response suggestions. Supabase migration/probe still need target execution. |
-| CRM ideal phase 3 proposals closing | Implemented in repo | `/leads`, `/portal/comercial/leads`, `/portal/projetos/aprovacoes`, `/proposals` | `20260604030000_crm_proposals_closing.sql`, `crmClosingService`, `closingRules`, `LeadProposalLauncher`, `ProposalRecommendationPanel`, `ClosingChecklistPanel`, `ProposalEventTimeline` | Adds CRM-facing lead-to-proposal-to-contract orchestration, event timeline, follow-ups, objections, conversion run idempotency and onboarding checklist. Supabase migration/probe still need target execution. |
-| CRM ideal phase 4 attribution and MROI | Implemented in repo | `/leads`, `/reports`, `/portal/relatorios` | `20260604040000_crm_attribution_mroi.sql`, `crmAttributionService`, `attributionRules`, `LeadSourcesDashboard`, `SourceFunnelChart`, `MroiAlertPanel` | Adds normalized sources, attribution events, source rollups, campaign snapshots, attributed revenue, MROI alerts, CSV exports and portal-safe attribution reporting. Supabase migration/probe still need target execution. |
+| CRM ideal phase 1 commercial cockpit | Implemented in repo | `/leads`, `/portal/comercial/leads` | CRM cockpit schema lineage, `crmCockpitService`, `cockpitRules`, `CockpitTabs`, `TodayWorkQueue`, `Lead360Panel`, `LeadCsvImportPanel` | Adds tabs, filters, Today queue, calendar, sources, CSV preview, tags/import/action schema. Confirm target Postgres schema and authenticated QA. |
+| CRM ideal phase 2 WhatsApp AI | Implemented in repo | `/leads`, `/portal/comercial/leads`, `/portal/atendimento/conversas`, `/omnichannel` | CRM conversation schema lineage, `crmConversationService`, `conversationRules`, `LeadConversationPanel`, `LeadAiInsightPanel`, `LeadResponseComposer` | Links leads to conversations, stores CRM AI insights, tracks SLA/handoff and supports response suggestions. Live provider/runtime configuration remains operational. |
+| CRM ideal phase 3 proposals closing | Implemented in repo | `/leads`, `/portal/comercial/leads`, `/portal/projetos/aprovacoes`, `/proposals` | CRM closing schema lineage, `crmClosingService`, `closingRules`, `LeadProposalLauncher`, `ProposalRecommendationPanel`, `ClosingChecklistPanel`, `ProposalEventTimeline` | Adds CRM-facing lead-to-proposal-to-contract orchestration, event timeline, follow-ups, objections, conversion-run idempotency and onboarding checklist. Confirm target Postgres migration state. |
+| CRM ideal phase 4 attribution and MROI | Implemented in repo | `/leads`, `/reports`, `/portal/relatorios` | Attribution schema lineage, `crmAttributionService`, `attributionRules`, `LeadSourcesDashboard`, `SourceFunnelChart`, `MroiAlertPanel` | Adds normalized sources, attribution events, source rollups, campaign snapshots, revenue, MROI alerts and exports. Confirm target Postgres migration state and portal-safe QA. |
 | Sector models / blueprints | Implemented in repo | `/blueprints`, `/contracts`, `/client-conversions` | `20260601270000_sector_funnel_blueprints.sql`, `BlueprintApplyPanel`, `ContractsPage`, `ClientConversionsPage`, blueprint application rules | Provides reusable sector templates and contract application runs. Can be applied globally, from a selected contract or during lead conversion. |
 | Landing Pages module | Implemented in repo | `/landing-pages`, `/portal/marketing/landing-pages` | `20260601280000_landing_pages.sql`, `landingPageService`, landing page workspaces | Tracks versions, approvals, visits/leads and portal review surface. |
+| Standalone external lead forms | Implemented and locally validated | `/portal/marketing/formularios`, `/client-workspaces/:organizationId/marketing/formularios`, public `POST /api/public/lead-forms/:token/submissions` | `0113_external_lead_forms.sql`, `0114_lead_identity_consent_and_scoring.sql`, `0117_standalone_external_lead_forms.sql`, `0118_external_lead_form_crm_visibility.sql`, lead-form repository/routes, portal workspace and `docs/external-lead-forms.md` | Supports hashed/rotatable tokens, custom field mappings, allowed origins, consent/UTM snapshots, idempotency, CRM routing and forms independent of YUX landing pages. Apply migrations and smoke-test the public domain before production use. |
 | Campaigns API-first core | Implemented in repo | `/campaigns`, `/portal/marketing/campanhas` | `20260601290000_campaigns_ads_api_core.sql`, backend function compatibility route, campaign service/workspaces, `backend/src/lib/edge-compat/adsProvider.ts` | API-first campaign draft/provider mutation path now routes through the VPS backend; provider side-effect handlers still need explicit domain hardening beyond compatibility jobs. |
 | Real WhatsApp provider path | Implemented and locally validated | `/omnichannel`, `/portal/atendimento/conversas` | Backend webhook route, worker handlers and `backend/src/lib/edge-compat/whatsappProvider.ts` | Meta HMAC validation, tenant lookup, idempotency and official outbound dispatch now run through the Fastify/worker path. Provider credentials and Meta production verification remain operational setup. |
 | Meta channel connectors | Implemented in repo | `/portal/atendimento/canais`, `/admin/channels` | `20260605110828_meta_channel_connectors.sql`, backend compatibility function route, `metaChannelService`, connected-channel workspaces, `backend/src/lib/edge-compat/metaChannel.ts` | Requires Meta App configuration, App Review permissions, runtime secrets and authenticated production QA. Edge Function source was removed from active code. |
@@ -70,11 +76,98 @@ the target VPS/Dokploy environment.
 | YUX Agent Harness Runtime | Implemented and locally validated | `/admin/strategy-engine`, `/omnichannel` and Strategy Admin chat | PostgreSQL runtime store, queue, workflow, trace, autonomy and retrieval modules | Runtime requires its bearer token and Postgres, validates tenant context, uses `SKIP LOCKED`, keeps traces PII-minimized and applies worker retention. VPS deployment confirmation remains separate. |
 | Flow Builder Lite (initial) | Implemented in repo | `/automations` | `20260601320000_flow_builder_lite.sql`, `automationService`, `AutomationWorkspace`, `dispatch-crm-automation` | Initial trigger/condition/action flows and execution history. Later evolved into full Intelligent Automations Workspace. |
 | Intelligent automations and SMTP2GO email hub | Implemented in repo | `/automations` | `20260604050000_intelligent_automations_foundation.sql`, `20260604060000_automation_sequences.sql`, `20260604070000_smtp2go_email_hub.sql`, `20260604080000_automation_sector_templates.sql`, backend automation routes/jobs, `automationService`, `automationSequenceService`, `emailDeliveryRules`, `AutomationWorkspace`, `SequencesWorkspace` timeline | Full automation workspace with visual builder, simulation, templates, versioning, bulk operations, dashboard, CRM/IA previews, audit trail, CRM sequences and VPS material storage. Runtime now targets backend routes/jobs instead of Edge Functions. |
+| Integrated lead orchestration foundation | Implemented and locally validated | Backend/worker; surfaced through forms, CRM, automations and sequences | `0119_lead_orchestration_foundation.sql`, `0120_crm_pipeline_management.sql`, `0121_crm_task_center.sql`, `0122_lead_scoring_rules.sql`, domain-event outbox/delivery ledger, pipeline/task repositories, scoring engine, automation runtime and SMTP2GO delivery/webhook services | Fans one event out to independent automation and scoring consumers with retries, idempotency, version snapshots, re-entry controls, correlation and loop protection. Funis, central de tarefas e scoring por ações estão disponíveis no portal do cliente e conectados ao outbox. |
 | Visual Node Editor & Materials Library | Implemented in repo | `/automations`, `/admin/limits` | `20260604220000_automation_graph_and_materials.sql`, `AutomationNodeEditor`, `NodeConfigSidebar`, `MaterialLibraryDialog`, `AdminLimitsPage`, `automationService`, `adminPlatformService` | Visual node-based automation flow editor (React Flow), branched flow traversal (parallel execution), dynamic file attachments (email/WhatsApp) integrated with multitenant Materials Library storage, and administrative interface to configure global and client limits. |
 | Growth Workspace orchestration | Implemented and locally validated | `/leads`, `/campaigns`, `/automations`, `/reports`, portal/workspace routes | `20260608130000_growth_workspace_foundation.sql`, `growthWorkspaceService`, `record360Rules`, `campaignPlanRules`, `onboardingRules`, `templateRules`, Growth Workspace components | Connects Registro 360, Campanha 360, sector onboarding, Central da Marca, template library, smart segments, guided automations and executive Ads/MROI reporting into one commercial journey. |
 | Operational reports and MROI | Implemented and locally validated | `/reports`, `/portal/relatorios` | `20260601330000_operational_reports.sql`, `reportService`, `reportRules`, report workspaces, `CampaignMetricsPanel` | Aggregates funnel, campaign, landing page, proposal, conversation, project and activity metrics with portal-safe output, report presets, AI insight summary and executive Ads/MROI cockpit. |
 | Portal dashboard and next actions | Implemented in repo | `/portal`, `/client-workspaces/:organizationId` | `PortalDashboardPage`, `usePortalActionSummary`, `usePortalWorkspacePath`, navigation rules/tests | Dashboard highlights active contract, module summaries and fixed approval shortcut. Next actions aggregate approvals, marketing reviews, CRM follow-ups, projects and finance. |
 | Deploy and CI hardening | Implemented in repo | N/A | `docs/phase-8-deploy-hardening.md`, `DEPLOY-DOKPLOY-VPS.md`, `docker-compose.dokploy.yml` | Production target is now VPS/Dokploy with self-hosted backend, Postgres and Redis. Vercel configs and Vercel deploy docs were removed from the active path. |
+
+## Changes Since The Previous Documentation Boundary
+
+The previous content boundary was commit `a8728d0` on 2026-07-10. The items
+below were verified against the current source and tests; planning-only commits
+are listed separately and are not counted as implemented scope.
+
+### Security And Tenant Isolation Reverification
+
+Implemented after the previous boundary:
+
+- tenant/membership checks for support messages and ticket mutations,
+  omnichannel outbound approval/retry and scoped provider/campaign data;
+- internal-only raw finance, support and operational-report endpoints, keeping
+  portal callers on sanitized DTOs;
+- forced RLS policy for `support_messages` through migration `0112`;
+- server-side Agent Harness credit estimation and reservation, ignoring
+  caller-supplied credit estimates;
+- expanded trace/event/message PII retention purge, sanitized subagent traces,
+  attachment magic-byte validation and scheduled Google token refresh;
+- startup validation requiring `N8N_WEBHOOK_SECRET` whenever the CRM webhook is
+  configured, plus negative multitenant regression coverage.
+
+These are repository guarantees. They do not replace migration application,
+secret configuration or authenticated production penetration/smoke testing.
+
+### Authentication, Invitation And CRM Provisioning Stabilization
+
+Implemented:
+
+- persisted frontend sessions are revalidated against the backend during app
+  startup; an invalid/expired session is cleared before protected routes load;
+- client creation and access-email resend now distinguish successful client
+  persistence from SMTP2GO invitation delivery failure and expose a useful
+  operator message;
+- linked client and portal-user e-mails are synchronized only when the
+  relationship is unambiguous and the target e-mail is not already in use;
+- active contracts with the CRM module create/reconcile a governed CRM instance;
+  an instance becomes active when an active pipeline exists and is paused when
+  entitlement is removed;
+- CRM governance context is resolved through backend membership/contract checks
+  rather than frontend generic-table queries, including the operator path used
+  by assisted client workspaces.
+
+### External Lead Capture
+
+Implemented:
+
+- public JSON and form-urlencoded submissions with per-form rate limiting,
+  hashed/rotatable tokens, `Idempotency-Key` and optional external submission ID;
+- forms tied to a YUX landing page or standalone forms owned directly by a
+  client contract, managed at `marketing/formularios`;
+- per-client field mappings, required-field validation, allowed origins,
+  consent/policy versions, UTM/referrer/language snapshots and custom CRM values;
+- lead deduplication by normalized identity, attribution history and routing to
+  an active CRM pipeline/stage with correct CRM-instance visibility;
+- atomic `lead.created` (new identity only) and `form.submitted` (every distinct
+  accepted submission) events, with sanitized payloads available to automations.
+
+See `docs/external-lead-forms.md` for the integration contract.
+
+### Transactional Lead Orchestration
+
+Implemented in migration `0119` and the Fastify/BullMQ worker:
+
+- transactional `domain_events` outbox and per-consumer delivery ledger;
+- event catalog for lead, form, stage/owner/task/interaction, sequence, e-mail
+  lifecycle and score events;
+- dispatcher scheduled every five seconds, claiming up to 100 events and
+  delivering automation and scoring consumers independently;
+- published-flow snapshot matching, conditions, per-flow execution runs,
+  independent retry/failure, daily limits, re-entry cooldown, correlation,
+  maximum depth, automation trace and idempotent action effects;
+- native CRM commands for pipeline/stage moves, owner assignment, tasks,
+  activities, allowed field updates, sequence enrollment/pause, tags and manual
+  score adjustment; external/AI/WhatsApp actions remain behind the signed n8n
+  adapter when selected;
+- CRM sequence execution with idempotent tasks, published e-mail templates,
+  server-side suppression/quota checks, SMTP2GO sending and signed delivery,
+  open, click, bounce, complaint and unsubscribe webhook events.
+
+Not implemented in this phase:
+
+- a first-class operations UI for the outbox, dead letters and event replay;
+- deeper scoring analytics and bulk rule import beyond the client-facing
+  configuration and simulation surface.
 
 ## Growth Workspace Reorganization Status
 
@@ -113,38 +206,35 @@ Phase-by-phase status:
 | 6. Segments, automations and templates | Smart segments, guided automation objectives and template library | Implemented |
 | 7. Ads/MROI cockpit and reports | Executive campaign metrics, report presets, AI insight summary and launch QA | Implemented and locally validated |
 
-## Pending Operational Work
+## Growth Workspace Operational Notes
 
 - configure Meta App IDs, Embedded Signup config, App Review permissions and
   runtime secrets;
-- deploy Meta channel Edge Functions;
+- route Meta callbacks to the Fastify backend webhook and keep the backend
+  worker running; active production traffic must not target the archived Edge
+  Function path;
 - validate WhatsApp Embedded Signup, Instagram Direct and Messenger with
-  development-mode test assets before production.
+  development-mode test assets before production;
 - configure per-client WordPress application-password secrets referenced by
-  `publishing_connections.token_reference` before executing live blog posts.
+  `publishing_connections.token_reference` before executing live blog posts;
 - configure native Marketing Studio runtime secrets for Meta/Google OAuth,
   Google Ads developer token and provider secret encryption before live posting
   or ad activation;
 - complete Meta App Review, Google OAuth consent setup and redirect URL
-  registration before client tenants authorize their accounts.
-- confirm or apply/probe `20260608095633_portal_phase6_rls_visibility.sql` in
-  the target Supabase project before treating the new portal/client workspace
-  loading behavior as production-confirmed.
-- confirm or apply/probe `20260608130000_growth_workspace_foundation.sql` in
-  the target Supabase project before treating Growth Workspace persistence as
-  production-confirmed. The migration and probe files exist locally, but this
-  status update could not verify remote migration history because the linked
-  Supabase database password failed authentication in the local CLI.
-- apply/probe `backend/src/db/migrations/0105_strategy_packs_yux_workspace.sql`
-  in the target VPS/Postgres database before treating Strategy Packs, the
+  registration before client tenants authorize their accounts;
+- confirm/apply the current backend Postgres migration history, including
+  `0105_strategy_packs_yux_workspace.sql`, before treating Strategy Packs, the
   pinned `Crescimento YUX` workspace and contextual harness panels as
-  production-confirmed.
+  production-confirmed;
 - confirm the older Strategy Engine/Harness schema already exists in the target
   VPS/Postgres database before treating Strategy Engine, workflow traces and
-  Active Learning records as production-confirmed.
+  Active Learning records as production-confirmed;
 - deploy and configure the YUX Agent Harness Runtime on VPS/Dokploy before
   treating WhatsApp/Strategy Admin runtime execution as operational instead of
   fallback-only.
+
+The consolidated deployment checklist, including migrations `0112` through
+`0119`, appears in the final Pending Operational Work section.
 
 ## Implemented Functional Scope
 
@@ -313,12 +403,20 @@ Implemented:
 - lead interaction support required by later automation;
 - client CRM portal enablement;
 - follow-up rules and tests;
-- n8n-oriented boundaries without coupling the frontend to provider execution.
+- n8n-oriented boundaries without coupling the frontend to provider execution;
+- standalone and landing-page-bound external lead capture with CRM routing;
+- transactional domain-event outbox, independent delivery ledger and worker
+  fan-out to automations and the preparatory scoring consumer;
+- real automation command adapters for CRM mutations, sequence enrollment,
+  task/activity creation, tags and controlled score adjustments;
+- native CRM sequence task/e-mail execution and SMTP2GO delivery events.
 
 Not complete:
 
 - complete live provider integrations;
-- full outbound automation execution UI for every workflow type.
+- full outbound automation execution UI for every workflow type;
+- action-based scoring rules/thresholds and automatic qualification;
+- centralized task-management UI and operational event/dead-letter console.
 
 ### CRM Governed By Contract
 
@@ -338,16 +436,21 @@ Implemented:
 - client settings surface moved from legacy `/portal/crm/settings` to the
   customer journey route `/portal/empresa/usuarios`;
 - CRM workspace state for clients without active CRM instance;
-- seller and manager workspace titles.
+- seller and manager workspace titles;
+- backend governance-context endpoint with contract/membership enforcement;
+- automatic CRM-instance creation/reconciliation when an active contract has
+  the CRM module, activation after pipeline configuration and pause after
+  entitlement removal.
 
 Not complete:
 
-- target Supabase application of `20260603230000_crm_governance_by_contract.sql`;
-- target probe execution for `supabase/probes/20260603230000_crm_governance_by_contract.sql`;
+- confirmation/application of the current CRM governance and reconciliation
+  migrations in the target VPS/Postgres database;
 - full CRUD forms for every governance entity;
-- real user invitation lifecycle through Supabase Auth;
+- richer invitation lifecycle/audit beyond the implemented SMTP2GO delivery
+  status and resend feedback;
 - advanced sales dashboard by seller/team;
-- AI scoring and full CRM redesign beyond this governance foundation.
+- behavioral scoring and the planned functional-funnel/task-center expansion.
 
 ### CRM Ideal Phase 1 Commercial Cockpit
 
@@ -696,6 +799,21 @@ Not complete:
 
 ## Current Validation Evidence
 
+Repository-wide validation rerun for this documentation audit on 2026-08-04:
+
+- backend `npm test`: 55 test files, 246 tests passed;
+- backend `npm run type-check`: passed;
+- frontend `npm test`: 95 test files, 460 tests passed;
+- frontend `npm run type-check`: passed;
+- `python -m pytest tests` in the Agent Harness runtime: 66 tests passed.
+
+The frontend total includes the router-context regression fixtures added for
+Campaigns, CRM, Omnichannel, Reports and Strategy Engine workspace tests after
+the previous documentation boundary.
+
+The frontend test run emitted only the existing Vite/esbuild deprecation and
+outdated Browserslist-data warnings; neither caused a failure.
+
 Latest YUX Agent Harness validation:
 
 - `python -m pytest tests` from `workers/marketing-studio-agent-runtime`: 52
@@ -778,6 +896,9 @@ Previous support commit validation:
 
 Known validation limitation:
 
+- This 2026-08-04 audit did not apply migrations or perform authenticated
+  browser/provider smoke tests against the production VPS. Passing repository
+  tests therefore confirms code consistency, not deployment state.
 - Historical unauthenticated HTTP smoke on Vercel preview routes returned `401`
   because Vercel Authentication protected the preview deployment.
 - Local Supabase reset for CRM governance could not run in this session because
@@ -795,78 +916,70 @@ Known validation limitation:
 These are not missing code in this repository; they are deployment/operation
 steps still required before treating the app as live-ready:
 
-- apply the latest Supabase migrations in the target project, especially:
-  - `20260601220000_basic_finance.sql`;
-  - `20260601230000_basic_support.sql`;
-  - `20260601270000_sector_funnel_blueprints.sql`;
-  - `20260601280000_landing_pages.sql`;
-  - `20260601290000_campaigns_ads_api_core.sql`;
-  - `20260601300000_whatsapp_provider_path.sql`;
-  - `20260601310000_ai_assistant_settings.sql`;
-  - `20260601320000_flow_builder_lite.sql`;
-  - `20260601330000_operational_reports.sql`;
-  - `20260604010000_crm_commercial_cockpit.sql`;
-  - `20260604020000_crm_whatsapp_ai.sql`;
-  - `20260604030000_crm_proposals_closing.sql`;
-  - `20260604050000_intelligent_automations_foundation.sql`;
-  - `20260604060000_automation_sequences.sql`;
-  - `20260604070000_smtp2go_email_hub.sql`;
-  - `20260604080000_automation_sector_templates.sql`;
-  - `20260604220000_automation_graph_and_materials.sql`;
-  - `20260608095633_portal_phase6_rls_visibility.sql`;
-  - `20260608130000_growth_workspace_foundation.sql`;
-  - `20260611190000_yux_strategy_engine.sql`;
-  - `20260612183708_yux_strategy_admin_chat.sql`;
-  - `20260612184513_yux_strategy_growth_route_seed.sql`;
-  - `20260613191046_yux_agent_harness_runtime.sql`;
-- confirm remote migration history or apply the missing migrations, then run
-  the corresponding probes in `supabase/probes/`;
-- verify portal/internal flows with authenticated test users after migrations;
+- confirm the target VPS/Postgres migration history and apply every missing
+  backend migration in order, with special attention to:
+  - `0105_strategy_packs_yux_workspace.sql`;
+  - `0112_rls_support_messages.sql`;
+  - `0113_external_lead_forms.sql`;
+  - `0114_lead_identity_consent_and_scoring.sql`;
+  - `0115_reconcile_client_portal_emails.sql`;
+  - `0116_reconcile_crm_instances.sql`;
+  - `0117_standalone_external_lead_forms.sql`;
+  - `0118_external_lead_form_crm_visibility.sql`;
+  - `0119_lead_orchestration_foundation.sql`;
+- keep the Fastify API, Redis and BullMQ worker healthy; confirm the five-second
+  outbox dispatcher, automation deliveries, sequence scheduler and retries are
+  operating after deployment;
+- smoke-test standalone and landing-page-bound form submission on the public
+  production domain, including allowed origins, idempotency, duplicate identity,
+  CRM visibility and two independent matching automations;
+- run authenticated portal/internal QA for session revalidation, client
+  invitation/resend feedback, e-mail identity synchronization, CRM governance
+  and CRM-instance provisioning;
+- configure `PUBLIC_APP_URL`, `CORS_ORIGIN`, `SMTP2GO_WEBHOOK_SECRET` and the
+  signed SMTP2GO callback before relying on e-mail lifecycle events;
+- configure `N8N_CRM_WEBHOOK_URL` together with `N8N_WEBHOOK_SECRET` only when
+  external automation actions are enabled;
 - deploy `workers/marketing-studio-agent-runtime` to VPS/Dokploy and configure
-  `YUX_AGENT_RUNTIME_URL` plus `YUX_AGENT_RUNTIME_TOKEN` for Edge Functions when
-  the runtime should process Strategy Admin or WhatsApp jobs;
-- configure runtime server secrets such as `SUPABASE_URL`,
-  `SUPABASE_SERVICE_ROLE_KEY`, `OPENROUTER_API_KEY` and `JINA_API_KEY` only in
-  server-side/Dokploy environments;
+  `YUX_AGENT_RUNTIME_URL` plus `YUX_AGENT_RUNTIME_TOKEN` in the backend when the
+  runtime should process Strategy Admin or WhatsApp jobs;
+- configure runtime/provider secrets such as the Postgres connection,
+  `OPENROUTER_API_KEY`, `JINA_API_KEY`, Meta/Google credentials and provider
+  encryption keys only in server-side/Dokploy environments;
 - run authenticated QA for `/admin/strategy-engine`, especially the
   `Harness & Learning` tab, after target migration application;
 - verify the Agent Harness runtime health endpoint and job execution in the
   production VPS before switching WhatsApp/Strategy Admin paths from fallback to
   runtime execution;
-- confirm current Supabase project activity/status before diagnosing remote SQL
-  failures;
 - deploy `docker-compose.dokploy.yml` in Dokploy and validate production domains;
 - configure real provider credentials only when the business chooses to move
   from provider-neutral bases to live integrations.
 
 ## Recommended Next Product Focus
 
-The next commercial build focus is documented in
-`docs/commercial-mvp-priorities.md`.
+The 2026-08-03 lead-orchestration plan and its first functional CRM expansion
+are implemented locally. The following documents remain as implementation
+contracts and acceptance checklists:
 
-The implementation design and master execution plan are documented in:
+- `docs/superpowers/plans/2026-08-03-crm-funis-funcionais.md`;
+- `docs/superpowers/plans/2026-08-03-crm-central-tarefas.md`;
+- `docs/superpowers/plans/2026-08-03-crm-scoring-por-acoes.md`.
 
-- `docs/superpowers/specs/2026-06-03-yux-hub-commercial-mvp-design.md`;
-- `docs/superpowers/plans/2026-06-03-yux-hub-commercial-mvp.md`.
+Recommended order:
 
-Short version:
-
-- deepen CRM into a visual sales cockpit;
-- add sector funnel templates through blueprints;
-- implement one real WhatsApp provider path;
-- add Landing Pages as tracked, approvable funnel assets;
-- add Campaigns And Ads with API-first Meta/Google creation and management;
-- add configurable AI assistant settings;
-- add simple operational reports;
-- complete email settings configuration UI.
+1. apply migrations `0119` through `0122` and validate the outbox/automation
+   path in the VPS;
+2. run the authenticated client smoke test for funis, tarefas and scoring;
+3. add the outbox/dead-letter operations surface and deeper scoring analytics
+   when operational volume justifies it.
 
 Finance and support should stay basic unless a real client forces deeper
 requirements.
 
 ## Known Workspace Notes
 
-- The local worktree may contain unrelated untracked files. At this snapshot,
-  `Ruolo-Dott.ssa-Iannelli-ud.01.06.2026.pdf` and root `package-lock.json` were
-  intentionally outside the support/finance commits.
-- The repository is still partly mid-migration: prefer newer module services
-  and `supabaseService` over legacy `/api` assumptions in `apiService`.
+- The local worktree contains unrelated untracked files; none were used as
+  implementation evidence or modified by this documentation audit.
+- The active frontend path is the self-hosted `/api/*` backend and module
+  services. Supabase/Edge Function references in historical sections are
+  archival and must not be used as the current production architecture.

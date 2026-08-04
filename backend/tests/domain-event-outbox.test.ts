@@ -181,8 +181,8 @@ describe('domain event fan-out', () => {
   })
 })
 
-describe('passive scoring consumer', () => {
-  it('acknowledges scoring deliveries without changing lead scores in Phase 0', async () => {
+describe('scoring consumer compatibility', () => {
+  it('keeps envelope-only calls side-effect free', async () => {
     const result = await handleCrmScoringEvent(createDomainEventEnvelope({
       eventId: ids.event,
       eventType: 'email.opened',
@@ -193,6 +193,6 @@ describe('passive scoring consumer', () => {
       actor: { type: 'provider', id: 'smtp2go' },
     }))
 
-    expect(result).toEqual({ ignored: 'scoring_not_enabled', eventType: 'email.opened' })
+    expect(result).toEqual({ ignored: 'scoring_pool_not_provided', eventType: 'email.opened' })
   })
 })

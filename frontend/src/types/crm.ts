@@ -3,6 +3,7 @@ import type { AttributionContext, LeadSourceKind } from './commercial'
 export type CrmActionType = 'whatsapp' | 'email' | 'internal_task'
 export type CrmEnrollmentStatus = 'active' | 'paused' | 'manual' | 'completed' | 'cancelled'
 export type CrmTaskStatus = 'pending' | 'completed' | 'cancelled'
+export type CrmTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type AutomationExecutionStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export type CrmLeadStatus = 'open' | 'won' | 'lost'
 export type CrmLeadAttentionState = 'on_track' | 'due_today' | 'overdue' | 'stale' | 'won' | 'lost'
@@ -97,6 +98,54 @@ export interface CrmPipelineStage {
   isActive: boolean
 }
 
+export interface CrmPipelineCreateInput {
+  organizationId: string
+  crmInstanceId: string
+  name: string
+  description?: string
+  isDefault?: boolean
+  isActive?: boolean
+}
+
+export interface CrmPipelinePatch {
+  name?: string
+  description?: string
+  isDefault?: boolean
+  isActive?: boolean
+}
+
+export interface CrmPipelineStageCreateInput {
+  pipelineId: string
+  name: string
+  key: string
+  color: string
+  isWon?: boolean
+  isLost?: boolean
+  isActive?: boolean
+}
+
+export interface CrmPipelineStagePatch {
+  name?: string
+  key?: string
+  color?: string
+  isWon?: boolean
+  isLost?: boolean
+  isActive?: boolean
+}
+
+export interface CrmPipelineMetrics {
+  leadCount: number
+  openValue: number
+  staleCount: number
+  wonCount: number
+  lostCount: number
+  conversionRate: number | null
+}
+
+export interface CrmPipelineStageMetrics extends CrmPipelineMetrics {
+  stageId: string
+}
+
 export interface CrmLead {
   id: string
   organizationId: string
@@ -137,6 +186,8 @@ export interface CrmLead {
   urgencyDetectedAt?: string
   lastConversationAt?: string
   score: number
+  fitScore?: number
+  intentScore?: number
   value?: number
   notes?: string
   ownerId?: string
@@ -177,10 +228,87 @@ export interface CrmTask {
   title: string
   description?: string
   status: CrmTaskStatus
-  priority?: 'low' | 'medium' | 'high' | 'urgent'
+  priority?: CrmTaskPriority
   dueAt: string
   completedAt?: string
+  cancelledAt?: string
   assignedTo?: string
+}
+
+export interface CrmTaskListItem extends CrmTask {
+  leadName: string
+  leadCompany?: string
+  pipelineName?: string
+  stageName?: string
+  assignedToName?: string
+}
+
+export interface CrmTaskPage {
+  items: CrmTaskListItem[]
+  total: number
+  nextCursor?: string
+}
+
+export interface CrmTaskFilters {
+  organizationId: string
+  crmInstanceId: string
+  status?: CrmTaskStatus
+  priority?: CrmTaskPriority
+  assignedTo?: string
+  leadId?: string
+  due?: 'overdue' | 'today' | 'upcoming'
+  search?: string
+  cursor?: string
+  limit?: number
+}
+
+export interface CrmTaskPatch {
+  title?: string
+  description?: string | null
+  dueAt?: string
+  assignedTo?: string | null
+  priority?: CrmTaskPriority
+  status?: CrmTaskStatus
+}
+
+export type LeadScoreDimension = 'fit' | 'intent'
+export type LeadScoringOperator = 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'exists'
+
+export interface LeadScoringModel {
+  id: string
+  crmInstanceId: string
+  name: string
+  fitWeight: number
+  intentWeight: number
+  thresholds: number[]
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LeadScoringRule {
+  id: string
+  modelId: string
+  name: string
+  dimension: LeadScoreDimension
+  eventType: string
+  fieldPath?: string
+  operator?: LeadScoringOperator
+  comparisonValue?: unknown
+  points: number
+  isActive: boolean
+}
+
+export interface LeadScoreEvent {
+  id: string
+  leadId: string
+  eventType: string
+  dimension: LeadScoreDimension
+  points: number
+  previousScore: number
+  resultingScore: number
+  context: Record<string, unknown>
+  occurredAt: string
 }
 
 export interface CreateLeadTaskInput {
@@ -190,7 +318,7 @@ export interface CreateLeadTaskInput {
   description?: string
   dueAt: string
   assignedTo?: string
-  priority?: 'low' | 'medium' | 'high' | 'urgent'
+  priority?: CrmTaskPriority
 }
 
 export interface RecordLeadActivityInput {

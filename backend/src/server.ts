@@ -57,7 +57,7 @@ type BuildServerOptions = {
 export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerOptions = {}) {
   const app = Fastify({ logger: env.NODE_ENV !== 'test', bodyLimit: 1 * 1024 * 1024 })
   const pool = options.pool ?? createPool(env.DATABASE_URL)
-  const queue = options.jobQueue ?? createAppJobQueue()
+  const queue = options.jobQueue ?? (env.NODE_ENV === 'test' ? createNoopJobQueue() : createAppJobQueue())
 
   app.decorate('config', env)
   app.decorate('pg', pool)
@@ -145,5 +145,12 @@ function createAppJobQueue(): AppJobQueue {
     async close() {
       await queue.close()
     },
+  }
+}
+
+function createNoopJobQueue(): AppJobQueue {
+  return {
+    async add() { return {} },
+    async close() { return undefined },
   }
 }

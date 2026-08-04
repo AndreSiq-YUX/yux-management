@@ -6,6 +6,9 @@ import {
   buildLeadScoreUpdatePayload,
   buildLeadTaskInsertPayload,
   buildLeadWonPayload,
+  buildPipelinePayload,
+  buildPipelinePatchPayload,
+  buildPipelineStagePayload,
   crmService,
 } from './crmService'
 
@@ -113,6 +116,39 @@ describe('crmService payload builders', () => {
     })
     expect(typeof payload.last_assignment_at).toBe('string')
   })
+
+  it('normalizes pipeline configuration payloads', () => {
+    expect(buildPipelinePayload({
+      organizationId: 'org-1',
+      crmInstanceId: 'instance-1',
+      name: '  Novos negócios  ',
+      description: '  Entrada comercial  ',
+    })).toEqual({
+      organizationId: 'org-1',
+      crmInstanceId: 'instance-1',
+      name: 'Novos negócios',
+      description: 'Entrada comercial',
+      isDefault: false,
+      isActive: true,
+    })
+    expect(buildPipelinePatchPayload({ name: '  Vendas  ', isDefault: true })).toEqual({
+      name: 'Vendas',
+      isDefault: true,
+    })
+    expect(buildPipelineStagePayload({
+      pipelineId: 'pipeline-1',
+      name: '  Qualificação  ',
+      key: '  qualification  ',
+      color: '#2563eb',
+    })).toEqual({
+      name: 'Qualificação',
+      key: 'qualification',
+      color: '#2563eb',
+      isWon: false,
+      isLost: false,
+      isActive: true,
+    })
+  })
 })
 
 describe('crmService backend API methods', () => {
@@ -141,6 +177,31 @@ describe('crmService backend API methods', () => {
       headers: expect.any(Headers),
       credentials: 'include',
     })
+  })
+
+  it('connects pipeline and stage management routes', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'pipeline-1', name: 'Vendas', stages: [] }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'pipeline-1', name: 'Comercial', stages: [] }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'stage-1', pipelineId: 'pipeline-1', name: 'Novo' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'stage-1', pipelineId: 'pipeline-1', name: 'Qualificado' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'pipeline-1', name: 'Comercial', stages: [] }))
+
+    await crmService.createPipeline({ organizationId: 'org-1', crmInstanceId: 'instance-1', name: 'Vendas' })
+    await crmService.updatePipeline('pipeline-1', { name: 'Comercial' })
+    await crmService.createPipelineStage({ pipelineId: 'pipeline-1', name: 'Novo', key: 'new', color: '#2563eb' })
+    await crmService.updatePipelineStage('stage-1', { name: 'Qualificado' })
+    await crmService.reorderPipelineStages('pipeline-1', ['stage-1'])
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/crm/pipelines', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/crm/pipelines/pipeline-1', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/crm/pipelines/pipeline-1/stages', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/crm/pipeline-stages/stage-1', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/crm/pipelines/pipeline-1/stages/order', expect.objectContaining({ method: 'PUT' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/crm/pipelines/pipeline-1/stages/order', expect.objectContaining({
+      body: JSON.stringify({ stageIds: ['stage-1'] }),
+    }))
   })
 
   it('creates CRM leads through the backend CRM endpoint', async () => {

@@ -51,6 +51,7 @@ import { PortalCommercialFunnelsPage } from '@/pages/client-portal/commercial/Po
 import { PortalCommercialLeadsPage } from '@/pages/client-portal/commercial/PortalCommercialLeadsPage'
 import { PortalCommercialRadarPage } from '@/pages/client-portal/commercial/PortalCommercialRadarPage'
 import { PortalCommercialTasksPage } from '@/pages/client-portal/commercial/PortalCommercialTasksPage'
+import { PortalLeadScoringPage } from '@/pages/client-portal/commercial/PortalLeadScoringPage'
 import { PortalBrandVoicePage } from '@/pages/client-portal/company/PortalBrandVoicePage'
 import { PortalCompanyIntegrationsPage } from '@/pages/client-portal/company/PortalCompanyIntegrationsPage'
 import { PortalCompanyProfilePage } from '@/pages/client-portal/company/PortalCompanyProfilePage'
@@ -180,6 +181,7 @@ function App() {
               <Route path="comercial/contas" element={<PortalCommercialAccountsPage />} />
               <Route path="comercial/funis" element={<PortalCommercialFunnelsPage />} />
               <Route path="comercial/tarefas" element={<PortalCommercialTasksPage />} />
+              <Route path="comercial/scoring" element={<PortalLeadScoringPage />} />
               <Route path="comercial/radar" element={<PortalCommercialRadarPage />} />
 
               <Route path="atendimento/conversas" element={<PortalServiceConversationsPage />} />
@@ -227,6 +229,7 @@ function App() {
             <Route path="portal/comercial/contas" element={<PortalCommercialAccountsPage />} />
             <Route path="portal/comercial/funis" element={<PortalCommercialFunnelsPage />} />
             <Route path="portal/comercial/tarefas" element={<PortalCommercialTasksPage />} />
+            <Route path="portal/comercial/scoring" element={<PortalLeadScoringPage />} />
 
             <Route path="portal/atendimento/conversas" element={<PortalServiceConversationsPage />} />
             <Route path="portal/atendimento/agente-ia" element={<PortalAiAgentPage />} />

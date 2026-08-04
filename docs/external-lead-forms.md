@@ -80,25 +80,57 @@ O header `Idempotency-Key` deve ser estável para a mesma submissão. Se não fo
 
 ## Respostas
 
-- `201`: lead novo criado; o job `lead.created` é enviado para automações.
-- `200`: submissão repetida ou lead já existente; não cria um novo lead.
+- `201`: lead novo criado; os eventos `lead.created` e `form.submitted` são
+  gravados no outbox na mesma transação da captura.
+- `200`: submissão idempotente repetida ou lead já existente; não cria um novo
+  lead. Uma nova submissão para uma identidade existente ainda registra
+  `form.submitted` e seu histórico/atribuição.
 - `403`: a origem não está na lista permitida.
 - `409`: a organização não tem pipeline e estágio válidos para receber o lead.
 - `422`: falta nome, e-mail ou consentimento.
-- `503`: o lead foi salvo, mas a fila estava temporariamente indisponível; repita a chamada com a mesma `Idempotency-Key` para reenviar a automação sem duplicar o lead.
+- `500`: a transação não foi concluída. É seguro repetir com a mesma
+  `Idempotency-Key`.
+
+A aceitação do formulário não depende da disponibilidade imediata do Redis. O
+lead, a submissão e os eventos são confirmados juntos no Postgres; o worker
+entrega os eventos pendentes quando a fila estiver disponível.
 
 ## Automação
 
-Crie ou edite um fluxo publicado com gatilho **Lead criado**. A entrada pelo formulário dispara esse mesmo evento e mantém no contexto `formId`, origem, UTM e campos personalizados. `landingPageId` também é informado quando o formulário estiver vinculado a uma landing page.
+Crie ou edite um fluxo publicado com gatilho `form.submitted` para reagir a
+toda nova submissão aceita, inclusive quando o lead já existia. Use
+`lead.created` apenas quando a automação deve executar uma vez para uma nova
+identidade. O contexto mantém `formId`, `submissionId`, origem, UTMs e campos
+personalizados; `landingPageId` também é informado quando houver vínculo com
+uma landing page.
 
-As ações CRM executadas pelo worker incluem criação de tarefa, registro de atividade, mudança de estágio, atribuição de responsável e atualização de campos. Ações externas continuam usando `N8N_CRM_WEBHOOK_URL` e o segredo configurado para o webhook.
+Cada fluxo compatível recebe uma execução independente, com versão publicada
+congelada, limite diário, idempotência, proteção contra reentrada/loop e retry.
+As ações CRM nativas incluem criação de tarefa, registro de atividade, mudança
+de funil/estágio, atribuição de responsável, atualização permitida de campos,
+tags, matrícula/pausa de sequência e ajuste manual de score. Ações externas,
+IA e WhatsApp continuam usando `N8N_CRM_WEBHOOK_URL` com
+`N8N_WEBHOOK_SECRET` quando selecionadas.
+
+O consumidor de scoring já recebe os eventos, mas ainda não altera o lead: até
+o plano de scoring por ações ser implementado, ele conclui a entrega com
+`scoring_not_enabled`.
 
 ## Produção
 
 - Aplicar a migration `0113_external_lead_forms.sql`.
 - Aplicar também a migration `0114_lead_identity_consent_and_scoring.sql`.
 - Aplicar a migration `0117_standalone_external_lead_forms.sql` para liberar formulários independentes por contrato.
-- Garantir que o worker e a fila estejam ativos.
+- Aplicar `0118_external_lead_form_crm_visibility.sql` para reconciliar a
+  visibilidade dos leads capturados no CRM governado.
+- Aplicar `0119_lead_orchestration_foundation.sql` para o outbox, entregas e
+  runtime de automações.
+- Aplicar também `0120_crm_pipeline_management.sql`, `0121_crm_task_center.sql`
+  e `0122_lead_scoring_rules.sql` para habilitar a configuração de funis,
+  central de tarefas e scoring por ações.
+- Garantir que o worker e a fila estejam ativos para processar o outbox; uma
+  indisponibilidade temporária atrasa a automação, mas não perde a captura já
+  confirmada no Postgres.
 - Configurar `PUBLIC_APP_URL` para que o painel mostre uma URL pública completa.
 - Para submissões feitas por JavaScript em outro domínio, configurar `CORS_ORIGIN` com a origem do site externo. Submissões server-to-server ou HTML tradicional não dependem dessa configuração de navegador.
 - Quando necessário, restringir o formulário a domínios específicos pelo campo `allowedOrigins` da rota autenticada `PATCH /api/landing-pages/forms/:id`.
