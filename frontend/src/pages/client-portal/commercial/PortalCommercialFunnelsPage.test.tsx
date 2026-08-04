@@ -79,6 +79,7 @@ describe('PortalCommercialFunnelsPage', () => {
     vi.clearAllMocks()
     vi.mocked(usePortalCrmContext).mockReturnValue({
       organization: { id: organizationId, name: 'Cliente', slug: 'cliente', kind: 'client', createdAt: '', updatedAt: '' },
+      role: null,
       enabledModuleKeys: ['crm'], loading: false, error: null, pipelines: [pipeline], leads, tasks: [], reload: vi.fn().mockResolvedValue(undefined),
     })
     vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(governance.instance)
@@ -131,6 +132,31 @@ describe('PortalCommercialFunnelsPage', () => {
     })
 
     expect(crmService.moveLeadToStage).toHaveBeenCalledWith('lead-1', 'new-stage')
+    act(() => root.unmount())
+  })
+
+  it('offers a clear first-funnel setup path for an internal admin', async () => {
+    vi.mocked(usePortalCrmContext).mockReturnValue({
+      organization: { id: organizationId, name: 'Cliente', slug: 'cliente', kind: 'client', createdAt: '', updatedAt: '' },
+      role: { key: 'yux_admin', name: 'YUX Admin', scope: 'internal', permissions: [] },
+      enabledModuleKeys: ['crm'], loading: false, error: null, pipelines: [], leads: [], tasks: [], reload: vi.fn().mockResolvedValue(undefined),
+    })
+    vi.mocked(crmGovernanceService.getGovernanceContext).mockResolvedValue({ ...governance, currentMember: undefined })
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<MemoryRouter><PortalCommercialFunnelsPage /></MemoryRouter>)
+      await flush()
+      await flush()
+      await flush()
+    })
+
+    const renderedText = (container.textContent || '').replace(/\u00a0/g, ' ')
+    expect(renderedText).toContain('Comece pela sua primeira operação')
+    expect(renderedText).toContain('Criar primeiro funil')
+
     act(() => root.unmount())
   })
 })

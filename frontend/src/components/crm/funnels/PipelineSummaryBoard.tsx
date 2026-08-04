@@ -102,53 +102,53 @@ export function PipelineSummaryBoard({
   )
 
   return (
-    <section className="rounded-lg border bg-white p-5" aria-labelledby={`pipeline-board-${pipeline.id}`}>
-      <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
+    <section className="space-y-5" aria-labelledby={`pipeline-board-${pipeline.id}`}>
+      <div className="flex flex-col gap-5 border-b border-slate-200 pb-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 id={`pipeline-board-${pipeline.id}`} className="text-lg font-semibold text-gray-900">{pipeline.name}</h2>
             {pipeline.isDefault && <span className="rounded-full bg-yux-50 px-2 py-1 text-xs font-medium text-yux-700">Padrão</span>}
-            {!pipeline.isActive && <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">Inativo</span>}
+            {!pipeline.isActive && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">Inativo</span>}
           </div>
-          {pipeline.description && <p className="mt-1 max-w-2xl text-sm text-gray-600">{pipeline.description}</p>}
+          {pipeline.description && <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-600">{pipeline.description}</p>}
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div>
-            <p className="text-xs text-gray-500">Leads</p>
-            <p className="font-semibold text-gray-900">{metrics.leadCount}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Leads</p>
+            <p className="mt-1 font-semibold text-slate-950">{metrics.leadCount}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Valor aberto</p>
-            <p className="font-semibold text-gray-900">{formatPortalCurrency(metrics.openValue)}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Valor aberto</p>
+            <p className="mt-1 font-semibold text-slate-950">{formatPortalCurrency(metrics.openValue)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Parados</p>
-            <p className="font-semibold text-gray-900">{metrics.staleCount}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Parados</p>
+            <p className="mt-1 font-semibold text-slate-950">{metrics.staleCount}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Conversão</p>
-            <p className="font-semibold text-gray-900">{formatConversionRate(metrics.conversionRate)}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Conversão</p>
+            <p className="mt-1 font-semibold text-slate-950">{formatConversionRate(metrics.conversionRate)}</p>
           </div>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-3">
         {stages.map(stage => {
           const stageLeads = leads.filter(lead => lead.stageId === stage.id)
           const metricsForStage = stageMetrics.get(stage.id) as CrmPipelineStageMetrics
 
           return (
-            <article key={stage.id} className="min-w-0 rounded-md border bg-gray-50 p-3">
-              <div className="flex items-start justify-between gap-2">
+            <article key={stage.id} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <div className="flex items-start justify-between gap-2 border-b border-slate-200 pb-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: stage.color }} aria-hidden="true" />
-                  <h3 className="truncate text-sm font-semibold text-gray-900">{stage.name}</h3>
+                  <h3 className="truncate text-sm font-semibold text-slate-950">{stage.name}</h3>
                 </div>
-                <span className="shrink-0 text-xs text-gray-600">
+                <span className="shrink-0 text-xs font-medium text-slate-600">
                   {metricsForStage.leadCount} leads · {formatPortalCurrency(metricsForStage.openValue)}
                 </span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                 <span>{metricsForStage.wonCount} ganhos</span>
                 <span>{metricsForStage.lostCount} perdidos</span>
                 <span>{formatConversionRate(metricsForStage.conversionRate)}</span>
@@ -161,15 +161,15 @@ export function PipelineSummaryBoard({
                 {stageLeads.map(lead => {
                   const stale = isStaleLead(lead, now)
                   return (
-                    <div key={lead.id} className="rounded-md border bg-white p-3">
+                    <div key={lead.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-yux-300 hover:shadow-md">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">{lead.name}</p>
-                          <p className="truncate text-xs text-gray-500">{lead.company || lead.email}</p>
+                          <p className="truncate text-sm font-semibold text-slate-950">{lead.name}</p>
+                          <p className="truncate text-xs text-slate-500">{lead.company || lead.email}</p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Score {lead.score}</span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">Score {lead.score}</span>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                         <span>{lead.value ? formatPortalCurrency(lead.value) : 'Sem valor informado'}</span>
                         {stale ? (
                           <span className="inline-flex items-center gap-1 font-medium text-amber-700">
@@ -177,7 +177,7 @@ export function PipelineSummaryBoard({
                             Sem atividade há mais de 7 dias
                           </span>
                         ) : (
-                          <span>Atividade: {formatPortalDateTime(lead.lastActivityAt || lead.updatedAt)}</span>
+                        <span>Atividade: {formatPortalDateTime(lead.lastActivityAt || lead.updatedAt)}</span>
                         )}
                       </div>
                       <label htmlFor={`move-lead-${lead.id}`} className="sr-only">Mover {lead.name} para</label>
@@ -201,7 +201,7 @@ export function PipelineSummaryBoard({
                   )
                 })}
                 {!stageLeads.length && (
-                  <div className="rounded-md border border-dashed bg-white px-3 py-6 text-center text-xs text-gray-500">
+                    <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-8 text-center text-xs text-slate-500">
                     Nenhum lead nesta etapa.
                   </div>
                 )}
@@ -210,7 +210,7 @@ export function PipelineSummaryBoard({
           )
         })}
         {!stages.length && (
-          <div className="rounded-md border border-dashed p-6 text-center text-sm text-gray-600 xl:col-span-3">
+          <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600 xl:col-span-3">
             <Users className="mx-auto h-5 w-5 text-gray-400" aria-hidden="true" />
             <p className="mt-2">Este funil ainda não possui etapas.</p>
           </div>
@@ -218,7 +218,7 @@ export function PipelineSummaryBoard({
       </div>
 
       {canMoveLeads && stages.length > 0 && (
-        <p className="mt-4 inline-flex items-center gap-1 text-xs text-gray-500">
+        <p className="inline-flex items-center gap-1 text-xs text-slate-500">
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           Use o seletor de cada lead para registrar a próxima etapa.
         </p>

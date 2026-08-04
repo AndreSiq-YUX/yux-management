@@ -1,5 +1,6 @@
 import { CheckCircle2, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { TaskEditorDialog } from '@/components/crm/tasks/TaskEditorDialog'
@@ -7,6 +8,7 @@ import { TaskFilters } from '@/components/crm/tasks/TaskFilters'
 import { TaskList } from '@/components/crm/tasks/TaskList'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
 import { usePortalCrmContext } from '@/hooks/usePortalCrmContext'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { countItems } from '@/lib/client-portal/portalDisplay'
 import { crmService } from '@/services/crmService'
 import type { CrmTaskFilters, CrmTaskStatus } from '@/types/crm'
@@ -24,6 +26,7 @@ function matchesDue(dueAt: string, due: LocalFilters['due']) {
 
 export function PortalCommercialTasksPage() {
   const { organization, loading, error, tasks, leads, pipelines, reload } = usePortalCrmContext()
+  const portalPath = usePortalWorkspacePath()
   const [filters, setFilters] = useState<LocalFilters>({})
   const [editorOpen, setEditorOpen] = useState(false)
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null)
@@ -76,10 +79,16 @@ export function PortalCommercialTasksPage() {
       <section className="rounded-lg border bg-white p-5" aria-labelledby="task-center-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><h2 id="task-center-title" className="text-base font-semibold text-gray-900">Central de tarefas</h2><p className="mt-1 text-sm text-gray-600">Acompanhe a fila operacional e mantenha o próximo passo do lead atualizado.</p></div>
-          <Button type="button" onClick={() => setEditorOpen(true)} disabled={!organization?.id || !crmInstanceId}><Plus className="mr-2 h-4 w-4" />Nova tarefa</Button>
+          <Button type="button" onClick={() => setEditorOpen(true)} disabled={!organization?.id || !crmInstanceId || leads.length === 0} title={leads.length === 0 ? 'É necessário ter pelo menos um lead para criar uma tarefa.' : undefined}><Plus className="mr-2 h-4 w-4" />Nova tarefa</Button>
         </div>
         <div className="mt-4"><TaskFilters value={filters} onChange={setFilters} onReset={() => setFilters({})} /></div>
-        {loading ? <p className="mt-4 text-sm text-gray-600" role="status">Carregando tarefas comerciais...</p> : error ? <p className="mt-4 text-sm text-red-600" role="alert">{error}</p> : <div className="mt-4"><TaskList tasks={filteredTasks} onStatusChange={updateStatus} /></div>}
+        {loading ? <p className="mt-4 text-sm text-gray-600" role="status">Carregando tarefas comerciais...</p> : error ? <p className="mt-4 text-sm text-red-600" role="alert">{error}</p> : pipelines.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6">
+            <h3 className="text-sm font-semibold text-slate-950">Ainda não há uma operação comercial ativa</h3>
+            <p className="mt-1 max-w-xl text-sm leading-5 text-slate-600">As tarefas precisam estar ligadas a um lead e a um funil. Configure o primeiro funil para liberar a fila de follow-ups.</p>
+            <Link to={portalPath('/portal/comercial/funis')} className="mt-4 inline-flex items-center rounded-lg bg-yux-600 px-3 py-2 text-sm font-semibold text-white hover:bg-yux-700">Configurar funis</Link>
+          </div>
+        ) : <div className="mt-4"><TaskList tasks={filteredTasks} busyTaskId={busyTaskId} onStatusChange={updateStatus} /></div>}
         {busyTaskId && <p className="mt-2 text-xs text-gray-500" role="status">Atualizando tarefa...</p>}
       </section>
       <TaskEditorDialog

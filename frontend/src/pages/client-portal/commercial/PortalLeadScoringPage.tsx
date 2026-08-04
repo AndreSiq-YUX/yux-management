@@ -11,7 +11,7 @@ import { crmScoringService } from '@/services/crmScoringService'
 import type { CrmGovernanceContext, LeadScoringModel, LeadScoringRule } from '@/types/crm'
 
 export function PortalLeadScoringPage() {
-  const { organization, leads, pipelines } = usePortalCrmContext()
+  const { organization, role, leads, pipelines } = usePortalCrmContext()
   const [governance, setGovernance] = useState<CrmGovernanceContext | null>(null)
   const [model, setModel] = useState<LeadScoringModel | null>(null)
   const [rules, setRules] = useState<LeadScoringRule[]>([])
@@ -20,7 +20,7 @@ export function PortalLeadScoringPage() {
   const [selectedLeadId, setSelectedLeadId] = useState('')
   const [simulation, setSimulation] = useState<{ resultingFitScore: number; resultingIntentScore: number; resultingCombinedScore: number; appliedRules: Array<{ name: string; dimension: string; points: number }> } | null>(null)
   const crmInstanceId = governance?.instance.id || pipelines.find(pipeline => pipeline.crmInstanceId)?.crmInstanceId
-  const canEdit = ['client_admin', 'manager', 'yux_admin'].includes(governance?.currentMember?.role || '')
+  const canEdit = ['client_admin', 'manager', 'yux_admin', 'yux_operator'].includes(governance?.currentMember?.role || role?.key || '')
   const activeRules = useMemo(() => rules.filter(rule => rule.isActive), [rules])
 
   const load = async () => {

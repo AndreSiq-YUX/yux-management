@@ -327,8 +327,8 @@ async function getPipelineForMutation(pool: Queryable, user: AuthUser, pipelineI
             ci.id AS instance_id,
             ci.allow_client_pipeline_customization,
             ci.max_pipeline_count,
-            member.role AS member_role,
-            member.status AS member_status
+            COALESCE(member.role::text, membership.role_key) AS member_role,
+            COALESCE(member.status::text, CASE WHEN membership.id IS NOT NULL THEN 'active' END) AS member_status
      FROM public.crm_pipelines p
      JOIN public.crm_instances ci
        ON ci.id = p.crm_instance_id
@@ -336,6 +336,9 @@ async function getPipelineForMutation(pool: Queryable, user: AuthUser, pipelineI
      LEFT JOIN public.crm_instance_members member
        ON member.crm_instance_id = ci.id
       AND member.user_id = $1
+     LEFT JOIN public.memberships membership
+       ON membership.user_id = $1
+      AND membership.organization_id = ci.organization_id
      WHERE p.id = $2
        AND p.is_active = TRUE
        AND (
@@ -363,14 +366,17 @@ async function getStageForMutation(pool: Queryable, user: AuthUser, stageId: str
             ci.id AS instance_id,
             ci.allow_client_pipeline_customization,
             ci.max_pipeline_count,
-            member.role AS member_role,
-            member.status AS member_status
+            COALESCE(member.role::text, membership.role_key) AS member_role,
+            COALESCE(member.status::text, CASE WHEN membership.id IS NOT NULL THEN 'active' END) AS member_status
      FROM public.crm_pipeline_stages s
      JOIN public.crm_pipelines p ON p.id = s.pipeline_id
      JOIN public.crm_instances ci ON ci.id = p.crm_instance_id AND ci.organization_id = p.organization_id
      LEFT JOIN public.crm_instance_members member
        ON member.crm_instance_id = ci.id
       AND member.user_id = $1
+     LEFT JOIN public.memberships membership
+       ON membership.user_id = $1
+      AND membership.organization_id = p.organization_id
      WHERE s.id = $2
        AND s.is_active = TRUE
        AND p.is_active = TRUE
@@ -400,11 +406,15 @@ async function requirePipelineMutationAccess(pool: Queryable, user: AuthUser, or
 async function getInstanceAccess(pool: Queryable, user: AuthUser, organizationId: string, crmInstanceId: string) {
   const result = await pool.query<InstanceAccessRow>(
     `SELECT ci.id, ci.organization_id, ci.allow_client_pipeline_customization, ci.max_pipeline_count,
-            member.role AS member_role, member.status AS member_status
+            COALESCE(member.role::text, membership.role_key) AS member_role,
+            COALESCE(member.status::text, CASE WHEN membership.id IS NOT NULL THEN 'active' END) AS member_status
      FROM public.crm_instances ci
      LEFT JOIN public.crm_instance_members member
        ON member.crm_instance_id = ci.id
       AND member.user_id = $3
+     LEFT JOIN public.memberships membership
+       ON membership.user_id = $3
+      AND membership.organization_id = ci.organization_id
      WHERE ci.id = $2
        AND ci.organization_id = $1
        AND (

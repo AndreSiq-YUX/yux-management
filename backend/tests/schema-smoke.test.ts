@@ -12,6 +12,7 @@ const orchestrationMigration = readFileSync(path.join(migrationsDir, '0119_lead_
 const scoringMigration = readFileSync(path.join(migrationsDir, '0122_lead_scoring_rules.sql'), 'utf8')
 const pipelineManagementMigration = readFileSync(path.join(migrationsDir, '0120_crm_pipeline_management.sql'), 'utf8')
 const taskCenterMigration = readFileSync(path.join(migrationsDir, '0121_crm_task_center.sql'), 'utf8')
+const runtimeReconciliationMigration = readFileSync(path.join(migrationsDir, '0124_reconcile_crm_runtime.sql'), 'utf8')
 
 describe('self-hosted portal schema bootstrap', () => {
   it('does not keep executable Supabase-only dependencies', () => {
@@ -89,5 +90,13 @@ describe('self-hosted portal schema bootstrap', () => {
     expect(taskCenterMigration).toContain('cancelled_at')
     expect(taskCenterMigration).toContain('updated_by')
     expect(taskCenterMigration).toContain('idx_lead_tasks_org_status_due')
+  })
+
+  it('reconciles legacy CRM pipelines into active runtime instances', () => {
+    expect(runtimeReconciliationMigration).toContain('INSERT INTO public.crm_instances')
+    expect(runtimeReconciliationMigration).toContain('crm_instance_id = runtime.id')
+    expect(runtimeReconciliationMigration).toContain('INSERT INTO public.crm_pipeline_stages')
+    expect(runtimeReconciliationMigration).toContain("SET status = 'active'")
+    expect(runtimeReconciliationMigration).toContain('CREATE TEMP TABLE crm_runtime_defaults')
   })
 })

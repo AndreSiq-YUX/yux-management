@@ -1,4 +1,4 @@
-import { GitBranch, Plus, RefreshCw, Settings2 } from 'lucide-react'
+import { ArrowRight, GitBranch, Plus, RefreshCw, Settings2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
@@ -19,19 +19,19 @@ import type {
   CrmPipelineStagePatch,
 } from '@/types/crm'
 
-function canManagePipelineConfiguration(governance: CrmGovernanceContext | null) {
-  if (!governance?.currentMember) return false
-  if (governance.currentMember.role === 'yux_admin') return true
-  if (governance.currentMember.role !== 'client_admin' && governance.currentMember.role !== 'manager') return false
-  return governance.instance.allowClientPipelineCustomization
+function canManagePipelineConfiguration(governance: CrmGovernanceContext | null, platformRole?: string | null) {
+  if (platformRole === 'yux_admin' || platformRole === 'yux_operator') return true
+  const memberRole = governance?.currentMember?.role || platformRole
+  if (memberRole !== 'client_admin' && memberRole !== 'manager') return false
+  return Boolean(governance?.instance.allowClientPipelineCustomization)
 }
 
-function canMoveLead(governance: CrmGovernanceContext | null) {
-  return ['seller', 'manager', 'client_admin', 'yux_admin'].includes(governance?.currentMember?.role || '')
+function canMoveLead(governance: CrmGovernanceContext | null, platformRole?: string | null) {
+  return ['seller', 'manager', 'client_admin', 'yux_admin', 'yux_operator'].includes(governance?.currentMember?.role || platformRole || '')
 }
 
 export function PortalCommercialFunnelsPage() {
-  const { organization, loading, error, pipelines, leads, reload } = usePortalCrmContext()
+  const { organization, role, loading, error, pipelines, leads, reload } = usePortalCrmContext()
   const [selectedPipelineId, setSelectedPipelineId] = useState('')
   const [editingPipeline, setEditingPipeline] = useState<CrmPipeline | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -54,8 +54,8 @@ export function PortalCommercialFunnelsPage() {
     return counts
   }, {})
   const pipelineLeadCount = selectedPipelineLeads.length
-  const canConfigure = canManagePipelineConfiguration(governance)
-  const canMove = canMoveLead(governance)
+  const canConfigure = canManagePipelineConfiguration(governance, role?.key)
+  const canMove = canMoveLead(governance, role?.key)
   const maxPipelineCount = governance?.instance.maxPipelineCount || Math.max(pipelines.length, 1)
   const crmInstanceId = governance?.instance.id || selectedPipeline?.crmInstanceId || ''
 
@@ -165,12 +165,12 @@ export function PortalCommercialFunnelsPage() {
     <PortalJourneyPage
       eyebrow="Comercial"
       title="Funis"
-      description="Visualize a operação por etapa, acompanhe métricas reais e configure a estrutura comercial quando seu perfil permitir."
+      description="Organize oportunidades por etapa, identifique gargalos e mova cada lead para a próxima ação comercial."
       icon={GitBranch}
       metrics={[
-        { label: 'Funis', value: String(pipelines.length), detail: 'Pipelines ativos para a organização.' },
-        { label: 'Oportunidades', value: String(openLeads.length), detail: 'Leads abertos nos funis.' },
-        { label: 'Valor aberto', value: formatPortalCurrency(openValue), detail: 'Soma das oportunidades abertas.' },
+        { label: 'Funis ativos', value: String(pipelines.length), detail: 'Estruturas comerciais disponíveis.' },
+        { label: 'Oportunidades', value: String(openLeads.length), detail: 'Leads abertos na operação.' },
+        { label: 'Valor em aberto', value: formatPortalCurrency(openValue), detail: 'Soma das oportunidades abertas.' },
       ]}
       capabilities={[
         'Visualizar leads, valor, conversão e gargalos por etapa.',
@@ -178,21 +178,26 @@ export function PortalCommercialFunnelsPage() {
         'Configurar funis, etapas e ordem somente com a autorização da governança.',
         'Preservar a leitura para sellers e demais perfis sem permissão estrutural.',
       ]}
-      primaryAction={{ label: 'Abrir Leads', href: '/portal/comercial/leads' }}
+      primaryAction={!canConfigure ? { label: 'Abrir Leads', href: '/portal/comercial/leads' } : undefined}
       secondaryActions={[
         { label: 'Empresas / Contas', href: '/portal/comercial/contas' },
         { label: 'Tarefas e Follow-ups', href: '/portal/comercial/tarefas' },
       ]}
     >
-      <section className="rounded-lg border bg-white p-5" aria-labelledby="funnels-operation-title">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-labelledby="funnels-operation-title">
+        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 px-6 py-5 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 id="funnels-operation-title" className="text-base font-semibold text-gray-900">Operação dos funis</h2>
-            <p className="mt-1 text-sm text-gray-600">Selecione um funil para acompanhar a distribuição e agir nos leads.</p>
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-white p-2 text-yux-700 shadow-sm ring-1 ring-inset ring-slate-200">
+                <GitBranch className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <h2 id="funnels-operation-title" className="text-base font-semibold text-slate-950">Operação comercial</h2>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">Escolha um funil para acompanhar as oportunidades e agir no momento certo.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {canConfigure && (
-              <Button type="button" variant="outline" onClick={openCreateEditor} disabled={governanceLoading || !crmInstanceId}>
+              <Button type="button" variant="outline" onClick={openCreateEditor} disabled={governanceLoading || !crmInstanceId} className="bg-white">
                 <Plus className="mr-2 h-4 w-4" />
                 Novo funil
               </Button>
@@ -206,11 +211,12 @@ export function PortalCommercialFunnelsPage() {
           </div>
         </div>
 
+        <div className="p-6">
         {loading ? (
-          <p className="mt-4 text-sm text-gray-600" role="status">Carregando funis comerciais...</p>
+          <p className="text-sm text-slate-600" role="status">Carregando sua operação comercial...</p>
         ) : error ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-red-50 p-3">
-            <p className="text-sm text-red-700" role="alert">{error}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+            <p className="text-sm text-red-700" role="alert">Não foi possível carregar os funis. {error}</p>
             <Button type="button" variant="outline" onClick={() => void reload()}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Tentar novamente
@@ -219,21 +225,21 @@ export function PortalCommercialFunnelsPage() {
         ) : (
           <>
             {governanceLoading && (
-              <p className="mt-4 text-sm text-gray-600" role="status">Verificando permissões de configuração...</p>
+              <p className="text-sm text-slate-600" role="status">Verificando permissões de configuração...</p>
             )}
             {governanceError && (
-              <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800" role="alert">{governanceError} A visualização continua disponível em modo somente leitura.</p>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">{governanceError} A visualização continua disponível em modo somente leitura.</p>
             )}
             {!governanceLoading && !governanceError && governance && !canConfigure && (
-              <p className="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-600">Seu perfil pode acompanhar e operar leads, mas não alterar a estrutura dos funis.</p>
+              <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Seu perfil pode acompanhar e operar leads, mas não alterar a estrutura dos funis.</p>
             )}
 
             {pipelines.length > 0 && (
-              <div className="mt-4 max-w-md">
-                <label htmlFor="selected-pipeline" className="text-sm font-medium text-gray-700">Funil em análise</label>
+              <div className="max-w-md">
+                <label htmlFor="selected-pipeline" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Funil em análise</label>
                 <select
                   id="selected-pipeline"
-                  className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="mt-2 flex h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yux-500"
                   value={selectedPipeline?.id || ''}
                   onChange={event => setSelectedPipelineId(event.target.value)}
                 >
@@ -243,7 +249,7 @@ export function PortalCommercialFunnelsPage() {
             )}
 
             {selectedPipeline ? (
-              <div className="mt-5">
+              <div className="mt-6">
                 <PipelineSummaryBoard
                   pipeline={selectedPipeline}
                   leads={selectedPipelineLeads}
@@ -254,14 +260,39 @@ export function PortalCommercialFunnelsPage() {
                 />
               </div>
             ) : (
-              <div className="mt-5 rounded-md border border-dashed p-8 text-center">
-                <GitBranch className="mx-auto h-6 w-6 text-gray-400" aria-hidden="true" />
-                <p className="mt-2 text-sm text-gray-600">Nenhum funil ativo encontrado para esta organização.</p>
-                {canConfigure && <Button type="button" className="mt-4" onClick={openCreateEditor}>Criar primeiro funil</Button>}
+              <div className="mt-6 grid gap-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-6 md:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] md:p-8">
+                <div>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yux-100 text-yux-700">
+                    <GitBranch className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold tracking-tight text-slate-950">Comece pela sua primeira operação</h3>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">O funil organiza os leads que chegam pelos formulários, automações e canais comerciais. Crie as etapas uma vez e use-as para orientar o time.</p>
+                  {canConfigure && crmInstanceId ? (
+                    <Button type="button" className="mt-5" onClick={openCreateEditor}>
+                      Criar primeiro funil
+                      <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  ) : (
+                    <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">A estrutura do CRM ainda precisa ser publicada por um administrador antes de criar o primeiro funil.</p>
+                  )}
+                </div>
+                <ol className="space-y-3 rounded-xl border border-white bg-white p-4 shadow-sm">
+                  {[
+                    'Crie o funil e defina seu objetivo.',
+                    'Ajuste etapas, cores e resultados.',
+                    'Receba leads e mova-os conforme a próxima ação.',
+                  ].map((step, index) => (
+                    <li key={step} className="flex gap-3 text-sm text-slate-700">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yux-50 text-xs font-bold text-yux-700">{index + 1}</span>
+                      <span className="pt-0.5">{step}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
           </>
         )}
+        </div>
       </section>
 
       <PipelineEditorDialog

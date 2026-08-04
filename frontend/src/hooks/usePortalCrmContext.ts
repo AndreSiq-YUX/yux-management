@@ -17,6 +17,7 @@ const emptyState: PortalCrmContextState = {
 
 export function usePortalCrmContext() {
   const organization = usePlatformStore(state => state.organization)
+  const role = usePlatformStore(state => state.role)
   const activeContract = usePlatformStore(state => state.activeContract)
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
@@ -75,6 +76,7 @@ export function usePortalCrmContext() {
 
   return {
     organization,
+    role,
     enabledModuleKeys,
     loading,
     error,
