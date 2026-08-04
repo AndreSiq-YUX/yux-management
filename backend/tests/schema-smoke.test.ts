@@ -94,6 +94,9 @@ describe('self-hosted portal schema bootstrap', () => {
 
   it('reconciles legacy CRM pipelines into active runtime instances', () => {
     expect(runtimeReconciliationMigration).toContain('INSERT INTO public.crm_instances')
+    expect(runtimeReconciliationMigration).toMatch(
+      /INSERT INTO public\.crm_instances \(organization_id, contract_id, status\)\s+SELECT organization_id, contract_id, 'draft'/,
+    )
     expect(runtimeReconciliationMigration).toContain('crm_instance_id = runtime.id')
     expect(runtimeReconciliationMigration).toContain('INSERT INTO public.crm_pipeline_stages')
     expect(runtimeReconciliationMigration).toContain("SET status = 'active'")

@@ -18,7 +18,7 @@ WITH eligible_contracts AS (
   ORDER BY contract.id, organization.created_at ASC
 )
 INSERT INTO public.crm_instances (organization_id, contract_id, status)
-SELECT contract_id, organization_id, 'draft'
+SELECT organization_id, contract_id, 'draft'
 FROM eligible_contracts
 ON CONFLICT (contract_id) DO UPDATE
 SET organization_id = EXCLUDED.organization_id,
