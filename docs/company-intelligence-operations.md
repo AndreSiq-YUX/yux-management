@@ -26,16 +26,36 @@ Para conferir o histórico registrado pelo migrador:
 docker exec -i "$(docker ps --format '{{.Names}}' | grep 'yux-backend-api' | head -n 1)" node -e "const{Client}=require('pg');(async()=>{const c=new Client({connectionString:process.env.DATABASE_URL});await c.connect();const r=await c.query('SELECT version, applied_at FROM public.schema_migrations ORDER BY version');console.table(r.rows);await c.end()})().catch(e=>{console.error(e);process.exit(1)})"
 ```
 
-Confirme que `0125_company_intelligence_hub.sql` aparece na listagem.
+Confirme que `0125_company_intelligence_hub.sql` e
+`0126_intelligent_knowledge_pipeline.sql` aparecem na listagem.
+
+Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
+
+- `OPENROUTER_API_KEY` no Agent Harness, para curadoria e extração estruturada;
+- `KNOWLEDGE_CURATION_MODEL` (padrão `openai/gpt-4.1-mini`);
+- `JINA_API_KEY` no backend worker e no Agent Harness;
+- `JINA_EMBEDDING_MODEL` (padrão `jina-embeddings-v3`);
+- `JINA_EMBEDDING_DIMENSIONS` (padrão `1024`);
+- `KNOWLEDGE_CURATION_ENABLED=true`;
+- `KNOWLEDGE_CURATION_MAX_BATCH_CHARS=12000`;
+- `KNOWLEDGE_WEBSITE_MAX_PAGES=10`;
+- `YUX_AGENT_RUNTIME_URL` e o mesmo `YUX_AGENT_RUNTIME_TOKEN` no backend,
+  worker e Agent Harness.
 
 ## Uso pelo Crescimento YUX
 
 1. Entre em **Crescimento YUX** e abra **Empresa > Perfil**.
-2. Preencha descrição, site, setor, posicionamento, diferenciais, contatos e regiões atendidas.
-3. Abra **Empresa > Marca e tom de voz** e configure tom, persona, vocabulário recomendado, o que não falar, temas proibidos e observações de conformidade.
-4. Abra **Empresa > Base de conhecimento**.
-5. Cadastre conteúdo por texto, importe uma URL ou envie PDF, DOCX, TXT e Markdown.
-6. Aguarde a indexação, revise o texto extraído, ajuste visibilidade e perfis de agente e publique explicitamente.
+2. Informe o site em **Preencher com o site**, aguarde a leitura e revise cada
+   sugestão com sua evidência e página de origem. Aplique somente as desejadas.
+3. Complete manualmente descrição, setor, posicionamento, diferenciais,
+   contatos e regiões atendidas que o site não informou.
+4. Abra **Empresa > Marca e tom de voz** e configure tom, persona, vocabulário
+   recomendado, o que não falar, temas proibidos e observações de conformidade.
+   Bloqueios e compliance nunca são inferidos automaticamente do site.
+5. Abra **Empresa > Base de conhecimento**.
+6. Cadastre conteúdo por texto, importe uma URL ou envie PDF, DOCX, TXT e Markdown.
+7. Aguarde a preparação inteligente, aprove ou rejeite cada fato proposto,
+   ajuste visibilidade e perfis de agente e publique explicitamente.
 
 Arquivar é recuperável e substitui exclusão destrutiva. Um arquivo duplicado ativo, identificado por SHA-256 dentro da organização, é rejeitado.
 
@@ -55,6 +75,14 @@ Arquivar é recuperável e substitui exclusão destrutiva. Um arquivo duplicado 
 
 - O limite padrão é 10 MB por arquivo, respeitando a configuração global/da organização existente.
 - A requisição HTTP aceita no máximo 25 MB para acomodar o arquivo codificado em base64.
-- A busca textual e o ranking por termos estão ativos. Embeddings vetoriais continuam opcionais até a infraestrutura usar pgvector.
-- Se a indexação falhar, o documento permanece fora de publicação e exibe o erro. Corrija a origem ou o volume compartilhado e envie/importa novamente.
-- URL importa somente a página informada; não há crawler de links nesta entrega.
+- O original é preservado em chunks brutos para auditoria. A publicação normal
+  substitui o corpo consumido pelos agentes pelos itens curados e aprovados.
+- A busca híbrida combina similaridade dos embeddings Jina armazenados em
+  JSONB, relevância textual e qualidade. Não depende de pgvector e mantém
+  fallback textual se a Jina estiver indisponível.
+- Falhas de extração impedem a publicação. Falhas somente de LLM/embedding
+  deixam o processamento degradado e exigem confirmação explícita para publicar
+  o texto original.
+- O preenchimento pelo site lê no máximo 20 páginas do mesmo domínio (10 por
+  padrão), priorizando páginas institucionais, produtos, serviços e contato.
+  Endereços locais/privados são bloqueados antes da leitura.

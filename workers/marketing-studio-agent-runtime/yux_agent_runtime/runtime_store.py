@@ -88,7 +88,8 @@ class PostgresAgentRuntimeStore:
         "agent_autonomy_policies", "yux_strategy_concept_cards", "yux_strategy_source_chunks",
         "yux_strategy_source_assets", "yux_strategy_profile_tool_policies",
         "organization_company_profiles", "marketing_brand_profiles", "marketing_products_services",
-        "knowledge_sources", "knowledge_entries", "ai_assistant_knowledge_links",
+        "knowledge_sources", "knowledge_entries", "marketing_knowledge_documents",
+        "marketing_knowledge_chunks", "ai_assistant_knowledge_links",
         "ai_assistant_safety_rules",
     }
 

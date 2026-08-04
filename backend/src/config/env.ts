@@ -15,6 +15,11 @@ const optionalEmail = z.preprocess((value) => {
   return value
 }, z.string().email().optional())
 
+const optionalBoolean = z.preprocess((value) => {
+  if (typeof value === 'string') return value.trim().toLowerCase()
+  return value
+}, z.enum(['true', 'false']).transform(value => value === 'true').optional())
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -43,6 +48,11 @@ const envSchema = z.object({
   OAUTH_ALLOWED_REDIRECT_URIS: optionalString,
   PROVIDER_SECRET_ENCRYPTION_KEY_B64: optionalString,
   JINA_API_KEY: optionalString,
+  JINA_EMBEDDING_MODEL: optionalString,
+  JINA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
+  KNOWLEDGE_CURATION_ENABLED: optionalBoolean,
+  KNOWLEDGE_CURATION_MAX_BATCH_CHARS: z.coerce.number().int().min(2_000).max(100_000).optional(),
+  KNOWLEDGE_WEBSITE_MAX_PAGES: z.coerce.number().int().min(1).max(20).optional(),
   N8N_CRM_WEBHOOK_URL: optionalUrl,
   N8N_WEBHOOK_SECRET: optionalString,
   OMNICHANNEL_ATTACHMENTS_DIR: z.string().optional(),

@@ -5,11 +5,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .harness import Harness
-from .providers import OpenRouterClient
+from .providers import JinaClient, OpenRouterClient
 from .retrieval import StrategyRetrievalService
 from .runtime_store import AgentRuntimeStore
 from .workflow import StrategyWorkflowEngine
 from .customer_context import CustomerContextService
+from .embedding import QueryEmbeddingService
 
 
 DEFAULT_MODEL = "openai/gpt-4.1-mini"
@@ -183,7 +184,7 @@ def build_strategy_workflow_engine(
         harness=harness,
         agent_profiles=agents,
         retrieval_service=retrieval,
-        customer_context_service=CustomerContextService(store),
+        customer_context_service=CustomerContextService(store, embedding_service=QueryEmbeddingService(JinaClient.from_env())),
         workflow_specs=workflows,
         default_autonomy_policies=autonomy_policies,
     )

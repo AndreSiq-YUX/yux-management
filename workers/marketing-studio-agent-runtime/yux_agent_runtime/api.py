@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -7,6 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .queue import AgentEventQueue
+from .knowledge_intelligence import KnowledgeIntelligenceService
 from .runtime_factory import build_strategy_workflow_engine
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
@@ -44,6 +46,32 @@ class ExecuteWorkflowRequest(BaseModel):
     estimated_credits: int = Field(default=0, ge=0)
 
 
+class KnowledgeSectionRequest(BaseModel):
+    locator: str
+    heading: str | None = None
+    body: str
+
+
+class CurateKnowledgeRequest(BaseModel):
+    organization_id: str
+    client_id: str | None = None
+    contract_id: str | None = None
+    sections: list[KnowledgeSectionRequest] = Field(min_length=1, max_length=80)
+
+
+class WebsitePageRequest(BaseModel):
+    url: str
+    title: str | None = None
+    content: str
+
+
+class ExtractCompanyProfileRequest(BaseModel):
+    organization_id: str
+    client_id: str | None = None
+    contract_id: str | None = None
+    pages: list[WebsitePageRequest] = Field(min_length=1, max_length=20)
+
+
 def _runtime_token() -> str:
     return os.getenv("YUX_AGENT_RUNTIME_TOKEN", "")
 
@@ -54,7 +82,10 @@ def require_runtime_token(authorization: str | None = Header(default=None)) -> N
         raise HTTPException(status_code=401, detail="invalid runtime token")
 
 
-def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
+def create_app(
+    store: AgentRuntimeStore | None = None,
+    knowledge_service: KnowledgeIntelligenceService | None = None,
+) -> FastAPI:
     if not _runtime_token():
         raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
     app = FastAPI(title="YUX Agent Harness Runtime", version="1.0.0")
@@ -63,6 +94,7 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
     # Tests may inject an isolated store. Production configuration is loaded
     # lazily from Postgres so health checks do not depend on OpenRouter or RAG.
     engine: StrategyWorkflowEngine | None = StrategyWorkflowEngine(runtime_store) if store is not None else None
+    curator = knowledge_service or KnowledgeIntelligenceService.from_env()
 
     def workflow_engine() -> StrategyWorkflowEngine:
         nonlocal engine
@@ -126,6 +158,28 @@ def create_app(store: AgentRuntimeStore | None = None) -> FastAPI:
             raise HTTPException(status_code=402, detail=str(error)) from error
         result = workflow_engine().execute(**request.model_dump(exclude={"estimated_credits"}))
         return {**result, "credits": credits}
+
+    @app.post("/knowledge/curate", dependencies=[Depends(require_runtime_token)])
+    def curate_knowledge(request: CurateKnowledgeRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        total_chars = sum(len(item.body) for item in request.sections)
+        if total_chars > 120_000:
+            raise HTTPException(status_code=413, detail="knowledge_curation_input_too_large")
+        try:
+            return curator.curate([item.model_dump() for item in request.sections])
+        except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post("/knowledge/extract-company-profile", dependencies=[Depends(require_runtime_token)])
+    def extract_company_profile(request: ExtractCompanyProfileRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        total_chars = sum(len(item.content) for item in request.pages)
+        if total_chars > 400_000:
+            raise HTTPException(status_code=413, detail="website_extraction_input_too_large")
+        try:
+            return curator.extract_company_profile([item.model_dump() for item in request.pages])
+        except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
 
     @app.post("/jobs/process-next", dependencies=[Depends(require_runtime_token)])
     def process_next_job(worker_id: str = "api-worker") -> dict[str, Any]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from math import sqrt
 from typing import Any
 
 from .runtime_store import AgentRuntimeStore
@@ -28,6 +29,7 @@ def _latest(records: list[dict[str, Any]]) -> dict[str, Any] | None:
 @dataclass
 class CustomerContextService:
     store: AgentRuntimeStore
+    embedding_service: Any | None = None
     max_snippets: int = 4
     max_context_chars: int = 6000
 
@@ -62,9 +64,49 @@ class CustomerContextService:
             item for item in self.store.list("knowledge_entries", {"organization_id": organization_id}, limit=500)
             if item.get("status") in ("approved", "published") and str(item.get("source_id")) in source_by_id
         ]
+        documents = [
+            item for item in self.store.list("marketing_knowledge_documents", {"organization_id": organization_id}, limit=300)
+            if item.get("status") == "published" and str(item.get("source_id")) in source_by_id
+        ]
+        documents_by_id = {str(item.get("id")): item for item in documents if item.get("id")}
+        curated_chunks = [
+            item for item in self.store.list("marketing_knowledge_chunks", {"organization_id": organization_id}, limit=500)
+            if str(item.get("document_id")) in documents_by_id
+            and item.get("chunk_kind") in ("curated_fact", "curated_summary")
+            and item.get("curation_status") == "approved"
+        ]
         linked_ids = self._assistant_linked_entry_ids(assistant_id)
         ranked = self._rank_entries(entries, query, linked_ids)
-        snippets, source_ids = self._fit_snippets(ranked)
+        query_embedding = self.embedding_service.embed_query(query) if self.embedding_service is not None else None
+        ranked_curated = self._rank_chunks(curated_chunks, query, query_embedding)
+        if ranked_curated:
+            snippets, source_ids = self._fit_curated_snippets(ranked_curated, documents_by_id)
+            context_items = [
+                {
+                    "id": f"company:{item.get('id')}",
+                    "entry_id": item.get("entry_id"),
+                    "source_id": (documents_by_id.get(str(item.get("document_id"))) or {}).get("source_id"),
+                    "section_key": item.get("title") or item.get("source_locator") or "knowledge",
+                    "chunk_text": str(item.get("body") or "")[:1600],
+                    "source_scope": "organization",
+                    "source_locator": item.get("source_locator"),
+                    "retrieval_score": item.get("retrieval_score"),
+                }
+                for item in ranked_curated[: self.max_snippets]
+            ]
+        else:
+            snippets, source_ids = self._fit_snippets(ranked)
+            context_items = [
+                {
+                    "id": f"company:{entry.get('id')}",
+                    "entry_id": entry.get("id"),
+                    "source_id": entry.get("source_id"),
+                    "section_key": entry.get("title") or "knowledge",
+                    "chunk_text": str(entry.get("body") or "")[:1600],
+                    "source_scope": "organization",
+                }
+                for entry in ranked[: self.max_snippets]
+            ]
         safety_rules = self._assistant_safety_rules(assistant_id)
         brand_rules = self._brand_rules(brand, safety_rules)
 
@@ -75,17 +117,7 @@ class CustomerContextService:
             "brand_rules": brand_rules,
             "products": [self._product_summary(item) for item in products[:10]],
             "knowledge_snippets": snippets,
-            "company_chunks": [
-                {
-                    "id": f"company:{entry.get('id')}",
-                    "entry_id": entry.get("id"),
-                    "source_id": entry.get("source_id"),
-                    "section_key": entry.get("title") or "knowledge",
-                    "chunk_text": str(entry.get("body") or "")[:1600],
-                    "source_scope": "organization",
-                }
-                for entry in ranked[: self.max_snippets]
-            ],
+            "company_chunks": context_items,
             "company_context_source_ids": source_ids,
             "brand_profile_id": brand.get("id") if brand else None,
         }
@@ -129,6 +161,46 @@ class CustomerContextService:
             scored.append(((linked, overlap, str(entry.get("updated_at") or "")), entry))
         scored.sort(key=lambda item: item[0], reverse=True)
         return [entry for _, entry in scored]
+
+    @staticmethod
+    def _rank_chunks(chunks: list[dict[str, Any]], query: str, query_embedding: list[float] | None) -> list[dict[str, Any]]:
+        query_tokens = _tokens(query)
+        scored = []
+        for chunk in chunks:
+            haystack = _tokens(f"{chunk.get('title', '')} {chunk.get('body', '')}")
+            keyword = len(query_tokens.intersection(haystack)) / max(len(query_tokens), 1) if query_tokens else 0.0
+            vector = CustomerContextService._cosine(query_embedding, chunk.get("embedding"))
+            quality = float(chunk.get("quality_score") or 0)
+            total = (0.60 * vector) + (0.25 * keyword) + (0.10 * quality)
+            scored.append((total, str(chunk.get("updated_at") or ""), {**chunk, "retrieval_score": round(total, 6)}))
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [item[2] for item in scored]
+
+    @staticmethod
+    def _cosine(left: list[float] | None, right: Any) -> float:
+        if not left or not isinstance(right, list) or len(left) != len(right):
+            return 0.0
+        try:
+            values = [float(item) for item in right]
+        except (TypeError, ValueError):
+            return 0.0
+        denominator = sqrt(sum(item * item for item in left)) * sqrt(sum(item * item for item in values))
+        return sum(a * b for a, b in zip(left, values)) / denominator if denominator else 0.0
+
+    def _fit_curated_snippets(self, chunks: list[dict[str, Any]], documents_by_id: dict[str, dict[str, Any]]) -> tuple[list[str], list[str]]:
+        snippets: list[str] = []
+        source_ids: list[str] = []
+        remaining = self.max_context_chars
+        for chunk in chunks[: self.max_snippets]:
+            body = str(chunk.get("body") or "").strip()[: min(1600, remaining)]
+            if not body or remaining <= 0:
+                break
+            snippets.append(body)
+            source_id = (documents_by_id.get(str(chunk.get("document_id"))) or {}).get("source_id")
+            if source_id:
+                source_ids.append(str(source_id))
+            remaining -= len(body)
+        return snippets, source_ids
 
     def _fit_snippets(self, entries: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
         snippets: list[str] = []

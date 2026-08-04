@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import { createHash } from 'node:crypto'
 import type { BrandProfileInput, CompanyContextPreview, CompanyProfileInput } from './types.js'
 import type { ExtractedKnowledge } from './text-extraction.js'
 
@@ -340,14 +341,16 @@ export async function completeKnowledgeIngestion(
     }
     await client.query('DELETE FROM public.marketing_knowledge_chunks WHERE document_id = $1', [input.documentId])
     for (const [index, chunk] of input.extracted.chunks.entries()) {
+      const contentHash = createHash('sha256').update(chunk.body).digest('hex')
       await client.query(
         `INSERT INTO public.marketing_knowledge_chunks (
            organization_id, client_id, contract_id, document_id, entry_id,
-           chunk_index, title, body, token_count, metadata
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'{}'::jsonb)`,
+           chunk_index, title, body, token_count, metadata, chunk_kind,
+           source_locator, curation_status, content_hash
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'{}'::jsonb,'raw',$10,'not_required',$11)`,
         [
           row.organization_id, row.client_id, row.contract_id, input.documentId, entryId,
-          index, chunk.title || null, chunk.body, chunk.tokenCount,
+          index, chunk.title || null, chunk.body, chunk.tokenCount, chunk.sourceLocator, contentHash,
         ],
       )
     }
@@ -373,12 +376,334 @@ export async function completeKnowledgeIngestion(
   }
 }
 
+export type CuratedKnowledgeChunkInput = {
+  title?: string
+  body: string
+  chunkKind: 'curated_fact' | 'curated_summary'
+  sourceLocator?: string
+  evidenceExcerpt?: string
+  qualityScore?: number
+  metadata?: Record<string, unknown>
+}
+
+export async function createKnowledgeIntelligenceRun(pool: pg.Pool, documentId: string) {
+  const result = await pool.query<Row>(
+    `INSERT INTO public.knowledge_intelligence_runs (
+       organization_id, client_id, contract_id, source_id, document_id,
+       run_kind, status, stage, progress, started_at
+     )
+     SELECT organization_id, client_id, contract_id, source_id, id,
+            'document_curation', 'running', 'extracting', 5, NOW()
+       FROM public.marketing_knowledge_documents
+      WHERE id = $1
+      RETURNING *`,
+    [documentId],
+  )
+  if (!result.rows[0]) throw domainError(404, 'knowledge_document_not_found')
+  return mapIntelligenceRun(result.rows[0])
+}
+
+export async function createWebsiteOnboardingRun(pool: pg.Pool, input: {
+  organizationId: string
+  contractId?: string
+  websiteUrl: string
+  maxPages: number
+  createdBy: string
+}) {
+  const scope = await resolveMarketingScope(pool, input.organizationId, input.contractId)
+  const result = await pool.query<Row>(
+    `INSERT INTO public.knowledge_intelligence_runs (
+       organization_id, client_id, contract_id, run_kind, status, stage, progress,
+       output_payload, created_by
+     ) VALUES ($1,$2,$3,'website_onboarding','queued','queued',0,$4::jsonb,$5)
+     RETURNING *`,
+    [input.organizationId, scope.clientId, scope.contractId, JSON.stringify({ websiteUrl: input.websiteUrl, maxPages: input.maxPages }), input.createdBy],
+  )
+  return mapIntelligenceRun(result.rows[0])
+}
+
+export async function getWebsiteOnboardingRun(pool: pg.Pool, organizationId: string, runId: string) {
+  const [run, suggestions] = await Promise.all([
+    pool.query<Row>("SELECT * FROM public.knowledge_intelligence_runs WHERE id = $1 AND organization_id = $2 AND run_kind = 'website_onboarding' LIMIT 1", [runId, organizationId]),
+    pool.query<Row>('SELECT * FROM public.company_intelligence_suggestions WHERE run_id = $1 AND organization_id = $2 ORDER BY confidence DESC, created_at', [runId, organizationId]),
+  ])
+  if (!run.rows[0]) throw domainError(404, 'website_onboarding_run_not_found')
+  return { run: mapIntelligenceRun(run.rows[0]), suggestions: suggestions.rows.map(mapCompanySuggestion) }
+}
+
+export async function replaceCompanyIntelligenceSuggestions(pool: pg.Pool, runId: string, suggestions: Array<{
+  suggestionKind: 'profile' | 'brand' | 'product'
+  fieldPath: string
+  suggestedValue: unknown
+  evidenceExcerpt: string
+  sourceUrl: string
+  confidence: number
+}>) {
+  const runScope = await pool.query<{ organization_id: string }>('SELECT organization_id FROM public.knowledge_intelligence_runs WHERE id = $1', [runId])
+  if (!runScope.rows[0]) throw domainError(404, 'website_onboarding_run_not_found')
+  const organizationId = runScope.rows[0].organization_id
+  const [profile, brand] = await Promise.all([
+    getCompanyProfile(pool, organizationId, true),
+    getBrandProfile(pool, organizationId, true),
+  ])
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const run = await client.query<{ organization_id: string }>('SELECT organization_id FROM public.knowledge_intelligence_runs WHERE id = $1 FOR UPDATE', [runId])
+    if (!run.rows[0]) throw domainError(404, 'website_onboarding_run_not_found')
+    await client.query('DELETE FROM public.company_intelligence_suggestions WHERE run_id = $1', [runId])
+    for (const suggestion of suggestions) {
+      await client.query(
+        `INSERT INTO public.company_intelligence_suggestions (
+           run_id, organization_id, suggestion_kind, field_path, current_value, suggested_value,
+           evidence_excerpt, source_url, confidence
+         ) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9)
+         ON CONFLICT (run_id, field_path, source_url) DO UPDATE SET
+           suggested_value = EXCLUDED.suggested_value, evidence_excerpt = EXCLUDED.evidence_excerpt,
+           confidence = EXCLUDED.confidence, updated_at = NOW()`,
+        [runId, run.rows[0].organization_id, suggestion.suggestionKind, suggestion.fieldPath,
+          JSON.stringify(currentSuggestionValue(profile, brand, suggestion.suggestionKind, suggestion.fieldPath)),
+          JSON.stringify(suggestion.suggestedValue), suggestion.evidenceExcerpt, suggestion.sourceUrl, suggestion.confidence],
+      )
+    }
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: {
+  organizationId: string
+  runId: string
+  suggestionIds: string[]
+  userId: string
+}) {
+  const run = await getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
+  if (!['ready_for_review', 'degraded'].includes(run.run.status)) throw domainError(409, 'website_onboarding_not_ready')
+  const selected = run.suggestions.filter(item => input.suggestionIds.includes(item.id) && item.status === 'suggested')
+  if (!selected.length) throw domainError(400, 'website_onboarding_suggestions_required')
+  const profile = await getCompanyProfile(pool, input.organizationId, true)
+  const brand = await getBrandProfile(pool, input.organizationId, true)
+  const nextProfile: CompanyProfileInput = {
+    legalName: profile.legalName, tradeName: profile.tradeName, description: profile.description,
+    websiteUrl: profile.websiteUrl || null, industry: profile.industry, positioning: profile.positioning,
+    differentiators: profile.differentiators, emails: profile.emails, phones: profile.phones,
+    address: profile.address, businessHours: profile.businessHours, serviceRegions: profile.serviceRegions,
+    socialLinks: profile.socialLinks, internalNotes: profile.internalNotes || null,
+  }
+  const nextBrand: BrandProfileInput = brand ? {
+    contractId: brand.contractId, toneOfVoice: brand.toneOfVoice, persona: brand.persona,
+    brandVoiceSummary: brand.brandVoiceSummary, vocabularyDo: brand.vocabularyDo,
+    vocabularyDont: brand.vocabularyDont, forbiddenTopics: brand.forbiddenTopics,
+    priorityTopics: brand.priorityTopics, visualGuidelines: brand.visualGuidelines || null,
+    complianceNotes: brand.complianceNotes || null, status: brand.status,
+  } : {
+    contractId: run.run.contractId, toneOfVoice: '', persona: '', brandVoiceSummary: '',
+    vocabularyDo: [], vocabularyDont: [], forbiddenTopics: [], priorityTopics: [],
+    visualGuidelines: null, complianceNotes: null, status: 'draft',
+  }
+  let profileChanged = false
+  let brandChanged = false
+  const products: Array<Record<string, unknown>> = []
+  for (const suggestion of selected) {
+    const value = normalizeSuggestedValue(suggestion.suggestionKind, suggestion.fieldPath, suggestion.suggestedValue)
+    if (value === undefined) continue
+    if (suggestion.suggestionKind === 'profile' && suggestion.fieldPath in nextProfile) {
+      ;(nextProfile as unknown as Record<string, unknown>)[suggestion.fieldPath] = value
+      profileChanged = true
+    } else if (suggestion.suggestionKind === 'brand' && suggestion.fieldPath in nextBrand) {
+      ;(nextBrand as unknown as Record<string, unknown>)[suggestion.fieldPath] = value
+      brandChanged = true
+    } else if (suggestion.suggestionKind === 'product' && suggestion.fieldPath === 'products' && Array.isArray(value)) {
+      products.push(...value as Array<Record<string, unknown>>)
+    }
+  }
+  if (profileChanged) await upsertCompanyProfile(pool, input.organizationId, nextProfile)
+  if (brandChanged) await upsertBrandProfile(pool, input.organizationId, nextBrand)
+  for (const product of products.slice(0, 50)) {
+    const name = typeof product.name === 'string' ? product.name.trim() : ''
+    if (!name) continue
+    await pool.query(
+      `INSERT INTO public.marketing_products_services (
+         organization_id, client_id, contract_id, name, description, value_proposition, status, metadata
+       ) SELECT $1,$2,$3,$4,$5,$6,'active',$7::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM public.marketing_products_services WHERE organization_id = $1 AND LOWER(name) = LOWER($4) AND status <> 'archived'
+       )`,
+      [input.organizationId, run.run.clientId, run.run.contractId, name,
+        typeof product.description === 'string' ? product.description : '',
+        typeof product.valueProposition === 'string' ? product.valueProposition : null,
+        JSON.stringify({ source: 'website_onboarding', runId: input.runId })],
+    )
+  }
+  await pool.query(
+    `UPDATE public.company_intelligence_suggestions
+        SET status = 'applied', selected = TRUE, applied_by = $3, applied_at = NOW(), updated_at = NOW()
+      WHERE run_id = $1 AND id = ANY($2::uuid[])`,
+    [input.runId, selected.map(item => item.id), input.userId],
+  )
+  await pool.query(
+    `UPDATE public.company_intelligence_suggestions
+        SET status = 'rejected', selected = FALSE, updated_at = NOW()
+      WHERE run_id = $1 AND status = 'suggested'`,
+    [input.runId],
+  )
+  await updateKnowledgeIntelligenceRun(pool, input.runId, { status: 'applied', stage: 'completed', progress: 100, completed: true })
+  return getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
+}
+
+export async function updateKnowledgeIntelligenceRun(pool: pg.Pool, runId: string, input: {
+  status?: 'running' | 'ready_for_review' | 'degraded' | 'failed' | 'applied' | 'cancelled'
+  stage?: 'queued' | 'discovering' | 'extracting' | 'cleaning' | 'curating' | 'embedding' | 'ready_for_review' | 'applying' | 'completed' | 'failed'
+  progress?: number
+  provider?: string
+  model?: string
+  metrics?: Record<string, unknown>
+  outputPayload?: Record<string, unknown>
+  errorMessage?: string | null
+  completed?: boolean
+  sourceId?: string
+  documentId?: string
+}) {
+  await pool.query(
+    `UPDATE public.knowledge_intelligence_runs SET
+       status = COALESCE($2, status), stage = COALESCE($3, stage),
+       progress = COALESCE($4, progress), provider = COALESCE($5, provider),
+       model = COALESCE($6, model), metrics = metrics || $7::jsonb,
+       output_payload = output_payload || $8::jsonb, error_message = $9,
+       completed_at = CASE WHEN $10::boolean THEN NOW() ELSE completed_at END,
+       source_id = COALESCE($11, source_id), document_id = COALESCE($12, document_id),
+       updated_at = NOW()
+     WHERE id = $1`,
+    [runId, input.status || null, input.stage || null, input.progress ?? null, input.provider || null,
+      input.model || null, JSON.stringify(input.metrics || {}), JSON.stringify(input.outputPayload || {}),
+      input.errorMessage ?? null, Boolean(input.completed), input.sourceId || null, input.documentId || null],
+  )
+}
+
+export async function replaceCuratedKnowledgeChunks(pool: pg.Pool, documentId: string, chunks: CuratedKnowledgeChunkInput[]) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const scope = await client.query<Row>(
+      `SELECT organization_id, client_id, contract_id,
+              (SELECT id FROM public.knowledge_entries WHERE source_id = document.source_id ORDER BY updated_at DESC LIMIT 1) AS entry_id
+         FROM public.marketing_knowledge_documents document
+        WHERE id = $1 FOR UPDATE`,
+      [documentId],
+    )
+    const row = scope.rows[0]
+    if (!row) throw domainError(404, 'knowledge_document_not_found')
+    await client.query("DELETE FROM public.marketing_knowledge_chunks WHERE document_id = $1 AND chunk_kind <> 'raw'", [documentId])
+    const indexResult = await client.query<{ next_index: number }>(
+      'SELECT COALESCE(MAX(chunk_index), -1) + 1 AS next_index FROM public.marketing_knowledge_chunks WHERE document_id = $1',
+      [documentId],
+    )
+    let index = Number(indexResult.rows[0]?.next_index || 0)
+    const inserted: Array<{ id: string; body: string }> = []
+    for (const chunk of chunks) {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO public.marketing_knowledge_chunks (
+           organization_id, client_id, contract_id, document_id, entry_id, chunk_index,
+           title, body, token_count, metadata, chunk_kind, source_locator,
+           evidence_excerpt, quality_score, curation_status, content_hash
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,'pending',$15)
+         RETURNING id`,
+        [row.organization_id, row.client_id, row.contract_id, documentId, row.entry_id, index,
+          chunk.title || null, chunk.body, Math.max(1, Math.ceil(chunk.body.length / 4)),
+          JSON.stringify(chunk.metadata || {}), chunk.chunkKind, chunk.sourceLocator || null,
+          chunk.evidenceExcerpt || null, chunk.qualityScore ?? null,
+          createHash('sha256').update(chunk.body).digest('hex')],
+      )
+      inserted.push({ id: result.rows[0].id, body: chunk.body })
+      index += 1
+    }
+    const summary = chunks.find(chunk => chunk.chunkKind === 'curated_summary')?.body
+    if (summary) await client.query('UPDATE public.marketing_knowledge_documents SET summary = $2, updated_at = NOW() WHERE id = $1', [documentId, summary.slice(0, 2_000)])
+    await client.query('COMMIT')
+    return inserted
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function attachCuratedKnowledgeEmbeddings(pool: pg.Pool, input: {
+  chunks: Array<{ id: string; vector: number[] }>
+  model: string
+  dimensions: number
+}) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const chunk of input.chunks) {
+      await client.query(
+        `UPDATE public.marketing_knowledge_chunks
+            SET embedding = $2::jsonb, embedding_model = $3, embedding_dimensions = $4, updated_at = NOW()
+          WHERE id = $1`,
+        [chunk.id, JSON.stringify(chunk.vector), input.model, input.dimensions],
+      )
+    }
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function getKnowledgeProcessing(pool: pg.Pool, documentId: string) {
+  const [run, chunks] = await Promise.all([
+    pool.query<Row>('SELECT * FROM public.knowledge_intelligence_runs WHERE document_id = $1 ORDER BY created_at DESC LIMIT 1', [documentId]),
+    pool.query<Row>(
+      `SELECT id, chunk_kind, title, body, source_locator, evidence_excerpt,
+              quality_score, curation_status, embedding_model, embedding_dimensions, metadata
+         FROM public.marketing_knowledge_chunks
+        WHERE document_id = $1 AND chunk_kind <> 'raw'
+        ORDER BY chunk_index`,
+      [documentId],
+    ),
+  ])
+  return {
+    run: run.rows[0] ? mapIntelligenceRun(run.rows[0]) : null,
+    chunks: chunks.rows.map(row => ({
+      id: row.id, chunkKind: row.chunk_kind, title: row.title || undefined, body: row.body,
+      sourceLocator: row.source_locator || undefined, evidenceExcerpt: row.evidence_excerpt || undefined,
+      qualityScore: row.quality_score == null ? undefined : Number(row.quality_score),
+      curationStatus: row.curation_status, embeddingModel: row.embedding_model || undefined,
+      embeddingDimensions: row.embedding_dimensions || undefined, metadata: row.metadata || {},
+    })),
+  }
+}
+
+export async function reviewCuratedKnowledgeChunk(pool: pg.Pool, documentId: string, chunkId: string, status: 'approved' | 'rejected') {
+  const result = await pool.query<Row>(
+    `UPDATE public.marketing_knowledge_chunks
+        SET curation_status = $3, updated_at = NOW()
+      WHERE id = $2 AND document_id = $1 AND chunk_kind <> 'raw'
+      RETURNING id, chunk_kind, body, source_locator, evidence_excerpt, quality_score, curation_status, metadata`,
+    [documentId, chunkId, status],
+  )
+  if (!result.rows[0]) throw domainError(404, 'knowledge_curated_chunk_not_found')
+  return result.rows[0]
+}
+
 export async function markKnowledgeIngestionFailed(pool: pg.Pool, sourceId: string, documentId: string, error: unknown) {
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 1_000)
   await Promise.all([
     pool.query('UPDATE public.knowledge_sources SET processing_error = $2, updated_at = NOW() WHERE id = $1', [sourceId, message]),
     pool.query("UPDATE public.marketing_knowledge_documents SET status = 'draft', updated_at = NOW() WHERE id = $1", [documentId]),
   ])
+}
+
+export async function markKnowledgeProcessingState(pool: pg.Pool, documentId: string, status: 'indexing' | 'indexed') {
+  await pool.query('UPDATE public.marketing_knowledge_documents SET status = $2, updated_at = NOW() WHERE id = $1', [documentId, status])
 }
 
 export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: string) {
@@ -452,12 +777,38 @@ export async function updateKnowledgeGovernance(pool: pg.Pool, documentId: strin
   return getKnowledgeDocument(pool, documentId)
 }
 
-export async function publishKnowledgeDocument(pool: pg.Pool, documentId: string, reviewerUserId: string) {
+export async function publishKnowledgeDocument(pool: pg.Pool, documentId: string, reviewerUserId: string, allowDegradedRaw = false) {
   const current = await getKnowledgeDocument(pool, documentId)
   if (!current.entryId || current.status !== 'indexed') throw domainError(409, 'knowledge_document_not_ready')
+  const review = await pool.query<{ pending: number; approved: number; curated: number }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE curation_status = 'pending')::int AS pending,
+       COUNT(*) FILTER (WHERE curation_status = 'approved')::int AS approved,
+       COUNT(*)::int AS curated
+     FROM public.marketing_knowledge_chunks
+     WHERE document_id = $1 AND chunk_kind <> 'raw'`,
+    [documentId],
+  )
+  const counts = review.rows[0]
+  if (Number(counts.pending) > 0) throw domainError(409, 'knowledge_review_pending')
+  if (Number(counts.approved) === 0 && !allowDegradedRaw) throw domainError(409, 'knowledge_degraded_confirmation_required')
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    if (Number(counts.approved) > 0) {
+      await client.query(
+        `UPDATE public.knowledge_entries entry SET
+           body = curated.body, updated_at = NOW()
+         FROM (
+           SELECT entry_id, STRING_AGG(body, E'\n\n' ORDER BY chunk_index) AS body
+             FROM public.marketing_knowledge_chunks
+            WHERE document_id = $1 AND chunk_kind <> 'raw' AND curation_status = 'approved'
+            GROUP BY entry_id
+         ) curated
+         WHERE entry.id = curated.entry_id AND entry.id = $2`,
+        [documentId, current.entryId],
+      )
+    }
     await client.query("UPDATE public.knowledge_sources SET status = 'published', updated_at = NOW() WHERE id = $1", [current.sourceId])
     await client.query(
       `UPDATE public.knowledge_entries SET status = 'published', reviewer_user_id = $2,
@@ -544,6 +895,66 @@ function mapKnowledgeDocument(row: Row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function mapIntelligenceRun(row: Row) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    clientId: row.client_id || undefined,
+    contractId: row.contract_id || undefined,
+    sourceId: row.source_id || undefined,
+    documentId: row.document_id || undefined,
+    runKind: row.run_kind,
+    status: row.status,
+    stage: row.stage,
+    progress: Number(row.progress || 0),
+    provider: row.provider || undefined,
+    model: row.model || undefined,
+    metrics: row.metrics || {},
+    outputPayload: row.output_payload || {},
+    errorMessage: row.error_message || undefined,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapCompanySuggestion(row: Row) {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    organizationId: row.organization_id,
+    suggestionKind: row.suggestion_kind,
+    fieldPath: row.field_path,
+    currentValue: row.current_value,
+    suggestedValue: row.suggested_value,
+    evidenceExcerpt: row.evidence_excerpt,
+    sourceUrl: row.source_url,
+    confidence: Number(row.confidence || 0),
+    selected: Boolean(row.selected),
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function normalizeSuggestedValue(kind: string, field: string, value: unknown): unknown | undefined {
+  const stringFields = new Set(['legalName', 'tradeName', 'description', 'websiteUrl', 'industry', 'positioning', 'toneOfVoice', 'persona', 'brandVoiceSummary', 'visualGuidelines'])
+  const listFields = new Set(['differentiators', 'emails', 'phones', 'serviceRegions', 'vocabularyDo', 'vocabularyDont', 'priorityTopics'])
+  const recordFields = new Set(['address', 'businessHours', 'socialLinks'])
+  if (stringFields.has(field)) return typeof value === 'string' ? value.trim().slice(0, 20_000) : undefined
+  if (listFields.has(field)) return Array.isArray(value) ? value.filter(item => typeof item === 'string').map(item => item.trim()).filter(Boolean).slice(0, 100) : undefined
+  if (recordFields.has(field)) return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined
+  if (kind === 'product' && field === 'products') return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)).slice(0, 50) : undefined
+  return undefined
+}
+
+function currentSuggestionValue(profile: Row, brand: Row | null, kind: string, field: string) {
+  if (kind === 'profile') return profile[field] ?? null
+  if (kind === 'brand') return brand?.[field] ?? null
+  return null
 }
 
 function isUniqueViolation(error: unknown) {

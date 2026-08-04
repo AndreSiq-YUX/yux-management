@@ -14,7 +14,7 @@ import { handleAutomationDispatch, handleAutomationRun } from './jobs/handlers/a
 import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
-import { handleKnowledgeIndexing } from './jobs/handlers/company-intelligence.js'
+import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './jobs/handlers/company-intelligence.js'
 
 type WorkerResult = {
   ok: true
@@ -57,7 +57,8 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }
   if (job.name === 'strategy.adminChat') { await handleStrategyAdminChat(pool, env, job.data); return { ok: true } }
   if (job.name === 'radar.analyzeOpportunity') { await handleRadarOpportunityAnalysis(pool, env, job.data); return { ok: true } }
-  if (job.name === 'company-intelligence.indexKnowledge') { await handleKnowledgeIndexing(pool, job.data); return { ok: true } }
+  if (job.name === 'company-intelligence.indexKnowledge') { await handleKnowledgeIndexing(pool, env, job.data); return { ok: true } }
+  if (job.name === 'company-intelligence.discoverWebsite') { await handleWebsiteOnboarding(pool, env, job.data); return { ok: true } }
   if (job.name === 'maintenance.purgeExpiredTraces') { await purgeExpiredTraces(pool); return { ok: true } }
   if (job.name === 'maintenance.refreshGoogleTokens') { await refreshExpiringGoogleTokens(pool, env); return { ok: true } }
 

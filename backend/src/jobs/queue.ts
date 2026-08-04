@@ -23,6 +23,7 @@ export const JOB_NAMES = [
   'strategy.adminChat',
   'radar.analyzeOpportunity',
   'company-intelligence.indexKnowledge',
+  'company-intelligence.discoverWebsite',
   'proposal.convert',
   'maintenance.purgeExpiredTraces',
   'maintenance.refreshGoogleTokens',

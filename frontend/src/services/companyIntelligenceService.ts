@@ -5,8 +5,10 @@ import type {
   CompanyContextPreview,
   CompanyKnowledgeBaseInput,
   CompanyKnowledgeDocument,
+  KnowledgeProcessingResult,
   CompanyProfile,
   CompanyProfileInput,
+  WebsiteOnboardingResult,
 } from '@/types/companyIntelligence'
 
 export const companyIntelligenceService = {
@@ -82,6 +84,34 @@ export const companyIntelligenceService = {
 
   archiveKnowledge(documentId: string) {
     return apiRequest<CompanyKnowledgeDocument>(`/company-intelligence/knowledge/${documentId}/archive`, { method: 'POST' })
+  },
+
+  getKnowledgeProcessing(documentId: string) {
+    return apiRequest<KnowledgeProcessingResult>(`/company-intelligence/knowledge/${documentId}/processing`)
+  },
+
+  reviewKnowledgeChunk(documentId: string, chunkId: string, status: 'approved' | 'rejected') {
+    return apiRequest(`/company-intelligence/knowledge/${documentId}/chunks/${chunkId}/review`, { method: 'PATCH', body: { status } })
+  },
+
+  publishDegradedKnowledge(documentId: string) {
+    return apiRequest<CompanyKnowledgeDocument>(`/company-intelligence/knowledge/${documentId}/publish`, { method: 'POST', body: { allowDegradedRaw: true } })
+  },
+
+  startWebsiteOnboarding(organizationId: string, websiteUrl: string, contractId?: string) {
+    return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding`, {
+      method: 'POST', body: { websiteUrl, contractId, maxPages: 10 },
+    })
+  },
+
+  getWebsiteOnboarding(organizationId: string, runId: string) {
+    return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding/${runId}`)
+  },
+
+  applyWebsiteSuggestions(organizationId: string, runId: string, suggestionIds: string[]) {
+    return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding/${runId}/apply`, {
+      method: 'POST', body: { suggestionIds },
+    })
   },
 }
 

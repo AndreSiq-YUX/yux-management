@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { Building2 } from 'lucide-react'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
 import { CompanyProfileForm } from '@/components/company-intelligence/CompanyProfileForm'
+import { WebsiteOnboardingCard } from '@/components/company-intelligence/WebsiteOnboardingCard'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
 import { formatPortalCurrency, formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
 import { companyIntelligenceService } from '@/services/companyIntelligenceService'
@@ -50,6 +51,11 @@ export function PortalCompanyProfilePage() {
     }
   }
 
+  const reloadProfile = async () => {
+    if (!organization?.id) return
+    setCompanyProfile(await companyIntelligenceService.getProfile(organization.id))
+  }
+
   const activeProducts = productsServices.filter(product => product.status === 'active')
   const publishedDocuments = knowledgeDocuments.filter(document => document.status === 'published')
 
@@ -77,6 +83,7 @@ export function PortalCompanyProfilePage() {
       ]}
       note="Nesta fase, esta pagina define a responsabilidade de produto e evita misturar dados da empresa com Configuracoes da Conta."
     >
+      {organization?.id && <WebsiteOnboardingCard organizationId={organization.id} contractId={activeContract?.id} initialUrl={companyProfile?.websiteUrl} onApplied={reloadProfile} />}
       {profileLoading && <p className="rounded-lg border bg-white p-5 text-sm text-gray-600">Carregando informações editáveis...</p>}
       {!profileLoading && companyProfile && <CompanyProfileForm profile={companyProfile} saving={saving} onSave={saveProfile} />}
 

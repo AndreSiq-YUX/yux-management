@@ -93,3 +93,55 @@ export interface CompanyKnowledgeBaseInput {
   allowedAgentProfileKeys: string[]
   blockedAgentProfileKeys: string[]
 }
+
+export interface KnowledgeIntelligenceRun {
+  id: string
+  runKind: 'document_curation' | 'website_onboarding'
+  status: 'queued' | 'running' | 'ready_for_review' | 'degraded' | 'failed' | 'applied' | 'cancelled'
+  stage: string
+  progress: number
+  provider?: string
+  model?: string
+  metrics: Record<string, unknown>
+  outputPayload: Record<string, unknown>
+  errorMessage?: string
+  documentId?: string
+}
+
+export interface CompanyIntelligenceSuggestion {
+  id: string
+  suggestionKind: 'profile' | 'brand' | 'product'
+  fieldPath: string
+  currentValue?: unknown
+  suggestedValue: unknown
+  evidenceExcerpt: string
+  sourceUrl: string
+  confidence: number
+  selected: boolean
+  status: 'suggested' | 'applied' | 'rejected'
+}
+
+export interface WebsiteOnboardingResult {
+  run: KnowledgeIntelligenceRun
+  suggestions: CompanyIntelligenceSuggestion[]
+  jobId?: string
+}
+
+export interface CuratedKnowledgeChunk {
+  id: string
+  chunkKind: 'curated_fact' | 'curated_summary'
+  title?: string
+  body: string
+  sourceLocator?: string
+  evidenceExcerpt?: string
+  qualityScore?: number
+  curationStatus: 'pending' | 'approved' | 'rejected'
+  embeddingModel?: string
+  embeddingDimensions?: number
+  metadata: Record<string, unknown>
+}
+
+export interface KnowledgeProcessingResult {
+  run: KnowledgeIntelligenceRun | null
+  chunks: CuratedKnowledgeChunk[]
+}

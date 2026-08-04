@@ -6,17 +6,23 @@ import { requireOrganizationScope } from '../../http/guards.js'
 import { readKnowledgeFile, writeKnowledgeFile } from './file-storage.js'
 import {
   archiveKnowledgeDocument,
+  applyCompanyIntelligenceSuggestions,
   attachKnowledgeFile,
   completeKnowledgeIngestion,
   createKnowledgeShell,
+  createWebsiteOnboardingRun,
   getBrandProfile,
   getCompanyContextPreview,
   getCompanyProfile,
   getKnowledgeDocument,
+  getKnowledgeProcessing,
   getKnowledgeUploadLimitMb,
+  getWebsiteOnboardingRun,
   listKnowledgeDocuments,
   markKnowledgeIngestionFailed,
+  markKnowledgeProcessingState,
   publishKnowledgeDocument,
+  reviewCuratedKnowledgeChunk,
   updateKnowledgeGovernance,
   upsertBrandProfile,
   upsertCompanyProfile,
@@ -89,6 +95,9 @@ const fileKnowledgeSchema = knowledgeBase.extend({
   contentBase64: z.string().min(1),
 })
 const documentParams = z.object({ documentId: z.string().uuid() })
+const chunkParams = z.object({ documentId: z.string().uuid(), chunkId: z.string().uuid() })
+const reviewChunkSchema = z.object({ status: z.enum(['approved', 'rejected']) })
+const publishKnowledgeSchema = z.object({ allowDegradedRaw: z.boolean().default(false) }).default({ allowDegradedRaw: false })
 const knowledgePatchSchema = z.object({
   title: z.string().trim().min(1).max(300).optional(),
   documentType: documentType.optional(),
@@ -96,6 +105,13 @@ const knowledgePatchSchema = z.object({
   allowedAgentProfileKeys: stringList.optional(),
   blockedAgentProfileKeys: stringList.optional(),
 })
+const websiteOnboardingSchema = z.object({
+  websiteUrl: z.string().trim().min(3).max(2_000),
+  contractId: z.string().uuid().optional(),
+  maxPages: z.number().int().min(1).max(20).default(10),
+})
+const websiteRunParams = z.object({ organizationId: z.string().uuid(), runId: z.string().uuid() })
+const applyWebsiteSuggestionsSchema = z.object({ suggestionIds: z.array(z.string().uuid()).min(1).max(100) })
 
 export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
   app.get('/organizations/:organizationId/profile', async (request, reply) => {
@@ -153,6 +169,51 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     return { limitMb: await getKnowledgeUploadLimitMb(app.pg, params.data.organizationId) }
   })
 
+  app.post('/organizations/:organizationId/website-onboarding', async (request, reply) => {
+    const params = organizationParams.safeParse(request.params)
+    const body = websiteOnboardingSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_website_onboarding_payload' })
+    const ctx = requireOrganizationScope(request, params.data.organizationId)
+    assertCanConfigure(ctx.role)
+    const run = await createWebsiteOnboardingRun(app.pg, {
+      organizationId: params.data.organizationId,
+      contractId: body.data.contractId,
+      websiteUrl: body.data.websiteUrl,
+      maxPages: body.data.maxPages,
+      createdBy: ctx.userId,
+    })
+    const job = await app.jobQueue.add('company-intelligence.discoverWebsite', {
+      runId: run.id,
+      organizationId: params.data.organizationId,
+      clientId: run.clientId,
+      contractId: run.contractId,
+      websiteUrl: body.data.websiteUrl,
+      maxPages: body.data.maxPages,
+    })
+    return reply.code(202).send({ run, suggestions: [], jobId: job.id })
+  })
+
+  app.get('/organizations/:organizationId/website-onboarding/:runId', async (request, reply) => {
+    const params = websiteRunParams.safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_website_onboarding_run' })
+    requireOrganizationScope(request, params.data.organizationId)
+    return getWebsiteOnboardingRun(app.pg, params.data.organizationId, params.data.runId)
+  })
+
+  app.post('/organizations/:organizationId/website-onboarding/:runId/apply', async (request, reply) => {
+    const params = websiteRunParams.safeParse(request.params)
+    const body = applyWebsiteSuggestionsSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_website_onboarding_apply_payload' })
+    const ctx = requireOrganizationScope(request, params.data.organizationId)
+    assertCanConfigure(ctx.role)
+    return applyCompanyIntelligenceSuggestions(app.pg, {
+      organizationId: params.data.organizationId,
+      runId: params.data.runId,
+      suggestionIds: body.data.suggestionIds,
+      userId: ctx.userId,
+    })
+  })
+
   app.post('/organizations/:organizationId/knowledge/text', async (request, reply) => {
     const params = organizationParams.safeParse(request.params)
     const body = manualKnowledgeSchema.safeParse(request.body)
@@ -171,7 +232,13 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
         documentId: shell.documentId,
         extracted: extractManualKnowledge(body.data.title, body.data.body),
       })
-      return reply.code(201).send(await getKnowledgeDocument(app.pg, shell.documentId))
+      const job = await app.jobQueue.add('company-intelligence.indexKnowledge', {
+        sourceId: shell.sourceId,
+        documentId: shell.documentId,
+        sourceType: 'manual',
+      })
+      await markKnowledgeProcessingState(app.pg, shell.documentId, 'indexing')
+      return reply.code(202).send({ ...(await getKnowledgeDocument(app.pg, shell.documentId)), jobId: job.id })
     } catch (error) {
       await markKnowledgeIngestionFailed(app.pg, shell.sourceId, shell.documentId, error)
       throw error
@@ -255,13 +322,32 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     return updateKnowledgeGovernance(app.pg, params.data.documentId, normalizeKnowledgePatch(body.data))
   })
 
-  app.post('/knowledge/:documentId/publish', async (request, reply) => {
+  app.get('/knowledge/:documentId/processing', async (request, reply) => {
     const params = documentParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_knowledge_document_id' })
     const current = await getKnowledgeDocument(app.pg, params.data.documentId)
+    requireOrganizationScope(request, current.organizationId)
+    return getKnowledgeProcessing(app.pg, params.data.documentId)
+  })
+
+  app.patch('/knowledge/:documentId/chunks/:chunkId/review', async (request, reply) => {
+    const params = chunkParams.safeParse(request.params)
+    const body = reviewChunkSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_knowledge_review_payload' })
+    const current = await getKnowledgeDocument(app.pg, params.data.documentId)
     const ctx = requireOrganizationScope(request, current.organizationId)
     assertCanConfigure(ctx.role)
-    return publishKnowledgeDocument(app.pg, params.data.documentId, ctx.userId)
+    return reviewCuratedKnowledgeChunk(app.pg, params.data.documentId, params.data.chunkId, body.data.status)
+  })
+
+  app.post('/knowledge/:documentId/publish', async (request, reply) => {
+    const params = documentParams.safeParse(request.params)
+    const body = publishKnowledgeSchema.safeParse(request.body || {})
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_knowledge_publish_payload' })
+    const current = await getKnowledgeDocument(app.pg, params.data.documentId)
+    const ctx = requireOrganizationScope(request, current.organizationId)
+    assertCanConfigure(ctx.role)
+    return publishKnowledgeDocument(app.pg, params.data.documentId, ctx.userId, body.data.allowDegradedRaw)
   })
 
   app.post('/knowledge/:documentId/archive', async (request, reply) => {

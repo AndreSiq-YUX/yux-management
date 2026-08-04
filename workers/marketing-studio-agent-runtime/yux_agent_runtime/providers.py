@@ -141,6 +141,23 @@ class JinaClient:
             "content": response if isinstance(response, str) else json.dumps(response, ensure_ascii=False),
         }
 
+    def embed_texts(self, texts: list[str], *, task: str, model: str = "jina-embeddings-v3", dimensions: int = 1024) -> dict[str, Any]:
+        if not self.api_key:
+            raise ProviderRequestError("missing_jina_api_key")
+        response = self.transport(
+            "https://api.jina.ai/v1/embeddings",
+            _bearer_headers(self.api_key),
+            {"model": model, "task": task, "normalized": True, "embedding_type": "float", "dimensions": dimensions, "input": texts},
+            "POST",
+        )
+        if not isinstance(response, dict):
+            raise ProviderRequestError("invalid_jina_embeddings_response")
+        records = sorted(response.get("data") or [], key=lambda item: int(item.get("index") or 0))
+        vectors = [item.get("embedding") for item in records]
+        if len(vectors) != len(texts) or any(not isinstance(vector, list) or len(vector) != dimensions for vector in vectors):
+            raise ProviderRequestError("invalid_jina_embedding_vector")
+        return {"model": response.get("model") or model, "dimensions": dimensions, "vectors": vectors, "tokens": int((response.get("usage") or {}).get("total_tokens") or 0)}
+
     def ground_statement(self, statement: str, references: list[str] | None = None) -> dict[str, Any]:
         if not self.api_key:
             raise ProviderRequestError("missing_jina_api_key")

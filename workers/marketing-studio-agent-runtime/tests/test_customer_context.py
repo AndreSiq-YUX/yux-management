@@ -30,6 +30,13 @@ class CustomerContextTest(unittest.TestCase):
                 {"id": "entry-draft", "organization_id": "org-a", "source_id": "source-draft", "title": "Rascunho", "body": "Ainda não publicado.", "status": "draft"},
                 {"id": "entry-b", "organization_id": "org-b", "source_id": "source-b", "title": "Segredo B", "body": "Nunca deve vazar.", "status": "published"},
             ],
+            "marketing_knowledge_documents": [
+                {"id": "doc-a", "organization_id": "org-a", "source_id": "source-a", "status": "published"},
+            ],
+            "marketing_knowledge_chunks": [
+                {"id": "chunk-keyword", "organization_id": "org-a", "document_id": "doc-a", "entry_id": "entry-a", "chunk_kind": "curated_fact", "curation_status": "approved", "body": "Diagnóstico comercial tradicional.", "quality_score": 0.8, "embedding": [0.0, 1.0]},
+                {"id": "chunk-semantic", "organization_id": "org-a", "document_id": "doc-a", "entry_id": "entry-a", "chunk_kind": "curated_fact", "curation_status": "approved", "body": "Mapeamento completo da operação.", "quality_score": 0.9, "embedding": [1.0, 0.0], "source_locator": "page:4"},
+            ],
         })
 
     def test_retrieves_only_published_tenant_safe_context(self):
@@ -37,13 +44,24 @@ class CustomerContextTest(unittest.TestCase):
             organization_id="org-a", contract_id="contract-a", profile_key="ai_sdr_comercial_1", query="diagnóstico proposta", external=True
         )
         text = str(result)
-        self.assertIn("Diagnóstico antes da proposta", text)
+        self.assertIn("Diagnóstico comercial tradicional", text)
         self.assertIn("resultado garantido", text)
         self.assertNotIn("Não deve aparecer", text)
         self.assertNotIn("Nunca enviar ao contato", text)
         self.assertNotIn("Ainda não publicado", text)
         self.assertNotIn("Segredo B", text)
         self.assertEqual(result["brand_profile_id"], "brand-a")
+
+    def test_prefers_semantically_matching_approved_curated_fact(self):
+        class Embeddings:
+            def embed_query(self, _query):
+                return [1.0, 0.0]
+
+        result = CustomerContextService(self.store, embedding_service=Embeddings()).retrieve(
+            organization_id="org-a", contract_id="contract-a", profile_key="ai_sdr_comercial_1", query="diagnóstico", external=True
+        )
+        self.assertEqual(result["company_chunks"][0]["id"], "company:chunk-semantic")
+        self.assertEqual(result["company_chunks"][0]["source_locator"], "page:4")
 
 
 if __name__ == "__main__":

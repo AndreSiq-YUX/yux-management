@@ -66,6 +66,20 @@ class ProviderClientTest(unittest.TestCase):
         self.assertEqual(grounding["factuality"], 0.91)
         self.assertEqual(grounding["tokens"], 1234)
 
+    def test_jina_embeddings_uses_retrieval_task(self):
+        calls = []
+
+        def transport(url, headers, payload, method):
+            calls.append((url, headers, payload, method))
+            return {"model": "jina-embeddings-v3", "data": [{"index": 0, "embedding": [1.0, 0.0]}], "usage": {"total_tokens": 3}}
+
+        result = JinaClient(api_key="jina-key", transport=transport).embed_texts(
+            ["consulta semantica"], task="retrieval.query", dimensions=2
+        )
+        self.assertEqual(calls[0][0], "https://api.jina.ai/v1/embeddings")
+        self.assertEqual(calls[0][2]["task"], "retrieval.query")
+        self.assertEqual(result["vectors"], [[1.0, 0.0]])
+
 
 if __name__ == "__main__":
     unittest.main()
