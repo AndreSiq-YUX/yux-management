@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { createBullMqJobId } from '../../jobs/queue.js'
 import { createDomainEventEnvelope, isUuid, type DomainEventEnvelope } from '../events/types.js'
 import { getDomainEvent, recordDomainEvent } from '../events/repository.js'
 import { createDefaultAutomationCommandServices } from './command-adapters.js'
@@ -142,7 +143,7 @@ export async function dispatchAutomationEvent(
     matchedFlowIds.push(flow.id)
     const runContext: RunContext = { runId, event, flow, actions: flow.snapshot.actions, lead }
     if (options.queue) {
-      await options.queue.add('automation.executeRun', { runId, eventId: event.eventId, flowId: flow.id }, { jobId: `automation-run:${runId}` })
+      await options.queue.add('automation.executeRun', { runId, eventId: event.eventId, flowId: flow.id }, { jobId: createBullMqJobId('automation-run', runId) })
       results.push({ flowId: flow.id, runId, status: 'queued' })
     } else {
       const result = await executeAutomationRun(db, runContext, options)

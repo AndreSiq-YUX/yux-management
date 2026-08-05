@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createIdempotencyKey } from '../src/jobs/queue.js'
+import { createBullMqJobId, createIdempotencyKey } from '../src/jobs/queue.js'
 
 describe('job idempotency', () => {
   it('creates the same key for equivalent payloads with different key order', () => {
@@ -45,5 +45,16 @@ describe('job idempotency', () => {
     expect(createIdempotencyKey('crm.sequence.processExecution', { executionId: 'execution-1' })).not.toBe(
       createIdempotencyKey('crm.sequence.processExecution', { executionId: 'execution-2' }),
     )
+  })
+
+  it('never emits the colon reserved by BullMQ in custom job IDs', () => {
+    const idempotencyKey = createIdempotencyKey('company-intelligence.discoverWebsite', {
+      runId: 'run-1',
+    })
+    const scheduledKey = createBullMqJobId('maintenance', '2026-08-04T21:30:00.000Z')
+
+    expect(idempotencyKey).not.toContain(':')
+    expect(scheduledKey).not.toContain(':')
+    expect(scheduledKey).toBe('maintenance-2026-08-04T21-30-00.000Z')
   })
 })

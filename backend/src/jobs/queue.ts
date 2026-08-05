@@ -108,5 +108,16 @@ function stableSerialize(value: unknown): string {
 
 export function createIdempotencyKey(name: JobName, data: QueueJobData): string {
   const hash = createHash('sha256').update(`${name}:${stableSerialize(data)}`).digest('hex')
-  return `${name}:${hash.slice(0, 32)}`
+  return createBullMqJobId(name, hash.slice(0, 32))
+}
+
+/**
+ * BullMQ reserves `:` for its internal Redis keys and rejects custom job IDs
+ * containing that character. Keep every ID produced by the application safe,
+ * including dynamic segments such as ISO timestamps.
+ */
+export function createBullMqJobId(...segments: Array<string | number>): string {
+  return segments
+    .map((segment) => String(segment).replaceAll(':', '-'))
+    .join('-')
 }

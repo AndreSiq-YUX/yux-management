@@ -174,8 +174,8 @@ describe('domain event fan-out', () => {
       'events.consume.scoring',
     ])
     expect(jobs.map((job) => job.jobId)).toEqual([
-      `automation:${ids.event}`,
-      `scoring:${ids.event}`,
+      `automation-${ids.event}`,
+      `scoring-${ids.event}`,
     ])
     expect(client.calls.some((call) => call.sql.includes("dispatch_status = 'dispatched'"))).toBe(true)
   })

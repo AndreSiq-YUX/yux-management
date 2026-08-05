@@ -42,6 +42,8 @@ class FakePool {
   async query(sql: string, params: unknown[] = []) {
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [{ organization_id: ids.orgA }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+    if (sql.includes('FROM public.contracts c') && sql.includes('JOIN public.organizations')) return { rows: [{ organization_id: ids.orgA }] }
+    if (sql.includes('FROM public.match_marketing_knowledge')) return { rows: [] }
     if (sql.includes('FROM public."')) {
       this.dataQuery = { sql, params }
       return { rows: [{ id: 'campaign-a', organization_id: ids.orgA }] }
@@ -151,6 +153,28 @@ describe('tenant-scoped module queries', () => {
 
     expect(response.statusCode).toBe(200)
     expect(pool.dataQuery?.params).toEqual([[ids.orgA]])
+  })
+
+  it('resolves the contract organization before searching marketing knowledge', async () => {
+    const { authStore, token } = authenticatedStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/marketing-studio/rpc',
+      headers: headers(token),
+      payload: {
+        name: 'match_marketing_knowledge',
+        args: {
+          target_contract_id: '00000000-0000-4000-8000-000000000010',
+          query_text: '',
+          match_limit: 3,
+        },
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ data: [], error: null, count: 0 })
   })
 
   it.each(['ad_provider_connections', 'ad_provider_mutation_runs'])(

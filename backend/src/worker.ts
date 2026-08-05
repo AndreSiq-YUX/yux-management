@@ -1,5 +1,5 @@
 import type { Job } from 'bullmq'
-import { DEFAULT_QUEUE_NAME, createQueue, createWorker, isJobName, type QueueJobData } from './jobs/queue.js'
+import { DEFAULT_QUEUE_NAME, createBullMqJobId, createQueue, createWorker, isJobName, type QueueJobData } from './jobs/queue.js'
 import { createPool } from './db/client.js'
 import { runWithDatabaseRequestContext } from './db/request-context.js'
 import { loadEnv } from './config/env.js'
@@ -82,7 +82,7 @@ const scheduler = setInterval(() => {
 
 function scheduleTraceRetentionPurge() {
   const day = new Date().toISOString().slice(0, 10)
-  return maintenanceQueue.add('maintenance.purgeExpiredTraces', { scheduledFor: day }, { jobId: `maintenance-purge-traces:${day}` })
+  return maintenanceQueue.add('maintenance.purgeExpiredTraces', { scheduledFor: day }, { jobId: createBullMqJobId('maintenance-purge-traces', day) })
 }
 
 void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))
@@ -95,7 +95,7 @@ const googleTokenRefreshIntervalMs = Number(process.env.GOOGLE_TOKEN_REFRESH_INT
 function scheduleGoogleTokenRefresh() {
   // One job per interval window keeps the schedule idempotent across restarts.
   const window = Math.floor(Date.now() / googleTokenRefreshIntervalMs)
-  return maintenanceQueue.add('maintenance.refreshGoogleTokens', { window }, { jobId: `maintenance-google-token-refresh:${window}` })
+  return maintenanceQueue.add('maintenance.refreshGoogleTokens', { window }, { jobId: createBullMqJobId('maintenance-google-token-refresh', window) })
 }
 
 void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
@@ -105,7 +105,7 @@ const googleTokenRefreshScheduler = setInterval(() => {
 
 function scheduleDomainEventDispatch() {
   const window = Math.floor(Date.now() / domainEventDispatchIntervalMs)
-  return maintenanceQueue.add('events.dispatchPending', { window, limit: 100 }, { jobId: `events-dispatch:${window}` })
+  return maintenanceQueue.add('events.dispatchPending', { window, limit: 100 }, { jobId: createBullMqJobId('events-dispatch', window) })
 }
 
 void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))

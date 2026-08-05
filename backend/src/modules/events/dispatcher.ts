@@ -4,6 +4,7 @@ import {
   ensureEventDeliveries,
   failEventDispatch,
 } from './repository.js'
+import { createBullMqJobId } from '../../jobs/queue.js'
 import type { DomainEventEnvelope } from './types.js'
 
 export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring'] as const
@@ -72,7 +73,7 @@ export async function fanOutDomainEvent(
       await queue.add(
         consumerKey === 'automation' ? 'events.consume.automation' : 'events.consume.scoring',
         { eventId: event.eventId, deliveryId: delivery.id, consumerKey },
-        { jobId: `${consumerKey}:${event.eventId}` },
+        { jobId: createBullMqJobId(consumerKey, event.eventId) },
       )
     }
     await completeEventDispatch(client, event.eventId)

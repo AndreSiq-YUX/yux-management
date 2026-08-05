@@ -150,12 +150,9 @@ export async function registerMarketingStudioRoutes(app: FastifyInstance) {
         match_limit: z.coerce.number().int().min(1).max(20).default(8),
       }).safeParse(parsed.data.args)
       if (!args.success) return reply.code(400).send({ error: 'invalid_marketing_knowledge_query' })
-      const contract = await app.pg.query<{ organization_id: string }>(
-        'SELECT organization_id FROM public.contracts WHERE id = $1 LIMIT 1',
-        [args.data.target_contract_id],
-      )
-      if (!contract.rows[0]) return reply.code(404).send({ error: 'contract_not_found' })
-      requireMembership(request, contract.rows[0].organization_id)
+      const organizationId = await getContractOrganizationId(app.pg, args.data.target_contract_id)
+      if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
+      requireMembership(request, organizationId)
       const result = await app.pg.query(
         'SELECT * FROM public.match_marketing_knowledge($1, $2, $3)',
         [args.data.target_contract_id, args.data.query_text, args.data.match_limit],
