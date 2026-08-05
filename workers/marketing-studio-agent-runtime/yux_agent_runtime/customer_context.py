@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from math import sqrt
@@ -115,6 +116,7 @@ class CustomerContextService:
             "customer_context": self._company_summary(company),
             "brand_summary": self._brand_summary(brand),
             "brand_rules": brand_rules,
+            "visual_identity": (brand or {}).get("visual_identity") or {},
             "products": [self._product_summary(item) for item in products[:10]],
             "knowledge_snippets": snippets,
             "company_chunks": context_items,
@@ -246,7 +248,15 @@ class CustomerContextService:
     def _brand_summary(brand: dict[str, Any] | None) -> str:
         if not brand:
             return ""
-        parts = [brand.get("brand_voice_summary"), f"Tom: {brand.get('tone_of_voice')}" if brand.get("tone_of_voice") else "", f"Persona: {brand.get('persona')}" if brand.get("persona") else ""]
+        visual_identity = brand.get("visual_identity") or {}
+        visual_summary = json.dumps(visual_identity, ensure_ascii=False) if visual_identity else ""
+        parts = [
+            brand.get("brand_voice_summary"),
+            f"Tom: {brand.get('tone_of_voice')}" if brand.get("tone_of_voice") else "",
+            f"Persona: {brand.get('persona')}" if brand.get("persona") else "",
+            f"Diretrizes visuais: {brand.get('visual_guidelines')}" if brand.get("visual_guidelines") else "",
+            f"Identidade visual: {visual_summary}" if visual_summary else "",
+        ]
         return " | ".join(str(part).strip() for part in parts if str(part or "").strip())
 
     @staticmethod
@@ -258,6 +268,7 @@ class CustomerContextService:
             "forbidden_topics": _strings(brand.get("forbidden_topics")),
             "priority_topics": _strings(brand.get("priority_topics")),
             "compliance_notes": str(brand.get("compliance_notes") or "").strip(),
+            "visual_identity": brand.get("visual_identity") or {},
             "assistant_safety_rules": assistant_rules,
         }
 

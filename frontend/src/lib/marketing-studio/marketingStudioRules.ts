@@ -186,6 +186,7 @@ type BrandReadinessProfile = Partial<Pick<
   | 'vocabularyDont'
   | 'forbiddenTopics'
   | 'priorityTopics'
+  | 'visualIdentity'
   | 'visualGuidelines'
   | 'complianceNotes'
   | 'status'
@@ -213,18 +214,18 @@ export function summarizeBrandReadiness(
 ): BrandReadinessSummary {
   const activeDocuments = knowledgeDocuments.filter(isKnowledgeDocumentActive)
   const activeProductsServices = productsServices.filter(product => product.status === 'active')
-  const visualText = `${profile?.visualGuidelines || ''} ${activeDocuments.map(document => `${document.title} ${document.summary || ''}`).join(' ')}`
+  const visualText = `${profile?.visualGuidelines || ''} ${JSON.stringify(profile?.visualIdentity || {})} ${activeDocuments.map(document => `${document.title} ${document.summary || ''}`).join(' ')}`
   const checks: BrandReadinessCheck[] = [
     {
       key: 'logo',
       label: 'Logo ou kit visual',
-      ready: hasMetadataValue(activeDocuments, ['logo', 'logoUrl', 'logotipo', 'brandLogo', 'brandKit']) || /\blogo|logotipo|kit de marca\b/i.test(visualText),
+      ready: Boolean(profile?.visualIdentity?.logoUrl) || hasMetadataValue(activeDocuments, ['logo', 'logoUrl', 'logotipo', 'brandLogo', 'brandKit']) || /\blogo|logotipo|kit de marca\b/i.test(visualText),
       detail: 'Necessario para criativos, landing pages e pecas de campanha.',
     },
     {
       key: 'colors',
       label: 'Cores da marca',
-      ready: hasMetadataValue(activeDocuments, ['colors', 'brandColors', 'palette', 'paleta']) || /#(?:[0-9a-f]{3}){1,2}\b/i.test(visualText) || /\bcor|cores|paleta\b/i.test(visualText),
+      ready: Boolean(profile?.visualIdentity?.colors?.length) || hasMetadataValue(activeDocuments, ['colors', 'brandColors', 'palette', 'paleta']) || /#(?:[0-9a-f]{3}){1,2}\b/i.test(visualText) || /\bcor|cores|paleta\b/i.test(visualText),
       detail: 'Evita pecas genericas e garante consistencia visual.',
     },
     {

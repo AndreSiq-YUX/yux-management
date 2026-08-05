@@ -22,6 +22,15 @@ export interface CompanyProfile {
 
 export type CompanyProfileInput = Omit<CompanyProfile, 'id' | 'organizationId' | 'clientId' | 'createdAt' | 'updatedAt'>
 
+export interface BrandVisualIdentity {
+  logoUrl?: string
+  colors: string[]
+  typography: string[]
+  designStyle: string
+  imageryStyle: string
+  graphicElements: string[]
+}
+
 export interface CompanyBrandProfile {
   id: string
   organizationId: string
@@ -34,6 +43,7 @@ export interface CompanyBrandProfile {
   vocabularyDont: string[]
   forbiddenTopics: string[]
   priorityTopics: string[]
+  visualIdentity: BrandVisualIdentity
   visualGuidelines?: string
   complianceNotes?: string
   status: 'draft' | 'active' | 'archived'

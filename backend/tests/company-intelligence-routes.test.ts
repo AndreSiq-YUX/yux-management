@@ -85,8 +85,8 @@ class FakePool {
         id: ids.brand, organization_id: ids.org, client_id: ids.client, contract_id: ids.contract,
         tone_of_voice: params[3], persona: params[4], brand_voice_summary: params[5],
         vocabulary_do: params[6], vocabulary_dont: params[7], forbidden_topics: params[8],
-        priority_topics: params[9], visual_guidelines: params[10], compliance_notes: params[11],
-        status: params[12], created_at: '2026-08-01T00:00:00.000Z', updated_at: '2026-08-01T00:00:00.000Z',
+        priority_topics: params[9], visual_identity: JSON.parse(params[10]), visual_guidelines: params[11], compliance_notes: params[12],
+        status: params[13], created_at: '2026-08-01T00:00:00.000Z', updated_at: '2026-08-01T00:00:00.000Z',
       }] }
     }
     if (sql.includes('FROM public.marketing_brand_profiles profile')) return { rows: [] }
@@ -148,7 +148,8 @@ describe('company intelligence routes', () => {
         contractId: ids.contract,
         toneOfVoice: 'consultivo e direto', persona: 'gestores de PMEs', brandVoiceSummary: 'Clara e prática',
         vocabularyDo: ['diagnóstico'], vocabularyDont: ['garantido'], forbiddenTopics: ['resultado garantido'],
-        priorityTopics: ['crescimento'], visualGuidelines: 'minimalista', complianceNotes: 'Não prometer resultados', status: 'active',
+        priorityTopics: ['crescimento'], visualIdentity: { logoUrl: 'https://yux.com.br/logo.svg', colors: ['#5519ff'] },
+        visualGuidelines: 'minimalista', complianceNotes: 'Não prometer resultados', status: 'active',
       },
     })
     expect(response.statusCode).toBe(200)
@@ -156,6 +157,7 @@ describe('company intelligence routes', () => {
       toneOfVoice: 'consultivo e direto',
       vocabularyDont: ['garantido'],
       forbiddenTopics: ['resultado garantido'],
+      visualIdentity: expect.objectContaining({ logoUrl: 'https://yux.com.br/logo.svg', colors: ['#5519ff'] }),
       complianceNotes: 'Não prometer resultados',
       status: 'active',
     })

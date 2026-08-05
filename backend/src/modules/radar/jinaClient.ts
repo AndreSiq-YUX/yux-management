@@ -74,9 +74,9 @@ async function requestJina(url: string, options: JinaRequestOptions) {
   const baseHeaders: Record<string, string> = {
     Accept: 'application/json',
     'X-Respond-With': 'markdown',
-    'X-Retain-Images': 'none',
+    'X-Retain-Images': 'all',
     'X-Timeout': '10',
-    'X-Max-Tokens': '3000',
+    'X-Max-Tokens': '8000',
   }
   let apiKey = (options.apiKey ?? process.env.JINA_API_KEY)?.trim() || undefined
   const maxAttempts = Math.max(1, Math.min(5, options.maxAttempts ?? 3))

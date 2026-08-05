@@ -8,6 +8,7 @@ import {
   completeKnowledgeIngestion,
   createKnowledgeShell,
   createKnowledgeIntelligenceRun,
+  findKnowledgeDocumentByChecksum,
   getKnowledgeDocument,
   getKnowledgeProcessing,
   markKnowledgeIngestionFailed,
@@ -21,6 +22,7 @@ import { curateKnowledgeWithRuntime, type CuratedKnowledge } from '../../modules
 import { embedPassages } from '../../modules/company-intelligence/jina-embeddings.js'
 import { extractCompanyProfileWithRuntime } from '../../modules/company-intelligence/runtime-curation.js'
 import { discoverCompanyWebsite } from '../../modules/company-intelligence/website-discovery.js'
+import { inspectWebsiteVisualIdentity } from '../../modules/company-intelligence/website-visual-identity.js'
 import { extractKnowledgeText, extractManualKnowledge, type ExtractedKnowledge, type LocatedSection } from '../../modules/company-intelligence/text-extraction.js'
 
 type PipelineDependencies = {
@@ -184,11 +186,18 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       metrics: { discoveredPages: discovery.pages.length, failedPages: discovery.failedPages },
       outputPayload: { rootUrl: discovery.rootUrl, pageUrls: discovery.pages.map(page => page.url) },
     })
+    const visualSignals = await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null)
     const contractId = typeof data.contractId === 'string' ? data.contractId : undefined
     const clientId = typeof data.clientId === 'string' ? data.clientId : undefined
     const extraction = await extractCompanyProfileWithRuntime(env, {
       organizationId, clientId, contractId,
-      pages: discovery.pages.map(page => ({ url: page.url, title: page.title, content: page.content })),
+      pages: discovery.pages.map((page, index) => ({
+        url: page.url,
+        title: page.title,
+        content: index === 0 && visualSignals?.evidenceText
+          ? `${page.content}\n\n## Identidade visual detectada automaticamente\n${visualSignals.evidenceText}`
+          : page.content,
+      })),
     })
     await replaceCompanyIntelligenceSuggestions(pool, runId, extraction.suggestions.map(item => ({
       suggestionKind: item.suggestion_kind,
@@ -200,23 +209,33 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
     })))
 
     const combined = discovery.pages.map(page => `# ${page.title}\nFonte: ${page.url}\n\n${page.content}`).join('\n\n---\n\n')
-    const shell = await createKnowledgeShell(pool, {
-      organizationId, contractId, title: 'Site institucional', sourceType: 'manual',
-      sourceUrl: discovery.rootUrl, documentType: 'other', visibility: 'both',
-      checksumSha256: createHash('sha256').update(combined).digest('hex'),
-      metadata: { websiteOnboardingRunId: runId, discoveredUrls: discovery.pages.map(page => page.url) },
-    })
-    await completeKnowledgeIngestion(pool, {
-      sourceId: shell.sourceId,
-      documentId: shell.documentId,
-      extracted: extractManualKnowledge('Site institucional', combined),
-    })
+    const checksumSha256 = createHash('sha256').update(combined).digest('hex')
+    const existingKnowledge = await findKnowledgeDocumentByChecksum(pool, organizationId, checksumSha256)
+    const shell = existingKnowledge
+      ? { sourceId: existingKnowledge.sourceId, documentId: existingKnowledge.id }
+      : await createKnowledgeShell(pool, {
+          organizationId, contractId, title: 'Site institucional', sourceType: 'manual',
+          sourceUrl: discovery.rootUrl, documentType: 'other', visibility: 'both',
+          checksumSha256,
+          metadata: { websiteOnboardingRunId: runId, discoveredUrls: discovery.pages.map(page => page.url) },
+        })
+    if (!existingKnowledge) {
+      await completeKnowledgeIngestion(pool, {
+        sourceId: shell.sourceId,
+        documentId: shell.documentId,
+        extracted: extractManualKnowledge('Site institucional', combined),
+      })
+    }
     await updateKnowledgeIntelligenceRun(pool, runId, {
       status: 'ready_for_review', stage: 'ready_for_review', progress: 100,
       provider: extraction.provider, model: extraction.model, completed: true,
       sourceId: shell.sourceId, documentId: shell.documentId,
       metrics: { suggestions: extraction.suggestions.length },
-      outputPayload: { warnings: extraction.warnings },
+      outputPayload: {
+        warnings: extraction.warnings,
+        ...(visualSignals ? { visualSignals } : {}),
+        ...(existingKnowledge ? { knowledgeReused: true } : {}),
+      },
     })
     try {
       await handleKnowledgeIndexing(pool, env, { sourceId: shell.sourceId, documentId: shell.documentId })

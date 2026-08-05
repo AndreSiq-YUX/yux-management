@@ -34,6 +34,14 @@ const text = z.string().trim().max(20_000).default('')
 const optionalText = z.string().trim().max(20_000).nullable().optional()
 const stringList = z.array(z.string().trim().min(1).max(300)).max(100).default([])
 const record = z.record(z.string(), z.unknown()).default({})
+const visualIdentitySchema = z.object({
+  logoUrl: z.union([z.string().trim().url(), z.literal('')]).optional(),
+  colors: stringList,
+  typography: stringList,
+  designStyle: text,
+  imageryStyle: text,
+  graphicElements: stringList,
+}).default({ colors: [], typography: [], designStyle: '', imageryStyle: '', graphicElements: [] })
 
 const profileSchema = z.object({
   legalName: text,
@@ -61,6 +69,7 @@ const brandSchema = z.object({
   vocabularyDont: stringList,
   forbiddenTopics: stringList,
   priorityTopics: stringList,
+  visualIdentity: visualIdentitySchema,
   visualGuidelines: optionalText,
   complianceNotes: optionalText,
   status: z.enum(['draft', 'active', 'archived']).default('draft'),
@@ -111,7 +120,10 @@ const websiteOnboardingSchema = z.object({
   maxPages: z.number().int().min(1).max(20).default(10),
 })
 const websiteRunParams = z.object({ organizationId: z.string().uuid(), runId: z.string().uuid() })
-const applyWebsiteSuggestionsSchema = z.object({ suggestionIds: z.array(z.string().uuid()).min(1).max(100) })
+const applyWebsiteSuggestionsSchema = z.object({
+  suggestionIds: z.array(z.string().uuid()).min(1).max(100),
+  suggestionEdits: z.array(z.object({ id: z.string().uuid(), suggestedValue: z.unknown() })).max(100).default([]),
+})
 
 export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
   app.get('/organizations/:organizationId/profile', async (request, reply) => {
@@ -210,6 +222,7 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
       organizationId: params.data.organizationId,
       runId: params.data.runId,
       suggestionIds: body.data.suggestionIds,
+      suggestionEdits: body.data.suggestionEdits,
       userId: ctx.userId,
     })
   })

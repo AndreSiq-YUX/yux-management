@@ -161,6 +161,7 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
     brandVoiceSummary: state.settings.toneOfVoice || '',
     forbiddenTopics: state.settings.forbiddenTopics || [],
     priorityTopics: state.settings.priorityTopics || [],
+    visualIdentity: {},
     visualGuidelines: state.settings.visualPreferences,
     status: 'active' as const,
   } : null)

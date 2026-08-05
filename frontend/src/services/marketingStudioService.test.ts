@@ -319,6 +319,7 @@ describe('marketingStudioService mapping helpers', () => {
       vocabulary_dont: ['garantido'],
       forbidden_topics: ['promessa'],
       priority_topics: ['ia'],
+      visual_identity: { logoUrl: 'https://yux.com.br/logo.svg', colors: ['#6d28d9'] },
       visual_guidelines: 'minimalista',
       compliance_notes: 'sem promessas',
       status: 'active',
@@ -328,6 +329,7 @@ describe('marketingStudioService mapping helpers', () => {
       id: 'brand-1',
       toneOfVoice: 'consultivo',
       vocabularyDo: ['clareza'],
+      visualIdentity: { logoUrl: 'https://yux.com.br/logo.svg', colors: ['#6d28d9'] },
       complianceNotes: 'sem promessas',
     })
 
@@ -338,12 +340,14 @@ describe('marketingStudioService mapping helpers', () => {
       toneOfVoice: ' consultivo ',
       persona: ' especialista ',
       brandVoiceSummary: ' resumo ',
+      visualIdentity: { colors: ['#6d28d9'] },
       status: 'active',
     })).toMatchObject({
       organization_id: 'org-1',
       tone_of_voice: 'consultivo',
       persona: 'especialista',
       brand_voice_summary: 'resumo',
+      visual_identity: { colors: ['#6d28d9'] },
       status: 'active',
     })
   })

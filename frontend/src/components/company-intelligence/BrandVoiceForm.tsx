@@ -20,6 +20,9 @@ export function BrandVoiceForm({ profile, saving = false, onSave }: BrandVoiceFo
   const update = <K extends keyof CompanyBrandProfileInput>(key: K, value: CompanyBrandProfileInput[K]) => {
     setDraft(current => ({ ...current, [key]: value })); setDirty(true)
   }
+  const updateVisual = <K extends keyof CompanyBrandProfileInput['visualIdentity']>(key: K, value: CompanyBrandProfileInput['visualIdentity'][K]) => {
+    update('visualIdentity', { ...draft.visualIdentity, [key]: value })
+  }
 
   return (
     <form className="space-y-6 rounded-lg border bg-white p-5" onSubmit={async event => { event.preventDefault(); await onSave({ ...draft, status: 'active' }); setDirty(false) }}>
@@ -47,7 +50,20 @@ export function BrandVoiceForm({ profile, saving = false, onSave }: BrandVoiceFo
         <div className="space-y-2"><Label htmlFor="compliance-notes" className="text-rose-800">Restrições legais e recomendações</Label><Textarea id="compliance-notes" rows={4} className="border-rose-200" value={draft.complianceNotes || ''} onChange={event => update('complianceNotes', event.target.value)} placeholder="Ex.: não garantir resultado, não oferecer desconto sem aprovação..." /></div>
       </section>
 
-      <div className="space-y-2"><Label htmlFor="visual-guidelines">Direção visual</Label><Textarea id="visual-guidelines" rows={3} value={draft.visualGuidelines || ''} onChange={event => update('visualGuidelines', event.target.value)} /></div>
+      <section className="space-y-4 rounded-lg border border-violet-200 bg-violet-50/40 p-4">
+        <div><h3 className="font-semibold text-gray-950">Identidade visual estruturada</h3><p className="text-sm text-gray-600">Logo, cores e padrões usados por criativos, landing pages e agentes.</p></div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2"><Label htmlFor="logo-url">URL do logo</Label><Input id="logo-url" type="url" value={draft.visualIdentity.logoUrl || ''} onChange={event => updateVisual('logoUrl', event.target.value)} placeholder="https://site.com/logo.svg" /></div>
+          <TagListField id="brand-colors" label="Cores da marca" value={draft.visualIdentity.colors} onChange={value => updateVisual('colors', value)} />
+          <TagListField id="brand-typography" label="Tipografias" value={draft.visualIdentity.typography} onChange={value => updateVisual('typography', value)} />
+          <TagListField id="brand-graphic-elements" label="Elementos gráficos" value={draft.visualIdentity.graphicElements} onChange={value => updateVisual('graphicElements', value)} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2"><Label htmlFor="design-style">Estilo de design</Label><Textarea id="design-style" rows={3} value={draft.visualIdentity.designStyle} onChange={event => updateVisual('designStyle', event.target.value)} /></div>
+          <div className="space-y-2"><Label htmlFor="imagery-style">Estilo de imagens</Label><Textarea id="imagery-style" rows={3} value={draft.visualIdentity.imageryStyle} onChange={event => updateVisual('imageryStyle', event.target.value)} /></div>
+        </div>
+        <div className="space-y-2"><Label htmlFor="visual-guidelines">Direção visual complementar</Label><Textarea id="visual-guidelines" rows={3} value={draft.visualGuidelines || ''} onChange={event => update('visualGuidelines', event.target.value)} /></div>
+      </section>
     </form>
   )
 }

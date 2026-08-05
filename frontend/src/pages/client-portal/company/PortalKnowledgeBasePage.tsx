@@ -62,6 +62,7 @@ export function PortalKnowledgeBasePage() {
     brandVoiceSummary: settings.toneOfVoice || '',
     forbiddenTopics: settings.forbiddenTopics || [],
     priorityTopics: settings.priorityTopics || [],
+    visualIdentity: {},
     visualGuidelines: settings.visualPreferences,
     status: 'active' as const,
   } : null)

@@ -30,6 +30,7 @@ class FakeWebsiteLlm:
             "model": "test-model",
             "content": '''{"suggestions":[
               {"suggestion_kind":"profile","field_path":"tradeName","suggested_value":"YUX","evidence_excerpt":"YUX Solucoes em IA","source_url":"https://yux.test/","confidence":0.98},
+              {"suggestion_kind":"brand","field_path":"visualIdentity","suggested_value":{"logoUrl":"https://yux.test/logo.svg","colors":["#5519ff"]},"evidence_excerpt":"Cores detectadas no site: #5519ff","source_url":"https://yux.test/","confidence":0.9},
               {"suggestion_kind":"brand","field_path":"forbiddenTopics","suggested_value":["precos"],"evidence_excerpt":"YUX Solucoes em IA","source_url":"https://yux.test/","confidence":0.5},
               {"suggestion_kind":"profile","field_path":"industry","suggested_value":"Tecnologia","evidence_excerpt":"consultoria juridica","source_url":"https://yux.test/","confidence":0.7}
             ],"warnings":[]}''',
@@ -57,9 +58,10 @@ class KnowledgeIntelligenceTest(unittest.TestCase):
 
     def test_website_profile_only_accepts_allowed_grounded_suggestions(self):
         service = KnowledgeIntelligenceService(FakeWebsiteLlm(), model="test-model")
-        result = service.extract_company_profile([{"url": "https://yux.test/", "title": "YUX", "content": "YUX Solucoes em IA para empresas."}])
-        self.assertEqual(len(result["suggestions"]), 1)
+        result = service.extract_company_profile([{"url": "https://yux.test/", "title": "YUX", "content": "YUX Solucoes em IA para empresas. Cores detectadas no site: #5519ff"}])
+        self.assertEqual(len(result["suggestions"]), 2)
         self.assertEqual(result["suggestions"][0]["field_path"], "tradeName")
+        self.assertEqual(result["suggestions"][1]["field_path"], "visualIdentity")
         self.assertIn("rejected_unverifiable_suggestion:forbiddenTopics", result["warnings"])
         self.assertIn("rejected_unverifiable_suggestion:industry", result["warnings"])
 

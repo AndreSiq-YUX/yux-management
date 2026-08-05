@@ -24,6 +24,14 @@ export type BrandProfileInput = {
   vocabularyDont: string[]
   forbiddenTopics: string[]
   priorityTopics: string[]
+  visualIdentity: {
+    logoUrl?: string
+    colors?: string[]
+    typography?: string[]
+    designStyle?: string
+    imageryStyle?: string
+    graphicElements?: string[]
+  }
   visualGuidelines?: string | null
   complianceNotes?: string | null
   status: 'draft' | 'active' | 'archived'

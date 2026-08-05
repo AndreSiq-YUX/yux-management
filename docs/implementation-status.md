@@ -1,7 +1,7 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-08-04 (repository audit plus the locally validated active
-prospecting and intelligent Company Knowledge implementation on the feature branch)
+Updated: 2026-08-05 (repository audit plus the locally validated active
+prospecting and expanded intelligent Company Knowledge onboarding on the feature branch)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -23,8 +23,8 @@ the target VPS/Dokploy environment.
 - Current implementation boundary: committed `main` at `34b3af4`, including
   standalone external lead forms, CRM/client access stabilization and the
   transactional lead-orchestration foundation.
-- The VPS operator confirmed the backend migration history through `0125` on
-  2026-08-04. The new `0126_intelligent_knowledge_pipeline.sql` still requires
+- The VPS operator confirmed the backend migration history through `0126` on
+  2026-08-05. The new `0127_company_visual_identity.sql` still requires
   application after this feature branch is deployed.
 - Redis/BullMQ executes asynchronous deliveries, but new lead/form events are
   first committed to the Postgres transactional outbox so a temporary queue
@@ -50,6 +50,13 @@ the target VPS/Dokploy environment.
   embeddings for hybrid semantic/text retrieval. A website-assisted onboarding
   flow crawls a bounded set of same-origin pages and proposes company, brand and
   product fields with literal evidence before the user applies them.
+- Website onboarding now tolerates canonical-host links by safely mapping their
+  paths back to the requested public host, reuses an existing site document
+  instead of failing on a duplicate checksum and keeps grounded suggestions
+  reviewable even if a later indexing step is degraded. The review UI supports
+  editing, selecting and applying suggestions for company profile, audience,
+  offers and structured visual identity (logo, colors, typography and style).
+  That visual context is shared with Marketing Studio and Agent Harness agents.
 - CRM-specific reference:
   `docs/crm-lead-management.md`.
 
@@ -86,7 +93,7 @@ the target VPS/Dokploy environment.
 | Internal YUX active prospecting | Implemented and locally validated; production activation pending | Internal Radar workspace, `/api/prospecting/*`, CRM sequences and `/omnichannel` | `0123_active_prospecting_orchestration.sql`, prospecting repository/service/routes, asynchronous Radar worker, Agent Harness live workflow contracts, `ProspectingPlanPanel`, native SMTP2GO/Meta dispatch and WhatsApp AI loop | First contact remains human-approved and WhatsApp requires recorded permission, an active Meta connection and approved template. Apply migration `0123`, configure runtime/provider secrets and pass the staged production smoke test before enabling real outreach. |
 | Meta channel connectors | Implemented in repo | `/portal/atendimento/canais`, `/admin/channels` | `20260605110828_meta_channel_connectors.sql`, backend compatibility function route, `metaChannelService`, connected-channel workspaces, `backend/src/lib/edge-compat/metaChannel.ts` | Requires Meta App configuration, App Review permissions, runtime secrets and authenticated production QA. Edge Function source was removed from active code. |
 | Configurable AI assistant | Implemented in repo | `/omnichannel` admin | `20260601310000_ai_assistant_settings.sql`, `aiAssistantService`, `AssistantSettingsPanel`, `process-ai-message` | Adds configurable assistant objectives, fields, handoff, safety, knowledge links and sanitized AI run metadata. |
-| Company Intelligence hub | Implemented and locally validated; production activation pending | `/portal/empresa/perfil`, `/portal/empresa/conhecimento`, `/portal/empresa/marca`, equivalent Crescimento YUX workspace routes and `/api/company-intelligence/*` | `0125_company_intelligence_hub.sql`, `0126_intelligent_knowledge_pipeline.sql`, company-intelligence backend module/worker, profile/brand forms, evidence review library, website onboarding, `CustomerContextService`, WhatsApp guardrail and `docs/company-intelligence-operations.md` | Supports editable company/brand data, manual text, URL and PDF/DOCX/TXT/MD ingestion, conservative cleanup, LLM curation with literal evidence, per-fact review, Jina embeddings, hybrid retrieval, explicit publication, visibility and agent rules. Apply migration `0126`, configure OpenRouter/Jina and execute the authenticated/provider smoke test. |
+| Company Intelligence hub | Implemented and locally validated; production activation pending | `/portal/empresa/perfil`, `/portal/empresa/conhecimento`, `/portal/empresa/marca`, equivalent Crescimento YUX workspace routes and `/api/company-intelligence/*` | `0125_company_intelligence_hub.sql`, `0126_intelligent_knowledge_pipeline.sql`, `0127_company_visual_identity.sql`, company-intelligence backend module/worker, profile/brand forms, evidence review library, multi-page website onboarding, `CustomerContextService`, WhatsApp guardrail and `docs/company-intelligence-operations.md` | Supports editable company/brand data, manual text, URL and PDF/DOCX/TXT/MD ingestion, conservative cleanup, LLM curation with literal evidence, editable website suggestions, structured visual identity, per-fact review, Jina embeddings, hybrid retrieval, explicit publication, visibility and agent rules. Apply migration `0127`, configure OpenRouter/Jina and execute the authenticated/provider smoke test. |
 | Marketing Studio foundation | Implemented | `/marketing-studio`, `/portal/marketing/studio` | `20260605220328_marketing_studio_foundation.sql`, `marketingStudioService`, `MarketingStudioWorkspace`, `PortalMarketingStudioWorkspace`, Marketing Studio domain rules | Adds module shell, navigation, settings, agent templates, ideas, content/version/review workflow, editorial calendar, AI credits and usage ledger. Migration and probe passed remotely on `portal-yux`. |
 | Marketing Studio organic content and calendar | Implemented in repo | `/marketing-studio`, `/portal/marketing/studio`, `/portal/marketing/conteudo`, `/portal/marketing/calendario` | `2026-06-06-yux-marketing-studio-organic-calendar.md`, expanded `marketingStudioService`, organic content workspace, portal approval surface, calendar/review/version rules | Adds manual organic content operations, version tracking, review decisions, approval actions and editorial calendar surfaces. LangGraph, RAG, Radar, WordPress publishing and AI generation remain follow-up phases. |
 | Marketing Studio knowledge and RAG | Implemented and locally validated | `/marketing-studio`, `/portal/marketing/studio`, `/portal/empresa/conhecimento`, `/portal/empresa/marca` | Company Intelligence API/worker, `0126_intelligent_knowledge_pipeline.sql`, Python `CustomerContextService`, Jina query/passage embeddings, hybrid ranking and Strategy Packs | Published, approved organization knowledge is tenant-filtered and merged centrally with Strategy Packs for agent workflows. Semantic vectors are stored in JSONB so pgvector is not required; retrieval combines vector similarity, text relevance and quality with safe text fallback. VPS migration, shared storage and provider smoke tests remain required. |
@@ -1008,8 +1015,17 @@ Latest intelligent Company Knowledge validation:
 - backend and frontend type checks/builds passed;
 - focused frontend lint for the changed Company Intelligence files passed with
   zero warnings;
-- production/provider canary and disposable Postgres application of migration
-  `0126` remain operational validation, not repository validation.
+- the operator later confirmed production application of migration `0126`;
+  the authenticated provider canary remains operational validation.
+
+Latest website-onboarding expansion validation (2026-08-05):
+
+- backend `npm test`: 71 files and 295 tests passed;
+- frontend `npm test`: 101 files and 472 tests passed;
+- Agent Harness `python -m unittest discover -s tests -v`: 75 tests passed;
+- backend and frontend production builds passed;
+- migration `0127` and an authenticated live website/provider smoke test remain
+  operational validation, not repository validation.
 
 Known validation limitation:
 
@@ -1039,8 +1055,8 @@ Known validation limitation:
 These are not missing code in this repository; they are deployment/operation
 steps still required before treating the app as live-ready:
 
-- preserve the user-confirmed VPS/Postgres migration history through `0125`
-  and apply `0126_intelligent_knowledge_pipeline.sql` after deploying this
+- preserve the user-confirmed VPS/Postgres migration history through `0126`
+  and apply `0127_company_visual_identity.sql` after deploying this
   feature branch;
 - keep the Fastify API, Redis and BullMQ worker healthy; confirm the five-second
   outbox dispatcher, automation deliveries, sequence scheduler and retries are
@@ -1094,7 +1110,7 @@ checklists:
 
 Recommended order:
 
-1. apply migration `0126`, preserve the confirmed history through `0125` and
+1. apply migration `0127`, preserve the confirmed history through `0126` and
    validate Postgres, Redis/BullMQ, outbox, Agent Harness and native delivery
    health in the VPS before using intelligent Company Knowledge;
 2. run the active-prospecting canary in gates: Radar without outbound, approved

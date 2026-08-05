@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises'
 import { readJinaUrl, type RadarJinaEvidence } from '../radar/jinaClient.js'
 
 type ReadPage = (url: string) => Promise<RadarJinaEvidence>
-type ResolveHost = (hostname: string) => Promise<string[]>
+export type ResolveHost = (hostname: string) => Promise<string[]>
 
 const preferredPaths = /\b(sobre|quem-somos|empresa|servicos|servi[cç]os|produtos|solucoes|solu[cç][oõ]es|contato|faq|precos|pre[cç]os|planos|cases|clientes|politica|pol[ií]tica)\b/i
 
@@ -35,12 +35,32 @@ export async function discoverCompanyWebsite(inputUrl: string, options: {
 }
 
 export function rankSameOriginLinks(root: URL, links: string[]) {
+  const alternateHostCounts = new Map<string, number>()
+  for (const value of links) {
+    try {
+      const url = new URL(value, root)
+      if (url.hostname !== root.hostname && preferredPaths.test(url.pathname)) {
+        alternateHostCounts.set(url.hostname, (alternateHostCounts.get(url.hostname) || 0) + 1)
+      }
+    } catch {
+      // Invalid links are ignored below as well.
+    }
+  }
+  const canonicalAlias = [...alternateHostCounts.entries()]
+    .filter(([, count]) => count >= 3)
+    .sort((left, right) => right[1] - left[1])[0]?.[0]
   const seen = new Set<string>()
   return links.flatMap(value => {
     try {
       const url = new URL(value, root)
       url.hash = ''
-      if (!['http:', 'https:'].includes(url.protocol) || url.hostname !== root.hostname) return []
+      if (!['http:', 'https:'].includes(url.protocol)) return []
+      if (url.hostname !== root.hostname) {
+        if (url.hostname !== canonicalAlias) return []
+        url.protocol = root.protocol
+        url.hostname = root.hostname
+        url.port = root.port
+      }
       if (/\.(pdf|jpe?g|png|gif|svg|webp|zip|docx?|xlsx?)$/i.test(url.pathname)) return []
       const normalized = url.toString()
       if (seen.has(normalized) || normalized === root.toString()) return []
@@ -62,7 +82,7 @@ export function normalizePublicUrl(value: string) {
   return url
 }
 
-async function assertPublicHostname(hostname: string, resolveHost?: ResolveHost) {
+export async function assertPublicHostname(hostname: string, resolveHost?: ResolveHost) {
   const normalized = hostname.toLowerCase()
   if (normalized === 'localhost' || normalized.endsWith('.local') || normalized.endsWith('.internal')) throw new Error('private_company_website_url')
   const addresses = isIP(normalized) ? [normalized] : await (resolveHost || defaultResolve)(normalized)

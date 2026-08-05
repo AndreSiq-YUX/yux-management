@@ -108,9 +108,14 @@ export const companyIntelligenceService = {
     return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding/${runId}`)
   },
 
-  applyWebsiteSuggestions(organizationId: string, runId: string, suggestionIds: string[]) {
+  applyWebsiteSuggestions(
+    organizationId: string,
+    runId: string,
+    suggestionIds: string[],
+    suggestionEdits: Array<{ id: string; suggestedValue: unknown }> = [],
+  ) {
     return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding/${runId}/apply`, {
-      method: 'POST', body: { suggestionIds },
+      method: 'POST', body: { suggestionIds, suggestionEdits },
     })
   },
 }

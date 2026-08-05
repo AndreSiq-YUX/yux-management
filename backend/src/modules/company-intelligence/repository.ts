@@ -118,8 +118,8 @@ export async function upsertBrandProfile(pool: pg.Pool, organizationId: string, 
     `INSERT INTO public.marketing_brand_profiles (
        organization_id, client_id, contract_id, tone_of_voice, persona, brand_voice_summary,
        vocabulary_do, vocabulary_dont, forbidden_topics, priority_topics,
-       visual_guidelines, compliance_notes, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       visual_identity, visual_guidelines, compliance_notes, status
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14)
      ON CONFLICT (contract_id) DO UPDATE SET
        tone_of_voice = EXCLUDED.tone_of_voice,
        persona = EXCLUDED.persona,
@@ -128,6 +128,7 @@ export async function upsertBrandProfile(pool: pg.Pool, organizationId: string, 
        vocabulary_dont = EXCLUDED.vocabulary_dont,
        forbidden_topics = EXCLUDED.forbidden_topics,
        priority_topics = EXCLUDED.priority_topics,
+       visual_identity = EXCLUDED.visual_identity,
        visual_guidelines = EXCLUDED.visual_guidelines,
        compliance_notes = EXCLUDED.compliance_notes,
        status = EXCLUDED.status,
@@ -136,7 +137,8 @@ export async function upsertBrandProfile(pool: pg.Pool, organizationId: string, 
     [
       organizationId, scope.clientId, scope.contractId, input.toneOfVoice, input.persona,
       input.brandVoiceSummary, input.vocabularyDo, input.vocabularyDont, input.forbiddenTopics,
-      input.priorityTopics, input.visualGuidelines || null, input.complianceNotes || null, input.status,
+      input.priorityTopics, JSON.stringify(input.visualIdentity || {}), input.visualGuidelines || null,
+      input.complianceNotes || null, input.status,
     ],
   )
   return mapBrandProfile(result.rows[0], true)
@@ -266,6 +268,28 @@ export async function createKnowledgeShell(pool: pg.Pool, input: {
   } finally {
     client.release()
   }
+}
+
+export async function findKnowledgeDocumentByChecksum(
+  pool: pg.Pool,
+  organizationId: string,
+  checksumSha256: string,
+) {
+  const result = await pool.query<Row>(
+    `SELECT document.*, source.status AS source_status, source.source_type,
+            source.visibility, source.allowed_agent_profile_keys,
+            source.blocked_agent_profile_keys, source.checksum_sha256,
+            source.metadata AS source_metadata, source.mime_type, source.byte_size
+       FROM public.knowledge_sources source
+       JOIN public.marketing_knowledge_documents document ON document.source_id = source.id
+      WHERE source.organization_id = $1
+        AND source.checksum_sha256 = $2
+        AND source.status <> 'archived'
+      ORDER BY document.updated_at DESC
+      LIMIT 1`,
+    [organizationId, checksumSha256],
+  )
+  return result.rows[0] ? mapKnowledgeDocument(result.rows[0]) : null
 }
 
 export async function attachKnowledgeFile(pool: pg.Pool, input: {
@@ -479,11 +503,15 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
   organizationId: string
   runId: string
   suggestionIds: string[]
+  suggestionEdits?: Array<{ id: string; suggestedValue: unknown }>
   userId: string
 }) {
   const run = await getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
-  if (!['ready_for_review', 'degraded'].includes(run.run.status)) throw domainError(409, 'website_onboarding_not_ready')
-  const selected = run.suggestions.filter(item => input.suggestionIds.includes(item.id) && item.status === 'suggested')
+  if (!['ready_for_review', 'degraded', 'failed'].includes(run.run.status)) throw domainError(409, 'website_onboarding_not_ready')
+  const editedValues = new Map((input.suggestionEdits || []).map(edit => [edit.id, edit.suggestedValue]))
+  const selected = run.suggestions
+    .filter(item => input.suggestionIds.includes(item.id) && item.status === 'suggested')
+    .map(item => editedValues.has(item.id) ? { ...item, suggestedValue: editedValues.get(item.id) } : item)
   if (!selected.length) throw domainError(400, 'website_onboarding_suggestions_required')
   const profile = await getCompanyProfile(pool, input.organizationId, true)
   const brand = await getBrandProfile(pool, input.organizationId, true)
@@ -498,12 +526,13 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
     contractId: brand.contractId, toneOfVoice: brand.toneOfVoice, persona: brand.persona,
     brandVoiceSummary: brand.brandVoiceSummary, vocabularyDo: brand.vocabularyDo,
     vocabularyDont: brand.vocabularyDont, forbiddenTopics: brand.forbiddenTopics,
-    priorityTopics: brand.priorityTopics, visualGuidelines: brand.visualGuidelines || null,
+    priorityTopics: brand.priorityTopics, visualIdentity: brand.visualIdentity || {},
+    visualGuidelines: brand.visualGuidelines || null,
     complianceNotes: brand.complianceNotes || null, status: brand.status,
   } : {
     contractId: run.run.contractId, toneOfVoice: '', persona: '', brandVoiceSummary: '',
     vocabularyDo: [], vocabularyDont: [], forbiddenTopics: [], priorityTopics: [],
-    visualGuidelines: null, complianceNotes: null, status: 'draft',
+    visualIdentity: {}, visualGuidelines: null, complianceNotes: null, status: 'draft',
   }
   let profileChanged = false
   let brandChanged = false
@@ -537,6 +566,15 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
         typeof product.description === 'string' ? product.description : '',
         typeof product.valueProposition === 'string' ? product.valueProposition : null,
         JSON.stringify({ source: 'website_onboarding', runId: input.runId })],
+    )
+  }
+  for (const suggestion of selected) {
+    if (!editedValues.has(suggestion.id)) continue
+    await pool.query(
+      `UPDATE public.company_intelligence_suggestions
+          SET suggested_value = $3::jsonb, updated_at = NOW()
+        WHERE run_id = $1 AND id = $2`,
+      [input.runId, suggestion.id, JSON.stringify(suggestion.suggestedValue)],
     )
   }
   await pool.query(
@@ -946,9 +984,27 @@ function normalizeSuggestedValue(kind: string, field: string, value: unknown): u
   const recordFields = new Set(['address', 'businessHours', 'socialLinks'])
   if (stringFields.has(field)) return typeof value === 'string' ? value.trim().slice(0, 20_000) : undefined
   if (listFields.has(field)) return Array.isArray(value) ? value.filter(item => typeof item === 'string').map(item => item.trim()).filter(Boolean).slice(0, 100) : undefined
+  if (field === 'visualIdentity') return normalizeVisualIdentity(value)
   if (recordFields.has(field)) return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined
   if (kind === 'product' && field === 'products') return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)).slice(0, 50) : undefined
   return undefined
+}
+
+function normalizeVisualIdentity(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const input = value as Record<string, unknown>
+  const strings = (field: string, limit = 20) => Array.isArray(input[field])
+    ? input[field].filter(item => typeof item === 'string').map(item => item.trim().slice(0, 300)).filter(Boolean).slice(0, limit)
+    : []
+  const text = (field: string) => typeof input[field] === 'string' ? input[field].trim().slice(0, 5_000) : ''
+  return {
+    logoUrl: text('logoUrl'),
+    colors: strings('colors'),
+    typography: strings('typography'),
+    designStyle: text('designStyle'),
+    imageryStyle: text('imageryStyle'),
+    graphicElements: strings('graphicElements'),
+  }
 }
 
 function currentSuggestionValue(profile: Row, brand: Row | null, kind: string, field: string) {
@@ -998,6 +1054,7 @@ function mapBrandProfile(row: Row, includeCompliance: boolean) {
     vocabularyDont: row.vocabulary_dont || [],
     forbiddenTopics: row.forbidden_topics || [],
     priorityTopics: row.priority_topics || [],
+    visualIdentity: row.visual_identity || {},
     visualGuidelines: row.visual_guidelines || undefined,
     ...(includeCompliance ? { complianceNotes: row.compliance_notes || undefined } : {}),
     status: row.status,

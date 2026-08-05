@@ -10,6 +10,22 @@ describe('website discovery', () => {
     expect(links).not.toContain('https://other.test/sobre')
   })
 
+  it('maps a dominant canonical-host alias back to the requested public domain', () => {
+    const links = rankSameOriginLinks(new URL('https://yux.com.br/'), [
+      'https://wordpress.internal-host.test/sobre',
+      'https://wordpress.internal-host.test/servicos',
+      'https://wordpress.internal-host.test/contato',
+      'https://other.test/sobre',
+    ])
+
+    expect(links).toEqual(expect.arrayContaining([
+      'https://yux.com.br/sobre',
+      'https://yux.com.br/servicos',
+      'https://yux.com.br/contato',
+    ]))
+    expect(links).not.toContain('https://other.test/sobre')
+  })
+
   it('rejects private hosts before sending them to the reader', async () => {
     await expect(discoverCompanyWebsite('http://intranet.test', {
       resolveHost: async () => ['10.0.0.2'],

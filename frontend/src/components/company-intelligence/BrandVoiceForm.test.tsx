@@ -20,6 +20,7 @@ describe('BrandVoiceForm', () => {
       root.render(<BrandVoiceForm profile={{
         contractId: 'contract-1', toneOfVoice: '', persona: '', brandVoiceSummary: '',
         vocabularyDo: [], vocabularyDont: [], forbiddenTopics: [], priorityTopics: [],
+        visualIdentity: { logoUrl: '', colors: [], typography: [], designStyle: '', imageryStyle: '', graphicElements: [] },
         visualGuidelines: '', complianceNotes: '', status: 'draft',
       }} onSave={onSave} />)
       await flush()
@@ -33,6 +34,8 @@ describe('BrandVoiceForm', () => {
     await change('#forbidden-topics', 'resultado garantido')
     await change('#priority-topics', 'crescimento, eficiência')
     await change('#compliance-notes', 'Não prometer prazo ou resultado sem aprovação.')
+    await change('#logo-url', 'https://yux.com.br/logo.svg')
+    await change('#brand-colors', '#5519ff, #eef0ff')
 
     await act(async () => {
       container.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -45,6 +48,7 @@ describe('BrandVoiceForm', () => {
       vocabularyDont: ['garantido', 'desconto automático'],
       forbiddenTopics: ['resultado garantido'],
       complianceNotes: 'Não prometer prazo ou resultado sem aprovação.',
+      visualIdentity: expect.objectContaining({ logoUrl: 'https://yux.com.br/logo.svg', colors: ['#5519ff', '#eef0ff'] }),
       status: 'active',
     }))
     act(() => root.unmount())

@@ -12,7 +12,7 @@ class CustomerContextTest(unittest.TestCase):
                 {"id": "company-b", "organization_id": "org-b", "trade_name": "Outra empresa", "industry": "Varejo"},
             ],
             "marketing_brand_profiles": [
-                {"id": "brand-a", "organization_id": "org-a", "contract_id": "contract-a", "status": "active", "tone_of_voice": "consultivo", "brand_voice_summary": "Clara e direta", "vocabulary_dont": ["garantido"], "forbidden_topics": ["resultado garantido"], "compliance_notes": "Não prometer resultados."},
+                {"id": "brand-a", "organization_id": "org-a", "contract_id": "contract-a", "status": "active", "tone_of_voice": "consultivo", "brand_voice_summary": "Clara e direta", "vocabulary_dont": ["garantido"], "forbidden_topics": ["resultado garantido"], "compliance_notes": "Não prometer resultados.", "visual_guidelines": "minimalista", "visual_identity": {"logoUrl": "https://yux.com.br/logo.svg", "colors": ["#6d28d9"]}},
                 {"id": "brand-b", "organization_id": "org-b", "contract_id": "contract-b", "status": "active", "brand_voice_summary": "Marca B"},
             ],
             "marketing_products_services": [{"id": "product-a", "organization_id": "org-a", "status": "active", "name": "Radar YUX", "description": "Captação ativa"}],
@@ -51,6 +51,9 @@ class CustomerContextTest(unittest.TestCase):
         self.assertNotIn("Ainda não publicado", text)
         self.assertNotIn("Segredo B", text)
         self.assertEqual(result["brand_profile_id"], "brand-a")
+        self.assertEqual(result["visual_identity"]["colors"], ["#6d28d9"])
+        self.assertEqual(result["brand_rules"]["visual_identity"]["logoUrl"], "https://yux.com.br/logo.svg")
+        self.assertIn("Identidade visual", result["brand_summary"])
 
     def test_prefers_semantically_matching_approved_curated_fact(self):
         class Embeddings:

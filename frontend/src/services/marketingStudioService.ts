@@ -160,6 +160,7 @@ export function mapMarketingBrandProfile(row: any): MarketingBrandProfile {
     vocabularyDont: row.vocabulary_dont || [],
     forbiddenTopics: row.forbidden_topics || [],
     priorityTopics: row.priority_topics || [],
+    visualIdentity: row.visual_identity || {},
     visualGuidelines: row.visual_guidelines || undefined,
     complianceNotes: row.compliance_notes || undefined,
     status: row.status || 'draft',
@@ -951,6 +952,7 @@ export function buildBrandProfilePayload(input: {
   vocabularyDont?: string[]
   forbiddenTopics?: string[]
   priorityTopics?: string[]
+  visualIdentity?: MarketingBrandProfile['visualIdentity']
   visualGuidelines?: string
   complianceNotes?: string
   status?: MarketingBrandProfile['status']
@@ -966,6 +968,7 @@ export function buildBrandProfilePayload(input: {
     vocabulary_dont: input.vocabularyDont || [],
     forbidden_topics: input.forbiddenTopics || [],
     priority_topics: input.priorityTopics || [],
+    visual_identity: input.visualIdentity || {},
     visual_guidelines: input.visualGuidelines?.trim() || null,
     compliance_notes: input.complianceNotes?.trim() || null,
     status: input.status || 'draft',

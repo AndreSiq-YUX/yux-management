@@ -1,3 +1,5 @@
+import type { BrandVisualIdentity } from '@/types/companyIntelligence'
+
 export type MarketingOperationMode = 'managed_by_yux' | 'assisted_client' | 'advanced_partner'
 
 export type MarketingAgentType =
@@ -177,6 +179,7 @@ export interface MarketingBrandProfile {
   vocabularyDont: string[]
   forbiddenTopics: string[]
   priorityTopics: string[]
+  visualIdentity?: Partial<BrandVisualIdentity>
   visualGuidelines?: string
   complianceNotes?: string
   status: 'draft' | 'active' | 'archived'
