@@ -59,7 +59,35 @@ describe('radar jina client', () => {
   it('throws a governed error when Jina fails', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 429 })) as never
 
-    await expect(readJinaUrl('https://boavida.com.br', { fetchImpl })).rejects.toThrow('jina_request_failed')
+    await expect(readJinaUrl('https://boavida.com.br', { fetchImpl, maxAttempts: 1 })).rejects.toThrow('jina_request_failed')
+  })
+
+  it('retries anonymously when a configured API key is rejected', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { title: 'YUX', url: 'https://yux.com.br', content: 'YUX IA' } }),
+      })
+
+    const result = await readJinaUrl('https://yux.com.br', { fetchImpl: fetchImpl as never, apiKey: 'invalid-key' })
+
+    expect(result.title).toBe('YUX')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer invalid-key' })
+    expect(fetchImpl.mock.calls[1]?.[1]?.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('retries transient rate limits before succeeding', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { title: 'YUX', url: 'https://yux.com.br', content: 'YUX IA' } }),
+      })
+
+    await expect(readJinaUrl('https://yux.com.br', { fetchImpl: fetchImpl as never, retryDelayMs: 0 })).resolves.toMatchObject({ title: 'YUX' })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 })
 

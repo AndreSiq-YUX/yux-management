@@ -21,6 +21,11 @@ const DOMAIN_EVENT_COLUMNS = `
   attempt_count, available_at, dispatched_at, last_error, created_at
 `
 
+const QUALIFIED_DOMAIN_EVENT_COLUMNS = DOMAIN_EVENT_COLUMNS
+  .split(',')
+  .map(column => `event.${column.trim()}`)
+  .join(', ')
+
 export async function recordDomainEvent<TPayload extends Record<string, unknown>>(
   client: Queryable,
   input: DomainEventInput<TPayload>,
@@ -106,7 +111,7 @@ export async function claimPendingEvents(pool: Connectable, limit = 100): Promis
            attempt_count = event.attempt_count + 1
        FROM claimed
        WHERE event.id = claimed.id
-       RETURNING ${DOMAIN_EVENT_COLUMNS}`,
+       RETURNING ${QUALIFIED_DOMAIN_EVENT_COLUMNS}`,
       [safeLimit],
     )
     await client.query('COMMIT')

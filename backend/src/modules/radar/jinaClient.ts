@@ -15,6 +15,14 @@ export type RadarJinaSearchResult = RadarJinaEvidence & {
 
 type FetchLike = typeof fetch
 
+type JinaRequestOptions = {
+  fetchImpl?: FetchLike
+  apiKey?: string
+  limit?: number
+  maxAttempts?: number
+  retryDelayMs?: number
+}
+
 type JinaJsonResponse = {
   data?: unknown
   title?: string
@@ -38,7 +46,7 @@ const CTA_TERMS = [
   'diagnóstico',
 ]
 
-export async function readJinaUrl(url: string, options: { fetchImpl?: FetchLike; apiKey?: string } = {}) {
+export async function readJinaUrl(url: string, options: JinaRequestOptions = {}) {
   const normalizedUrl = normalizeHttpUrl(url)
   const response = await requestJina(`https://r.jina.ai/${normalizedUrl}`, options)
   return normalizeJinaEvidence(response, normalizedUrl)
@@ -46,7 +54,7 @@ export async function readJinaUrl(url: string, options: { fetchImpl?: FetchLike;
 
 export async function searchJinaWeb(
   query: string,
-  options: { fetchImpl?: FetchLike; apiKey?: string; limit?: number } = {},
+  options: JinaRequestOptions = {},
 ) {
   const response = await requestJina(`https://s.jina.ai/${encodeURIComponent(query)}`, options)
   const data = extractData(response)
@@ -61,23 +69,47 @@ export async function searchJinaWeb(
     }))
 }
 
-async function requestJina(url: string, options: { fetchImpl?: FetchLike; apiKey?: string }) {
+async function requestJina(url: string, options: JinaRequestOptions) {
   const fetchImpl = options.fetchImpl ?? fetch
-  const headers: Record<string, string> = {
+  const baseHeaders: Record<string, string> = {
     Accept: 'application/json',
     'X-Respond-With': 'markdown',
     'X-Retain-Images': 'none',
     'X-Timeout': '10',
     'X-Max-Tokens': '3000',
   }
-  const apiKey = options.apiKey ?? process.env.JINA_API_KEY
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+  let apiKey = (options.apiKey ?? process.env.JINA_API_KEY)?.trim() || undefined
+  const maxAttempts = Math.max(1, Math.min(5, options.maxAttempts ?? 3))
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? 300)
+  let lastStatus = 0
+  let authFallbackUsed = false
 
-  const response = await fetchImpl(url, { headers })
-  if (!response.ok) {
-    throw Object.assign(new Error('jina_request_failed'), { statusCode: response.status })
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const headers = { ...baseHeaders }
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+    const response = await fetchImpl(url, { headers })
+    if (response.ok) return await response.json() as JinaJsonResponse
+
+    lastStatus = response.status
+    if (apiKey && !authFallbackUsed && (response.status === 401 || response.status === 403)) {
+      apiKey = undefined
+      authFallbackUsed = true
+      attempt -= 1
+      continue
+    }
+    if (!isTransientJinaStatus(response.status) || attempt === maxAttempts) break
+    if (retryDelayMs) await wait(retryDelayMs * attempt)
   }
-  return await response.json() as JinaJsonResponse
+
+  throw Object.assign(new Error('jina_request_failed'), { statusCode: lastStatus })
+}
+
+function isTransientJinaStatus(status: number) {
+  return status === 408 || status === 425 || status === 429 || status >= 500
+}
+
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
 function normalizeJinaEvidence(value: unknown, fallbackUrl?: string, fallbackTitle = 'Resultado') {
