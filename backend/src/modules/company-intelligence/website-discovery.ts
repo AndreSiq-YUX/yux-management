@@ -18,20 +18,42 @@ export async function discoverCompanyWebsite(inputUrl: string, options: {
   const root = normalizePublicUrl(inputUrl)
   await assertPublicHostname(root.hostname, options.resolveHost)
   const readPage = options.readPage || (url => readJinaUrl(url))
-  const maxPages = Math.max(1, Math.min(20, options.maxPages || 10))
+  const maxPages = Math.max(1, Math.min(50, options.maxPages || 30))
   const homepage = await readPage(root.toString())
-  const candidates = rankSameOriginLinks(root, homepage.links).slice(0, maxPages - 1)
   const pages: DiscoveredWebsitePage[] = [pickPage(homepage, root.toString())]
   const concurrency = Math.max(1, Math.min(5, options.concurrency || 3))
-  for (let index = 0; index < candidates.length; index += concurrency) {
-    const batch = candidates.slice(index, index + concurrency)
+  const queued: string[] = []
+  const scheduled = new Set([root.toString()])
+  const enqueue = (links: string[]) => {
+    for (const url of rankSameOriginLinks(root, links)) {
+      if (scheduled.has(url)) continue
+      scheduled.add(url)
+      queued.push(url)
+    }
+  }
+  enqueue(homepage.links)
+  let attemptedPages = 0
+  let failedPages = 0
+  const maxAttempts = Math.max(maxPages - 1, (maxPages - 1) * 2)
+  while (queued.length && pages.length < maxPages && attemptedPages < maxAttempts) {
+    const batchSize = Math.min(concurrency, queued.length, maxPages - pages.length, maxAttempts - attemptedPages)
+    const batch = queued.splice(0, batchSize)
+    attemptedPages += batch.length
     const results = await Promise.allSettled(batch.map(async url => {
       await assertPublicHostname(new URL(url).hostname, options.resolveHost)
-      return pickPage(await readPage(url), url)
+      const evidence = await readPage(url)
+      return { page: pickPage(evidence, url), links: evidence.links }
     }))
-    for (const result of results) if (result.status === 'fulfilled' && result.value.content.trim()) pages.push(result.value)
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.page.content.trim()) {
+        pages.push(result.value.page)
+        enqueue(result.value.links)
+      } else {
+        failedPages += 1
+      }
+    }
   }
-  return { rootUrl: root.toString(), pages, failedPages: Math.max(0, candidates.length + 1 - pages.length) }
+  return { rootUrl: root.toString(), pages, failedPages }
 }
 
 export function rankSameOriginLinks(root: URL, links: string[]) {

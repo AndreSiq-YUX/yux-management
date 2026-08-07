@@ -43,6 +43,18 @@ const websiteExtractionSchema = z.object({
 
 export type WebsiteIntelligenceExtraction = z.infer<typeof websiteExtractionSchema>
 
+export type WebsiteExtractionInput = {
+  organizationId: string
+  clientId?: string
+  contractId?: string
+  pages: Array<{ url: string; title: string; content: string }>
+}
+
+export type BatchedWebsiteIntelligenceExtraction = WebsiteIntelligenceExtraction & {
+  successfulBatches: number
+  failedPageUrls: string[]
+}
+
 export async function curateKnowledgeWithRuntime(env: AppEnv, input: {
   organizationId: string
   clientId?: string
@@ -58,12 +70,7 @@ export async function curateKnowledgeWithRuntime(env: AppEnv, input: {
   return curationSchema.parse(result)
 }
 
-export async function extractCompanyProfileWithRuntime(env: AppEnv, input: {
-  organizationId: string
-  clientId?: string
-  contractId?: string
-  pages: Array<{ url: string; title: string; content: string }>
-}) {
+export async function extractCompanyProfileWithRuntime(env: AppEnv, input: WebsiteExtractionInput) {
   const result = await invokeAgentRuntime<unknown>(env, '/knowledge/extract-company-profile', {
     organization_id: input.organizationId,
     client_id: input.clientId,
@@ -71,4 +78,81 @@ export async function extractCompanyProfileWithRuntime(env: AppEnv, input: {
     pages: input.pages,
   })
   return websiteExtractionSchema.parse(result)
+}
+
+export async function extractCompanyProfileInBatches(
+  env: AppEnv,
+  input: WebsiteExtractionInput,
+): Promise<BatchedWebsiteIntelligenceExtraction> {
+  const batches = splitWebsitePages(input.pages)
+  const successes: WebsiteIntelligenceExtraction[] = []
+  const failures: Array<{ url: string; error: string }> = []
+
+  const extract = async (pages: WebsiteExtractionInput['pages']): Promise<void> => {
+    try {
+      successes.push(await extractCompanyProfileWithRuntime(env, { ...input, pages }))
+    } catch (error) {
+      if (pages.length > 1) {
+        const middle = Math.ceil(pages.length / 2)
+        await extract(pages.slice(0, middle))
+        await extract(pages.slice(middle))
+        return
+      }
+      failures.push({ url: pages[0].url, error: runtimeErrorMessage(error) })
+    }
+  }
+
+  for (const batch of batches) await extract(batch)
+  if (!successes.length) throw new Error(failures[0]?.error || 'website_extraction_failed')
+
+  return {
+    suggestions: deduplicateWebsiteSuggestions(successes.flatMap(result => result.suggestions)),
+    warnings: [
+      ...new Set(successes.flatMap(result => result.warnings)),
+      ...failures.map(failure => `website_page_extraction_failed:${failure.url}:${failure.error}`),
+    ],
+    provider: successes[0].provider,
+    model: successes[0].model,
+    successfulBatches: successes.length,
+    failedPageUrls: failures.map(failure => failure.url),
+  }
+}
+
+function splitWebsitePages(pages: WebsiteExtractionInput['pages']) {
+  const batches: Array<WebsiteExtractionInput['pages']> = []
+  let current: WebsiteExtractionInput['pages'] = []
+  let currentChars = 0
+  for (const page of pages) {
+    const bounded = { ...page, content: boundWebsiteContent(page.content) }
+    if (current.length && (current.length >= 3 || currentChars + bounded.content.length > 60_000)) {
+      batches.push(current)
+      current = []
+      currentChars = 0
+    }
+    current.push(bounded)
+    currentChars += bounded.content.length
+  }
+  if (current.length) batches.push(current)
+  return batches
+}
+
+function boundWebsiteContent(content: string) {
+  if (content.length <= 20_000) return content
+  return `${content.slice(0, 16_000)}\n\n[conteúdo intermediário omitido]\n\n${content.slice(-4_000)}`
+}
+
+function deduplicateWebsiteSuggestions(suggestions: WebsiteIntelligenceExtraction['suggestions']) {
+  const selected = new Map<string, WebsiteIntelligenceExtraction['suggestions'][number]>()
+  for (const suggestion of suggestions) {
+    const key = suggestion.suggestion_kind === 'product'
+      ? `${suggestion.suggestion_kind}|${suggestion.field_path}|${suggestion.source_url}|${JSON.stringify(suggestion.suggested_value)}`
+      : `${suggestion.suggestion_kind}|${suggestion.field_path}`
+    const existing = selected.get(key)
+    if (!existing || suggestion.confidence > existing.confidence) selected.set(key, suggestion)
+  }
+  return [...selected.values()]
+}
+
+function runtimeErrorMessage(error: unknown) {
+  return (error instanceof Error ? error.message : String(error)).replace(/\s+/g, '_').slice(0, 300)
 }

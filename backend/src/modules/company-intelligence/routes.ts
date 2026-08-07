@@ -117,7 +117,7 @@ const knowledgePatchSchema = z.object({
 const websiteOnboardingSchema = z.object({
   websiteUrl: z.string().trim().min(3).max(2_000),
   contractId: z.string().uuid().optional(),
-  maxPages: z.number().int().min(1).max(20).default(10),
+  maxPages: z.number().int().min(1).max(50).default(30),
 })
 const websiteRunParams = z.object({ organizationId: z.string().uuid(), runId: z.string().uuid() })
 const applyWebsiteSuggestionsSchema = z.object({

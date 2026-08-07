@@ -17,6 +17,7 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
   onApplied: () => Promise<void> | void
 }) {
   const [websiteUrl, setWebsiteUrl] = useState(initialUrl || '')
+  const [maxPages, setMaxPages] = useState(30)
   const [result, setResult] = useState<WebsiteOnboardingResult | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -64,7 +65,7 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
     if (!websiteUrl.trim()) return toast.error('Informe o site da empresa.')
     setStarting(true)
     try {
-      const created = await companyIntelligenceService.startWebsiteOnboarding(organizationId, websiteUrl.trim(), contractId)
+      const created = await companyIntelligenceService.startWebsiteOnboarding(organizationId, websiteUrl.trim(), contractId, maxPages)
       setResult(created)
       if (['queued', 'running'].includes(created.run.status)) {
         setSelected([])
@@ -122,10 +123,12 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
         <span className="rounded-lg bg-violet-100 p-2 text-violet-700"><Sparkles className="h-5 w-5" /></span>
         <div><h2 className="font-semibold text-gray-950">Preencher com o site</h2><p className="mt-1 text-sm text-gray-600">A IA lê as páginas mais importantes, propõe dados da empresa, marca, identidade visual e ofertas, e mostra a fonte antes de salvar.</p></div>
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_auto]">
         <Input aria-label="Site da empresa" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} placeholder="https://suaempresa.com.br" disabled={processing} />
+        <Input aria-label="Limite de páginas" type="number" min={1} max={50} value={maxPages} onChange={event => setMaxPages(clampPageLimit(event.target.value))} disabled={processing} title="Quantidade máxima de páginas a analisar" />
         <Button onClick={start} disabled={starting || processing}>{starting || processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{processing ? 'Analisando...' : 'Analisar site'}</Button>
       </div>
+      <p className="text-xs text-gray-500">A análise percorre páginas internas relevantes de forma recursiva. Limite atual: {maxPages} páginas (máximo de 50).</p>
       {result && processing ? <div className="space-y-2"><div className="flex justify-between text-xs text-gray-600"><span>{stageLabel(result.run.stage)}</span><span>{result.run.progress}%</span></div><Progress value={result.run.progress} className="h-2" /></div> : null}
       {result?.run.status === 'failed' && result.suggestions.length ? <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">A leitura terminou parcialmente, mas as sugestões com evidência foram preservadas e podem ser editadas e aplicadas.</p> : null}
       {result?.run.status === 'failed' && !result.suggestions.length ? <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-800">A análise não foi concluída. {friendlyRunError(result.run.errorMessage)}</p> : null}
@@ -263,9 +266,14 @@ function displayValue(value: unknown) {
 function stringValue(value: unknown) { return typeof value === 'string' ? value : '' }
 function stringList(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [] }
 function splitList(value: string) { return value.split(/,|\n/).map(item => item.trim()).filter(Boolean) }
+function clampPageLimit(value: string) { return Math.max(1, Math.min(50, Number.parseInt(value, 10) || 1)) }
 function isStructuredValue(value: unknown) { return Boolean(value && typeof value === 'object' && (!Array.isArray(value) || value.some(item => typeof item === 'object'))) }
 function longField(field: string) { return ['description', 'positioning', 'brandVoiceSummary', 'visualGuidelines', 'persona'].includes(field) }
-function friendlyRunError(error?: string) { return error === 'knowledge_file_already_exists' ? 'O conteúdo já existe na base de conhecimento.' : error || 'Verifique o endereço e as integrações de IA.' }
+function friendlyRunError(error?: string) {
+  if (error === 'knowledge_file_already_exists') return 'O conteúdo já existe na base de conhecimento.'
+  if (error?.startsWith('agent_runtime_')) return 'O serviço de IA não conseguiu concluir a extração. Tente novamente; se persistir, verifique a conexão do Agent Harness com o OpenRouter.'
+  return error || 'Verifique o endereço e as integrações de IA.'
+}
 export function hasValue(value: unknown) { return value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0) && (typeof value !== 'object' || Array.isArray(value) || Object.keys(value as Record<string, unknown>).length > 0) }
 export function shouldSelectByDefault(item: WebsiteOnboardingResult['suggestions'][number]) { return item.confidence >= (hasValue(item.currentValue) ? 0.9 : 0.75) }
 function groupLabel(kind: 'profile' | 'brand' | 'product') { return ({ profile: 'Perfil da empresa', brand: 'Marca, público e identidade visual', product: 'Produtos e serviços' })[kind] }

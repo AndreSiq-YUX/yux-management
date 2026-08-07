@@ -45,4 +45,52 @@ describe('website discovery', () => {
     expect(pages.pages).toHaveLength(2)
     expect(pages.failedPages).toBe(1)
   })
+
+  it('discovers useful links found on child pages until the configured limit', async () => {
+    const linksByUrl: Record<string, string[]> = {
+      'https://example.com/': ['/sobre', '/servicos'],
+      'https://example.com/sobre': ['/cases/cliente-a'],
+      'https://example.com/servicos': ['/contato'],
+      'https://example.com/cases/cliente-a': [],
+      'https://example.com/contato': [],
+    }
+    const result = await discoverCompanyWebsite('https://example.com', {
+      maxPages: 4,
+      concurrency: 2,
+      resolveHost: async () => ['93.184.216.34'],
+      readPage: async url => ({
+        title: url,
+        url,
+        content: `Conteudo de ${url}`,
+        emails: [],
+        phones: [],
+        links: linksByUrl[url] || [],
+        ctaTerms: [],
+      }),
+    })
+
+    expect(result.pages).toHaveLength(4)
+    expect(result.pages.map(page => page.url)).toContain('https://example.com/cases/cliente-a')
+    expect(result.pages.map(page => page.url)).not.toContain('https://example.com/contato')
+  })
+
+  it('supports a configured crawl above the previous twenty-page ceiling', async () => {
+    const homepageLinks = Array.from({ length: 30 }, (_, index) => `/servicos/${index + 1}`)
+    const result = await discoverCompanyWebsite('https://example.com', {
+      maxPages: 25,
+      concurrency: 5,
+      resolveHost: async () => ['93.184.216.34'],
+      readPage: async url => ({
+        title: url,
+        url,
+        content: 'Conteudo util',
+        emails: [],
+        phones: [],
+        links: url.endsWith('/') ? homepageLinks : [],
+        ctaTerms: [],
+      }),
+    })
+
+    expect(result.pages).toHaveLength(25)
+  })
 })

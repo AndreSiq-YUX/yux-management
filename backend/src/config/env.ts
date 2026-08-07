@@ -52,7 +52,7 @@ const envSchema = z.object({
   JINA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
   KNOWLEDGE_CURATION_ENABLED: optionalBoolean,
   KNOWLEDGE_CURATION_MAX_BATCH_CHARS: z.coerce.number().int().min(2_000).max(100_000).optional(),
-  KNOWLEDGE_WEBSITE_MAX_PAGES: z.coerce.number().int().min(1).max(20).optional(),
+  KNOWLEDGE_WEBSITE_MAX_PAGES: z.coerce.number().int().min(1).max(50).optional(),
   N8N_CRM_WEBHOOK_URL: optionalUrl,
   N8N_WEBHOOK_SECRET: optionalString,
   OMNICHANNEL_ATTACHMENTS_DIR: z.string().optional(),

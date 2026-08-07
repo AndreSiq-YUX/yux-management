@@ -38,7 +38,7 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `JINA_EMBEDDING_DIMENSIONS` (padrão `1024`);
 - `KNOWLEDGE_CURATION_ENABLED=true`;
 - `KNOWLEDGE_CURATION_MAX_BATCH_CHARS=12000`;
-- `KNOWLEDGE_WEBSITE_MAX_PAGES=10`;
+- `KNOWLEDGE_WEBSITE_MAX_PAGES=30` por padrão, configurável entre 1 e 50;
 - `YUX_AGENT_RUNTIME_URL` e o mesmo `YUX_AGENT_RUNTIME_TOKEN` no backend,
   worker e Agent Harness.
 

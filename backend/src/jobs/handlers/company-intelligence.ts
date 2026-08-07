@@ -20,7 +20,7 @@ import {
 import { cleanKnowledgeSections } from '../../modules/company-intelligence/knowledge-cleanup.js'
 import { curateKnowledgeWithRuntime, type CuratedKnowledge } from '../../modules/company-intelligence/runtime-curation.js'
 import { embedPassages } from '../../modules/company-intelligence/jina-embeddings.js'
-import { extractCompanyProfileWithRuntime } from '../../modules/company-intelligence/runtime-curation.js'
+import { extractCompanyProfileInBatches } from '../../modules/company-intelligence/runtime-curation.js'
 import { discoverCompanyWebsite } from '../../modules/company-intelligence/website-discovery.js'
 import { inspectWebsiteVisualIdentity } from '../../modules/company-intelligence/website-visual-identity.js'
 import { extractKnowledgeText, extractManualKnowledge, type ExtractedKnowledge, type LocatedSection } from '../../modules/company-intelligence/text-extraction.js'
@@ -176,11 +176,11 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
   const runId = typeof data.runId === 'string' ? data.runId : ''
   const organizationId = typeof data.organizationId === 'string' ? data.organizationId : ''
   const websiteUrl = typeof data.websiteUrl === 'string' ? data.websiteUrl : ''
-  const maxPages = Math.max(1, Math.min(20, Number(data.maxPages || 10)))
+  const maxPages = Math.max(1, Math.min(50, Number(data.maxPages || 30)))
   if (!runId || !organizationId || !websiteUrl) throw new Error('website_onboarding_context_required')
   try {
     await updateKnowledgeIntelligenceRun(pool, runId, { status: 'running', stage: 'discovering', progress: 10 })
-    const discovery = await discoverCompanyWebsite(websiteUrl, { maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 10) })
+    const discovery = await discoverCompanyWebsite(websiteUrl, { maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 30) })
     await updateKnowledgeIntelligenceRun(pool, runId, {
       stage: 'extracting', progress: 45,
       metrics: { discoveredPages: discovery.pages.length, failedPages: discovery.failedPages },
@@ -189,7 +189,7 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
     const visualSignals = await inspectWebsiteVisualIdentity(websiteUrl).catch(() => null)
     const contractId = typeof data.contractId === 'string' ? data.contractId : undefined
     const clientId = typeof data.clientId === 'string' ? data.clientId : undefined
-    const extraction = await extractCompanyProfileWithRuntime(env, {
+    const extraction = await extractCompanyProfileInBatches(env, {
       organizationId, clientId, contractId,
       pages: discovery.pages.map((page, index) => ({
         url: page.url,
@@ -230,9 +230,14 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
       status: 'ready_for_review', stage: 'ready_for_review', progress: 100,
       provider: extraction.provider, model: extraction.model, completed: true,
       sourceId: shell.sourceId, documentId: shell.documentId,
-      metrics: { suggestions: extraction.suggestions.length },
+      metrics: {
+        suggestions: extraction.suggestions.length,
+        extractionBatches: extraction.successfulBatches,
+        extractionFailedPages: extraction.failedPageUrls.length,
+      },
       outputPayload: {
         warnings: extraction.warnings,
+        ...(extraction.failedPageUrls.length ? { extractionFailedPageUrls: extraction.failedPageUrls } : {}),
         ...(visualSignals ? { visualSignals } : {}),
         ...(existingKnowledge ? { knowledgeReused: true } : {}),
       },

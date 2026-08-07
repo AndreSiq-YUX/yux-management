@@ -14,6 +14,13 @@ def _normalized(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
 
+def _score(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value or 0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _json_content(value: str) -> dict[str, Any]:
     clean = value.strip()
     if clean.startswith("```"):
@@ -87,8 +94,8 @@ class KnowledgeIntelligenceService:
                 "category": str(raw.get("category") or "other"),
                 "evidence_excerpt": evidence,
                 "source_locator": locator,
-                "confidence": max(0.0, min(1.0, float(raw.get("confidence") or 0))),
-                "usefulness": max(0.0, min(1.0, float(raw.get("usefulness") or 0))),
+                "confidence": _score(raw.get("confidence")),
+                "usefulness": _score(raw.get("usefulness")),
                 "agent_profiles": [str(item) for item in raw.get("agent_profiles") or [] if str(item).strip()],
                 "sensitivity": str(raw.get("sensitivity") or "public"),
             })
@@ -160,7 +167,7 @@ class KnowledgeIntelligenceService:
                 "suggested_value": raw.get("suggested_value"),
                 "evidence_excerpt": evidence,
                 "source_url": source_url,
-                "confidence": max(0.0, min(1.0, float(raw.get("confidence") or 0))),
+                "confidence": _score(raw.get("confidence")),
             })
         return {
             "suggestions": suggestions,

@@ -98,9 +98,9 @@ export const companyIntelligenceService = {
     return apiRequest<CompanyKnowledgeDocument>(`/company-intelligence/knowledge/${documentId}/publish`, { method: 'POST', body: { allowDegradedRaw: true } })
   },
 
-  startWebsiteOnboarding(organizationId: string, websiteUrl: string, contractId?: string) {
+  startWebsiteOnboarding(organizationId: string, websiteUrl: string, contractId?: string, maxPages = 30) {
     return apiRequest<WebsiteOnboardingResult>(`/company-intelligence/organizations/${organizationId}/website-onboarding`, {
-      method: 'POST', body: { websiteUrl, contractId, maxPages: 10 },
+      method: 'POST', body: { websiteUrl, contractId, maxPages },
     })
   },
 

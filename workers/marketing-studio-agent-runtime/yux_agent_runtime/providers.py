@@ -87,8 +87,14 @@ class OpenRouterClient:
             raise ProviderRequestError("invalid_openrouter_response")
 
         choice = (response.get("choices") or [{}])[0]
+        if not isinstance(choice, dict):
+            raise ProviderRequestError("invalid_openrouter_choice")
         message = choice.get("message") or {}
+        if not isinstance(message, dict):
+            raise ProviderRequestError("invalid_openrouter_message")
         usage = response.get("usage") or {}
+        if not isinstance(usage, dict):
+            usage = {}
         return {
             "provider": "openrouter",
             "model": response.get("model") or model,

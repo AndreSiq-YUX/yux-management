@@ -1,7 +1,7 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-08-05 (repository audit plus the locally validated active
-prospecting and expanded intelligent Company Knowledge onboarding on the feature branch)
+Updated: 2026-08-07 (repository audit plus the locally validated active
+prospecting and resilient intelligent Company Knowledge onboarding on the feature branch)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -57,6 +57,12 @@ the target VPS/Dokploy environment.
   editing, selecting and applying suggestions for company profile, audience,
   offers and structured visual identity (logo, colors, typography and style).
   That visual context is shared with Marketing Studio and Agent Harness agents.
+- Website discovery now follows useful same-origin links found on child pages,
+  defaults to 30 pages and allows an operator-selected maximum up to 50. Agent
+  extraction runs in batches of at most three pages/60,000 characters; a failed
+  batch is split down to individual pages so successful grounded suggestions are
+  preserved. The runtime API now imports and handles `ProviderRequestError`
+  correctly instead of turning provider failures into `agent_runtime_500`.
 - CRM-specific reference:
   `docs/crm-lead-management.md`.
 
@@ -1026,6 +1032,20 @@ Latest website-onboarding expansion validation (2026-08-05):
 - backend and frontend production builds passed;
 - migration `0127` and an authenticated live website/provider smoke test remain
   operational validation, not repository validation.
+
+Latest resilient crawl/runtime correction validation (2026-08-07):
+
+- backend `npm test`: 71 files and 299 tests passed;
+- frontend `npm test`: 101 files and 472 tests passed;
+- Agent Harness `python -m unittest discover -s tests -v`: 77 tests passed;
+- backend and frontend production builds passed;
+- recursive discovery above the former 10/20-page limits and partial page
+  failures are covered by backend tests;
+- Agent Harness batch isolation, safe HTTP error detail and malformed model
+  confidence are covered by TypeScript/Python regression tests;
+- the production screenshot and authenticated DOM confirmed the prior failure
+  occurred after 10 successful page reads, specifically at Agent Harness
+  extraction; post-deploy provider validation remains required.
 
 Known validation limitation:
 

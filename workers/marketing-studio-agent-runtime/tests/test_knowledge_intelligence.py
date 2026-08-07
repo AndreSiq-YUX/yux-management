@@ -37,6 +37,22 @@ class FakeWebsiteLlm:
         }
 
 
+class MalformedConfidenceWebsiteLlm:
+    def chat_completion(self, **_kwargs):
+        return {
+            "provider": "openrouter",
+            "model": "test-model",
+            "content": '''{"suggestions":[
+              {"suggestion_kind":"profile","field_path":"tradeName","suggested_value":"YUX","evidence_excerpt":"YUX Solucoes em IA","source_url":"https://yux.test/","confidence":{"score":0.98}}
+            ],"warnings":[]}''',
+        }
+
+
+class UnexpectedWebsiteFailure:
+    def extract_company_profile(self, _pages):
+        raise RuntimeError("unexpected provider payload")
+
+
 class KnowledgeIntelligenceTest(unittest.TestCase):
     def setUp(self):
         self.service = KnowledgeIntelligenceService(FakeLlm(), model="test-model")
@@ -64,6 +80,21 @@ class KnowledgeIntelligenceTest(unittest.TestCase):
         self.assertEqual(result["suggestions"][1]["field_path"], "visualIdentity")
         self.assertIn("rejected_unverifiable_suggestion:forbiddenTopics", result["warnings"])
         self.assertIn("rejected_unverifiable_suggestion:industry", result["warnings"])
+
+    def test_website_profile_normalizes_malformed_confidence(self):
+        service = KnowledgeIntelligenceService(MalformedConfidenceWebsiteLlm(), model="test-model")
+        result = service.extract_company_profile([{"url": "https://yux.test/", "title": "YUX", "content": "YUX Solucoes em IA"}])
+        self.assertEqual(result["suggestions"][0]["confidence"], 0.0)
+
+    def test_website_api_converts_unexpected_extraction_error_to_safe_gateway_error(self):
+        client = TestClient(create_app(InMemoryAgentRuntimeStore(), UnexpectedWebsiteFailure()))
+        response = client.post(
+            "/knowledge/extract-company-profile",
+            headers={"Authorization": "Bearer test-runtime-token"},
+            json={"organization_id": "org-1", "pages": [{"url": "https://yux.test/", "content": "YUX"}]},
+        )
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["detail"], "website_extraction_failed")
 
 
 if __name__ == "__main__":

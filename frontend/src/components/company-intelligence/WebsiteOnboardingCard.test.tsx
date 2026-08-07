@@ -58,7 +58,12 @@ describe('WebsiteOnboardingCard', () => {
     await act(async () => {
       root.render(<WebsiteOnboardingCard organizationId="00000000-0000-4000-8000-000000000001" initialUrl="https://yux.com.br" onApplied={vi.fn()} />)
     })
+    await changeInput(container.querySelector('[aria-label="Limite de páginas"]') as HTMLInputElement, '45')
     await clickButton(container, 'Analisar site')
+
+    expect(companyIntelligenceService.startWebsiteOnboarding).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000001', 'https://yux.com.br', undefined, 45,
+    )
 
     expect(container.textContent).toContain('Aplicar selecionadas (1)')
     const editor = container.querySelector('[aria-label="Editar Descrição"]') as HTMLTextAreaElement
@@ -84,6 +89,15 @@ async function clickButton(container: HTMLElement, text: string) {
 async function change(element: HTMLTextAreaElement, value: string) {
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    setter?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function changeInput(element: HTMLInputElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     setter?.call(element, value)
     element.dispatchEvent(new Event('input', { bubbles: true }))
     element.dispatchEvent(new Event('change', { bubbles: true }))

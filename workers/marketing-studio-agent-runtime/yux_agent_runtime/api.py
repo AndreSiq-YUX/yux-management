@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -9,9 +10,13 @@ from pydantic import BaseModel, Field
 
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
+from .providers import ProviderRequestError
 from .runtime_factory import build_strategy_workflow_engine
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
+
+
+logger = logging.getLogger(__name__)
 
 
 class IngestEventRequest(BaseModel):
@@ -180,6 +185,9 @@ def create_app(
             return curator.extract_company_profile([item.model_dump() for item in request.pages])
         except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
+        except Exception as error:
+            logger.exception("Unexpected website profile extraction failure")
+            raise HTTPException(status_code=502, detail="website_extraction_failed") from error
 
     @app.post("/jobs/process-next", dependencies=[Depends(require_runtime_token)])
     def process_next_job(worker_id: str = "api-worker") -> dict[str, Any]:
