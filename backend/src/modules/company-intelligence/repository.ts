@@ -4,6 +4,7 @@ import type { BrandProfileInput, CompanyContextPreview, CompanyProfileInput } fr
 import type { ExtractedKnowledge } from './text-extraction.js'
 
 type Row = Record<string, any>
+type QueryExecutor = Pick<pg.Pool, 'query'>
 
 export async function getCompanyProfile(pool: pg.Pool, organizationId: string, includeInternal = false) {
   const result = await pool.query<Row>(
@@ -507,11 +508,10 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
   userId: string
 }) {
   const run = await getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
-  if (!['ready_for_review', 'degraded', 'failed'].includes(run.run.status)) throw domainError(409, 'website_onboarding_not_ready')
   const editedValues = new Map((input.suggestionEdits || []).map(edit => [edit.id, edit.suggestedValue]))
-  const selected = run.suggestions
-    .filter(item => input.suggestionIds.includes(item.id) && item.status === 'suggested')
-    .map(item => editedValues.has(item.id) ? { ...item, suggestedValue: editedValues.get(item.id) } : item)
+  const selected = selectSuggestionsForApplication(run.suggestions, input.suggestionIds, editedValues)
+  if (run.run.status === 'applied' && selected.length && selected.every(item => item.status === 'applied')) return run
+  if (!['ready_for_review', 'degraded', 'failed'].includes(run.run.status)) throw domainError(409, 'website_onboarding_not_ready')
   if (!selected.length) throw domainError(400, 'website_onboarding_suggestions_required')
   const profile = await getCompanyProfile(pool, input.organizationId, true)
   const brand = await getBrandProfile(pool, input.organizationId, true)
@@ -568,32 +568,53 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
         JSON.stringify({ source: 'website_onboarding', runId: input.runId })],
     )
   }
-  for (const suggestion of selected) {
-    if (!editedValues.has(suggestion.id)) continue
-    await pool.query(
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const suggestion of selected) {
+      if (!editedValues.has(suggestion.id)) continue
+      await client.query(
+        `UPDATE public.company_intelligence_suggestions
+            SET suggested_value = $3::jsonb, updated_at = NOW()
+          WHERE run_id = $1 AND id = $2`,
+        [input.runId, suggestion.id, JSON.stringify(suggestion.suggestedValue)],
+      )
+    }
+    await client.query(
       `UPDATE public.company_intelligence_suggestions
-          SET suggested_value = $3::jsonb, updated_at = NOW()
-        WHERE run_id = $1 AND id = $2`,
-      [input.runId, suggestion.id, JSON.stringify(suggestion.suggestedValue)],
+          SET status = 'applied', selected = TRUE, applied_by = $3, applied_at = NOW(), updated_at = NOW()
+        WHERE run_id = $1 AND id = ANY($2::uuid[])`,
+      [input.runId, selected.map(item => item.id), input.userId],
     )
+    await client.query(
+      `UPDATE public.company_intelligence_suggestions
+          SET status = 'rejected', selected = FALSE, updated_at = NOW()
+        WHERE run_id = $1 AND status = 'suggested'`,
+      [input.runId],
+    )
+    await updateKnowledgeIntelligenceRun(client, input.runId, { status: 'applied', stage: 'completed', progress: 100, completed: true })
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
   }
-  await pool.query(
-    `UPDATE public.company_intelligence_suggestions
-        SET status = 'applied', selected = TRUE, applied_by = $3, applied_at = NOW(), updated_at = NOW()
-      WHERE run_id = $1 AND id = ANY($2::uuid[])`,
-    [input.runId, selected.map(item => item.id), input.userId],
-  )
-  await pool.query(
-    `UPDATE public.company_intelligence_suggestions
-        SET status = 'rejected', selected = FALSE, updated_at = NOW()
-      WHERE run_id = $1 AND status = 'suggested'`,
-    [input.runId],
-  )
-  await updateKnowledgeIntelligenceRun(pool, input.runId, { status: 'applied', stage: 'completed', progress: 100, completed: true })
   return getWebsiteOnboardingRun(pool, input.organizationId, input.runId)
 }
 
-export async function updateKnowledgeIntelligenceRun(pool: pg.Pool, runId: string, input: {
+export function selectSuggestionsForApplication<T extends { id: string; suggestedValue: unknown }>(
+  suggestions: T[],
+  suggestionIds: string[],
+  editedValues: Map<string, unknown>,
+): T[] {
+  const requestedIds = new Set(suggestionIds)
+  return suggestions
+    .filter(item => requestedIds.has(item.id))
+    .map(item => editedValues.has(item.id) ? { ...item, suggestedValue: editedValues.get(item.id) } : item)
+}
+
+export async function updateKnowledgeIntelligenceRun(pool: QueryExecutor, runId: string, input: {
   status?: 'running' | 'ready_for_review' | 'degraded' | 'failed' | 'applied' | 'cancelled'
   stage?: 'queued' | 'discovering' | 'extracting' | 'cleaning' | 'curating' | 'embedding' | 'ready_for_review' | 'applying' | 'completed' | 'failed'
   progress?: number

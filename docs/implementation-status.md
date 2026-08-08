@@ -1,6 +1,6 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-08-07 (repository audit plus the locally validated active
+Updated: 2026-08-08 (repository audit plus the locally validated active
 prospecting and resilient intelligent Company Knowledge onboarding on the feature branch)
 
 This document tracks what is implemented in this repository. It separates code
@@ -1046,6 +1046,19 @@ Latest resilient crawl/runtime correction validation (2026-08-07):
 - the production screenshot and authenticated DOM confirmed the prior failure
   occurred after 10 successful page reads, specifically at Agent Harness
   extraction; post-deploy provider validation remains required.
+
+Latest website-suggestion application correction validation (2026-08-08):
+
+- backend `npm test`: 72 files and 300 tests passed;
+- backend production build passed;
+- applying a reviewed run now recovers suggestions left as `applied` or
+  `rejected` by an interrupted prior attempt instead of incorrectly returning
+  `website_onboarding_suggestions_required`;
+- edited values, selected/rejected suggestion states and the final run status
+  are committed together in one transaction, preventing that partial state
+  from recurring;
+- authenticated post-deploy interaction remains required because the available
+  in-app browser session did not contain the operator's production login.
 
 Known validation limitation:
 
