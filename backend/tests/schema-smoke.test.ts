@@ -13,6 +13,7 @@ const scoringMigration = readFileSync(path.join(migrationsDir, '0122_lead_scorin
 const pipelineManagementMigration = readFileSync(path.join(migrationsDir, '0120_crm_pipeline_management.sql'), 'utf8')
 const taskCenterMigration = readFileSync(path.join(migrationsDir, '0121_crm_task_center.sql'), 'utf8')
 const runtimeReconciliationMigration = readFileSync(path.join(migrationsDir, '0124_reconcile_crm_runtime.sql'), 'utf8')
+const taskEnrollmentCompatMigration = readFileSync(path.join(migrationsDir, '0129_lead_tasks_enrollment_compat.sql'), 'utf8')
 
 describe('self-hosted portal schema bootstrap', () => {
   it('does not keep executable Supabase-only dependencies', () => {
@@ -90,6 +91,13 @@ describe('self-hosted portal schema bootstrap', () => {
     expect(taskCenterMigration).toContain('cancelled_at')
     expect(taskCenterMigration).toContain('updated_by')
     expect(taskCenterMigration).toContain('idx_lead_tasks_org_status_due')
+  })
+
+  it('preserves sequence lineage in the aggregated CRM task center', () => {
+    expect(taskEnrollmentCompatMigration).toContain('ADD COLUMN IF NOT EXISTS enrollment_id UUID')
+    expect(taskEnrollmentCompatMigration).toContain('REFERENCES public.crm_sequence_enrollments(id) ON DELETE SET NULL')
+    expect(taskEnrollmentCompatMigration).toContain('FROM public.crm_tasks source')
+    expect(taskEnrollmentCompatMigration).toContain('idx_lead_tasks_enrollment_id')
   })
 
   it('reconciles legacy CRM pipelines into active runtime instances', () => {

@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/navigation/Sidebar'
 import { Header } from '@/components/navigation/Header'
 import { useAuthStore } from '@/stores/authStore'
 import { usePlatformStore } from '@/stores/platformStore'
+import { resolvePlatformMode } from './platformMode'
 
 export function DashboardLayout() {
   const location = useLocation()
@@ -12,25 +13,19 @@ export function DashboardLayout() {
   const setMode = usePlatformStore(state => state.setMode)
   const platformError = usePlatformStore(state => state.error)
   const platformLoading = usePlatformStore(state => state.isLoading)
+  const routeMode = resolvePlatformMode(location.pathname)
 
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && routeMode !== 'client_workspace') {
       initializeForUser(user.id, user.role)
     }
-  }, [initializeForUser, location.pathname, user?.id, user?.role])
+  }, [initializeForUser, routeMode, user?.id, user?.role])
 
   useLayoutEffect(() => {
-    const isSelectedClientWorkspace = /^\/client-workspaces\/[^/]+/.test(location.pathname)
-    const mode = location.pathname.startsWith('/portal')
-      ? 'portal'
-      : isSelectedClientWorkspace
-        ? 'client_workspace'
-        : 'internal'
+    setMode(routeMode)
+  }, [routeMode, setMode])
 
-    setMode(mode)
-  }, [location.pathname, setMode])
-
-  if (platformError && !platformLoading) {
+  if (routeMode !== 'client_workspace' && platformError && !platformLoading) {
     return (
       <main className="grid min-h-screen place-items-center bg-gray-50 p-6">
         <section className="max-w-md space-y-4 rounded-lg border bg-white p-6 shadow-sm">
