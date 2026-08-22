@@ -153,7 +153,7 @@ describe('domain event fan-out', () => {
     }
     const jobs: Array<{ name: string; data: unknown; jobId?: string }> = []
     const queue = {
-      async add(name: 'events.consume.automation' | 'events.consume.scoring', data: { eventId: string; deliveryId: string; consumerKey: 'automation' | 'scoring' }, options?: { jobId?: string }) {
+      async add(name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver', data: { eventId: string; deliveryId: string; consumerKey: 'automation' | 'scoring' | 'mission_observer' }, options?: { jobId?: string }) {
         jobs.push({ name, data, jobId: options?.jobId })
       },
     }
@@ -168,14 +168,16 @@ describe('domain event fan-out', () => {
       actor: { type: 'system' },
     }))
 
-    expect(jobs).toHaveLength(2)
+    expect(jobs).toHaveLength(3)
     expect(jobs.map((job) => job.name)).toEqual([
       'events.consume.automation',
       'events.consume.scoring',
+      'events.consume.missionObserver',
     ])
     expect(jobs.map((job) => job.jobId)).toEqual([
       `automation-${ids.event}`,
       `scoring-${ids.event}`,
+      `mission_observer-${ids.event}`,
     ])
     expect(client.calls.some((call) => call.sql.includes("dispatch_status = 'dispatched'"))).toBe(true)
   })

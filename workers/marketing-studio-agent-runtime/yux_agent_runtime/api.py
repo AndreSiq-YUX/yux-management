@@ -13,6 +13,7 @@ from .knowledge_intelligence import KnowledgeIntelligenceService
 from .providers import ProviderRequestError
 from .runtime_factory import build_strategy_workflow_engine
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
+from .mission import MissionPlanRequest, plan_mission
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
 
 
@@ -163,6 +164,13 @@ def create_app(
             raise HTTPException(status_code=402, detail=str(error)) from error
         result = workflow_engine().execute(**request.model_dump(exclude={"estimated_credits"}))
         return {**result, "credits": credits}
+
+    @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
+    def create_mission_plan(request: MissionPlanRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        # The harness returns a proposal only. It never persists Action Engine
+        # rows or produces an external effect.
+        return plan_mission(request.model_dump())
 
     @app.post("/knowledge/curate", dependencies=[Depends(require_runtime_token)])
     def curate_knowledge(request: CurateKnowledgeRequest) -> dict[str, Any]:

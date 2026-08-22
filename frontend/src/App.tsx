@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 // Layout components
@@ -81,6 +81,15 @@ import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
 import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
 import { ModulesPage } from '@/pages/platform/ModulesPage'
 import { PackagesPage } from '@/pages/platform/PackagesPage'
+
+const MissionsPage = lazy(() => import('@/pages/action-engine/MissionsPage').then(module => ({ default: module.MissionsPage })))
+const MissionDetailPage = lazy(() => import('@/pages/action-engine/MissionDetailPage').then(module => ({ default: module.MissionDetailPage })))
+const PortalMissionsPage = lazy(() => import('@/pages/client-portal/PortalMissionsPage').then(module => ({ default: module.PortalMissionsPage })))
+const PortalMissionDetailPage = lazy(() => import('@/pages/client-portal/PortalMissionDetailPage').then(module => ({ default: module.PortalMissionDetailPage })))
+
+function LazyPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<main className="grid min-h-64 place-items-center text-sm text-slate-500">Carregando missões...</main>}>{children}</Suspense>
+}
 
 function RequireRole({ roles, children }: { roles: Array<'admin' | 'manager' | 'client'>; children: ReactNode }) {
   const { user } = useAuthStore()
@@ -165,6 +174,8 @@ function App() {
             <Route path="automations" element={<AutomationsPage />} />
             <Route path="support" element={<SupportPage />} />
             <Route path="finance" element={<FinancePage />} />
+            <Route path="missions" element={<LazyPage><MissionsPage /></LazyPage>} />
+            <Route path="missions/:missionId" element={<LazyPage><MissionDetailPage /></LazyPage>} />
             <Route path="blueprints" element={<RequireRole roles={['admin']}><BlueprintsPage /></RequireRole>} />
 
             <Route path="client-workspaces" element={<ClientWorkspaceSelectorPage />} />
@@ -205,6 +216,8 @@ function App() {
               <Route path="projetos/projetos" element={<PortalProjectsPage />} />
               <Route path="projetos/aprovacoes" element={<PortalApprovalsPage />} />
               <Route path="projetos/documentos" element={<PortalDocumentsPage />} />
+              <Route path="missoes" element={<LazyPage><PortalMissionsPage /></LazyPage>} />
+              <Route path="missoes/:missionId" element={<LazyPage><PortalMissionDetailPage /></LazyPage>} />
 
               <Route path="relatorios" element={<PortalReportsPage />} />
               <Route path="suporte" element={<PortalSupportPage />} />
@@ -252,6 +265,8 @@ function App() {
             <Route path="portal/projetos/projetos" element={<PortalProjectsPage />} />
             <Route path="portal/projetos/aprovacoes" element={<PortalApprovalsPage />} />
             <Route path="portal/projetos/documentos" element={<PortalDocumentsPage />} />
+            <Route path="portal/missoes" element={<LazyPage><PortalMissionsPage /></LazyPage>} />
+            <Route path="portal/missoes/:missionId" element={<LazyPage><PortalMissionDetailPage /></LazyPage>} />
 
             <Route path="portal/relatorios" element={<PortalReportsPage />} />
             <Route path="portal/suporte" element={<PortalSupportPage />} />

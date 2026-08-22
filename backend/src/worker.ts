@@ -15,6 +15,7 @@ import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
 import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './jobs/handlers/company-intelligence.js'
+import { handleActionEngineCollectMetrics, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEnginePlanMission, handleActionEngineSchedule } from './jobs/handlers/action-engine.js'
 
 type WorkerResult = {
   ok: true
@@ -46,7 +47,13 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'proposal.convert') { await handleProposalConversion(pool, job.data.proposalId); return { ok: true } }
   if (job.name === 'automation.dispatch') { await handleAutomationDispatch(pool, env, job.data); return { ok: true } }
   if (job.name === 'events.dispatchPending') { await handleDomainEventDispatch(pool, maintenanceQueue, job.data); return { ok: true } }
-  if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring') {
+  if (job.name === 'action-engine.planMission') { await handleActionEnginePlanMission(pool, env, job.data, maintenanceQueue); return { ok: true } }
+  if (job.name === 'action-engine.scheduleReadyActions') { await handleActionEngineSchedule(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'action-engine.executeAction') { await handleActionEngineExecute(pool, maintenanceQueue, job.data, `worker:${job.id ?? 'unknown'}`); return { ok: true } }
+  if (job.name === 'action-engine.evaluateMission') { await handleActionEngineEvaluation(pool, job.data, maintenanceQueue); return { ok: true } }
+  if (job.name === 'action-engine.expireWaits') { await handleActionEngineExpireWaits(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'action-engine.collectMetrics') { await handleActionEngineCollectMetrics(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver') {
     await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
     return { ok: true }
   }
@@ -73,6 +80,8 @@ const maintenanceQueue = createQueue(DEFAULT_QUEUE_NAME)
 const schedulerIntervalMs = Number(process.env.CRM_SEQUENCE_SCHEDULER_INTERVAL_MS || 60_000)
 const maintenanceIntervalMs = Number(process.env.TRACE_RETENTION_PURGE_INTERVAL_MS || 24 * 60 * 60 * 1_000)
 const domainEventDispatchIntervalMs = Number(process.env.DOMAIN_EVENT_DISPATCH_INTERVAL_MS || 5_000)
+const actionWaitIntervalMs = Number(process.env.ACTION_ENGINE_WAIT_INTERVAL_MS || 60_000)
+const actionMetricsIntervalMs = Number(process.env.ACTION_ENGINE_METRICS_INTERVAL_MS || 5 * 60_000)
 
 const scheduler = setInterval(() => {
   void runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })).catch((error) => {
@@ -113,6 +122,20 @@ const domainEventDispatchScheduler = setInterval(() => {
   void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
 }, domainEventDispatchIntervalMs)
 
+function scheduleActionEngineMaintenance() {
+  const waitWindow = Math.floor(Date.now() / actionWaitIntervalMs)
+  const metricWindow = Math.floor(Date.now() / actionMetricsIntervalMs)
+  return Promise.all([
+    maintenanceQueue.add('action-engine.expireWaits', { window: waitWindow, limit: 100 }, { jobId: createBullMqJobId('action-engine-expire-waits', waitWindow) }),
+    maintenanceQueue.add('action-engine.collectMetrics', { window: metricWindow }, { jobId: createBullMqJobId('action-engine-collect-metrics', metricWindow) }),
+  ])
+}
+
+void scheduleActionEngineMaintenance().catch((error) => console.error('[worker] action engine scheduling failed', error))
+const actionEngineScheduler = setInterval(() => {
+  void scheduleActionEngineMaintenance().catch((error) => console.error('[worker] action engine scheduling failed', error))
+}, Math.min(actionWaitIntervalMs, actionMetricsIntervalMs))
+
 worker.on('completed', (job) => {
   console.log(`[worker] completed ${job.name}#${job.id ?? 'unknown'}`)
 })
@@ -127,6 +150,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   clearInterval(maintenanceScheduler)
   clearInterval(googleTokenRefreshScheduler)
   clearInterval(domainEventDispatchScheduler)
+  clearInterval(actionEngineScheduler)
   await worker.close()
   await maintenanceQueue.close()
   await pool.end()

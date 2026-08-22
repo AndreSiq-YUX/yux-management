@@ -14,6 +14,7 @@ import type {
   LeadCommandContext,
   RawAutomationEvent,
 } from './types.js'
+import { loadEntityOwnership, resolveAutomationConflict } from '../action-engine/execution-ownership.js'
 
 type RuntimeDb = {
   query: <T = any>(...args: any[]) => Promise<{ rows: T[]; rowCount?: number | null }>
@@ -81,6 +82,13 @@ export async function dispatchAutomationEvent(
     }
     if (event.depth >= (options.maxDepth ?? 12)) {
       results.push({ flowId: flow.id, status: 'skipped', reason: 'domain_event_max_depth_reached' })
+      continue
+    }
+
+    const ownershipConflict = await findOwnershipConflict(db, event, flow.snapshot.actions)
+    if (ownershipConflict) {
+      results.push({ flowId: flow.id, status: 'skipped', reason: ownershipConflict })
+      await emitOwnershipConflict(db, event, flow.id, ownershipConflict)
       continue
     }
 
@@ -166,6 +174,11 @@ export async function executeAutomationRun(
   try {
     for (let index = 0; index < context.actions.length; index += 1) {
       const action = context.actions[index]
+      const ownershipConflict = await findOwnershipConflict(db, context.event, [action])
+      if (ownershipConflict) {
+        await emitOwnershipConflict(db, context.event, context.flow.id, ownershipConflict)
+        throw new Error(ownershipConflict)
+      }
       const effectKey = `${context.runId}:${action.id ?? index}`
       const effect = await db.query<{ id: string; status: string; result: Record<string, unknown> }>(
         `INSERT INTO public.automation_action_effects (run_id, action_id, idempotency_key, status)
@@ -224,6 +237,33 @@ export async function executeAutomationRun(
     await db.query(`UPDATE public.automation_execution_runs SET status = 'failed', last_error = $2, completed_at = NOW(), updated_at = NOW() WHERE id = $1`, [context.runId, reason])
     return { status: 'failed', reason }
   }
+}
+
+async function findOwnershipConflict(db: RuntimeDb, event: DomainEventEnvelope, actions: AutomationAction[]): Promise<string | null> {
+  if (!event.leadId) return null
+  const ownership = await loadEntityOwnership(db, event.organizationId, 'lead', event.leadId)
+  if (!ownership) return null
+  const missionId = typeof event.payload?.missionId === 'string' ? event.payload.missionId : undefined
+  for (const action of actions) {
+    const decision = resolveAutomationConflict(ownership, {
+      missionId,
+      missionBound: Boolean(missionId),
+      actionKey: action.actionType,
+    })
+    if (decision.outcome === 'block') return decision.reason
+  }
+  return null
+}
+
+async function emitOwnershipConflict(db: RuntimeDb, event: DomainEventEnvelope, flowId: string, reason: string): Promise<void> {
+  await recordDomainEvent(db as any, {
+    eventId: coerceUuid(undefined, `mission-ownership-conflict:${event.eventId}:${flowId}:${reason}`),
+    eventType: 'mission.ownership_conflict', organizationId: event.organizationId,
+    crmInstanceId: event.crmInstanceId, aggregateType: 'mission',
+    aggregateId: typeof event.payload?.missionId === 'string' && isUuid(event.payload.missionId) ? event.payload.missionId : event.aggregateId,
+    leadId: event.leadId, actor: { type: 'system' }, parent: event,
+    payload: { flowId, actionEngineReason: reason, missionId: event.payload?.missionId },
+  })
 }
 
 export function normalizeEvent(raw: RawAutomationEvent): DomainEventEnvelope {

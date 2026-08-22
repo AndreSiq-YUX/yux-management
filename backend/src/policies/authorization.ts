@@ -11,6 +11,9 @@ export type Operation =
   | 'omnichannel.read'
   | 'omnichannel.write'
   | 'strategy.manage'
+  | 'action_engine.read'
+  | 'action_engine.write'
+  | 'action_engine.economics.read'
 
 export type Resource = {
   organizationId?: string | null
@@ -24,6 +27,9 @@ const moduleOperationKeys: Partial<Record<Operation, string>> = {
   'automations.write': 'automations',
   'omnichannel.read': 'omnichannel',
   'omnichannel.write': 'omnichannel',
+  'action_engine.read': 'action_engine',
+  'action_engine.write': 'action_engine',
+  'action_engine.economics.read': 'action_engine',
 }
 
 export function canAccess(ctx: RequestContext, operation: Operation, resource: Resource = {}) {
@@ -37,6 +43,8 @@ export function canAccess(ctx: RequestContext, operation: Operation, resource: R
   if (moduleKey && !ctx.enabledModuleKeys.includes(moduleKey)) return false
 
   if (ctx.role === 'yux_operator') return operation.endsWith('.read') || operation.endsWith('.write')
+  if (operation === 'action_engine.write') return false
+  if (operation === 'action_engine.economics.read') return false
   if (ctx.role === 'client_admin') return !operation.startsWith('platform.')
   if (ctx.role === 'client_member') return operation.endsWith('.read')
 

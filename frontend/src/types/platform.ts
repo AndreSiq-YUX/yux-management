@@ -58,6 +58,9 @@ export type PermissionKey =
   | 'finance.write'
   | 'blueprints.read'
   | 'blueprints.write'
+  | 'action_engine.read'
+  | 'action_engine.write'
+  | 'action_engine.economics.read'
 
 export type RoleScope = 'internal' | 'client'
 

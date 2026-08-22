@@ -2,6 +2,14 @@ import type { PlatformModule } from '@/types/platform'
 
 export const PLATFORM_MODULES: PlatformModule[] = [
   {
+    key: 'action_engine',
+    name: 'Missões',
+    base: false,
+    internalRoute: '/missions',
+    portalRoute: '/portal/missoes',
+    requiredPermissions: ['action_engine.read'],
+  },
+  {
     key: 'clients',
     name: 'Clientes',
     base: true,

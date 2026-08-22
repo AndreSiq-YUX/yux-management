@@ -11,6 +11,7 @@ import { createPool } from './db/client.js'
 import { contextPlugin } from './http/context-plugin.js'
 import { DEFAULT_QUEUE_NAME, createIdempotencyKey, createQueue, type JobName, type QueueJobData } from './jobs/queue.js'
 import { registerAiAssistantRoutes } from './modules/ai-assistant/routes.js'
+import { registerActionEngineRoutes } from './modules/action-engine/routes.js'
 import { registerAutomationRoutes } from './modules/automations/routes.js'
 import { registerCampaignRoutes } from './modules/campaigns/routes.js'
 import { registerCompanyIntelligenceRoutes } from './modules/company-intelligence/routes.js'
@@ -114,6 +115,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerMarketingStudioRoutes, { prefix: '/api/marketing-studio' })
   await app.register(registerStrategyEngineRoutes, { prefix: '/api/strategy-engine' })
   await app.register(registerAiAssistantRoutes, { prefix: '/api/ai-assistant' })
+  await app.register(registerActionEngineRoutes, { prefix: '/api/action-engine' })
   await app.register(registerLandingPageRoutes, { prefix: '/api/landing-pages' })
   await app.register(registerCampaignRoutes, { prefix: '/api/campaigns' })
   await app.register(registerCompanyIntelligenceRoutes, { prefix: '/api/company-intelligence' })

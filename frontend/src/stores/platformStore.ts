@@ -23,6 +23,7 @@ const fallbackOrganization: Organization = {
 }
 
 const internalModuleKeys = [
+  'action_engine',
   'clients',
   'crm',
   'projects',

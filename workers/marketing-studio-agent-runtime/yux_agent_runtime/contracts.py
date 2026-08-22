@@ -8,6 +8,87 @@ class AgentContractError(ValueError):
     """Raised when a provider response cannot be trusted as a workflow result."""
 
 
+def validate_mission_plan(value: dict[str, Any], planning_input: dict[str, Any]) -> dict[str, Any]:
+    """Validate a proposed plan without trusting the model/provider.
+
+    This is an early quality boundary. The Fastify Action Engine recompiles and
+    validates the same document before it can become executable.
+    """
+    if value.get("schemaVersion") != 1:
+        raise AgentContractError("mission_plan_schema_version_invalid")
+    if value.get("missionId") != planning_input.get("mission", {}).get("id"):
+        raise AgentContractError("mission_plan_mission_mismatch")
+
+    requested_pack = planning_input.get("action_pack") or {}
+    proposed_pack = value.get("actionPack") or {}
+    for proposed_key, requested_key in (("key", "key"), ("version", "semanticVersion"), ("templateHash", "contentHash")):
+        if proposed_pack.get(proposed_key) != requested_pack.get(requested_key):
+            raise AgentContractError("mission_plan_pack_mismatch")
+
+    capabilities = {
+        (str(item.get("key")), int(item.get("version", 0)))
+        for item in planning_input.get("capabilities") or []
+        if isinstance(item, dict)
+    }
+    steps = value.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise AgentContractError("mission_plan_steps_required")
+    keys = [str(step.get("stepKey") or "") for step in steps if isinstance(step, dict)]
+    if len(keys) != len(steps) or any(not key for key in keys) or len(set(keys)) != len(keys):
+        raise AgentContractError("mission_plan_step_key_invalid")
+
+    protected = requested_pack.get("protectedStepKeys") or []
+    for protected_key in protected:
+        if protected_key not in keys:
+            raise AgentContractError("mission_plan_protected_step_missing")
+    if "pack.collect_metrics_and_costs" not in keys or "pack.evaluate" not in keys:
+        raise AgentContractError("mission_plan_economics_checkpoint_missing")
+
+    dependency_graph: dict[str, list[str]] = {}
+    for step in steps:
+        capability_key = str(step.get("capabilityKey") or "")
+        capability_version = int(step.get("capabilityVersion") or 0)
+        if (capability_key, capability_version) not in capabilities:
+            raise AgentContractError("mission_plan_capability_not_allowed")
+        dependencies = step.get("dependsOn") or []
+        if not isinstance(dependencies, list) or any(str(item) not in keys for item in dependencies):
+            raise AgentContractError("mission_plan_dependency_missing")
+        dependency_graph[str(step["stepKey"])] = [str(item) for item in dependencies]
+        timeout = step.get("timeoutSeconds")
+        attempts = step.get("maxAttempts")
+        if not isinstance(timeout, int) or timeout < 1 or timeout > 86400:
+            raise AgentContractError("mission_plan_timeout_invalid")
+        if not isinstance(attempts, int) or attempts < 1 or attempts > 5:
+            raise AgentContractError("mission_plan_attempts_invalid")
+        if step.get("effect") == "external" and step.get("approvalRequired") is not True:
+            raise AgentContractError("mission_plan_external_approval_required")
+
+    _assert_acyclic(dependency_graph)
+    economics = value.get("estimatedEconomics")
+    if not isinstance(economics, dict) or economics.get("currency") != "BRL" or "totalExecutionCost" not in economics:
+        raise AgentContractError("mission_plan_economics_invalid")
+    return value
+
+
+def _assert_acyclic(graph: dict[str, list[str]]) -> None:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node: str) -> None:
+        if node in visiting:
+            raise AgentContractError("mission_plan_cycle_detected")
+        if node in visited:
+            return
+        visiting.add(node)
+        for dependency in graph.get(node, []):
+            visit(dependency)
+        visiting.remove(node)
+        visited.add(node)
+
+    for key in graph:
+        visit(key)
+
+
 def parse_json_object(content: str) -> dict[str, Any]:
     text = str(content or "").strip()
     if text.startswith("```"):

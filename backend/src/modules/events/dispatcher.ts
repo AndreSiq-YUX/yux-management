@@ -7,12 +7,12 @@ import {
 import { createBullMqJobId } from '../../jobs/queue.js'
 import type { DomainEventEnvelope } from './types.js'
 
-export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring'] as const
+export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring', 'mission_observer'] as const
 export type DomainEventConsumerKey = (typeof DOMAIN_EVENT_CONSUMERS)[number]
 
 export type DomainEventQueue = {
   add(
-    name: 'events.consume.automation' | 'events.consume.scoring',
+    name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver',
     data: { eventId: string; deliveryId: string; consumerKey: DomainEventConsumerKey },
     options?: { jobId?: string },
   ): Promise<unknown>
@@ -71,7 +71,9 @@ export async function fanOutDomainEvent(
       const consumerKey = delivery.consumer_key as DomainEventConsumerKey
       if (!consumers.includes(consumerKey)) continue
       await queue.add(
-        consumerKey === 'automation' ? 'events.consume.automation' : 'events.consume.scoring',
+        consumerKey === 'automation' ? 'events.consume.automation'
+          : consumerKey === 'scoring' ? 'events.consume.scoring'
+            : 'events.consume.missionObserver',
         { eventId: event.eventId, deliveryId: delivery.id, consumerKey },
         { jobId: createBullMqJobId(consumerKey, event.eventId) },
       )

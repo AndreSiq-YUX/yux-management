@@ -9,6 +9,7 @@ import type { DomainEventQueue } from '../../modules/events/dispatcher.js'
 import type { AutomationJobQueue } from '../../modules/automation/types.js'
 import { handleCrmScoringEvent } from './crm-scoring.js'
 import { handleAutomationDispatch } from './automation.js'
+import { observeDomainEvent } from '../../modules/action-engine/observer.js'
 
 type DomainEventJobData = {
   eventId?: unknown
@@ -36,7 +37,7 @@ export async function handleDomainEventDelivery(
   const deliveryId = stringValue(data.deliveryId)
   const eventId = stringValue(data.eventId)
   const consumerKey = stringValue(data.consumerKey)
-  if (!deliveryId || !eventId || !['automation', 'scoring'].includes(consumerKey)) {
+  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer'].includes(consumerKey)) {
     throw new Error('domain_event_delivery_context_required')
   }
 
@@ -62,13 +63,15 @@ export async function handleDomainEventDelivery(
   try {
     const result = consumerKey === 'scoring'
       ? await handleCrmScoringEvent(event, pool)
-      : await handleAutomationDispatch(pool, env, {
+      : consumerKey === 'mission_observer'
+        ? await observeDomainEvent(pool, event)
+        : await handleAutomationDispatch(pool, env, {
         event: {
           ...event,
           type: event.eventType,
           eventId: event.eventId,
         },
-      }, queue)
+        }, queue)
     await completeDelivery(pool, deliveryId, result)
     return { ok: true, result }
   } catch (error) {

@@ -118,3 +118,6 @@ __all__ = [
     "requires_grounding",
     "review_content_quality",
 ]
+from .mission import MissionPlanRequest, compose_mission_planning_prompt, plan_mission
+
+__all__ += ["MissionPlanRequest", "compose_mission_planning_prompt", "plan_mission"]

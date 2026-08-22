@@ -40,6 +40,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
   {
     label: 'Operacao',
     items: [
+      { label: 'Missões', href: '/missions', moduleKey: 'action_engine' },
       { label: 'Projetos', href: '/projects', moduleKey: 'projects' },
       { label: 'Entregaveis', href: '/projects', moduleKey: 'projects' },
       { label: 'Aprovacoes', href: '/projects', moduleKey: 'projects' },
@@ -150,6 +151,12 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
         ...moduleItem(context, { label: 'Templates', href: href('/automacoes/templates'), moduleKey: 'automations' }),
         ...moduleItem(context, { label: 'Execucoes', href: href('/automacoes/execucoes'), moduleKey: 'automations' }),
         ...moduleItem(context, { label: 'Logs', href: href('/automacoes/logs'), moduleKey: 'automations' }),
+      ],
+    },
+    {
+      label: 'Execucao YUX',
+      items: [
+        ...moduleItem(context, { label: 'Missões', href: href('/missoes'), moduleKey: 'action_engine' }),
       ],
     },
     {
