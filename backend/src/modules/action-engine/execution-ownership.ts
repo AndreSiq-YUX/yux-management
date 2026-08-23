@@ -1,5 +1,6 @@
 import type { Connectable, Queryable } from './repository.js'
 import type { OwnershipConflictPolicy, OwnershipMode } from './types.js'
+import { releaseResourceClaims } from './resource-claims.js'
 
 export type MissionOwnership = {
   missionId: string
@@ -59,7 +60,8 @@ export async function releaseMissionOwnership(client: Queryable, missionId: stri
     `UPDATE public.action_mission_entities SET active = FALSE, released_at = NOW()
      WHERE mission_id = $1 AND organization_id = $2 AND active = TRUE`, [missionId, organizationId],
   )
-  return result.rowCount ?? 0
+  const releasedClaims = await releaseResourceClaims(client, missionId, organizationId)
+  return (result.rowCount ?? 0) + releasedClaims
 }
 
 export async function loadEntityOwnership(client: Queryable, organizationId: string, entityType: string, entityId: string): Promise<MissionOwnership | null> {

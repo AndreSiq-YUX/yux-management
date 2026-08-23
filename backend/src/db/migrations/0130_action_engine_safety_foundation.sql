@@ -56,6 +56,23 @@ CREATE TABLE IF NOT EXISTS public.action_external_effects (
   UNIQUE (organization_id, capability_key, capability_version, provider_idempotency_key)
 );
 
+CREATE TABLE IF NOT EXISTS public.action_resource_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
+  mission_id UUID NOT NULL REFERENCES public.action_missions(id) ON DELETE RESTRICT,
+  mission_label TEXT NOT NULL CHECK (BTRIM(mission_label) <> ''),
+  resource_key TEXT NOT NULL CHECK (BTRIM(resource_key) <> ''),
+  scope TEXT NOT NULL CHECK (BTRIM(scope) <> ''),
+  mode TEXT NOT NULL CHECK (mode IN ('observe','shared','exclusive')),
+  fencing_token BIGINT NOT NULL CHECK (fencing_token > 0),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  lease_expires_at TIMESTAMPTZ NOT NULL,
+  last_renewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  released_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.action_external_effect_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
@@ -84,6 +101,11 @@ CREATE TABLE IF NOT EXISTS public.action_incidents (
 CREATE INDEX IF NOT EXISTS idx_action_external_effects_reconcile
   ON public.action_external_effects(status, next_reconcile_at, created_at)
   WHERE status IN ('unknown','reconciling');
+CREATE INDEX IF NOT EXISTS idx_action_resource_claims_active
+  ON public.action_resource_claims(organization_id, resource_key, scope, lease_expires_at)
+  WHERE active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_action_resource_claims_mission
+  ON public.action_resource_claims(mission_id, active, lease_expires_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effects_mission
   ON public.action_external_effects(mission_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effect_events_effect
@@ -108,7 +130,7 @@ DO $action_engine_safety_rls$
 DECLARE table_name TEXT;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
-    'action_external_effects','action_external_effect_events','action_incidents'
+    'action_external_effects','action_external_effect_events','action_incidents','action_resource_claims'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);

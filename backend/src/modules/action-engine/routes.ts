@@ -15,6 +15,7 @@ import type { MissionStatus } from './types.js'
 import { getAction, listMissionActions, resolveHumanTask, retryAction, skipAction, startMission } from './executor.js'
 import { collectMissionMetrics } from './evaluator.js'
 import { collectMissionEconomics } from './economics.js'
+import { releaseResourceClaims } from './resource-claims.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -377,11 +378,15 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_command' })
       requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
       try {
-        return await transaction(app.pg, (client) => transitionMission(client, {
-          missionId: params.data.missionId, organizationId: body.data.organizationId,
-          expectedVersion: body.data.expectedVersion, toStatus: commandStatus(command),
-          actor: { type: 'user', id: ctx.userId }, reason: body.data.reason,
-        }))
+        return await transaction(app.pg, async (client) => {
+          const updated = await transitionMission(client, {
+            missionId: params.data.missionId, organizationId: body.data.organizationId,
+            expectedVersion: body.data.expectedVersion, toStatus: commandStatus(command),
+            actor: { type: 'user', id: ctx.userId }, reason: body.data.reason,
+          })
+          if (command === 'cancel') await releaseResourceClaims(client, params.data.missionId, body.data.organizationId)
+          return updated
+        })
       } catch (error) { return sendDomainError(reply, error) }
     })
   }

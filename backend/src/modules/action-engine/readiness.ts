@@ -57,6 +57,22 @@ export async function evaluateMissionReadiness(
   )
   checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
 
+  const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(
+    `SELECT mission_id, mission_label, lease_expires_at
+     FROM public.action_resource_claims
+     WHERE organization_id = $1 AND resource_key = 'crm.lead_population'
+       AND scope = 'inactive_revenue_recovery' AND active = TRUE AND lease_expires_at > NOW()
+     ORDER BY CASE mode WHEN 'exclusive' THEN 0 ELSE 1 END, acquired_at LIMIT 1`,
+    [input.organizationId],
+  )
+  checks.push(resourceClaimReadinessCheck(claim.rows[0] ? {
+    missionId: claim.rows[0].mission_id,
+    missionLabel: claim.rows[0].mission_label,
+    leaseExpiresAt: claim.rows[0].lease_expires_at instanceof Date
+      ? claim.rows[0].lease_expires_at.toISOString()
+      : new Date(claim.rows[0].lease_expires_at).toISOString(),
+  } : null))
+
   const eligible = await client.query<{ count: number | string }>(
     `SELECT COUNT(*)::INT AS count FROM public.leads
      WHERE organization_id = $1 AND COALESCE(last_activity_at, updated_at, created_at) < NOW() - INTERVAL '7 days'`,
@@ -112,6 +128,20 @@ export async function evaluateMissionReadiness(
   // connections are still diagnosed above, but they are not advertised as an
   // executable Mission channel until their Action Engine adapters are enabled.
   return { ready: checks.every((item) => item.status !== 'block'), checks, availableChannels }
+}
+
+export function resourceClaimReadinessCheck(conflict: {
+  missionId: string; missionLabel: string; leaseExpiresAt: string
+} | null): ReadinessCheck {
+  if (!conflict) {
+    return { status: 'pass', code: 'resource_claim_available', message: 'Escopo operacional disponível para a missão.' }
+  }
+  return {
+    status: 'block',
+    code: 'resource_claim_conflict',
+    message: `O recurso está reservado pela missão “${conflict.missionLabel}” até ${conflict.leaseExpiresAt}.`,
+    fixHref: `/missions/${encodeURIComponent(conflict.missionId)}`,
+  }
 }
 
 function positiveDecimal(value: string): boolean {

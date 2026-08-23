@@ -17,6 +17,7 @@ import {
   createPostgresExternalEffectReconciliationStore,
   reconcileUnknownEffect,
 } from '../../modules/action-engine/provider-reconciliation.js'
+import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
 
 type Pool = {
   query: Queryable['query']
@@ -224,6 +225,9 @@ export async function handleActionEngineEvaluation(pool: Pool, data: Record<stri
     if (current.status === 'active') {
       const nextStatus = ({ continue: 'active', pause: 'paused', block: 'blocked', propose_replan: 'pending_replan_approval', succeed: 'succeeded', fail: 'failed', expire: 'expired' } as const)[evaluation.conclusion]
       const transitioned = await transitionMission(client, { missionId, organizationId, expectedVersion: evaluating.version, toStatus: nextStatus, actor: { type: 'system' }, reason: evaluation.reasons.join(',') })
+      if (['succeeded','failed','expired','cancelled'].includes(nextStatus)) {
+        await releaseResourceClaims(client, missionId, organizationId)
+      }
       return { evaluation, economics, replanVersion: nextStatus === 'pending_replan_approval' ? transitioned.version : undefined }
     }
     return { evaluation, economics }

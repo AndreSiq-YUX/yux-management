@@ -13,6 +13,7 @@ import {
   type ExternalEffect,
 } from './external-effects.js'
 import { assertPinnedCapabilityAvailable, hashCapabilityManifest, type CapabilityManifestEntry } from './capability-manifest.js'
+import { acquireResourceClaim, renewMissionResourceClaims } from './resource-claims.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -36,6 +37,15 @@ export async function startMission(pool: Connectable, input: {
       [mission.activePlanId, input.missionId, input.organizationId],
     )
     if (plan.rows[0]?.status !== 'approved') throw new Error('mission_plan_not_approved')
+    await acquireResourceClaim(client, {
+      organizationId: input.organizationId,
+      missionId: input.missionId,
+      missionLabel: mission.title,
+      resourceKey: 'crm.lead_population',
+      scope: 'inactive_revenue_recovery',
+      mode: 'exclusive',
+      ttlSeconds: 900,
+    })
     const runCount = await createActionRuns(client, { organizationId: input.organizationId, missionId: input.missionId, planId: mission.activePlanId })
     await client.query(`UPDATE public.action_plans SET status = 'active', updated_at = NOW() WHERE id = $1`, [mission.activePlanId])
     const active = await transitionMission(client, {
@@ -132,6 +142,12 @@ export async function executeActionRun(
   )
   if (preflight.rows[0]?.mission_status !== 'active' || preflight.rows[0]?.run_status !== 'running') {
     await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'mission_not_active_at_preflight')
+    return { status: 'blocked' }
+  }
+  try {
+    await renewMissionResourceClaims(pool, claimed.action.mission_id, input.organizationId, 900)
+  } catch {
+    await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'resource_claim_stale_fencing_token')
     return { status: 'blocked' }
   }
 
