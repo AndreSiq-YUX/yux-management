@@ -4,6 +4,7 @@ import type { AppEnv } from '../../config/env.js'
 import { validatePlanConformance, type ActionPackVersion } from './action-pack.js'
 import type { CapabilityRegistry } from './capability-registry.js'
 import type { ActionPlanStep, ProposedMissionPlan } from './types.js'
+import { createCapabilityManifest, type CapabilityManifestEntry } from './capability-manifest.js'
 
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/)
 const harnessStep = z.object({
@@ -34,6 +35,8 @@ export type CompiledMissionPlan = {
   packVersion: string
   packContentHash: string
   planHash: string
+  capabilityManifest: CapabilityManifestEntry[]
+  capabilityManifestHash: string
   parameters: Record<string, unknown>
   deviations: Array<{ path: string; reason: string; approvalRequired: boolean }>
   estimatedEconomics: HarnessMissionPlan['estimatedEconomics']
@@ -58,6 +61,7 @@ export function diffMissionPlans(previous: CompiledMissionPlan, proposed: Compil
   const changedCapabilities = common.filter((key) => {
     const left = previousSteps.get(key)!; const right = proposedSteps.get(key)!
     return left.capabilityKey !== right.capabilityKey || left.capabilityVersion !== right.capabilityVersion
+      || left.capabilityDefinitionHash !== right.capabilityDefinitionHash
   })
   const changedApprovals = common.filter((key) => previousSteps.get(key)!.approvalRequired !== proposedSteps.get(key)!.approvalRequired)
   const previousPopulation = decimalParameter(previous.parameters.maxPopulation)
@@ -142,12 +146,22 @@ export function compileMissionPlan(input: {
   if (compareDecimal(raw.estimatedEconomics.totalExecutionCost, input.maxTotalCostBrl) > 0) {
     throw new Error('mission_plan_budget_exceeded')
   }
+  const capabilityManifest = createCapabilityManifest(
+    input.registry,
+    raw.steps.map((step) => ({ key: step.capabilityKey, version: step.capabilityVersion })),
+  )
+  const manifestByIdentity = new Map(
+    capabilityManifest.entries.map((entry) => [`${entry.key}@${entry.version}`, entry]),
+  )
   const normalized = {
     missionId: input.missionId, packKey: input.pack.key, packVersion: input.pack.semanticVersion,
     packContentHash: input.pack.contentHash, parameters: raw.resolvedParameters, deviations: raw.deviations,
     estimatedEconomics: raw.estimatedEconomics,
+    capabilityManifest: capabilityManifest.entries,
+    capabilityManifestHash: capabilityManifest.hash,
     steps: raw.steps.map((step) => ({
       stepKey: step.stepKey, capabilityKey: step.capabilityKey, capabilityVersion: step.capabilityVersion,
+      capabilityDefinitionHash: manifestByIdentity.get(`${step.capabilityKey}@${step.capabilityVersion}`)!.definitionHash,
       dependsOn: [...step.dependsOn].sort(), parameters: step.input, approvalRequired: step.approvalRequired,
       protected: input.pack.protectedStepKeys.includes(step.stepKey), ...(step.extensionPoint ? { extensionPoint: step.extensionPoint } : {}),
       timeoutSeconds: step.timeoutSeconds, maxAttempts: step.maxAttempts, outputBindings: step.outputBindings,

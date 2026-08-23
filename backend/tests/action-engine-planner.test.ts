@@ -37,6 +37,9 @@ describe('Action Engine deterministic plan compiler', () => {
     const second = compile(structuredClone(raw))
     expect(first.planHash).toMatch(/^[a-f0-9]{64}$/)
     expect(first.planHash).toBe(second.planHash)
+    expect(first.capabilityManifestHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(first.capabilityManifest.length).toBeGreaterThan(0)
+    expect(first.steps.every((step) => step.capabilityDefinitionHash?.length === 64)).toBe(true)
     expect(first.steps.find((step) => step.stepKey === 'pack.approve_canary')?.approvalRequired).toBe(true)
   })
 

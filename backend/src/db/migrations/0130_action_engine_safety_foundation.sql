@@ -1,6 +1,33 @@
 -- Cross-cutting safety primitives required before the general Mission Supervisor.
 -- This migration is additive and preserves every existing Action Engine row.
 
+ALTER TABLE public.action_plans
+  ADD COLUMN IF NOT EXISTS capability_manifest JSONB NOT NULL DEFAULT '[]'::JSONB
+    CHECK (jsonb_typeof(capability_manifest) = 'array'),
+  ADD COLUMN IF NOT EXISTS capability_manifest_hash TEXT NOT NULL
+    DEFAULT '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e1694018417eb71d718210b'
+    CHECK (capability_manifest_hash ~ '^[a-f0-9]{64}$');
+
+ALTER TABLE public.action_plan_steps
+  ADD COLUMN IF NOT EXISTS capability_definition_hash TEXT
+    CHECK (capability_definition_hash IS NULL OR capability_definition_hash ~ '^[a-f0-9]{64}$');
+
+CREATE OR REPLACE FUNCTION private.guard_action_plan_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.status IN ('approved','active','superseded','completed')
+     AND (NEW.parameters IS DISTINCT FROM OLD.parameters
+       OR NEW.deviations IS DISTINCT FROM OLD.deviations
+       OR NEW.plan_hash IS DISTINCT FROM OLD.plan_hash
+       OR NEW.pack_content_hash IS DISTINCT FROM OLD.pack_content_hash
+       OR NEW.capability_manifest IS DISTINCT FROM OLD.capability_manifest
+       OR NEW.capability_manifest_hash IS DISTINCT FROM OLD.capability_manifest_hash) THEN
+    RAISE EXCEPTION 'action_plan_immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE IF NOT EXISTS public.action_external_effects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,

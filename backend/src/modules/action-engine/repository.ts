@@ -3,6 +3,7 @@ import { recordDomainEvent } from '../events/repository.js'
 import type { DomainEventActor } from '../events/types.js'
 import { assertMissionTransition } from './state-machine.js'
 import type { ActionMission, ActionPlanStep, MissionMode, MissionStatus } from './types.js'
+import type { CapabilityManifestEntry } from './capability-manifest.js'
 
 export type Queryable = {
   query<TRow = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: TRow[]; rowCount?: number | null }>
@@ -204,6 +205,8 @@ export async function insertPlanRevision(
     parameters: Record<string, unknown>
     deviations: Array<Record<string, unknown>>
     estimatedEconomics: Record<string, unknown>
+    capabilityManifest?: CapabilityManifestEntry[]
+    capabilityManifestHash?: string
     proposedPayload?: Record<string, unknown>
     compiledPayload?: Record<string, unknown>
     planHash?: string
@@ -230,12 +233,15 @@ export async function insertPlanRevision(
   const plan = await client.query<{ id: string }>(
     `INSERT INTO public.action_plans (
        organization_id, mission_id, revision, status, pack_version_id, pack_content_hash,
-       plan_hash, parameters, deviations, proposed_payload, compiled_payload, estimated_economics, created_by
-     ) VALUES ($1,$2,$3,'proposed',$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       plan_hash, parameters, deviations, proposed_payload, compiled_payload, estimated_economics,
+       capability_manifest, capability_manifest_hash, created_by
+     ) VALUES ($1,$2,$3,'proposed',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING id`,
     [input.organizationId, input.missionId, revision, input.packVersionId, input.packContentHash,
       planHash, input.parameters, input.deviations, input.proposedPayload ?? {}, input.compiledPayload ?? {},
-      input.estimatedEconomics, input.createdBy ?? null],
+      input.estimatedEconomics, input.capabilityManifest ?? [],
+      input.capabilityManifestHash ?? '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e1694018417eb71d718210b',
+      input.createdBy ?? null],
   )
   const planId = plan.rows[0]?.id
   if (!planId) throw new Error('plan_insert_failed')
@@ -243,10 +249,10 @@ export async function insertPlanRevision(
     await client.query(
       `INSERT INTO public.action_plan_steps (
          organization_id, plan_id, step_key, position, capability_key, capability_version,
-         depends_on, parameters, approval_required, is_protected, extension_point
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+         capability_definition_hash, depends_on, parameters, approval_required, is_protected, extension_point
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [input.organizationId, planId, step.stepKey, position, step.capabilityKey,
-        step.capabilityVersion, step.dependsOn, step.parameters, step.approvalRequired,
+        step.capabilityVersion, step.capabilityDefinitionHash ?? null, step.dependsOn, step.parameters, step.approvalRequired,
         step.protected, step.extensionPoint ?? null],
     )
   }
@@ -286,6 +292,7 @@ export async function listMissionPlans(client: Queryable, missionId: string, org
   const result = await client.query<Record<string, unknown>>(
     `SELECT id, organization_id AS "organizationId", mission_id AS "missionId", revision, status,
             pack_version_id AS "packVersionId", pack_content_hash AS "packContentHash", plan_hash AS "planHash",
+            capability_manifest AS "capabilityManifest", capability_manifest_hash AS "capabilityManifestHash",
             parameters, deviations, estimated_economics AS "estimatedEconomics",
             approved_at AS "approvedAt", created_at AS "createdAt", updated_at AS "updatedAt"
      FROM public.action_plans WHERE mission_id = $1 AND organization_id = $2 ORDER BY revision DESC`,
@@ -298,6 +305,7 @@ export async function getPlan(client: Queryable, planId: string, organizationId:
   const plan = await client.query<Record<string, unknown>>(
     `SELECT id, organization_id AS "organizationId", mission_id AS "missionId", revision, status,
             pack_version_id AS "packVersionId", pack_content_hash AS "packContentHash", plan_hash AS "planHash",
+            capability_manifest AS "capabilityManifest", capability_manifest_hash AS "capabilityManifestHash",
             parameters, deviations, proposed_payload AS "proposedPayload", compiled_payload AS "compiledPayload",
             estimated_economics AS "estimatedEconomics", approved_at AS "approvedAt",
             created_at AS "createdAt", updated_at AS "updatedAt"
@@ -307,7 +315,8 @@ export async function getPlan(client: Queryable, planId: string, organizationId:
   if (!plan.rows[0]) return null
   const steps = await client.query<Record<string, unknown>>(
     `SELECT id, step_key AS "stepKey", position, capability_key AS "capabilityKey",
-            capability_version AS "capabilityVersion", depends_on AS "dependsOn", parameters,
+            capability_version AS "capabilityVersion", capability_definition_hash AS "capabilityDefinitionHash",
+            depends_on AS "dependsOn", parameters,
             approval_required AS "approvalRequired", is_protected AS "protected", extension_point AS "extensionPoint"
      FROM public.action_plan_steps WHERE plan_id = $1 AND organization_id = $2 ORDER BY position`,
     [planId, organizationId],

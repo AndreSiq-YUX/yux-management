@@ -5,6 +5,7 @@ import { diffMissionPlans } from '../src/modules/action-engine/planner.js'
 function plan(): CompiledMissionPlan {
   return {
     missionId: 'mission-1', packKey: 'revenue_recovery', packVersion: '0.1.0', packContentHash: 'a'.repeat(64), planHash: 'b'.repeat(64),
+    capabilityManifest: [], capabilityManifestHash: 'c'.repeat(64),
     parameters: { maxPopulation: 20, ownershipMode: 'exclusive' }, deviations: [],
     estimatedEconomics: { currency: 'BRL', aiAndProviderCost: '10', mediaCost: '0', humanHours: '2', humanCost: '200', totalExecutionCost: '210' },
     steps: [{ stepKey: 'pack.readiness', capabilityKey: 'system.readiness.check', capabilityVersion: 1, dependsOn: [], parameters: {}, approvalRequired: false, protected: true, timeoutSeconds: 300, maxAttempts: 3, outputBindings: {} }],

@@ -298,6 +298,8 @@ export async function handleActionEnginePlanMission(
         organizationId, missionId, packVersionId: mission.packVersionId,
         packContentHash: compiled.packContentHash, parameters: compiled.parameters,
         deviations: compiled.deviations, estimatedEconomics: compiled.estimatedEconomics,
+        capabilityManifest: compiled.capabilityManifest,
+        capabilityManifestHash: compiled.capabilityManifestHash,
         steps: compiled.steps, proposedPayload: rawPlan as Record<string, unknown>,
         compiledPayload: compiled as unknown as Record<string, unknown>, planHash: compiled.planHash,
       })

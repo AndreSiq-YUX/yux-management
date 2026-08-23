@@ -93,6 +93,7 @@ export type ActionPlanStep = {
   stepKey: string
   capabilityKey: string
   capabilityVersion: number
+  capabilityDefinitionHash?: string
   dependsOn: string[]
   parameters: Record<string, unknown>
   approvalRequired: boolean

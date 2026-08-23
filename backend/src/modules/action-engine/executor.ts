@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { AppJobQueue } from '../../server.js'
-import type { CapabilityContext, CapabilityRegistry } from './capability-registry.js'
+import type { CapabilityContext, CapabilityDefinition, CapabilityRegistry } from './capability-registry.js'
 import { createActionRuns, getMission, recordApproval, transitionMission, type Connectable, type Queryable } from './repository.js'
 import type { ActionRunStatus } from './types.js'
 import { recordDomainEvent } from '../events/repository.js'
@@ -12,11 +12,14 @@ import {
   resolveExternalEffect,
   type ExternalEffect,
 } from './external-effects.js'
+import { assertPinnedCapabilityAvailable, hashCapabilityManifest, type CapabilityManifestEntry } from './capability-manifest.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
   status: ActionRunStatus; idempotency_key: string; input: Record<string, unknown>;
   capability_key: string; capability_version: number; approval_required: boolean;
+  capability_definition_hash: string | null; capability_manifest: CapabilityManifestEntry[];
+  capability_manifest_hash: string;
   mission_status: string; plan_status: string; available_at: string | Date;
 }
 
@@ -105,7 +108,9 @@ export async function executeActionRun(
          AND mission.status = 'active' AND plan.status = 'active'
        RETURNING run.id, run.organization_id, run.mission_id, run.plan_id, run.plan_step_id,
          run.status, run.idempotency_key, run.input, step.capability_key, step.capability_version,
-         step.approval_required, mission.status AS mission_status, plan.status AS plan_status, run.available_at`,
+         step.capability_definition_hash, plan.capability_manifest, plan.capability_manifest_hash,
+         step.approval_required,
+         mission.status AS mission_status, plan.status AS plan_status, run.available_at`,
       [input.actionRunId, input.organizationId, input.workerId],
     )
     const action = result.rows[0]
@@ -130,8 +135,26 @@ export async function executeActionRun(
     return { status: 'blocked' }
   }
 
+  let capability: CapabilityDefinition
+  try {
+    capability = registry.get(claimed.action.capability_key, Number(claimed.action.capability_version))
+    const manifest = Array.isArray(claimed.action.capability_manifest) ? claimed.action.capability_manifest : []
+    if (manifest.length > 0) {
+      if (hashCapabilityManifest(manifest) !== claimed.action.capability_manifest_hash) {
+        throw new Error('capability_catalog_drift')
+      }
+      const pinned = manifest.find((entry) => entry.key === capability.key && entry.version === capability.version)
+      if (!pinned || claimed.action.capability_definition_hash !== pinned.definitionHash) {
+        throw new Error('capability_catalog_drift')
+      }
+      assertPinnedCapabilityAvailable(registry, pinned)
+    }
+  } catch {
+    await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'capability_catalog_drift')
+    return { status: 'blocked' }
+  }
+
   let externalEffect: ExternalEffect | null = null
-  const capability = registry.get(claimed.action.capability_key, Number(claimed.action.capability_version))
   if (capability.effect === 'external') {
     const reserved = await reserveExternalEffect(pool, {
       organizationId: input.organizationId,
