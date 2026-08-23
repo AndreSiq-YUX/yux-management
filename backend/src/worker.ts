@@ -52,8 +52,8 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'action-engine.executeAction') { await handleActionEngineExecute(pool, maintenanceQueue, job.data, `worker:${job.id ?? 'unknown'}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET); return { ok: true } }
   if (job.name === 'action-engine.reconcileProviderEffect') { await handleActionEngineReconcileProviderEffect(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.evaluateMission') { await handleActionEngineEvaluation(pool, job.data, maintenanceQueue); return { ok: true } }
-  if (job.name === 'action-engine.deliverDecisionNotification') { await handleActionEngineDecisionNotification(pool, maintenanceQueue, job.data); return { ok: true } }
-  if (job.name === 'action-engine.dispatchDecisionNotifications') { await handleActionEngineDecisionNotificationDispatch(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'action-engine.deliverDecisionNotification') { await handleActionEngineDecisionNotification(pool, maintenanceQueue, job.data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false); return { ok: true } }
+  if (job.name === 'action-engine.dispatchDecisionNotifications') { await handleActionEngineDecisionNotificationDispatch(pool, maintenanceQueue, job.data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false); return { ok: true } }
   if (job.name === 'action-engine.expireWaits') { await handleActionEngineExpireWaits(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.collectMetrics') { await handleActionEngineCollectMetrics(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }

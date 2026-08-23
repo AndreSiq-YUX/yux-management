@@ -75,6 +75,7 @@ const missionPatch = z.object({
 
 export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/public/simulation-reports/:token', async (request, reply) => {
+    if (app.config.MISSION_SIMULATION_REPORTS_ENABLED === false) return reply.code(503).send({ error: 'mission_simulation_reports_disabled' })
     const parsed = simulationTokenParams.safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'simulation_report_not_found' })
     try { return await runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => getPublicSimulationReport(app.pg, parsed.data.token)) }
@@ -82,6 +83,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   })
 
   app.get('/public/simulation-reports/:token/pdf', async (request, reply) => {
+    if (app.config.MISSION_SIMULATION_REPORTS_ENABLED === false) return reply.code(503).send({ error: 'mission_simulation_reports_disabled' })
     const parsed = simulationTokenParams.safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'simulation_report_not_found' })
     try {
@@ -91,6 +93,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   })
 
   app.post('/public/simulation-reports/:token/feedback', async (request, reply) => {
+    if (app.config.MISSION_DECISION_FEEDBACK_ENABLED === false) return reply.code(503).send({ error: 'mission_decision_feedback_disabled' })
     const params = simulationTokenParams.safeParse(request.params)
     const body = z.object({
       reviewerName: z.string().trim().min(2).max(100),
@@ -200,7 +203,13 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       actionFailures: Number(actions.rows[0]?.failed ?? 0),
       durableWaits: Number(actions.rows[0]?.waiting ?? 0),
       pendingApprovals: Number(approvals.rows[0]?.pending ?? 0),
-      rollout: { missionSupervisorEnabled: app.config.MISSION_SUPERVISOR_ENABLED !== false },
+      rollout: {
+        missionSupervisorEnabled: app.config.MISSION_SUPERVISOR_ENABLED !== false,
+        decisionsEnabled: app.config.MISSION_DECISIONS_ENABLED !== false,
+        decisionNotificationsEnabled: app.config.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false,
+        simulationReportsEnabled: app.config.MISSION_SIMULATION_REPORTS_ENABLED !== false,
+        decisionFeedbackEnabled: app.config.MISSION_DECISION_FEEDBACK_ENABLED !== false,
+      },
       planner: {
         available: app.config.MISSION_SUPERVISOR_ENABLED !== false && Boolean(app.config.YUX_AGENT_RUNTIME_URL && app.config.YUX_AGENT_RUNTIME_TOKEN),
         harnessConfigured: Boolean(app.config.YUX_AGENT_RUNTIME_URL && app.config.YUX_AGENT_RUNTIME_TOKEN),
@@ -216,6 +225,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
 
   app.post('/missions/:missionId/simulation-reports', async (request, reply) => {
     const ctx = requireAuth(request)
+    if (app.config.MISSION_SIMULATION_REPORTS_ENABLED === false) return reply.code(503).send({ error: 'mission_simulation_reports_disabled' })
     const params = missionParams.safeParse(request.params)
     const body = z.object({ organizationId: uuid, planId: uuid, expiresInDays: z.number().int().min(1).max(7).default(7) }).safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_simulation_report_request' })
@@ -462,6 +472,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
 
   app.post('/plans/:planId/submit', async (request, reply) => {
     const ctx = requireAuth(request)
+    if (app.config.MISSION_DECISIONS_ENABLED === false) return reply.code(503).send({ error: 'mission_decisions_disabled' })
     const params = z.object({ planId: uuid }).safeParse(request.params)
     const body = z.object({
       organizationId: uuid, missionId: uuid, approvalId: uuid, expectedMissionVersion: z.number().int().positive(),
@@ -600,6 +611,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
 
   app.post('/approvals/:approvalId/decide', async (request, reply) => {
     const ctx = requireAuth(request)
+    if (app.config.MISSION_DECISIONS_ENABLED === false) return reply.code(503).send({ error: 'mission_decisions_disabled' })
     const params = z.object({ approvalId: uuid }).safeParse(request.params)
     const body = z.object({
       organizationId: uuid, subjectHash: z.string().regex(/^[a-f0-9]{64}$/),

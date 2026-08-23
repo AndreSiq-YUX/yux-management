@@ -37,11 +37,13 @@ export async function handleActionEngineSchedule(pool: Pool, queue: AppJobQueue,
   return scheduleReadyActions(pool as never, queue, missionId)
 }
 
-export async function handleActionEngineDecisionNotification(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
+export async function handleActionEngineDecisionNotification(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, enabled = true) {
+  if (!enabled) return { skipped: 'mission_decision_notifications_disabled' }
   return deliverDecisionNotification(pool as never, queue, data)
 }
 
-export async function handleActionEngineDecisionNotificationDispatch(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
+export async function handleActionEngineDecisionNotificationDispatch(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, enabled = true) {
+  if (!enabled) return { skipped: 'mission_decision_notifications_disabled' }
   return enqueuePendingDecisionNotifications(pool as never, queue, { limit: typeof data.limit === 'number' ? data.limit : 100 })
 }
 
