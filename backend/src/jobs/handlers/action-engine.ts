@@ -30,12 +30,18 @@ export async function handleActionEngineSchedule(pool: Pool, queue: AppJobQueue,
   return scheduleReadyActions(pool as never, queue, missionId)
 }
 
-export async function handleActionEngineExecute(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>, workerId = 'action-engine-worker') {
+export async function handleActionEngineExecute(
+  pool: Pool,
+  queue: AppJobQueue,
+  data: Record<string, unknown>,
+  workerId = 'action-engine-worker',
+  mutationLeaseSecret = process.env.ACTION_ENGINE_MUTATION_LEASE_SECRET,
+) {
   const actionRunId = stringField(data, 'actionRunId')
   const organizationId = stringField(data, 'organizationId')
   const missionId = stringField(data, 'missionId')
   const result = await executeActionRun(pool as never, createActionEngineCapabilityRegistry(), {
-    actionRunId, organizationId, workerId, commands: createActionEngineCommands(pool as never, missionId),
+    actionRunId, organizationId, workerId, commands: createActionEngineCommands(pool as never, missionId), mutationLeaseSecret,
   })
   if (result.reconciliation) {
     await queue.add('action-engine.reconcileProviderEffect', {

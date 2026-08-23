@@ -143,6 +143,48 @@ CREATE TABLE IF NOT EXISTS public.action_planning_artifact_cache (
   UNIQUE (organization_id, cache_key)
 );
 
+CREATE TABLE IF NOT EXISTS public.action_mutation_leases (
+  id UUID PRIMARY KEY,
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
+  mission_id UUID NOT NULL REFERENCES public.action_missions(id) ON DELETE RESTRICT,
+  action_run_id UUID NOT NULL REFERENCES public.action_runs(id) ON DELETE RESTRICT,
+  attempt_id UUID NOT NULL REFERENCES public.action_run_attempts(id) ON DELETE RESTRICT,
+  capability_key TEXT NOT NULL,
+  capability_version INTEGER NOT NULL CHECK (capability_version > 0),
+  capability_definition_hash TEXT NOT NULL CHECK (capability_definition_hash ~ '^[a-f0-9]{64}$'),
+  fencing_token BIGINT NOT NULL CHECK (fencing_token > 0),
+  effect TEXT NOT NULL CHECK (effect IN ('draft','internal','external','destructive')),
+  token_hash TEXT NOT NULL UNIQUE CHECK (token_hash ~ '^[a-f0-9]{64}$'),
+  consumed BOOLEAN NOT NULL DEFAULT FALSE,
+  issued_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (expires_at > issued_at AND expires_at <= issued_at + INTERVAL '30 seconds')
+);
+
+CREATE TABLE IF NOT EXISTS public.action_engine_kill_switches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL CHECK (scope IN ('global','organization','pack','capability')),
+  pack_key TEXT,
+  pack_version TEXT,
+  capability_key TEXT,
+  capability_version INTEGER CHECK (capability_version IS NULL OR capability_version > 0),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  reason TEXT NOT NULL,
+  activated_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  activated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  CHECK (
+    (scope = 'global' AND organization_id IS NULL AND pack_key IS NULL AND capability_key IS NULL) OR
+    (scope = 'organization' AND organization_id IS NOT NULL AND pack_key IS NULL AND capability_key IS NULL) OR
+    (scope = 'pack' AND organization_id IS NOT NULL AND pack_key IS NOT NULL AND pack_version IS NOT NULL AND capability_key IS NULL) OR
+    (scope = 'capability' AND organization_id IS NOT NULL AND capability_key IS NOT NULL AND capability_version IS NOT NULL)
+  )
+);
+
 CREATE TABLE IF NOT EXISTS public.action_external_effect_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
@@ -180,6 +222,10 @@ CREATE INDEX IF NOT EXISTS idx_action_planning_cycles_mission
   ON public.action_planning_cycles(mission_id, plan_revision);
 CREATE INDEX IF NOT EXISTS idx_action_planning_artifact_cache_expiry
   ON public.action_planning_artifact_cache(organization_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_action_mutation_leases_active
+  ON public.action_mutation_leases(organization_id, expires_at) WHERE consumed = FALSE AND revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_action_engine_kill_switches_resolution
+  ON public.action_engine_kill_switches(organization_id, scope, enabled, expires_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effects_mission
   ON public.action_external_effects(mission_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effect_events_effect
@@ -210,7 +256,8 @@ DECLARE table_name TEXT;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'action_external_effects','action_external_effect_events','action_incidents','action_resource_claims',
-    'action_planning_cycles','action_planning_usage_entries','action_planning_artifact_cache'
+    'action_planning_cycles','action_planning_usage_entries','action_planning_artifact_cache',
+    'action_mutation_leases'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);
@@ -227,3 +274,13 @@ BEGIN
   END LOOP;
 END;
 $action_engine_safety_rls$;
+
+ALTER TABLE public.action_engine_kill_switches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.action_engine_kill_switches FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS action_engine_kill_switches_read ON public.action_engine_kill_switches;
+DROP POLICY IF EXISTS action_engine_kill_switches_write ON public.action_engine_kill_switches;
+CREATE POLICY action_engine_kill_switches_read ON public.action_engine_kill_switches FOR SELECT USING (
+  (organization_id IS NULL AND private.rls_is_internal()) OR private.rls_can_access_organization(organization_id)
+);
+CREATE POLICY action_engine_kill_switches_write ON public.action_engine_kill_switches FOR ALL
+  USING (private.rls_is_internal()) WITH CHECK (private.rls_is_internal());

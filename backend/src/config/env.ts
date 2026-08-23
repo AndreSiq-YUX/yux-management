@@ -36,6 +36,7 @@ const envSchema = z.object({
   SMTP2GO_WEBHOOK_SECRET: optionalString,
   YUX_AGENT_RUNTIME_URL: optionalUrl,
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
+  ACTION_ENGINE_MUTATION_LEASE_SECRET: z.string().min(32).optional(),
   META_APP_SECRET: optionalString,
   META_APP_ID: optionalString,
   META_MARKETING_OAUTH_REDIRECT_URI: optionalUrl,

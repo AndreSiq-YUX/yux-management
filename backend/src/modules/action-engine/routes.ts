@@ -109,7 +109,11 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_readiness_request' })
     requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
-    return evaluateMissionReadiness(app.pg, { ...parsed.data, agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL) })
+    return evaluateMissionReadiness(app.pg, {
+      ...parsed.data,
+      agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL),
+      mutationLeaseReady: Boolean(app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
+    })
   })
 
   app.get('/missions', async (request, reply) => {

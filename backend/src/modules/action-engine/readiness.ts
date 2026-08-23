@@ -26,6 +26,7 @@ export async function evaluateMissionReadiness(
     maxHumanHours: string
     humanHourlyRateBrl: string
     agentHarnessHealthy: boolean
+    mutationLeaseReady: boolean
   },
 ): Promise<MissionReadinessReport> {
   const checks: ReadinessCheck[] = []
@@ -114,6 +115,7 @@ export async function evaluateMissionReadiness(
   checks.push(check(Boolean(permissionTables.rows[0]?.available), 'permission_evidence_ready', 'permission_evidence_missing', 'Evidência de permissão e suppression disponível.', 'Ledger de permissão/suppression indisponível.', '/prospecting/policy'))
 
   checks.push(check(input.agentHarnessHealthy, 'agent_harness_healthy', 'agent_harness_unavailable', 'Agent Harness disponível para planejamento.', 'Agent Harness indisponível; a missão não pode ser planejada.'))
+  checks.push(check(input.mutationLeaseReady, 'mutation_lease_ready', 'mutation_lease_unavailable', 'Assinatura de mutações configurada.', 'A chave isolada de autorização de mutações não está configurada.'))
 
   const pack = await client.query<{ content_hash: string }>(
     `SELECT version.content_hash FROM public.action_pack_versions version

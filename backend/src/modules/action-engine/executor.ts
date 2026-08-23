@@ -13,7 +13,9 @@ import {
   type ExternalEffect,
 } from './external-effects.js'
 import { assertPinnedCapabilityAvailable, hashCapabilityManifest, type CapabilityManifestEntry } from './capability-manifest.js'
-import { acquireResourceClaim, renewMissionResourceClaims } from './resource-claims.js'
+import { acquireResourceClaim, getMissionFencingToken, renewMissionResourceClaims } from './resource-claims.js'
+import { consumeMutationLease, issueMutationLease } from './mutation-leases.js'
+import { loadKillSwitchState, resolveCapabilityDecision } from './capability-policy.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -21,6 +23,7 @@ type ActionRow = {
   capability_key: string; capability_version: number; approval_required: boolean;
   capability_definition_hash: string | null; capability_manifest: CapabilityManifestEntry[];
   capability_manifest_hash: string;
+  pack_key: string; pack_version: string;
   mission_status: string; plan_status: string; available_at: string | Date;
 }
 
@@ -107,19 +110,21 @@ export async function scheduleReadyActions(pool: Connectable, queue: AppJobQueue
 export async function executeActionRun(
   pool: Connectable,
   registry: CapabilityRegistry,
-  input: { actionRunId: string; organizationId: string; workerId: string; commands?: CapabilityContext['commands'] },
+  input: { actionRunId: string; organizationId: string; workerId: string; commands?: CapabilityContext['commands']; mutationLeaseSecret?: string },
 ): Promise<{ status: ActionRunStatus; duplicate?: boolean; reconciliation?: { effectId: string; organizationId: string } }> {
   const claimed = await transaction(pool, async (client) => {
     const result = await client.query<ActionRow>(
       `UPDATE public.action_runs run SET status = 'running', claimed_at = NOW(), claimed_by = $3, updated_at = NOW()
-       FROM public.action_plan_steps step, public.action_missions mission, public.action_plans plan
+       FROM public.action_plan_steps step, public.action_missions mission, public.action_plans plan,
+            public.action_pack_versions pack_version, public.action_packs pack
        WHERE run.id = $1 AND run.organization_id = $2 AND run.status IN ('ready','queued','retry_scheduled')
          AND step.id = run.plan_step_id AND mission.id = run.mission_id AND plan.id = run.plan_id
+         AND pack_version.id = plan.pack_version_id AND pack.id = pack_version.pack_id
          AND mission.status = 'active' AND plan.status = 'active'
        RETURNING run.id, run.organization_id, run.mission_id, run.plan_id, run.plan_step_id,
          run.status, run.idempotency_key, run.input, step.capability_key, step.capability_version,
          step.capability_definition_hash, plan.capability_manifest, plan.capability_manifest_hash,
-         step.approval_required,
+         pack.key AS pack_key, pack_version.semantic_version AS pack_version, step.approval_required,
          mission.status AS mission_status, plan.status AS plan_status, run.available_at`,
       [input.actionRunId, input.organizationId, input.workerId],
     )
@@ -168,6 +173,48 @@ export async function executeActionRun(
   } catch {
     await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'capability_catalog_drift')
     return { status: 'blocked' }
+  }
+
+  let mutationLease: string | undefined
+  let fencingToken: string | undefined
+  if (capability.effect !== 'none') {
+    if (!input.mutationLeaseSecret || !claimed.attemptId || !claimed.action.capability_definition_hash) {
+      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'mutation_lease_signing_unavailable')
+      return { status: 'blocked' }
+    }
+    try {
+      const issued = await transaction(pool, async (client) => {
+        const switches = await loadKillSwitchState(client, {
+          organizationId: input.organizationId, packKey: claimed.action.pack_key,
+          packVersion: claimed.action.pack_version, capabilityKey: capability.key, capabilityVersion: capability.version,
+        })
+        const decision = resolveCapabilityDecision({
+          capability: { approval: capability.approval, effect: capability.effect },
+          globalKillSwitch: switches.global, organizationKillSwitch: switches.organization,
+          packKillSwitch: switches.pack, capabilityKillSwitch: switches.capability,
+          requiredConnectionsHealthy: true, legalOrConsentAllowed: true, budgetAvailable: true,
+          missionMode: 'assisted',
+        })
+        if (decision.outcome !== 'allow') throw new Error(decision.reason)
+        const currentFencingToken = await getMissionFencingToken(client, claimed.action.mission_id, input.organizationId)
+        const lease = await issueMutationLease(client, input.mutationLeaseSecret!, {
+          organizationId: input.organizationId, missionId: claimed.action.mission_id,
+          actionRunId: input.actionRunId, attemptId: claimed.attemptId!, capabilityKey: capability.key,
+          capabilityVersion: capability.version, capabilityDefinitionHash: claimed.action.capability_definition_hash!,
+          fencingToken: currentFencingToken, effect: capability.effect === 'external' ? 'external' : 'internal', ttlSeconds: 30,
+        })
+        await consumeMutationLease(client, {
+          token: lease.token, secret: input.mutationLeaseSecret!, expected: lease.claims,
+          organizationId: input.organizationId,
+        })
+        return { token: lease.token, fencingToken: currentFencingToken }
+      })
+      mutationLease = issued.token
+      fencingToken = issued.fencingToken
+    } catch (error) {
+      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, safeError(error))
+      return { status: 'blocked' }
+    }
   }
 
   let externalEffect: ExternalEffect | null = null
@@ -228,6 +275,7 @@ export async function executeActionRun(
     const result = await registry.invoke(claimed.action.capability_key, Number(claimed.action.capability_version), {
       organizationId: input.organizationId, missionId: claimed.action.mission_id, actor: { type: 'system' },
       idempotencyKey: claimed.action.idempotency_key, dryRun: false,
+      ...(mutationLease ? { mutationLease } : {}), ...(fencingToken ? { fencingToken } : {}),
       query: pool.query.bind(pool), commands: input.commands,
     }, claimed.action.input)
     if (externalEffect) {

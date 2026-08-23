@@ -11,6 +11,8 @@ export type CapabilityContext = {
   actor: DomainEventActor
   idempotencyKey: string
   dryRun: boolean
+  mutationLease?: string
+  fencingToken?: string
   query: <TRow = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: TRow[]; rowCount?: number | null }>
   commands?: {
     createTask?: (input: Record<string, unknown>) => Promise<unknown>

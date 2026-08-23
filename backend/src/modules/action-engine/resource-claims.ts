@@ -150,6 +150,21 @@ export async function assertFencingToken(client: Queryable, input: {
   if (!result.rows[0]) throw new Error('resource_claim_stale_fencing_token')
 }
 
+export async function getMissionFencingToken(
+  client: Queryable,
+  missionId: string,
+  organizationId: string,
+): Promise<string> {
+  const result = await client.query<{ fencing_token: string | number | bigint }>(
+    `SELECT MAX(fencing_token) AS fencing_token FROM public.action_resource_claims
+     WHERE mission_id = $1 AND organization_id = $2 AND active = TRUE AND lease_expires_at > NOW()`,
+    [missionId, organizationId],
+  )
+  const token = result.rows[0]?.fencing_token
+  if (token === null || token === undefined) throw new Error('resource_claim_stale_fencing_token')
+  return String(token)
+}
+
 export async function releaseResourceClaims(client: Queryable, missionId: string, organizationId: string): Promise<number> {
   const result = await client.query(
     `UPDATE public.action_resource_claims SET active = FALSE, released_at = NOW()
