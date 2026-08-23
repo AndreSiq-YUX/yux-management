@@ -1,5 +1,7 @@
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
+import type { CapabilityRegistry } from './capability-registry.js'
 import type { Queryable } from './repository.js'
+import type { MissionMode } from './types.js'
 
 export type ReadinessCheck = {
   status: 'pass' | 'warn' | 'block'
@@ -13,6 +15,58 @@ export type MissionReadinessReport = {
   ready: boolean
   checks: ReadinessCheck[]
   availableChannels: Array<'human_task' | 'email' | 'whatsapp'>
+}
+
+export async function evaluateCapabilityReadiness(
+  registry: CapabilityRegistry,
+  input: {
+    organizationId: string
+    missionId: string
+    mode: MissionMode
+    allowedModules: string[]
+    capabilityKey: string
+    capabilityVersion: number
+    capabilityInput: unknown
+    healthyConnections: string[]
+  },
+): Promise<ReadinessCheck[]> {
+  let capability
+  try {
+    capability = registry.get(input.capabilityKey, input.capabilityVersion)
+  } catch {
+    return [{ status: 'block', code: 'capability_not_registered', message: 'A capability solicitada não está disponível.' }]
+  }
+  const blockers: ReadinessCheck[] = []
+  const supportedModes = capability.supportsModes ?? ['shadow','prepare','assisted','autonomous']
+  if (!supportedModes.includes(input.mode)) {
+    blockers.push({ status: 'block', code: 'capability_mode_unsupported', message: `A capability não suporta o modo ${input.mode}.` })
+  }
+  const modules = new Set(input.allowedModules)
+  for (const moduleKey of capability.requiredModules) {
+    if (!modules.has(moduleKey)) blockers.push({
+      status: 'block', code: 'capability_module_unavailable', capabilityKey: capability.key,
+      message: `O módulo ${moduleKey} é necessário para esta ação.`, fixHref: '/platform/contracts',
+    })
+  }
+  const connections = new Set(input.healthyConnections)
+  for (const connection of capability.requiredConnections) {
+    if (!connections.has(connection)) blockers.push({
+      status: 'block', code: 'capability_connection_unavailable', capabilityKey: capability.key,
+      message: `A conexão ${connection} precisa estar ativa.`, fixHref: '/integrations',
+    })
+  }
+  if (capability.readiness && blockers.length === 0) {
+    const parsed = capability.inputSchema.safeParse(input.capabilityInput)
+    if (!parsed.success) return [{ status: 'block', code: 'capability_input_invalid', message: 'Os parâmetros da ação são inválidos.' }]
+    const custom = await capability.readiness({
+      organizationId: input.organizationId, missionId: input.missionId,
+      mode: input.mode, allowedModules: input.allowedModules,
+    }, parsed.data)
+    blockers.push(...custom.blockers.map((item) => ({ status: 'block' as const, ...item, capabilityKey: capability.key })))
+  }
+  return blockers.length > 0
+    ? blockers
+    : [{ status: 'pass', code: 'capability_ready', message: 'Capability disponível para o modo e contexto atuais.', capabilityKey: capability.key }]
 }
 
 export async function evaluateMissionReadiness(

@@ -1,8 +1,9 @@
 import type { ZodType } from 'zod'
 import type { DomainEventActor } from '../events/types.js'
+import type { MissionMode } from './types.js'
 
 export type CapabilityRisk = 'read_only' | 'low' | 'medium' | 'high'
-export type CapabilityEffect = 'none' | 'internal' | 'external'
+export type CapabilityEffect = 'none' | 'draft' | 'internal' | 'external' | 'destructive'
 export type CapabilityIdempotency = 'none' | 'supported' | 'required'
 
 export type CapabilityContext = {
@@ -39,6 +40,18 @@ export type CapabilityRecovery<TOutput = unknown> =
   | { kind: 'pausable'; contain: (context: CapabilityContext, result: TOutput) => Promise<CapabilityResult> }
   | { kind: 'irreversible'; incidentType: string }
 
+export type CapabilityReadinessContext = {
+  organizationId: string
+  missionId: string
+  mode: MissionMode
+  allowedModules: string[]
+}
+
+export type CapabilityReadiness = {
+  ready: boolean
+  blockers: Array<{ code: string; message: string; fixHref?: string }>
+}
+
 export type CapabilityDefinition<TInput = unknown, TOutput = unknown> = {
   key: string
   version: number
@@ -52,11 +65,25 @@ export type CapabilityDefinition<TInput = unknown, TOutput = unknown> = {
   outputSchema: ZodType<TOutput>
   requiredModules: string[]
   requiredConnections: string[]
+  domain?: string
+  requiredPermissions?: string[]
+  supportsModes?: readonly MissionMode[]
+  readiness?: (context: CapabilityReadinessContext, input: TInput) => Promise<CapabilityReadiness>
   recovery: CapabilityRecovery<TOutput>
   execute(context: CapabilityContext, input: TInput): Promise<CapabilityResult<TOutput>>
 }
 
+export type CapabilityDefinitionV2<TInput = unknown, TOutput = unknown> = CapabilityDefinition<TInput, TOutput> & {
+  domain: string
+  requiredPermissions: string[]
+  supportsModes: readonly MissionMode[]
+  readiness: (context: CapabilityReadinessContext, input: TInput) => Promise<CapabilityReadiness>
+}
+
 export type CapabilityMetadata = Omit<CapabilityDefinition, 'inputSchema' | 'outputSchema' | 'execute' | 'recovery'> & {
+  domain: string
+  requiredPermissions: string[]
+  supportsModes: readonly MissionMode[]
   inputSchema: Record<string, unknown>
   outputSchema: Record<string, unknown>
   recoveryKind: CapabilityRecovery['kind']
@@ -97,6 +124,9 @@ export class CapabilityRegistry {
         idempotency: definition.idempotency,
         requiredModules: [...definition.requiredModules],
         requiredConnections: [...definition.requiredConnections],
+        domain: definition.domain ?? definition.key.split('.')[0] ?? 'system',
+        requiredPermissions: [...(definition.requiredPermissions ?? [])].sort(),
+        supportsModes: [...(definition.supportsModes ?? ['shadow','prepare','assisted','autonomous'])],
         recoveryKind: definition.recovery.kind,
         ...(definition.recovery.kind === 'irreversible' ? { incidentType: definition.recovery.incidentType } : {}),
         inputSchema: schemaMetadata(definition.inputSchema),

@@ -4,7 +4,8 @@ import { growthSegmentPreview } from './growth.js'
 import { humanTaskCreate } from './human.js'
 import { reportsRecoveredRevenueSnapshot } from './reports.js'
 import { systemApprovalAwait, systemEvaluationCheckpoint, systemReadinessCheck, systemSignalWait } from './system.js'
-import { crmSequenceEnroll, omnichannelMessageDraft } from './communications.js'
+import { crmSequenceEnroll, emailMessageQueue, omnichannelMessageDraft, whatsappTemplateQueue } from './communications.js'
+import { automationFlowExecute } from './automation.js'
 
 export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
   return new CapabilityRegistry()
@@ -22,4 +23,7 @@ export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
     .register(reportsRecoveredRevenueSnapshot)
     .register(omnichannelMessageDraft)
     .register(crmSequenceEnroll)
+    .register(emailMessageQueue)
+    .register(whatsappTemplateQueue)
+    .register(automationFlowExecute)
 }

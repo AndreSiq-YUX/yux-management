@@ -177,48 +177,99 @@ export async function executeActionRun(
 
   let mutationLease: string | undefined
   let fencingToken: string | undefined
-  if (capability.effect !== 'none') {
-    if (!input.mutationLeaseSecret || !claimed.attemptId || !claimed.action.capability_definition_hash) {
-      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'mutation_lease_signing_unavailable')
-      return { status: 'blocked' }
-    }
-    try {
-      const issued = await transaction(pool, async (client) => {
-        const switches = await loadKillSwitchState(client, {
+  let dryRun = false
+  try {
+    const issued = await transaction(pool, async (client) => {
+      const currentMission = await getMission(client, claimed.action.mission_id, input.organizationId)
+      const consentChannel = capability.key === 'email.message.queue' ? 'email'
+        : capability.key === 'whatsapp.template.queue' ? 'whatsapp' : null
+      const consentEvidenceId = typeof claimed.action.input.consentEvidenceId === 'string' ? claimed.action.input.consentEvidenceId : null
+      const leadId = typeof claimed.action.input.leadId === 'string' ? claimed.action.input.leadId : null
+      const destination = typeof claimed.action.input.to === 'string' ? claimed.action.input.to : null
+      const [switches, approval, costs, connections, consent] = await Promise.all([
+        loadKillSwitchState(client, {
           organizationId: input.organizationId, packKey: claimed.action.pack_key,
           packVersion: claimed.action.pack_version, capabilityKey: capability.key, capabilityVersion: capability.version,
-        })
-        const decision = resolveCapabilityDecision({
-          capability: { approval: capability.approval, effect: capability.effect },
-          globalKillSwitch: switches.global, organizationKillSwitch: switches.organization,
-          packKillSwitch: switches.pack, capabilityKillSwitch: switches.capability,
-          requiredConnectionsHealthy: true, legalOrConsentAllowed: true, budgetAvailable: true,
-          missionMode: 'assisted',
-        })
-        if (decision.outcome !== 'allow') throw new Error(decision.reason)
-        const currentFencingToken = await getMissionFencingToken(client, claimed.action.mission_id, input.organizationId)
-        const lease = await issueMutationLease(client, input.mutationLeaseSecret!, {
-          organizationId: input.organizationId, missionId: claimed.action.mission_id,
-          actionRunId: input.actionRunId, attemptId: claimed.attemptId!, capabilityKey: capability.key,
-          capabilityVersion: capability.version, capabilityDefinitionHash: claimed.action.capability_definition_hash!,
-          fencingToken: currentFencingToken, effect: capability.effect === 'external' ? 'external' : 'internal', ttlSeconds: 30,
-        })
-        await consumeMutationLease(client, {
-          token: lease.token, secret: input.mutationLeaseSecret!, expected: lease.claims,
-          organizationId: input.organizationId,
-        })
-        return { token: lease.token, fencingToken: currentFencingToken }
+        }),
+        client.query<{ approved: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM public.action_approvals
+           WHERE run_id = $1 AND organization_id = $2 AND status = 'approved') AS approved`,
+          [input.actionRunId, input.organizationId],
+        ),
+        client.query<{ total: string }>(
+          `SELECT COALESCE(SUM(amount_brl),0)::TEXT AS total FROM public.action_cost_entries
+           WHERE mission_id = $1 AND organization_id = $2 AND nature IN ('estimated','actual','reversal')`,
+          [claimed.action.mission_id, input.organizationId],
+        ),
+        capability.requiredConnections.length === 0
+          ? Promise.resolve({ rows: [{ healthy: true }] })
+          : client.query<{ healthy: boolean }>(
+            `SELECT COUNT(DISTINCT channel)::INT >= $2::INT AS healthy
+             FROM public.channel_connections
+             WHERE organization_id = $1 AND is_active = TRUE AND channel = ANY($3::TEXT[])`,
+            [input.organizationId, capability.requiredConnections.length, capability.requiredConnections],
+          ),
+        !consentChannel
+          ? Promise.resolve({ rows: [{ allowed: true }] })
+          : client.query<{ allowed: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1 FROM public.lead_channel_permissions
+               WHERE id = $1 AND organization_id = $2 AND lead_id = $3
+                 AND channel = $4 AND address = $5 AND status = 'granted' AND revoked_at IS NULL
+             ) AS allowed`,
+            [consentEvidenceId, input.organizationId, leadId, consentChannel, destination],
+          ),
+      ])
+      const envelope = currentMission?.autonomyEnvelope
+      const allowedCapabilityKeys = envelope?.allowedCapabilityKeys ?? []
+      const decision = resolveCapabilityDecision({
+        capability: {
+          key: capability.key, approval: capability.approval, effect: capability.effect,
+          supportsModes: capability.supportsModes,
+          requiredPermissions: capability.requiredPermissions,
+        },
+        globalKillSwitch: switches.global, organizationKillSwitch: switches.organization,
+        packKillSwitch: switches.pack, capabilityKillSwitch: switches.capability,
+        requiredConnectionsHealthy: connections.rows[0]?.healthy === true,
+        legalOrConsentAllowed: consent.rows[0]?.allowed === true,
+        budgetAvailable: Number(costs.rows[0]?.total ?? 0) <= Number(envelope?.maxTotalCostBrl ?? 0),
+        missionMode: currentMission?.mode ?? 'assisted', missionActive: currentMission?.status === 'active',
+        envelopeExpiresAt: envelope?.expiresAt,
+        actorPermissions: capability.requiredPermissions ?? [],
+        capabilityAllowedByEnvelope: (allowedCapabilityKeys.length === 0 || allowedCapabilityKeys.includes(capability.key))
+          && capability.requiredModules.every((moduleKey) => envelope?.allowedModules.includes(moduleKey)),
+        alwaysRequireApprovalFor: envelope?.alwaysRequireApprovalFor,
       })
-      mutationLease = issued.token
-      fencingToken = issued.fencingToken
-    } catch (error) {
-      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, safeError(error))
-      return { status: 'blocked' }
-    }
+      if (decision.outcome !== 'allow') throw new Error(decision.reason)
+      if (decision.requiresApproval && approval.rows[0]?.approved !== true) throw new Error('capability_approval_required')
+      if (decision.dryRun || capability.effect === 'none') return { decision }
+      if (!input.mutationLeaseSecret || !claimed.attemptId || !claimed.action.capability_definition_hash) {
+        throw new Error('mutation_lease_signing_unavailable')
+      }
+      const currentFencingToken = await getMissionFencingToken(client, claimed.action.mission_id, input.organizationId)
+      const lease = await issueMutationLease(client, input.mutationLeaseSecret, {
+        organizationId: input.organizationId, missionId: claimed.action.mission_id,
+        actionRunId: input.actionRunId, attemptId: claimed.attemptId, capabilityKey: capability.key,
+        capabilityVersion: capability.version, capabilityDefinitionHash: claimed.action.capability_definition_hash,
+        fencingToken: currentFencingToken,
+        effect: capability.effect === 'external' || capability.effect === 'destructive' ? 'external' : 'internal', ttlSeconds: 30,
+      })
+      await consumeMutationLease(client, {
+        token: lease.token, secret: input.mutationLeaseSecret, expected: lease.claims,
+        organizationId: input.organizationId,
+      })
+      return { decision, token: lease.token, fencingToken: currentFencingToken }
+    })
+    dryRun = issued.decision.dryRun
+    mutationLease = issued.token
+    fencingToken = issued.fencingToken
+  } catch (error) {
+    await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, safeError(error))
+    return { status: 'blocked' }
   }
 
   let externalEffect: ExternalEffect | null = null
-  if (capability.effect === 'external') {
+  if ((capability.effect === 'external' || capability.effect === 'destructive') && !dryRun) {
     const reserved = await reserveExternalEffect(pool, {
       organizationId: input.organizationId,
       missionId: claimed.action.mission_id,
@@ -274,7 +325,7 @@ export async function executeActionRun(
   try {
     const result = await registry.invoke(claimed.action.capability_key, Number(claimed.action.capability_version), {
       organizationId: input.organizationId, missionId: claimed.action.mission_id, actor: { type: 'system' },
-      idempotencyKey: claimed.action.idempotency_key, dryRun: false,
+      idempotencyKey: claimed.action.idempotency_key, dryRun,
       ...(mutationLease ? { mutationLease } : {}), ...(fencingToken ? { fencingToken } : {}),
       query: pool.query.bind(pool), commands: input.commands,
     }, claimed.action.input)

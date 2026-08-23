@@ -43,9 +43,10 @@ describe('Action Engine capability registry', () => {
     expect(registry.get('crm.recovery_candidates.search', 1).idempotency).toBe('none')
     expect(registry.get('crm.task.create', 1).idempotency).toBe('required')
     expect(metadata.some((item) => item.key === 'crm.sequence.enroll')).toBe(true)
-    expect(metadata.some((item) => item.key === 'email.message.queue')).toBe(false)
-    expect(metadata.some((item) => item.key === 'whatsapp.template.queue')).toBe(false)
-    expect(metadata.some((item) => item.key === 'automation.flow.execute')).toBe(false)
+    expect(metadata.some((item) => item.key === 'email.message.queue')).toBe(true)
+    expect(metadata.some((item) => item.key === 'whatsapp.template.queue')).toBe(true)
+    expect(metadata.some((item) => item.key === 'automation.flow.execute')).toBe(true)
+    expect(metadata.every((item) => item.supportsModes.length > 0 && item.domain.length > 0)).toBe(true)
   })
 
   it('keeps command dry-runs mutation-free', async () => {
