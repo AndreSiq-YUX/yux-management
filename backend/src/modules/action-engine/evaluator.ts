@@ -34,8 +34,8 @@ export async function collectMissionMetrics(client: Queryable, missionId: string
       `SELECT observation_type, COUNT(*)::INT AS count FROM public.action_observations
        WHERE mission_id = $1 AND organization_id = $2 GROUP BY observation_type`, [missionId, organizationId],
     ),
-    client.query<{ metric_key: string; value_kind: MetricValue['kind']; numeric_value: string | null; unit: string; reason: string | null; measured_at: string | Date }>(
-      `SELECT DISTINCT ON (metric_key) metric_key, value_kind, numeric_value::TEXT, unit, reason, measured_at
+    client.query<{ metric_key: string; value_kind: MetricValue['kind']; numeric_value: string | null; unit: string; reason: string | null; measured_at: string | Date; attribution_status: string }>(
+      `SELECT DISTINCT ON (metric_key) metric_key, value_kind, numeric_value::TEXT, unit, reason, measured_at, attribution_status
        FROM public.action_mission_metrics WHERE mission_id = $1 AND organization_id = $2
        ORDER BY metric_key, measured_at DESC`, [missionId, organizationId],
     ),
@@ -57,6 +57,11 @@ export async function collectMissionMetrics(client: Queryable, missionId: string
     human_hours: human.rows[0]?.minutes ? known(formatMinutesAsHours(human.rows[0].minutes), 'hours') : known('0', 'hours'),
   }
   for (const row of persisted.rows) {
+    if (['signed_revenue','recovered_revenue_brl'].includes(row.metric_key)
+      && row.value_kind === 'known' && row.attribution_status !== 'versioned') {
+      metrics[row.metric_key] = { kind: 'unknown', reason: 'attribution_policy_legacy_unversioned', unit: row.unit }
+      continue
+    }
     if (row.value_kind === 'known' && row.numeric_value !== null) {
       metrics[row.metric_key] = known(row.numeric_value, row.unit)
     } else if (row.value_kind === 'unknown') {

@@ -11,7 +11,7 @@ const parameters = {
 describe('Revenue Recovery Pack v0', () => {
   it('has a stable published identity and accepts bounded pilot parameters', () => {
     expect(REVENUE_RECOVERY_PACK_V0.key).toBe('revenue_recovery')
-    expect(REVENUE_RECOVERY_PACK_V0.semanticVersion).toBe('0.1.0')
+    expect(REVENUE_RECOVERY_PACK_V0.semanticVersion).toBe('0.2.0')
     expect(REVENUE_RECOVERY_PACK_V0.contentHash).toMatch(/^[a-f0-9]{64}$/)
     expect(validatePackParameters({ targetRevenueBrl: '10000', canarySize: 20 }, REVENUE_RECOVERY_PACK_V0).success).toBe(true)
     expect(validatePackParameters({ targetRevenueBrl: '10000', canarySize: 21 }, REVENUE_RECOVERY_PACK_V0).success).toBe(false)

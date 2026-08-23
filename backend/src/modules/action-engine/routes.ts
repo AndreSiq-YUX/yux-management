@@ -25,7 +25,7 @@ const missionParams = z.object({ missionId: uuid })
 const versionCommand = z.object({ organizationId: uuid, expectedVersion: z.number().int().positive(), reason: z.string().min(3).max(1000) })
 const missionCreate = z.object({
   organizationId: uuid, contractId: uuid.optional(), packKey: z.literal('revenue_recovery').default('revenue_recovery'),
-  semanticVersion: z.literal('0.1.0').default('0.1.0'), title: z.string().min(3).max(200), objective: z.string().min(3).max(2000),
+  semanticVersion: z.literal('0.2.0').default('0.2.0'), title: z.string().min(3).max(200), objective: z.string().min(3).max(2000),
   mode: z.enum(['shadow','prepare','assisted']).default('assisted'), deadlineAt: z.string().datetime(),
   parameters: z.object({
     targetRevenueBrl: decimal, deadlineDays: z.number().int().min(1).max(180).default(30),
@@ -59,7 +59,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/action-packs/:packKey/versions/:semanticVersion', async (request, reply) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    const parsed = z.object({ packKey: z.literal('revenue_recovery'), semanticVersion: z.literal('0.1.0') }).safeParse(request.params)
+    const parsed = z.object({ packKey: z.literal('revenue_recovery'), semanticVersion: z.literal('0.2.0') }).safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'action_pack_not_found' })
     return publicPack(REVENUE_RECOVERY_PACK_V0)
   })
@@ -86,7 +86,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       app.pg.query<{ content_hash: string }>(
         `SELECT version.content_hash FROM public.action_pack_versions version
          JOIN public.action_packs pack ON pack.id = version.pack_id
-         WHERE pack.key = 'revenue_recovery' AND version.semantic_version = '0.1.0'
+         WHERE pack.key = 'revenue_recovery' AND version.semantic_version = '0.2.0'
            AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
       ),
     ])

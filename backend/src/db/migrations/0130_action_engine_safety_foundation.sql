@@ -12,6 +12,21 @@ ALTER TABLE public.action_plan_steps
   ADD COLUMN IF NOT EXISTS capability_definition_hash TEXT
     CHECK (capability_definition_hash IS NULL OR capability_definition_hash ~ '^[a-f0-9]{64}$');
 
+ALTER TABLE public.action_mission_metrics
+  ADD COLUMN IF NOT EXISTS attribution_status TEXT NOT NULL DEFAULT 'not_applicable'
+    CHECK (attribution_status IN ('not_applicable','legacy_unversioned','versioned')),
+  ADD COLUMN IF NOT EXISTS attribution_policy_version INTEGER
+    CHECK (attribution_policy_version IS NULL OR attribution_policy_version > 0),
+  ADD COLUMN IF NOT EXISTS attribution_policy_hash TEXT
+    CHECK (attribution_policy_hash IS NULL OR attribution_policy_hash ~ '^[a-f0-9]{64}$'),
+  ADD COLUMN IF NOT EXISTS attribution_event_ids JSONB NOT NULL DEFAULT '[]'::JSONB
+    CHECK (jsonb_typeof(attribution_event_ids) = 'array');
+
+UPDATE public.action_mission_metrics
+SET attribution_status = 'legacy_unversioned'
+WHERE metric_key IN ('signed_revenue','recovered_revenue_brl')
+  AND value_kind = 'known' AND attribution_status = 'not_applicable';
+
 CREATE OR REPLACE FUNCTION private.guard_action_plan_immutability()
 RETURNS TRIGGER AS $$
 BEGIN

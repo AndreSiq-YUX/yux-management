@@ -1,6 +1,17 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { ActionPackVersion, PackStepTemplate, RuntimeActionPackVersion } from '../action-pack.js'
+import { hashAttributionPolicy, type AttributionPolicy } from '../metrics/attribution.js'
+
+export const REVENUE_RECOVERY_ATTRIBUTION_POLICY: AttributionPolicy = {
+  version: 1,
+  model: 'last_touch',
+  windowDays: 30,
+  eligibleEventTypes: ['email_sent','whatsapp_sent','sequence_enrolled','human_follow_up'],
+  identityResolution: 'exact_lead',
+  currency: 'BRL',
+  lateEvents: 'reopen_evaluation',
+}
 
 export const revenueRecoveryParameters = z.object({
   targetRevenueBrl: z.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => Number(value) > 0),
@@ -59,7 +70,7 @@ const topologySteps: PackStepTemplate[] = protectedStepKeys.map((stepKey, positi
 
 const definitionWithoutHash: Omit<ActionPackVersion, 'contentHash'> = {
   key: 'revenue_recovery',
-  semanticVersion: '0.1.0',
+  semanticVersion: '0.2.0',
   schemaVersion: 1,
   outcomeType: 'recovered_revenue',
   status: 'published_for_internal_pilot',
@@ -89,7 +100,11 @@ const definitionWithoutHash: Omit<ActionPackVersion, 'contentHash'> = {
     'omnichannel.message.draft', 'crm.sequence.enroll', 'email.message.queue', 'whatsapp.template.queue', 'automation.flow.execute',
   ].map((key) => ({ key, versions: [1], required: protectedStepKeys.some((step) => capabilityByStep[step].key === key) })),
   metricSpec: {
-    primary: { key: 'recovered_revenue_brl', unit: 'BRL', attribution: 'mission_population_won_since_start' },
+    primary: {
+      key: 'recovered_revenue_brl', unit: 'BRL',
+      attributionPolicy: REVENUE_RECOVERY_ATTRIBUTION_POLICY,
+      attributionPolicyHash: hashAttributionPolicy(REVENUE_RECOVERY_ATTRIBUTION_POLICY),
+    },
     guardrails: ['opt_out_rate', 'complaint_rate', 'ownership_conflicts'],
     unknownPolicy: 'preserve_unknown',
   },

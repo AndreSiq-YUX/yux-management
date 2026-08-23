@@ -50,6 +50,13 @@ export type MetricValue =
   | { kind: 'unknown'; reason: string; unit: string }
   | { kind: 'not_applicable'; reason: string; unit: string }
 
+export type MissionMetricAttribution = {
+  status: 'not_applicable' | 'legacy_unversioned' | 'versioned'
+  policyVersion?: number
+  policyHash?: string
+  sourceEventIds: string[]
+}
+
 export type MissionActor = {
   type: 'user' | 'system' | 'provider'
   id?: string

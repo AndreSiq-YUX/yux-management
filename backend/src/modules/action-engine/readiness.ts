@@ -118,7 +118,7 @@ export async function evaluateMissionReadiness(
   const pack = await client.query<{ content_hash: string }>(
     `SELECT version.content_hash FROM public.action_pack_versions version
      JOIN public.action_packs pack ON pack.id = version.pack_id
-     WHERE pack.key = 'revenue_recovery' AND version.semantic_version = '0.1.0'
+     WHERE pack.key = 'revenue_recovery' AND version.semantic_version = '0.2.0'
        AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
   )
   checks.push(check(pack.rows[0]?.content_hash === REVENUE_RECOVERY_PACK_V0.contentHash, 'revenue_recovery_pack_ready', 'revenue_recovery_pack_missing_or_changed', 'Revenue Recovery Pack v0 publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
