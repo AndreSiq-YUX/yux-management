@@ -20,6 +20,10 @@ export interface WhatsAppSendInput extends WhatsAppTextInput {
   fetchFn?: typeof fetch
 }
 
+export interface WhatsAppOperationalNotificationInput extends WhatsAppSendInput {
+  consentGranted: boolean
+}
+
 export interface WhatsAppTemplateInput {
   to: string
   templateName: string
@@ -249,6 +253,13 @@ export async function sendWhatsAppTextMessage(input: WhatsAppSendInput) {
       error: sanitizeProtectedError(error).message,
     }
   }
+}
+
+export async function sendWhatsAppOperationalNotification(input: WhatsAppOperationalNotificationInput) {
+  if (!input.consentGranted) {
+    return { configured: Boolean(input.phoneNumberId && input.accessToken), ok: false, status: 0, error: 'whatsapp_notification_consent_required' }
+  }
+  return sendWhatsAppTextMessage(input)
 }
 
 export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateSendInput) {

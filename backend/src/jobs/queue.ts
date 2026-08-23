@@ -19,6 +19,8 @@ export const JOB_NAMES = [
   'action-engine.collectMetrics',
   'action-engine.enforceRetention',
   'action-engine.evaluateMission',
+  'action-engine.deliverDecisionNotification',
+  'action-engine.dispatchDecisionNotifications',
   'crm.sequence.dispatchDue',
   'crm.sequence.processExecution',
   'omnichannel.processMessage',

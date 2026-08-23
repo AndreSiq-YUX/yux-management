@@ -15,7 +15,7 @@ import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
 import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './jobs/handlers/company-intelligence.js'
-import { handleActionEngineCollectMetrics, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule } from './jobs/handlers/action-engine.js'
+import { handleActionEngineCollectMetrics, handleActionEngineDecisionNotification, handleActionEngineDecisionNotificationDispatch, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule } from './jobs/handlers/action-engine.js'
 
 type WorkerResult = {
   ok: true
@@ -52,6 +52,8 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'action-engine.executeAction') { await handleActionEngineExecute(pool, maintenanceQueue, job.data, `worker:${job.id ?? 'unknown'}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET); return { ok: true } }
   if (job.name === 'action-engine.reconcileProviderEffect') { await handleActionEngineReconcileProviderEffect(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.evaluateMission') { await handleActionEngineEvaluation(pool, job.data, maintenanceQueue); return { ok: true } }
+  if (job.name === 'action-engine.deliverDecisionNotification') { await handleActionEngineDecisionNotification(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'action-engine.dispatchDecisionNotifications') { await handleActionEngineDecisionNotificationDispatch(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.expireWaits') { await handleActionEngineExpireWaits(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.collectMetrics') { await handleActionEngineCollectMetrics(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }
@@ -133,6 +135,7 @@ function scheduleActionEngineMaintenance() {
   return Promise.all([
     maintenanceQueue.add('action-engine.expireWaits', { window: waitWindow, limit: 100 }, { jobId: createBullMqJobId('action-engine-expire-waits', waitWindow) }),
     maintenanceQueue.add('action-engine.collectMetrics', { window: metricWindow }, { jobId: createBullMqJobId('action-engine-collect-metrics', metricWindow) }),
+    maintenanceQueue.add('action-engine.dispatchDecisionNotifications', { window: waitWindow, limit: 100 }, { jobId: createBullMqJobId('action-engine-decision-dispatch', waitWindow) }),
   ])
 }
 

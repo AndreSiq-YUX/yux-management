@@ -25,6 +25,7 @@ import { buildMissionContext } from '../../modules/action-engine/context-builder
 import { createCapabilityManifest } from '../../modules/action-engine/capability-manifest.js'
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
 import { buildMissionDecisionSummary } from '../../modules/action-engine/decision-summary.js'
+import { deliverDecisionNotification, enqueuePendingDecisionNotifications, persistDecisionNotificationSchedule } from '../../modules/action-engine/decision-notifications.js'
 
 type Pool = {
   query: Queryable['query']
@@ -34,6 +35,14 @@ type Pool = {
 export async function handleActionEngineSchedule(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
   const missionId = typeof data.missionId === 'string' ? data.missionId : undefined
   return scheduleReadyActions(pool as never, queue, missionId)
+}
+
+export async function handleActionEngineDecisionNotification(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
+  return deliverDecisionNotification(pool as never, queue, data)
+}
+
+export async function handleActionEngineDecisionNotificationDispatch(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
+  return enqueuePendingDecisionNotifications(pool as never, queue, { limit: typeof data.limit === 'number' ? data.limit : 100 })
 }
 
 export async function handleActionEngineExecute(
@@ -259,7 +268,7 @@ export async function handleActionEnginePlanMission(
   pool: Pool,
   env: AppEnv,
   data: Record<string, unknown>,
-  _queue?: AppJobQueue,
+  queue?: AppJobQueue,
 ): Promise<{ planId?: string; skipped?: string }> {
   if (env.MISSION_SUPERVISOR_ENABLED === false) throw new Error('mission_supervisor_disabled')
   const missionId = stringField(data, 'missionId')
@@ -436,7 +445,7 @@ export async function handleActionEnginePlanMission(
       })
     }
     const compiled = compileResult.compiled
-    return await transaction(pool, async (client) => {
+    const planningResult = await transaction(pool, async (client) => {
       const current = await getMission(client, missionId, organizationId)
       if (!current || current.status !== expectedStatus || current.version !== requestedVersion) return { skipped: 'mission_state_changed' }
       const diff = isReplan && previousCompiled
@@ -477,10 +486,11 @@ export async function handleActionEnginePlanMission(
         estimatedHumanMinutes: Math.round(Number(compiled.estimatedEconomics.humanHours) * 60),
         capabilityManifest: compiled.capabilityManifest, assumptions: [],
       })
-      await recordApproval(client, {
+      const approval = await recordApproval(client, {
         organizationId, missionId, planId: plan.id, approvalType: isReplan ? 'replan' : 'plan', subjectHash: decisionSummary.decisionSubjectHash,
         requestedPayload: { decisionSummary, packContentHash: compiled.packContentHash, planHash: compiled.planHash, revision: plan.revision, ...(diff ? { diff } : {}) },
       })
+      await persistDecisionNotificationSchedule(client as never, { approvalId: approval.id, organizationId })
       await recordDomainEvent(client, {
         eventType: isReplan ? 'mission.replan_requested' : 'mission.plan_proposed', organizationId, aggregateType: 'mission', aggregateId: missionId,
         actor: { type: 'system' }, payload: { planId: plan.id, revision: plan.revision, planHash: compiled.planHash, decisionSubjectHash: decisionSummary.decisionSubjectHash, ...(diff ? { diff } : {}) },
@@ -491,8 +501,12 @@ export async function handleActionEnginePlanMission(
           actor: { type: 'system' }, reason: 'plan_compiled_and_verified',
         })
       }
-      return { planId: plan.id }
+      return { planId: plan.id, approvalId: approval.id }
     })
+    if (queue && 'approvalId' in planningResult && planningResult.approvalId) {
+      await enqueuePendingDecisionNotifications(pool as never, queue, { approvalId: planningResult.approvalId }).catch(() => undefined)
+    }
+    return planningResult
   } catch (error) {
     await transaction(pool, async (client) => {
       const current = await getMission(client, missionId, organizationId)

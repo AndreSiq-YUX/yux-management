@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 function assertEquals(actual: unknown, expected: unknown) {
   expect(actual).toEqual(expected)
@@ -7,8 +7,19 @@ import {
   buildWhatsAppTemplatePayload,
   buildWhatsAppTextPayload,
   normalizeWhatsAppInbound,
+  sendWhatsAppOperationalNotification,
   validateWhatsAppSignature,
 } from '../../src/lib/edge-compat/whatsappProvider.js'
+
+it('blocks operational WhatsApp notifications before any provider call without consent', async () => {
+  const fetchFn = vi.fn()
+  const result = await sendWhatsAppOperationalNotification({
+    to: '+5543999999999', body: 'Decisão pendente', consentGranted: false,
+    phoneNumberId: 'phone-number-1', accessToken: 'secret', fetchFn,
+  })
+  expect(result).toMatchObject({ ok: false, error: 'whatsapp_notification_consent_required' })
+  expect(fetchFn).not.toHaveBeenCalled()
+})
 
 it('normalizes Meta WhatsApp inbound messages into the omnichannel event contract', () => {
   const event = normalizeWhatsAppInbound({

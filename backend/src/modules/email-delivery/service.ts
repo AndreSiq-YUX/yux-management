@@ -25,7 +25,7 @@ export type EmailDeliveryRequest = {
 
 export type QueueEmailInput = {
   organizationId: string
-  leadId: string
+  leadId: string | null
   templateId?: string | null
   templateVersionId?: string | null
   emailKind: 'transactional' | 'operational' | 'marketing'
@@ -37,6 +37,7 @@ export type QueueEmailInput = {
   renderedVariables?: Record<string, unknown>
   idempotencyKey: string
   sourceEntityType?: string
+  moduleKey?: string
   sourceEntityId?: string | null
   metadata?: Record<string, unknown>
   correlationId?: string
@@ -66,7 +67,7 @@ export async function queueEmailRequest(db: Queryable, input: QueueEmailInput) {
        rendered_variables, sender_scope, source_entity_type, source_entity_id,
        status, idempotency_key, metadata
      )
-     VALUES ($1, $2, $3, $4, $5, 'crm_sequence', $6, $7, $8, $9, $10, $11::jsonb,
+     VALUES ($1, $2, $3, $4, $5, $16, $6, $7, $8, $9, $10, $11::jsonb,
              'organization', $12, $13, 'queued', $14, $15::jsonb)
      ON CONFLICT (idempotency_key) DO UPDATE SET updated_at = NOW()
      RETURNING id, organization_id, lead_id, template_id, template_version_id,
@@ -89,6 +90,7 @@ export async function queueEmailRequest(db: Queryable, input: QueueEmailInput) {
       input.sourceEntityId ?? null,
       input.idempotencyKey,
       JSON.stringify(input.metadata ?? {}),
+      input.moduleKey ?? 'crm_sequence',
     ],
   )
 
