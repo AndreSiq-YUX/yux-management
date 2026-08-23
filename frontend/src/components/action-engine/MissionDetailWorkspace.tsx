@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { MissionDetail } from './MissionDetail'
+import { MissionClarificationPanel } from './MissionClarificationPanel'
 import { actionEngineService } from '@/services/actionEngineService'
-import type { ActionMission, MissionActionRun, MissionApproval, MissionEconomics, MissionMetrics, MissionPlan } from '@/types/actionEngine'
+import type { ActionMission, MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics, MissionPlan } from '@/types/actionEngine'
 
 export function MissionDetailWorkspace({ missionId, organizationId, backHref, canWrite }: { missionId: string; organizationId: string; backHref: string; canWrite: boolean }) {
   const [mission, setMission] = useState<ActionMission | null>(null)
@@ -11,18 +12,20 @@ export function MissionDetailWorkspace({ missionId, organizationId, backHref, ca
   const [approvals, setApprovals] = useState<MissionApproval[]>([])
   const [metrics, setMetrics] = useState<MissionMetrics>({})
   const [economics, setEconomics] = useState<MissionEconomics | null>(null)
+  const [context, setContext] = useState<MissionContextPreview | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [missionData, plans, actionData, approvalData, metricData, economicsData] = await Promise.all([
+    const [missionData, plans, actionData, approvalData, metricData, economicsData, contextData] = await Promise.all([
       actionEngineService.getMission(missionId, organizationId), actionEngineService.listPlans(missionId, organizationId),
       actionEngineService.listActions(missionId, organizationId), actionEngineService.listApprovals(missionId, organizationId),
       actionEngineService.getMetrics(missionId, organizationId), actionEngineService.getEconomics(missionId, organizationId),
+      actionEngineService.previewMissionContext(missionId, organizationId),
     ])
     const selected = plans[0] ? await actionEngineService.getPlan(plans[0].id, organizationId) : null
-    setMission(missionData); setPlan(selected); setActions(actionData); setApprovals(approvalData); setMetrics(metricData); setEconomics(economicsData)
+    setMission(missionData); setPlan(selected); setActions(actionData); setApprovals(approvalData); setMetrics(metricData); setEconomics(economicsData); setContext(contextData)
   }, [missionId, organizationId])
 
   useEffect(() => { let active = true; setLoading(true); load().catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Não foi possível abrir a missão.') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [load])
@@ -37,5 +40,6 @@ export function MissionDetailWorkspace({ missionId, organizationId, backHref, ca
     if (key === 'evaluate') return void run(key, () => actionEngineService.evaluateMission(mission))
     return void run(key, () => actionEngineService.command(mission, key, `Comando ${key} solicitado pela operação`))
   }
-  return <>{error && <div className="mb-4 border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}<MissionDetail mission={mission} plan={plan} actions={actions} approvals={approvals} metrics={metrics} economics={economics} backHref={backHref} canWrite={canWrite} busy={busy} onCommand={command} onApprovePlan={approval => plan && void run('approve-plan', () => actionEngineService.approvePlan(mission, plan, approval))} onApprovalDecision={(approval, decision) => void run(`approval:${approval.id}`, () => actionEngineService.decideApproval(organizationId, approval, decision, decision === 'approved' ? 'Aprovado pela operação' : 'Rejeitado pela operação'))} onRetryAction={action => void run(`action:${action.id}`, () => actionEngineService.retryAction(organizationId, action.id))} onResolveHuman={action => void run(`action:${action.id}`, () => actionEngineService.resolveHumanTask(organizationId, action.id, 30))} /></>
+  const clarification = mission.packSelection.clarification
+  return <>{error && <div className="mb-4 border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}{clarification?.questions.length ? <div className="mb-6"><MissionClarificationPanel key={`${mission.version}:${clarification.contextSnapshotId ?? ''}`} questions={clarification.questions} context={context} canWrite={canWrite} busy={busy === 'clarification'} onSubmit={answers => void run('clarification', () => actionEngineService.answerMissionClarification(mission.id, { organizationId, expectedVersion: mission.version, answers }))} /></div> : null}<MissionDetail mission={mission} plan={plan} actions={actions} approvals={approvals} metrics={metrics} economics={economics} backHref={backHref} canWrite={canWrite} busy={busy} onCommand={command} onApprovePlan={approval => plan && void run('approve-plan', () => actionEngineService.approvePlan(mission, plan, approval))} onApprovalDecision={(approval, decision) => void run(`approval:${approval.id}`, () => actionEngineService.decideApproval(organizationId, approval, decision, decision === 'approved' ? 'Aprovado pela operação' : 'Rejeitado pela operação'))} onRetryAction={action => void run(`action:${action.id}`, () => actionEngineService.retryAction(organizationId, action.id))} onResolveHuman={action => void run(`action:${action.id}`, () => actionEngineService.resolveHumanTask(organizationId, action.id, 30))} /></>
 }

@@ -1,7 +1,8 @@
 import { apiRequest } from '@/lib/apiClient'
 import type {
-  ActionMission, ActionPack, CreateMissionInput, MissionActionRun, MissionApproval,
-  MissionEconomics, MissionMetrics, MissionPlan, MissionReadiness, MissionStatus,
+  ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput,
+  MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
+  MissionPlan, MissionReadiness, MissionStatus,
 } from '@/types/actionEngine'
 
 function query(params: Record<string, string | number | undefined>) {
@@ -25,6 +26,13 @@ export const actionEngineService = {
   createMission: (input: CreateMissionInput) => apiRequest<ActionMission>(`${root}/missions`, {
     method: 'POST', body: input, headers: { 'Idempotency-Key': crypto.randomUUID() },
   }),
+  createMissionIntent: (input: CreateMissionIntentInput) => apiRequest<ActionMission>(`${root}/missions/intents`, {
+    method: 'POST', body: input, headers: { 'Idempotency-Key': crypto.randomUUID() },
+  }),
+  answerMissionClarification: (missionId: string, input: ClarificationAnswerInput) =>
+    apiRequest<ActionMission>(`${root}/missions/${missionId}/clarification`, { method: 'POST', body: input }),
+  previewMissionContext: (missionId: string, organizationId: string) =>
+    apiRequest<MissionContextPreview>(`${root}/missions/${missionId}/context-preview?${query({ organizationId })}`),
   command: (mission: ActionMission, command: 'qualify' | 'pause' | 'resume' | 'cancel', reason: string) =>
     apiRequest<ActionMission>(`${root}/missions/${mission.id}/${command}`, {
       method: 'POST', body: { organizationId: mission.organizationId, expectedVersion: mission.version, reason },

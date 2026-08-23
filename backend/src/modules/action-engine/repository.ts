@@ -106,6 +106,46 @@ export async function getMission(client: Queryable, missionId: string, organizat
   return result.rows[0] ? mapMission(result.rows[0]) : null
 }
 
+export async function answerMissionClarification(client: Queryable, input: {
+  missionId: string
+  organizationId: string
+  expectedVersion: number
+  answers: Record<string, unknown>
+  actorId: string
+}): Promise<ActionMission> {
+  const current = await client.query<MissionRow>(
+    `SELECT ${MISSION_COLUMNS} FROM public.action_missions
+     WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+    [input.missionId, input.organizationId],
+  )
+  const row = current.rows[0]
+  if (!row) throw new Error('mission_not_found')
+  if (Number(row.version) !== input.expectedVersion) throw new Error('mission_version_conflict')
+  if (row.status !== 'qualifying') throw new Error('mission_not_awaiting_clarification')
+  const updated = await client.query<MissionRow>(
+    `UPDATE public.action_missions
+     SET goal = jsonb_set(
+           COALESCE(goal, '{}'::jsonb),
+           '{constraints,clarificationAnswers}',
+           COALESCE(goal #> '{constraints,clarificationAnswers}', '{}'::jsonb) || $3::jsonb,
+           TRUE
+         ),
+         pack_selection = (COALESCE(pack_selection, '{}'::jsonb) - 'clarification')
+           || jsonb_build_object('clarificationAnswers', $3::jsonb),
+         version = version + 1, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2
+     RETURNING ${MISSION_COLUMNS}`,
+    [input.missionId, input.organizationId, input.answers],
+  )
+  const mission = mapMission(updated.rows[0]!)
+  await recordDomainEvent(client, {
+    eventType: 'mission.clarification_answered', organizationId: input.organizationId,
+    aggregateType: 'mission', aggregateId: input.missionId,
+    actor: { type: 'user', id: input.actorId }, payload: { answerKeys: Object.keys(input.answers).sort() },
+  })
+  return mission
+}
+
 type ContextSnapshotRow = {
   id: string; organization_id: string; mission_id: string; context_hash: string; query: string;
   company_context: Record<string, unknown>; knowledge_items: Array<Record<string, unknown>>;

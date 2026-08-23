@@ -6,7 +6,36 @@ export type MissionStatus =
 export type PlanStatus = 'proposed' | 'validating' | 'invalid' | 'pending_approval' | 'approved' | 'active' | 'superseded' | 'completed' | 'cancelled'
 export type ActionRunStatus = 'pending' | 'ready' | 'waiting_approval' | 'queued' | 'running' | 'retry_scheduled' | 'succeeded' | 'failed' | 'blocked' | 'skipped' | 'cancelled'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested' | 'expired' | 'cancelled'
-export type MissionMode = 'shadow' | 'prepare' | 'assisted'
+export type MissionMode = 'shadow' | 'prepare' | 'assisted' | 'autonomous'
+
+export interface MissionGoal {
+  statement: string
+  requestedOutcome: string
+  scopeHints: string[]
+  constraints: Record<string, unknown>
+  acceptanceCriteria: Array<{ key: string; operator: string; target: string; unit: string }>
+}
+
+export interface AutonomyEnvelope {
+  mode: MissionMode
+  allowedModules: string[]
+  allowedCapabilityKeys: string[]
+  maxTotalCostBrl: string
+  maxHumanHours: string
+  maxExternalContacts?: number
+  expiresAt: string
+  alwaysRequireApprovalFor: string[]
+}
+
+export interface MissionClarificationQuestion {
+  key: string
+  label: string
+  whyNeeded: string
+  priority: number
+  answerType: 'text' | 'number' | 'currency' | 'date' | 'single_choice' | 'multiple_choice' | 'boolean'
+  defaultValue?: unknown
+  defaultSourceId?: string
+}
 
 export interface ActionMission {
   id: string
@@ -17,7 +46,16 @@ export interface ActionMission {
   mode: MissionMode
   title: string
   objective: string
-  parameters: RevenueRecoveryParameters
+  goal: MissionGoal
+  autonomyEnvelope: AutonomyEnvelope
+  packSelection: {
+    strategy?: string
+    packs?: Array<{ key: string; version: string }>
+    clarification?: { interpretation: Record<string, unknown>; questions: MissionClarificationQuestion[]; contextSnapshotId?: string }
+    clarificationAnswers?: Record<string, unknown>
+    [key: string]: unknown
+  }
+  parameters: RevenueRecoveryParameters & Record<string, unknown>
   budget: Record<string, unknown>
   deadlineAt?: string
   activePlanId?: string
@@ -41,8 +79,8 @@ export interface RevenueRecoveryParameters {
 }
 
 export interface ActionPack {
-  key: 'revenue_recovery'
-  semanticVersion: '0.1.0'
+  key: string
+  semanticVersion: string
   outcomeType: string
   contentHash: string
   status: string
@@ -151,4 +189,32 @@ export interface CreateMissionInput {
   mode: MissionMode
   deadlineAt: string
   parameters: RevenueRecoveryParameters
+}
+
+export interface CreateMissionIntentInput {
+  organizationId: string
+  contractId?: string
+  title?: string
+  objective: string
+  mode: MissionMode
+  deadlineAt: string
+  allowedModules: string[]
+  maxTotalCostBrl: string
+  maxHumanHours: string
+  maxExternalContacts?: number
+  expectedValueBrl?: string
+  quickStart?: 'revenue_recovery'
+}
+
+export interface ClarificationAnswerInput {
+  organizationId: string
+  expectedVersion: number
+  answers: Record<string, unknown>
+}
+
+export interface MissionContextPreview {
+  snapshotId: string | null
+  contextHash: string | null
+  sources: Array<{ id: string; title: string; category: 'knowledge' | 'strategy' | string }>
+  createdAt: string | null
 }

@@ -28,7 +28,7 @@ export const approvalTypeLabel: Record<string, string> = {
   plan: 'Plano', replan: 'Replanejamento', population: 'População', canary: 'Lote canário', action: 'Ação', external_effect: 'Efeito externo',
 }
 
-export const missionModeLabel: Record<string, string> = { assisted: 'Assistido', prepare: 'Preparação', shadow: 'Shadow' }
+export const missionModeLabel: Record<string, string> = { assisted: 'Assistido', prepare: 'Preparação', shadow: 'Simulação', autonomous: 'Autônomo' }
 
 export function missionProgress(actions: MissionActionRun[]) {
   if (!actions.length) return 0

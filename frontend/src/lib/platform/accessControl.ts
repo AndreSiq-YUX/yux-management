@@ -22,3 +22,15 @@ export function canAccessModule(
 ) {
   return isModuleEnabled(module, enabledModuleKeys) && hasEveryPermission(role, module.requiredPermissions)
 }
+
+export function canReadMissions(role: PlatformRole | null) {
+  return hasPermission(role, 'action_engine.read')
+}
+
+export function canManageMissions(role: PlatformRole | null) {
+  return hasPermission(role, 'action_engine.write')
+}
+
+export function canReadMissionEconomics(role: PlatformRole | null) {
+  return hasPermission(role, 'action_engine.economics.read')
+}

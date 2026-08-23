@@ -28,6 +28,8 @@ export const DOMAIN_EVENT_TYPES = [
   'mission.updated',
   'mission.status_changed',
   'mission.plan_proposed',
+  'mission.clarification_requested',
+  'mission.clarification_answered',
   'mission.plan_approved',
   'mission.started',
   'mission.paused',

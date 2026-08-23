@@ -7,7 +7,7 @@ import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { evaluateMissionReadiness } from './readiness.js'
 import {
-  approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
+  answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
   getPublishedActionPackVersion, publishActionPackVersion, transitionMission, updateMissionDraft,
   type Queryable,
 } from './repository.js'
@@ -48,6 +48,17 @@ const missionCreate = z.object({
     maxHumanHours: decimal, humanHourlyRateBrl: decimal, minimumValueCostRatio: decimal.default('3'),
     channels: z.array(z.enum(['human_task','email','whatsapp','automation'])).min(1).default(['human_task']),
   }),
+})
+const missionIntentCreate = z.object({
+  organizationId: uuid, contractId: uuid.optional(), title: z.string().min(3).max(200).optional(),
+  objective: z.string().min(10).max(2000), mode: z.enum(['shadow','prepare','assisted','autonomous']).default('assisted'),
+  deadlineAt: z.string().datetime(), allowedModules: z.array(z.string().min(1)).min(1).max(50),
+  maxTotalCostBrl: decimal, maxHumanHours: decimal, maxExternalContacts: z.number().int().nonnegative().optional(),
+  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery']).optional(),
+})
+const clarificationAnswers = z.object({
+  organizationId: uuid, expectedVersion: z.number().int().positive(),
+  answers: z.record(z.string().min(1), z.unknown()).refine((value) => Object.keys(value).length > 0),
 })
 const missionPatch = z.object({
   organizationId: uuid, expectedVersion: z.number().int().positive(), title: z.string().min(3).max(200).optional(),
@@ -183,6 +194,91 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       return reply.code(201).send(mission)
     } catch (error) {
       return sendDomainError(reply, error)
+    }
+  })
+
+  app.post('/missions/intents', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const parsed = missionIntentCreate.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_intent' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
+    const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
+    if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })
+    try {
+      const packVersion = await ensurePackVersion(app.pg, ctx.userId)
+      const expectedValue = parsed.data.expectedValueBrl ?? '1'
+      const deadlineDays = Math.max(1, Math.min(180, Math.ceil((Date.parse(parsed.data.deadlineAt) - Date.now()) / 86_400_000)))
+      const parameters = {
+        targetRevenueBrl: expectedValue, deadlineDays, inactiveDays: 60, canarySize: 20, maxPopulation: 100,
+        maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours,
+        humanHourlyRateBrl: '100', minimumValueCostRatio: '1', channels: ['human_task'] as const,
+      }
+      const mission = await createMission(app.pg as never, {
+        organizationId: parsed.data.organizationId, contractId: parsed.data.contractId,
+        packVersionId: packVersion.id, title: parsed.data.title?.trim() || parsed.data.objective.slice(0, 120),
+        objective: parsed.data.objective, mode: parsed.data.mode, parameters,
+        goal: {
+          statement: parsed.data.objective, requestedOutcome: parsed.data.quickStart ?? 'supervisor_interpreted_outcome',
+          scopeHints: parsed.data.allowedModules, constraints: {}, acceptanceCriteria: [],
+        },
+        autonomyEnvelope: {
+          mode: parsed.data.mode, allowedModules: parsed.data.allowedModules, allowedCapabilityKeys: [],
+          maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours,
+          ...(parsed.data.maxExternalContacts !== undefined ? { maxExternalContacts: parsed.data.maxExternalContacts } : {}),
+          expiresAt: parsed.data.deadlineAt, alwaysRequireApprovalFor: ['destructive'],
+        },
+        packSelection: {
+          strategy: parsed.data.quickStart ? 'explicit_quick_start' : 'supervisor',
+          packs: parsed.data.quickStart ? [{ key: 'revenue_recovery', version: REVENUE_RECOVERY_PACK_V0.semanticVersion }] : [],
+        },
+        budget: { maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours },
+        deadlineAt: parsed.data.deadlineAt, createdBy: ctx.userId, idempotencyKey,
+      })
+      return reply.code(201).send(mission)
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.post('/missions/:missionId/clarification', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const body = clarificationAnswers.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_clarification' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try {
+      return await transaction(app.pg, (client) => answerMissionClarification(client, {
+        missionId: params.data.missionId, organizationId: body.data.organizationId,
+        expectedVersion: body.data.expectedVersion, answers: body.data.answers, actorId: ctx.userId,
+      }))
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.get('/missions/:missionId/context-preview', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const query = organizationQuery.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_mission_context_preview' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    const snapshot = await app.pg.query<{
+      id: string; context_hash: string; knowledge_items: Array<Record<string, unknown>>;
+      strategy_items: Array<Record<string, unknown>>; source_ids: string[]; created_at: string | Date;
+    }>(
+      `SELECT id, context_hash, knowledge_items, strategy_items, source_ids, created_at
+       FROM public.action_mission_context_snapshots
+       WHERE mission_id = $1 AND organization_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      [params.data.missionId, query.data.organizationId],
+    )
+    const row = snapshot.rows[0]
+    if (!row) return { snapshotId: null, contextHash: null, sources: [], createdAt: null }
+    const knowledge = (row.knowledge_items ?? []).map((item) => ({
+      id: String(item.sourceId ?? item.id ?? ''), title: 'Base de conhecimento publicada', category: 'knowledge',
+    }))
+    const strategy = (row.strategy_items ?? []).map((item) => ({
+      id: String(item.id ?? ''), title: 'Estratégia YUX aprovada', category: 'strategy',
+    }))
+    return {
+      snapshotId: row.id, contextHash: row.context_hash,
+      sources: [...knowledge, ...strategy].filter((item) => item.id),
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     }
   })
 
@@ -492,6 +588,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
   const statusCode: Record<string, number> = {
     mission_not_found: 404, mission_transition_not_allowed: 409, mission_terminal: 409,
     mission_version_conflict: 409, mission_not_draft: 409, idempotency_conflict: 409,
+    mission_not_awaiting_clarification: 409,
     action_pack_version_hash_conflict: 409,
     plan_or_approval_not_found: 404, plan_not_pending_approval: 409, approval_subject_changed: 409,
     agent_harness_unavailable: 503,
