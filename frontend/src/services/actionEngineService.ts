@@ -1,6 +1,6 @@
 import { apiRequest } from '@/lib/apiClient'
 import type {
-  ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput,
+  ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput, DecisionReasonKey,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
   MissionPlan, MissionReadiness, MissionStatus,
   PublicSimulationReport, SimulationReportShare,
@@ -57,8 +57,8 @@ export const actionEngineService = {
   }),
   listActions: (missionId: string, organizationId: string) => apiRequest<MissionActionRun[]>(`${root}/missions/${missionId}/actions?${query({ organizationId })}`),
   listApprovals: (missionId: string, organizationId: string) => apiRequest<MissionApproval[]>(`${root}/missions/${missionId}/approvals?${query({ organizationId })}`),
-  decideApproval: (organizationId: string, approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', comment: string) =>
-    apiRequest(`${root}/approvals/${approval.id}/decide`, { method: 'POST', body: { organizationId, subjectHash: approval.subjectHash, decision, comment } }),
+  decideApproval: (organizationId: string, approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', reasonKey?: DecisionReasonKey, comment?: string) =>
+    apiRequest(`${root}/approvals/${approval.id}/decide`, { method: 'POST', body: { organizationId, subjectHash: approval.subjectHash, decision, reasonKey, comment } }),
   retryAction: (organizationId: string, actionId: string) => apiRequest(`${root}/actions/${actionId}/retry`, { method: 'POST', body: { organizationId, reason: 'Nova tentativa solicitada pela operação' } }),
   resolveHumanTask: (organizationId: string, actionId: string, actualMinutes: number) => apiRequest(`${root}/actions/${actionId}/resolve-human-task`, {
     method: 'POST', body: { organizationId, actualMinutes, result: { resolvedFrom: 'missions_ui' } },
@@ -72,7 +72,7 @@ export const actionEngineService = {
     method: 'POST', body: { organizationId },
   }),
   getPublicSimulationReport: (token: string) => apiRequest<PublicSimulationReport>(`${root}/public/simulation-reports/${encodeURIComponent(token)}`),
-  submitSimulationFeedback: (token: string, input: { reviewerName: string; decision: 'support' | 'request_changes' | 'reject'; reasonKey?: string; comment?: string }) =>
+  submitSimulationFeedback: (token: string, input: { reviewerName: string; decision: 'support' | 'request_changes' | 'reject'; reasonKey?: DecisionReasonKey; comment?: string }) =>
     apiRequest<{ id: string; decision: string; createdAt: string; executionApproved: false }>(`${root}/public/simulation-reports/${encodeURIComponent(token)}/feedback`, { method: 'POST', body: input }),
   simulationPdfHref: (token: string) => `/api${root}/public/simulation-reports/${encodeURIComponent(token)}/pdf`,
 }

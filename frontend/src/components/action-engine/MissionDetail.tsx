@@ -9,7 +9,7 @@ import { MissionPlanPanel } from './MissionPlanPanel'
 import { MissionTechnicalProof } from './MissionTechnicalProof'
 import { MissionStatusBadge } from './MissionStatusBadge'
 import { availableMissionCommands, formatBrl, formatMissionDate, missionModeLabel, missionStatusMeta } from '@/lib/action-engine/missionRules'
-import type { ActionMission, MissionActionRun, MissionApproval, MissionEconomics, MissionMetrics, MissionPlan } from '@/types/actionEngine'
+import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionEconomics, MissionMetrics, MissionPlan } from '@/types/actionEngine'
 
 type MissionDetailProps = {
   mission: ActionMission; plan: MissionPlan | null; actions: MissionActionRun[]; approvals: MissionApproval[];
@@ -17,7 +17,7 @@ type MissionDetailProps = {
   onCommand: (command: 'qualify' | 'plan' | 'start' | 'pause' | 'resume' | 'evaluate' | 'cancel') => void;
   onApprovePlan: (approval: MissionApproval) => void;
   onShareSimulation: () => void;
-  onApprovalDecision: (approval: MissionApproval, decision: 'approved' | 'rejected') => void;
+  onApprovalDecision: (approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', reasonKey?: DecisionReasonKey, comment?: string) => void;
   onRetryAction: (action: MissionActionRun) => void; onResolveHuman: (action: MissionActionRun) => void;
 }
 

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type pg from 'pg'
 import { renderSimulationReportPdf } from './simulation-report-pdf.js'
+import { assertDecisionFeedback, recordDecisionFeedback, type DecisionReasonKey } from './decision-feedback.js'
 
 type Queryable = Pick<pg.Pool, 'query'>
 
@@ -17,7 +18,7 @@ export type SimulationReportSnapshot = {
   economics: { estimatedCostBrl: string; maximumCostBrl: string; estimatedHumanMinutes: number }
   irreversibleEffects: Array<{ description: string }>
   assumptions: Array<{ key: string; value: string; source: string }>
-  technicalProof: { packVersion: string; planHash: string; manifestHash: string; sourceCount: number }
+  technicalProof: { packVersion: string; planHash: string; manifestHash: string; sourceCount: number; decisionSubjectHash: string }
   createdAt: string
   expiresAt: string
   disclaimer: string
@@ -28,6 +29,8 @@ type ReportRow = {
   organization_id: string
   mission_id: string
   plan_id: string
+  approval_id: string | null
+  approval_subject_hash: string | null
   token_hash: string
   report_hash: string
   snapshot: SimulationReportSnapshot
@@ -59,10 +62,10 @@ export async function createSimulationReport(db: Queryable, input: {
   const pdfData = await renderSimulationReportPdf(snapshot)
   await db.query(
     `INSERT INTO public.action_simulation_reports (
-       id, organization_id, mission_id, plan_id, plan_revision, token_hash, report_hash,
+       id, organization_id, mission_id, plan_id, approval_id, plan_revision, token_hash, report_hash,
        redaction_version, snapshot, pdf_data, expires_at, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,$9,$10,$11)`,
-    [reportId, input.organizationId, input.missionId, input.planId, source.revision,
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,$12)`,
+    [reportId, input.organizationId, input.missionId, input.planId, source.approval_id, source.revision,
       sha256(token), reportHash, snapshot, Buffer.from(pdfData), expiresAt, input.createdBy],
   )
   return { id: reportId, token, url: `/mission-simulation/review/${token}`, expiresAt, reportHash, snapshot }
@@ -95,21 +98,35 @@ export async function recordSimulationFeedback(db: Queryable, token: string, inp
   comment?: string
 }) {
   const report = await loadReportByToken(db, token)
+  assertDecisionFeedback({
+    decision: input.decision === 'support' ? 'support' : input.decision === 'reject' ? 'rejected' : 'changes_requested',
+    reasonKey: input.reasonKey, comment: input.comment, subjectHash: report.approval_subject_hash ?? report.report_hash,
+  })
   const result = await db.query<{ id: string; created_at: string }>(
     `INSERT INTO public.action_simulation_report_feedback (report_id, reviewer_name, decision, reason_key, comment)
      VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at`,
     [report.id, redactText(input.reviewerName, 100), input.decision, input.reasonKey ?? null, input.comment ? redactText(input.comment, 2000) : null],
   )
   if (!result.rows[0]) throw new Error('simulation_feedback_not_recorded')
+  if (report.approval_id && report.approval_subject_hash) {
+    await recordDecisionFeedback(db, {
+      organizationId: report.organization_id, missionId: report.mission_id, approvalId: report.approval_id,
+      simulationReportId: report.id, reviewerType: 'external',
+      decision: input.decision === 'support' ? 'support' : input.decision === 'reject' ? 'rejected' : 'changes_requested',
+      reasonKey: input.decision === 'support' ? undefined : input.reasonKey as DecisionReasonKey | undefined,
+      comment: input.comment, subjectHash: report.approval_subject_hash,
+    })
+  }
   return { id: result.rows[0].id, decision: input.decision, createdAt: result.rows[0].created_at, executionApproved: false }
 }
 
 async function loadSimulationSource(db: Queryable, input: { organizationId: string; missionId: string; planId: string }) {
   const result = await db.query<{
-    mission_title: string; objective: string; mode: string; revision: number; plan_hash: string;
+    mission_title: string; objective: string; mode: string; revision: number; plan_hash: string; approval_id: string; approval_subject_hash: string;
     pack_content_hash: string; capability_manifest_hash: string; requested_payload: Record<string, unknown>;
   }>(
-    `SELECT mission.title AS mission_title, mission.objective, mission.mode, plan.revision,
+    `SELECT mission.title AS mission_title, mission.objective, mission.mode, plan.revision, approval.id AS approval_id,
+            approval.subject_hash AS approval_subject_hash,
             plan.plan_hash, plan.pack_content_hash, plan.capability_manifest_hash, approval.requested_payload
        FROM public.action_missions mission
        JOIN public.action_plans plan ON plan.mission_id = mission.id AND plan.organization_id = mission.organization_id
@@ -145,6 +162,7 @@ function buildSimulationSnapshot(source: Awaited<ReturnType<typeof loadSimulatio
     technicalProof: {
       packVersion: source.pack_content_hash, planHash: String(proof.planHash ?? source.plan_hash),
       manifestHash: String(proof.manifestHash ?? source.capability_manifest_hash), sourceCount: safeNumber(proof.sourceCount),
+      decisionSubjectHash: source.approval_subject_hash,
     },
     createdAt: input.createdAt, expiresAt: input.expiresAt,
     disclaimer: 'Simulacao - nenhum efeito executado. Este link coleta feedback, mas nao autoriza execucao.',
@@ -155,8 +173,12 @@ async function loadReportByToken(db: Queryable, token: string): Promise<ReportRo
   const [id] = token.split('.', 1)
   if (!id || !/^[a-f0-9-]{36}$/i.test(id)) throw new Error('simulation_report_token_invalid')
   const result = await db.query<ReportRow>(
-    `SELECT id, organization_id, mission_id, plan_id, token_hash, report_hash, snapshot,
-            pdf_data, expires_at, revoked_at FROM public.action_simulation_reports WHERE id = $1 LIMIT 1`,
+    `SELECT report.id, report.organization_id, report.mission_id, report.plan_id, report.approval_id,
+            approval.subject_hash AS approval_subject_hash, report.token_hash, report.report_hash, report.snapshot,
+            report.pdf_data, report.expires_at, report.revoked_at
+       FROM public.action_simulation_reports report
+       LEFT JOIN public.action_approvals approval ON approval.id = report.approval_id
+      WHERE report.id = $1 LIMIT 1`,
     [id],
   )
   const report = result.rows[0]

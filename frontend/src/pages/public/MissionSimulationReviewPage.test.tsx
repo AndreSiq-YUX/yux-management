@@ -28,6 +28,24 @@ describe('MissionSimulationReviewPage', () => {
     expect(document.body.textContent).toContain('Parecer registrado')
     act(() => root.unmount())
   })
+
+  it('requires a structured reason when the stakeholder requests changes', async () => {
+    vi.spyOn(actionEngineService, 'getPublicSimulationReport').mockResolvedValue(report)
+    const submit = vi.spyOn(actionEngineService, 'submitSimulationFeedback').mockResolvedValue({ id: 'feedback-2', decision: 'request_changes', createdAt: '', executionApproved: false })
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<MemoryRouter initialEntries={['/mission-simulation/review/report-token']}><Routes><Route path="/mission-simulation/review/:token" element={<MissionSimulationReviewPage />} /></Routes></MemoryRouter>)
+      await flush()
+    })
+    await change('input', 'Stakeholder')
+    await change('select', 'request_changes')
+    expect(document.body.textContent).toContain('Público ou ICP incorreto')
+    await change('select[aria-label="Motivo da decisão"]', 'cost_too_high')
+    await click('Enviar parecer')
+    expect(submit).toHaveBeenCalledWith('report-token', expect.objectContaining({ decision: 'request_changes', reasonKey: 'cost_too_high' }))
+    act(() => root.unmount())
+  })
 })
 
 const report = {
@@ -38,7 +56,7 @@ const report = {
     changes: [{ quantity: 2, label: 'artefatos' }], contactImpact: { existingContacts: 0, futureEligibleContacts: true, channels: ['email'] },
     economics: { estimatedCostBrl: '340', maximumCostBrl: '500', estimatedHumanMinutes: 45 },
     irreversibleEffects: [{ description: 'Envios não podem ser desfeitos.' }], assumptions: [],
-    technicalProof: { packVersion: 'b'.repeat(64), planHash: 'c'.repeat(64), manifestHash: 'd'.repeat(64), sourceCount: 2 },
+    technicalProof: { packVersion: 'b'.repeat(64), planHash: 'c'.repeat(64), manifestHash: 'd'.repeat(64), sourceCount: 2, decisionSubjectHash: 'e'.repeat(64) },
     createdAt: '2026-08-22T12:00:00Z', expiresAt: '2026-08-29T12:00:00Z',
     disclaimer: 'Simulação - nenhum efeito executado.',
   },

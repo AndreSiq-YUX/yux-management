@@ -7,6 +7,7 @@ export type PlanStatus = 'proposed' | 'validating' | 'invalid' | 'pending_approv
 export type ActionRunStatus = 'pending' | 'ready' | 'waiting_approval' | 'queued' | 'running' | 'retry_scheduled' | 'succeeded' | 'failed' | 'blocked' | 'skipped' | 'cancelled'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested' | 'expired' | 'cancelled'
 export type MissionMode = 'shadow' | 'prepare' | 'assisted' | 'autonomous'
+export type DecisionReasonKey = 'wrong_icp' | 'wrong_tone' | 'cost_too_high' | 'scope_too_broad' | 'scope_too_narrow' | 'timing_wrong' | 'channel_wrong' | 'compliance_risk' | 'outcome_wrong' | 'other'
 
 export interface MissionGoal {
   statement: string
@@ -254,7 +255,7 @@ export interface SimulationReportSnapshot {
   economics: { estimatedCostBrl: string; maximumCostBrl: string; estimatedHumanMinutes: number }
   irreversibleEffects: Array<{ description: string }>
   assumptions: Array<{ key: string; value: string; source: string }>
-  technicalProof: { packVersion: string; planHash: string; manifestHash: string; sourceCount: number }
+  technicalProof: { packVersion: string; planHash: string; manifestHash: string; sourceCount: number; decisionSubjectHash: string }
   createdAt: string
   expiresAt: string
   disclaimer: string

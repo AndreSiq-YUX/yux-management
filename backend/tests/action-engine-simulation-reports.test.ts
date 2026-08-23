@@ -68,6 +68,8 @@ describe('Shadow simulation reports', () => {
 function source(overrides: Record<string, unknown> = {}) {
   return {
     mission_title: 'Recuperar ana@example.com', objective: 'Contatar +5543999999999', mode: 'shadow', revision: 1,
+    approval_id: '00000000-0000-4000-8000-000000000005',
+    approval_subject_hash: 'd'.repeat(64),
     plan_hash: 'a'.repeat(64), pack_content_hash: 'b'.repeat(64), capability_manifest_hash: 'c'.repeat(64),
     requested_payload: {
       decisionSummary: {
@@ -77,7 +79,7 @@ function source(overrides: Record<string, unknown> = {}) {
         economics: { estimatedCostBrl: '340', maximumCostBrl: '500', estimatedHumanMinutes: 45 },
         irreversibleEffects: [{ description: 'E-mails enviados nao podem ser desfeitos.' }],
         assumptions: [{ key: 'tone', value: 'consultivo', source: 'company_context' }],
-        technicalProof: { planHash: 'a'.repeat(64), manifestHash: 'c'.repeat(64), sourceCount: 3 },
+        decisionSubjectHash: 'd'.repeat(64), technicalProof: { planHash: 'a'.repeat(64), manifestHash: 'c'.repeat(64), sourceCount: 3 },
       },
     },
     ...overrides,
@@ -95,13 +97,14 @@ class SimulationDatabase {
     }
     if (sql.includes('INSERT INTO public.action_simulation_reports (')) {
       this.report = {
-        id: params[0], organization_id: params[1], mission_id: params[2], plan_id: params[3],
-        token_hash: params[5], report_hash: params[6], snapshot: params[7], pdf_data: params[8],
-        expires_at: params[9], revoked_at: null,
+        id: params[0], organization_id: params[1], mission_id: params[2], plan_id: params[3], approval_id: params[4],
+        token_hash: params[6], report_hash: params[7], snapshot: params[8], pdf_data: params[9],
+        approval_subject_hash: this.sourceRow.approval_subject_hash,
+        expires_at: params[10], revoked_at: null,
       }
       return { rows: [] }
     }
-    if (sql.includes('FROM public.action_simulation_reports WHERE id')) {
+    if (sql.includes('FROM public.action_simulation_reports report')) {
       return { rows: this.report && this.report.id === params[0] ? [this.report] : [] }
     }
     if (sql.includes('UPDATE public.action_simulation_reports SET revoked_at')) {
@@ -111,6 +114,9 @@ class SimulationDatabase {
     }
     if (sql.includes('INSERT INTO public.action_simulation_report_feedback')) {
       return { rows: [{ id: 'feedback-1', created_at: '2026-08-22T13:00:00Z' }] }
+    }
+    if (sql.includes('INSERT INTO public.action_decision_feedback')) {
+      return { rows: [{ id: 'evidence-1', created_at: '2026-08-22T13:00:00Z' }] }
     }
     if (sql.includes('action_approvals') && /UPDATE|INSERT/.test(sql)) this.approvalMutations += 1
     return { rows: [] }

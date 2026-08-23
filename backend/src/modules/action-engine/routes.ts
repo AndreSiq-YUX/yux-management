@@ -19,6 +19,7 @@ import { collectMissionEconomics } from './economics.js'
 import { releaseResourceClaims } from './resource-claims.js'
 import { buildActionEngineNfrSnapshot } from './operations-health.js'
 import { createSimulationReport, getPublicSimulationReport, getPublicSimulationReportPdf, recordSimulationFeedback, revokeSimulationReport } from './simulation-reports.js'
+import { DECISION_REASON_KEYS, exportDecisionFeedbackLearningEvidence } from './decision-feedback.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -92,8 +93,12 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const body = z.object({
       reviewerName: z.string().trim().min(2).max(100),
       decision: z.enum(['support','request_changes','reject']),
-      reasonKey: z.string().trim().min(2).max(100).optional(),
+      reasonKey: z.enum(DECISION_REASON_KEYS).optional(),
       comment: z.string().trim().max(2000).optional(),
+    }).superRefine((value, ctx) => {
+      if (value.decision !== 'support' && !value.reasonKey) ctx.addIssue({ code: 'custom', message: 'reasonKey is required', path: ['reasonKey'] })
+      if (value.decision === 'support' && value.reasonKey) ctx.addIssue({ code: 'custom', message: 'reasonKey is not allowed', path: ['reasonKey'] })
+      if (value.reasonKey === 'other' && (value.comment?.trim().length ?? 0) < 3) ctx.addIssue({ code: 'custom', message: 'comment is required', path: ['comment'] })
     }).safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_simulation_feedback' })
     try { return reply.code(201).send(await runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => recordSimulationFeedback(app.pg, params.data.token, body.data))) }
@@ -553,17 +558,35 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.post('/approvals/:approvalId/decide', async (request, reply) => {
     const ctx = requireAuth(request)
     const params = z.object({ approvalId: uuid }).safeParse(request.params)
-    const body = z.object({ organizationId: uuid, subjectHash: z.string().regex(/^[a-f0-9]{64}$/), decision: z.enum(['approved','rejected','changes_requested']), comment: z.string().min(3).max(1000) }).safeParse(request.body)
+    const body = z.object({
+      organizationId: uuid, subjectHash: z.string().regex(/^[a-f0-9]{64}$/),
+      decision: z.enum(['approved','rejected','changes_requested']),
+      reasonKey: z.enum(DECISION_REASON_KEYS).optional(), comment: z.string().trim().max(2000).optional(),
+    }).superRefine((value, ctx) => {
+      if (value.decision !== 'approved' && !value.reasonKey) ctx.addIssue({ code: 'custom', message: 'reasonKey is required', path: ['reasonKey'] })
+      if (value.decision === 'approved' && value.reasonKey) ctx.addIssue({ code: 'custom', message: 'reasonKey is not allowed', path: ['reasonKey'] })
+      if (value.reasonKey === 'other' && (value.comment?.trim().length ?? 0) < 3) ctx.addIssue({ code: 'custom', message: 'comment is required', path: ['comment'] })
+    }).safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_approval_decision' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
     try {
       const result = await decideActionApproval(app.pg as never, {
         approvalId: params.data.approvalId, organizationId: body.data.organizationId,
-        subjectHash: body.data.subjectHash, decision: body.data.decision, reason: body.data.comment, decidedBy: ctx.userId,
+        subjectHash: body.data.subjectHash, decision: body.data.decision,
+        reason: body.data.comment || body.data.reasonKey || 'Aprovado pela operação',
+        reasonKey: body.data.reasonKey, decidedBy: ctx.userId,
       })
       if (result.runId && result.status === 'approved') await app.jobQueue.add('action-engine.executeAction', { actionRunId: result.runId, organizationId: body.data.organizationId, missionId: result.missionId })
       return result
     } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.get('/decision-feedback/learning', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const query = organizationQuery.safeParse(request.query)
+    if (!query.success) return reply.code(400).send({ error: 'invalid_decision_feedback_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    return exportDecisionFeedbackLearningEvidence(app.pg, query.data.organizationId)
   })
 
   app.post('/actions/:actionId/retry', async (request, reply) => {
@@ -699,6 +722,8 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     actual_minutes_required: 400, human_cost_rate_missing: 409,
     simulation_plan_not_found: 404, simulation_report_not_found: 404,
     simulation_report_requires_shadow_mode: 409,
+    decision_feedback_reason_required: 400, decision_feedback_reason_invalid: 400, decision_feedback_reason_not_allowed: 400,
+    decision_feedback_comment_required: 400, decision_feedback_comment_too_long: 400,
   }
   return reply.code(statusCode[code] ?? 500).send({ error: statusCode[code] ? code : 'internal_error' })
 }
@@ -708,6 +733,7 @@ function sendSimulationError(reply: FastifyReply, error: unknown) {
   const status = code === 'simulation_report_expired' ? 410
     : code === 'simulation_report_revoked' ? 410
       : code === 'simulation_report_token_invalid' ? 404
+        : code.startsWith('decision_feedback_') ? 400
         : 500
   return reply.code(status).send({ error: status === 500 ? 'simulation_report_error' : code })
 }

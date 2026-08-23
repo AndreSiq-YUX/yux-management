@@ -4,6 +4,7 @@ import type { DomainEventActor } from '../events/types.js'
 import { assertMissionTransition } from './state-machine.js'
 import type { ActionMission, ActionPlanStep, AutonomyEnvelope, MissionContextSnapshot, MissionGoal, MissionMode, MissionStatus } from './types.js'
 import type { CapabilityManifestEntry } from './capability-manifest.js'
+import { recordDecisionFeedback, type DecisionReasonKey } from './decision-feedback.js'
 
 export type Queryable = {
   query<TRow = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: TRow[]; rowCount?: number | null }>
@@ -523,19 +524,23 @@ export async function listMissionApprovals(client: Queryable, missionId: string,
 
 export async function decideActionApproval(pool: Connectable, input: {
   approvalId: string; organizationId: string; subjectHash: string;
-  decision: 'approved' | 'rejected' | 'changes_requested'; reason: string; decidedBy: string
+  decision: 'approved' | 'rejected' | 'changes_requested'; reason: string; reasonKey?: DecisionReasonKey; decidedBy: string
 }) {
   return inTransaction(pool, async (client) => {
-    const result = await client.query<{ id: string; run_id: string | null; mission_id: string; approval_type: string; status: string; subject_hash: string }>(
-      `SELECT id, run_id, mission_id, approval_type, status, subject_hash
-       FROM public.action_approvals WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+    const result = await client.query<{ id: string; run_id: string | null; plan_id: string | null; mission_id: string; approval_type: string; status: string; subject_hash: string; mission_status: MissionStatus; mission_version: number }>(
+      `SELECT approval.id, approval.run_id, approval.plan_id, approval.mission_id, approval.approval_type,
+              approval.status, approval.subject_hash, mission.status AS mission_status, mission.version AS mission_version
+       FROM public.action_approvals approval JOIN public.action_missions mission ON mission.id = approval.mission_id
+       WHERE approval.id = $1 AND approval.organization_id = $2 FOR UPDATE OF approval, mission`,
       [input.approvalId, input.organizationId],
     )
     const approval = result.rows[0]
     if (!approval) throw new Error('approval_not_found')
     if (approval.status !== 'pending') throw new Error('approval_already_decided')
     if (approval.subject_hash !== input.subjectHash) throw new Error('approval_subject_changed')
-    if (approval.approval_type === 'plan' || approval.approval_type === 'replan') throw new Error('plan_approval_requires_version_context')
+    const planDecision = approval.approval_type === 'plan' || approval.approval_type === 'replan'
+    if (planDecision && input.decision === 'approved') throw new Error('plan_approval_requires_version_context')
+    if (input.decision !== 'approved' && !input.reasonKey) throw new Error('decision_feedback_reason_required')
     await client.query(
       `UPDATE public.action_approvals SET status = $2, decision_reason = $3, decided_by = $4,
               decided_at = NOW(), updated_at = NOW() WHERE id = $1`,
@@ -550,10 +555,32 @@ export async function decideActionApproval(pool: Connectable, input: {
         [approval.run_id, input.decision === 'approved' ? 'queued' : 'blocked', input.decision, input.reason],
       )
     }
+    if (planDecision) {
+      if (approval.plan_id) {
+        await client.query(`UPDATE public.action_plans SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending_approval'`, [approval.plan_id])
+      }
+      const nextStatus: MissionStatus = approval.approval_type === 'replan' ? 'paused' : 'planning'
+      assertMissionTransition(approval.mission_status, nextStatus)
+      const updated = await client.query<{ id: string }>(
+        `UPDATE public.action_missions SET status = $3, version = version + 1,
+                pack_selection = pack_selection || jsonb_build_object('lastDecisionFeedbackApprovalId',$4::text), updated_at = NOW()
+          WHERE id = $1 AND organization_id = $2 AND version = $5 RETURNING id`,
+        [approval.mission_id, input.organizationId, nextStatus, input.approvalId, approval.mission_version],
+      )
+      if (!updated.rows[0]) throw new Error('mission_version_conflict')
+    }
+    if (input.decision !== 'approved' && input.reasonKey) {
+      await recordDecisionFeedback(client as never, {
+        organizationId: input.organizationId, missionId: approval.mission_id, approvalId: input.approvalId,
+        reviewerType: 'authenticated', reviewerUserId: input.decidedBy,
+        decision: input.decision === 'rejected' ? 'rejected' : 'changes_requested',
+        reasonKey: input.reasonKey, comment: input.reason, subjectHash: input.subjectHash,
+      })
+    }
     await recordDomainEvent(client, {
       eventType: input.decision === 'approved' ? 'approval.approved' : 'approval.rejected',
       organizationId: input.organizationId, aggregateType: 'approval', aggregateId: input.approvalId,
-      actor: { type: 'user', id: input.decidedBy }, payload: { missionId: approval.mission_id, runId: approval.run_id, decision: input.decision },
+      actor: { type: 'user', id: input.decidedBy }, payload: { missionId: approval.mission_id, runId: approval.run_id, decision: input.decision, reasonKey: input.reasonKey ?? null },
     })
     return { approvalId: input.approvalId, missionId: approval.mission_id, runId: approval.run_id, status: input.decision }
   })
