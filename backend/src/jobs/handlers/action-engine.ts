@@ -2,7 +2,8 @@ import type { AppEnv } from '../../config/env.js'
 import type { AppJobQueue } from '../../server.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from '../../modules/action-engine/packs/revenue-recovery-v0.js'
-import { compileMissionPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
+import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
+import type { ActionPackVersion } from '../../modules/action-engine/action-pack.js'
 import {
   getMission, getPlan, insertMissionContextSnapshot, insertPlanRevision, recordApproval, transitionMission, type Queryable,
 } from '../../modules/action-engine/repository.js'
@@ -269,8 +270,9 @@ export async function handleActionEnginePlanMission(
   if (mission.status !== expectedStatus || mission.version !== requestedVersion) return { skipped: 'mission_state_changed' }
 
   const registry = createActionEngineCapabilityRegistry()
-  const { parameters: _runtimeSchema, ...serializablePack } = REVENUE_RECOVERY_PACK_V0
-  const allowedKeys = new Set(REVENUE_RECOVERY_PACK_V0.allowedCapabilities.map((item) => item.key))
+  const pack = await loadMissionActionPack(pool, mission.packVersionId)
+  const { parameters: _runtimeSchema, ...serializablePack } = pack as ActionPackVersion & { parameters?: unknown }
+  const allowedKeys = new Set(pack.allowedCapabilities.map((item) => item.key))
   const capabilityCatalog = registry.listMetadata().filter((item) => allowedKeys.has(item.key))
   try {
   const manifest = createCapabilityManifest(
@@ -307,8 +309,8 @@ export async function handleActionEnginePlanMission(
        ) VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (mission_id, plan_revision) DO UPDATE SET updated_at = NOW()
        RETURNING id`,
-      [organizationId, missionId, requestedVersion, contextHash, REVENUE_RECOVERY_PACK_V0.key,
-        REVENUE_RECOVERY_PACK_V0.semanticVersion, planningBudget],
+      [organizationId, missionId, requestedVersion, contextHash, pack.key,
+        pack.semanticVersion, planningBudget],
     )
     const cycleId = created.rows[0]?.id
     if (!cycleId) throw new Error('planning_cycle_create_failed')
@@ -335,6 +337,7 @@ export async function handleActionEnginePlanMission(
         budget: mission.budget, deadlineAt: mission.deadlineAt,
       },
       action_pack: serializablePack,
+      pack_catalog: [serializablePack],
       readiness: { ready: true, source: 'server_preflight' },
       baseline: builtContext.liveState, capabilities: capabilityCatalog,
       limits: mission.budget,
@@ -353,17 +356,45 @@ export async function handleActionEnginePlanMission(
         usage: { calls: 0, inputTokens: 0, outputTokens: 0, costBrl: '0', latencyMs: 0 },
         estimate: planningEstimate,
       },
-      ...(previousCompiled ? { previous_plan: previousCompiled } : {}),
+      ...(previousCompiled ? { previous_revision: previousCompiled } : {}),
     })
-    const compiled = compileMissionPlan({
-      rawPlan, missionId, pack: REVENUE_RECOVERY_PACK_V0, registry,
-      maxTotalCostBrl: String(mission.budget.maxTotalCostBrl ?? '0'),
+    const compileResult = compileSupervisorPlan({
+      rawProposal: rawPlan, missionId, packCatalog: [pack], registry,
+      maxTotalCostBrl: String(mission.budget.maxTotalCostBrl ?? mission.autonomyEnvelope.maxTotalCostBrl ?? '0'),
+      allowedSourceIds: contextSnapshot.sourceIds, contextHash: contextSnapshot.contextHash,
+      capabilityCatalogHash: contextSnapshot.capabilityCatalogHash,
+      expectedCapabilityCatalogHash: builtContext.capabilityCatalogHash,
+      autonomyEnvelope: mission.autonomyEnvelope,
     })
     await pool.query(
       `UPDATE public.action_planning_cycles SET status = 'completed', completed_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND organization_id = $2 AND status = 'active'`,
       [planningCycle.id, organizationId],
     )
+    if (compileResult.kind === 'clarification') {
+      return await transaction(pool, async (client) => {
+        const current = await getMission(client, missionId, organizationId)
+        if (!current || current.status !== expectedStatus || current.version !== requestedVersion) return { skipped: 'mission_state_changed' }
+        await client.query(
+          `UPDATE public.action_missions
+           SET pack_selection = COALESCE(pack_selection, '{}'::jsonb) || $3::jsonb, updated_at = NOW()
+           WHERE id = $1 AND organization_id = $2`,
+          [missionId, organizationId, {
+            clarification: { interpretation: compileResult.interpretation, questions: compileResult.questions, contextSnapshotId: contextSnapshot.id },
+          }],
+        )
+        await transitionMission(client, {
+          missionId, organizationId, expectedVersion: requestedVersion, toStatus: isReplan ? 'paused' : 'qualifying',
+          actor: { type: 'system' }, reason: 'mission_clarification_required',
+        })
+        await recordDomainEvent(client, {
+          eventType: 'mission.clarification_requested', organizationId, aggregateType: 'mission', aggregateId: missionId,
+          actor: { type: 'system' }, payload: { questions: compileResult.questions, contextSnapshotId: contextSnapshot.id },
+        })
+        return { skipped: 'clarification_required' }
+      })
+    }
+    const compiled = compileResult.compiled
     return await transaction(pool, async (client) => {
       const current = await getMission(client, missionId, organizationId)
       if (!current || current.status !== expectedStatus || current.version !== requestedVersion) return { skipped: 'mission_state_changed' }
@@ -436,6 +467,40 @@ function safeErrorCode(error: unknown): string {
 function planningCostCeiling(value: unknown): string {
   const total = typeof value === 'string' && /^\d+(\.\d{1,6})?$/.test(value) ? Number(value) : 50
   return String(Math.max(5, Math.min(50, Math.round(total * 0.1 * 100) / 100)))
+}
+
+async function loadMissionActionPack(pool: Pool, packVersionId: string): Promise<ActionPackVersion> {
+  const result = await pool.query<{
+    key: string; semantic_version: string; outcome_type: string; status: ActionPackVersion['status'];
+    definition: Record<string, unknown>; content_hash: string;
+  }>(
+    `SELECT pack.key, version.semantic_version, version.outcome_type, version.status,
+            version.definition, version.content_hash
+     FROM public.action_pack_versions version
+     JOIN public.action_packs pack ON pack.id = version.pack_id
+     WHERE version.id = $1 AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
+    [packVersionId],
+  )
+  const row = result.rows[0]
+  if (!row) throw new Error('mission_action_pack_unavailable')
+  if (row.key === REVENUE_RECOVERY_PACK_V0.key && row.semantic_version === REVENUE_RECOVERY_PACK_V0.semanticVersion) {
+    if (row.content_hash !== REVENUE_RECOVERY_PACK_V0.contentHash) throw new Error('action_pack_hash_mismatch')
+    return REVENUE_RECOVERY_PACK_V0
+  }
+  const definition = row.definition
+  const pack = {
+    ...definition,
+    key: row.key,
+    semanticVersion: row.semantic_version,
+    outcomeType: row.outcome_type,
+    status: row.status,
+    contentHash: row.content_hash,
+  } as ActionPackVersion
+  if (pack.schemaVersion !== 1 || !Array.isArray(pack.allowedCapabilities) || !Array.isArray(pack.protectedStepKeys)
+    || !pack.topologyTemplate || !Array.isArray(pack.topologyTemplate.steps)) {
+    throw new Error('mission_action_pack_contract_invalid')
+  }
+  return pack
 }
 
 async function transaction<T>(pool: Pool, work: (client: Queryable) => Promise<T>): Promise<T> {

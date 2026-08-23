@@ -222,6 +222,32 @@
           },
           "title": "Sourceids",
           "type": "array"
+        },
+        "trace": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usage"
         }
       },
       "required": [
@@ -518,6 +544,32 @@
           },
           "title": "Sourceids",
           "type": "array"
+        },
+        "trace": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usage"
         }
       },
       "required": [

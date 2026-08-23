@@ -7,7 +7,7 @@ export const ACTION_TERMINAL_STATES = ['succeeded', 'failed', 'skipped', 'cancel
 const missionTransitions: Record<MissionStatus, readonly MissionStatus[]> = {
   draft: ['qualifying', 'planning', 'cancelled'],
   qualifying: ['planning', 'blocked', 'cancelled'],
-  planning: ['pending_plan_approval', 'blocked', 'failed', 'cancelled'],
+  planning: ['qualifying', 'pending_plan_approval', 'blocked', 'failed', 'cancelled'],
   pending_plan_approval: ['ready', 'planning', 'cancelled'],
   ready: ['active', 'blocked', 'cancelled'],
   active: ['paused', 'blocked', 'evaluating', 'succeeded', 'failed', 'expired', 'cancelled'],

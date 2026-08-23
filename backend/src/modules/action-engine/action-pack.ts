@@ -96,10 +96,12 @@ export function validatePlanConformance(plan: ProposedMissionPlan, pack: ActionP
     if (count > extension.maxAdditionalSteps) throw new Error('action_pack_extension_limit_exceeded')
   }
 
-  const populationApproval = stepKeys.indexOf('pack.approve_population')
-  const canaryApproval = stepKeys.indexOf('pack.approve_canary')
-  const outreach = stepKeys.indexOf('pack.execute_outreach')
-  if (populationApproval < 0 || canaryApproval < 0 || outreach < 0 || populationApproval > outreach || canaryApproval > outreach) {
-    throw new Error('action_pack_outreach_approval_missing')
+  if (pack.key === 'revenue_recovery') {
+    const populationApproval = stepKeys.indexOf('pack.approve_population')
+    const canaryApproval = stepKeys.indexOf('pack.approve_canary')
+    const outreach = stepKeys.indexOf('pack.execute_outreach')
+    if (populationApproval < 0 || canaryApproval < 0 || outreach < 0 || populationApproval > outreach || canaryApproval > outreach) {
+      throw new Error('action_pack_outreach_approval_missing')
+    }
   }
 }

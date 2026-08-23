@@ -68,7 +68,15 @@ def plan_mission(value: dict[str, Any], supervisor: MissionSupervisor | None = N
     else:
         raise MissionSupervisorError("mission_supervisor_model_unavailable")
     validated = validate_mission_plan(proposal, value)
+    pack = value.get("action_pack") or {}
     return {
+        "kind": "plan",
+        "interpretation": {"objective": (value.get("mission") or {}).get("objective")},
+        "questions": [],
+        "selectedPacks": [{
+            "key": pack.get("key"), "version": pack.get("semanticVersion"), "contentHash": pack.get("contentHash"),
+        }],
+        "sourceIds": [],
         "plan": validated,
         "trace": {
             "profile": "growth_strategist",

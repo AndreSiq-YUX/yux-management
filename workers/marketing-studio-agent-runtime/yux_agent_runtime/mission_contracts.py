@@ -122,6 +122,8 @@ class ClarificationResponseWire(StrictWireModel):
     selectedPacks: list[SelectedPackWire] = Field(default_factory=list)
     sourceIds: list[str] = Field(default_factory=list)
     plan: None = None
+    trace: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
 
 
 class PlanProposalResponseWire(StrictWireModel):
@@ -131,6 +133,8 @@ class PlanProposalResponseWire(StrictWireModel):
     selectedPacks: list[SelectedPackWire] = Field(min_length=1)
     sourceIds: list[str] = Field(default_factory=list)
     plan: PlanWire
+    trace: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
 
 
 class MissionSupervisorProposal(StrictWireModel):

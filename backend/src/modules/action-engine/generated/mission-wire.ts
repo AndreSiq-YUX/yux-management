@@ -50,6 +50,12 @@ export type Key3 = string
 export type Version1 = string
 export type Selectedpacks = SelectedPackWire[]
 export type Sourceids = string[]
+export type Trace = {
+  [k: string]: unknown
+} | null
+export type Usage = {
+  [k: string]: unknown
+} | null
 export type Kind1 = 'plan'
 export type Key4 = string
 export type Templatehash = string
@@ -91,6 +97,12 @@ export type Questions1 = []
  */
 export type Selectedpacks1 = [SelectedPackWire, ...SelectedPackWire[]]
 export type Sourceids1 = string[]
+export type Trace1 = {
+  [k: string]: unknown
+} | null
+export type Usage1 = {
+  [k: string]: unknown
+} | null
 
 export interface YUXMissionSupervisorWireContractV1 {
   request: MissionPlanRequestWire
@@ -153,6 +165,8 @@ export interface ClarificationResponseWire {
   questions: Questions
   selectedPacks?: Selectedpacks
   sourceIds?: Sourceids
+  trace?: Trace
+  usage?: Usage
 }
 export interface Interpretation {
   [k: string]: unknown
@@ -178,6 +192,8 @@ export interface PlanProposalResponseWire {
   questions?: Questions1
   selectedPacks: Selectedpacks1
   sourceIds?: Sourceids1
+  trace?: Trace1
+  usage?: Usage1
 }
 export interface Interpretation1 {
   [k: string]: unknown

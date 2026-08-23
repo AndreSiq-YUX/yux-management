@@ -5,13 +5,16 @@ import { validatePlanConformance, type ActionPackVersion } from './action-pack.j
 import type { CapabilityRegistry } from './capability-registry.js'
 import type { ActionPlanStep, ProposedMissionPlan } from './types.js'
 import { createCapabilityManifest, type CapabilityManifestEntry } from './capability-manifest.js'
+import { validateMissionPlanResponseWire } from './mission-wire-validator.js'
+import type { ClarificationQuestionWire, SelectedPackWire } from './generated/mission-wire.js'
+import type { AutonomyEnvelope } from './types.js'
 
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/)
 const harnessStep = z.object({
   stepKey: z.string().min(1), dependsOn: z.array(z.string()), capabilityKey: z.string().min(1),
   capabilityVersion: z.number().int().positive(), input: z.record(z.string(), z.unknown()).default({}),
   timeoutSeconds: z.number().int().min(1).max(86_400), maxAttempts: z.number().int().min(1).max(5),
-  approvalRequired: z.boolean(), effect: z.enum(['none','internal','external']),
+  approvalRequired: z.boolean(), effect: z.enum(['none','draft','internal','external','destructive']),
   extensionPoint: z.string().optional(),
   outputBindings: z.record(z.string(), z.object({ fromStep: z.string(), path: z.string().min(1) })).default({}),
 })
@@ -19,7 +22,7 @@ const harnessPlan = z.object({
   schemaVersion: z.literal(1), missionId: z.string().min(1),
   actionPack: z.object({ key: z.string(), version: z.string(), templateHash: z.string() }),
   resolvedParameters: z.record(z.string(), z.unknown()).default({}),
-  deviations: z.array(z.object({ path: z.string(), reason: z.string(), approvalRequired: z.boolean() })).default([]),
+  deviations: z.array(z.object({ extensionPoint: z.string(), rationale: z.string() })).default([]),
   rationale: z.string().default(''), assumptions: z.array(z.unknown()).default([]), risks: z.array(z.unknown()).default([]),
   estimatedEconomics: z.object({
     currency: z.literal('BRL'), aiAndProviderCost: decimal.default('0'), mediaCost: decimal.default('0'),
@@ -38,8 +41,12 @@ export type CompiledMissionPlan = {
   capabilityManifest: CapabilityManifestEntry[]
   capabilityManifestHash: string
   parameters: Record<string, unknown>
-  deviations: Array<{ path: string; reason: string; approvalRequired: boolean }>
+  deviations: Array<{ extensionPoint: string; rationale: string }>
   estimatedEconomics: HarnessMissionPlan['estimatedEconomics']
+  contextHash?: string
+  sourceIds?: string[]
+  selectedPacks?: SelectedPackWire[]
+  capabilityCatalogHash?: string
   steps: Array<ActionPlanStep & { timeoutSeconds: number; maxAttempts: number; outputBindings: Record<string, { fromStep: string; path: string }> }>
 }
 
@@ -48,6 +55,10 @@ export type PlanMaterialDiff = {
   changedApprovals: string[]; changedOwnership: boolean; populationExpanded: boolean;
   budgetExpanded: boolean; economicsChanged: boolean; requiresReplanApproval: boolean
 }
+
+export type SupervisorCompileResult =
+  | { kind: 'clarification'; interpretation: Record<string, unknown>; questions: ClarificationQuestionWire[] }
+  | { kind: 'plan'; compiled: CompiledMissionPlan; selectedPacks: SelectedPackWire[]; sourceIds: string[] }
 
 export function diffMissionPlans(previous: CompiledMissionPlan, proposed: CompiledMissionPlan): PlanMaterialDiff {
   if (previous.packKey !== proposed.packKey || previous.packVersion !== proposed.packVersion || previous.packContentHash !== proposed.packContentHash) {
@@ -97,10 +108,79 @@ export async function requestMissionPlan(
     body: JSON.stringify(payload), signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok) throw new Error(`agent_harness_plan_failed:${response.status}`)
-  const body = await response.json() as { plan?: unknown; outcome?: string }
+  const body = await response.json() as { plan?: unknown; outcome?: string; kind?: string }
   if (body.outcome === 'planning_budget_exhausted') throw new Error('planning_budget_exhausted')
-  if (!body.plan) throw new Error('agent_harness_plan_missing')
-  return body.plan
+  if (!body.kind && !body.plan) throw new Error('agent_harness_plan_missing')
+  return body
+}
+
+export function compileSupervisorPlan(input: {
+  rawProposal: unknown
+  missionId: string
+  packCatalog: ActionPackVersion[]
+  registry: CapabilityRegistry
+  maxTotalCostBrl: string
+  allowedSourceIds: string[]
+  contextHash: string
+  capabilityCatalogHash: string
+  expectedCapabilityCatalogHash: string
+  autonomyEnvelope: AutonomyEnvelope
+  now?: Date
+}): SupervisorCompileResult {
+  const proposal = validateMissionPlanResponseWire(input.rawProposal)
+  if (input.capabilityCatalogHash !== input.expectedCapabilityCatalogHash) {
+    throw new Error('mission_capability_catalog_hash_mismatch')
+  }
+  if (!/^[a-f0-9]{64}$/.test(input.contextHash)) throw new Error('mission_context_hash_invalid')
+  const now = input.now ?? new Date()
+  const expiresAt = Date.parse(input.autonomyEnvelope.expiresAt)
+  if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) throw new Error('mission_autonomy_envelope_expired')
+  if (!['shadow','prepare','assisted','autonomous'].includes(input.autonomyEnvelope.mode)) {
+    throw new Error('mission_autonomy_mode_unsupported')
+  }
+
+  const allowedSources = new Set(input.allowedSourceIds)
+  const sourceIds = [...new Set(proposal.sourceIds ?? [])].sort()
+  if (sourceIds.some((sourceId) => !allowedSources.has(sourceId))) throw new Error('mission_plan_source_not_allowed')
+  if (proposal.kind === 'clarification') {
+    const defaultSources = proposal.questions
+      .map((question) => question.defaultSourceId)
+      .filter((sourceId): sourceId is string => typeof sourceId === 'string')
+    if (defaultSources.some((sourceId) => !allowedSources.has(sourceId))) throw new Error('mission_plan_source_not_allowed')
+    return { kind: 'clarification', interpretation: proposal.interpretation, questions: proposal.questions }
+  }
+
+  const catalog = new Map(input.packCatalog.map((pack) => [packIdentity(pack.key, pack.semanticVersion, pack.contentHash), pack]))
+  for (const selected of proposal.selectedPacks) {
+    if (!catalog.has(packIdentity(selected.key, selected.version, selected.contentHash))) {
+      throw new Error('mission_plan_pack_not_allowed')
+    }
+  }
+  if (proposal.selectedPacks.length !== 1) throw new Error('mission_composite_pack_not_supported')
+  const selected = proposal.selectedPacks[0]!
+  const pack = catalog.get(packIdentity(selected.key, selected.version, selected.contentHash))!
+  if (proposal.plan.actionPack.key !== selected.key || proposal.plan.actionPack.version !== selected.version
+    || proposal.plan.actionPack.templateHash !== selected.contentHash) {
+    throw new Error('mission_plan_selected_pack_mismatch')
+  }
+  const compiled = compileMissionPlan({
+    rawPlan: proposal.plan, missionId: input.missionId, pack, registry: input.registry,
+    maxTotalCostBrl: input.maxTotalCostBrl,
+  })
+  const allowedCapabilities = new Set(input.autonomyEnvelope.allowedCapabilityKeys)
+  if (allowedCapabilities.size > 0 && compiled.steps.some((step) => !allowedCapabilities.has(step.capabilityKey))) {
+    throw new Error('mission_plan_capability_outside_envelope')
+  }
+  const contextual = {
+    ...compiled,
+    contextHash: input.contextHash,
+    sourceIds,
+    selectedPacks: proposal.selectedPacks,
+    capabilityCatalogHash: input.capabilityCatalogHash,
+  }
+  const { planHash: _unboundPlanHash, ...hashInput } = contextual
+  const bound = { ...contextual, planHash: createHash('sha256').update(stableSerialize(hashInput)).digest('hex') }
+  return { kind: 'plan', compiled: bound, selectedPacks: proposal.selectedPacks, sourceIds }
 }
 
 export function compileMissionPlan(input: {
@@ -118,7 +198,7 @@ export function compileMissionPlan(input: {
   const internal: ProposedMissionPlan = {
     schemaVersion: 1, packKey: raw.actionPack.key, packVersion: raw.actionPack.version,
     packContentHash: raw.actionPack.templateHash, parameters: raw.resolvedParameters,
-    deviations: raw.deviations.map((item) => ({ extensionPoint: item.path, rationale: item.reason })),
+    deviations: raw.deviations,
     estimatedEconomics: raw.estimatedEconomics,
     steps: raw.steps.map((step) => ({
       stepKey: step.stepKey, capabilityKey: step.capabilityKey, capabilityVersion: step.capabilityVersion,
@@ -204,4 +284,8 @@ function stableSerialize(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
   if (value && typeof value === 'object') return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`
   return JSON.stringify(value)
+}
+
+function packIdentity(key: string, version: string, contentHash: string): string {
+  return `${key.trim()}@${version.trim()}#${contentHash}`
 }

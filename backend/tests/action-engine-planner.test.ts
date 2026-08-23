@@ -67,7 +67,7 @@ describe('Action Engine deterministic plan compiler', () => {
   })
 
   it('enforces extension points, approvals and budget', () => {
-    const deviation = rawPlan(); deviation.deviations = [{ path: 'free_dag', reason: 'fora do pack', approvalRequired: true }]
+    const deviation = rawPlan(); deviation.deviations = [{ extensionPoint: 'free_dag', rationale: 'fora do pack' }]
     expect(() => compile(deviation)).toThrowError('action_pack_extension_point_unknown')
     const noApproval = rawPlan(); noApproval.steps.find((step: { stepKey: string }) => step.stepKey === 'pack.approve_canary')!.approvalRequired = false
     expect(() => compile(noApproval)).toThrowError('mission_plan_required_approval_missing')
