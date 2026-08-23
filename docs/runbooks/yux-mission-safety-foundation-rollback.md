@@ -37,6 +37,10 @@ Conter efeitos de Missões sem apagar evidências, custos ou estados externos in
 - Duas janelas de 15 minutos atendem aos SLOs.
 - Segurança/privacidade aprovou a retomada quando houve exposição de dados.
 
+## Evidência obrigatória de promoção
+
+Antes de promover modelo, prompt, pack ou catálogo, execute `python scripts/run_golden_missions.py` no runtime. A promoção exige 15/15 cenários sem falha de schema, nós protegidos, citações, política ou tenant boundary; score de domínio mínimo de 90%; e regressão mediana de custo/p95 de latência no máximo 20%. Exceção requer registro versionado com aprovador, justificativa e validade. O ensaio de rollback deve confirmar a ordem de contenção deste runbook.
+
 ## Risco residual documentado
 
 Existe uma janela residual entre a validação final/consumo do lease e a aceitação do efeito pelo provider. O kill switch impede novo trabalho, mas não apaga um efeito já aceito. A resposta correta é contenção, reconciliação e ledger de incidente.

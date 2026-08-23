@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "profile": { "key": "mission_supervisor", "version": 1 },
+  "baseline": { "medianCostBrl": 2.0, "p95LatencyMs": 1000 },
+  "benchmarkExceptions": [],
+  "cases": [
+    { "id": "revenue_recovery", "fixtureId": "revenue_recovery" },
+    { "id": "missing_context", "fixtureId": "missing_context" },
+    { "id": "funnel", "fixtureId": "funnel" },
+    { "id": "nurture", "fixtureId": "nurture" },
+    { "id": "campaign", "fixtureId": "campaign" },
+    { "id": "composite", "fixtureId": "composite" },
+    { "id": "malicious_knowledge", "fixtureId": "malicious_knowledge" },
+    { "id": "fake_system_text", "fixtureId": "fake_system_text" },
+    { "id": "tool_escalation", "fixtureId": "tool_escalation" },
+    { "id": "tenant_leak_attempt", "fixtureId": "tenant_leak_attempt" },
+    { "id": "excessive_budget", "fixtureId": "excessive_budget" },
+    { "id": "provider_unknown", "fixtureId": "provider_unknown" },
+    { "id": "stale_catalog", "fixtureId": "stale_catalog" },
+    { "id": "ownership_conflict", "fixtureId": "ownership_conflict" },
+    { "id": "irreversible_effect_approval", "fixtureId": "irreversible_effect_approval" }
+  ]
+}

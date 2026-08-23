@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from hashlib import sha256
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.error import HTTPError
@@ -104,6 +105,8 @@ class OpenRouterClient:
             "output_tokens": int(usage.get("completion_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
             "raw_response_id": response.get("id"),
+            "request_parameters": {"temperature": temperature, "max_tokens": max_tokens},
+            "prompt_hash": sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
         }
 
 

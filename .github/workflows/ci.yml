@@ -61,3 +61,4 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scripts/export_mission_contracts.py --check
       - run: python -m pytest tests
+      - run: python scripts/run_golden_missions.py --output golden-missions/report.json
