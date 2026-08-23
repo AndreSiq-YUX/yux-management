@@ -185,6 +185,18 @@ CREATE TABLE IF NOT EXISTS public.action_engine_kill_switches (
   )
 );
 
+CREATE TABLE IF NOT EXISTS public.action_mission_telemetry (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  mission_id UUID NOT NULL REFERENCES public.action_missions(id) ON DELETE CASCADE,
+  artifact_kind TEXT NOT NULL CHECK (artifact_kind IN ('encrypted_reconciliation_body','redacted_model_trace','audit_manifest')),
+  payload JSONB NOT NULL DEFAULT '{}'::JSONB CHECK (jsonb_typeof(payload) = 'object'),
+  legal_hold BOOLEAN NOT NULL DEFAULT FALSE,
+  legal_hold_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK ((legal_hold = FALSE AND legal_hold_reason IS NULL) OR (legal_hold = TRUE AND BTRIM(legal_hold_reason) <> ''))
+);
+
 CREATE TABLE IF NOT EXISTS public.action_external_effect_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
@@ -226,6 +238,8 @@ CREATE INDEX IF NOT EXISTS idx_action_mutation_leases_active
   ON public.action_mutation_leases(organization_id, expires_at) WHERE consumed = FALSE AND revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_action_engine_kill_switches_resolution
   ON public.action_engine_kill_switches(organization_id, scope, enabled, expires_at);
+CREATE INDEX IF NOT EXISTS idx_action_mission_telemetry_retention
+  ON public.action_mission_telemetry(artifact_kind, created_at) WHERE legal_hold = FALSE;
 CREATE INDEX IF NOT EXISTS idx_action_external_effects_mission
   ON public.action_external_effects(mission_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effect_events_effect
@@ -257,7 +271,7 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'action_external_effects','action_external_effect_events','action_incidents','action_resource_claims',
     'action_planning_cycles','action_planning_usage_entries','action_planning_artifact_cache',
-    'action_mutation_leases'
+    'action_mutation_leases','action_mission_telemetry'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);

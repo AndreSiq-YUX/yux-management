@@ -15,7 +15,7 @@ import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
 import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './jobs/handlers/company-intelligence.js'
-import { handleActionEngineCollectMetrics, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineSchedule } from './jobs/handlers/action-engine.js'
+import { handleActionEngineCollectMetrics, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule } from './jobs/handlers/action-engine.js'
 
 type WorkerResult = {
   ok: true
@@ -54,6 +54,7 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'action-engine.evaluateMission') { await handleActionEngineEvaluation(pool, job.data, maintenanceQueue); return { ok: true } }
   if (job.name === 'action-engine.expireWaits') { await handleActionEngineExpireWaits(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.collectMetrics') { await handleActionEngineCollectMetrics(pool, maintenanceQueue, job.data); return { ok: true } }
+  if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }
   if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver') {
     await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
     return { ok: true }
@@ -92,7 +93,10 @@ const scheduler = setInterval(() => {
 
 function scheduleTraceRetentionPurge() {
   const day = new Date().toISOString().slice(0, 10)
-  return maintenanceQueue.add('maintenance.purgeExpiredTraces', { scheduledFor: day }, { jobId: createBullMqJobId('maintenance-purge-traces', day) })
+  return Promise.all([
+    maintenanceQueue.add('maintenance.purgeExpiredTraces', { scheduledFor: day }, { jobId: createBullMqJobId('maintenance-purge-traces', day) }),
+    maintenanceQueue.add('action-engine.enforceRetention', { scheduledFor: day }, { jobId: createBullMqJobId('action-engine-retention', day) }),
+  ])
 }
 
 void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))

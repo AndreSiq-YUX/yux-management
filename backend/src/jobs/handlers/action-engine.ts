@@ -19,6 +19,7 @@ import {
 } from '../../modules/action-engine/provider-reconciliation.js'
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
 import { hashPlanningContext, reservePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
+import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
 
 type Pool = {
   query: Queryable['query']
@@ -191,6 +192,10 @@ export async function handleActionEngineCollectMetrics(pool: Pool, queue: AppJob
     })
   }
   return { missions: missions.rows.length, snapshots }
+}
+
+export async function handleActionEngineRetention(pool: Pool) {
+  return enforceMissionRetention(pool)
 }
 
 export async function handleActionEngineEvaluation(pool: Pool, data: Record<string, unknown>, queue?: AppJobQueue) {
