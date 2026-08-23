@@ -43,6 +43,8 @@ class MissionPlanRequestWire(StrictWireModel):
     observations: list[dict[str, Any]] = Field(default_factory=list)
     proposed_plan: dict[str, Any] | None = None
     planning_budget: dict[str, Any] | None = None
+    context_snapshot_id: str | None = None
+    allowed_source_ids: list[str] = Field(default_factory=list)
 
 
 class ClarificationQuestionWire(StrictWireModel):

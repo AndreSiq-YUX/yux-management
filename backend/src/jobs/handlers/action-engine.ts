@@ -4,7 +4,7 @@ import { createActionEngineCapabilityRegistry } from '../../modules/action-engin
 import { REVENUE_RECOVERY_PACK_V0 } from '../../modules/action-engine/packs/revenue-recovery-v0.js'
 import { compileMissionPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import {
-  getMission, getPlan, insertPlanRevision, recordApproval, transitionMission, type Queryable,
+  getMission, getPlan, insertMissionContextSnapshot, insertPlanRevision, recordApproval, transitionMission, type Queryable,
 } from '../../modules/action-engine/repository.js'
 import { recordDomainEvent } from '../../modules/events/repository.js'
 import { executeActionRun, scheduleReadyActions } from '../../modules/action-engine/executor.js'
@@ -18,8 +18,10 @@ import {
   reconcileUnknownEffect,
 } from '../../modules/action-engine/provider-reconciliation.js'
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
-import { hashPlanningContext, reservePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
+import { reservePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
 import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
+import { buildMissionContext } from '../../modules/action-engine/context-builder.js'
+import { createCapabilityManifest } from '../../modules/action-engine/capability-manifest.js'
 
 type Pool = {
   query: Queryable['query']
@@ -270,6 +272,25 @@ export async function handleActionEnginePlanMission(
   const { parameters: _runtimeSchema, ...serializablePack } = REVENUE_RECOVERY_PACK_V0
   const allowedKeys = new Set(REVENUE_RECOVERY_PACK_V0.allowedCapabilities.map((item) => item.key))
   const capabilityCatalog = registry.listMetadata().filter((item) => allowedKeys.has(item.key))
+  try {
+  const manifest = createCapabilityManifest(
+    registry,
+    capabilityCatalog.map((item) => ({ key: item.key, version: item.version })),
+  )
+  const builtContext = await buildMissionContext(pool, {
+    organizationId, ...(mission.contractId ? { contractId: mission.contractId } : {}),
+    query: `${mission.goal.statement}\n${mission.goal.requestedOutcome}`,
+    agentProfileKey: 'mission_supervisor',
+    requestedModules: mission.autonomyEnvelope.allowedModules,
+    capabilityManifest: manifest.entries,
+  })
+  const contextSnapshot = await transaction(pool, (client) => insertMissionContextSnapshot(client, {
+    organizationId, missionId, query: builtContext.query, companyContext: builtContext.companyContext,
+    knowledgeItems: builtContext.knowledgeItems, strategyItems: builtContext.strategyItems,
+    liveState: builtContext.liveState,
+    capabilityManifest: builtContext.capabilityManifest as unknown as Array<Record<string, unknown>>,
+    capabilityCatalogHash: builtContext.capabilityCatalogHash, sourceIds: builtContext.sourceIds,
+  }))
   const planningBudget: PlanningCycleBudget = {
     maxCalls: 8,
     maxInputTokens: 50_000,
@@ -278,14 +299,8 @@ export async function handleActionEnginePlanMission(
     maxLatencyMs: 120_000,
   }
   const planningEstimate = { calls: 1, inputTokens: 12_000, outputTokens: 2_500, costBrl: '5', latencyMs: 60_000 }
-  try {
   const planningCycle = await transaction(pool, async (client) => {
-    const contextHash = hashPlanningContext({
-      organizationId, missionId, objective: mission.objective, parameters: mission.parameters,
-      packContentHash: REVENUE_RECOVERY_PACK_V0.contentHash,
-      capabilityCatalog: capabilityCatalog.map((item) => ({ key: item.key, version: item.version })),
-      strategyContextVersion: 1, specialistProfile: 'growth_strategist', specialistVersion: 1,
-    })
+    const contextHash = builtContext.contextHash
     const created = await client.query<{ id: string }>(
       `INSERT INTO public.action_planning_cycles (
          organization_id, mission_id, plan_revision, context_hash, pack_key, pack_version, budget
@@ -321,8 +336,16 @@ export async function handleActionEnginePlanMission(
       },
       action_pack: serializablePack,
       readiness: { ready: true, source: 'server_preflight' },
-      baseline: {}, capabilities: capabilityCatalog,
-      limits: mission.budget, strategy_context: {}, observations: observations.rows,
+      baseline: builtContext.liveState, capabilities: capabilityCatalog,
+      limits: mission.budget,
+      strategy_context: {
+        companyContext: builtContext.companyContext,
+        strategyItems: builtContext.strategyItems,
+        knowledgeItems: builtContext.knowledgeItems,
+      },
+      context_snapshot_id: contextSnapshot.id,
+      allowed_source_ids: builtContext.sourceIds,
+      observations: observations.rows,
       planning_budget: {
         cycleId: planningCycle.id,
         contextHash: planningCycle.contextHash,

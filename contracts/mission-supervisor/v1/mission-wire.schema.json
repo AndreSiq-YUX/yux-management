@@ -266,6 +266,13 @@
         "action_pack": {
           "$ref": "#/$defs/ActionPackWire"
         },
+        "allowed_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Source Ids",
+          "type": "array"
+        },
         "baseline": {
           "additionalProperties": true,
           "title": "Baseline",
@@ -289,6 +296,18 @@
           ],
           "default": null,
           "title": "Client Id"
+        },
+        "context_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Snapshot Id"
         },
         "contract_id": {
           "anyOf": [
