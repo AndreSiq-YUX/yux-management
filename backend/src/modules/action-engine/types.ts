@@ -78,6 +78,17 @@ export type MissionContextSnapshot = {
   createdAt: string
 }
 
+export type MissionDecisionSummary = {
+  headline: string
+  changes: Array<{ entityType: string; operation: string; quantity: number; label: string }>
+  contactImpact: { existingContacts: number; futureEligibleContacts: boolean; channels: string[] }
+  economics: { estimatedCostBrl: string; maximumCostBrl: string; estimatedHumanMinutes: number }
+  irreversibleEffects: Array<{ capabilityKey: string; description: string }>
+  assumptions: Array<{ key: string; value: string; source: 'company_context' | 'user' | 'pack_default' }>
+  technicalProof: { planRevision: number; planHash: string; manifestHash: string; sourceCount: number }
+  decisionSubjectHash: string
+}
+
 export type DecimalString = `${number}`
 
 export type MetricValue =

@@ -24,6 +24,7 @@ import { enforceMissionRetention } from '../../modules/action-engine/retention.j
 import { buildMissionContext } from '../../modules/action-engine/context-builder.js'
 import { createCapabilityManifest } from '../../modules/action-engine/capability-manifest.js'
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
+import { buildMissionDecisionSummary } from '../../modules/action-engine/decision-summary.js'
 
 type Pool = {
   query: Queryable['query']
@@ -451,13 +452,31 @@ export async function handleActionEnginePlanMission(
         compiledPayload: compiled as unknown as Record<string, unknown>, planHash: compiled.planHash,
       })
       await client.query(`UPDATE public.action_plans SET status = 'pending_approval', updated_at = NOW() WHERE id = $1`, [plan.id])
+      const effectsByCapability = new Map(compiled.capabilityManifest.map(item => [`${item.key}@${item.version}`, item.effect]))
+      const decisionSummary = buildMissionDecisionSummary({
+        headline: mission.objective, planRevision: plan.revision, planHash: compiled.planHash,
+        manifestHash: compiled.capabilityManifestHash, sourceIds: compiled.sourceIds ?? [],
+        artifacts: compiled.steps
+          .filter(step => effectsByCapability.get(`${step.capabilityKey}@${step.capabilityVersion}`) !== 'none')
+          .map(step => ({
+            id: step.stepKey, entityType: step.capabilityKey.split('.')[1] ?? 'artifact', operation: step.capabilityKey.split('.').at(-1) ?? 'change',
+            quantity: inferArtifactQuantity(step.parameters), label: humanizeCapability(step.capabilityKey),
+            version: `${step.capabilityVersion}:${step.capabilityDefinitionHash}`, providerTarget: step.capabilityKey.split('.')[0],
+          })),
+        existingContacts: Number(mission.parameters.existingContacts ?? 0), futureEligibleContacts: true,
+        channels: Array.isArray(mission.parameters.channels) ? mission.parameters.channels.map(String) : [],
+        estimatedCostBrl: compiled.estimatedEconomics.totalExecutionCost,
+        maximumCostBrl: mission.autonomyEnvelope.maxTotalCostBrl,
+        estimatedHumanMinutes: Math.round(Number(compiled.estimatedEconomics.humanHours) * 60),
+        capabilityManifest: compiled.capabilityManifest, assumptions: [],
+      })
       await recordApproval(client, {
-        organizationId, missionId, planId: plan.id, approvalType: isReplan ? 'replan' : 'plan', subjectHash: compiled.planHash,
-        requestedPayload: { packContentHash: compiled.packContentHash, planHash: compiled.planHash, revision: plan.revision, ...(diff ? { diff } : {}) },
+        organizationId, missionId, planId: plan.id, approvalType: isReplan ? 'replan' : 'plan', subjectHash: decisionSummary.decisionSubjectHash,
+        requestedPayload: { decisionSummary, packContentHash: compiled.packContentHash, planHash: compiled.planHash, revision: plan.revision, ...(diff ? { diff } : {}) },
       })
       await recordDomainEvent(client, {
         eventType: isReplan ? 'mission.replan_requested' : 'mission.plan_proposed', organizationId, aggregateType: 'mission', aggregateId: missionId,
-        actor: { type: 'system' }, payload: { planId: plan.id, revision: plan.revision, planHash: compiled.planHash, ...(diff ? { diff } : {}) },
+        actor: { type: 'system' }, payload: { planId: plan.id, revision: plan.revision, planHash: compiled.planHash, decisionSubjectHash: decisionSummary.decisionSubjectHash, ...(diff ? { diff } : {}) },
       })
       if (!isReplan) {
         await transitionMission(client, {
@@ -500,6 +519,17 @@ function safeErrorCode(error: unknown): string {
 function planningCostCeiling(value: unknown): string {
   const total = typeof value === 'string' && /^\d+(\.\d{1,6})?$/.test(value) ? Number(value) : 50
   return String(Math.max(5, Math.min(50, Math.round(total * 0.1 * 100) / 100)))
+}
+
+function inferArtifactQuantity(parameters: Record<string, unknown>): number {
+  for (const value of Object.values(parameters)) {
+    if (Array.isArray(value) && value.length > 0) return value.length
+  }
+  return 1
+}
+
+function humanizeCapability(key: string): string {
+  return key.split('.').map(part => part.replace(/_/g, ' ')).join(' › ')
 }
 
 async function loadMissionActionPack(pool: Pool, packVersionId: string): Promise<ActionPackVersion> {

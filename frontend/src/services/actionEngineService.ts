@@ -51,7 +51,7 @@ export const actionEngineService = {
   approvePlan: (mission: ActionMission, plan: MissionPlan, approval: MissionApproval) => apiRequest<ActionMission>(`${root}/plans/${plan.id}/submit`, {
     method: 'POST', body: {
       organizationId: mission.organizationId, missionId: mission.id, approvalId: approval.id,
-      expectedMissionVersion: mission.version, subjectHash: plan.planHash, decision: 'approved', reason: 'Plano protegido revisado e aprovado',
+      expectedMissionVersion: mission.version, subjectHash: approval.subjectHash, decision: 'approved', reason: 'Impacto e plano protegidos revisados e aprovados',
     },
   }),
   listActions: (missionId: string, organizationId: string) => apiRequest<MissionActionRun[]>(`${root}/missions/${missionId}/actions?${query({ organizationId })}`),
