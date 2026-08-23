@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { describe, expect, it } from 'vitest'
-import { CapabilityRegistry } from '../src/modules/action-engine/capability-registry.js'
+import { CapabilityRegistry, noEffectRecovery } from '../src/modules/action-engine/capability-registry.js'
 import { createActionEngineCapabilityRegistry } from '../src/modules/action-engine/capabilities/index.js'
 
 const definition = {
   key: 'test.echo', version: 1, title: 'Echo', description: 'Echo test',
   risk: 'read_only' as const, effect: 'none' as const, approval: 'never' as const,
   idempotency: 'none' as const, requiredModules: [], requiredConnections: [],
+  recovery: noEffectRecovery<{ value: string }>(),
   inputSchema: z.object({ value: z.string() }), outputSchema: z.object({ value: z.string() }),
   async execute(_context: never, input: { value: string }) { return { output: input, effectProduced: false } },
 }

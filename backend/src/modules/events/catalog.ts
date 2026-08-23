@@ -10,6 +10,7 @@ export const DOMAIN_EVENT_TYPES = [
   'lead.task_reopened',
   'lead.interaction_recorded',
   'lead.sequence_enrolled',
+  'lead.sequence_paused',
   'lead.sequence_completed',
   'email.queued',
   'email.sent',

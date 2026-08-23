@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CapabilityDefinition } from '../capability-registry.js'
+import { noEffectRecovery, type CapabilityDefinition } from '../capability-registry.js'
 
 const pipelineSnapshotInput = z.object({ crmInstanceId: z.string().uuid().optional() })
 const pipelineSnapshotOutput = z.object({
@@ -11,6 +11,7 @@ export const crmPipelineSnapshot: CapabilityDefinition<z.infer<typeof pipelineSn
   description: 'Lê pipelines e estágios do CRM sem produzir efeitos.', risk: 'read_only', effect: 'none',
   approval: 'never', idempotency: 'none', inputSchema: pipelineSnapshotInput, outputSchema: pipelineSnapshotOutput,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(context, input) {
     const result = await context.query<{ pipeline_id: string; pipeline_name: string; stage_id: string; stage_name: string; position: number }>(
       `SELECT pipeline.id AS pipeline_id, pipeline.name AS pipeline_name,
@@ -48,6 +49,7 @@ export const crmRecoveryCandidatesSearch: CapabilityDefinition<z.infer<typeof ca
   description: 'Busca leads inativos elegíveis usando filtros e exclusões explícitas.', risk: 'read_only', effect: 'none',
   approval: 'never', idempotency: 'none', inputSchema: candidateInput, outputSchema: candidateOutput,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(context, input) {
     const result = await context.query<{ id: string; name: string; company: string | null; value: string | null; stage_id: string | null; last_activity_at: string | Date | null }>(
       `SELECT lead.id, lead.name, lead.company, lead.value::TEXT, lead.stage_id, lead.last_activity_at
@@ -79,6 +81,7 @@ export const crmLeadTimelineRead: CapabilityDefinition<z.infer<typeof timelineIn
   key: 'crm.lead.timeline.read', version: 1, title: 'Ler timeline do lead', description: 'Lê interações e eventos recentes do lead.',
   risk: 'read_only', effect: 'none', approval: 'never', idempotency: 'none', inputSchema: timelineInput, outputSchema: timelineOutput,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(context, input) {
     const result = await context.query<{ id: string; event_type: string; occurred_at: string | Date; summary: string }>(
       `SELECT event.id::TEXT AS id, event.event_type, event.occurred_at,
@@ -99,6 +102,15 @@ export const crmTaskCreate: CapabilityDefinition<z.infer<typeof taskInput>, z.in
   key: 'crm.task.create', version: 1, title: 'Criar tarefa no CRM', description: 'Cria uma tarefa interna pelo command de domínio do CRM.',
   risk: 'low', effect: 'internal', approval: 'risk_based', idempotency: 'required', inputSchema: taskInput, outputSchema: taskOutput,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: {
+    kind: 'compensatable',
+    async compensate(context, result) {
+      if (!result.taskId) return { output: { recovered: true, reason: 'preview_only' }, effectProduced: false }
+      if (!context.commands?.cancelTask) throw new Error('capability_recovery_command_unavailable')
+      await context.commands.cancelTask({ taskId: result.taskId, organizationId: context.organizationId, missionId: context.missionId })
+      return { output: { recovered: true, taskId: result.taskId }, effectProduced: true, sourceRecords: [{ type: 'task', id: result.taskId }] }
+    },
+  },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true }, effectProduced: false }
     if (!context.commands?.createTask) throw new Error('capability_command_unavailable')
@@ -115,6 +127,7 @@ export const crmLeadAssignOwner: CapabilityDefinition<z.infer<typeof assignInput
   key: 'crm.lead.assign_owner', version: 1, title: 'Atribuir responsável', description: 'Atribui um responsável usando o command do CRM.',
   risk: 'low', effect: 'internal', approval: 'risk_based', idempotency: 'required', inputSchema: assignInput, outputSchema: assignOutput,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: { kind: 'irreversible', incidentType: 'lead_owner_assignment_requires_manual_review' },
   async execute(context, input) {
     if (!context.dryRun) {
       if (!context.commands?.assignLeadOwner) throw new Error('capability_command_unavailable')

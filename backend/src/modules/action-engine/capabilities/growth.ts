@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CapabilityDefinition } from '../capability-registry.js'
+import { noEffectRecovery, type CapabilityDefinition } from '../capability-registry.js'
 
 const segmentInput = z.object({
   candidateIds: z.array(z.string().uuid()).max(500),
@@ -12,6 +12,7 @@ export const growthSegmentPreview: CapabilityDefinition<z.infer<typeof segmentIn
   description: 'Divide deterministicamente candidatos entre canário e restante, sem mutation.',
   risk: 'read_only', effect: 'none', approval: 'never', idempotency: 'none', inputSchema: segmentInput, outputSchema: segmentOutput,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(_context, input) {
     const ordered = [...new Set(input.candidateIds)].sort()
     return { output: { canaryIds: ordered.slice(0, input.canarySize), remainderIds: ordered.slice(input.canarySize), total: ordered.length }, effectProduced: false }

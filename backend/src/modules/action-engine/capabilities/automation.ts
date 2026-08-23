@@ -13,6 +13,15 @@ export const automationFlowExecute: CapabilityDefinition<z.infer<typeof inputSch
   description: 'Executa uma versão publicada e congelada sob ownership e correlation da missão.',
   risk: 'high', effect: 'external', approval: 'always', idempotency: 'required', inputSchema, outputSchema,
   requiredModules: ['automations'], requiredConnections: [],
+  recovery: {
+    kind: 'pausable',
+    async contain(context, result) {
+      if (!result.subprocessRunId) return { output: { contained: true, reason: 'preview_only' }, effectProduced: false }
+      if (!context.commands?.pauseAutomation) throw new Error('capability_recovery_command_unavailable')
+      await context.commands.pauseAutomation({ subprocessRunId: result.subprocessRunId, organizationId: context.organizationId, missionId: context.missionId })
+      return { output: { contained: true, subprocessRunId: result.subprocessRunId }, effectProduced: true, sourceRecords: [{ type: 'automation_run', id: result.subprocessRunId }] }
+    },
+  },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true, publishedVersionId: input.publishedVersionId }, effectProduced: false }
     if (!context.commands?.executeAutomation) throw new Error('capability_command_unavailable')

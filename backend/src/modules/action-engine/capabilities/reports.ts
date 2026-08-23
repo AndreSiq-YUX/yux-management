@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CapabilityDefinition } from '../capability-registry.js'
+import { noEffectRecovery, type CapabilityDefinition } from '../capability-registry.js'
 
 const inputSchema = z.object({ since: z.string().datetime(), leadIds: z.array(z.string().uuid()).max(500).default([]) })
 const outputSchema = z.object({ valueKind: z.enum(['known', 'unknown']), recoveredRevenueBrl: z.string().optional(), reason: z.string().optional(), sourceIds: z.array(z.string()) })
@@ -9,6 +9,7 @@ export const reportsRecoveredRevenueSnapshot: CapabilityDefinition<z.infer<typeo
   description: 'Soma receita ganha atribuível a leads do escopo preservando unknown quando não há fonte confiável.',
   risk: 'read_only', effect: 'none', approval: 'never', idempotency: 'none', inputSchema, outputSchema,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(context, input) {
     if (input.leadIds.length === 0) {
       return { output: { valueKind: 'unknown', reason: 'recovery_population_not_available', sourceIds: [] }, effectProduced: false }

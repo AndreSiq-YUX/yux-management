@@ -8,6 +8,21 @@ export const omnichannelMessageDraft: CapabilityDefinition<z.infer<typeof draftI
   key: 'omnichannel.message.draft', version: 1, title: 'Preparar mensagem', description: 'Cria um artefato interno revisável sem enviar a mensagem.',
   risk: 'low', effect: 'internal', approval: 'risk_based', idempotency: 'required', inputSchema: draftInput, outputSchema: draftOutput,
   requiredModules: ['omnichannel'], requiredConnections: [],
+  recovery: {
+    kind: 'compensatable',
+    async compensate(context, result) {
+      if (!result.draftId) return { output: { recovered: true, reason: 'preview_only' }, effectProduced: false }
+      const updated = await context.query<{ id: string }>(
+        `UPDATE public.action_observations
+         SET payload = payload || '{"status":"discarded"}'::jsonb
+         WHERE id = $1 AND organization_id = $2 AND mission_id = $3
+           AND observation_type = 'message_draft' RETURNING id`,
+        [result.draftId, context.organizationId, context.missionId],
+      )
+      if (!updated.rows[0]) throw new Error('message_draft_recovery_target_not_found')
+      return { output: { recovered: true, draftId: result.draftId }, effectProduced: true, sourceRecords: [{ type: 'message_draft', id: result.draftId }] }
+    },
+  },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true, channel: input.channel }, effectProduced: false }
     const result = await context.query<{ id: string }>(
@@ -30,6 +45,15 @@ export const crmSequenceEnroll: CapabilityDefinition<z.infer<typeof sequenceInpu
   key: 'crm.sequence.enroll', version: 1, title: 'Inscrever em cadência', description: 'Agenda uma cadência publicada usando o command idempotente do CRM.',
   risk: 'high', effect: 'external', approval: 'always', idempotency: 'required', inputSchema: sequenceInput, outputSchema: sequenceOutput,
   requiredModules: ['crm','automations'], requiredConnections: [],
+  recovery: {
+    kind: 'pausable',
+    async contain(context, result) {
+      if (!result.enrollmentId) return { output: { contained: true, reason: 'preview_only' }, effectProduced: false }
+      if (!context.commands?.pauseSequenceEnrollment) throw new Error('capability_recovery_command_unavailable')
+      await context.commands.pauseSequenceEnrollment({ enrollmentId: result.enrollmentId, organizationId: context.organizationId, missionId: context.missionId })
+      return { output: { contained: true, enrollmentId: result.enrollmentId }, effectProduced: true, sourceRecords: [{ type: 'sequence_enrollment', id: result.enrollmentId }] }
+    },
+  },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true }, effectProduced: false }
     if (!context.commands?.enrollSequence) throw new Error('capability_command_unavailable')
@@ -49,6 +73,7 @@ export const emailMessageQueue: CapabilityDefinition<z.infer<typeof emailInput>,
   key: 'email.message.queue', version: 1, title: 'Enfileirar e-mail aprovado', description: 'Enfileira mensagem externa após consentimento, suppression e template publicado.',
   risk: 'high', effect: 'external', approval: 'always', idempotency: 'required', inputSchema: emailInput, outputSchema: emailOutput,
   requiredModules: ['crm','email'], requiredConnections: ['email'],
+  recovery: { kind: 'irreversible', incidentType: 'email_dispatch_accepted' },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true }, effectProduced: false }
     if (!context.commands?.queueEmail) throw new Error('capability_command_unavailable')
@@ -70,6 +95,7 @@ export const whatsappTemplateQueue: CapabilityDefinition<z.infer<typeof whatsapp
   key: 'whatsapp.template.queue', version: 1, title: 'Enfileirar template WhatsApp', description: 'Enfileira somente template aprovado e com evidência de permissão.',
   risk: 'high', effect: 'external', approval: 'always', idempotency: 'required', inputSchema: whatsappInput, outputSchema: whatsappOutput,
   requiredModules: ['omnichannel'], requiredConnections: ['whatsapp'],
+  recovery: { kind: 'irreversible', incidentType: 'whatsapp_dispatch_accepted' },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true }, effectProduced: false }
     if (!context.commands?.queueWhatsapp) throw new Error('capability_command_unavailable')

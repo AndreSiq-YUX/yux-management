@@ -9,6 +9,21 @@ export const humanTaskCreate: CapabilityDefinition<z.infer<typeof inputSchema>, 
   description: 'Cria uma tarefa rastreável e posteriormente mede os minutos humanos reais.',
   risk: 'low', effect: 'internal', approval: 'risk_based', idempotency: 'required', inputSchema, outputSchema,
   requiredModules: ['crm'], requiredConnections: [],
+  recovery: {
+    kind: 'compensatable',
+    async compensate(context, result) {
+      if (!result.taskId) return { output: { recovered: true, reason: 'preview_only' }, effectProduced: false }
+      const updated = await context.query<{ id: string }>(
+        `UPDATE public.action_observations
+         SET payload = payload || '{"status":"cancelled"}'::jsonb
+         WHERE id = $1 AND organization_id = $2 AND mission_id = $3
+           AND observation_type = 'human_task_created' RETURNING id`,
+        [result.taskId, context.organizationId, context.missionId],
+      )
+      if (!updated.rows[0]) throw new Error('human_task_recovery_target_not_found')
+      return { output: { recovered: true, taskId: result.taskId }, effectProduced: true, sourceRecords: [{ type: 'human_task', id: result.taskId }] }
+    },
+  },
   async execute(context, input) {
     if (context.dryRun) return { output: { preview: true }, effectProduced: false }
     const result = await context.query<{ id: string }>(

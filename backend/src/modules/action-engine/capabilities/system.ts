@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CapabilityDefinition } from '../capability-registry.js'
+import { noEffectRecovery, type CapabilityDefinition } from '../capability-registry.js'
 
 const readinessInput = z.object({
   contractId: z.string().uuid().optional(),
@@ -25,6 +25,7 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
   outputSchema: readinessOutput,
   requiredModules: [],
   requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(context, input) {
     const checks: z.infer<typeof readinessOutput>['checks'] = []
     const organization = await context.query<{ id: string }>(
@@ -71,6 +72,7 @@ export const systemApprovalAwait: CapabilityDefinition<z.infer<typeof approvalIn
   description: 'Checkpoint intrínseco do Action Engine; o executor persiste a aprovação e suspende o passo.',
   risk: 'low', effect: 'internal', approval: 'always', idempotency: 'required', inputSchema: approvalInput, outputSchema: approvalOutput,
   requiredModules: [], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(_context, input) {
     return { output: { awaitingApproval: true, approvalType: input.approvalType }, effectProduced: false }
   },
@@ -83,6 +85,7 @@ export const systemSignalWait: CapabilityDefinition<z.infer<typeof waitInput>, z
   key: 'system.signal.wait', version: 1, title: 'Aguardar sinais', description: 'Calcula o próximo checkpoint durável sem manter processo aberto.',
   risk: 'read_only', effect: 'none', approval: 'never', idempotency: 'none', inputSchema: waitInput, outputSchema: waitOutput,
   requiredModules: [], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(_context, input) {
     return { output: { waitUntil: new Date(Date.now() + input.durationHours * 3_600_000).toISOString() }, effectProduced: false }
   },
@@ -95,6 +98,7 @@ export const systemEvaluationCheckpoint: CapabilityDefinition<z.infer<typeof eva
   key: 'system.evaluation.checkpoint', version: 1, title: 'Avaliar checkpoint', description: 'Solicita ao avaliador determinístico uma fotografia de outcome e economia.',
   risk: 'read_only', effect: 'none', approval: 'never', idempotency: 'required', inputSchema: evaluateInput, outputSchema: evaluateOutput,
   requiredModules: [], requiredConnections: [],
+  recovery: noEffectRecovery(),
   async execute(_context, input) {
     return { output: { evaluationRequested: true, checkpointKey: input.checkpointKey }, effectProduced: false }
   },

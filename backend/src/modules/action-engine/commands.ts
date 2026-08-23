@@ -9,8 +9,10 @@ type CommandInput = Record<string, unknown>
 export function createActionEngineCommands(pool: Connectable, missionId: string): NonNullable<CapabilityContext['commands']> {
   return {
     createTask: (input) => createLeadTask(pool, missionId, input),
+    cancelTask: (input) => cancelLeadTask(pool, missionId, input),
     assignLeadOwner: (input) => assignLeadOwner(pool, missionId, input),
     enrollSequence: (input) => enrollSequence(pool, missionId, input),
+    pauseSequenceEnrollment: (input) => pauseSequenceEnrollment(pool, missionId, input),
   }
 }
 
@@ -72,11 +74,67 @@ async function assignLeadOwner(pool: Connectable, missionId: string, input: Comm
   })
 }
 
+async function cancelLeadTask(pool: Connectable, missionId: string, input: CommandInput) {
+  const organizationId = requiredString(input, 'organizationId')
+  const taskId = requiredString(input, 'taskId')
+  return transaction(pool, async (client) => {
+    const result = await client.query<{ id: string; lead_id: string }>(
+      `UPDATE public.lead_tasks
+       SET status = 'cancelled', cancelled_at = NOW(), completed_at = NULL,
+           metadata = metadata || $3::jsonb, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+       RETURNING id, lead_id`,
+      [taskId, organizationId, { recovery: 'mission_compensation', missionId }],
+    )
+    if (result.rows[0]) {
+      await recordDomainEvent(client, {
+        eventType: 'lead.task_cancelled', organizationId, aggregateType: 'task', aggregateId: taskId,
+        leadId: result.rows[0].lead_id, actor: { type: 'system' }, payload: { missionId, taskId },
+      })
+      return { id: taskId, status: 'cancelled' }
+    }
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM public.lead_tasks WHERE id = $1 AND organization_id = $2 AND status = 'cancelled'`,
+      [taskId, organizationId],
+    )
+    if (!existing.rows[0]) throw new Error('action_engine_task_recovery_not_available')
+    return { id: taskId, status: 'cancelled', duplicate: true }
+  })
+}
+
 async function enrollSequence(pool: Connectable, missionId: string, input: CommandInput) {
   return enrollLeadInSequence(pool as never, {
     organizationId: requiredString(input, 'organizationId'), leadId: requiredString(input, 'leadId'),
     sequenceId: requiredString(input, 'sequenceId'), existingEnrollment: sequenceMode(input.existingEnrollment),
     correlationId: missionId,
+  })
+}
+
+async function pauseSequenceEnrollment(pool: Connectable, missionId: string, input: CommandInput) {
+  const organizationId = requiredString(input, 'organizationId')
+  const enrollmentId = requiredString(input, 'enrollmentId')
+  return transaction(pool, async (client) => {
+    const result = await client.query<{ id: string; lead_id: string; sequence_id: string }>(
+      `UPDATE public.crm_sequence_enrollments
+       SET status = 'paused', next_execution_at = NULL, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND status = 'active'
+       RETURNING id, lead_id, sequence_id`,
+      [enrollmentId, organizationId],
+    )
+    if (result.rows[0]) {
+      await recordDomainEvent(client, {
+        eventType: 'lead.sequence_paused', organizationId, aggregateType: 'sequence_enrollment',
+        aggregateId: enrollmentId, leadId: result.rows[0].lead_id, actor: { type: 'system' },
+        payload: { missionId, enrollmentId, sequenceId: result.rows[0].sequence_id },
+      })
+      return { enrollmentId, status: 'paused' }
+    }
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM public.crm_sequence_enrollments WHERE id = $1 AND organization_id = $2 AND status = 'paused'`,
+      [enrollmentId, organizationId],
+    )
+    if (!existing.rows[0]) throw new Error('action_engine_sequence_recovery_not_available')
+    return { enrollmentId, status: 'paused', duplicate: true }
   })
 }
 
