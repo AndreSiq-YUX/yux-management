@@ -311,6 +311,13 @@
           "title": "Allowed Source Ids",
           "type": "array"
         },
+        "asked_question_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Asked Question Keys",
+          "type": "array"
+        },
         "baseline": {
           "additionalProperties": true,
           "title": "Baseline",
@@ -322,6 +329,13 @@
           },
           "title": "Capabilities",
           "type": "array"
+        },
+        "clarification_round": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Clarification Round",
+          "type": "integer"
         },
         "client_id": {
           "anyOf": [

@@ -112,6 +112,51 @@ def test_returns_at_most_three_grounded_clarification_questions() -> None:
     assert result["trace"]["profileKey"] == "mission_supervisor"
 
 
+def test_prioritizes_safety_budget_and_outcome_over_style_questions() -> None:
+    response = {
+        "kind": "clarification", "interpretation": {"objective": "Criar uma campanha"},
+        "questions": [
+            {"key": "tone", "label": "Qual tom?", "whyNeeded": "Ajusta a copy", "priority": 1,
+             "answerType": "text", "defaultValue": "direto", "defaultSourceId": "source-1"},
+            {"key": "campaign_goal", "label": "Qual meta?", "whyNeeded": "Define o resultado", "priority": 1,
+             "answerType": "text", "defaultValue": None, "defaultSourceId": None},
+            {"key": "budget_limit", "label": "Qual orçamento?", "whyNeeded": "Limita o custo", "priority": 1,
+             "answerType": "currency", "defaultValue": "500", "defaultSourceId": "source-1"},
+            {"key": "legal_consent", "label": "Há consentimento?", "whyNeeded": "Protege os contatos", "priority": 1,
+             "answerType": "boolean", "defaultValue": True, "defaultSourceId": "source-1"},
+        ],
+        "selectedPacks": [], "sourceIds": ["source-1"], "plan": None,
+    }
+
+    result = _supervisor(response).propose(_request())
+
+    assert [question["key"] for question in result["questions"]] == [
+        "legal_consent", "budget_limit", "campaign_goal",
+    ]
+    assert result["questions"][0]["defaultSourceId"] == "source-1"
+
+
+@pytest.mark.parametrize(
+    "request_update",
+    [
+        {"asked_question_keys": ["budget_limit"]},
+        {"clarification_round": 1},
+    ],
+)
+def test_blocks_a_second_clarification_round(request_update: dict) -> None:
+    request = _request()
+    request.update(request_update)
+    response = {
+        "kind": "clarification", "interpretation": {"objective": "Criar um funil"},
+        "questions": [{"key": "tone", "label": "Qual tom?", "whyNeeded": "Ajusta a copy", "priority": 1,
+                       "answerType": "text", "defaultValue": None, "defaultSourceId": None}],
+        "selectedPacks": [], "sourceIds": [], "plan": None,
+    }
+
+    with pytest.raises(MissionSupervisorError, match="mission_supervisor_clarification_round_exhausted"):
+        _supervisor(response).propose(request)
+
+
 def test_returns_a_valid_catalog_bound_plan() -> None:
     result = _supervisor(_plan_response()).propose(_request())
     assert result["kind"] == "plan"
@@ -151,4 +196,3 @@ def test_retrieved_prompt_injection_is_marked_untrusted_and_cannot_expand_author
     assert "UNTRUSTED" in messages[0]["content"]
     with pytest.raises(ValueError, match="mission_plan_capability_not_allowed"):
         supervisor.propose(request)
-

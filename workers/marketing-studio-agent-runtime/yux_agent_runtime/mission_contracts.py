@@ -46,6 +46,8 @@ class MissionPlanRequestWire(StrictWireModel):
     planning_budget: dict[str, Any] | None = None
     context_snapshot_id: str | None = None
     allowed_source_ids: list[str] = Field(default_factory=list)
+    asked_question_keys: list[str] = Field(default_factory=list)
+    clarification_round: int = Field(default=0, ge=0, le=1)
 
 
 class ClarificationQuestionWire(StrictWireModel):
@@ -142,7 +144,7 @@ class MissionSupervisorProposal(StrictWireModel):
 
     kind: Literal["clarification", "plan"]
     interpretation: dict[str, Any]
-    questions: list[ClarificationQuestionWire] = Field(default_factory=list, max_length=3)
+    questions: list[ClarificationQuestionWire] = Field(default_factory=list, max_length=20)
     selected_packs: list[SelectedPackWire] = Field(default_factory=list, alias="selectedPacks")
     plan: dict[str, Any] | None = None
     source_ids: list[str] = Field(default_factory=list, alias="sourceIds")

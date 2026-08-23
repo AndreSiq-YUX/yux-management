@@ -339,6 +339,7 @@ export async function handleActionEnginePlanMission(
       mission: {
         id: mission.id, objective: mission.objective, parameters: mission.parameters,
         budget: mission.budget, deadlineAt: mission.deadlineAt,
+        goal: mission.goal, autonomyEnvelope: mission.autonomyEnvelope,
       },
       action_pack: serializablePack,
       pack_catalog: [serializablePack],
@@ -352,6 +353,10 @@ export async function handleActionEnginePlanMission(
       },
       context_snapshot_id: contextSnapshot.id,
       allowed_source_ids: builtContext.sourceIds,
+      asked_question_keys: Array.isArray(mission.packSelection.askedQuestionKeys)
+        ? mission.packSelection.askedQuestionKeys.filter((key): key is string => typeof key === 'string')
+        : [],
+      clarification_round: Number(mission.packSelection.clarificationRound ?? 0),
       observations: observations.rows,
       planning_budget: {
         cycleId: planningCycle.id,
@@ -415,6 +420,8 @@ export async function handleActionEnginePlanMission(
            WHERE id = $1 AND organization_id = $2`,
           [missionId, organizationId, {
             clarification: { interpretation: compileResult.interpretation, questions: compileResult.questions, contextSnapshotId: contextSnapshot.id },
+            askedQuestionKeys: compileResult.questions.map((question) => question.key),
+            clarificationRound: 1,
           }],
         )
         await transitionMission(client, {

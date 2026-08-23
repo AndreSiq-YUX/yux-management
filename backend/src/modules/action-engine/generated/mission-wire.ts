@@ -5,11 +5,13 @@ export type Key = string
 export type Protectedstepkeys = string[]
 export type Semanticversion = string
 export type AllowedSourceIds = string[]
+export type AskedQuestionKeys = string[]
 export type Definitionhash = string | null
 export type Effect = 'none' | 'draft' | 'internal' | 'external' | 'destructive'
 export type Key1 = string
 export type Version = number
 export type Capabilities = CapabilityWire[]
+export type ClarificationRound = number
 export type ClientId = string | null
 export type ContextSnapshotId = string | null
 export type ContractId = string | null
@@ -111,8 +113,10 @@ export interface YUXMissionSupervisorWireContractV1 {
 export interface MissionPlanRequestWire {
   action_pack: ActionPackWire
   allowed_source_ids?: AllowedSourceIds
+  asked_question_keys?: AskedQuestionKeys
   baseline?: Baseline
   capabilities: Capabilities
+  clarification_round?: ClarificationRound
   client_id?: ClientId
   context_snapshot_id?: ContextSnapshotId
   contract_id?: ContractId
