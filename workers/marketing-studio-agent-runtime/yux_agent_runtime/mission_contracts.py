@@ -42,6 +42,7 @@ class MissionPlanRequestWire(StrictWireModel):
     previous_revision: dict[str, Any] | None = None
     observations: list[dict[str, Any]] = Field(default_factory=list)
     proposed_plan: dict[str, Any] | None = None
+    planning_budget: dict[str, Any] | None = None
 
 
 class ClarificationQuestionWire(StrictWireModel):

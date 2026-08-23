@@ -325,6 +325,19 @@
           "title": "Organization Id",
           "type": "string"
         },
+        "planning_budget": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planning Budget"
+        },
         "previous_revision": {
           "anyOf": [
             {

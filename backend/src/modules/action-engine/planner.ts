@@ -97,7 +97,8 @@ export async function requestMissionPlan(
     body: JSON.stringify(payload), signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok) throw new Error(`agent_harness_plan_failed:${response.status}`)
-  const body = await response.json() as { plan?: unknown }
+  const body = await response.json() as { plan?: unknown; outcome?: string }
+  if (body.outcome === 'planning_budget_exhausted') throw new Error('planning_budget_exhausted')
   if (!body.plan) throw new Error('agent_harness_plan_missing')
   return body.plan
 }

@@ -15,6 +15,9 @@ export type Observations = {
   [k: string]: unknown
 }[]
 export type OrganizationId = string
+export type PlanningBudget = {
+  [k: string]: unknown
+} | null
 export type PreviousRevision = {
   [k: string]: unknown
 } | null
@@ -94,6 +97,7 @@ export interface MissionPlanRequestWire {
   mission: Mission
   observations?: Observations
   organization_id: OrganizationId
+  planning_budget?: PlanningBudget
   previous_revision?: PreviousRevision
   proposed_plan?: ProposedPlan
   readiness: Readiness

@@ -18,6 +18,7 @@ import {
   reconcileUnknownEffect,
 } from '../../modules/action-engine/provider-reconciliation.js'
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
+import { hashPlanningContext, reservePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
 
 type Pool = {
   query: Queryable['query']
@@ -258,7 +259,39 @@ export async function handleActionEnginePlanMission(
   const { parameters: _runtimeSchema, ...serializablePack } = REVENUE_RECOVERY_PACK_V0
   const allowedKeys = new Set(REVENUE_RECOVERY_PACK_V0.allowedCapabilities.map((item) => item.key))
   const capabilityCatalog = registry.listMetadata().filter((item) => allowedKeys.has(item.key))
+  const planningBudget: PlanningCycleBudget = {
+    maxCalls: 8,
+    maxInputTokens: 50_000,
+    maxOutputTokens: 10_000,
+    maxCostBrl: planningCostCeiling(mission.budget.maxTotalCostBrl),
+    maxLatencyMs: 120_000,
+  }
+  const planningEstimate = { calls: 1, inputTokens: 12_000, outputTokens: 2_500, costBrl: '5', latencyMs: 60_000 }
   try {
+  const planningCycle = await transaction(pool, async (client) => {
+    const contextHash = hashPlanningContext({
+      organizationId, missionId, objective: mission.objective, parameters: mission.parameters,
+      packContentHash: REVENUE_RECOVERY_PACK_V0.contentHash,
+      capabilityCatalog: capabilityCatalog.map((item) => ({ key: item.key, version: item.version })),
+      strategyContextVersion: 1, specialistProfile: 'growth_strategist', specialistVersion: 1,
+    })
+    const created = await client.query<{ id: string }>(
+      `INSERT INTO public.action_planning_cycles (
+         organization_id, mission_id, plan_revision, context_hash, pack_key, pack_version, budget
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (mission_id, plan_revision) DO UPDATE SET updated_at = NOW()
+       RETURNING id`,
+      [organizationId, missionId, requestedVersion, contextHash, REVENUE_RECOVERY_PACK_V0.key,
+        REVENUE_RECOVERY_PACK_V0.semanticVersion, planningBudget],
+    )
+    const cycleId = created.rows[0]?.id
+    if (!cycleId) throw new Error('planning_cycle_create_failed')
+    await reservePlanningCall(client, {
+      cycleId, organizationId, specialistProfile: 'growth_strategist', specialistVersion: 1,
+      reservation: planningEstimate,
+    })
+    return { id: cycleId, contextHash }
+  })
     const previousPlan = isReplan && mission.activePlanId ? await getPlan(pool, mission.activePlanId, organizationId) : null
     const previousCompiled = previousPlan && typeof previousPlan === 'object'
       ? Reflect.get(previousPlan, 'compiledPayload') as Record<string, unknown> | undefined
@@ -279,12 +312,24 @@ export async function handleActionEnginePlanMission(
       readiness: { ready: true, source: 'server_preflight' },
       baseline: {}, capabilities: capabilityCatalog,
       limits: mission.budget, strategy_context: {}, observations: observations.rows,
+      planning_budget: {
+        cycleId: planningCycle.id,
+        contextHash: planningCycle.contextHash,
+        budget: planningBudget,
+        usage: { calls: 0, inputTokens: 0, outputTokens: 0, costBrl: '0', latencyMs: 0 },
+        estimate: planningEstimate,
+      },
       ...(previousCompiled ? { previous_plan: previousCompiled } : {}),
     })
     const compiled = compileMissionPlan({
       rawPlan, missionId, pack: REVENUE_RECOVERY_PACK_V0, registry,
       maxTotalCostBrl: String(mission.budget.maxTotalCostBrl ?? '0'),
     })
+    await pool.query(
+      `UPDATE public.action_planning_cycles SET status = 'completed', completed_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND status = 'active'`,
+      [planningCycle.id, organizationId],
+    )
     return await transaction(pool, async (client) => {
       const current = await getMission(client, missionId, organizationId)
       if (!current || current.status !== expectedStatus || current.version !== requestedVersion) return { skipped: 'mission_state_changed' }
@@ -352,6 +397,11 @@ function numberField(data: Record<string, unknown>, key: string): number {
 
 function safeErrorCode(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500).replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+}
+
+function planningCostCeiling(value: unknown): string {
+  const total = typeof value === 'string' && /^\d+(\.\d{1,6})?$/.test(value) ? Number(value) : 50
+  return String(Math.max(5, Math.min(50, Math.round(total * 0.1 * 100) / 100)))
 }
 
 async function transaction<T>(pool: Pool, work: (client: Queryable) => Promise<T>): Promise<T> {

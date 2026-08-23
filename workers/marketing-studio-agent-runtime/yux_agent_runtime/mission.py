@@ -6,6 +6,7 @@ from typing import Any
 
 from .contracts import validate_mission_plan
 from .mission_contracts import MissionPlanRequestWire
+from .planning_budget import decision_from_wire
 
 
 MissionPlanRequest = MissionPlanRequestWire
@@ -40,6 +41,17 @@ def plan_mission(value: dict[str, Any]) -> dict[str, Any]:
     graph generation.
     """
     prompt = compose_mission_planning_prompt(value)
+    if value.get("planning_budget"):
+        decision = decision_from_wire(value["planning_budget"])
+        if not decision.allowed:
+            return {
+                "plan": None,
+                "outcome": "planning_budget_exhausted",
+                "reason": decision.reason,
+                "usage": decision.as_dict()["projected"],
+                "recommendation": "human_review",
+                "trace": {"profile": "growth_strategist", "steps": [], "promptEnvelope": prompt},
+            }
     proposal = deepcopy(value.get("proposed_plan")) if value.get("proposed_plan") else _canonical_proposal(value)
     validated = validate_mission_plan(proposal, value)
     return {

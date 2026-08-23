@@ -73,6 +73,61 @@ CREATE TABLE IF NOT EXISTS public.action_resource_claims (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.action_planning_cycles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
+  mission_id UUID NOT NULL REFERENCES public.action_missions(id) ON DELETE RESTRICT,
+  plan_revision INTEGER NOT NULL CHECK (plan_revision > 0),
+  context_hash TEXT NOT NULL CHECK (context_hash ~ '^[a-f0-9]{64}$'),
+  pack_key TEXT NOT NULL,
+  pack_version TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','exhausted','completed','cancelled')),
+  budget JSONB NOT NULL CHECK (jsonb_typeof(budget) = 'object'),
+  usage JSONB NOT NULL DEFAULT '{"calls":0,"inputTokens":0,"outputTokens":0,"costBrl":"0","latencyMs":0}'::JSONB,
+  terminal_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (mission_id, plan_revision)
+);
+
+CREATE TABLE IF NOT EXISTS public.action_planning_usage_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
+  cycle_id UUID NOT NULL REFERENCES public.action_planning_cycles(id) ON DELETE RESTRICT,
+  specialist_profile TEXT NOT NULL,
+  specialist_version INTEGER NOT NULL CHECK (specialist_version > 0),
+  nature TEXT NOT NULL CHECK (nature IN ('reservation','actual','release')),
+  calls INTEGER NOT NULL DEFAULT 0 CHECK (calls >= 0),
+  input_tokens INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+  output_tokens INTEGER NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+  cost_brl NUMERIC(18,6) NOT NULL DEFAULT 0 CHECK (cost_brl >= 0),
+  latency_ms INTEGER NOT NULL DEFAULT 0 CHECK (latency_ms >= 0),
+  reservation_id UUID REFERENCES public.action_planning_usage_entries(id) ON DELETE RESTRICT,
+  provider_model_id TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.action_planning_artifact_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  cache_key TEXT NOT NULL CHECK (cache_key ~ '^[a-f0-9]{64}$'),
+  context_hash TEXT NOT NULL CHECK (context_hash ~ '^[a-f0-9]{64}$'),
+  pack_key TEXT NOT NULL,
+  pack_version TEXT NOT NULL,
+  specialist_profile TEXT NOT NULL,
+  specialist_version INTEGER NOT NULL CHECK (specialist_version > 0),
+  artifact_schema TEXT NOT NULL,
+  artifact_version INTEGER NOT NULL CHECK (artifact_version > 0),
+  relevant_input_hash TEXT NOT NULL CHECK (relevant_input_hash ~ '^[a-f0-9]{64}$'),
+  artifact JSONB NOT NULL CHECK (jsonb_typeof(artifact) = 'object'),
+  source_ids JSONB NOT NULL DEFAULT '[]'::JSONB CHECK (jsonb_typeof(source_ids) = 'array'),
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (organization_id, cache_key)
+);
+
 CREATE TABLE IF NOT EXISTS public.action_external_effect_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
@@ -106,6 +161,10 @@ CREATE INDEX IF NOT EXISTS idx_action_resource_claims_active
   WHERE active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_action_resource_claims_mission
   ON public.action_resource_claims(mission_id, active, lease_expires_at);
+CREATE INDEX IF NOT EXISTS idx_action_planning_cycles_mission
+  ON public.action_planning_cycles(mission_id, plan_revision);
+CREATE INDEX IF NOT EXISTS idx_action_planning_artifact_cache_expiry
+  ON public.action_planning_artifact_cache(organization_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effects_mission
   ON public.action_external_effects(mission_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_action_external_effect_events_effect
@@ -126,11 +185,17 @@ CREATE TRIGGER action_external_effect_events_append_only
   BEFORE UPDATE OR DELETE ON public.action_external_effect_events
   FOR EACH ROW EXECUTE FUNCTION private.guard_action_external_effect_events_append_only();
 
+DROP TRIGGER IF EXISTS action_planning_usage_entries_append_only ON public.action_planning_usage_entries;
+CREATE TRIGGER action_planning_usage_entries_append_only
+  BEFORE UPDATE OR DELETE ON public.action_planning_usage_entries
+  FOR EACH ROW EXECUTE FUNCTION private.guard_action_external_effect_events_append_only();
+
 DO $action_engine_safety_rls$
 DECLARE table_name TEXT;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
-    'action_external_effects','action_external_effect_events','action_incidents','action_resource_claims'
+    'action_external_effects','action_external_effect_events','action_incidents','action_resource_claims',
+    'action_planning_cycles','action_planning_usage_entries','action_planning_artifact_cache'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);
