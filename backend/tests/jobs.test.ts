@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { createBullMqJobId, createIdempotencyKey } from '../src/jobs/queue.js'
+import { JOB_NAMES, createBullMqJobId, createIdempotencyKey } from '../src/jobs/queue.js'
 
 describe('job idempotency', () => {
+  it('registers provider-effect reconciliation as a durable job', () => {
+    expect(JOB_NAMES).toContain('action-engine.reconcileProviderEffect')
+    expect(createIdempotencyKey('action-engine.reconcileProviderEffect', {
+      effectId: 'effect-1', organizationId: 'org-1', scheduledFor: '2026-08-22T12:01:00.000Z',
+    })).toMatch(/^action-engine\.reconcileProviderEffect-/)
+  })
+
   it('creates the same key for equivalent payloads with different key order', () => {
     const first = createIdempotencyKey('automation.dispatch', {
       organizationId: 'org-1',

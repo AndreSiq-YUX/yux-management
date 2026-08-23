@@ -46,7 +46,7 @@ declare module 'fastify' {
 }
 
 export type AppJobQueue = {
-  add(name: JobName, data: QueueJobData): Promise<{ id?: string | number | undefined }>
+  add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }): Promise<{ id?: string | number | undefined }>
   close(): Promise<void>
 }
 
@@ -143,9 +143,10 @@ function createAppJobQueue(): AppJobQueue {
   const queue = createQueue()
 
   return {
-    async add(name, data) {
+    async add(name, data, options) {
       return queue.add(name, data, {
-        jobId: createIdempotencyKey(name, data),
+        jobId: options?.jobId ?? createIdempotencyKey(name, data),
+        ...(options?.delay !== undefined ? { delay: options.delay } : {}),
       })
     },
     async close() {

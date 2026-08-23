@@ -12,6 +12,11 @@ import { collectMissionEconomics } from '../../modules/action-engine/economics.j
 import { evaluateMission } from '../../modules/action-engine/evaluator.js'
 import { collectMissionMetrics } from '../../modules/action-engine/evaluator.js'
 import { createActionEngineCommands } from '../../modules/action-engine/commands.js'
+import {
+  ProviderEffectResolverRegistry,
+  createPostgresExternalEffectReconciliationStore,
+  reconcileUnknownEffect,
+} from '../../modules/action-engine/provider-reconciliation.js'
 
 type Pool = {
   query: Queryable['query']
@@ -30,10 +35,96 @@ export async function handleActionEngineExecute(pool: Pool, queue: AppJobQueue, 
   const result = await executeActionRun(pool as never, createActionEngineCapabilityRegistry(), {
     actionRunId, organizationId, workerId, commands: createActionEngineCommands(pool as never, missionId),
   })
+  if (result.reconciliation) {
+    await queue.add('action-engine.reconcileProviderEffect', {
+      effectId: result.reconciliation.effectId,
+      organizationId: result.reconciliation.organizationId,
+    }, { delay: 15_000 })
+  }
   if (result.status === 'succeeded' || result.status === 'failed' || result.status === 'skipped') {
     await queue.add('action-engine.scheduleReadyActions', { missionId })
   }
   return result
+}
+
+export async function handleActionEngineReconcileProviderEffect(
+  pool: Pool,
+  queue: AppJobQueue,
+  data: Record<string, unknown>,
+  resolvers = new ProviderEffectResolverRegistry(),
+) {
+  const effectId = stringField(data, 'effectId')
+  const organizationId = stringField(data, 'organizationId')
+  const result = await reconcileUnknownEffect(
+    createPostgresExternalEffectReconciliationStore(pool as never),
+    resolvers,
+    { effectId, organizationId },
+  )
+
+  if ((result.outcome === 'created' || result.outcome === 'failed') && result.effect) {
+    await finalizeReconciledAction(pool, result.effect.runId, organizationId, result.outcome, {
+      externalEffectId: result.effect.id,
+      providerReference: result.effect.providerReference ?? null,
+      evidence: result.effect.outcomeEvidence,
+    })
+    if (result.outcome === 'created') {
+      await queue.add('action-engine.scheduleReadyActions', { missionId: result.effect.missionId })
+    }
+  } else if (result.outcome === 'deferred' && result.effect?.nextReconcileAt) {
+    const delay = Math.max(1_000, new Date(result.effect.nextReconcileAt).getTime() - Date.now())
+    await queue.add('action-engine.reconcileProviderEffect', {
+      effectId: result.effect.id,
+      organizationId: result.effect.organizationId,
+      scheduledFor: result.effect.nextReconcileAt,
+    }, { delay })
+  }
+
+  return result
+}
+
+async function finalizeReconciledAction(
+  pool: Pool,
+  actionRunId: string,
+  organizationId: string,
+  outcome: 'created' | 'failed',
+  reconciliation: Record<string, unknown>,
+): Promise<void> {
+  await transaction(pool, async (client) => {
+    const action = await client.query<{ mission_id: string; status: string }>(
+      `SELECT mission_id, status FROM public.action_runs
+       WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+      [actionRunId, organizationId],
+    )
+    const row = action.rows[0]
+    if (!row || !['blocked', 'running'].includes(row.status)) return
+    const status = outcome === 'created' ? 'succeeded' : 'failed'
+    await client.query(
+      `UPDATE public.action_runs
+       SET status = $3, output = CASE WHEN $3 = 'succeeded' THEN $4::jsonb ELSE output END,
+           last_error = CASE WHEN $3 = 'failed' THEN 'provider_effect_confirmed_failed' ELSE NULL END,
+           completed_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2`,
+      [actionRunId, organizationId, status, { reconciliation }],
+    )
+    await client.query(
+      `UPDATE public.action_run_attempts
+       SET status = $2, output_snapshot = CASE WHEN $2 = 'succeeded' THEN $3::jsonb ELSE output_snapshot END,
+           error_code = CASE WHEN $2 = 'failed' THEN 'provider_effect_confirmed_failed' ELSE error_code END,
+           completed_at = NOW()
+       WHERE id = (
+         SELECT id FROM public.action_run_attempts WHERE run_id = $1 ORDER BY attempt_number DESC LIMIT 1
+       )`,
+      [actionRunId, status, { reconciliation }],
+    )
+    await recordDomainEvent(client, {
+      eventType: outcome === 'created' ? 'action.succeeded' : 'action.failed',
+      organizationId,
+      aggregateType: 'action_run',
+      aggregateId: actionRunId,
+      actor: { type: 'system' },
+      payload: { missionId: row.mission_id, reason: `provider_effect_confirmed_${outcome}`, reconciliation },
+    })
+  })
 }
 
 export async function handleActionEngineExpireWaits(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {

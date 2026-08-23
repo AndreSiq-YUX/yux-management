@@ -5,6 +5,13 @@ import { createActionRuns, getMission, recordApproval, transitionMission, type C
 import type { ActionRunStatus } from './types.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { recordCapabilityCosts } from './economics.js'
+import {
+  markExternalEffectDispatched,
+  markExternalEffectUnknown,
+  reserveExternalEffect,
+  resolveExternalEffect,
+  type ExternalEffect,
+} from './external-effects.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -88,7 +95,7 @@ export async function executeActionRun(
   pool: Connectable,
   registry: CapabilityRegistry,
   input: { actionRunId: string; organizationId: string; workerId: string; commands?: CapabilityContext['commands'] },
-): Promise<{ status: ActionRunStatus; duplicate?: boolean }> {
+): Promise<{ status: ActionRunStatus; duplicate?: boolean; reconciliation?: { effectId: string; organizationId: string } }> {
   const claimed = await transaction(pool, async (client) => {
     const result = await client.query<ActionRow>(
       `UPDATE public.action_runs run SET status = 'running', claimed_at = NOW(), claimed_by = $3, updated_at = NOW()
@@ -123,12 +130,76 @@ export async function executeActionRun(
     return { status: 'blocked' }
   }
 
+  let externalEffect: ExternalEffect | null = null
+  const capability = registry.get(claimed.action.capability_key, Number(claimed.action.capability_version))
+  if (capability.effect === 'external') {
+    const reserved = await reserveExternalEffect(pool, {
+      organizationId: input.organizationId,
+      missionId: claimed.action.mission_id,
+      planId: claimed.action.plan_id,
+      runId: input.actionRunId,
+      attemptId: claimed.attemptId,
+      capabilityKey: capability.key,
+      capabilityVersion: capability.version,
+      providerKey: capability.requiredConnections[0] ?? capability.key.split('.')[0],
+      providerIdempotencyKey: claimed.action.idempotency_key,
+      requestHash: hashSubject(stableSerialize(claimed.action.input)),
+      requestMetadata: { actionRunId: input.actionRunId, attemptNumber: claimed.attemptNumber },
+      reconciliationDeadlineAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    })
+    externalEffect = reserved.effect
+    if (externalEffect.status !== 'reserved') {
+      if (externalEffect.status === 'dispatched') {
+        externalEffect = await markExternalEffectUnknown(pool, {
+          effectId: externalEffect.id,
+          organizationId: input.organizationId,
+          errorCode: 'worker_recovered_after_dispatch',
+          nextReconcileAt: new Date(Date.now() + 15_000).toISOString(),
+          evidence: { actionRunId: input.actionRunId },
+        })
+      }
+      if (externalEffect.status === 'confirmed_created' || externalEffect.status === 'confirmed_failed') {
+        const recoveredStatus = externalEffect.status === 'confirmed_created' ? 'succeeded' : 'failed'
+        await finishFromConfirmedExternalEffect(pool, {
+          actionRunId: input.actionRunId,
+          organizationId: input.organizationId,
+          missionId: claimed.action.mission_id,
+          attemptId: claimed.attemptId,
+          status: recoveredStatus,
+          effect: externalEffect,
+        })
+        return { status: recoveredStatus, duplicate: true }
+      }
+      const unresolved = ['unknown', 'reconciling'].includes(externalEffect.status)
+      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, `external_effect_${externalEffect.status}`)
+      return {
+        status: 'blocked',
+        ...(unresolved ? { reconciliation: { effectId: externalEffect.id, organizationId: input.organizationId } } : {}),
+      }
+    }
+    externalEffect = await markExternalEffectDispatched(pool, {
+      effectId: externalEffect.id,
+      organizationId: input.organizationId,
+      attemptId: claimed.attemptId,
+      evidence: { actionRunId: input.actionRunId, attemptNumber: claimed.attemptNumber },
+    })
+  }
+
   try {
     const result = await registry.invoke(claimed.action.capability_key, Number(claimed.action.capability_version), {
       organizationId: input.organizationId, missionId: claimed.action.mission_id, actor: { type: 'system' },
       idempotencyKey: claimed.action.idempotency_key, dryRun: false,
       query: pool.query.bind(pool), commands: input.commands,
     }, claimed.action.input)
+    if (externalEffect) {
+      externalEffect = await resolveExternalEffect(pool, {
+        effectId: externalEffect.id,
+        organizationId: input.organizationId,
+        outcome: 'created',
+        ...(result.sourceRecords?.[0]?.id ? { providerReference: result.sourceRecords[0].id } : {}),
+        evidence: { actionRunId: input.actionRunId, sourceRecords: result.sourceRecords ?? [] },
+      })
+    }
     await transaction(pool, async (client) => {
       if (result.costHints?.length) {
         await recordCapabilityCosts(client, result.costHints.map((cost, index) => ({
@@ -166,7 +237,26 @@ export async function executeActionRun(
     })
     return { status: claimed.action.capability_key === 'system.signal.wait' || claimed.action.capability_key === 'human.task.create' ? 'running' : 'succeeded' }
   } catch (error) {
-    const retryable = isRetryable(error) && claimed.attemptNumber < 3
+    if (externalEffect && isOutcomeUnknown(error)) {
+      await markExternalEffectUnknown(pool, {
+        effectId: externalEffect.id,
+        organizationId: input.organizationId,
+        errorCode: 'provider_outcome_unknown',
+        nextReconcileAt: new Date(Date.now() + 15_000).toISOString(),
+        evidence: { actionRunId: input.actionRunId, errorCode: safeError(error) },
+      })
+      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'provider_outcome_unknown')
+      return { status: 'blocked', reconciliation: { effectId: externalEffect.id, organizationId: input.organizationId } }
+    }
+    if (externalEffect && externalEffect.status === 'dispatched') {
+      await resolveExternalEffect(pool, {
+        effectId: externalEffect.id,
+        organizationId: input.organizationId,
+        outcome: 'failed',
+        evidence: { actionRunId: input.actionRunId, errorCode: safeError(error) },
+      })
+    }
+    const retryable = !externalEffect && isRetryable(error) && claimed.attemptNumber < 3
     await transaction(pool, async (client) => {
       await client.query(`UPDATE public.action_run_attempts SET status = 'failed', error_code = $2, error_message = $3, completed_at = NOW() WHERE id = $1`, [claimed.attemptId, retryable ? 'transient' : 'execution_failed', safeError(error)])
       await client.query(
@@ -282,13 +372,71 @@ async function markBlocked(pool: Connectable, actionRunId: string, organizationI
   })
 }
 
+async function finishFromConfirmedExternalEffect(pool: Connectable, input: {
+  actionRunId: string
+  organizationId: string
+  missionId: string
+  attemptId?: string
+  status: 'succeeded' | 'failed'
+  effect: ExternalEffect
+}): Promise<void> {
+  const reconciliation = {
+    externalEffectId: input.effect.id,
+    providerReference: input.effect.providerReference ?? null,
+    evidence: input.effect.outcomeEvidence,
+    recoveredFromPriorDispatch: true,
+  }
+  await transaction(pool, async (client) => {
+    if (input.attemptId) {
+      await client.query(
+        `UPDATE public.action_run_attempts
+         SET status = $2, output_snapshot = CASE WHEN $2 = 'succeeded' THEN $3::jsonb ELSE output_snapshot END,
+             error_code = CASE WHEN $2 = 'failed' THEN 'provider_effect_confirmed_failed' ELSE NULL END,
+             completed_at = NOW()
+         WHERE id = $1`,
+        [input.attemptId, input.status, { reconciliation }],
+      )
+    }
+    await client.query(
+      `UPDATE public.action_runs
+       SET status = $3, output = CASE WHEN $3 = 'succeeded' THEN $4::jsonb ELSE output END,
+           last_error = CASE WHEN $3 = 'failed' THEN 'provider_effect_confirmed_failed' ELSE NULL END,
+           completed_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2`,
+      [input.actionRunId, input.organizationId, input.status, { reconciliation }],
+    )
+    await recordDomainEvent(client, {
+      eventType: input.status === 'succeeded' ? 'action.succeeded' : 'action.failed',
+      organizationId: input.organizationId,
+      aggregateType: 'action_run',
+      aggregateId: input.actionRunId,
+      actor: { type: 'system' },
+      payload: { missionId: input.missionId, reason: 'provider_effect_reused', reconciliation },
+    })
+  })
+}
+
 function isRetryable(error: unknown): boolean {
   const message = safeError(error)
   return /timeout|temporar|ECONN|429|502|503|504/i.test(message)
 }
 
+function isOutcomeUnknown(error: unknown): boolean {
+  return /timeout|ECONN|socket|502|503|504|connection reset|network/i.test(safeError(error))
+}
+
 function safeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 1000).replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
 }
 
 async function transaction<T>(pool: Connectable, work: (client: Queryable) => Promise<T>): Promise<T> {

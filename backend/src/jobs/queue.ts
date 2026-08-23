@@ -14,6 +14,7 @@ export const JOB_NAMES = [
   'action-engine.planMission',
   'action-engine.scheduleReadyActions',
   'action-engine.executeAction',
+  'action-engine.reconcileProviderEffect',
   'action-engine.expireWaits',
   'action-engine.collectMetrics',
   'action-engine.evaluateMission',
