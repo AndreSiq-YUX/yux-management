@@ -208,7 +208,7 @@ export async function saveEmailTemplate(pool: pg.Pool, input: SaveEmailTemplateI
 export async function publishEmailTemplate(pool: pg.Pool, input: { templateId: string; userId: string }) {
   const result = await pool.query(
     `WITH current_template AS (
-       SELECT id, subject, preheader, body_html, body_text, variables_schema, required_variables
+       SELECT id, subject, preheader, body_html, body_text, variables_schema, required_variables, content_hash
        FROM public.email_templates
        WHERE id = $1
      ),
@@ -220,7 +220,7 @@ export async function publishEmailTemplate(pool: pg.Pool, input: { templateId: s
      inserted_version AS (
        INSERT INTO public.email_template_versions (
          template_id, version_number, subject, preheader, body_html, body_text,
-         variables_schema, required_variables, change_summary, published_by
+         variables_schema, required_variables, change_summary, published_by, content_hash
        )
        SELECT
          current_template.id,
@@ -232,7 +232,8 @@ export async function publishEmailTemplate(pool: pg.Pool, input: { templateId: s
          current_template.variables_schema,
          current_template.required_variables,
          'Published from template management',
-         $2
+         $2,
+         current_template.content_hash
        FROM current_template, next_version
        RETURNING id
      )
