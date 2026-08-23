@@ -16,6 +16,7 @@ import { getAction, listMissionActions, resolveHumanTask, retryAction, skipActio
 import { collectMissionMetrics } from './evaluator.js'
 import { collectMissionEconomics } from './economics.js'
 import { releaseResourceClaims } from './resource-claims.js'
+import { buildActionEngineNfrSnapshot } from './operations-health.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -99,7 +100,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const parsed = organizationQuery.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_action_engine_health_query' })
     requireAccess(ctx, 'action_engine.read', { organizationId: parsed.data.organizationId })
-    const [missions, actions, approvals, pack] = await Promise.all([
+    const [missions, actions, approvals, pack, planningLatency, executionHealth, snapshots, staleEnvelopes, actionsByMode] = await Promise.all([
       app.pg.query<{ status: string; count: number | string }>(
         `SELECT status, COUNT(*)::INT AS count FROM public.action_missions
          WHERE organization_id = $1 GROUP BY status`, [parsed.data.organizationId],
@@ -119,7 +120,39 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
          WHERE pack.key = 'revenue_recovery' AND version.semantic_version = '0.2.0'
            AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
       ),
+      app.pg.query<{ latency_ms: number | string }>(
+        `SELECT latency_ms FROM public.action_planning_usage_entries
+         WHERE organization_id = $1 AND nature = 'actual' AND created_at > NOW() - INTERVAL '24 hours'
+         ORDER BY created_at DESC LIMIT 1000`, [parsed.data.organizationId],
+      ),
+      app.pg.query<{ latency_ms: number | string; available: boolean }>(
+        `SELECT GREATEST(0, EXTRACT(EPOCH FROM (COALESCE(completed_at,NOW()) - started_at)) * 1000)::BIGINT AS latency_ms,
+                status IN ('succeeded','running') AS available
+         FROM public.action_run_attempts WHERE organization_id = $1 AND started_at > NOW() - INTERVAL '24 hours'
+         ORDER BY started_at DESC LIMIT 5000`, [parsed.data.organizationId],
+      ),
+      app.pg.query<{ count: number | string; latest_hash: string | null }>(
+        `SELECT COUNT(*)::INT AS count,
+                (ARRAY_AGG(capability_catalog_hash ORDER BY created_at DESC))[1] AS latest_hash
+         FROM public.action_mission_context_snapshots
+         WHERE organization_id = $1 AND created_at > NOW() - INTERVAL '24 hours'`, [parsed.data.organizationId],
+      ),
+      app.pg.query<{ count: number | string }>(
+        `SELECT COUNT(*)::INT AS count FROM public.action_missions
+         WHERE organization_id = $1 AND status NOT IN ('succeeded','failed','expired','cancelled')
+           AND NULLIF(autonomy_envelope->>'expiresAt','')::TIMESTAMPTZ <= NOW()`, [parsed.data.organizationId],
+      ),
+      app.pg.query<{ mode: string; count: number | string }>(
+        `SELECT mission.mode, COUNT(run.id)::INT AS count
+         FROM public.action_missions mission LEFT JOIN public.action_runs run ON run.mission_id = mission.id
+         WHERE mission.organization_id = $1 GROUP BY mission.mode`, [parsed.data.organizationId],
+      ),
     ])
+    const nfr = buildActionEngineNfrSnapshot({
+      planningLatencyMs: planningLatency.rows.map(row => Number(row.latency_ms)),
+      executionLatencyMs: executionHealth.rows.map(row => Number(row.latency_ms)),
+      executorAvailable: executionHealth.rows.map(row => row.available),
+    })
     return {
       status: pack.rows[0]?.content_hash === REVENUE_RECOVERY_PACK_V0.contentHash ? 'ready' : 'degraded',
       agentHarnessConfigured: Boolean(app.config.YUX_AGENT_RUNTIME_URL),
@@ -128,6 +161,17 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       actionFailures: Number(actions.rows[0]?.failed ?? 0),
       durableWaits: Number(actions.rows[0]?.waiting ?? 0),
       pendingApprovals: Number(approvals.rows[0]?.pending ?? 0),
+      rollout: { missionSupervisorEnabled: app.config.MISSION_SUPERVISOR_ENABLED !== false },
+      planner: {
+        available: app.config.MISSION_SUPERVISOR_ENABLED !== false && Boolean(app.config.YUX_AGENT_RUNTIME_URL && app.config.YUX_AGENT_RUNTIME_TOKEN),
+        harnessConfigured: Boolean(app.config.YUX_AGENT_RUNTIME_URL && app.config.YUX_AGENT_RUNTIME_TOKEN),
+      },
+      telemetryRedactionReady: Boolean(app.config.ACTION_ENGINE_TELEMETRY_REDACTION_KEY ?? app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
+      contextRetrieval: { status: Number(snapshots.rows[0]?.count ?? 0) > 0 ? 'observed' : 'no_recent_samples', recentSnapshots: Number(snapshots.rows[0]?.count ?? 0) },
+      pinnedCapabilityCatalogHash: snapshots.rows[0]?.latest_hash ?? null,
+      staleAutonomyEnvelopes: Number(staleEnvelopes.rows[0]?.count ?? 0),
+      actionsByMode: Object.fromEntries(actionsByMode.rows.map(row => [row.mode, Number(row.count)])),
+      nfr,
     }
   })
 
@@ -201,6 +245,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const ctx = requireAuth(request)
     const parsed = missionIntentCreate.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_intent' })
+    if (app.config.MISSION_SUPERVISOR_ENABLED === false) return reply.code(503).send({ error: 'mission_supervisor_disabled' })
     requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
     const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
     if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })

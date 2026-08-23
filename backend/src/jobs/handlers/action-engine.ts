@@ -19,10 +19,11 @@ import {
   reconcileUnknownEffect,
 } from '../../modules/action-engine/provider-reconciliation.js'
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
-import { reservePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
+import { reservePlanningCall, settlePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
 import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
 import { buildMissionContext } from '../../modules/action-engine/context-builder.js'
 import { createCapabilityManifest } from '../../modules/action-engine/capability-manifest.js'
+import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
 
 type Pool = {
   query: Queryable['query']
@@ -259,6 +260,7 @@ export async function handleActionEnginePlanMission(
   data: Record<string, unknown>,
   _queue?: AppJobQueue,
 ): Promise<{ planId?: string; skipped?: string }> {
+  if (env.MISSION_SUPERVISOR_ENABLED === false) throw new Error('mission_supervisor_disabled')
   const missionId = stringField(data, 'missionId')
   const organizationId = stringField(data, 'organizationId')
   const requestedVersion = numberField(data, 'requestedVersion')
@@ -314,11 +316,11 @@ export async function handleActionEnginePlanMission(
     )
     const cycleId = created.rows[0]?.id
     if (!cycleId) throw new Error('planning_cycle_create_failed')
-    await reservePlanningCall(client, {
+    const reservation = await reservePlanningCall(client, {
       cycleId, organizationId, specialistProfile: 'growth_strategist', specialistVersion: 1,
       reservation: planningEstimate,
     })
-    return { id: cycleId, contextHash }
+    return { id: cycleId, contextHash, reservationId: reservation.reservationId }
   })
     const previousPlan = isReplan && mission.activePlanId ? await getPlan(pool, mission.activePlanId, organizationId) : null
     const previousCompiled = previousPlan && typeof previousPlan === 'object'
@@ -329,6 +331,7 @@ export async function handleActionEnginePlanMission(
        FROM public.action_observations WHERE mission_id = $1 AND organization_id = $2
        ORDER BY observed_at DESC LIMIT 100`, [missionId, organizationId],
     ) : { rows: [] }
+    const planningStartedAt = Date.now()
     const rawPlan = await requestMissionPlan(env, {
       organization_id: organizationId,
       ...(mission.contractId ? { contract_id: mission.contractId } : {}),
@@ -357,6 +360,36 @@ export async function handleActionEnginePlanMission(
         estimate: planningEstimate,
       },
       ...(previousCompiled ? { previous_revision: previousCompiled } : {}),
+    })
+    const planningDurationMs = Math.max(0, Date.now() - planningStartedAt)
+    const rawEnvelope = rawPlan && typeof rawPlan === 'object' ? rawPlan as Record<string, unknown> : {}
+    const rawUsage = rawEnvelope.usage && typeof rawEnvelope.usage === 'object' ? rawEnvelope.usage as Record<string, unknown> : {}
+    const rawTrace = rawEnvelope.trace && typeof rawEnvelope.trace === 'object' ? rawEnvelope.trace as Record<string, unknown> : {}
+    await transaction(pool, async (client) => {
+      await settlePlanningCall(client, {
+        cycleId: planningCycle.id, organizationId, reservationId: planningCycle.reservationId,
+        actual: {
+          calls: 1, inputTokens: Number(rawUsage.inputTokens ?? 0), outputTokens: Number(rawUsage.outputTokens ?? 0),
+          costBrl: '0', latencyMs: planningDurationMs,
+        },
+        providerModelId: typeof rawTrace.resolvedModelId === 'string' ? rawTrace.resolvedModelId : undefined,
+        metadata: { profileKey: rawTrace.profileKey ?? 'mission_supervisor', promptHash: rawTrace.promptHash ?? null },
+      })
+      const telemetryKey = env.ACTION_ENGINE_TELEMETRY_REDACTION_KEY ?? env.ACTION_ENGINE_MUTATION_LEASE_SECRET
+      if (telemetryKey) {
+        const payload = redactMissionTelemetry({
+          missionId, durationMs: planningDurationMs,
+          inputTokens: Number(rawUsage.inputTokens ?? 0), outputTokens: Number(rawUsage.outputTokens ?? 0),
+          modelId: rawTrace.resolvedModelId ?? rawTrace.requestedModelId ?? null,
+          promptHash: rawTrace.promptHash ?? null, contextHash: contextSnapshot.contextHash,
+          packVersion: pack.semanticVersion, status: rawEnvelope.kind ?? 'unknown',
+        }, { missionId, tokenKey: telemetryKey })
+        await client.query(
+          `INSERT INTO public.action_mission_telemetry (organization_id, mission_id, artifact_kind, payload)
+           VALUES ($1,$2,'redacted_model_trace',$3)`,
+          [organizationId, missionId, payload],
+        )
+      }
     })
     const compileResult = compileSupervisorPlan({
       rawProposal: rawPlan, missionId, packCatalog: [pack], registry,

@@ -37,6 +37,8 @@ const envSchema = z.object({
   YUX_AGENT_RUNTIME_URL: optionalUrl,
   YUX_AGENT_RUNTIME_TOKEN: z.string().optional(),
   ACTION_ENGINE_MUTATION_LEASE_SECRET: z.string().min(32).optional(),
+  ACTION_ENGINE_TELEMETRY_REDACTION_KEY: z.string().min(32).optional(),
+  MISSION_SUPERVISOR_ENABLED: optionalBoolean,
   META_APP_SECRET: optionalString,
   META_APP_ID: optionalString,
   META_MARKETING_OAUTH_REDIRECT_URI: optionalUrl,

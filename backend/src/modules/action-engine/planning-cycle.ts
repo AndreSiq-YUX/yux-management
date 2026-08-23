@@ -106,6 +106,52 @@ export async function reservePlanningCall(client: Queryable, input: {
   return { reservationId: reservation.rows[0].id, projected: decision.projected }
 }
 
+export async function settlePlanningCall(client: Queryable, input: {
+  cycleId: string
+  organizationId: string
+  reservationId: string
+  actual: PlanningUsage
+  providerModelId?: string
+  metadata?: Record<string, unknown>
+}): Promise<PlanningUsage> {
+  const result = await client.query<{
+    budget: PlanningCycleBudget; usage: PlanningUsage; status: string;
+    calls: number; input_tokens: number; output_tokens: number; cost_brl: string; latency_ms: number;
+  }>(
+    `SELECT cycle.budget, cycle.usage, cycle.status, reservation.calls,
+            reservation.input_tokens, reservation.output_tokens, reservation.cost_brl::TEXT, reservation.latency_ms
+     FROM public.action_planning_cycles cycle
+     JOIN public.action_planning_usage_entries reservation ON reservation.id = $3 AND reservation.cycle_id = cycle.id
+     WHERE cycle.id = $1 AND cycle.organization_id = $2 FOR UPDATE OF cycle`,
+    [input.cycleId, input.organizationId, input.reservationId],
+  )
+  const row = result.rows[0]
+  if (!row || row.status !== 'active') throw new Error('planning_reservation_unavailable')
+  const reserved: PlanningUsage = {
+    calls: Number(row.calls), inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens),
+    costBrl: String(row.cost_brl), latencyMs: Number(row.latency_ms),
+  }
+  const base = subtractUsage(row.usage, reserved)
+  const decision = evaluatePlanningReservation(row.budget, base, input.actual)
+  if (!decision.allowed) throw new Error('planning_actual_budget_exhausted')
+  await client.query(
+    `INSERT INTO public.action_planning_usage_entries (
+       organization_id, cycle_id, specialist_profile, specialist_version, nature,
+       calls, input_tokens, output_tokens, cost_brl, latency_ms, reservation_id, provider_model_id, metadata
+     ) SELECT organization_id, cycle_id, specialist_profile, specialist_version, 'actual',
+              $4,$5,$6,$7,$8,id,$9,$10
+       FROM public.action_planning_usage_entries WHERE id = $3 AND organization_id = $2`,
+    [input.cycleId, input.organizationId, input.reservationId, input.actual.calls, input.actual.inputTokens,
+      input.actual.outputTokens, input.actual.costBrl, input.actual.latencyMs, input.providerModelId ?? null, input.metadata ?? {}],
+  )
+  await client.query(
+    `UPDATE public.action_planning_cycles SET usage = $3::jsonb, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2`,
+    [input.cycleId, input.organizationId, decision.projected],
+  )
+  return decision.projected
+}
+
 function parseDecimal(value: string): bigint {
   if (!/^\d+(\.\d{1,6})?$/.test(value)) throw new Error('planning_decimal_invalid')
   const [whole, fraction = ''] = value.split('.')
@@ -120,6 +166,17 @@ function formatDecimal(value: bigint): string {
 
 function addDecimal(left: string, right: string): string { return formatDecimal(parseDecimal(left) + parseDecimal(right)) }
 function compareDecimal(left: string, right: string): number { return Number(parseDecimal(left) - parseDecimal(right)) }
+
+function subtractUsage(total: PlanningUsage, reserved: PlanningUsage): PlanningUsage {
+  return {
+    calls: Math.max(0, total.calls - reserved.calls),
+    inputTokens: Math.max(0, total.inputTokens - reserved.inputTokens),
+    outputTokens: Math.max(0, total.outputTokens - reserved.outputTokens),
+    costBrl: formatDecimal(parseDecimal(total.costBrl) > parseDecimal(reserved.costBrl)
+      ? parseDecimal(total.costBrl) - parseDecimal(reserved.costBrl) : 0n),
+    latencyMs: Math.max(0, total.latencyMs - reserved.latencyMs),
+  }
+}
 
 function stableSerialize(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
