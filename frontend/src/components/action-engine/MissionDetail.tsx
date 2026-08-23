@@ -5,20 +5,23 @@ import { MissionEconomicsPanel } from './MissionEconomicsPanel'
 import { MissionDecisionSummary, readDecisionSummary } from './MissionDecisionSummary'
 import { MissionExecutionTimeline } from './MissionExecutionTimeline'
 import { MissionMetricsPanel } from './MissionMetricsPanel'
+import { MissionOperationalControls } from './MissionOperationalControls'
 import { MissionPlanPanel } from './MissionPlanPanel'
 import { MissionTechnicalProof } from './MissionTechnicalProof'
 import { MissionStatusBadge } from './MissionStatusBadge'
 import { availableMissionCommands, formatBrl, formatMissionDate, missionModeLabel, missionStatusMeta } from '@/lib/action-engine/missionRules'
-import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionEconomics, MissionMetrics, MissionPlan } from '@/types/actionEngine'
+import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionCapabilityControl, MissionEconomics, MissionMetrics, MissionOperationalControls as OperationalControls, MissionPlan } from '@/types/actionEngine'
 
 type MissionDetailProps = {
   mission: ActionMission; plan: MissionPlan | null; actions: MissionActionRun[]; approvals: MissionApproval[];
   metrics: MissionMetrics; economics: MissionEconomics | null; backHref: string; canWrite: boolean; showTechnicalProof: boolean; busy?: string;
+  operationalControls: OperationalControls | null;
   onCommand: (command: 'qualify' | 'plan' | 'start' | 'pause' | 'resume' | 'evaluate' | 'cancel') => void;
   onApprovePlan: (approval: MissionApproval) => void;
   onShareSimulation: () => void;
   onApprovalDecision: (approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', reasonKey?: DecisionReasonKey, comment?: string) => void;
   onRetryAction: (action: MissionActionRun) => void; onResolveHuman: (action: MissionActionRun) => void;
+  onCapabilityControl: (capability: MissionCapabilityControl, disabled: boolean, reason: string) => void;
 }
 
 export function MissionDetail(props: MissionDetailProps) {
@@ -38,6 +41,7 @@ export function MissionDetail(props: MissionDetailProps) {
       </header>
       {decisionSummary && planApproval ? <><MissionDecisionSummary summary={decisionSummary} approvalSubjectHash={planApproval.subjectHash} canApprove={canWrite} busy={busy === 'approve-plan'} onApprove={() => props.onApprovePlan(planApproval)} />{props.showTechnicalProof ? <MissionTechnicalProof summary={decisionSummary} plan={plan} /> : null}</> : <MissionPlanPanel plan={plan} />}
       <MissionMetricsPanel metrics={metrics} />
+      {props.operationalControls ? <MissionOperationalControls controls={props.operationalControls} busyCapability={busy?.replace('capability:', '')} onCapabilityControl={props.onCapabilityControl} /> : null}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]"><MissionExecutionTimeline actions={actions} canWrite={canWrite} busyActionId={busy?.replace('action:', '')} onRetry={props.onRetryAction} onResolveHuman={props.onResolveHuman} /><MissionApprovalsPanel approvals={approvals} canWrite={canWrite} busyApprovalId={busy?.replace('approval:', '')} onDecision={props.onApprovalDecision} /></div>
       <MissionEconomicsPanel economics={economics} />
     </div>

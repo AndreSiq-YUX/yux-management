@@ -14,6 +14,7 @@ export type Operation =
   | 'action_engine.read'
   | 'action_engine.write'
   | 'action_engine.economics.read'
+  | 'action_engine.policy.manage'
 
 export type Resource = {
   organizationId?: string | null
@@ -30,6 +31,7 @@ const moduleOperationKeys: Partial<Record<Operation, string>> = {
   'action_engine.read': 'action_engine',
   'action_engine.write': 'action_engine',
   'action_engine.economics.read': 'action_engine',
+  'action_engine.policy.manage': 'action_engine',
 }
 
 export function canAccess(ctx: RequestContext, operation: Operation, resource: Resource = {}) {
@@ -42,9 +44,10 @@ export function canAccess(ctx: RequestContext, operation: Operation, resource: R
   const moduleKey = resource.moduleKey ?? moduleOperationKeys[operation]
   if (moduleKey && !ctx.enabledModuleKeys.includes(moduleKey)) return false
 
-  if (ctx.role === 'yux_operator') return operation.endsWith('.read') || operation.endsWith('.write')
+  if (ctx.role === 'yux_operator') return operation.endsWith('.read') || operation.endsWith('.write') || operation === 'action_engine.policy.manage'
   if (operation === 'action_engine.write') return false
   if (operation === 'action_engine.economics.read') return false
+  if (operation === 'action_engine.policy.manage') return false
   if (ctx.role === 'client_admin') return !operation.startsWith('platform.')
   if (ctx.role === 'client_member') return operation.endsWith('.read')
 

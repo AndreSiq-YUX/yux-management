@@ -2,7 +2,7 @@ import { apiRequest } from '@/lib/apiClient'
 import type {
   ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput, DecisionReasonKey,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
-  MissionPlan, MissionReadiness, MissionStatus,
+  MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
   PublicSimulationReport, SimulationReportShare,
 } from '@/types/actionEngine'
 
@@ -65,6 +65,9 @@ export const actionEngineService = {
   }),
   getMetrics: (missionId: string, organizationId: string) => apiRequest<MissionMetrics>(`${root}/missions/${missionId}/metrics?${query({ organizationId })}`),
   getEconomics: (missionId: string, organizationId: string) => apiRequest<MissionEconomics>(`${root}/missions/${missionId}/economics?${query({ organizationId })}`),
+  getOperationalControls: (missionId: string, organizationId: string) => apiRequest<MissionOperationalControls>(`${root}/missions/${missionId}/operational-controls?${query({ organizationId })}`),
+  setCapabilityControl: (missionId: string, input: { organizationId: string; capabilityKey: string; capabilityVersion: number; disabled: boolean; reason: string }) =>
+    apiRequest(`${root}/missions/${missionId}/capability-controls`, { method: 'POST', body: input }),
   createSimulationReport: (mission: ActionMission, planId: string, expiresInDays: number) => apiRequest<SimulationReportShare>(`${root}/missions/${mission.id}/simulation-reports`, {
     method: 'POST', body: { organizationId: mission.organizationId, planId, expiresInDays },
   }),

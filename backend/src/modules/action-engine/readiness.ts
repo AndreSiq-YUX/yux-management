@@ -81,6 +81,7 @@ export async function evaluateMissionReadiness(
     humanHourlyRateBrl: string
     agentHarnessHealthy: boolean
     mutationLeaseReady: boolean
+    missionId?: string
   },
 ): Promise<MissionReadinessReport> {
   const checks: ReadinessCheck[] = []
@@ -115,10 +116,10 @@ export async function evaluateMissionReadiness(
   const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(
     `SELECT mission_id, mission_label, lease_expires_at
      FROM public.action_resource_claims
-     WHERE organization_id = $1 AND resource_key = 'crm.lead_population'
+     WHERE organization_id = $1 AND ($2::UUID IS NULL OR mission_id <> $2) AND resource_key = 'crm.lead_population'
        AND scope = 'inactive_revenue_recovery' AND active = TRUE AND lease_expires_at > NOW()
      ORDER BY CASE mode WHEN 'exclusive' THEN 0 ELSE 1 END, acquired_at LIMIT 1`,
-    [input.organizationId],
+    [input.organizationId, input.missionId ?? null],
   )
   checks.push(resourceClaimReadinessCheck(claim.rows[0] ? {
     missionId: claim.rows[0].mission_id,
@@ -198,6 +199,21 @@ export function resourceClaimReadinessCheck(conflict: {
     message: `O recurso está reservado pela missão “${conflict.missionLabel}” até ${conflict.leaseExpiresAt}.`,
     fixHref: `/missions/${encodeURIComponent(conflict.missionId)}`,
   }
+}
+
+const FIX_ROUTE_AREAS = [
+  ['/platform/', 'platform'], ['/integrations', 'integrations'], ['/omnichannel/', 'omnichannel'],
+  ['/crm', 'crm'], ['/prospecting/', 'crm'], ['/missions/', 'missions'],
+] as const
+
+export function filterReadinessCorrectionLinks(checks: ReadinessCheck[], allowedAreas: readonly string[]): ReadinessCheck[] {
+  const allowed = new Set(allowedAreas)
+  return checks.map(item => {
+    if (!item.fixHref) return item
+    const area = FIX_ROUTE_AREAS.find(([prefix]) => item.fixHref!.startsWith(prefix))?.[1]
+    if (!area || !allowed.has(area)) { const { fixHref: _hidden, ...safe } = item; return safe }
+    return item
+  })
 }
 
 function positiveDecimal(value: string): boolean {

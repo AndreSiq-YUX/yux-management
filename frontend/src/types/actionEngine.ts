@@ -190,6 +190,34 @@ export interface MissionEconomics {
   humanFreeExecutionRate: string | 'not_applicable'
 }
 
+export interface MissionBudgetBurnDown {
+  currency: 'BRL'
+  envelopeVersion: number
+  actualCostBrl: string
+  reservedCostBrl: string
+  consumedCostBrl: string
+  remainingCostBrl: string
+  maximumCostBrl: string
+  consumedPercent: string
+  alertThresholds: Array<50 | 80 | 95>
+  nextAlertThreshold?: 50 | 80 | 95
+  exhausted: boolean
+}
+
+export interface MissionCapabilityControl {
+  capabilityKey: string
+  capabilityVersion: number
+  disabled: boolean
+  reason?: string
+}
+
+export interface MissionOperationalControls {
+  budget: MissionBudgetBurnDown
+  readiness: MissionReadiness
+  capabilities: MissionCapabilityControl[]
+  canManagePolicy: boolean
+}
+
 export interface MissionReadinessCheck {
   code: string
   status: 'pass' | 'warn' | 'block'

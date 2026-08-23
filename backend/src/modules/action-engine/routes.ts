@@ -1,12 +1,12 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { requireAuth } from '../../http/guards.js'
-import { requireAccess } from '../../policies/authorization.js'
+import { canAccess, requireAccess } from '../../policies/authorization.js'
 import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { validatePackParameters } from './action-pack.js'
 import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
-import { evaluateMissionReadiness } from './readiness.js'
+import { evaluateMissionReadiness, filterReadinessCorrectionLinks } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
   getPublishedActionPackVersion, publishActionPackVersion, transitionMission, updateMissionDraft,
@@ -20,6 +20,8 @@ import { releaseResourceClaims } from './resource-claims.js'
 import { buildActionEngineNfrSnapshot } from './operations-health.js'
 import { createSimulationReport, getPublicSimulationReport, getPublicSimulationReportPdf, recordSimulationFeedback, revokeSimulationReport } from './simulation-reports.js'
 import { DECISION_REASON_KEYS, exportDecisionFeedbackLearningEvidence } from './decision-feedback.js'
+import { collectMissionBudgetBurnDown } from './budget-alerts.js'
+import { listMissionCapabilityControls, setCapabilityControl } from './kill-switch-controls.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -523,6 +525,47 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     return internal ? economics : sanitizeEconomics(economics)
   })
 
+  app.get('/missions/:missionId/operational-controls', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const query = organizationQuery.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_operational_controls_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    const mission = await getMission(app.pg, params.data.missionId, query.data.organizationId)
+    if (!mission) return reply.code(404).send({ error: 'mission_not_found' })
+    const readiness = await evaluateMissionReadiness(app.pg, {
+      organizationId: query.data.organizationId, missionId: mission.id, contractId: mission.contractId,
+      targetRevenueBrl: String(mission.parameters.targetRevenueBrl ?? mission.goal.constraints.expectedValueBrl ?? '0'),
+      deadlineAt: mission.deadlineAt ?? mission.autonomyEnvelope.expiresAt,
+      maxTotalCostBrl: mission.autonomyEnvelope.maxTotalCostBrl,
+      maxHumanHours: mission.autonomyEnvelope.maxHumanHours,
+      humanHourlyRateBrl: String(mission.parameters.humanHourlyRateBrl ?? mission.budget.humanHourlyRateBrl ?? '100'),
+      agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL), mutationLeaseReady: Boolean(app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
+    })
+    const allowedAreas = [
+      canAccess(ctx, 'platform.manage', { organizationId: query.data.organizationId }) ? 'platform' : null,
+      canAccess(ctx, 'omnichannel.write', { organizationId: query.data.organizationId }) ? 'integrations' : null,
+      canAccess(ctx, 'omnichannel.write', { organizationId: query.data.organizationId }) ? 'omnichannel' : null,
+      canAccess(ctx, 'crm.write', { organizationId: query.data.organizationId }) ? 'crm' : null,
+      canAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId }) ? 'missions' : null,
+    ].filter((item): item is string => Boolean(item))
+    const [budget, capabilities] = await Promise.all([
+      collectMissionBudgetBurnDown(app.pg, mission.id, query.data.organizationId),
+      listMissionCapabilityControls(app.pg, { missionId: mission.id, organizationId: query.data.organizationId }),
+    ])
+    return { budget, readiness: { ...readiness, checks: filterReadinessCorrectionLinks(readiness.checks, allowedAreas) }, capabilities, canManagePolicy: canAccess(ctx, 'action_engine.policy.manage', { organizationId: query.data.organizationId }) }
+  })
+
+  app.post('/missions/:missionId/capability-controls', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const body = z.object({ organizationId: uuid, capabilityKey: z.string().min(1).max(200), capabilityVersion: z.number().int().positive(), disabled: z.boolean(), reason: z.string().trim().min(3).max(1000) }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_capability_control' })
+    requireAccess(ctx, 'action_engine.policy.manage', { organizationId: body.data.organizationId })
+    try { return await transaction(app.pg, client => setCapabilityControl(client, { ...body.data, missionId: params.data.missionId, actorId: ctx.userId })) }
+    catch (error) { return sendDomainError(reply, error) }
+  })
+
   app.get('/actions/:actionId', async (request, reply) => {
     const ctx = requireAuth(request)
     const params = z.object({ actionId: uuid }).safeParse(request.params)
@@ -724,6 +767,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     simulation_report_requires_shadow_mode: 409,
     decision_feedback_reason_required: 400, decision_feedback_reason_invalid: 400, decision_feedback_reason_not_allowed: 400,
     decision_feedback_comment_required: 400, decision_feedback_comment_too_long: 400,
+    mission_budget_maximum_invalid: 409, mission_capability_not_found: 404,
   }
   return reply.code(statusCode[code] ?? 500).send({ error: statusCode[code] ? code : 'internal_error' })
 }
