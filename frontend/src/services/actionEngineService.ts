@@ -3,6 +3,7 @@ import type {
   ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
   MissionPlan, MissionReadiness, MissionStatus,
+  PublicSimulationReport, SimulationReportShare,
 } from '@/types/actionEngine'
 
 function query(params: Record<string, string | number | undefined>) {
@@ -64,4 +65,14 @@ export const actionEngineService = {
   }),
   getMetrics: (missionId: string, organizationId: string) => apiRequest<MissionMetrics>(`${root}/missions/${missionId}/metrics?${query({ organizationId })}`),
   getEconomics: (missionId: string, organizationId: string) => apiRequest<MissionEconomics>(`${root}/missions/${missionId}/economics?${query({ organizationId })}`),
+  createSimulationReport: (mission: ActionMission, planId: string, expiresInDays: number) => apiRequest<SimulationReportShare>(`${root}/missions/${mission.id}/simulation-reports`, {
+    method: 'POST', body: { organizationId: mission.organizationId, planId, expiresInDays },
+  }),
+  revokeSimulationReport: (organizationId: string, reportId: string) => apiRequest<{ id: string; revoked: true }>(`${root}/simulation-reports/${reportId}/revoke`, {
+    method: 'POST', body: { organizationId },
+  }),
+  getPublicSimulationReport: (token: string) => apiRequest<PublicSimulationReport>(`${root}/public/simulation-reports/${encodeURIComponent(token)}`),
+  submitSimulationFeedback: (token: string, input: { reviewerName: string; decision: 'support' | 'request_changes' | 'reject'; reasonKey?: string; comment?: string }) =>
+    apiRequest<{ id: string; decision: string; createdAt: string; executionApproved: false }>(`${root}/public/simulation-reports/${encodeURIComponent(token)}/feedback`, { method: 'POST', body: input }),
+  simulationPdfHref: (token: string) => `/api${root}/public/simulation-reports/${encodeURIComponent(token)}/pdf`,
 }

@@ -240,3 +240,38 @@ export interface MissionContextPreview {
   sources: Array<{ id: string; title: string; category: 'knowledge' | 'strategy' | string }>
   createdAt: string | null
 }
+
+export interface SimulationReportSnapshot {
+  schemaVersion: 1
+  redactionVersion: 1
+  reportId: string
+  reportHash: string
+  missionTitle: string
+  objective: string
+  planRevision: number
+  changes: Array<{ quantity: number; label: string }>
+  contactImpact: { existingContacts: number; futureEligibleContacts: boolean; channels: string[] }
+  economics: { estimatedCostBrl: string; maximumCostBrl: string; estimatedHumanMinutes: number }
+  irreversibleEffects: Array<{ description: string }>
+  assumptions: Array<{ key: string; value: string; source: string }>
+  technicalProof: { packVersion: string; planHash: string; manifestHash: string; sourceCount: number }
+  createdAt: string
+  expiresAt: string
+  disclaimer: string
+}
+
+export interface SimulationReportShare {
+  id: string
+  token: string
+  url: string
+  expiresAt: string
+  reportHash: string
+  snapshot: SimulationReportSnapshot
+}
+
+export interface PublicSimulationReport {
+  id: string
+  reportHash: string
+  expiresAt: string
+  snapshot: SimulationReportSnapshot
+}

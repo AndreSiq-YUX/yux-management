@@ -86,6 +86,7 @@ const MissionsPage = lazy(() => import('@/pages/action-engine/MissionsPage').the
 const MissionDetailPage = lazy(() => import('@/pages/action-engine/MissionDetailPage').then(module => ({ default: module.MissionDetailPage })))
 const PortalMissionsPage = lazy(() => import('@/pages/client-portal/PortalMissionsPage').then(module => ({ default: module.PortalMissionsPage })))
 const PortalMissionDetailPage = lazy(() => import('@/pages/client-portal/PortalMissionDetailPage').then(module => ({ default: module.PortalMissionDetailPage })))
+const MissionSimulationReviewPage = lazy(() => import('@/pages/public/MissionSimulationReviewPage').then(module => ({ default: module.MissionSimulationReviewPage })))
 
 function LazyPage({ children }: { children: ReactNode }) {
   return <Suspense fallback={<main className="grid min-h-64 place-items-center text-sm text-slate-500">Carregando missões...</main>}>{children}</Suspense>
@@ -127,6 +128,7 @@ function App() {
         <Route index element={<Navigate to="/auth/login" replace />} />
       </Route>
       <Route path="/proposal/review/:token" element={<PublicProposalPage />} />
+      <Route path="/mission-simulation/review/:token" element={<LazyPage><MissionSimulationReviewPage /></LazyPage>} />
       <Route path="/webchat/session" element={<WebchatWidgetPage />} />
 
       {/* Protected routes */}

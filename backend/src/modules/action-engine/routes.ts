@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { requireAuth } from '../../http/guards.js'
 import { requireAccess } from '../../policies/authorization.js'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { validatePackParameters } from './action-pack.js'
 import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
@@ -17,12 +18,14 @@ import { collectMissionMetrics } from './evaluator.js'
 import { collectMissionEconomics } from './economics.js'
 import { releaseResourceClaims } from './resource-claims.js'
 import { buildActionEngineNfrSnapshot } from './operations-health.js'
+import { createSimulationReport, getPublicSimulationReport, getPublicSimulationReportPdf, recordSimulationFeedback, revokeSimulationReport } from './simulation-reports.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
 const status = z.enum(['draft','qualifying','planning','pending_plan_approval','ready','active','paused','blocked','evaluating','pending_replan_approval','succeeded','failed','expired','cancelled'])
 const organizationQuery = z.object({ organizationId: uuid })
 const missionParams = z.object({ missionId: uuid })
+const simulationTokenParams = z.object({ token: z.string().min(40).max(200) })
 const versionCommand = z.object({ organizationId: uuid, expectedVersion: z.number().int().positive(), reason: z.string().min(3).max(1000) })
 const missionGoal = z.object({
   statement: z.string().min(3).max(2000), requestedOutcome: z.string().min(1).max(200),
@@ -68,6 +71,35 @@ const missionPatch = z.object({
 }).refine((value) => value.title !== undefined || value.objective !== undefined || value.deadlineAt !== undefined || value.budget !== undefined)
 
 export async function registerActionEngineRoutes(app: FastifyInstance) {
+  app.get('/public/simulation-reports/:token', async (request, reply) => {
+    const parsed = simulationTokenParams.safeParse(request.params)
+    if (!parsed.success) return reply.code(404).send({ error: 'simulation_report_not_found' })
+    try { return await runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => getPublicSimulationReport(app.pg, parsed.data.token)) }
+    catch (error) { return sendSimulationError(reply, error) }
+  })
+
+  app.get('/public/simulation-reports/:token/pdf', async (request, reply) => {
+    const parsed = simulationTokenParams.safeParse(request.params)
+    if (!parsed.success) return reply.code(404).send({ error: 'simulation_report_not_found' })
+    try {
+      const report = await runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => getPublicSimulationReportPdf(app.pg, parsed.data.token))
+      return reply.type('application/pdf').header('Content-Disposition', `attachment; filename="simulacao-yux-${report.id}.pdf"`).send(report.pdf)
+    } catch (error) { return sendSimulationError(reply, error) }
+  })
+
+  app.post('/public/simulation-reports/:token/feedback', async (request, reply) => {
+    const params = simulationTokenParams.safeParse(request.params)
+    const body = z.object({
+      reviewerName: z.string().trim().min(2).max(100),
+      decision: z.enum(['support','request_changes','reject']),
+      reasonKey: z.string().trim().min(2).max(100).optional(),
+      comment: z.string().trim().max(2000).optional(),
+    }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_simulation_feedback' })
+    try { return reply.code(201).send(await runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => recordSimulationFeedback(app.pg, params.data.token, body.data))) }
+    catch (error) { return sendSimulationError(reply, error) }
+  })
+
   const registry = createActionEngineCapabilityRegistry()
 
   app.get('/capabilities', async (request) => {
@@ -173,6 +205,30 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       actionsByMode: Object.fromEntries(actionsByMode.rows.map(row => [row.mode, Number(row.count)])),
       nfr,
     }
+  })
+
+  app.post('/missions/:missionId/simulation-reports', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const body = z.object({ organizationId: uuid, planId: uuid, expiresInDays: z.number().int().min(1).max(7).default(7) }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_simulation_report_request' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try {
+      return reply.code(201).send(await createSimulationReport(app.pg, {
+        organizationId: body.data.organizationId, missionId: params.data.missionId,
+        planId: body.data.planId, createdBy: ctx.userId, expiresInDays: body.data.expiresInDays,
+      }))
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.post('/simulation-reports/:reportId/revoke', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = z.object({ reportId: uuid }).safeParse(request.params)
+    const body = organizationQuery.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_simulation_report_revoke' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try { return await revokeSimulationReport(app.pg, { reportId: params.data.reportId, organizationId: body.data.organizationId }) }
+    catch (error) { return sendDomainError(reply, error) }
   })
 
   app.post('/readiness', async (request, reply) => {
@@ -641,6 +697,17 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     approval_not_found: 404, approval_already_decided: 409, plan_approval_requires_version_context: 409,
     action_not_retryable: 409, action_skip_not_allowed: 409, action_not_human_task: 409,
     actual_minutes_required: 400, human_cost_rate_missing: 409,
+    simulation_plan_not_found: 404, simulation_report_not_found: 404,
+    simulation_report_requires_shadow_mode: 409,
   }
   return reply.code(statusCode[code] ?? 500).send({ error: statusCode[code] ? code : 'internal_error' })
+}
+
+function sendSimulationError(reply: FastifyReply, error: unknown) {
+  const code = error instanceof Error ? error.message : 'simulation_report_error'
+  const status = code === 'simulation_report_expired' ? 410
+    : code === 'simulation_report_revoked' ? 410
+      : code === 'simulation_report_token_invalid' ? 404
+        : 500
+  return reply.code(status).send({ error: status === 500 ? 'simulation_report_error' : code })
 }
