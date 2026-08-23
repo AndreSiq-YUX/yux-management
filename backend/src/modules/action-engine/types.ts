@@ -41,7 +41,42 @@ export type ActionRunStatus =
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested' | 'expired' | 'cancelled'
 export type OwnershipMode = 'observe' | 'shared' | 'exclusive'
 export type OwnershipConflictPolicy = 'allow_disjoint' | 'mission_wins' | 'block_new'
-export type MissionMode = 'shadow' | 'prepare' | 'assisted'
+export type MissionMode = 'shadow' | 'prepare' | 'assisted' | 'autonomous'
+
+export type MissionGoal = {
+  statement: string
+  requestedOutcome: string
+  scopeHints: string[]
+  constraints: Record<string, unknown>
+  acceptanceCriteria: Array<{ key: string; operator: string; target: string; unit: string }>
+}
+
+export type AutonomyEnvelope = {
+  mode: MissionMode
+  allowedModules: string[]
+  allowedCapabilityKeys: string[]
+  maxTotalCostBrl: string
+  maxHumanHours: string
+  maxExternalContacts?: number
+  expiresAt: string
+  alwaysRequireApprovalFor: string[]
+}
+
+export type MissionContextSnapshot = {
+  id: string
+  organizationId: string
+  missionId: string
+  contextHash: string
+  query: string
+  companyContext: Record<string, unknown>
+  knowledgeItems: Array<Record<string, unknown>>
+  strategyItems: Array<Record<string, unknown>>
+  liveState: Record<string, unknown>
+  capabilityManifest: Array<Record<string, unknown>>
+  capabilityCatalogHash: string
+  sourceIds: string[]
+  createdAt: string
+}
 
 export type DecimalString = `${number}`
 
@@ -71,6 +106,9 @@ export type ActionMission = {
   mode: MissionMode
   title: string
   objective: string
+  goal: MissionGoal
+  autonomyEnvelope: AutonomyEnvelope
+  packSelection: Record<string, unknown>
   parameters: Record<string, unknown>
   budget: Record<string, unknown>
   deadlineAt?: string

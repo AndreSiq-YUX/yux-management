@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { recordDomainEvent } from '../events/repository.js'
 import type { DomainEventActor } from '../events/types.js'
 import { assertMissionTransition } from './state-machine.js'
-import type { ActionMission, ActionPlanStep, MissionMode, MissionStatus } from './types.js'
+import type { ActionMission, ActionPlanStep, AutonomyEnvelope, MissionContextSnapshot, MissionGoal, MissionMode, MissionStatus } from './types.js'
 import type { CapabilityManifestEntry } from './capability-manifest.js'
 
 export type Queryable = {
@@ -22,6 +22,9 @@ type MissionRow = {
   mode: MissionMode
   title: string
   objective: string
+  goal: MissionGoal | null
+  autonomy_envelope: AutonomyEnvelope | null
+  pack_selection: Record<string, unknown> | null
   parameters: Record<string, unknown>
   budget: Record<string, unknown>
   deadline_at: string | Date | null
@@ -33,7 +36,7 @@ type MissionRow = {
 }
 
 const MISSION_COLUMNS = `id, organization_id, contract_id, pack_version_id, status, mode,
-  title, objective, parameters, budget, deadline_at, active_plan_id, version,
+  title, objective, goal, autonomy_envelope, pack_selection, parameters, budget, deadline_at, active_plan_id, version,
   created_by, created_at, updated_at`
 
 export async function createMission(
@@ -44,6 +47,9 @@ export async function createMission(
     packVersionId: string
     title: string
     objective: string
+    goal?: MissionGoal
+    autonomyEnvelope?: AutonomyEnvelope
+    packSelection?: Record<string, unknown>
     mode?: MissionMode
     parameters?: Record<string, unknown>
     budget?: Record<string, unknown>
@@ -56,13 +62,14 @@ export async function createMission(
     const result = await client.query<MissionRow>(
       `INSERT INTO public.action_missions (
          organization_id, contract_id, pack_version_id, title, objective, mode,
-         parameters, budget, deadline_at, created_by, create_idempotency_key
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         goal, autonomy_envelope, pack_selection, parameters, budget, deadline_at, created_by, create_idempotency_key
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (organization_id, create_idempotency_key) DO NOTHING
        RETURNING ${MISSION_COLUMNS}`,
       [input.organizationId, input.contractId ?? null, input.packVersionId, input.title.trim(),
-        input.objective.trim(), input.mode ?? 'assisted', input.parameters ?? {}, input.budget ?? {},
-        input.deadlineAt ?? null, input.createdBy, input.idempotencyKey],
+        input.objective.trim(), input.mode ?? 'assisted', input.goal ?? {}, input.autonomyEnvelope ?? {},
+        input.packSelection ?? {}, input.parameters ?? {}, input.budget ?? {}, input.deadlineAt ?? null,
+        input.createdBy, input.idempotencyKey],
     )
     let row = result.rows[0]
     if (!row) {
@@ -97,6 +104,69 @@ export async function getMission(client: Queryable, missionId: string, organizat
     [missionId, organizationId],
   )
   return result.rows[0] ? mapMission(result.rows[0]) : null
+}
+
+type ContextSnapshotRow = {
+  id: string; organization_id: string; mission_id: string; context_hash: string; query: string;
+  company_context: Record<string, unknown>; knowledge_items: Array<Record<string, unknown>>;
+  strategy_items: Array<Record<string, unknown>>; live_state: Record<string, unknown>;
+  capability_manifest: Array<Record<string, unknown>>; capability_catalog_hash: string;
+  source_ids: string[]; created_at: string | Date;
+}
+
+export async function insertMissionContextSnapshot(client: Queryable, input: {
+  organizationId: string
+  missionId: string
+  query: string
+  companyContext: Record<string, unknown>
+  knowledgeItems: Array<Record<string, unknown>>
+  strategyItems: Array<Record<string, unknown>>
+  liveState: Record<string, unknown>
+  capabilityManifest: Array<Record<string, unknown>>
+  capabilityCatalogHash: string
+  sourceIds: string[]
+}): Promise<MissionContextSnapshot> {
+  const canonical = {
+    query: input.query.trim(), companyContext: input.companyContext,
+    knowledgeItems: input.knowledgeItems, strategyItems: input.strategyItems,
+    liveState: input.liveState, capabilityManifest: input.capabilityManifest,
+    capabilityCatalogHash: input.capabilityCatalogHash, sourceIds: [...new Set(input.sourceIds)].sort(),
+  }
+  const contextHash = hashCanonical(canonical)
+  const inserted = await client.query<ContextSnapshotRow>(
+    `INSERT INTO public.action_mission_context_snapshots (
+       organization_id, mission_id, context_hash, query, company_context, knowledge_items,
+       strategy_items, live_state, capability_manifest, capability_catalog_hash, source_ids
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (mission_id, context_hash) DO NOTHING RETURNING *`,
+    [input.organizationId, input.missionId, contextHash, canonical.query, canonical.companyContext,
+      canonical.knowledgeItems, canonical.strategyItems, canonical.liveState, canonical.capabilityManifest,
+      canonical.capabilityCatalogHash, canonical.sourceIds],
+  )
+  let row = inserted.rows[0]
+  if (!row) {
+    const existing = await client.query<ContextSnapshotRow>(
+      `SELECT * FROM public.action_mission_context_snapshots
+       WHERE organization_id = $1 AND mission_id = $2 AND context_hash = $3 LIMIT 1`,
+      [input.organizationId, input.missionId, contextHash],
+    )
+    row = existing.rows[0]
+  }
+  if (!row) throw new Error('mission_context_snapshot_insert_failed')
+  return mapContextSnapshot(row)
+}
+
+export async function getMissionContextSnapshot(
+  client: Queryable,
+  snapshotId: string,
+  organizationId: string,
+): Promise<MissionContextSnapshot | null> {
+  const result = await client.query<ContextSnapshotRow>(
+    `SELECT * FROM public.action_mission_context_snapshots
+     WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+    [snapshotId, organizationId],
+  )
+  return result.rows[0] ? mapContextSnapshot(result.rows[0]) : null
 }
 
 export async function listMissions(
@@ -634,6 +704,10 @@ function stableSerialize(value: unknown): string {
 }
 
 function mapMission(row: MissionRow): ActionMission {
+  const goal = row.goal && Object.keys(row.goal).length > 0 ? row.goal : legacyGoal(row)
+  const autonomyEnvelope = row.autonomy_envelope && Object.keys(row.autonomy_envelope).length > 0
+    ? row.autonomy_envelope
+    : legacyAutonomyEnvelope(row)
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -643,6 +717,9 @@ function mapMission(row: MissionRow): ActionMission {
     mode: row.mode,
     title: row.title,
     objective: row.objective,
+    goal,
+    autonomyEnvelope,
+    packSelection: row.pack_selection ?? {},
     parameters: row.parameters ?? {},
     budget: row.budget ?? {},
     ...(row.deadline_at ? { deadlineAt: toIso(row.deadline_at) } : {}),
@@ -651,6 +728,39 @@ function mapMission(row: MissionRow): ActionMission {
     createdBy: row.created_by,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
+  }
+}
+
+function mapContextSnapshot(row: ContextSnapshotRow): MissionContextSnapshot {
+  return {
+    id: row.id, organizationId: row.organization_id, missionId: row.mission_id,
+    contextHash: row.context_hash, query: row.query, companyContext: row.company_context ?? {},
+    knowledgeItems: row.knowledge_items ?? [], strategyItems: row.strategy_items ?? [],
+    liveState: row.live_state ?? {}, capabilityManifest: row.capability_manifest ?? [],
+    capabilityCatalogHash: row.capability_catalog_hash, sourceIds: row.source_ids ?? [],
+    createdAt: toIso(row.created_at),
+  }
+}
+
+function legacyGoal(row: MissionRow): MissionGoal {
+  return {
+    statement: row.objective,
+    requestedOutcome: 'recovered_revenue',
+    scopeHints: ['crm'],
+    constraints: {},
+    acceptanceCriteria: [],
+  }
+}
+
+function legacyAutonomyEnvelope(row: MissionRow): AutonomyEnvelope {
+  return {
+    mode: row.mode,
+    allowedModules: ['crm'],
+    allowedCapabilityKeys: [],
+    maxTotalCostBrl: String(row.budget?.maxTotalCostBrl ?? '0'),
+    maxHumanHours: String(row.budget?.maxHumanHours ?? '0'),
+    ...(row.deadline_at ? { expiresAt: toIso(row.deadline_at) } : { expiresAt: new Date(0).toISOString() }),
+    alwaysRequireApprovalFor: ['external','irreversible'],
   }
 }
 

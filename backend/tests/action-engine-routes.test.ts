@@ -35,6 +35,15 @@ class Pool {
         active_plan_id: null, version: 2, created_by: 'user-1', created_at: new Date(), updated_at: new Date(),
       }] as T[] }
     }
+    if (sql.includes('FROM public.action_missions') && sql.includes('LIMIT 1')) {
+      return { rows: [{
+        id: missionId, organization_id: orgA, contract_id: null,
+        pack_version_id: '00000000-0000-4000-8000-000000000004', status: 'draft', mode: 'assisted',
+        title: 'Missão legada', objective: 'Recuperar receita', goal: {}, autonomy_envelope: {}, pack_selection: {},
+        parameters: {}, budget: { maxTotalCostBrl: '1000', maxHumanHours: '10' }, deadline_at: null,
+        active_plan_id: null, version: 1, created_by: 'user-1', created_at: new Date(), updated_at: new Date(),
+      }] as T[] }
+    }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
   async connect() { return { query: this.query.bind(this), release() {} } }
@@ -67,6 +76,18 @@ describe('Action Engine routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json().some((item: { key: string }) => item.key === 'crm.recovery_candidates.search')).toBe(true)
     expect(response.json().every((item: Record<string, unknown>) => !Object.prototype.hasOwnProperty.call(item, 'execute'))).toBe(true)
+  })
+
+  it('maps legacy missions to safe generic goal and autonomy defaults', async () => {
+    const session = auth('yux_admin')
+    app = await buildServer(env, { authStore: session.store, pool: new Pool() as never, jobQueue: queue })
+    const response = await app.inject({ method: 'GET', url: `/api/action-engine/missions/${missionId}?organizationId=${orgA}`, headers: session.headers })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      goal: { statement: 'Recuperar receita', requestedOutcome: 'recovered_revenue' },
+      autonomyEnvelope: { mode: 'assisted', maxTotalCostBrl: '1000', maxHumanHours: '10' },
+      packSelection: {},
+    })
   })
 
   it('denies lifecycle writes to client users and cross-organization reads', async () => {

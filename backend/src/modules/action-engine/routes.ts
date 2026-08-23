@@ -8,7 +8,7 @@ import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { evaluateMissionReadiness } from './readiness.js'
 import {
   approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
-  publishActionPackVersion, transitionMission, updateMissionDraft,
+  getPublishedActionPackVersion, publishActionPackVersion, transitionMission, updateMissionDraft,
   type Queryable,
 } from './repository.js'
 import type { MissionStatus } from './types.js'
@@ -23,10 +23,24 @@ const status = z.enum(['draft','qualifying','planning','pending_plan_approval','
 const organizationQuery = z.object({ organizationId: uuid })
 const missionParams = z.object({ missionId: uuid })
 const versionCommand = z.object({ organizationId: uuid, expectedVersion: z.number().int().positive(), reason: z.string().min(3).max(1000) })
+const missionGoal = z.object({
+  statement: z.string().min(3).max(2000), requestedOutcome: z.string().min(1).max(200),
+  scopeHints: z.array(z.string().min(1).max(100)).max(20).default([]),
+  constraints: z.record(z.string(), z.unknown()).default({}),
+  acceptanceCriteria: z.array(z.object({ key: z.string().min(1), operator: z.string().min(1), target: z.string(), unit: z.string() })).max(50).default([]),
+})
+const autonomyEnvelope = z.object({
+  mode: z.enum(['shadow','prepare','assisted','autonomous']),
+  allowedModules: z.array(z.string().min(1)).max(50), allowedCapabilityKeys: z.array(z.string().min(1)).max(500),
+  maxTotalCostBrl: decimal, maxHumanHours: decimal, maxExternalContacts: z.number().int().nonnegative().optional(),
+  expiresAt: z.string().datetime(), alwaysRequireApprovalFor: z.array(z.string().min(1)).max(100),
+})
 const missionCreate = z.object({
   organizationId: uuid, contractId: uuid.optional(), packKey: z.literal('revenue_recovery').default('revenue_recovery'),
-  semanticVersion: z.literal('0.2.0').default('0.2.0'), title: z.string().min(3).max(200), objective: z.string().min(3).max(2000),
-  mode: z.enum(['shadow','prepare','assisted']).default('assisted'), deadlineAt: z.string().datetime(),
+  semanticVersion: z.enum(['0.1.0','0.2.0']).default('0.2.0'), title: z.string().min(3).max(200), objective: z.string().min(3).max(2000),
+  mode: z.enum(['shadow','prepare','assisted','autonomous']).default('assisted'), deadlineAt: z.string().datetime(),
+  goal: missionGoal.optional(), autonomyEnvelope: autonomyEnvelope.optional(),
+  packSelection: z.record(z.string(), z.unknown()).optional(),
   parameters: z.object({
     targetRevenueBrl: decimal, deadlineDays: z.number().int().min(1).max(180).default(30),
     inactiveDays: z.number().int().min(7).max(3650).default(60), canarySize: z.number().int().min(1).max(20).default(20),
@@ -59,8 +73,13 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/action-packs/:packKey/versions/:semanticVersion', async (request, reply) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    const parsed = z.object({ packKey: z.literal('revenue_recovery'), semanticVersion: z.literal('0.2.0') }).safeParse(request.params)
+    const parsed = z.object({ packKey: z.literal('revenue_recovery'), semanticVersion: z.enum(['0.1.0','0.2.0']) }).safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'action_pack_not_found' })
+    if (parsed.data.semanticVersion === '0.1.0') {
+      const legacy = await getPublishedActionPackVersion(app.pg, parsed.data.packKey, parsed.data.semanticVersion)
+      if (!legacy) return reply.code(404).send({ error: 'action_pack_not_found' })
+      return { ...legacy.definition, contentHash: legacy.content_hash }
+    }
     return publicPack(REVENUE_RECOVERY_PACK_V0)
   })
 
@@ -139,10 +158,23 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'mission_channel_not_enabled_for_pilot' })
     }
     try {
-      const packVersion = await ensurePackVersion(app.pg, ctx.userId)
+      const packVersion = parsed.data.semanticVersion === REVENUE_RECOVERY_PACK_V0.semanticVersion
+        ? await ensurePackVersion(app.pg, ctx.userId)
+        : await getPublishedActionPackVersion(app.pg, parsed.data.packKey, parsed.data.semanticVersion)
+      if (!packVersion) return reply.code(404).send({ error: 'action_pack_not_found' })
       const mission = await createMission(app.pg as never, {
         organizationId: parsed.data.organizationId, contractId: parsed.data.contractId, packVersionId: packVersion.id,
         title: parsed.data.title, objective: parsed.data.objective, mode: parsed.data.mode, parameters: parameterResult.data,
+        goal: parsed.data.goal ?? {
+          statement: parsed.data.objective, requestedOutcome: 'recovered_revenue', scopeHints: ['crm'],
+          constraints: {}, acceptanceCriteria: [{ key: 'recovered_revenue_brl', operator: 'gte', target: parameterResult.data.targetRevenueBrl, unit: 'BRL' }],
+        },
+        autonomyEnvelope: parsed.data.autonomyEnvelope ?? {
+          mode: parsed.data.mode, allowedModules: ['crm'], allowedCapabilityKeys: [],
+          maxTotalCostBrl: parameterResult.data.maxTotalCostBrl, maxHumanHours: parameterResult.data.maxHumanHours,
+          expiresAt: parsed.data.deadlineAt, alwaysRequireApprovalFor: ['external','irreversible'],
+        },
+        packSelection: parsed.data.packSelection ?? { strategy: 'explicit', packs: [{ key: parsed.data.packKey, version: parsed.data.semanticVersion }] },
         budget: {
           maxTotalCostBrl: parameterResult.data.maxTotalCostBrl, maxHumanHours: parameterResult.data.maxHumanHours,
           humanHourlyRateBrl: parameterResult.data.humanHourlyRateBrl,
