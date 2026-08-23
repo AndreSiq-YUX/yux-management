@@ -37,6 +37,17 @@ export interface MissionClarificationQuestion {
   defaultSourceId?: string
 }
 
+export interface MissionDecisionSummary {
+  headline: string
+  changes: Array<{ entityType: string; operation: string; quantity: number; label: string }>
+  contactImpact: { existingContacts: number; futureEligibleContacts: boolean; channels: string[] }
+  economics: { estimatedCostBrl: string; maximumCostBrl: string; estimatedHumanMinutes: number }
+  irreversibleEffects: Array<{ capabilityKey: string; description: string }>
+  assumptions: Array<{ key: string; value: string; source: 'company_context' | 'user' | 'pack_default' }>
+  technicalProof: { planRevision: number; planHash: string; manifestHash: string; sourceCount: number }
+  decisionSubjectHash: string
+}
+
 export interface ActionMission {
   id: string
   organizationId: string
@@ -96,6 +107,7 @@ export interface MissionPlanStep {
   position?: number
   capabilityKey: string
   capabilityVersion: number
+  capabilityDefinitionHash?: string
   dependsOn: string[]
   parameters: Record<string, unknown>
   approvalRequired: boolean
@@ -112,9 +124,19 @@ export interface MissionPlan {
   packVersionId: string
   packContentHash: string
   planHash: string
+  capabilityManifest?: Array<{
+    key: string
+    version: number
+    definitionHash: string
+    effect: 'none' | 'draft' | 'internal' | 'external' | 'destructive'
+    recoveryKind: 'compensatable' | 'pausable' | 'irreversible'
+  }>
+  capabilityManifestHash?: string
   parameters: Record<string, unknown>
   deviations: Array<{ extensionPoint: string; rationale: string }>
   estimatedEconomics: Record<string, unknown>
+  proposedPayload?: Record<string, unknown>
+  compiledPayload?: Record<string, unknown>
   steps?: MissionPlanStep[]
   approvedAt?: string
   createdAt: string
