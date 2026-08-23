@@ -195,6 +195,11 @@
           "title": "Kind",
           "type": "string"
         },
+        "plan": {
+          "default": null,
+          "title": "Plan",
+          "type": "null"
+        },
         "questions": {
           "items": {
             "$ref": "#/$defs/ClarificationQuestionWire"
@@ -202,6 +207,13 @@
           "maxItems": 3,
           "minItems": 1,
           "title": "Questions",
+          "type": "array"
+        },
+        "selectedPacks": {
+          "items": {
+            "$ref": "#/$defs/SelectedPackWire"
+          },
+          "title": "Selectedpacks",
           "type": "array"
         },
         "sourceIds": {
@@ -344,6 +356,13 @@
           "title": "Organization Id",
           "type": "string"
         },
+        "pack_catalog": {
+          "items": {
+            "$ref": "#/$defs/ActionPackWire"
+          },
+          "title": "Pack Catalog",
+          "type": "array"
+        },
         "planning_budget": {
           "anyOf": [
             {
@@ -470,12 +489,20 @@
           "type": "object"
         },
         "kind": {
-          "const": "proposal",
+          "const": "plan",
           "title": "Kind",
           "type": "string"
         },
         "plan": {
           "$ref": "#/$defs/PlanWire"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/ClarificationQuestionWire"
+          },
+          "maxItems": 0,
+          "title": "Questions",
+          "type": "array"
         },
         "selectedPacks": {
           "items": {

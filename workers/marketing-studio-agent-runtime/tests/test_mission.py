@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from yux_agent_runtime.api import create_app
 from yux_agent_runtime.contracts import AgentContractError, validate_mission_plan
 from yux_agent_runtime.mission import plan_mission
+from yux_agent_runtime.mission_supervisor import MissionSupervisorError
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 
 
@@ -71,6 +72,13 @@ class MissionPlanContractTests(unittest.TestCase):
         self.assertEqual(result["trace"]["workflowKey"], "mission_revenue_recovery_pack_v0")
         self.assertEqual(result["trace"]["steps"], ["planner", "contract_verifier"])
 
+    def test_generic_pack_never_uses_the_legacy_deterministic_fallback(self) -> None:
+        value = planning_input()
+        value.pop("proposed_plan")
+        value["action_pack"].update({"key": "crm_funnel", "semanticVersion": "1.0.0"})
+        with self.assertRaisesRegex(MissionSupervisorError, "mission_supervisor_model_unavailable"):
+            plan_mission(value)
+
     def test_endpoint_requires_bearer_and_tenant(self) -> None:
         client = TestClient(create_app(store=InMemoryAgentRuntimeStore()))
         payload = planning_input()
@@ -83,6 +91,19 @@ class MissionPlanContractTests(unittest.TestCase):
         )
         self.assertEqual(accepted.status_code, 200)
         self.assertEqual(accepted.json()["plan"]["missionId"], "mission-1")
+
+    def test_endpoint_rejects_invalid_tenant_before_planning(self) -> None:
+        class RejectingTenantStore(InMemoryAgentRuntimeStore):
+            def validate_tenant(self, organization_id, client_id=None, contract_id=None):
+                return False
+
+        client = TestClient(create_app(store=RejectingTenantStore()))
+        response = client.post(
+            "/missions/plan",
+            json=planning_input(),
+            headers={"Authorization": f"Bearer {os.environ['YUX_AGENT_RUNTIME_TOKEN']}"},
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

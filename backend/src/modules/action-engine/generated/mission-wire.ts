@@ -17,6 +17,7 @@ export type Observations = {
   [k: string]: unknown
 }[]
 export type OrganizationId = string
+export type PackCatalog = ActionPackWire[]
 export type PlanningBudget = {
   [k: string]: unknown
 } | null
@@ -28,6 +29,7 @@ export type ProposedPlan = {
 } | null
 export type MissionPlanResponseWire = ClarificationResponseWire | PlanProposalResponseWire
 export type Kind = 'clarification'
+export type Plan = null
 /**
  * @minItems 1
  * @maxItems 3
@@ -43,11 +45,15 @@ export type Key2 = string
 export type Label = string
 export type Priority = number
 export type Whyneeded = string
-export type Sourceids = string[]
-export type Kind1 = 'proposal'
+export type Contenthash1 = string
 export type Key3 = string
-export type Templatehash = string
 export type Version1 = string
+export type Selectedpacks = SelectedPackWire[]
+export type Sourceids = string[]
+export type Kind1 = 'plan'
+export type Key4 = string
+export type Templatehash = string
+export type Version2 = string
 export type Assumptions = string[]
 export type Extensionpoint = string
 export type Rationale = string
@@ -77,12 +83,13 @@ export type Path = string
 export type Stepkey = string
 export type Timeoutseconds = number
 /**
+ * @maxItems 0
+ */
+export type Questions1 = []
+/**
  * @minItems 1
  */
-export type Selectedpacks = [SelectedPackWire, ...SelectedPackWire[]]
-export type Contenthash1 = string
-export type Key4 = string
-export type Version2 = string
+export type Selectedpacks1 = [SelectedPackWire, ...SelectedPackWire[]]
 export type Sourceids1 = string[]
 
 export interface YUXMissionSupervisorWireContractV1 {
@@ -101,6 +108,7 @@ export interface MissionPlanRequestWire {
   mission: Mission
   observations?: Observations
   organization_id: OrganizationId
+  pack_catalog?: PackCatalog
   planning_budget?: PlanningBudget
   previous_revision?: PreviousRevision
   proposed_plan?: ProposedPlan
@@ -141,7 +149,9 @@ export interface StrategyContext {
 export interface ClarificationResponseWire {
   interpretation: Interpretation
   kind: Kind
+  plan?: Plan
   questions: Questions
+  selectedPacks?: Selectedpacks
   sourceIds?: Sourceids
 }
 export interface Interpretation {
@@ -156,11 +166,17 @@ export interface ClarificationQuestionWire {
   priority: Priority
   whyNeeded: Whyneeded
 }
+export interface SelectedPackWire {
+  contentHash: Contenthash1
+  key: Key3
+  version: Version1
+}
 export interface PlanProposalResponseWire {
   interpretation: Interpretation1
   kind: Kind1
   plan: PlanWire
-  selectedPacks: Selectedpacks
+  questions?: Questions1
+  selectedPacks: Selectedpacks1
   sourceIds?: Sourceids1
 }
 export interface Interpretation1 {
@@ -179,9 +195,9 @@ export interface PlanWire {
   steps: Steps
 }
 export interface ActionPackReferenceWire {
-  key: Key3
+  key: Key4
   templateHash: Templatehash
-  version: Version1
+  version: Version2
 }
 export interface PlanDeviationWire {
   extensionPoint: Extensionpoint
@@ -219,9 +235,4 @@ export interface Outputbindings {
 export interface OutputBindingWire {
   fromStep: Fromstep
   path: Path
-}
-export interface SelectedPackWire {
-  contentHash: Contenthash1
-  key: Key4
-  version: Version2
 }

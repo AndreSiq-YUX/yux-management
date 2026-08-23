@@ -3,8 +3,9 @@ import { validateMissionPlanResponseWire } from '../src/modules/action-engine/mi
 
 function proposal(): unknown {
   return {
-    kind: 'proposal',
+    kind: 'plan',
     interpretation: { requestedOutcome: 'Criar um funil e uma sequência de nutrição' },
+    questions: [],
     selectedPacks: [{ key: 'funnel_nurture', version: '1.0.0', contentHash: 'a'.repeat(64) }],
     sourceIds: ['knowledge-1'],
     plan: {

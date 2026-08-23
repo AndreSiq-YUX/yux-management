@@ -11,9 +11,10 @@ from pydantic import BaseModel, Field
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
 from .providers import ProviderRequestError
-from .runtime_factory import build_strategy_workflow_engine
+from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .mission import MissionPlanRequest, plan_mission
+from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
 
 
@@ -91,6 +92,7 @@ def require_runtime_token(authorization: str | None = Header(default=None)) -> N
 def create_app(
     store: AgentRuntimeStore | None = None,
     knowledge_service: KnowledgeIntelligenceService | None = None,
+    mission_supervisor: MissionSupervisor | None = None,
 ) -> FastAPI:
     if not _runtime_token():
         raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
@@ -101,12 +103,19 @@ def create_app(
     # lazily from Postgres so health checks do not depend on OpenRouter or RAG.
     engine: StrategyWorkflowEngine | None = StrategyWorkflowEngine(runtime_store) if store is not None else None
     curator = knowledge_service or KnowledgeIntelligenceService.from_env()
+    supervisor = mission_supervisor
 
     def workflow_engine() -> StrategyWorkflowEngine:
         nonlocal engine
         if engine is None:
             engine = build_strategy_workflow_engine(runtime_store)
         return engine
+
+    def mission_planner() -> MissionSupervisor:
+        nonlocal supervisor
+        if supervisor is None:
+            supervisor = build_mission_supervisor(runtime_store)
+        return supervisor
 
     def validate_tenant(organization_id: str | None, client_id: str | None = None, contract_id: str | None = None) -> None:
         if not organization_id:
@@ -170,7 +179,14 @@ def create_app(
         validate_tenant(request.organization_id, request.client_id, request.contract_id)
         # The harness returns a proposal only. It never persists Action Engine
         # rows or produces an external effect.
-        return plan_mission(request.model_dump())
+        try:
+            return plan_mission(
+                request.model_dump(),
+                None if request.proposed_plan is not None else mission_planner(),
+            )
+        except MissionSupervisorError as error:
+            status_code = 503 if str(error) == "mission_supervisor_model_unavailable" else 422
+            raise HTTPException(status_code=status_code, detail=str(error)) from error
 
     @app.post("/knowledge/curate", dependencies=[Depends(require_runtime_token)])
     def curate_knowledge(request: CurateKnowledgeRequest) -> dict[str, Any]:

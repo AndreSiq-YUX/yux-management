@@ -6,6 +6,7 @@ from typing import Any
 
 from .contracts import validate_mission_plan
 from .mission_contracts import MissionPlanRequestWire
+from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .planning_budget import decision_from_wire
 
 
@@ -22,6 +23,7 @@ def compose_mission_planning_prompt(value: dict[str, Any]) -> dict[str, Any]:
         ),
         "mission": {key: mission.get(key) for key in ("id", "objective", "parameters", "budget", "deadlineAt")},
         "actionPack": value.get("action_pack") or {},
+        "packCatalog": value.get("pack_catalog") or [value.get("action_pack") or {}],
         "readiness": value.get("readiness") or {},
         "baseline": value.get("baseline") or {},
         "capabilities": value.get("capabilities") or [],
@@ -32,7 +34,7 @@ def compose_mission_planning_prompt(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def plan_mission(value: dict[str, Any]) -> dict[str, Any]:
+def plan_mission(value: dict[str, Any], supervisor: MissionSupervisor | None = None) -> dict[str, Any]:
     """Instantiate the protected pack and validate the untrusted proposal.
 
     `proposed_plan` is the provider boundary: production callers may populate it
@@ -52,7 +54,19 @@ def plan_mission(value: dict[str, Any]) -> dict[str, Any]:
                 "recommendation": "human_review",
                 "trace": {"profile": "growth_strategist", "steps": [], "promptEnvelope": prompt},
             }
-    proposal = deepcopy(value.get("proposed_plan")) if value.get("proposed_plan") else _canonical_proposal(value)
+    if value.get("proposed_plan"):
+        proposal = deepcopy(value["proposed_plan"])
+    elif supervisor is not None:
+        try:
+            return supervisor.propose(value)
+        except MissionSupervisorError as error:
+            if str(error) != "mission_supervisor_model_unavailable" or not _supports_legacy_fallback(value):
+                raise
+            proposal = _canonical_proposal(value)
+    elif _supports_legacy_fallback(value):
+        proposal = _canonical_proposal(value)
+    else:
+        raise MissionSupervisorError("mission_supervisor_model_unavailable")
     validated = validate_mission_plan(proposal, value)
     return {
         "plan": validated,
@@ -63,6 +77,11 @@ def plan_mission(value: dict[str, Any]) -> dict[str, Any]:
             "promptEnvelope": prompt,
         },
     }
+
+
+def _supports_legacy_fallback(value: dict[str, Any]) -> bool:
+    pack = value.get("action_pack") or {}
+    return pack.get("key") == "revenue_recovery" and str(pack.get("semanticVersion") or "").startswith("0.")
 
 
 def _canonical_proposal(value: dict[str, Any]) -> dict[str, Any]:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from decimal import Decimal
+from hashlib import sha256
 from typing import Any
 
 from .harness import Harness
@@ -11,9 +13,41 @@ from .runtime_store import AgentRuntimeStore
 from .workflow import StrategyWorkflowEngine
 from .customer_context import CustomerContextService
 from .embedding import QueryEmbeddingService
+from .mission_supervisor import MissionSupervisor
+from .model_profiles import ModelProfile
 
 
 DEFAULT_MODEL = "openai/gpt-4.1-mini"
+
+
+def build_mission_supervisor(
+    store: AgentRuntimeStore,
+    llm_client: OpenRouterClient | None = None,
+) -> MissionSupervisor:
+    routes = _active(store.list("model_routing_rules", limit=500))
+    route = next(
+        (
+            item for item in routes
+            if item.get("agent_type") == "mission_supervisor"
+            and not item.get("organization_id")
+            and item.get("routing_tier", "default") == "default"
+        ),
+        {},
+    )
+    model = str(route.get("model_name") or os.getenv("OPENROUTER_MISSION_SUPERVISOR_MODEL") or os.getenv("OPENROUTER_DEFAULT_MODEL") or DEFAULT_MODEL)
+    profile = ModelProfile(
+        key="mission_supervisor",
+        version=int(route.get("version") or 1),
+        provider=str(route.get("provider") or "openrouter"),
+        model=model,
+        temperature=float(route.get("temperature") if route.get("temperature") is not None else 0),
+        max_tokens=int(route.get("max_output_tokens") or 2400),
+        timeout_seconds=int(route.get("timeout_seconds") or 45),
+        max_cost_brl=Decimal(str(route.get("max_cost_per_run") or "0")),
+        fallback_profile_keys=[],
+        prompt_bundle_hash=sha256(b"yux-mission-supervisor-v1").hexdigest(),
+    )
+    return MissionSupervisor(llm_client or OpenRouterClient.from_env(), profile)
 
 
 def _active(records: list[dict[str, Any]]) -> list[dict[str, Any]]:

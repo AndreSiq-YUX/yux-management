@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 
 MISSION_WIRE_SCHEMA_ID = "https://yux.app/contracts/mission-supervisor/v1/mission-wire.schema.json"
 
 
 class StrictWireModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
 class CapabilityWire(StrictWireModel):
@@ -34,6 +34,7 @@ class MissionPlanRequestWire(StrictWireModel):
     contract_id: str | None = None
     mission: dict[str, Any]
     action_pack: ActionPackWire
+    pack_catalog: list[ActionPackWire] = Field(default_factory=list)
     readiness: dict[str, Any]
     baseline: dict[str, Any] = Field(default_factory=dict)
     capabilities: list[CapabilityWire]
@@ -118,15 +119,38 @@ class ClarificationResponseWire(StrictWireModel):
     kind: Literal["clarification"]
     interpretation: dict[str, Any]
     questions: list[ClarificationQuestionWire] = Field(min_length=1, max_length=3)
+    selectedPacks: list[SelectedPackWire] = Field(default_factory=list)
     sourceIds: list[str] = Field(default_factory=list)
+    plan: None = None
 
 
 class PlanProposalResponseWire(StrictWireModel):
-    kind: Literal["proposal"]
+    kind: Literal["plan"]
     interpretation: dict[str, Any]
+    questions: list[ClarificationQuestionWire] = Field(default_factory=list, max_length=0)
     selectedPacks: list[SelectedPackWire] = Field(min_length=1)
     sourceIds: list[str] = Field(default_factory=list)
     plan: PlanWire
+
+
+class MissionSupervisorProposal(StrictWireModel):
+    """Provider-facing proposal before the deterministic compiler trusts it."""
+
+    kind: Literal["clarification", "plan"]
+    interpretation: dict[str, Any]
+    questions: list[ClarificationQuestionWire] = Field(default_factory=list, max_length=3)
+    selected_packs: list[SelectedPackWire] = Field(default_factory=list, alias="selectedPacks")
+    plan: dict[str, Any] | None = None
+    source_ids: list[str] = Field(default_factory=list, alias="sourceIds")
+
+    @model_validator(mode="after")
+    def validate_variant(self) -> "MissionSupervisorProposal":
+        if self.kind == "clarification":
+            if not self.questions or self.plan is not None or self.selected_packs:
+                raise ValueError("mission_supervisor_clarification_invalid")
+        elif not self.selected_packs or self.plan is None or self.questions:
+            raise ValueError("mission_supervisor_plan_invalid")
+        return self
 
 
 MissionPlanResponseVariant = Annotated[
