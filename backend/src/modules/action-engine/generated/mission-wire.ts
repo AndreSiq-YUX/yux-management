@@ -1,0 +1,219 @@
+/* Generated from contracts/mission-supervisor/v1/mission-wire.schema.json. Do not edit manually. */
+
+export type Contenthash = string
+export type Key = string
+export type Protectedstepkeys = string[]
+export type Semanticversion = string
+export type Definitionhash = string | null
+export type Effect = 'none' | 'draft' | 'internal' | 'external' | 'destructive'
+export type Key1 = string
+export type Version = number
+export type Capabilities = CapabilityWire[]
+export type ClientId = string | null
+export type ContractId = string | null
+export type Observations = {
+  [k: string]: unknown
+}[]
+export type OrganizationId = string
+export type PreviousRevision = {
+  [k: string]: unknown
+} | null
+export type ProposedPlan = {
+  [k: string]: unknown
+} | null
+export type MissionPlanResponseWire = ClarificationResponseWire | PlanProposalResponseWire
+export type Kind = 'clarification'
+/**
+ * @minItems 1
+ * @maxItems 3
+ */
+export type Questions =
+  | [ClarificationQuestionWire]
+  | [ClarificationQuestionWire, ClarificationQuestionWire]
+  | [ClarificationQuestionWire, ClarificationQuestionWire, ClarificationQuestionWire]
+export type Answertype = 'text' | 'number' | 'currency' | 'date' | 'single_choice' | 'multiple_choice' | 'boolean'
+export type Defaultsourceid = string | null
+export type Defaultvalue = unknown | null
+export type Key2 = string
+export type Label = string
+export type Priority = number
+export type Whyneeded = string
+export type Sourceids = string[]
+export type Kind1 = 'proposal'
+export type Key3 = string
+export type Templatehash = string
+export type Version1 = string
+export type Assumptions = string[]
+export type Extensionpoint = string
+export type Rationale = string
+export type Deviations = PlanDeviationWire[]
+export type Aiandprovidercost = string
+export type Currency = 'BRL'
+export type Humancost = string
+export type Humanhours = string
+export type Mediacost = string
+export type Totalexecutioncost = string
+export type Missionid = string
+export type Rationale1 = string
+export type Risks = string[]
+export type Schemaversion = 1
+/**
+ * @minItems 1
+ */
+export type Steps = [PlanStepWire, ...PlanStepWire[]]
+export type Approvalrequired = boolean
+export type Capabilitykey = string
+export type Capabilityversion = number
+export type Dependson = string[]
+export type Effect1 = 'none' | 'draft' | 'internal' | 'external' | 'destructive'
+export type Maxattempts = number
+export type Fromstep = string
+export type Path = string
+export type Stepkey = string
+export type Timeoutseconds = number
+/**
+ * @minItems 1
+ */
+export type Selectedpacks = [SelectedPackWire, ...SelectedPackWire[]]
+export type Contenthash1 = string
+export type Key4 = string
+export type Version2 = string
+export type Sourceids1 = string[]
+
+export interface YUXMissionSupervisorWireContractV1 {
+  request: MissionPlanRequestWire
+  response: MissionPlanResponseWire
+}
+export interface MissionPlanRequestWire {
+  action_pack: ActionPackWire
+  baseline?: Baseline
+  capabilities: Capabilities
+  client_id?: ClientId
+  contract_id?: ContractId
+  limits?: Limits
+  mission: Mission
+  observations?: Observations
+  organization_id: OrganizationId
+  previous_revision?: PreviousRevision
+  proposed_plan?: ProposedPlan
+  readiness: Readiness
+  strategy_context?: StrategyContext
+}
+export interface ActionPackWire {
+  contentHash: Contenthash
+  key: Key
+  protectedStepKeys?: Protectedstepkeys
+  semanticVersion: Semanticversion
+  topologyTemplate?: Topologytemplate
+}
+export interface Topologytemplate {
+  [k: string]: unknown
+}
+export interface Baseline {
+  [k: string]: unknown
+}
+export interface CapabilityWire {
+  definitionHash?: Definitionhash
+  effect: Effect
+  key: Key1
+  version: Version
+}
+export interface Limits {
+  [k: string]: unknown
+}
+export interface Mission {
+  [k: string]: unknown
+}
+export interface Readiness {
+  [k: string]: unknown
+}
+export interface StrategyContext {
+  [k: string]: unknown
+}
+export interface ClarificationResponseWire {
+  interpretation: Interpretation
+  kind: Kind
+  questions: Questions
+  sourceIds?: Sourceids
+}
+export interface Interpretation {
+  [k: string]: unknown
+}
+export interface ClarificationQuestionWire {
+  answerType: Answertype
+  defaultSourceId?: Defaultsourceid
+  defaultValue?: Defaultvalue
+  key: Key2
+  label: Label
+  priority: Priority
+  whyNeeded: Whyneeded
+}
+export interface PlanProposalResponseWire {
+  interpretation: Interpretation1
+  kind: Kind1
+  plan: PlanWire
+  selectedPacks: Selectedpacks
+  sourceIds?: Sourceids1
+}
+export interface Interpretation1 {
+  [k: string]: unknown
+}
+export interface PlanWire {
+  actionPack: ActionPackReferenceWire
+  assumptions?: Assumptions
+  deviations?: Deviations
+  estimatedEconomics: EstimatedEconomicsWire
+  missionId: Missionid
+  rationale: Rationale1
+  resolvedParameters?: Resolvedparameters
+  risks?: Risks
+  schemaVersion: Schemaversion
+  steps: Steps
+}
+export interface ActionPackReferenceWire {
+  key: Key3
+  templateHash: Templatehash
+  version: Version1
+}
+export interface PlanDeviationWire {
+  extensionPoint: Extensionpoint
+  rationale: Rationale
+}
+export interface EstimatedEconomicsWire {
+  aiAndProviderCost: Aiandprovidercost
+  currency: Currency
+  humanCost: Humancost
+  humanHours: Humanhours
+  mediaCost: Mediacost
+  totalExecutionCost: Totalexecutioncost
+}
+export interface Resolvedparameters {
+  [k: string]: unknown
+}
+export interface PlanStepWire {
+  approvalRequired: Approvalrequired
+  capabilityKey: Capabilitykey
+  capabilityVersion: Capabilityversion
+  dependsOn?: Dependson
+  effect: Effect1
+  input?: Input
+  maxAttempts: Maxattempts
+  outputBindings?: Outputbindings
+  stepKey: Stepkey
+  timeoutSeconds: Timeoutseconds
+}
+export interface Input {
+  [k: string]: unknown
+}
+export interface Outputbindings {
+  [k: string]: OutputBindingWire
+}
+export interface OutputBindingWire {
+  fromStep: Fromstep
+  path: Path
+}
+export interface SelectedPackWire {
+  contentHash: Contenthash1
+  key: Key4
+  version: Version2
+}

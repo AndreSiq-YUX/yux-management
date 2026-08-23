@@ -4,25 +4,11 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 from .contracts import validate_mission_plan
+from .mission_contracts import MissionPlanRequestWire
 
 
-class MissionPlanRequest(BaseModel):
-    organization_id: str
-    client_id: str | None = None
-    contract_id: str | None = None
-    mission: dict[str, Any]
-    action_pack: dict[str, Any]
-    readiness: dict[str, Any]
-    baseline: dict[str, Any] = Field(default_factory=dict)
-    capabilities: list[dict[str, Any]]
-    limits: dict[str, Any] = Field(default_factory=dict)
-    strategy_context: dict[str, Any] = Field(default_factory=dict)
-    previous_revision: dict[str, Any] | None = None
-    observations: list[dict[str, Any]] = Field(default_factory=list)
-    proposed_plan: dict[str, Any] | None = None
+MissionPlanRequest = MissionPlanRequestWire
 
 
 def compose_mission_planning_prompt(value: dict[str, Any]) -> dict[str, Any]:

@@ -40,6 +40,8 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - run: npm run generate:mission-contracts
+      - run: git diff --exit-code -- ../contracts/mission-supervisor src/modules/action-engine/generated
       - run: npm run type-check
       - run: npm test
 
@@ -57,4 +59,5 @@ jobs:
           cache: pip
           cache-dependency-path: workers/marketing-studio-agent-runtime/requirements.txt
       - run: pip install -r requirements.txt
+      - run: python scripts/export_mission_contracts.py --check
       - run: python -m pytest tests

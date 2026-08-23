@@ -1,0 +1,665 @@
+{
+  "$defs": {
+    "ActionPackReferenceWire": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "templateHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Templatehash",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "version",
+        "templateHash"
+      ],
+      "title": "ActionPackReferenceWire",
+      "type": "object"
+    },
+    "ActionPackWire": {
+      "additionalProperties": false,
+      "properties": {
+        "contentHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Contenthash",
+          "type": "string"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "protectedStepKeys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Protectedstepkeys",
+          "type": "array"
+        },
+        "semanticVersion": {
+          "minLength": 1,
+          "title": "Semanticversion",
+          "type": "string"
+        },
+        "topologyTemplate": {
+          "additionalProperties": true,
+          "title": "Topologytemplate",
+          "type": "object"
+        }
+      },
+      "required": [
+        "key",
+        "semanticVersion",
+        "contentHash"
+      ],
+      "title": "ActionPackWire",
+      "type": "object"
+    },
+    "CapabilityWire": {
+      "additionalProperties": false,
+      "properties": {
+        "definitionHash": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Definitionhash"
+        },
+        "effect": {
+          "enum": [
+            "none",
+            "draft",
+            "internal",
+            "external",
+            "destructive"
+          ],
+          "title": "Effect",
+          "type": "string"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "version",
+        "effect"
+      ],
+      "title": "CapabilityWire",
+      "type": "object"
+    },
+    "ClarificationQuestionWire": {
+      "additionalProperties": false,
+      "properties": {
+        "answerType": {
+          "enum": [
+            "text",
+            "number",
+            "currency",
+            "date",
+            "single_choice",
+            "multiple_choice",
+            "boolean"
+          ],
+          "title": "Answertype",
+          "type": "string"
+        },
+        "defaultSourceId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaultsourceid"
+        },
+        "defaultValue": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaultvalue"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "priority": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "whyNeeded": {
+          "minLength": 1,
+          "title": "Whyneeded",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "whyNeeded",
+        "priority",
+        "answerType"
+      ],
+      "title": "ClarificationQuestionWire",
+      "type": "object"
+    },
+    "ClarificationResponseWire": {
+      "additionalProperties": false,
+      "properties": {
+        "interpretation": {
+          "additionalProperties": true,
+          "title": "Interpretation",
+          "type": "object"
+        },
+        "kind": {
+          "const": "clarification",
+          "title": "Kind",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/ClarificationQuestionWire"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Questions",
+          "type": "array"
+        },
+        "sourceIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourceids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "interpretation",
+        "questions"
+      ],
+      "title": "ClarificationResponseWire",
+      "type": "object"
+    },
+    "EstimatedEconomicsWire": {
+      "additionalProperties": false,
+      "properties": {
+        "aiAndProviderCost": {
+          "title": "Aiandprovidercost",
+          "type": "string"
+        },
+        "currency": {
+          "const": "BRL",
+          "title": "Currency",
+          "type": "string"
+        },
+        "humanCost": {
+          "title": "Humancost",
+          "type": "string"
+        },
+        "humanHours": {
+          "title": "Humanhours",
+          "type": "string"
+        },
+        "mediaCost": {
+          "title": "Mediacost",
+          "type": "string"
+        },
+        "totalExecutionCost": {
+          "title": "Totalexecutioncost",
+          "type": "string"
+        }
+      },
+      "required": [
+        "currency",
+        "aiAndProviderCost",
+        "mediaCost",
+        "humanHours",
+        "humanCost",
+        "totalExecutionCost"
+      ],
+      "title": "EstimatedEconomicsWire",
+      "type": "object"
+    },
+    "MissionPlanRequestWire": {
+      "additionalProperties": false,
+      "properties": {
+        "action_pack": {
+          "$ref": "#/$defs/ActionPackWire"
+        },
+        "baseline": {
+          "additionalProperties": true,
+          "title": "Baseline",
+          "type": "object"
+        },
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/CapabilityWire"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "client_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Id"
+        },
+        "contract_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contract Id"
+        },
+        "limits": {
+          "additionalProperties": true,
+          "title": "Limits",
+          "type": "object"
+        },
+        "mission": {
+          "additionalProperties": true,
+          "title": "Mission",
+          "type": "object"
+        },
+        "observations": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "organization_id": {
+          "minLength": 1,
+          "title": "Organization Id",
+          "type": "string"
+        },
+        "previous_revision": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Revision"
+        },
+        "proposed_plan": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposed Plan"
+        },
+        "readiness": {
+          "additionalProperties": true,
+          "title": "Readiness",
+          "type": "object"
+        },
+        "strategy_context": {
+          "additionalProperties": true,
+          "title": "Strategy Context",
+          "type": "object"
+        }
+      },
+      "required": [
+        "organization_id",
+        "mission",
+        "action_pack",
+        "readiness",
+        "capabilities"
+      ],
+      "title": "MissionPlanRequestWire",
+      "type": "object"
+    },
+    "MissionPlanResponseWire": {
+      "discriminator": {
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ClarificationResponseWire"
+        },
+        {
+          "$ref": "#/$defs/PlanProposalResponseWire"
+        }
+      ],
+      "title": "MissionPlanResponseWire",
+      "type": "object"
+    },
+    "OutputBindingWire": {
+      "additionalProperties": false,
+      "properties": {
+        "fromStep": {
+          "minLength": 1,
+          "title": "Fromstep",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fromStep",
+        "path"
+      ],
+      "title": "OutputBindingWire",
+      "type": "object"
+    },
+    "PlanDeviationWire": {
+      "additionalProperties": false,
+      "properties": {
+        "extensionPoint": {
+          "minLength": 1,
+          "title": "Extensionpoint",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionPoint",
+        "rationale"
+      ],
+      "title": "PlanDeviationWire",
+      "type": "object"
+    },
+    "PlanProposalResponseWire": {
+      "additionalProperties": false,
+      "properties": {
+        "interpretation": {
+          "additionalProperties": true,
+          "title": "Interpretation",
+          "type": "object"
+        },
+        "kind": {
+          "const": "proposal",
+          "title": "Kind",
+          "type": "string"
+        },
+        "plan": {
+          "$ref": "#/$defs/PlanWire"
+        },
+        "selectedPacks": {
+          "items": {
+            "$ref": "#/$defs/SelectedPackWire"
+          },
+          "minItems": 1,
+          "title": "Selectedpacks",
+          "type": "array"
+        },
+        "sourceIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourceids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "interpretation",
+        "selectedPacks",
+        "plan"
+      ],
+      "title": "PlanProposalResponseWire",
+      "type": "object"
+    },
+    "PlanStepWire": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalRequired": {
+          "title": "Approvalrequired",
+          "type": "boolean"
+        },
+        "capabilityKey": {
+          "minLength": 1,
+          "title": "Capabilitykey",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "minimum": 1,
+          "title": "Capabilityversion",
+          "type": "integer"
+        },
+        "dependsOn": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependson",
+          "type": "array"
+        },
+        "effect": {
+          "enum": [
+            "none",
+            "draft",
+            "internal",
+            "external",
+            "destructive"
+          ],
+          "title": "Effect",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "title": "Input",
+          "type": "object"
+        },
+        "maxAttempts": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Maxattempts",
+          "type": "integer"
+        },
+        "outputBindings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/OutputBindingWire"
+          },
+          "title": "Outputbindings",
+          "type": "object"
+        },
+        "stepKey": {
+          "minLength": 1,
+          "title": "Stepkey",
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stepKey",
+        "capabilityKey",
+        "capabilityVersion",
+        "timeoutSeconds",
+        "maxAttempts",
+        "approvalRequired",
+        "effect"
+      ],
+      "title": "PlanStepWire",
+      "type": "object"
+    },
+    "PlanWire": {
+      "additionalProperties": false,
+      "properties": {
+        "actionPack": {
+          "$ref": "#/$defs/ActionPackReferenceWire"
+        },
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "deviations": {
+          "items": {
+            "$ref": "#/$defs/PlanDeviationWire"
+          },
+          "title": "Deviations",
+          "type": "array"
+        },
+        "estimatedEconomics": {
+          "$ref": "#/$defs/EstimatedEconomicsWire"
+        },
+        "missionId": {
+          "minLength": 1,
+          "title": "Missionid",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "resolvedParameters": {
+          "additionalProperties": true,
+          "title": "Resolvedparameters",
+          "type": "object"
+        },
+        "risks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/PlanStepWire"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "missionId",
+        "actionPack",
+        "rationale",
+        "estimatedEconomics",
+        "steps"
+      ],
+      "title": "PlanWire",
+      "type": "object"
+    },
+    "SelectedPackWire": {
+      "additionalProperties": false,
+      "properties": {
+        "contentHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Contenthash",
+          "type": "string"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "version",
+        "contentHash"
+      ],
+      "title": "SelectedPackWire",
+      "type": "object"
+    }
+  },
+  "$id": "https://yux.app/contracts/mission-supervisor/v1/mission-wire.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "request": {
+      "$ref": "#/$defs/MissionPlanRequestWire"
+    },
+    "response": {
+      "$ref": "#/$defs/MissionPlanResponseWire"
+    }
+  },
+  "required": [
+    "request",
+    "response"
+  ],
+  "title": "YUX Mission Supervisor Wire Contract v1",
+  "type": "object"
+}
