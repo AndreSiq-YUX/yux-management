@@ -367,6 +367,17 @@ export async function insertPlanRevision(
         step.protected, step.extensionPoint ?? null],
     )
   }
+  const artifactBindings = Array.isArray(input.compiledPayload?.artifactBindings) ? input.compiledPayload.artifactBindings : []
+  for (const raw of artifactBindings) {
+    if (!raw || typeof raw !== 'object') throw new Error('plan_artifact_binding_invalid')
+    const binding = raw as Record<string, unknown>
+    await client.query(
+      `INSERT INTO public.action_plan_artifact_bindings (
+         organization_id,plan_id,from_pack_key,artifact_key,from_step_key,output_path,to_pack_key,to_step_key,input_key,schema_version
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [input.organizationId,planId,binding.fromPack,binding.artifactKey,binding.fromStepKey,binding.outputPath,binding.toPack,binding.toStepKey,binding.inputKey,binding.schemaVersion],
+    )
+  }
   return { id: planId, revision, planHash }
 }
 
