@@ -6,6 +6,7 @@ import { reportsRecoveredRevenueSnapshot } from './reports.js'
 import { systemApprovalAwait, systemEvaluationCheckpoint, systemReadinessCheck, systemSignalWait } from './system.js'
 import { crmSequenceEnroll, emailMessageQueue, omnichannelMessageDraft, whatsappTemplateQueue } from './communications.js'
 import { automationFlowExecute } from './automation.js'
+import { crmPipelineCreateDraft, crmPipelineInspect, crmPipelinePublish, crmPipelineSimulate } from './crm-funnel.js'
 
 export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
   return new CapabilityRegistry()
@@ -14,6 +15,10 @@ export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
     .register(systemSignalWait)
     .register(systemEvaluationCheckpoint)
     .register(crmPipelineSnapshot)
+    .register(crmPipelineInspect)
+    .register(crmPipelineSimulate)
+    .register(crmPipelineCreateDraft)
+    .register(crmPipelinePublish)
     .register(crmRecoveryCandidatesSearch)
     .register(crmLeadTimelineRead)
     .register(growthSegmentPreview)

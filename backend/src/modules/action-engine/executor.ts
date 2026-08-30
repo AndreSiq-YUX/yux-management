@@ -177,6 +177,7 @@ export async function executeActionRun(
 
   let mutationLease: string | undefined
   let fencingToken: string | undefined
+  let executionActorId: string | undefined
   let dryRun = false
   try {
     const issued = await transaction(pool, async (client) => {
@@ -191,9 +192,12 @@ export async function executeActionRun(
           organizationId: input.organizationId, packKey: claimed.action.pack_key,
           packVersion: claimed.action.pack_version, capabilityKey: capability.key, capabilityVersion: capability.version,
         }),
-        client.query<{ approved: boolean }>(
+        client.query<{ approved: boolean; decided_by: string | null }>(
           `SELECT EXISTS (SELECT 1 FROM public.action_approvals
-           WHERE run_id = $1 AND organization_id = $2 AND status = 'approved') AS approved`,
+             WHERE run_id = $1 AND organization_id = $2 AND status = 'approved') AS approved,
+             (SELECT decided_by FROM public.action_approvals
+               WHERE run_id = $1 AND organization_id = $2 AND status = 'approved'
+               ORDER BY decided_at DESC LIMIT 1) AS decided_by`,
           [input.actionRunId, input.organizationId],
         ),
         client.query<{ total: string }>(
@@ -242,7 +246,8 @@ export async function executeActionRun(
       })
       if (decision.outcome !== 'allow') throw new Error(decision.reason)
       if (decision.requiresApproval && approval.rows[0]?.approved !== true) throw new Error('capability_approval_required')
-      if (decision.dryRun || capability.effect === 'none') return { decision }
+      const actorId = approval.rows[0]?.decided_by ?? currentMission?.createdBy
+      if (decision.dryRun || capability.effect === 'none') return { decision, actorId }
       if (!input.mutationLeaseSecret || !claimed.attemptId || !claimed.action.capability_definition_hash) {
         throw new Error('mutation_lease_signing_unavailable')
       }
@@ -258,11 +263,12 @@ export async function executeActionRun(
         token: lease.token, secret: input.mutationLeaseSecret, expected: lease.claims,
         organizationId: input.organizationId,
       })
-      return { decision, token: lease.token, fencingToken: currentFencingToken }
+      return { decision, token: lease.token, fencingToken: currentFencingToken, actorId }
     })
     dryRun = issued.decision.dryRun
     mutationLease = issued.token
     fencingToken = issued.fencingToken
+    executionActorId = issued.actorId
   } catch (error) {
     await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, safeError(error))
     return { status: 'blocked' }
@@ -324,7 +330,8 @@ export async function executeActionRun(
 
   try {
     const result = await registry.invoke(claimed.action.capability_key, Number(claimed.action.capability_version), {
-      organizationId: input.organizationId, missionId: claimed.action.mission_id, actor: { type: 'system' },
+      organizationId: input.organizationId, missionId: claimed.action.mission_id,
+      actionRunId: input.actionRunId, actor: executionActorId ? { type: 'user', id: executionActorId } : { type: 'system' },
       idempotencyKey: claimed.action.idempotency_key, dryRun,
       ...(mutationLease ? { mutationLease } : {}), ...(fencingToken ? { fencingToken } : {}),
       query: pool.query.bind(pool), commands: input.commands,

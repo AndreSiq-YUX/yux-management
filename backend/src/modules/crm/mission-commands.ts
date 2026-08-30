@@ -62,4 +62,40 @@ export async function publishPipelineDraft(client: MissionCommandQueryable, cont
   return saveMissionCommandResult(client, context, commandKey, result)
 }
 
+export async function discardPipelineDraft(client: MissionCommandQueryable, context: MissionCommandContext, input: { versionId: string }) {
+  const commandKey = 'crm.pipeline.discard_draft'
+  const prior = await loadMissionCommandResult<{ versionId: string; status: 'archived' }>(client, context, commandKey); if (prior) return prior
+  const archived = await client.query<{ id: string }>(
+    `UPDATE public.crm_pipeline_versions version SET status = 'archived', updated_at = NOW()
+      FROM public.crm_instances instance
+     WHERE version.id = $1 AND version.crm_instance_id = instance.id
+       AND instance.organization_id = $2 AND version.mission_id = $3 AND version.status = 'draft'
+     RETURNING version.id`,
+    [input.versionId, context.organizationId, context.missionId],
+  )
+  if (!archived.rows[0]) throw new Error('pipeline_draft_recovery_not_available')
+  const result = { versionId: input.versionId, status: 'archived' as const }
+  await recordDomainEvent(client as never, { eventType: 'mission.pipeline_draft_archived', organizationId: context.organizationId, aggregateType: 'mission', aggregateId: context.missionId, actor: { type: 'user', id: context.actorId }, payload: { missionId: context.missionId, actionRunId: context.actionRunId, versionId: input.versionId } })
+  return saveMissionCommandResult(client, context, commandKey, result)
+}
+
+export async function archiveMissionPipeline(client: MissionCommandQueryable, context: MissionCommandContext, input: { pipelineId: string }) {
+  const commandKey = 'crm.pipeline.archive'
+  const prior = await loadMissionCommandResult<{ pipelineId: string; status: 'archived' }>(client, context, commandKey); if (prior) return prior
+  const archived = await client.query<{ id: string }>(
+    `UPDATE public.crm_pipelines pipeline SET is_active = FALSE, updated_at = NOW()
+      FROM public.crm_pipeline_versions version, public.crm_instances instance
+     WHERE pipeline.id = $1 AND pipeline.organization_id = $2
+       AND version.source_pipeline_id = pipeline.id AND version.mission_id = $3
+       AND instance.id = pipeline.crm_instance_id AND instance.organization_id = $2
+     RETURNING pipeline.id`,
+    [input.pipelineId, context.organizationId, context.missionId],
+  )
+  if (!archived.rows[0]) throw new Error('pipeline_recovery_not_available')
+  await client.query(`UPDATE public.crm_pipeline_versions SET status = 'archived', updated_at = NOW() WHERE source_pipeline_id = $1 AND mission_id = $2`, [input.pipelineId, context.missionId])
+  const result = { pipelineId: input.pipelineId, status: 'archived' as const }
+  await recordDomainEvent(client as never, { eventType: 'mission.pipeline_archived', organizationId: context.organizationId, aggregateType: 'mission', aggregateId: context.missionId, actor: { type: 'user', id: context.actorId }, payload: { missionId: context.missionId, actionRunId: context.actionRunId, pipelineId: input.pipelineId } })
+  return saveMissionCommandResult(client, context, commandKey, result)
+}
+
 function requiredId(value?: string) { if (!value) throw new Error('mission_command_persistence_failed'); return value }

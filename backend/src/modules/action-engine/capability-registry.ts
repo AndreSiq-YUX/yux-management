@@ -9,6 +9,7 @@ export type CapabilityIdempotency = 'none' | 'supported' | 'required'
 export type CapabilityContext = {
   organizationId: string
   missionId: string
+  actionRunId?: string
   actor: DomainEventActor
   idempotencyKey: string
   dryRun: boolean
@@ -25,6 +26,10 @@ export type CapabilityContext = {
     pauseSequenceEnrollment?: (input: Record<string, unknown>) => Promise<unknown>
     queueEmail?: (input: Record<string, unknown>) => Promise<unknown>
     queueWhatsapp?: (input: Record<string, unknown>) => Promise<unknown>
+    createPipelineDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    publishPipelineDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    discardPipelineDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    archivePipeline?: (input: Record<string, unknown>) => Promise<unknown>
   }
 }
 
