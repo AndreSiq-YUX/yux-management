@@ -17,6 +17,7 @@ import { acquireResourceClaim, getMissionFencingToken, renewMissionResourceClaim
 import { consumeMutationLease, issueMutationLease } from './mutation-leases.js'
 import { loadKillSwitchState, resolveCapabilityDecision } from './capability-policy.js'
 import { resolvePlanInputBindings } from './plan-input-bindings.js'
+import { resolveCompositeActionInput } from './composite-execution.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -25,6 +26,7 @@ type ActionRow = {
   capability_definition_hash: string | null; capability_manifest: CapabilityManifestEntry[];
   capability_manifest_hash: string;
   pack_key: string; pack_version: string;
+  compiled_payload: Record<string, unknown>; step_key: string;
   mission_status: string; plan_status: string; available_at: string | Date;
 }
 
@@ -36,31 +38,30 @@ export async function startMission(pool: Connectable, input: {
     if (!mission) throw new Error('mission_not_found')
     if (mission.version !== input.expectedVersion) throw new Error('mission_version_conflict')
     if (mission.status !== 'ready' || !mission.activePlanId) throw new Error('mission_not_ready')
-    const plan = await client.query<{ id: string; status: string; pack_key: string; parameters: Record<string, unknown> }>(
-      `SELECT plan.id,plan.status,plan.parameters,pack.key AS pack_key FROM public.action_plans plan
+    const plan = await client.query<{ id: string; status: string; pack_key: string; parameters: Record<string, unknown>; compiled_payload: Record<string, unknown> }>(
+      `SELECT plan.id,plan.status,plan.parameters,plan.compiled_payload,pack.key AS pack_key FROM public.action_plans plan
        JOIN public.action_pack_versions version ON version.id=plan.pack_version_id
        JOIN public.action_packs pack ON pack.id=version.pack_id
        WHERE plan.id = $1 AND plan.mission_id = $2 AND plan.organization_id = $3 FOR UPDATE OF plan`,
       [mission.activePlanId, input.missionId, input.organizationId],
     )
     if (plan.rows[0]?.status !== 'approved') throw new Error('mission_plan_not_approved')
-    const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture'
-    const campaignLaunch = plan.rows[0]?.pack_key === 'campaign_launch'
+    const compositePacks = Array.isArray(plan.rows[0]?.compiled_payload.packs)
+      ? plan.rows[0]!.compiled_payload.packs.map(item => item && typeof item === 'object' ? Reflect.get(item, 'key') : null) : []
+    const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture' || compositePacks.includes('funnel_nurture')
+    const campaignLaunch = plan.rows[0]?.pack_key === 'campaign_launch' || compositePacks.includes('campaign_launch')
     const campaignArtifacts = campaignLaunch && plan.rows[0]?.parameters.campaignLaunchArtifacts
       && typeof plan.rows[0].parameters.campaignLaunchArtifacts === 'object'
       ? plan.rows[0].parameters.campaignLaunchArtifacts as Record<string, unknown> : {}
     const campaignBrief = campaignArtifacts.brief && typeof campaignArtifacts.brief === 'object'
       ? campaignArtifacts.brief as Record<string, unknown> : {}
     const providerConnectionId = typeof campaignBrief.providerConnectionId === 'string' ? campaignBrief.providerConnectionId : 'organization'
-    await acquireResourceClaim(client, {
-      organizationId: input.organizationId,
-      missionId: input.missionId,
-      missionLabel: mission.title,
-      resourceKey: campaignLaunch ? 'campaign.provider_account' : funnelNurture ? 'crm.funnel_nurture_configuration' : 'crm.lead_population',
-      scope: campaignLaunch ? providerConnectionId : funnelNurture ? 'organization_funnel_nurture' : 'inactive_revenue_recovery',
-      mode: 'exclusive',
-      ttlSeconds: 900,
-    })
+    const claimTargets = [
+      ...(funnelNurture ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
+      ...(campaignLaunch ? [{ resourceKey: 'campaign.provider_account', scope: providerConnectionId }] : []),
+      ...(!funnelNurture && !campaignLaunch ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
+    ]
+    for (const target of claimTargets) await acquireResourceClaim(client, { organizationId: input.organizationId, missionId: input.missionId, missionLabel: mission.title, ...target, mode: 'exclusive', ttlSeconds: 900 })
     const runCount = await createActionRuns(client, { organizationId: input.organizationId, missionId: input.missionId, planId: mission.activePlanId })
     await client.query(`UPDATE public.action_plans SET status = 'active', updated_at = NOW() WHERE id = $1`, [mission.activePlanId])
     const active = await transitionMission(client, {
@@ -136,7 +137,7 @@ export async function executeActionRun(
        RETURNING run.id, run.organization_id, run.mission_id, run.plan_id, run.plan_step_id,
          run.status, run.idempotency_key, run.input, step.capability_key, step.capability_version,
          step.capability_definition_hash, plan.capability_manifest, plan.capability_manifest_hash,
-         pack.key AS pack_key, pack_version.semantic_version AS pack_version, step.approval_required,
+         pack.key AS pack_key, pack_version.semantic_version AS pack_version,plan.compiled_payload,step.step_key,step.approval_required,
          mission.status AS mission_status, plan.status AS plan_status, run.available_at`,
       [input.actionRunId, input.organizationId, input.workerId],
     )
@@ -155,6 +156,9 @@ export async function executeActionRun(
       resolvedParameters: planParameters.rows[0]?.parameters ?? {},
       outputsByStep: Object.fromEntries(dependencyOutputs.rows.map(row => [row.step_key, row.output ?? {}])),
     }) as Record<string, unknown>
+    if (Array.isArray(action.compiled_payload?.packs) && action.compiled_payload.packs.length > 1) {
+      action.input = await resolveCompositeActionInput(client, { organizationId: input.organizationId, planId: action.plan_id, targetStepKey: action.step_key, currentInput: action.input })
+    }
     await client.query(`UPDATE public.action_runs SET input = $3, updated_at = NOW() WHERE id = $1 AND organization_id = $2`, [action.id, input.organizationId, action.input])
     const attempt = await client.query<{ id: string; attempt_number: number }>(
       `INSERT INTO public.action_run_attempts (organization_id, run_id, attempt_number, status, input_snapshot)
