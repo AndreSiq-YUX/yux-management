@@ -9,6 +9,7 @@ from .contracts import AgentContractError, parse_json_object, validate_mission_p
 from .mission_contracts import MissionSupervisorProposal, PlanWire
 from .model_profiles import ModelProfile, build_model_trace
 from .providers import OpenRouterClient, ProviderRequestError
+from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
 
 
 class MissionSupervisorError(ValueError):
@@ -16,9 +17,10 @@ class MissionSupervisorError(ValueError):
 
 
 class MissionSupervisor:
-    def __init__(self, client: OpenRouterClient, profile: ModelProfile) -> None:
+    def __init__(self, client: OpenRouterClient, profile: ModelProfile, funnel_nurture: FunnelNurtureSpecialistWorkflow | None = None) -> None:
         self.client = client
         self.profile = profile
+        self.funnel_nurture = funnel_nurture or FunnelNurtureSpecialistWorkflow(client, profile)
 
     def compose_messages(self, value: dict[str, Any]) -> list[dict[str, str]]:
         envelope = {
@@ -84,6 +86,12 @@ class MissionSupervisor:
             proposal.questions = self._prioritize_questions(proposal.questions)
         self._validate_authority(proposal, value)
         if proposal.plan is not None:
+            if any(pack.key == "funnel_nurture" for pack in proposal.selected_packs):
+                try:
+                    artifacts = self.funnel_nurture.generate(value)
+                except FunnelNurtureError as error:
+                    raise MissionSupervisorError(str(error)) from error
+                proposal.plan = self._inject_funnel_nurture_artifacts(proposal.plan, artifacts)
             try:
                 typed_plan = PlanWire.model_validate(proposal.plan).model_dump(by_alias=True)
             except ValidationError as error:
@@ -104,6 +112,34 @@ class MissionSupervisor:
             usage,
         )
         return result
+
+    @staticmethod
+    def _inject_funnel_nurture_artifacts(plan: dict[str, Any], artifacts: dict[str, Any]) -> dict[str, Any]:
+        enriched = dict(plan)
+        parameters = dict(enriched.get("resolvedParameters") or {})
+        parameters["funnelNurtureArtifacts"] = artifacts
+        enriched["resolvedParameters"] = parameters
+        email_index = 0
+        steps = []
+        for raw_step in enriched.get("steps") or []:
+            step = dict(raw_step)
+            capability = str(step.get("capabilityKey") or "")
+            step_input = dict(step.get("input") or {})
+            if capability == "crm.pipeline.create_draft":
+                funnel = dict(artifacts["funnel"])
+                funnel.pop("reuseExistingFunnelId", None)
+                step_input.update(funnel)
+            elif capability == "email.template.create_draft" and email_index < len(artifacts["emails"]):
+                email = dict(artifacts["emails"][email_index]); email.pop("key", None)
+                step_input.update(email); email_index += 1
+            elif capability == "crm.sequence.create_draft":
+                step_input["artifactRef"] = "resolvedParameters.funnelNurtureArtifacts.sequence"
+            elif capability == "automation.flow.create_draft":
+                step_input["artifactRef"] = "resolvedParameters.funnelNurtureArtifacts.automation"
+            step["input"] = step_input
+            steps.append(step)
+        enriched["steps"] = steps
+        return enriched
 
     def _validate_authority(self, proposal: MissionSupervisorProposal, value: dict[str, Any]) -> None:
         allowed_sources = {str(item) for item in value.get("allowed_source_ids") or []}

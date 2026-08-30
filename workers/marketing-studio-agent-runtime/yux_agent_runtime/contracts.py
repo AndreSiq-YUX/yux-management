@@ -3,9 +3,119 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 
 class AgentContractError(ValueError):
     """Raised when a provider response cannot be trusted as a workflow result."""
+
+
+class StrictArtifactModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class FunnelStageArtifact(StrictArtifactModel):
+    key: str = Field(min_length=1, pattern=r"^[a-z0-9_]+$")
+    name: str = Field(min_length=1, max_length=120)
+    exitCriteria: list[str] = Field(default_factory=list, max_length=20)
+    isWon: bool = False
+    isLost: bool = False
+
+    @model_validator(mode="after")
+    def outcome_is_coherent(self) -> "FunnelStageArtifact":
+        if self.isWon and self.isLost:
+            raise ValueError("funnel_stage_outcome_invalid")
+        return self
+
+
+class FunnelArtifact(StrictArtifactModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    stages: list[FunnelStageArtifact] = Field(min_length=2, max_length=20)
+    reuseExistingFunnelId: str | None = None
+
+    @model_validator(mode="after")
+    def stages_are_coherent(self) -> "FunnelArtifact":
+        keys = [stage.key for stage in self.stages]
+        if len(keys) != len(set(keys)):
+            raise ValueError("funnel_stage_key_duplicate")
+        if sum(stage.isWon for stage in self.stages) > 1 or sum(stage.isLost for stage in self.stages) > 1:
+            raise ValueError("funnel_stage_outcome_duplicate")
+        return self
+
+
+class NurtureEmailArtifact(StrictArtifactModel):
+    key: str = Field(min_length=1, pattern=r"^[a-z0-9_]+$")
+    name: str = Field(min_length=1, max_length=160)
+    subject: str = Field(min_length=1, max_length=240)
+    previewText: str = Field(min_length=1, max_length=300)
+    bodyHtml: str = Field(min_length=1)
+    bodyText: str = Field(min_length=1)
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+    complianceNotes: list[str] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def includes_unsubscribe_intent(self) -> "NurtureEmailArtifact":
+        if "{{unsubscribe_url}}" not in self.bodyHtml or "{{unsubscribe_url}}" not in self.bodyText:
+            raise ValueError("nurture_email_unsubscribe_required")
+        return self
+
+
+class SequenceStepArtifact(StrictArtifactModel):
+    emailKey: str = Field(min_length=1)
+    delayMinutes: int = Field(ge=0, le=525_600)
+    exitConditions: list[str] = Field(default_factory=list, max_length=20)
+
+
+class SequenceArtifact(StrictArtifactModel):
+    name: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    conversionGoal: str = Field(default="", max_length=500)
+    steps: list[SequenceStepArtifact] = Field(min_length=1, max_length=12)
+
+    @model_validator(mode="after")
+    def delays_are_ordered(self) -> "SequenceArtifact":
+        if any(index > 0 and step.delayMinutes == 0 for index, step in enumerate(self.steps)):
+            raise ValueError("nurture_sequence_delay_invalid")
+        if len({step.emailKey for step in self.steps}) != len(self.steps):
+            raise ValueError("nurture_sequence_email_duplicate")
+        return self
+
+
+class AutomationArtifact(StrictArtifactModel):
+    name: str = Field(min_length=1, max_length=160)
+    trigger: dict[str, Any]
+    eligibilityConditions: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
+    exitConditions: list[str] = Field(min_length=1, max_length=20)
+    consentPolicy: str
+    suppressionPolicy: str
+    dailyRunLimit: int = Field(ge=1, le=10_000)
+
+    @model_validator(mode="after")
+    def policies_are_safe(self) -> "AutomationArtifact":
+        trigger_type = str(self.trigger.get("type") or "")
+        if trigger_type not in {"lead.created", "lead.stage_changed", "lead.field_changed"}:
+            raise ValueError("automation_trigger_invalid")
+        if self.consentPolicy != "require_granted" or self.suppressionPolicy != "check_before_enrollment":
+            raise ValueError("automation_policy_invalid")
+        return self
+
+
+class BrandComplianceVerdict(StrictArtifactModel):
+    approved: bool
+    forbiddenTerms: list[str] = Field(default_factory=list, max_length=100)
+    findings: list[str] = Field(default_factory=list, max_length=100)
+    sourceIds: list[str] = Field(default_factory=list, max_length=100)
+
+
+class FunnelNurtureArtifacts(StrictArtifactModel):
+    funnel: FunnelArtifact
+    emails: list[NurtureEmailArtifact] = Field(min_length=1, max_length=12)
+    sequence: SequenceArtifact
+    automation: AutomationArtifact
+    brandCompliance: BrandComplianceVerdict
+    sourceIds: list[str] = Field(min_length=1, max_length=200)
+    risks: list[str] = Field(default_factory=list, max_length=100)
 
 
 def validate_mission_plan(value: dict[str, Any], planning_input: dict[str, Any]) -> dict[str, Any]:
