@@ -20,6 +20,11 @@ export type PackExtensionPoint = {
   maxAdditionalSteps: number
 }
 
+export type PackArtifactContract = {
+  consumes: Array<{ key: string; schemaVersion: number; optional: boolean }>
+  produces: Array<{ key: string; schemaVersion: number }>
+}
+
 export type ActionPackVersion = {
   key: string
   semanticVersion: string
@@ -35,6 +40,7 @@ export type ActionPackVersion = {
   metricSpec: Record<string, unknown>
   economicsSpec: Record<string, unknown>
   policyDefaults: Record<string, unknown>
+  artifactContract?: PackArtifactContract
   contentHash: string
 }
 

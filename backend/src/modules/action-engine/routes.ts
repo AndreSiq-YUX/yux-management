@@ -27,6 +27,7 @@ import { listMissionCapabilityControls, setCapabilityControl } from './kill-swit
 import { buildMissionArtifactProjections } from './mission-artifacts.js'
 import { listMissionRecipes, resolveMissionRecipe } from './recipes.js'
 import { cleanupMissionSandbox, seedMissionSandbox } from './sandbox-seeder.js'
+import { createPublishedPackRegistry } from './pack-registry.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -128,6 +129,26 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
     return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1), publicPack(CAMPAIGN_LAUNCH_PACK_V1)]
+  })
+
+  app.get('/action-pack-catalog', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const query = organizationQuery.safeParse(request.query)
+    if (!query.success) return reply.code(400).send({ error: 'invalid_action_pack_catalog_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    const organization = await app.pg.query<{ kind: string; modules: string[] }>(
+      `SELECT organization.kind,COALESCE(ARRAY_AGG(DISTINCT module.module_key) FILTER (WHERE module.enabled=TRUE),ARRAY[]::TEXT[]) AS modules
+       FROM public.organizations organization
+       LEFT JOIN public.contracts contract ON contract.client_id=organization.client_id AND contract.status='active'
+       LEFT JOIN public.contract_modules module ON module.contract_id=contract.id
+       WHERE organization.id=$1 GROUP BY organization.kind`, [query.data.organizationId],
+    )
+    if (!organization.rows[0]) return reply.code(404).send({ error: 'organization_not_found' })
+    const entitled = new Set(organization.rows[0].modules ?? [])
+    return createPublishedPackRegistry([REVENUE_RECOVERY_PACK_V0,FUNNEL_NURTURE_PACK_V1,CAMPAIGN_LAUNCH_PACK_V1])
+      .list()
+      .filter(entry => organization.rows[0]!.kind === 'yux' || entry.requiredModules.every(moduleKey => entitled.has(moduleKey)))
+      .map(({ pack: _pack, ...entry }) => entry)
   })
 
   app.get('/mission-recipes', async (request, reply) => {
