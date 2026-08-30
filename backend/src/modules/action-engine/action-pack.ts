@@ -104,4 +104,11 @@ export function validatePlanConformance(plan: ProposedMissionPlan, pack: ActionP
       throw new Error('action_pack_outreach_approval_missing')
     }
   }
+  if (pack.key === 'funnel_nurture') {
+    const approvalIndex = stepKeys.indexOf('pack.approve_publication')
+    const publicationSteps = plan.steps.filter((step) => step.stepKey.startsWith('pack.publish_'))
+    if (approvalIndex < 0 || publicationSteps.length < 3 || publicationSteps.some((step) => stepKeys.indexOf(step.stepKey) <= approvalIndex || !step.approvalRequired)) {
+      throw new Error('action_pack_publication_approval_missing')
+    }
+  }
 }

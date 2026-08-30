@@ -7,7 +7,7 @@ export type AttributionPolicy = {
   model: 'first_touch' | 'last_touch' | 'linear'
   windowDays: number
   eligibleEventTypes: string[]
-  identityResolution: 'exact_contact' | 'exact_lead' | 'declared_binding'
+  identityResolution: 'exact_contact' | 'exact_lead' | 'declared_binding' | 'exact_contact_or_declared_binding'
   currency: 'BRL'
   lateEvents: 'ignore' | 'reopen_evaluation'
 }
@@ -137,7 +137,10 @@ function validatePolicy(policy: AttributionPolicy): void {
 }
 
 function identity(event: AttributionEvent, strategy: AttributionPolicy['identityResolution']): string | null {
-  const value = strategy === 'exact_contact' ? event.contactId : strategy === 'exact_lead' ? event.leadId : event.bindingId
+  const value = strategy === 'exact_contact' ? event.contactId
+    : strategy === 'exact_lead' ? event.leadId
+      : strategy === 'exact_contact_or_declared_binding' ? event.contactId ?? event.bindingId
+        : event.bindingId
   return value?.trim() || null
 }
 
