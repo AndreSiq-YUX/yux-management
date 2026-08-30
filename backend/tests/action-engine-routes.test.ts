@@ -27,6 +27,7 @@ class Pool {
     if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] as T[] }
     if (sql.includes('FROM public.memberships') && sql.includes('SELECT organization_id')) return { rows: [{ organization_id: orgA }] as T[] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [{ module_key: 'action_engine' }] as T[] }
+    if (sql.includes("definition->'metricSpec'")) return { rows: [{ metric_spec: {}, content_hash: 'a'.repeat(64) }] as T[] }
     if (sql.includes('FROM public.action_missions') && sql.includes('FOR UPDATE')) {
       return { rows: [{
         id: missionId, organization_id: orgA, contract_id: null,

@@ -1,21 +1,28 @@
 import { Bot, GitBranch, Mail, RefreshCw, Route, ShieldAlert } from 'lucide-react'
 import { ArtifactDiff } from './ArtifactDiff'
+import { CampaignMissionArtifacts } from './CampaignMissionArtifacts'
 import type { MissionArtifact } from '@/types/actionEngine'
 
 export function MissionArtifactsPanel({ artifacts, canWrite, showTechnicalProof, onRefresh, refreshing = false }: {
   artifacts: MissionArtifact[]; canWrite: boolean; showTechnicalProof: boolean; onRefresh: () => void; refreshing?: boolean
 }) {
   if (!artifacts.length) return null
-  const stale = artifacts.some(artifact => artifact.staleApproval)
+  const campaignArtifacts = artifacts.filter(artifact => artifact.kind.startsWith('campaign_'))
+  const standardArtifacts = artifacts.filter(artifact => !artifact.kind.startsWith('campaign_'))
+  if (campaignArtifacts.length && !standardArtifacts.length) return <CampaignMissionArtifacts artifacts={campaignArtifacts} canWrite={canWrite} showTechnicalProof={showTechnicalProof} />
+  const stale = standardArtifacts.some(artifact => artifact.staleApproval)
   return (
+    <div className="space-y-6">
+      {campaignArtifacts.length ? <CampaignMissionArtifacts artifacts={campaignArtifacts} canWrite={canWrite} showTechnicalProof={showTechnicalProof} /> : null}
     <section className="border border-slate-200 bg-white">
       <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div><h2 className="font-semibold text-slate-950">Entregáveis da missão</h2><p className="mt-1 text-xs text-slate-500">Revise exatamente o que será criado antes da publicação.</p></div>
         {stale ? <button type="button" onClick={onRefresh} disabled={refreshing} className="inline-flex h-8 items-center gap-2 self-start border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Atualizar revisão</button> : null}
       </div>
       {!canWrite ? <p className="border-b border-blue-100 bg-blue-50 px-5 py-3 text-xs text-blue-800">Visualização somente leitura. A operação YUX é responsável por publicar ou alterar estes itens.</p> : null}
-      <div className="grid gap-px bg-slate-200 lg:grid-cols-2">{artifacts.map(artifact => <ArtifactCard key={`${artifact.kind}:${artifact.key}`} artifact={artifact} showTechnicalProof={showTechnicalProof} />)}</div>
+      <div className="grid gap-px bg-slate-200 lg:grid-cols-2">{standardArtifacts.map(artifact => <ArtifactCard key={`${artifact.kind}:${artifact.key}`} artifact={artifact} showTechnicalProof={showTechnicalProof} />)}</div>
     </section>
+    </div>
   )
 }
 
@@ -46,5 +53,9 @@ function record(value: unknown): Record<string, unknown> { return value && typeo
 function records(value: unknown): Array<Record<string, unknown>> { return Array.isArray(value) ? value.map(record) : [] }
 function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [] }
 function delay(minutes: number) { if (minutes === 0) return 'imediatamente'; if (minutes % 1440 === 0) return `após ${minutes / 1440} dia(s)`; if (minutes % 60 === 0) return `após ${minutes / 60} hora(s)`; return `após ${minutes} minuto(s)` }
-const kindLabel = { funnel: 'Funil', email: 'E-mail', sequence: 'Sequência', automation: 'Automação' }
+const kindLabel: Record<MissionArtifact['kind'], string> = {
+  funnel: 'Funil', email: 'E-mail', sequence: 'Sequência', automation: 'Automação',
+  campaign_brief: 'Brief de campanha', campaign_audience: 'Público', campaign_creative: 'Criativo',
+  campaign_landing_page: 'Landing page', campaign_lead_form: 'Formulário', campaign_tracking: 'Tracking', campaign_provider: 'Provedor',
+}
 const statusLabel = { proposed: 'Proposto', draft: 'Rascunho', published: 'Publicado' }

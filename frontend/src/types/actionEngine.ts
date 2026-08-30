@@ -75,6 +75,8 @@ export interface ActionMission {
   createdBy: string
   createdAt: string
   updatedAt: string
+  metricSpec?: MissionMetricSpec
+  packContentHash?: string | null
 }
 
 export interface RevenueRecoveryParameters {
@@ -100,6 +102,7 @@ export interface ActionPack {
   protectedStepKeys: string[]
   extensionPoints: Array<{ key: string; afterStepKey: string; beforeStepKey: string; maxAdditionalSteps: number }>
   allowedCapabilities: Array<{ key: string; versions: number[]; required: boolean }>
+  metricSpec?: MissionMetricSpec
 }
 
 export interface MissionPlanStep {
@@ -170,6 +173,8 @@ export interface MissionArtifactVersion {
 export interface MissionArtifact {
   key: string
   kind: 'funnel' | 'email' | 'sequence' | 'automation'
+    | 'campaign_brief' | 'campaign_audience' | 'campaign_creative'
+    | 'campaign_landing_page' | 'campaign_lead_form' | 'campaign_tracking' | 'campaign_provider'
   title: string
   status: MissionArtifactVersion['status']
   contentHash: string
@@ -204,6 +209,23 @@ export type MissionMetric =
   | { kind: 'unknown' | 'not_applicable'; reason: string; unit: string }
 
 export type MissionMetrics = Record<string, MissionMetric>
+
+export interface MissionMetricDefinition {
+  key: string
+  unit?: string
+  group: 'primary' | 'leading' | 'operational' | 'economics' | 'guardrail'
+  attributionPolicy?: Record<string, unknown>
+  attributionPolicyHash?: string
+}
+
+export interface MissionMetricSpec {
+  primary?: MissionMetricDefinition | MissionMetricDefinition[]
+  leading?: string[]
+  operational?: string[]
+  economics?: string[]
+  guardrails?: string[]
+  unknownPolicy?: string
+}
 
 export interface MissionEconomics {
   producedValueBrl: string

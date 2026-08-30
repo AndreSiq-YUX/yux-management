@@ -5,6 +5,7 @@ import { MissionEconomicsPanel } from './MissionEconomicsPanel'
 import { MissionDecisionSummary, readDecisionSummary } from './MissionDecisionSummary'
 import { MissionExecutionTimeline } from './MissionExecutionTimeline'
 import { MissionMetricsPanel } from './MissionMetricsPanel'
+import { MissionGuardrailsPanel } from './MissionGuardrailsPanel'
 import { MissionOperationalControls } from './MissionOperationalControls'
 import { MissionPlanPanel } from './MissionPlanPanel'
 import { MissionTechnicalProof } from './MissionTechnicalProof'
@@ -34,6 +35,7 @@ export function MissionDetail(props: MissionDetailProps) {
   const planApproval = approvals.find(item => item.status === 'pending' && (item.approvalType === 'plan' || item.approvalType === 'replan'))
   const decisionSummary = readDecisionSummary(planApproval)
   const selectedPack = mission.packSelection.packs?.[0]
+  const isCampaignLaunch = selectedPack?.key === 'campaign_launch'
   const sourceLabel = selectedPack ? `${selectedPack.key.split('_').join(' ')} · ${selectedPack.version}` : 'Plano selecionado pelo Mission Supervisor'
   return (
     <div className="space-y-6">
@@ -44,7 +46,8 @@ export function MissionDetail(props: MissionDetailProps) {
       </header>
       {decisionSummary && planApproval ? <><MissionDecisionSummary summary={decisionSummary} approvalSubjectHash={planApproval.subjectHash} canApprove={canWrite} busy={busy === 'approve-plan'} onApprove={() => props.onApprovePlan(planApproval)} />{props.showTechnicalProof ? <MissionTechnicalProof summary={decisionSummary} plan={plan} /> : null}</> : <MissionPlanPanel plan={plan} />}
       <MissionArtifactsPanel artifacts={props.artifacts} canWrite={canWrite} showTechnicalProof={props.showTechnicalProof} onRefresh={props.onRefreshArtifacts} refreshing={busy === 'artifacts'} />
-      <MissionMetricsPanel metrics={metrics} />
+      <MissionMetricsPanel metrics={metrics} metricSpec={mission.metricSpec} showTechnicalProof={props.showTechnicalProof} />
+      {isCampaignLaunch ? <MissionGuardrailsPanel metrics={metrics} metricSpec={mission.metricSpec} status={mission.status} /> : null}
       {props.operationalControls ? <MissionOperationalControls controls={props.operationalControls} busyCapability={busy?.replace('capability:', '')} onCapabilityControl={props.onCapabilityControl} /> : null}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]"><MissionExecutionTimeline actions={actions} canWrite={canWrite} busyActionId={busy?.replace('action:', '')} onRetry={props.onRetryAction} onResolveHuman={props.onResolveHuman} /><MissionApprovalsPanel approvals={approvals} canWrite={canWrite} busyApprovalId={busy?.replace('approval:', '')} onDecision={props.onApprovalDecision} /></div>
       <MissionEconomicsPanel economics={economics} />

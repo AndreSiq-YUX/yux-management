@@ -498,7 +498,15 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
     const mission = await getMission(app.pg, params.data.missionId, query.data.organizationId)
     if (!mission) return reply.code(404).send({ error: 'mission_not_found' })
-    return sanitizeMission(mission, ctx.role === 'yux_admin' || ctx.role === 'yux_operator')
+    const pack = await app.pg.query<{ metric_spec: Record<string, unknown>; content_hash: string }>(
+      `SELECT definition->'metricSpec' AS metric_spec,content_hash
+       FROM public.action_pack_versions WHERE id=$1 LIMIT 1`, [mission.packVersionId],
+    )
+    return {
+      ...sanitizeMission(mission, ctx.role === 'yux_admin' || ctx.role === 'yux_operator'),
+      metricSpec: pack.rows[0]?.metric_spec ?? {},
+      packContentHash: pack.rows[0]?.content_hash ?? null,
+    }
   })
 
   app.patch('/missions/:missionId', async (request, reply) => {

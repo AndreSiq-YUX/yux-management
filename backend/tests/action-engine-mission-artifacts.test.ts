@@ -31,4 +31,29 @@ describe('mission artifact projections', () => {
     expect(artifacts).toHaveLength(1)
     expect(artifacts[0]).toMatchObject({ kind: 'email', staleApproval: false, proposedVersion: { contentHash } })
   })
+
+  it('projects the complete campaign review without provider credentials', () => {
+    const bundle = {
+      brief: { name: 'Imóveis SP', offer: 'Consultoria', platform: 'meta', dailyBudgetBrl: '50', totalBudgetBrl: '500', startsAt: '2026-09-01T00:00:00.000Z', sourceIds: ['source-1'] },
+      audience: { targeting: { region: 'São Paulo' }, rationale: 'ICP publicado', sourceIds: ['source-1'] },
+      creativeSet: { creatives: [{ format: 'image', headline: 'Encontre seu imóvel', body: 'Fale conosco', sourceIds: ['source-1'] }] },
+      acquisition: { landingPage: { name: 'Landing SP' }, leadForm: { name: 'Interesse' }, trackingPlan: { utm_source: 'meta', utm_medium: 'paid_social', utm_campaign: 'imoveis_sp', conversion_event: 'lead' } },
+      sourceIds: ['source-1'], brandCompliance: { findings: [] }, risks: [],
+    }
+    const artifacts = buildMissionArtifactProjections({
+      plan: { id: 'plan-1', planHash: 'a'.repeat(64), parameters: { campaignLaunchArtifacts: bundle } },
+      actions: [
+        { id: 'draft-1', stepKey: 'pack.draft_campaign', status: 'succeeded', output: { output: { entityId: 'campaign-1', versionId: 'version-1', contentHash: 'b'.repeat(64) } } },
+        { id: 'provider-1', stepKey: 'pack.create_provider_paused', status: 'succeeded', output: { output: { providerReference: 'meta-123', status: 'provider_paused', contentHash: 'b'.repeat(64) } } },
+      ],
+      approvals: [],
+      sources: [{ id: 'source-1', title: 'Base de conhecimento publicada', category: 'knowledge' }],
+    })
+    expect(artifacts.map(item => item.kind)).toEqual([
+      'campaign_brief', 'campaign_audience', 'campaign_creative', 'campaign_landing_page',
+      'campaign_lead_form', 'campaign_tracking', 'campaign_provider',
+    ])
+    expect(artifacts.find(item => item.kind === 'campaign_provider')?.data).toMatchObject({ providerState: 'provider_paused', providerReference: 'meta-123', totalBudgetBrl: '500' })
+    expect(JSON.stringify(artifacts)).not.toContain('accessToken')
+  })
 })

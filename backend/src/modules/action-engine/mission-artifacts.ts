@@ -5,6 +5,8 @@ type RecordValue = Record<string, unknown>
 export type MissionArtifactProjection = {
   key: string
   kind: 'funnel' | 'email' | 'sequence' | 'automation'
+    | 'campaign_brief' | 'campaign_audience' | 'campaign_creative'
+    | 'campaign_landing_page' | 'campaign_lead_form' | 'campaign_tracking' | 'campaign_provider'
   title: string
   status: 'proposed' | 'draft' | 'published'
   contentHash: string
@@ -26,6 +28,8 @@ export function buildMissionArtifactProjections(input: {
   sources: Array<{ id: string; title: string; category: string }>
 }): MissionArtifactProjection[] {
   const parameters = record(input.plan.parameters)
+  const campaignBundle = record(parameters.campaignLaunchArtifacts)
+  if (Object.keys(campaignBundle).length) return buildCampaignArtifacts(campaignBundle, input)
   const bundle = record(parameters.funnelNurtureArtifacts)
   if (!Object.keys(bundle).length) return []
 
@@ -56,6 +60,77 @@ export function buildMissionArtifactProjections(input: {
   return artifacts
 }
 
+function buildCampaignArtifacts(
+  bundle: RecordValue,
+  input: {
+    plan: RecordValue
+    actions: RecordValue[]
+    approvals: RecordValue[]
+    sources: Array<{ id: string; title: string; category: string }>
+  },
+): MissionArtifactProjection[] {
+  const citations = citationList(bundle, input.sources)
+  const compliance = record(bundle.brandCompliance)
+  const warnings = uniqueStrings([...strings(bundle.risks), ...strings(compliance.findings)])
+  const planApproval = input.approvals.find(item => item.planId === input.plan.id && ['pending', 'approved'].includes(String(item.status)))
+  const planApprovalPayload = record(planApproval?.requestedPayload)
+  const staleApproval = Boolean(planApproval && planApprovalPayload.planHash && planApprovalPayload.planHash !== input.plan.planHash)
+  const artifacts: MissionArtifactProjection[] = []
+  const add = (config: {
+    key: string; kind: MissionArtifactProjection['kind']; title: string; data: RecordValue;
+    draftStep: string; publishStep?: string; itemCitations?: MissionArtifactProjection['citations']; itemWarnings?: string[];
+  }) => artifacts.push(project({
+    ...config,
+    stepPrefix: 'pack.',
+    publishStep: config.publishStep ?? '__never__',
+    input,
+    citations: config.itemCitations ?? citations,
+    warnings: config.itemWarnings ?? warnings,
+    approval: planApproval,
+    staleApproval,
+  }))
+
+  const brief = record(bundle.brief)
+  if (Object.keys(brief).length) add({ key: 'brief', kind: 'campaign_brief', title: String(brief.name ?? 'Brief da campanha'), data: brief, draftStep: 'pack.draft_campaign' })
+  const audience = record(bundle.audience)
+  if (Object.keys(audience).length) add({ key: 'audience', kind: 'campaign_audience', title: 'Público e segmentação', data: audience, draftStep: 'pack.draft_campaign' })
+  records(record(bundle.creativeSet).creatives).forEach((creative, index) => add({
+    key: `creative_${index + 1}`, kind: 'campaign_creative', title: String(creative.headline ?? `Criativo ${index + 1}`),
+    data: creative, draftStep: 'pack.draft_creative', itemCitations: citationList(creative, input.sources),
+  }))
+  const acquisition = record(bundle.acquisition)
+  const landingPage = record(acquisition.landingPage)
+  if (Object.keys(landingPage).length) add({ key: 'landing_page', kind: 'campaign_landing_page', title: String(landingPage.name ?? 'Landing page'), data: landingPage, draftStep: 'pack.draft_landing_page' })
+  const leadForm = record(acquisition.leadForm)
+  if (Object.keys(leadForm).length) add({ key: 'lead_form', kind: 'campaign_lead_form', title: String(leadForm.name ?? 'Formulário'), data: leadForm, draftStep: 'pack.draft_lead_form' })
+  const tracking = record(acquisition.trackingPlan)
+  if (Object.keys(tracking).length) add({ key: 'tracking', kind: 'campaign_tracking', title: 'Mensuração e tracking', data: tracking, draftStep: 'pack.validate_tracking' })
+
+  const providerAction = latestAction(input.actions, 'pack.create_provider_paused')
+  const activationAction = latestAction(input.actions, 'pack.activate')
+  const providerOutput = actionEvidence(activationAction ?? providerAction)
+  if (providerAction || activationAction) {
+    const activationApproval = input.approvals.find(item => item.runId === activationAction?.id && ['pending', 'approved'].includes(String(item.status)))
+    const providerState = activationAction?.status === 'succeeded' ? 'active'
+      : providerAction?.status === 'succeeded' ? 'provider_paused' : String(providerOutput.status ?? 'preparing')
+    add({
+      key: 'provider', kind: 'campaign_provider', title: 'Campanha no provedor', draftStep: 'pack.create_provider_paused', publishStep: 'pack.activate',
+      data: {
+        provider: brief.platform,
+        providerState,
+        providerReference: providerOutput.providerReference,
+        dailyBudgetBrl: brief.dailyBudgetBrl,
+        totalBudgetBrl: brief.totalBudgetBrl,
+        startsAt: brief.startsAt,
+        endsAt: brief.endsAt,
+        activationApprovalStatus: activationApproval?.status ?? 'not_requested',
+        activationSubjectHash: activationApproval?.subjectHash,
+      },
+    })
+  }
+  return artifacts
+}
+
 function project(config: {
   key: string; kind: MissionArtifactProjection['kind']; title: string; data: RecordValue; stepPrefix: string;
   draftStep: string; publishStep: string; input: { plan: RecordValue; actions: RecordValue[] };
@@ -63,10 +138,11 @@ function project(config: {
 }): MissionArtifactProjection {
   const publication = latestAction(config.input.actions, config.publishStep)
   const draft = latestAction(config.input.actions, config.draftStep)
-  const evidence = record(publication?.output ?? draft?.output)
+  const evidence = actionEvidence(publication ?? draft)
   const status = publication?.status === 'succeeded' ? 'published' : draft?.status === 'succeeded' ? 'draft' : 'proposed'
   const proposedHash = artifactHash(config.kind, draft?.input ? record(draft.input) : config.data)
-  const currentHash = typeof evidence.contentHash === 'string' ? evidence.contentHash : proposedHash
+  const comparableEvidence = !['campaign_brief','campaign_audience','campaign_tracking','campaign_provider'].includes(config.kind)
+  const currentHash = comparableEvidence && typeof evidence.contentHash === 'string' ? evidence.contentHash : proposedHash
   return {
     key: config.key, kind: config.kind, title: config.title, status, contentHash: currentHash,
     ...(typeof evidence.entityId === 'string' ? { entityId: evidence.entityId } : {}),
@@ -95,6 +171,12 @@ function artifactHash(kind: MissionArtifactProjection['kind'], data: RecordValue
 
 function latestAction(actions: RecordValue[], stepKey: string): RecordValue | undefined {
   return [...actions].reverse().find(action => action.stepKey === stepKey)
+}
+
+function actionEvidence(action?: RecordValue): RecordValue {
+  const raw = record(action?.output)
+  const nested = record(raw.output)
+  return Object.keys(nested).length ? nested : raw
 }
 
 function citationList(value: RecordValue, sources: Array<{ id: string; title: string; category: string }>) {
