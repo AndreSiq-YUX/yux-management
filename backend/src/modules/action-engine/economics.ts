@@ -87,7 +87,7 @@ export async function collectMissionEconomics(client: Queryable, missionId: stri
   const [metric, costs, actionCounts] = await Promise.all([
     client.query<{ numeric_value: string | null }>(
       `SELECT numeric_value::TEXT FROM public.action_mission_metrics
-       WHERE mission_id = $1 AND organization_id = $2 AND metric_key = 'signed_revenue' AND value_kind = 'known'
+       WHERE mission_id = $1 AND organization_id = $2 AND metric_key = 'signed_revenue' AND value_kind = 'known' AND is_demo = FALSE
        ORDER BY measured_at DESC LIMIT 1`, [missionId, organizationId],
     ),
     client.query<{ amount_brl: string }>(

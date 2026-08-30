@@ -24,6 +24,8 @@ import { DECISION_REASON_KEYS, exportDecisionFeedbackLearningEvidence } from './
 import { collectMissionBudgetBurnDown } from './budget-alerts.js'
 import { listMissionCapabilityControls, setCapabilityControl } from './kill-switch-controls.js'
 import { buildMissionArtifactProjections } from './mission-artifacts.js'
+import { listMissionRecipes, resolveMissionRecipe } from './recipes.js'
+import { cleanupMissionSandbox, seedMissionSandbox } from './sandbox-seeder.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -64,6 +66,7 @@ const missionIntentCreate = z.object({
   deadlineAt: z.string().datetime(), allowedModules: z.array(z.string().min(1)).min(1).max(50),
   maxTotalCostBrl: decimal, maxHumanHours: decimal, maxExternalContacts: z.number().int().nonnegative().optional(),
   expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery','funnel_nurture']).optional(),
+  recipeSelection: z.object({ key: z.string().min(1).max(100), version: z.number().int().positive(), contentHash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
 })
 const clarificationAnswers = z.object({
   organizationId: uuid, expectedVersion: z.number().int().positive(),
@@ -124,6 +127,39 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
     return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1)]
+  })
+
+  app.get('/mission-recipes', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const query = organizationQuery.safeParse(request.query)
+    if (!query.success) return reply.code(400).send({ error: 'invalid_mission_recipe_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    try { return await listMissionRecipes(app.pg) }
+    catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.post('/mission-recipes/:recipeKey/versions/:version/seed-sandbox', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = z.object({ recipeKey: z.string().min(1).max(100), version: z.coerce.number().int().positive() }).safeParse(request.params)
+    const body = z.object({ organizationId: uuid }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_sandbox_seed' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try {
+      return reply.code(201).send(await seedMissionSandbox(app.pg, {
+        organizationId: body.data.organizationId, recipeKey: params.data.recipeKey,
+        recipeVersion: params.data.version, actorId: ctx.userId,
+      }))
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.delete('/sandbox-seeds/:manifestId', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = z.object({ manifestId: uuid }).safeParse(request.params)
+    const body = z.object({ organizationId: uuid }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_sandbox_cleanup' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try { return await cleanupMissionSandbox(app.pg, { organizationId: body.data.organizationId, manifestId: params.data.manifestId, actorId: ctx.userId }) }
+    catch (error) { return sendDomainError(reply, error) }
   })
 
   app.get('/action-packs/:packKey/versions/:semanticVersion', async (request, reply) => {
@@ -328,7 +364,21 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
     if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })
     try {
-      const packKey = selectIntentPack(parsed.data.quickStart, parsed.data.objective)
+      const recipe = parsed.data.recipeSelection
+        ? await resolveMissionRecipe(app.pg, parsed.data.recipeSelection.key, parsed.data.recipeSelection.version)
+        : null
+      if (recipe && recipe.contentHash !== parsed.data.recipeSelection?.contentHash) return reply.code(409).send({ error: 'mission_recipe_hash_mismatch' })
+      const recipePack = recipe?.packSelections[0]
+      const packKey = recipePack?.key ?? selectIntentPack(parsed.data.quickStart, parsed.data.objective)
+      if (recipe && (!recipePack || recipe.packSelections.length !== 1)) return reply.code(409).send({ error: 'mission_recipe_pack_selection_invalid' })
+      if (recipe) {
+        const allowedModules = Array.isArray(recipe.defaultGoal.allowedModules)
+          ? recipe.defaultGoal.allowedModules.filter((item): item is string => typeof item === 'string')
+          : []
+        if (JSON.stringify([...parsed.data.allowedModules].sort()) !== JSON.stringify([...allowedModules].sort())) {
+          return reply.code(409).send({ error: 'mission_recipe_non_editable_default_changed' })
+        }
+      }
       if (packKey === FUNNEL_NURTURE_PACK_V1.key && !(await hasFunnelNurtureEntitlement(app.pg, parsed.data.organizationId, parsed.data.contractId))) {
         return reply.code(403).send({ error: 'funnel_nurture_contract_flag_required' })
       }
@@ -357,8 +407,9 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
           expiresAt: parsed.data.deadlineAt, alwaysRequireApprovalFor: ['destructive'],
         },
         packSelection: {
-          strategy: parsed.data.quickStart ? 'explicit_quick_start' : 'supervisor',
-          packs: [{ key: packKey, version: packKey === FUNNEL_NURTURE_PACK_V1.key ? FUNNEL_NURTURE_PACK_V1.semanticVersion : REVENUE_RECOVERY_PACK_V0.semanticVersion }],
+          strategy: recipe ? 'versioned_recipe' : parsed.data.quickStart ? 'explicit_quick_start' : 'supervisor',
+          packs: [{ key: packKey, version: recipePack?.version ?? (packKey === FUNNEL_NURTURE_PACK_V1.key ? FUNNEL_NURTURE_PACK_V1.semanticVersion : REVENUE_RECOVERY_PACK_V0.semanticVersion) }],
+          ...(recipe ? { recipe: { key: recipe.key, version: recipe.version, contentHash: recipe.contentHash } } : {}),
         },
         budget: { maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours },
         deadlineAt: parsed.data.deadlineAt, createdBy: ctx.userId, idempotencyKey,
@@ -852,6 +903,9 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     decision_feedback_reason_required: 400, decision_feedback_reason_invalid: 400, decision_feedback_reason_not_allowed: 400,
     decision_feedback_comment_required: 400, decision_feedback_comment_too_long: 400,
     mission_budget_maximum_invalid: 409, mission_capability_not_found: 404,
+    mission_recipe_not_found: 404, mission_recipe_hash_mismatch: 409, mission_recipe_pack_unavailable: 409,
+    mission_recipe_pack_selection_invalid: 409, mission_recipe_non_editable_default_changed: 409, mission_sandbox_not_entitled: 403,
+    sandbox_manifest_not_found: 404, sandbox_seed_persistence_failed: 500,
   }
   return reply.code(statusCode[code] ?? 500).send({ error: statusCode[code] ? code : 'internal_error' })
 }

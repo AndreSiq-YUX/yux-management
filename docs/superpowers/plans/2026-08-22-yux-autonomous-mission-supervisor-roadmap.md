@@ -89,7 +89,7 @@ Run backend, frontend and Harness suites; create one generic Mission in `shadow`
 
 Verify the three-question cap, concrete impact summary, stale-revision invalidation, owner/operator views, outbound notification, redacted share report and external reviewer authority boundary.
 
-- [ ] **Checkpoint 5: execute Release 2 and publish `funnel_nurture@1.0.0`**
+- [x] **Checkpoint 5: execute Release 2 and publish `funnel_nurture@1.0.0`**
 
 Run the Funnel + Nurture acceptance scenario against a disposable organization before enabling its contract flag.
 

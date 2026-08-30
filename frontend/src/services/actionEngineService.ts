@@ -3,7 +3,7 @@ import type {
   ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput, DecisionReasonKey,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
   MissionArtifact, MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
-  PublicSimulationReport, SimulationReportShare,
+  MissionRecipe, PublicSimulationReport, SandboxSeedManifest, SimulationReportShare,
 } from '@/types/actionEngine'
 
 function query(params: Record<string, string | number | undefined>) {
@@ -16,6 +16,11 @@ const root = '/action-engine'
 
 export const actionEngineService = {
   listPacks: () => apiRequest<ActionPack[]>(`${root}/action-packs`),
+  listRecipes: (organizationId: string) => apiRequest<MissionRecipe[]>(`${root}/mission-recipes?${query({ organizationId })}`),
+  seedRecipeSandbox: (organizationId: string, recipe: Pick<MissionRecipe, 'key' | 'version'>) =>
+    apiRequest<SandboxSeedManifest>(`${root}/mission-recipes/${encodeURIComponent(recipe.key)}/versions/${recipe.version}/seed-sandbox`, { method: 'POST', body: { organizationId } }),
+  cleanupSandbox: (organizationId: string, manifestId: string) =>
+    apiRequest<{ manifestId: string; status: string; deleted: string[]; modified: string[] }>(`${root}/sandbox-seeds/${manifestId}`, { method: 'DELETE', body: { organizationId } }),
   readiness: (input: {
     organizationId: string; contractId?: string; targetRevenueBrl: string; deadlineAt: string;
     maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string; packKey?: 'revenue_recovery' | 'funnel_nurture';

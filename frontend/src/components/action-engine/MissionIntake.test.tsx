@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MissionIntake } from './MissionIntake'
 import { actionEngineService } from '@/services/actionEngineService'
 import type { ActionMission } from '@/types/actionEngine'
+import type { MissionRecipe } from '@/types/actionEngine'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
@@ -46,6 +47,24 @@ describe('MissionIntake', () => {
     const { root } = await renderIntake(true)
     await click('Funil + nutrição'); await click('Definir limites'); await click('Criar missão')
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ quickStart: 'funnel_nurture', mode: 'prepare', allowedModules: ['crm', 'automations', 'funnel_nurture_agent'] }))
+    act(() => root.unmount())
+  })
+
+  it('pins the selected recipe version and keeps its governed modules', async () => {
+    const recipe: MissionRecipe = {
+      id: 'recipe-id', key: 'funnel_nurture_real_estate', version: 1, title: 'Funil + nutrição para imobiliária', sector: 'real_estate',
+      packSelections: [{ key: 'funnel_nurture', version: '1.0.0', contentHash: 'a'.repeat(64) }],
+      defaultGoal: { title: 'Funil imobiliário', objective: 'Criar um funil imobiliário completo com três e-mails educativos.', mode: 'shadow', allowedModules: ['crm','automations','funnel_nurture_agent'], maxTotalCostBrl: '500', maxHumanHours: '4', maxExternalContacts: 0, expectedValueBrl: '10000' },
+      editableKeys: ['title','objective','mode'], contentHash: 'b'.repeat(64),
+    }
+    vi.spyOn(actionEngineService, 'listRecipes').mockResolvedValue([recipe])
+    const create = vi.spyOn(actionEngineService, 'createMissionIntent').mockResolvedValue({ id: 'mission-recipe' } as ActionMission)
+    const { root } = await renderIntake(true)
+    await click('Funil + nutrição para imobiliária'); await click('Definir limites'); await click('Criar missão')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'shadow', allowedModules: ['crm','automations','funnel_nurture_agent'],
+      recipeSelection: { key: recipe.key, version: 1, contentHash: recipe.contentHash },
+    }))
     act(() => root.unmount())
   })
 

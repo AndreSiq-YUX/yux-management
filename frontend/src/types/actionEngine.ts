@@ -279,6 +279,30 @@ export interface CreateMissionIntentInput {
   maxExternalContacts?: number
   expectedValueBrl?: string
   quickStart?: 'revenue_recovery' | 'funnel_nurture'
+  recipeSelection?: { key: string; version: number; contentHash: string }
+}
+
+export interface MissionRecipe {
+  id: string
+  key: string
+  version: number
+  title: string
+  sector: string
+  packSelections: Array<{ key: string; version: string; contentHash: string }>
+  defaultGoal: Record<string, unknown>
+  editableKeys: string[]
+  contentHash: string
+}
+
+export interface SandboxSeedManifest {
+  id: string
+  organizationId: string
+  recipeKey: string
+  recipeVersion: number
+  status: 'active' | 'cleaned' | 'review_required'
+  manifestHash: string
+  itemCount: number
+  reused?: boolean
 }
 
 export interface ClarificationAnswerInput {

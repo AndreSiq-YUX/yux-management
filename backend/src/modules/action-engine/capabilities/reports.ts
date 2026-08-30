@@ -18,7 +18,7 @@ export const reportsRecoveredRevenueSnapshot: CapabilityDefinition<z.infer<typeo
       `SELECT SUM(COALESCE(lead.value, 0))::TEXT AS total, ARRAY_AGG(lead.id::TEXT) AS ids
        FROM public.leads lead
        WHERE lead.organization_id = $1 AND lead.id = ANY($2::UUID[])
-         AND lead.stage = 'WON' AND lead.updated_at >= $3`,
+         AND lead.is_demo = FALSE AND lead.stage = 'WON' AND lead.updated_at >= $3`,
       [context.organizationId, input.leadIds, input.since],
     )
     const row = result.rows[0]

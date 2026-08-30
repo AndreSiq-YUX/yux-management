@@ -36,7 +36,7 @@ export async function collectMissionMetrics(client: Queryable, missionId: string
     ),
     client.query<{ metric_key: string; value_kind: MetricValue['kind']; numeric_value: string | null; unit: string; reason: string | null; measured_at: string | Date; attribution_status: string }>(
       `SELECT DISTINCT ON (metric_key) metric_key, value_kind, numeric_value::TEXT, unit, reason, measured_at, attribution_status
-       FROM public.action_mission_metrics WHERE mission_id = $1 AND organization_id = $2
+       FROM public.action_mission_metrics WHERE mission_id = $1 AND organization_id = $2 AND is_demo = FALSE
        ORDER BY metric_key, measured_at DESC`, [missionId, organizationId],
     ),
     client.query<{ minutes: string | null }>(

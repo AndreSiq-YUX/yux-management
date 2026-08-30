@@ -67,6 +67,9 @@ O ensaio autenticado na VPS e os IDs reais permanecem pendentes até deploy; nã
 ## Estado desta entrega
 
 - Testes/builds locais: executados na implementação da Release 2.
+- A Recipe versionada `Funil + nutrição para imobiliária` fica disponível no início do intake e continua sujeita aos mesmos gates do pack pinado.
+- O módulo contratual opcional `mission_sandbox` habilita a criação explícita de dados demo. Cada seed é idempotente, tenant-scoped e marcado com `is_demo`; esses registros não entram nas métricas reais.
+- A limpeza usa o manifesto gravado. Se qualquer registro demo tiver sido editado, nenhum registro do manifesto é apagado automaticamente e o manifesto fica em `review_required`.
 - Migration aplicada na VPS: pendente.
 - Aceitação autenticada e ensaio de rollback na VPS: pendentes.
 - Leads reais inscritos ou e-mails enviados neste aceite: nenhum; proibido no cenário descartável.
