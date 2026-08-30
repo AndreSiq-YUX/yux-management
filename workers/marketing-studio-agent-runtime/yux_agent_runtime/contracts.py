@@ -118,6 +118,72 @@ class FunnelNurtureArtifacts(StrictArtifactModel):
     risks: list[str] = Field(default_factory=list, max_length=100)
 
 
+class CampaignBriefArtifact(StrictArtifactModel):
+    name: str = Field(min_length=1, max_length=200)
+    objective: str = Field(pattern=r"^(lead_generation|traffic|conversions|awareness)$")
+    offer: str = Field(min_length=1, max_length=2000)
+    platform: str = Field(pattern=r"^(meta|google)$")
+    providerConnectionId: str = Field(min_length=1)
+    dailyBudgetBrl: str = Field(pattern=r"^\d+(\.\d{1,6})?$")
+    totalBudgetBrl: str = Field(pattern=r"^\d+(\.\d{1,6})?$")
+    startsAt: str = Field(min_length=1)
+    endsAt: str | None = None
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+    funnelArtifactRefs: list[str] = Field(default_factory=list, max_length=20)
+
+
+class AudienceArtifact(StrictArtifactModel):
+    targeting: dict[str, Any]
+    exclusions: list[str] = Field(default_factory=list, max_length=100)
+    rationale: str = Field(min_length=1, max_length=2000)
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+
+
+class CampaignCreativeArtifact(StrictArtifactModel):
+    format: str = Field(pattern=r"^(image|video|carousel|text)$")
+    headline: str = Field(min_length=1, max_length=240)
+    body: str = Field(min_length=1, max_length=5000)
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+
+
+class CreativeSetArtifact(StrictArtifactModel):
+    creatives: list[CampaignCreativeArtifact] = Field(min_length=1, max_length=20)
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+
+
+class AcquisitionPlanArtifact(StrictArtifactModel):
+    landingPage: dict[str, Any]
+    leadForm: dict[str, Any]
+    trackingPlan: dict[str, str]
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def tracking_is_complete(self) -> "AcquisitionPlanArtifact":
+        for key in ("utm_source", "utm_medium", "utm_campaign", "conversion_event"):
+            if not str(self.trackingPlan.get(key) or "").strip():
+                raise ValueError("campaign_tracking_required")
+        return self
+
+
+class MeasurementPlanArtifact(StrictArtifactModel):
+    primaryMetrics: list[str] = Field(min_length=1, max_length=20)
+    leadingMetrics: list[str] = Field(min_length=1, max_length=20)
+    attributionPolicyKey: str = Field(min_length=1)
+    attributionPolicyVersion: int = Field(ge=1)
+    sourceIds: list[str] = Field(min_length=1, max_length=100)
+
+
+class CampaignLaunchArtifacts(StrictArtifactModel):
+    brief: CampaignBriefArtifact
+    audience: AudienceArtifact
+    creativeSet: CreativeSetArtifact
+    acquisition: AcquisitionPlanArtifact
+    measurement: MeasurementPlanArtifact
+    brandCompliance: BrandComplianceVerdict
+    sourceIds: list[str] = Field(min_length=1, max_length=200)
+    risks: list[str] = Field(default_factory=list, max_length=100)
+
+
 def validate_mission_plan(value: dict[str, Any], planning_input: dict[str, Any]) -> dict[str, Any]:
     """Validate a proposed plan without trusting the model/provider.
 

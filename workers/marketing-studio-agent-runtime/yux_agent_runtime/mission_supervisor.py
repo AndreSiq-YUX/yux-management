@@ -10,6 +10,7 @@ from .mission_contracts import MissionSupervisorProposal, PlanWire
 from .model_profiles import ModelProfile, build_model_trace
 from .providers import OpenRouterClient, ProviderRequestError
 from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
+from .campaign_launch import CampaignLaunchError, CampaignLaunchSpecialistWorkflow
 
 
 class MissionSupervisorError(ValueError):
@@ -17,10 +18,11 @@ class MissionSupervisorError(ValueError):
 
 
 class MissionSupervisor:
-    def __init__(self, client: OpenRouterClient, profile: ModelProfile, funnel_nurture: FunnelNurtureSpecialistWorkflow | None = None) -> None:
+    def __init__(self, client: OpenRouterClient, profile: ModelProfile, funnel_nurture: FunnelNurtureSpecialistWorkflow | None = None, campaign_launch: CampaignLaunchSpecialistWorkflow | None = None) -> None:
         self.client = client
         self.profile = profile
         self.funnel_nurture = funnel_nurture or FunnelNurtureSpecialistWorkflow(client, profile)
+        self.campaign_launch = campaign_launch or CampaignLaunchSpecialistWorkflow(client, profile)
 
     def compose_messages(self, value: dict[str, Any]) -> list[dict[str, str]]:
         envelope = {
@@ -92,6 +94,12 @@ class MissionSupervisor:
                 except FunnelNurtureError as error:
                     raise MissionSupervisorError(str(error)) from error
                 proposal.plan = self._inject_funnel_nurture_artifacts(proposal.plan, artifacts)
+            if any(pack.key == "campaign_launch" for pack in proposal.selected_packs):
+                try:
+                    artifacts = self.campaign_launch.generate(value)
+                except CampaignLaunchError as error:
+                    raise MissionSupervisorError(str(error)) from error
+                proposal.plan = self._inject_campaign_launch_artifacts(proposal.plan, artifacts)
             try:
                 typed_plan = PlanWire.model_validate(proposal.plan).model_dump(by_alias=True)
             except ValidationError as error:
@@ -147,6 +155,49 @@ class MissionSupervisor:
             elif capability == "automation.flow.create_draft":
                 step_input = dict(artifacts["automation"])
                 step_input["sequenceVersionId"] = "binding:pack.draft_sequence.versionId"
+            step["input"] = step_input
+            steps.append(step)
+        enriched["steps"] = steps
+        return enriched
+
+    @staticmethod
+    def _inject_campaign_launch_artifacts(plan: dict[str, Any], artifacts: dict[str, Any]) -> dict[str, Any]:
+        enriched = dict(plan)
+        parameters = dict(enriched.get("resolvedParameters") or {})
+        parameters["campaignLaunchArtifacts"] = artifacts
+        enriched["resolvedParameters"] = parameters
+        creative_index = 0
+        steps = []
+        for raw_step in enriched.get("steps") or []:
+            step = dict(raw_step)
+            capability = str(step.get("capabilityKey") or "")
+            step_input = dict(step.get("input") or {})
+            if capability == "landing_page.create_draft":
+                step_input = dict(artifacts["acquisition"]["landingPage"])
+            elif capability == "lead_form.configure_draft":
+                step_input = dict(artifacts["acquisition"]["leadForm"])
+                step_input["landingPageId"] = "binding:pack.draft_landing_page.entityId"
+            elif capability == "campaign.create_draft":
+                brief = dict(artifacts["brief"])
+                source_ids = brief.pop("sourceIds", [])
+                step_input.update(brief)
+                step_input["audience"] = artifacts["audience"]["targeting"]
+                step_input["creatives"] = artifacts["creativeSet"]["creatives"]
+                step_input["trackingPlan"] = artifacts["acquisition"]["trackingPlan"]
+                step_input["landingPageId"] = "binding:pack.draft_landing_page.entityId"
+                step_input["leadFormId"] = "binding:pack.draft_lead_form.entityId"
+                step_input["sourceIds"] = sorted(set(source_ids + artifacts["sourceIds"]))
+            elif capability == "marketing.creative.generate_draft":
+                creative = artifacts["creativeSet"]["creatives"][creative_index]
+                step_input = {"campaignVersionId": "binding:pack.draft_campaign.versionId", "position": creative_index, "creative": creative}
+                creative_index += 1
+            elif capability == "campaign.tracking.validate":
+                tracking = artifacts["acquisition"]["trackingPlan"]
+                step_input = {"utmSource": tracking["utm_source"], "utmMedium": tracking["utm_medium"], "utmCampaign": tracking["utm_campaign"], "conversionEvent": tracking["conversion_event"], "landingPageUrl": tracking.get("landing_page_url", "https://preview.invalid")}
+            elif capability == "campaign.provider.create_paused":
+                step_input = {"versionId": "binding:pack.draft_campaign.versionId", "expectedContentHash": "binding:pack.draft_campaign.contentHash", "approvedSubjectHash": "binding:pack.draft_campaign.contentHash", "maxTotalBudgetBrl": artifacts["brief"]["totalBudgetBrl"]}
+            elif capability in {"campaign.provider.activate", "campaign.provider.pause"}:
+                step_input = {"versionId": "binding:pack.draft_campaign.versionId", "expectedContentHash": "binding:pack.draft_campaign.contentHash", "approvedSubjectHash": "binding:pack.draft_campaign.contentHash"}
             step["input"] = step_input
             steps.append(step)
         enriched["steps"] = steps
