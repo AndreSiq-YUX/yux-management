@@ -5,6 +5,8 @@ import { getContractOrganizationId } from '../../http/contract-organization.js'
 import { requireAuth, requireMembership } from '../../http/guards.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
+import { requireAccess } from '../../policies/authorization.js'
+import { inspectCampaignState } from './repository.js'
 
 const allowedTables = new Set([
   'ad_provider_connections',
@@ -23,6 +25,7 @@ const campaignTableRules = createScopedTableRules(
 )
 
 const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
+const missionStateQuerySchema = z.object({ organizationId: z.string().uuid(), missionId: z.string().uuid().optional() })
 
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
@@ -41,6 +44,14 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function registerCampaignRoutes(app: FastifyInstance) {
+  app.get('/mission-state', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const parsed = missionStateQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_campaign_mission_state_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: parsed.data.organizationId })
+    return inspectCampaignState(app.pg, parsed.data.organizationId, parsed.data.missionId)
+  })
+
   app.get('/portal/campaigns', async (request, reply) => {
     const parsed = portalContractQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_campaign_query' })

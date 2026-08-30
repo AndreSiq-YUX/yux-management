@@ -28,7 +28,7 @@ export async function handleProviderFunction(pool: Pick<pg.Pool, 'query'>, data:
 
   if (functionName === 'execute-ad-provider-mutation') {
     const action = stringValue(body.action, 'action') as AdsProviderMutationAction
-    if (action === 'create_campaign' || action === 'update_budget') await requireApprovedRequest(pool, body.approvalId)
+    if (action === 'create_campaign' || action === 'activate_campaign' || action === 'update_budget') await requireApprovedRequest(pool, body.approvalId)
 
     const connectionId = stringValue(body.providerConnectionId, 'providerConnectionId')
     const campaignId = stringValue(body.campaignId, 'campaignId')

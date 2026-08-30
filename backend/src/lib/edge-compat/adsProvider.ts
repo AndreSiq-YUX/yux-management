@@ -1,6 +1,6 @@
 export type AdsProviderKey = 'meta' | 'google'
 export type AdsProviderConnectionStatus = 'connected' | 'stale' | 'needs_reauth' | 'failed'
-export type AdsProviderMutationAction = 'create_campaign' | 'update_budget' | 'pause_campaign' | 'sync_metrics'
+export type AdsProviderMutationAction = 'create_campaign' | 'activate_campaign' | 'update_budget' | 'pause_campaign' | 'sync_metrics'
 export type AdsProviderMutationStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
 export interface ProviderMutationIdempotencyInput {
@@ -40,7 +40,7 @@ export interface ProviderHttpRequest {
 }
 
 const providers = new Set<AdsProviderKey>(['meta', 'google'])
-const actions = new Set<AdsProviderMutationAction>(['create_campaign', 'update_budget', 'pause_campaign', 'sync_metrics'])
+const actions = new Set<AdsProviderMutationAction>(['create_campaign', 'activate_campaign', 'update_budget', 'pause_campaign', 'sync_metrics'])
 const redactedValue = '[redacted]'
 
 function assertProvider(provider: string): AdsProviderKey {
@@ -369,14 +369,14 @@ async function executeMetaAdapter(input: {
     return buildProviderMutationResponse({ provider: 'meta', action: input.action, localMutationId: input.localMutationId, ok: true, raw: payload })
   }
 
-  if (input.action === 'pause_campaign') {
+  if (input.action === 'pause_campaign' || input.action === 'activate_campaign') {
     const campaignId = stringValue(input.requestPayload.campaignId || input.requestPayload.externalCampaignId || input.requestPayload.externalId, 'campaignId')
     const payload = await sendProviderRequest({
-      step: 'pause_campaign',
+      step: input.action,
       method: 'POST',
       url: `https://graph.facebook.com/${graphVersion}/${campaignId}`,
       bodyMode: 'form',
-      body: { status: 'PAUSED', access_token: accessToken },
+      body: { status: input.action === 'activate_campaign' ? 'ACTIVE' : 'PAUSED', access_token: accessToken },
     }, fetcher)
     return buildProviderMutationResponse({ provider: 'meta', action: input.action, localMutationId: input.localMutationId, ok: true, externalCampaignId: campaignId, raw: payload })
   }
@@ -454,10 +454,10 @@ async function executeGoogleAdapter(input: {
     return buildProviderMutationResponse({ provider: 'google', action: input.action, localMutationId: input.localMutationId, ok: true, raw: payload })
   }
 
-  if (input.action === 'pause_campaign') {
+  if (input.action === 'pause_campaign' || input.action === 'activate_campaign') {
     const campaignResourceName = stringValue(input.requestPayload.campaignResourceName || input.requestPayload.externalCampaignId, 'campaignResourceName')
     const payload = await sendProviderRequest({
-      step: 'pause_campaign',
+      step: input.action,
       method: 'POST',
       url: `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:mutate`,
       headers: googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)),
@@ -465,7 +465,7 @@ async function executeGoogleAdapter(input: {
       body: {
         mutateOperations: [{
           campaignOperation: {
-            update: { resourceName: campaignResourceName, status: 'PAUSED' },
+            update: { resourceName: campaignResourceName, status: input.action === 'activate_campaign' ? 'ENABLED' : 'PAUSED' },
             updateMask: 'status',
           },
         }],

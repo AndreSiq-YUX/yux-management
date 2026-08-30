@@ -1,0 +1,90 @@
+import { executeProviderAdapter, sanitizeProviderMetadata, type AdsProviderMutationAction } from '../../lib/edge-compat/adsProvider.js'
+import { loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
+import { recordDomainEvent } from '../events/repository.js'
+import { loadMissionCommandResult, missionArtifactHash, saveMissionCommandResult, type MissionCommandContext, type MissionCommandQueryable } from '../action-engine/mission-command.js'
+import type { Connectable } from '../action-engine/repository.js'
+import { getCampaignMissionVersion, insertCampaignDraft, inspectCampaignState, type CampaignLaunchArtifact } from './repository.js'
+
+type ArtifactResult = { entityId: string; versionId: string; status: string; contentHash: string; evidence: Record<string, unknown> }
+type ProviderResult = ArtifactResult & { providerReference: string; mutationRunId: string }
+
+export { inspectCampaignState }
+
+export async function createCampaignDraft(client: MissionCommandQueryable, context: MissionCommandContext, input: CampaignLaunchArtifact): Promise<ArtifactResult> {
+  const key='campaign.create_draft'; const prior=await loadMissionCommandResult<ArtifactResult>(client,context,key); if(prior)return prior
+  const version=await insertCampaignDraft(client,context,input)
+  const result={entityId:required(version.campaignId),versionId:version.id,status:'draft',contentHash:version.contentHash,evidence:{provider:input.platform,activated:false,budgetBrl:input.totalBudgetBrl}}
+  await event(client,context,'mission.campaign_draft_created',{campaignId:result.entityId,versionId:result.versionId,contentHash:result.contentHash})
+  return saveMissionCommandResult(client,context,key,result)
+}
+
+export async function generateCreativeDraft(client: MissionCommandQueryable, context: MissionCommandContext, input:{campaignVersionId:string;position:number;creative:CampaignLaunchArtifact['creatives'][number]}):Promise<ArtifactResult>{
+  const key='marketing.creative.generate_draft';const prior=await loadMissionCommandResult<ArtifactResult>(client,context,key);if(prior)return prior
+  const version=await requireVersion(client,context,input.campaignVersionId,'draft'); if(!input.creative.sourceIds.length)throw new Error('campaign_creative_evidence_required')
+  const hash=missionArtifactHash(input.creative);const inserted=await client.query<{id:string}>(`INSERT INTO public.campaign_creative_versions (organization_id,campaign_version_id,position,snapshot_payload,content_hash,mission_id,action_run_id) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (campaign_version_id,position) DO UPDATE SET snapshot_payload=EXCLUDED.snapshot_payload,content_hash=EXCLUDED.content_hash,action_run_id=EXCLUDED.action_run_id WHERE campaign_creative_versions.status='draft' RETURNING id`,[context.organizationId,version.id,input.position,input.creative,hash,context.missionId,context.actionRunId])
+  const id=required(inserted.rows[0]?.id);const result={entityId:id,versionId:id,status:'draft',contentHash:hash,evidence:{position:input.position,sourceIds:input.creative.sourceIds}}
+  await event(client,context,'mission.campaign_creative_draft_created',{campaignVersionId:version.id,creativeVersionId:id,contentHash:hash});return saveMissionCommandResult(client,context,key,result)
+}
+
+export async function attachAcquisitionAsset(client:MissionCommandQueryable,context:MissionCommandContext,input:{campaignVersionId:string;assetKind:'landing_page'|'lead_form'|'tracking';sourceEntityId?:string;payload:Record<string,unknown>;validated?:boolean}):Promise<ArtifactResult>{
+  const key=`campaign.acquisition.attach_${input.assetKind}`;const prior=await loadMissionCommandResult<ArtifactResult>(client,context,key);if(prior)return prior
+  const version=await requireVersion(client,context,input.campaignVersionId,'draft');const hash=missionArtifactHash(input.payload)
+  const inserted=await client.query<{id:string}>(`INSERT INTO public.campaign_acquisition_asset_versions (organization_id,campaign_version_id,asset_kind,source_entity_id,status,snapshot_payload,content_hash,mission_id,action_run_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (campaign_version_id,asset_kind) DO UPDATE SET source_entity_id=EXCLUDED.source_entity_id,status=EXCLUDED.status,snapshot_payload=EXCLUDED.snapshot_payload,content_hash=EXCLUDED.content_hash,action_run_id=EXCLUDED.action_run_id WHERE campaign_acquisition_asset_versions.status IN ('draft','validated') RETURNING id`,[context.organizationId,version.id,input.assetKind,input.sourceEntityId??null,input.validated?'validated':'draft',input.payload,hash,context.missionId,context.actionRunId])
+  const id=required(inserted.rows[0]?.id);const result={entityId:input.sourceEntityId??id,versionId:id,status:input.validated?'validated':'draft',contentHash:hash,evidence:{assetKind:input.assetKind}}
+  return saveMissionCommandResult(client,context,key,result)
+}
+
+export async function createProviderCampaignPaused(pool:Connectable,context:MissionCommandContext,input:{versionId:string;expectedContentHash:string;approvedSubjectHash:string;maxTotalBudgetBrl:string;fetcher?:typeof fetch}):Promise<ProviderResult>{
+  return providerMutation(pool,context,{action:'create_campaign',commandKey:'campaign.provider.create_paused',versionId:input.versionId,expectedContentHash:input.expectedContentHash,approvedSubjectHash:input.approvedSubjectHash,maxTotalBudgetBrl:input.maxTotalBudgetBrl,fetcher:input.fetcher,nextStatus:'provider_paused'})
+}
+export async function activateProviderCampaign(pool:Connectable,context:MissionCommandContext,input:{versionId:string;expectedContentHash:string;approvedSubjectHash:string;fetcher?:typeof fetch}):Promise<ProviderResult>{
+  return providerMutation(pool,context,{action:'activate_campaign',commandKey:'campaign.provider.activate',...input,nextStatus:'active'})
+}
+export async function pauseProviderCampaign(pool:Connectable,context:MissionCommandContext,input:{versionId:string;expectedContentHash:string;approvedSubjectHash:string;fetcher?:typeof fetch}):Promise<ProviderResult>{
+  return providerMutation(pool,context,{action:'pause_campaign',commandKey:'campaign.provider.pause',...input,nextStatus:'paused'})
+}
+
+async function providerMutation(pool:Connectable,context:MissionCommandContext,input:{action:AdsProviderMutationAction;commandKey:string;versionId:string;expectedContentHash:string;approvedSubjectHash:string;maxTotalBudgetBrl?:string;fetcher?:typeof fetch;nextStatus:'provider_paused'|'active'|'paused'}):Promise<ProviderResult>{
+  const prepared=await transaction(pool,async client=>{
+    const prior=await loadMissionCommandResult<ProviderResult>(client,context,input.commandKey);if(prior)return{prior}
+    const version=await requireVersion(client,context,input.versionId,input.action==='create_campaign'?'draft':input.action==='activate_campaign'?'provider_paused':'active')
+    if(version.contentHash!==input.expectedContentHash)throw new Error('campaign_version_hash_changed')
+    if(input.maxTotalBudgetBrl!==undefined&&Number(version.snapshotPayload.totalBudgetBrl)>Number(input.maxTotalBudgetBrl))throw new Error('campaign_budget_exceeds_envelope')
+    const connection=await client.query<{id:string;provider:'meta'|'google';provider_account_id:string|null;token_reference:string|null;status:string}>(`SELECT id,provider,provider_account_id,token_reference,status FROM public.ad_provider_connections WHERE id=$1 AND organization_id=$2 AND provider=$3 LIMIT 1`,[version.snapshotPayload.providerConnectionId,context.organizationId,version.snapshotPayload.platform])
+    const provider=connection.rows[0];if(!provider||provider.status!=='connected'||!provider.token_reference)throw new Error('campaign_provider_connection_unavailable')
+    const campaignId=required(version.campaignId);const idempotencyKey=`${provider.provider}:${input.action}:${context.idempotencyKey}`;const requestPayload=await buildProviderPayload(client,version,input.action)
+    const requestHash=missionArtifactHash(requestPayload)
+    const run=await client.query<{id:string;status:string;provider_reference:string|null}>(`INSERT INTO public.ad_provider_mutation_runs (organization_id,provider_connection_id,campaign_id,provider,action,status,idempotency_key,request_payload,request_hash,approved_subject_hash,mission_id,action_run_id,requested_by) VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id,status,provider_reference`,[context.organizationId,provider.id,campaignId,provider.provider,input.action,idempotencyKey,sanitizeProviderMetadata(requestPayload),requestHash,input.approvedSubjectHash,context.missionId,context.actionRunId,context.actorId])
+    if(run.rows[0]?.status==='succeeded'&&run.rows[0].provider_reference){const result=artifactProviderResult(version,run.rows[0].provider_reference,run.rows[0].id,input.nextStatus);return{prior:await saveMissionCommandResult(client,context,input.commandKey,result)}}
+    await client.query(`UPDATE public.ad_provider_mutation_runs SET status='running',updated_at=NOW() WHERE id=$1`,[run.rows[0]?.id])
+    return{version,provider,requestPayload,runId:required(run.rows[0]?.id)}
+  })
+  if('prior'in prepared&&prepared.prior)return prepared.prior
+  if(!('provider'in prepared))throw new Error('campaign_provider_preparation_failed')
+  const secret=await loadProviderSecretFromPool(pool as never,required(prepared.provider.token_reference??undefined));if(secret.expired)throw new Error('campaign_provider_token_expired')
+  const response=await executeProviderAdapter({provider:prepared.provider.provider,action:input.action,localMutationId:prepared.runId,requestPayload:{...prepared.requestPayload,accessToken:secret.value,providerAccountId:prepared.provider.provider_account_id??undefined},...(input.fetcher?{fetcher:input.fetcher}:{})})
+  if(response.status!=='succeeded'){
+    const unknown=/timeout|timed out|abort|network|fetch failed/i.test(response.protectedError??'')
+    await pool.query(`UPDATE public.ad_provider_mutation_runs SET status=$2,protected_error=$3,response_payload=$4,completed_at=NOW(),updated_at=NOW() WHERE id=$1`,[prepared.runId,unknown?'unknown':'failed',response.protectedError??'provider_mutation_failed',response.payload])
+    throw new Error(unknown?'provider_outcome_unknown':'provider_mutation_failed')
+  }
+  const providerReference=response.externalCampaignId??required(prepared.version.campaignId)
+  return transaction(pool,async client=>{
+    await client.query(`UPDATE public.ad_provider_mutation_runs SET status='succeeded',provider_reference=$2,response_payload=$3,protected_error=NULL,completed_at=NOW(),updated_at=NOW() WHERE id=$1`,[prepared.runId,providerReference,response.payload])
+    await client.query(`UPDATE public.campaign_mission_versions SET status=$2,approved_subject_hash=COALESCE(approved_subject_hash,$3),approved_by=COALESCE(approved_by,$4),approved_at=COALESCE(approved_at,NOW()),updated_at=NOW() WHERE id=$1 AND organization_id=$5`,[prepared.version.id,input.nextStatus,input.approvedSubjectHash,context.actorId,context.organizationId])
+    await client.query(`UPDATE public.campaigns SET external_id=$2,lifecycle_status=$3,status=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$5`,[prepared.version.campaignId,providerReference,input.nextStatus==='provider_paused'?'paused':input.nextStatus,input.nextStatus==='active'?'ACTIVE':'PAUSED',context.organizationId])
+    const result=artifactProviderResult(prepared.version,providerReference,prepared.runId,input.nextStatus);await event(client,context,`mission.campaign_provider_${input.nextStatus}`,{campaignId:prepared.version.campaignId,versionId:prepared.version.id,providerReference,mutationRunId:prepared.runId});return saveMissionCommandResult(client,context,input.commandKey,result)
+  })
+}
+
+async function buildProviderPayload(client:MissionCommandQueryable,version:NonNullable<Awaited<ReturnType<typeof getCampaignMissionVersion>>>,action:AdsProviderMutationAction){
+  if(action!=='create_campaign')return{externalCampaignId:await providerReference(client,required(version.campaignId))}
+  const artifact=version.snapshotPayload;const page=await client.query<{url:string|null}>(`SELECT COALESCE(published_url,preview_url) AS url FROM public.landing_pages WHERE id=$1 AND organization_id=$2 LIMIT 1`,[artifact.landingPageId??null,version.organizationId]);const landingPageUrl=page.rows[0]?.url;if(!landingPageUrl)throw new Error('campaign_landing_page_unavailable')
+  return{campaign:{name:artifact.name,objective:artifact.objective,dailyBudget:Number(artifact.dailyBudgetBrl),landingPageUrl,headline:artifact.creatives[0]!.headline,body:artifact.creatives[0]!.body}}
+}
+async function providerReference(client:MissionCommandQueryable,campaignId:string){const result=await client.query<{external_id:string}>(`SELECT external_id FROM public.campaigns WHERE id=$1 LIMIT 1`,[campaignId]);const value=result.rows[0]?.external_id;if(!value||value.startsWith('local:'))throw new Error('campaign_provider_reference_unavailable');return value}
+async function requireVersion(client:MissionCommandQueryable,context:MissionCommandContext,id:string,status: string){const version=await getCampaignMissionVersion(client,{organizationId:context.organizationId,missionId:context.missionId,versionId:id});if(!version)throw new Error('campaign_version_not_found');if(version.status!==status)throw new Error('campaign_version_status_invalid');return version}
+function artifactProviderResult(version:NonNullable<Awaited<ReturnType<typeof getCampaignMissionVersion>>>,providerReference:string,mutationRunId:string,status:string):ProviderResult{return{entityId:required(version.campaignId),versionId:version.id,status,contentHash:version.contentHash,providerReference,mutationRunId,evidence:{provider:version.snapshotPayload.platform,providerReference,activated:status==='active'}}}
+async function event(client:MissionCommandQueryable,context:MissionCommandContext,eventType:string,payload:Record<string,unknown>){await recordDomainEvent(client as never,{eventType,organizationId:context.organizationId,aggregateType:'mission',aggregateId:context.missionId,actor:{type:'user',id:context.actorId},correlationId:context.missionId,payload:{missionId:context.missionId,actionRunId:context.actionRunId,...payload}})}
+function required(value?:string){if(!value)throw new Error('campaign_command_persistence_failed');return value}
+async function transaction<T>(pool:Connectable,work:(client:MissionCommandQueryable)=>Promise<T>):Promise<T>{const client=await pool.connect();try{await client.query('BEGIN');const result=await work(client);await client.query('COMMIT');return result}catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}}
