@@ -111,4 +111,9 @@ export function validatePlanConformance(plan: ProposedMissionPlan, pack: ActionP
       throw new Error('action_pack_publication_approval_missing')
     }
   }
+  if (pack.key === 'campaign_launch') {
+    const pausedIndex=stepKeys.indexOf('pack.create_provider_paused');const approvalIndex=stepKeys.indexOf('pack.approve_launch');const activationIndex=stepKeys.indexOf('pack.activate')
+    const paused=plan.steps[pausedIndex];const activation=plan.steps[activationIndex]
+    if(pausedIndex<0||approvalIndex<=pausedIndex||activationIndex<=approvalIndex||!paused?.approvalRequired||!activation?.approvalRequired)throw new Error('action_pack_campaign_activation_approval_missing')
+  }
 }
