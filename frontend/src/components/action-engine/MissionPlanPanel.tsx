@@ -2,9 +2,11 @@ import { GitBranch, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { MissionStatusBadge } from './MissionStatusBadge'
 import { planStatusLabel } from '@/lib/action-engine/missionRules'
 import type { MissionPlan } from '@/types/actionEngine'
+import { CompositeMissionPlan, isCompositeMissionPlan } from './CompositeMissionPlan'
 
 export function MissionPlanPanel({ plan, technical = false }: { plan: MissionPlan | null; technical?: boolean }) {
   if (!plan) return <Empty title="Plano ainda não gerado" text="Qualifique a missão e peça ao planner para compilar o Revenue Recovery Pack v0." />
+  if (isCompositeMissionPlan(plan)) return <CompositeMissionPlan plan={plan} technical={technical} />
   return (
     <section className="border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><div className="flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-[#2563EB]" /><h2 className="font-semibold text-slate-950">Plano de execução protegido</h2></div><p className="mt-1 text-xs text-slate-500">Revisão {plan.revision} · topologia imutável, parâmetros versionados</p></div><MissionStatusBadge label={planStatusLabel[plan.status] ?? plan.status} tone={plan.status === 'active' || plan.status === 'approved' ? 'success' : plan.status.includes('pending') ? 'warning' : 'neutral'} /></div>

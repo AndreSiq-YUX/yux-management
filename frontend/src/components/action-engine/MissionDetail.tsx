@@ -11,6 +11,8 @@ import { MissionPlanPanel } from './MissionPlanPanel'
 import { MissionTechnicalProof } from './MissionTechnicalProof'
 import { MissionStatusBadge } from './MissionStatusBadge'
 import { MissionArtifactsPanel } from './MissionArtifactsPanel'
+import { isCompositeMissionPlan } from './CompositeMissionPlan'
+import { MissionSpecialistTrace } from './MissionSpecialistTrace'
 import { availableMissionCommands, formatBrl, formatMissionDate, missionModeLabel, missionStatusMeta } from '@/lib/action-engine/missionRules'
 import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionArtifact, MissionCapabilityControl, MissionEconomics, MissionMetrics, MissionOperationalControls as OperationalControls, MissionPlan } from '@/types/actionEngine'
 
@@ -45,6 +47,8 @@ export function MissionDetail(props: MissionDetailProps) {
         <div className="mt-5 grid border border-slate-200 bg-white sm:grid-cols-2 lg:grid-cols-4"><Summary label="Resultado esperado" value={mission.goal.requestedOutcome.split('_').join(' ')} /><Summary label="Prazo" value={formatMissionDate(mission.deadlineAt)} /><Summary label="Custo máximo" value={formatBrl(mission.autonomyEnvelope.maxTotalCostBrl)} /><Summary label="Modo" value={missionModeLabel[mission.mode] ?? mission.mode} /></div>
       </header>
       {decisionSummary && planApproval ? <><MissionDecisionSummary summary={decisionSummary} approvalSubjectHash={planApproval.subjectHash} canApprove={canWrite} busy={busy === 'approve-plan'} onApprove={() => props.onApprovePlan(planApproval)} />{props.showTechnicalProof ? <MissionTechnicalProof summary={decisionSummary} plan={plan} /> : null}</> : <MissionPlanPanel plan={plan} />}
+      {decisionSummary && isCompositeMissionPlan(plan) ? <MissionPlanPanel plan={plan} technical={props.showTechnicalProof} /> : null}
+      {plan && isCompositeMissionPlan(plan) ? <MissionSpecialistTrace plan={plan} /> : null}
       <MissionArtifactsPanel artifacts={props.artifacts} canWrite={canWrite} showTechnicalProof={props.showTechnicalProof} onRefresh={props.onRefreshArtifacts} refreshing={busy === 'artifacts'} />
       <MissionMetricsPanel metrics={metrics} metricSpec={mission.metricSpec} showTechnicalProof={props.showTechnicalProof} />
       {isCampaignLaunch ? <MissionGuardrailsPanel metrics={metrics} metricSpec={mission.metricSpec} status={mission.status} /> : null}
