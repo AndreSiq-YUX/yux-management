@@ -17,10 +17,10 @@ describe('Shadow simulation reports', () => {
     const database = new SimulationDatabase(source())
     const created = await createSimulationReport(database as never, {
       organizationId, missionId, planId, createdBy: userId, expiresInDays: 7,
-      now: new Date('2026-08-22T12:00:00Z'),
+      now: new Date('2099-01-01T12:00:00Z'),
     })
     expect(created.url).toBe(`/mission-simulation/review/${created.token}`)
-    expect(created.expiresAt).toBe('2026-08-29T12:00:00.000Z')
+    expect(created.expiresAt).toBe('2099-01-08T12:00:00.000Z')
     expect(created.snapshot.disclaimer).toContain('nenhum efeito executado')
     expect(JSON.stringify(created.snapshot)).not.toContain('ana@example.com')
     expect(JSON.stringify(created.snapshot)).not.toContain('+5543999999999')

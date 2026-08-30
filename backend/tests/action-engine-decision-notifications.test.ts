@@ -67,7 +67,8 @@ describe('Mission decision notifications', () => {
     const queueEmail = vi.fn().mockResolvedValue('email-request-1')
     const sendWhatsApp = vi.fn().mockResolvedValue(undefined)
 
-    const first = await deliverDecisionNotification(database as never, { add } as never, { approvalId, stage: 'created' }, { queueEmail, sendWhatsApp })
+    const now = new Date('2026-08-22T12:00:00Z')
+    const first = await deliverDecisionNotification(database as never, { add } as never, { approvalId, stage: 'created' }, { queueEmail, sendWhatsApp, now })
     expect(first.results).toEqual([
       { channel: 'in_product', status: 'delivered' },
       { channel: 'email', status: 'queued' },
@@ -76,7 +77,7 @@ describe('Mission decision notifications', () => {
     expect(add).toHaveBeenCalledWith('email.send', { requestId: 'email-request-1' }, expect.any(Object))
     expect(sendWhatsApp).toHaveBeenCalledTimes(1)
 
-    const duplicate = await deliverDecisionNotification(database as never, { add } as never, { approvalId, stage: 'created' }, { queueEmail, sendWhatsApp })
+    const duplicate = await deliverDecisionNotification(database as never, { add } as never, { approvalId, stage: 'created' }, { queueEmail, sendWhatsApp, now })
     expect(duplicate.results?.every(result => result.status === 'duplicate')).toBe(true)
     expect(queueEmail).toHaveBeenCalledTimes(1)
     expect(sendWhatsApp).toHaveBeenCalledTimes(1)
