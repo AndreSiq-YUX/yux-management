@@ -160,6 +160,30 @@ export interface MissionActionRun {
   approvalRequired: boolean
 }
 
+export interface MissionArtifactVersion {
+  status: 'proposed' | 'draft' | 'published'
+  contentHash: string
+  entityId?: string
+  versionId?: string
+}
+
+export interface MissionArtifact {
+  key: string
+  kind: 'funnel' | 'email' | 'sequence' | 'automation'
+  title: string
+  status: MissionArtifactVersion['status']
+  contentHash: string
+  entityId?: string
+  versionId?: string
+  approvalSubjectHash?: string
+  staleApproval: boolean
+  proposedVersion: MissionArtifactVersion
+  currentVersion?: MissionArtifactVersion
+  data: Record<string, unknown>
+  citations: Array<{ id: string; label: string; category: string }>
+  complianceWarnings: string[]
+}
+
 export interface MissionApproval {
   id: string
   missionId: string

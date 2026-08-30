@@ -2,7 +2,7 @@ import { apiRequest } from '@/lib/apiClient'
 import type {
   ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput, DecisionReasonKey,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
-  MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
+  MissionArtifact, MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
   PublicSimulationReport, SimulationReportShare,
 } from '@/types/actionEngine'
 
@@ -56,6 +56,7 @@ export const actionEngineService = {
     },
   }),
   listActions: (missionId: string, organizationId: string) => apiRequest<MissionActionRun[]>(`${root}/missions/${missionId}/actions?${query({ organizationId })}`),
+  listArtifacts: (missionId: string, organizationId: string) => apiRequest<MissionArtifact[]>(`${root}/missions/${missionId}/artifacts?${query({ organizationId })}`),
   listApprovals: (missionId: string, organizationId: string) => apiRequest<MissionApproval[]>(`${root}/missions/${missionId}/approvals?${query({ organizationId })}`),
   decideApproval: (organizationId: string, approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', reasonKey?: DecisionReasonKey, comment?: string) =>
     apiRequest(`${root}/approvals/${approval.id}/decide`, { method: 'POST', body: { organizationId, subjectHash: approval.subjectHash, decision, reasonKey, comment } }),

@@ -22,6 +22,7 @@ import { createSimulationReport, getPublicSimulationReport, getPublicSimulationR
 import { DECISION_REASON_KEYS, exportDecisionFeedbackLearningEvidence } from './decision-feedback.js'
 import { collectMissionBudgetBurnDown } from './budget-alerts.js'
 import { listMissionCapabilityControls, setCapabilityControl } from './kill-switch-controls.js'
+import { buildMissionArtifactProjections } from './mission-artifacts.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -398,6 +399,34 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       sources: [...knowledge, ...strategy].filter((item) => item.id),
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     }
+  })
+
+  app.get('/missions/:missionId/artifacts', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const query = organizationQuery.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_mission_artifacts_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    const mission = await getMission(app.pg, params.data.missionId, query.data.organizationId)
+    if (!mission) return reply.code(404).send({ error: 'mission_not_found' })
+    const plans = await listMissionPlans(app.pg, mission.id, query.data.organizationId)
+    const plan = plans[0] ? await getPlan(app.pg, String(plans[0].id), query.data.organizationId) : null
+    if (!plan) return []
+    const [actions, approvals, snapshot] = await Promise.all([
+      listMissionActions(app.pg, mission.id, query.data.organizationId),
+      listMissionApprovals(app.pg, mission.id, query.data.organizationId),
+      app.pg.query<{ knowledge_items: Array<Record<string, unknown>>; strategy_items: Array<Record<string, unknown>> }>(
+        `SELECT knowledge_items, strategy_items FROM public.action_mission_context_snapshots
+         WHERE mission_id = $1 AND organization_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        [mission.id, query.data.organizationId],
+      ),
+    ])
+    const row = snapshot.rows[0]
+    const sources = [
+      ...(row?.knowledge_items ?? []).map(item => ({ id: String(item.sourceId ?? item.id ?? ''), title: 'Base de conhecimento publicada', category: 'knowledge' })),
+      ...(row?.strategy_items ?? []).map(item => ({ id: String(item.id ?? ''), title: 'Estratégia YUX aprovada', category: 'strategy' })),
+    ].filter(item => item.id)
+    return buildMissionArtifactProjections({ plan, actions, approvals, sources })
   })
 
   app.get('/missions/:missionId', async (request, reply) => {
