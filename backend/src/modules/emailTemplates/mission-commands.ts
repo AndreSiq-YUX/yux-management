@@ -26,8 +26,15 @@ export async function createEmailTemplateDraft(client: MissionCommandQueryable, 
     [context.organizationId, draft.name, `Mission ${context.missionId}; sources: ${draft.sourceIds.join(',')}`, draft.subject, draft.preheader ?? null,
       draft.bodyHtml, draft.bodyText, { sourceIds: draft.sourceIds, complianceNotes: draft.complianceNotes }, context.actorId, context.missionId, context.actionRunId, contentHash])
   const entityId = requiredId(inserted.rows[0]?.id)
-  const result = { entityId, status: 'draft' as const, contentHash, evidence: { sourceIds: draft.sourceIds, complianceNotes: draft.complianceNotes, activated: false } }
-  await recordDomainEvent(client as never, { eventType: 'mission.email_template_draft_created', organizationId: context.organizationId, aggregateType: 'mission', aggregateId: context.missionId, actor: { type: 'user', id: context.actorId }, payload: { missionId: context.missionId, actionRunId: context.actionRunId, templateId: entityId, contentHash } })
+  const version = await client.query<{ id: string }>(
+    `INSERT INTO public.email_template_versions (template_id,version_number,subject,preheader,body_html,body_text,
+       variables_schema,required_variables,change_summary,published_by,content_hash)
+     VALUES ($1,1,$2,$3,$4,$5,$6,'{}','Mission draft',NULL,$7) RETURNING id`,
+    [entityId, draft.subject, draft.preheader ?? null, draft.bodyHtml, draft.bodyText, { sourceIds: draft.sourceIds, complianceNotes: draft.complianceNotes }, contentHash],
+  )
+  const versionId = requiredId(version.rows[0]?.id)
+  const result = { entityId, versionId, status: 'draft' as const, contentHash, evidence: { sourceIds: draft.sourceIds, complianceNotes: draft.complianceNotes, activated: false } }
+  await recordDomainEvent(client as never, { eventType: 'mission.email_template_draft_created', organizationId: context.organizationId, aggregateType: 'mission', aggregateId: context.missionId, actor: { type: 'user', id: context.actorId }, payload: { missionId: context.missionId, actionRunId: context.actionRunId, templateId: entityId, versionId, contentHash } })
   return saveMissionCommandResult(client, context, commandKey, result)
 }
 
@@ -40,14 +47,13 @@ export async function publishEmailTemplateVersion(client: MissionCommandQueryabl
   if (!current.rows[0]) throw new Error('email_template_draft_not_found')
   if (current.rows[0].content_hash !== input.expectedContentHash) throw new Error('email_template_hash_changed')
   const published = await client.query<{ template_id: string; version_id: string }>(
-    `WITH source AS (SELECT * FROM public.email_templates WHERE id = $1 FOR UPDATE),
-      next AS (SELECT COALESCE(MAX(version_number),0)+1 AS number FROM public.email_template_versions WHERE template_id = $1),
-      version AS (INSERT INTO public.email_template_versions (template_id, version_number, subject, preheader, body_html, body_text,
-        variables_schema, required_variables, change_summary, published_by, content_hash)
-        SELECT source.id, next.number, source.subject, source.preheader, source.body_html, source.body_text, source.variables_schema,
-          source.required_variables, 'Published by Mission', $2, source.content_hash FROM source,next RETURNING id, template_id)
-     UPDATE public.email_templates template SET status='published', published_version_id=version.id, updated_by=$2, updated_at=NOW()
-       FROM version WHERE template.id=version.template_id RETURNING template.id AS template_id, version.id AS version_id`, [input.templateId, context.actorId])
+    `WITH version AS (
+       UPDATE public.email_template_versions SET published_by=$2,published_at=NOW(),change_summary='Published by Mission'
+       WHERE id=(SELECT id FROM public.email_template_versions WHERE template_id=$1 AND content_hash=$3 ORDER BY version_number DESC LIMIT 1)
+       RETURNING id,template_id
+     )
+     UPDATE public.email_templates template SET status='published',published_version_id=version.id,updated_by=$2,updated_at=NOW()
+       FROM version WHERE template.id=version.template_id RETURNING template.id AS template_id,version.id AS version_id`, [input.templateId, context.actorId, input.expectedContentHash])
   const row = published.rows[0]; if (!row) throw new Error('email_template_publish_failed')
   const result = { entityId: row.template_id, versionId: row.version_id, status: 'published' as const, contentHash: input.expectedContentHash, evidence: { activated: true } }
   await recordDomainEvent(client as never, { eventType: 'mission.email_template_published', organizationId: context.organizationId, aggregateType: 'mission', aggregateId: context.missionId, actor: { type: 'user', id: context.actorId }, payload: { missionId: context.missionId, actionRunId: context.actionRunId, templateId: row.template_id, versionId: row.version_id, contentHash: input.expectedContentHash } })

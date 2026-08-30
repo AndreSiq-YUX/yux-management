@@ -51,6 +51,7 @@ async function createMissionEmailTemplate(pool: Connectable, missionId: string, 
       sourceIds: stringArray(input.sourceIds, 'sourceIds'), complianceNotes: stringArray(input.complianceNotes, 'complianceNotes'),
     })
     await own(client, context.organizationId, missionId, 'email_template', result.entityId, 'nurture_copy', ['email.template.publish'])
+    if (result.versionId) await own(client, context.organizationId, missionId, 'email_template_version', result.versionId, 'pinned_copy_version', [])
     return result
   })
 }

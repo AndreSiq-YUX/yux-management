@@ -278,7 +278,7 @@ export interface CreateMissionIntentInput {
   maxHumanHours: string
   maxExternalContacts?: number
   expectedValueBrl?: string
-  quickStart?: 'revenue_recovery'
+  quickStart?: 'revenue_recovery' | 'funnel_nurture'
 }
 
 export interface ClarificationAnswerInput {

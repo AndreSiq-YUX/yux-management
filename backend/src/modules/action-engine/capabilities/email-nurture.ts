@@ -95,7 +95,7 @@ export const emailTemplateCreateDraft: CapabilityDefinition = {
     const input = raw as z.infer<typeof copyInput>; const artifact = normalizedCopy(input); const contentHash = missionArtifactHash(artifact)
     if (context.dryRun) return { output: { preview: true, contentHash, activated: false }, effectProduced: false }
     const result = await invokeCommand(context, 'createEmailTemplateDraft', artifact)
-    return { output: { preview: false, entityId: result.entityId, templateId: result.entityId, contentHash: result.contentHash, status: 'draft', activated: false }, effectProduced: true, sourceRecords: [{ type: 'email_template', id: result.entityId }] }
+    return { output: { preview: false, entityId: result.entityId, templateId: result.entityId, versionId: result.versionId, contentHash: result.contentHash, status: 'draft', activated: false }, effectProduced: true, sourceRecords: [{ type: 'email_template', id: result.entityId }, ...(result.versionId ? [{ type: 'email_template_version', id: result.versionId }] : [])] }
   },
 }
 

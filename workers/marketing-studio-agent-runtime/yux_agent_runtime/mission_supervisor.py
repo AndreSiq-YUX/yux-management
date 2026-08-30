@@ -120,12 +120,13 @@ class MissionSupervisor:
         parameters["funnelNurtureArtifacts"] = artifacts
         enriched["resolvedParameters"] = parameters
         email_index = 0
+        email_step_keys = [f"pack.draft_email_{index}" for index in range(1, len(artifacts["emails"]) + 1)]
         steps = []
         for raw_step in enriched.get("steps") or []:
             step = dict(raw_step)
             capability = str(step.get("capabilityKey") or "")
             step_input = dict(step.get("input") or {})
-            if capability == "crm.pipeline.create_draft":
+            if capability in {"crm.pipeline.simulate", "crm.pipeline.create_draft"}:
                 funnel = dict(artifacts["funnel"])
                 funnel.pop("reuseExistingFunnelId", None)
                 step_input.update(funnel)
@@ -133,9 +134,19 @@ class MissionSupervisor:
                 email = dict(artifacts["emails"][email_index]); email.pop("key", None)
                 step_input.update(email); email_index += 1
             elif capability == "crm.sequence.create_draft":
-                step_input["artifactRef"] = "resolvedParameters.funnelNurtureArtifacts.sequence"
+                sequence = dict(artifacts["sequence"])
+                sequence["steps"] = [
+                    {
+                        "templateVersionId": f"binding:{email_step_keys[index]}.versionId",
+                        "delayMinutes": item["delayMinutes"],
+                        "exitConditions": item.get("exitConditions") or [],
+                    }
+                    for index, item in enumerate(sequence.get("steps") or [])
+                ]
+                step_input = sequence
             elif capability == "automation.flow.create_draft":
-                step_input["artifactRef"] = "resolvedParameters.funnelNurtureArtifacts.automation"
+                step_input = dict(artifacts["automation"])
+                step_input["sequenceVersionId"] = "binding:pack.draft_sequence.versionId"
             step["input"] = step_input
             steps.append(step)
         enriched["steps"] = steps

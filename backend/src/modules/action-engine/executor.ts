@@ -16,6 +16,7 @@ import { assertPinnedCapabilityAvailable, hashCapabilityManifest, type Capabilit
 import { acquireResourceClaim, getMissionFencingToken, renewMissionResourceClaims } from './resource-claims.js'
 import { consumeMutationLease, issueMutationLease } from './mutation-leases.js'
 import { loadKillSwitchState, resolveCapabilityDecision } from './capability-policy.js'
+import { resolvePlanInputBindings } from './plan-input-bindings.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -35,17 +36,21 @@ export async function startMission(pool: Connectable, input: {
     if (!mission) throw new Error('mission_not_found')
     if (mission.version !== input.expectedVersion) throw new Error('mission_version_conflict')
     if (mission.status !== 'ready' || !mission.activePlanId) throw new Error('mission_not_ready')
-    const plan = await client.query<{ id: string; status: string }>(
-      `SELECT id, status FROM public.action_plans WHERE id = $1 AND mission_id = $2 AND organization_id = $3 FOR UPDATE`,
+    const plan = await client.query<{ id: string; status: string; pack_key: string }>(
+      `SELECT plan.id,plan.status,pack.key AS pack_key FROM public.action_plans plan
+       JOIN public.action_pack_versions version ON version.id=plan.pack_version_id
+       JOIN public.action_packs pack ON pack.id=version.pack_id
+       WHERE plan.id = $1 AND plan.mission_id = $2 AND plan.organization_id = $3 FOR UPDATE OF plan`,
       [mission.activePlanId, input.missionId, input.organizationId],
     )
     if (plan.rows[0]?.status !== 'approved') throw new Error('mission_plan_not_approved')
+    const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture'
     await acquireResourceClaim(client, {
       organizationId: input.organizationId,
       missionId: input.missionId,
       missionLabel: mission.title,
-      resourceKey: 'crm.lead_population',
-      scope: 'inactive_revenue_recovery',
+      resourceKey: funnelNurture ? 'crm.funnel_nurture_configuration' : 'crm.lead_population',
+      scope: funnelNurture ? 'organization_funnel_nurture' : 'inactive_revenue_recovery',
       mode: 'exclusive',
       ttlSeconds: 900,
     })
@@ -130,6 +135,20 @@ export async function executeActionRun(
     )
     const action = result.rows[0]
     if (!action) return null
+    const [planParameters, dependencyOutputs] = await Promise.all([
+      client.query<{ parameters: Record<string, unknown> }>(`SELECT parameters FROM public.action_plans WHERE id = $1 AND organization_id = $2`, [action.plan_id, input.organizationId]),
+      client.query<{ step_key: string; output: Record<string, unknown> }>(
+        `SELECT step.step_key, run.output FROM public.action_runs run
+         JOIN public.action_plan_steps step ON step.id = run.plan_step_id
+         WHERE run.plan_id = $1 AND run.organization_id = $2 AND run.status = 'succeeded'`,
+        [action.plan_id, input.organizationId],
+      ),
+    ])
+    action.input = resolvePlanInputBindings(action.input, {
+      resolvedParameters: planParameters.rows[0]?.parameters ?? {},
+      outputsByStep: Object.fromEntries(dependencyOutputs.rows.map(row => [row.step_key, row.output ?? {}])),
+    }) as Record<string, unknown>
+    await client.query(`UPDATE public.action_runs SET input = $3, updated_at = NOW() WHERE id = $1 AND organization_id = $2`, [action.id, input.organizationId, action.input])
     const attempt = await client.query<{ id: string; attempt_number: number }>(
       `INSERT INTO public.action_run_attempts (organization_id, run_id, attempt_number, status, input_snapshot)
        SELECT $1, $2, COALESCE(MAX(attempt_number), 0) + 1, 'running', $3
@@ -187,7 +206,7 @@ export async function executeActionRun(
       const consentEvidenceId = typeof claimed.action.input.consentEvidenceId === 'string' ? claimed.action.input.consentEvidenceId : null
       const leadId = typeof claimed.action.input.leadId === 'string' ? claimed.action.input.leadId : null
       const destination = typeof claimed.action.input.to === 'string' ? claimed.action.input.to : null
-      const [switches, approval, costs, connections, consent] = await Promise.all([
+      const [switches, approval, costs, connections, consent, contractModules, packEntitlement] = await Promise.all([
         loadKillSwitchState(client, {
           organizationId: input.organizationId, packKey: claimed.action.pack_key,
           packVersion: claimed.action.pack_version, capabilityKey: capability.key, capabilityVersion: capability.version,
@@ -223,6 +242,30 @@ export async function executeActionRun(
              ) AS allowed`,
             [consentEvidenceId, input.organizationId, leadId, consentChannel, destination],
           ),
+        capability.requiredModules.length === 0
+          ? Promise.resolve({ rows: [{ allowed: true }] })
+          : client.query<{ allowed: boolean }>(
+            `SELECT organization.kind = 'yux' OR COUNT(DISTINCT module.module_key)::INT = $3::INT AS allowed
+             FROM public.organizations organization
+             LEFT JOIN public.contracts contract ON contract.client_id = organization.client_id
+               AND contract.status = 'active' AND ($2::UUID IS NULL OR contract.id = $2)
+             LEFT JOIN public.contract_modules module ON module.contract_id = contract.id
+               AND module.enabled = TRUE AND module.module_key = ANY($4::TEXT[])
+             WHERE organization.id = $1 GROUP BY organization.kind`,
+            [input.organizationId, currentMission?.contractId ?? null, capability.requiredModules.length, capability.requiredModules],
+          ),
+        claimed.action.pack_key !== 'funnel_nurture'
+          ? Promise.resolve({ rows: [{ allowed: true }] })
+          : client.query<{ allowed: boolean }>(
+            `SELECT organization.kind = 'yux' OR EXISTS (
+               SELECT 1 FROM public.contracts contract
+               JOIN public.contract_modules module ON module.contract_id = contract.id
+               WHERE contract.client_id = organization.client_id AND contract.status = 'active'
+                 AND ($2::UUID IS NULL OR contract.id = $2)
+                 AND module.module_key = 'funnel_nurture_agent' AND module.enabled = TRUE
+             ) AS allowed FROM public.organizations organization WHERE organization.id = $1`,
+            [input.organizationId, currentMission?.contractId ?? null],
+          ),
       ])
       const envelope = currentMission?.autonomyEnvelope
       const allowedCapabilityKeys = envelope?.allowedCapabilityKeys ?? []
@@ -241,7 +284,8 @@ export async function executeActionRun(
         envelopeExpiresAt: envelope?.expiresAt,
         actorPermissions: capability.requiredPermissions ?? [],
         capabilityAllowedByEnvelope: (allowedCapabilityKeys.length === 0 || allowedCapabilityKeys.includes(capability.key))
-          && capability.requiredModules.every((moduleKey) => envelope?.allowedModules.includes(moduleKey)),
+          && capability.requiredModules.every((moduleKey) => envelope?.allowedModules.includes(moduleKey))
+          && contractModules.rows[0]?.allowed === true && packEntitlement.rows[0]?.allowed === true,
         alwaysRequireApprovalFor: envelope?.alwaysRequireApprovalFor,
       })
       if (decision.outcome !== 'allow') throw new Error(decision.reason)

@@ -34,12 +34,12 @@ def responses() -> list[dict]:
             {"key": "diagnosis", "name": "Diagnóstico", "exitCriteria": ["Dor confirmada"], "isWon": False, "isLost": False},
             {"key": "won", "name": "Ganho", "exitCriteria": ["Contrato assinado"], "isWon": True, "isLost": False},
         ]}, "sourceIds": ["source-1"], "risks": []},
-        {"emails": [{"key": "education_1", "name": "Educação 1", "subject": "Como estruturar o diagnóstico",
+        {"emails": [{"key": f"education_{index}", "name": f"Educação {index}", "subject": f"Como estruturar o diagnóstico {index}",
             "previewText": "Um roteiro consultivo", "bodyHtml": "<p>Conteúdo útil.</p><a href='{{unsubscribe_url}}'>Sair</a>",
-            "bodyText": "Conteúdo útil. Sair: {{unsubscribe_url}}", "sourceIds": ["source-1"], "complianceNotes": ["Sem promessa"]}],
+            "bodyText": "Conteúdo útil. Sair: {{unsubscribe_url}}", "sourceIds": ["source-1"], "complianceNotes": ["Sem promessa"]} for index in range(1, 4)],
          "sourceIds": ["source-1"], "risks": []},
         {"sequence": {"name": "Nutrição", "description": "Educacional", "conversionGoal": "Resposta",
-            "steps": [{"emailKey": "education_1", "delayMinutes": 0, "exitConditions": ["replied"]}]},
+            "steps": [{"emailKey": f"education_{index}", "delayMinutes": 0 if index == 1 else index * 1440, "exitConditions": ["replied"]} for index in range(1, 4)]},
          "automation": {"name": "Entrada", "trigger": {"type": "lead.stage_changed", "pipelineId": "pipeline-1", "stageId": "stage-1"},
             "eligibilityConditions": [{"field": "lead.status", "operator": "equals", "value": "open"}],
             "exitConditions": ["replied", "unsubscribed"], "consentPolicy": "require_granted",
@@ -148,6 +148,6 @@ def test_supervisor_injects_typed_artifacts_into_bounded_pack_inputs() -> None:
     enriched = MissionSupervisor._inject_funnel_nurture_artifacts(plan, artifacts)
     assert enriched["resolvedParameters"]["funnelNurtureArtifacts"]["sourceIds"] == ["source-1"]
     assert enriched["steps"][0]["input"]["stages"][0]["key"] == "diagnosis"
-    assert enriched["steps"][1]["input"]["subject"] == "Como estruturar o diagnóstico"
-    assert enriched["steps"][2]["input"]["artifactRef"].endswith(".sequence")
-    assert enriched["steps"][3]["input"]["artifactRef"].endswith(".automation")
+    assert enriched["steps"][1]["input"]["subject"] == "Como estruturar o diagnóstico 1"
+    assert enriched["steps"][2]["input"]["steps"][0]["templateVersionId"] == "binding:pack.draft_email_1.versionId"
+    assert enriched["steps"][3]["input"]["sequenceVersionId"] == "binding:pack.draft_sequence.versionId"

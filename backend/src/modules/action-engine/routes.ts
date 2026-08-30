@@ -6,6 +6,7 @@ import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { validatePackParameters } from './action-pack.js'
 import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
+import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { evaluateMissionReadiness, filterReadinessCorrectionLinks } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
@@ -62,7 +63,7 @@ const missionIntentCreate = z.object({
   objective: z.string().min(10).max(2000), mode: z.enum(['shadow','prepare','assisted','autonomous']).default('assisted'),
   deadlineAt: z.string().datetime(), allowedModules: z.array(z.string().min(1)).min(1).max(50),
   maxTotalCostBrl: decimal, maxHumanHours: decimal, maxExternalContacts: z.number().int().nonnegative().optional(),
-  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery']).optional(),
+  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery','funnel_nurture']).optional(),
 })
 const clarificationAnswers = z.object({
   organizationId: uuid, expectedVersion: z.number().int().positive(),
@@ -122,20 +123,22 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/action-packs', async (request) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    return [publicPack(REVENUE_RECOVERY_PACK_V0)]
+    return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1)]
   })
 
   app.get('/action-packs/:packKey/versions/:semanticVersion', async (request, reply) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    const parsed = z.object({ packKey: z.literal('revenue_recovery'), semanticVersion: z.enum(['0.1.0','0.2.0']) }).safeParse(request.params)
+    const parsed = z.object({ packKey: z.enum(['revenue_recovery','funnel_nurture']), semanticVersion: z.string().min(1).max(40) }).safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'action_pack_not_found' })
+    if (parsed.data.packKey === FUNNEL_NURTURE_PACK_V1.key && parsed.data.semanticVersion === FUNNEL_NURTURE_PACK_V1.semanticVersion) return publicPack(FUNNEL_NURTURE_PACK_V1)
     if (parsed.data.semanticVersion === '0.1.0') {
       const legacy = await getPublishedActionPackVersion(app.pg, parsed.data.packKey, parsed.data.semanticVersion)
       if (!legacy) return reply.code(404).send({ error: 'action_pack_not_found' })
       return { ...legacy.definition, contentHash: legacy.content_hash }
     }
-    return publicPack(REVENUE_RECOVERY_PACK_V0)
+    if (parsed.data.packKey === REVENUE_RECOVERY_PACK_V0.key && parsed.data.semanticVersion === REVENUE_RECOVERY_PACK_V0.semanticVersion) return publicPack(REVENUE_RECOVERY_PACK_V0)
+    return reply.code(404).send({ error: 'action_pack_not_found' })
   })
 
   app.get('/operations/health', async (request, reply) => {
@@ -254,6 +257,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const parsed = z.object({
       organizationId: uuid, contractId: uuid.optional(), targetRevenueBrl: decimal, deadlineAt: z.string().datetime(),
       maxTotalCostBrl: decimal, maxHumanHours: decimal, humanHourlyRateBrl: decimal,
+      packKey: z.enum(['revenue_recovery','funnel_nurture']).optional(),
     }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_readiness_request' })
     requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
@@ -324,7 +328,13 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
     if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })
     try {
-      const packVersion = await ensurePackVersion(app.pg, ctx.userId)
+      const packKey = selectIntentPack(parsed.data.quickStart, parsed.data.objective)
+      if (packKey === FUNNEL_NURTURE_PACK_V1.key && !(await hasFunnelNurtureEntitlement(app.pg, parsed.data.organizationId, parsed.data.contractId))) {
+        return reply.code(403).send({ error: 'funnel_nurture_contract_flag_required' })
+      }
+      const packVersion = packKey === FUNNEL_NURTURE_PACK_V1.key
+        ? await ensureFunnelNurturePackVersion(app.pg, ctx.userId)
+        : await ensurePackVersion(app.pg, ctx.userId)
       const expectedValue = parsed.data.expectedValueBrl ?? '1'
       const deadlineDays = Math.max(1, Math.min(180, Math.ceil((Date.parse(parsed.data.deadlineAt) - Date.now()) / 86_400_000)))
       const parameters = {
@@ -348,7 +358,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         },
         packSelection: {
           strategy: parsed.data.quickStart ? 'explicit_quick_start' : 'supervisor',
-          packs: parsed.data.quickStart ? [{ key: 'revenue_recovery', version: REVENUE_RECOVERY_PACK_V0.semanticVersion }] : [],
+          packs: [{ key: packKey, version: packKey === FUNNEL_NURTURE_PACK_V1.key ? FUNNEL_NURTURE_PACK_V1.semanticVersion : REVENUE_RECOVERY_PACK_V0.semanticVersion }],
         },
         budget: { maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours },
         deadlineAt: parsed.data.deadlineAt, createdBy: ctx.userId, idempotencyKey,
@@ -580,6 +590,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       maxTotalCostBrl: mission.autonomyEnvelope.maxTotalCostBrl,
       maxHumanHours: mission.autonomyEnvelope.maxHumanHours,
       humanHourlyRateBrl: String(mission.parameters.humanHourlyRateBrl ?? mission.budget.humanHourlyRateBrl ?? '100'),
+      packKey: Array.isArray(mission.packSelection.packs) && (mission.packSelection.packs[0] as { key?: string } | undefined)?.key === 'funnel_nurture' ? 'funnel_nurture' : 'revenue_recovery',
       agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL), mutationLeaseReady: Boolean(app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
     })
     const allowedAreas = [
@@ -742,7 +753,39 @@ async function ensurePackVersion(client: Queryable, createdBy: string) {
   })
 }
 
-function publicPack(pack: typeof REVENUE_RECOVERY_PACK_V0) {
+async function ensureFunnelNurturePackVersion(client: Queryable, createdBy: string) {
+  const { parameters: _parameters, ...definition } = FUNNEL_NURTURE_PACK_V1
+  return publishActionPackVersion(client, {
+    packKey: FUNNEL_NURTURE_PACK_V1.key, name: 'Funnel + Nurture',
+    description: 'Criação governada de funil, copy citada, sequência e gatilho de nutrição.',
+    semanticVersion: FUNNEL_NURTURE_PACK_V1.semanticVersion, outcomeType: FUNNEL_NURTURE_PACK_V1.outcomeType,
+    definition: definition as unknown as Record<string, unknown>, contentHash: FUNNEL_NURTURE_PACK_V1.contentHash, createdBy,
+  })
+}
+
+function selectIntentPack(quickStart: 'revenue_recovery' | 'funnel_nurture' | undefined, objective: string) {
+  if (quickStart) return quickStart
+  return /(funil|pipeline|nutri[cç][aã]o|sequ[eê]ncia\s+de\s+e-?mails?|automati[sz].*e-?mails?)/iu.test(objective)
+    ? FUNNEL_NURTURE_PACK_V1.key
+    : REVENUE_RECOVERY_PACK_V0.key
+}
+
+async function hasFunnelNurtureEntitlement(client: Queryable, organizationId: string, contractId?: string) {
+  const result = await client.query<{ entitled: boolean }>(
+    `SELECT organization.kind = 'yux' OR EXISTS (
+       SELECT 1 FROM public.contracts contract
+       JOIN public.contract_modules module ON module.contract_id = contract.id
+       WHERE contract.client_id = organization.client_id AND contract.status = 'active'
+         AND module.module_key = 'funnel_nurture_agent' AND module.enabled = TRUE
+         AND ($2::UUID IS NULL OR contract.id = $2)
+     ) AS entitled
+     FROM public.organizations organization WHERE organization.id = $1 LIMIT 1`,
+    [organizationId, contractId ?? null],
+  )
+  return result.rows[0]?.entitled === true
+}
+
+function publicPack(pack: typeof REVENUE_RECOVERY_PACK_V0 | typeof FUNNEL_NURTURE_PACK_V1) {
   const { parameters: _parameters, ...serializable } = pack
   return serializable
 }

@@ -13,8 +13,9 @@ describe('MissionIntake', () => {
   it('explains the generic request, quick start and autonomy modes', async () => {
     const { root } = await renderIntake(true)
     expect(document.body.textContent).toContain('O que você quer que a YUX realize?')
-    expect(document.body.textContent).toContain('Atalho: Revenue Recovery')
-    await click('Atalho: Revenue Recovery')
+    expect(document.body.textContent).toContain('Funil + nutrição')
+    expect(document.body.textContent).toContain('Revenue Recovery')
+    await click('Revenue Recovery')
     await click('Definir limites')
     expect(document.body.textContent).toContain('Simular')
     expect(document.body.textContent).toContain('Preparar')
@@ -34,9 +35,17 @@ describe('MissionIntake', () => {
     await click('Criar missão')
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       objective: 'Crie um funil com quatro etapas e uma sequência de quatro e-mails.',
-      mode: 'autonomous', allowedModules: ['crm'], maxTotalCostBrl: '1000', maxHumanHours: '10',
+      mode: 'autonomous', allowedModules: ['crm', 'automations', 'funnel_nurture_agent'], maxTotalCostBrl: '1000', maxHumanHours: '10',
     }))
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'mission-1' }))
+    act(() => root.unmount())
+  })
+
+  it('submits the Funnel + Nurture shortcut in prepare mode with its explicit areas', async () => {
+    const create = vi.spyOn(actionEngineService, 'createMissionIntent').mockResolvedValue({ id: 'mission-funnel' } as ActionMission)
+    const { root } = await renderIntake(true)
+    await click('Funil + nutrição'); await click('Definir limites'); await click('Criar missão')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ quickStart: 'funnel_nurture', mode: 'prepare', allowedModules: ['crm', 'automations', 'funnel_nurture_agent'] }))
     act(() => root.unmount())
   })
 

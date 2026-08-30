@@ -42,11 +42,12 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
 
     for (const moduleKey of input.requiredModules) {
       const module = await context.query<{ module_key: string }>(
-        `SELECT cm.module_key FROM public.contract_modules cm
-         JOIN public.contracts contract ON contract.id = cm.contract_id
-         JOIN public.organizations organization ON organization.client_id = contract.client_id
-         WHERE organization.id = $1 AND cm.module_key = $2 AND cm.enabled = TRUE
-           AND contract.status = 'active' AND ($3::UUID IS NULL OR contract.id = $3) LIMIT 1`,
+        `SELECT $2::TEXT AS module_key FROM public.organizations organization
+         WHERE organization.id = $1 AND (organization.kind = 'yux' OR EXISTS (
+           SELECT 1 FROM public.contract_modules cm JOIN public.contracts contract ON contract.id = cm.contract_id
+           WHERE contract.client_id = organization.client_id AND cm.module_key = $2 AND cm.enabled = TRUE
+             AND contract.status = 'active' AND ($3::UUID IS NULL OR contract.id = $3)
+         )) LIMIT 1`,
         [context.organizationId, moduleKey, input.contractId ?? null],
       )
       checks.push({ key: `module:${moduleKey}`, status: module.rows[0] ? 'ready' : 'missing', detail: module.rows[0] ? 'Módulo habilitado.' : 'Módulo não contratado ou desabilitado.' })

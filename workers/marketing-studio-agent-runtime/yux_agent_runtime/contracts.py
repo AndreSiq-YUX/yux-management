@@ -110,7 +110,7 @@ class BrandComplianceVerdict(StrictArtifactModel):
 
 class FunnelNurtureArtifacts(StrictArtifactModel):
     funnel: FunnelArtifact
-    emails: list[NurtureEmailArtifact] = Field(min_length=1, max_length=12)
+    emails: list[NurtureEmailArtifact] = Field(min_length=3, max_length=3)
     sequence: SequenceArtifact
     automation: AutomationArtifact
     brandCompliance: BrandComplianceVerdict

@@ -18,6 +18,7 @@ const modes: Array<{ key: MissionMode; label: string; description: string }> = [
 
 const modules = [
   { key: 'crm', label: 'CRM' }, { key: 'automations', label: 'Automações' },
+  { key: 'funnel_nurture_agent', label: 'Agente Funil + Nutrição' },
   { key: 'campaigns', label: 'Campanhas' }, { key: 'email', label: 'E-mail' },
   { key: 'omnichannel', label: 'Omnichannel' }, { key: 'reports', label: 'Relatórios' },
 ]

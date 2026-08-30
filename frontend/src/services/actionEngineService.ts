@@ -18,7 +18,7 @@ export const actionEngineService = {
   listPacks: () => apiRequest<ActionPack[]>(`${root}/action-packs`),
   readiness: (input: {
     organizationId: string; contractId?: string; targetRevenueBrl: string; deadlineAt: string;
-    maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string;
+    maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string; packKey?: 'revenue_recovery' | 'funnel_nurture';
   }) => apiRequest<MissionReadiness>(`${root}/readiness`, { method: 'POST', body: input }),
   listMissions: (organizationId: string, status?: MissionStatus) =>
     apiRequest<ActionMission[]>(`${root}/missions?${query({ organizationId, status })}`),

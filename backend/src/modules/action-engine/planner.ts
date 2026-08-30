@@ -8,6 +8,7 @@ import { createCapabilityManifest, type CapabilityManifestEntry } from './capabi
 import { validateMissionPlanResponseWire } from './mission-wire-validator.js'
 import type { ClarificationQuestionWire, SelectedPackWire } from './generated/mission-wire.js'
 import type { AutonomyEnvelope } from './types.js'
+import { collectPlanInputBindingSteps, resolvePlanInputBindings } from './plan-input-bindings.js'
 
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/)
 const harnessStep = z.object({
@@ -212,13 +213,19 @@ export function compileMissionPlan(input: {
   const stepKeys = new Set(raw.steps.map((step) => step.stepKey))
   for (const step of raw.steps) {
     const capability = input.registry.get(step.capabilityKey, step.capabilityVersion)
-    if (!capability.inputSchema.safeParse(step.input).success) throw new Error('mission_plan_capability_input_invalid')
+    const validationInput = resolvePlanInputBindings(step.input, { resolvedParameters: raw.resolvedParameters, outputsByStep: {}, validation: true })
+    if (!capability.inputSchema.safeParse(validationInput).success) throw new Error(`mission_plan_capability_input_invalid:${step.stepKey}`)
     if (capability.effect === 'external' && !step.approvalRequired) throw new Error('mission_plan_external_approval_required')
     if (capability.approval === 'always' && !step.approvalRequired) throw new Error('mission_plan_required_approval_missing')
     if (capability.effect !== step.effect) throw new Error('mission_plan_capability_effect_mismatch')
     if (capability.key === 'system.signal.wait' && step.timeoutSeconds < 1) throw new Error('mission_plan_wait_timeout_required')
     for (const binding of Object.values(step.outputBindings)) {
       if (!stepKeys.has(binding.fromStep) || raw.steps.findIndex((candidate) => candidate.stepKey === binding.fromStep) >= raw.steps.indexOf(step)) {
+        throw new Error('mission_plan_output_binding_invalid')
+      }
+    }
+    for (const bindingStep of collectPlanInputBindingSteps(step.input)) {
+      if (!stepKeys.has(bindingStep) || raw.steps.findIndex(candidate => candidate.stepKey === bindingStep) >= raw.steps.indexOf(step)) {
         throw new Error('mission_plan_output_binding_invalid')
       }
     }

@@ -1,4 +1,5 @@
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
+import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import type { CapabilityRegistry } from './capability-registry.js'
 import type { Queryable } from './repository.js'
 import type { MissionMode } from './types.js'
@@ -82,9 +83,11 @@ export async function evaluateMissionReadiness(
     agentHarnessHealthy: boolean
     mutationLeaseReady: boolean
     missionId?: string
+    packKey?: 'revenue_recovery' | 'funnel_nurture'
   },
 ): Promise<MissionReadinessReport> {
   const checks: ReadinessCheck[] = []
+  const funnelNurture = input.packKey === FUNNEL_NURTURE_PACK_V1.key
   const organization = await client.query<{ id: string; kind: string }>(
     `SELECT id, kind FROM public.organizations WHERE id = $1 LIMIT 1`, [input.organizationId],
   )
@@ -92,11 +95,17 @@ export async function evaluateMissionReadiness(
 
   let contractValid = organization.rows[0]?.kind === 'yux' && !input.contractId
   let moduleEnabled = contractValid
+  let automationsEnabled = contractValid
+  let funnelNurtureEnabled = contractValid
   if (input.contractId) {
-    const contract = await client.query<{ id: string; action_engine_enabled: boolean }>(
+    const contract = await client.query<{ id: string; action_engine_enabled: boolean; automations_enabled: boolean; funnel_nurture_enabled: boolean }>(
       `SELECT contract.id,
               EXISTS (SELECT 1 FROM public.contract_modules module
                       WHERE module.contract_id = contract.id AND module.module_key = 'action_engine' AND module.enabled = TRUE) AS action_engine_enabled
+              ,EXISTS (SELECT 1 FROM public.contract_modules module
+                      WHERE module.contract_id = contract.id AND module.module_key = 'automations' AND module.enabled = TRUE) AS automations_enabled
+              ,EXISTS (SELECT 1 FROM public.contract_modules module
+                      WHERE module.contract_id = contract.id AND module.module_key = 'funnel_nurture_agent' AND module.enabled = TRUE) AS funnel_nurture_enabled
        FROM public.contracts contract
        JOIN public.organizations organization ON organization.client_id = contract.client_id
        WHERE contract.id = $1 AND organization.id = $2 AND contract.status = 'active' LIMIT 1`,
@@ -104,22 +113,31 @@ export async function evaluateMissionReadiness(
     )
     contractValid = Boolean(contract.rows[0])
     moduleEnabled = contract.rows[0]?.action_engine_enabled ?? false
+    automationsEnabled = contract.rows[0]?.automations_enabled ?? false
+    funnelNurtureEnabled = contract.rows[0]?.funnel_nurture_enabled ?? false
   }
   checks.push(check(contractValid, 'contract_valid', 'contract_invalid', 'Contrato ativo e compatível.', 'Contrato ativo não encontrado para a organização.', '/platform/contracts'))
   checks.push(check(moduleEnabled, 'action_engine_enabled', 'action_engine_disabled', 'Action Engine habilitado.', 'Módulo Action Engine não habilitado no contrato.', '/platform/contracts'))
+  if (funnelNurture) {
+    checks.push(check(automationsEnabled, 'automations_enabled', 'automations_disabled', 'Automações habilitadas.', 'Módulo Automações não habilitado no contrato.', '/platform/contracts'))
+    checks.push(check(funnelNurtureEnabled, 'funnel_nurture_entitled', 'funnel_nurture_not_entitled', 'Agente Funil + Nutrição habilitado.', 'Agente Funil + Nutrição não habilitado no contrato.', '/platform/contracts'))
+  }
 
   const crm = await client.query<{ id: string }>(
     `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status = 'active' LIMIT 1`, [input.organizationId],
   )
   checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
 
+  const claimTarget = funnelNurture
+    ? { resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }
+    : { resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }
   const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(
     `SELECT mission_id, mission_label, lease_expires_at
      FROM public.action_resource_claims
-     WHERE organization_id = $1 AND ($2::UUID IS NULL OR mission_id <> $2) AND resource_key = 'crm.lead_population'
-       AND scope = 'inactive_revenue_recovery' AND active = TRUE AND lease_expires_at > NOW()
+     WHERE organization_id = $1 AND ($2::UUID IS NULL OR mission_id <> $2) AND resource_key = $3
+       AND scope = $4 AND active = TRUE AND lease_expires_at > NOW()
      ORDER BY CASE mode WHEN 'exclusive' THEN 0 ELSE 1 END, acquired_at LIMIT 1`,
-    [input.organizationId, input.missionId ?? null],
+    [input.organizationId, input.missionId ?? null, claimTarget.resourceKey, claimTarget.scope],
   )
   checks.push(resourceClaimReadinessCheck(claim.rows[0] ? {
     missionId: claim.rows[0].mission_id,
@@ -129,18 +147,20 @@ export async function evaluateMissionReadiness(
       : new Date(claim.rows[0].lease_expires_at).toISOString(),
   } : null))
 
-  const eligible = await client.query<{ count: number | string }>(
+  if (!funnelNurture) {
+    const eligible = await client.query<{ count: number | string }>(
     `SELECT COUNT(*)::INT AS count FROM public.leads
      WHERE organization_id = $1 AND COALESCE(last_activity_at, updated_at, created_at) < NOW() - INTERVAL '7 days'`,
     [input.organizationId],
   )
-  const eligibleCount = Number(eligible.rows[0]?.count ?? 0)
-  checks.push({ status: eligibleCount > 0 ? 'pass' : 'warn', code: eligibleCount > 0 ? 'eligible_population_found' : 'eligible_population_empty', message: eligibleCount > 0 ? `${eligibleCount} oportunidades potencialmente elegíveis.` : 'Nenhuma oportunidade inativa encontrada; o planner poderá propor apenas preparação.' })
+    const eligibleCount = Number(eligible.rows[0]?.count ?? 0)
+    checks.push({ status: eligibleCount > 0 ? 'pass' : 'warn', code: eligibleCount > 0 ? 'eligible_population_found' : 'eligible_population_empty', message: eligibleCount > 0 ? `${eligibleCount} oportunidades potencialmente elegíveis.` : 'Nenhuma oportunidade inativa encontrada; o planner poderá propor apenas preparação.' })
 
-  const revenue = await client.query<{ count: number | string }>(
+    const revenue = await client.query<{ count: number | string }>(
     `SELECT COUNT(*)::INT AS count FROM public.leads WHERE organization_id = $1 AND value IS NOT NULL`, [input.organizationId],
   )
-  checks.push(check(Number(revenue.rows[0]?.count ?? 0) > 0, 'revenue_source_available', 'revenue_source_missing', 'Fonte de receita disponível.', 'Não há fonte confiável para medir receita recuperada.', '/crm'))
+    checks.push(check(Number(revenue.rows[0]?.count ?? 0) > 0, 'revenue_source_available', 'revenue_source_missing', 'Fonte de receita disponível.', 'Não há fonte confiável para medir receita recuperada.', '/crm'))
+  }
 
   const owner = await client.query<{ id: string }>(
     `SELECT membership.user_id AS id FROM public.memberships membership
@@ -161,8 +181,12 @@ export async function evaluateMissionReadiness(
     [input.organizationId],
   )
   const connected = new Set(connections.rows.map((row) => row.channel))
-  checks.push(channelCheck(connected.has('email'), 'email', '/omnichannel/settings'))
-  checks.push(channelCheck(connected.has('whatsapp'), 'whatsapp', '/omnichannel/settings'))
+  if (funnelNurture) {
+    checks.push(check(connected.has('email'), 'email_connected', 'email_unavailable', 'Conexão de e-mail ativa.', 'Conecte um provedor de e-mail antes de preparar a nutrição.', '/omnichannel/settings'))
+  } else {
+    checks.push(channelCheck(connected.has('email'), 'email', '/omnichannel/settings'))
+    checks.push(channelCheck(connected.has('whatsapp'), 'whatsapp', '/omnichannel/settings'))
+  }
 
   const permissionTables = await client.query<{ available: boolean }>(
     `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'lead_channel_permissions') AS available`,
@@ -172,18 +196,17 @@ export async function evaluateMissionReadiness(
   checks.push(check(input.agentHarnessHealthy, 'agent_harness_healthy', 'agent_harness_unavailable', 'Agent Harness disponível para planejamento.', 'Agent Harness indisponível; a missão não pode ser planejada.'))
   checks.push(check(input.mutationLeaseReady, 'mutation_lease_ready', 'mutation_lease_unavailable', 'Assinatura de mutações configurada.', 'A chave isolada de autorização de mutações não está configurada.'))
 
+  const expectedPack = funnelNurture ? FUNNEL_NURTURE_PACK_V1 : REVENUE_RECOVERY_PACK_V0
   const pack = await client.query<{ content_hash: string }>(
     `SELECT version.content_hash FROM public.action_pack_versions version
      JOIN public.action_packs pack ON pack.id = version.pack_id
-     WHERE pack.key = 'revenue_recovery' AND version.semantic_version = '0.2.0'
+     WHERE pack.key = $1 AND version.semantic_version = $2
        AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
+    [expectedPack.key, expectedPack.semanticVersion],
   )
-  checks.push(check(pack.rows[0]?.content_hash === REVENUE_RECOVERY_PACK_V0.contentHash, 'revenue_recovery_pack_ready', 'revenue_recovery_pack_missing_or_changed', 'Revenue Recovery Pack v0 publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
+  checks.push(check(pack.rows[0]?.content_hash === expectedPack.contentHash, `${expectedPack.key}_pack_ready`, `${expectedPack.key}_pack_missing_or_changed`, 'Action Pack publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
 
-  const availableChannels: MissionReadinessReport['availableChannels'] = ['human_task']
-  // The first pilot deliberately exposes only the human path. Provider
-  // connections are still diagnosed above, but they are not advertised as an
-  // executable Mission channel until their Action Engine adapters are enabled.
+  const availableChannels: MissionReadinessReport['availableChannels'] = funnelNurture ? ['email'] : ['human_task']
   return { ready: checks.every((item) => item.status !== 'block'), checks, availableChannels }
 }
 
