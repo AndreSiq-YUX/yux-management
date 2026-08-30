@@ -26,6 +26,13 @@ export async function generateCreativeDraft(client: MissionCommandQueryable, con
   await event(client,context,'mission.campaign_creative_draft_created',{campaignVersionId:version.id,creativeVersionId:id,contentHash:hash});return saveMissionCommandResult(client,context,key,result)
 }
 
+export async function attachCampaignCreativeDraft(client:MissionCommandQueryable,context:MissionCommandContext,input:{campaignVersionId:string;creativeVersionId:string;expectedContentHash:string}):Promise<ArtifactResult>{
+  const key='campaign.creative.attach_draft';const prior=await loadMissionCommandResult<ArtifactResult>(client,context,key);if(prior)return prior
+  await requireVersion(client,context,input.campaignVersionId,'draft')
+  const creative=await client.query<{id:string;content_hash:string;position:number}>(`SELECT creative.id,creative.content_hash,creative.position FROM public.campaign_creative_versions creative WHERE creative.id=$1 AND creative.campaign_version_id=$2 AND creative.organization_id=$3 AND creative.mission_id=$4 AND creative.status='draft' LIMIT 1`,[input.creativeVersionId,input.campaignVersionId,context.organizationId,context.missionId]);const row=creative.rows[0];if(!row)throw new Error('campaign_creative_version_not_found');if(row.content_hash!==input.expectedContentHash)throw new Error('campaign_creative_hash_changed')
+  const result={entityId:row.id,versionId:row.id,status:'draft',contentHash:row.content_hash,evidence:{attached:true,position:Number(row.position)}};return saveMissionCommandResult(client,context,key,result)
+}
+
 export async function attachAcquisitionAsset(client:MissionCommandQueryable,context:MissionCommandContext,input:{campaignVersionId:string;assetKind:'landing_page'|'lead_form'|'tracking';sourceEntityId?:string;payload:Record<string,unknown>;validated?:boolean}):Promise<ArtifactResult>{
   const key=`campaign.acquisition.attach_${input.assetKind}`;const prior=await loadMissionCommandResult<ArtifactResult>(client,context,key);if(prior)return prior
   const version=await requireVersion(client,context,input.campaignVersionId,'draft');const hash=missionArtifactHash(input.payload)

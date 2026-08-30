@@ -41,6 +41,16 @@ export type CapabilityContext = {
     archiveEmailTemplate?: (input: Record<string, unknown>) => Promise<unknown>
     archiveSequence?: (input: Record<string, unknown>) => Promise<unknown>
     archiveAutomationFlow?: (input: Record<string, unknown>) => Promise<unknown>
+    inspectCampaignState?: (input: Record<string, unknown>) => Promise<unknown>
+    createCampaignDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    generateCreativeDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    attachCampaignCreativeDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    createLandingPageDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    createLeadFormDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    attachAcquisitionAsset?: (input: Record<string, unknown>) => Promise<unknown>
+    createProviderCampaignPaused?: (input: Record<string, unknown>) => Promise<unknown>
+    activateProviderCampaign?: (input: Record<string, unknown>) => Promise<unknown>
+    pauseProviderCampaign?: (input: Record<string, unknown>) => Promise<unknown>
   }
 }
 

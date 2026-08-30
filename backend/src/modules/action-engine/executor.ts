@@ -227,9 +227,14 @@ export async function executeActionRun(
         capability.requiredConnections.length === 0
           ? Promise.resolve({ rows: [{ healthy: true }] })
           : client.query<{ healthy: boolean }>(
-            `SELECT COUNT(DISTINCT channel)::INT >= $2::INT AS healthy
-             FROM public.channel_connections
-             WHERE organization_id = $1 AND is_active = TRUE AND channel = ANY($3::TEXT[])`,
+            `SELECT COUNT(DISTINCT connection_key)::INT >= $2::INT AS healthy FROM (
+               SELECT channel AS connection_key FROM public.channel_connections
+               WHERE organization_id=$1 AND is_active=TRUE AND channel=ANY($3::TEXT[])
+               UNION ALL
+               SELECT 'ads_provider' AS connection_key WHERE 'ads_provider'=ANY($3::TEXT[]) AND EXISTS (
+                 SELECT 1 FROM public.ad_provider_connections WHERE organization_id=$1 AND status='connected'
+               )
+             ) connections`,
             [input.organizationId, capability.requiredConnections.length, capability.requiredConnections],
           ),
         !consentChannel

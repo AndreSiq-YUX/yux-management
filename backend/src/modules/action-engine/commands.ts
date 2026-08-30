@@ -13,6 +13,12 @@ import {
   simulateAutomationFlowDraft, simulateSequenceDraft,
   type AutomationFlowDraft,
 } from '../automations/mission-commands.js'
+import {
+  activateProviderCampaign, attachAcquisitionAsset, attachCampaignCreativeDraft, createCampaignDraft,
+  createProviderCampaignPaused, generateCreativeDraft, inspectCampaignState, pauseProviderCampaign,
+} from '../campaigns/commands.js'
+import type { CampaignLaunchArtifact } from '../campaigns/repository.js'
+import { createLandingPageDraft, createLeadFormDraft } from '../landing-pages/mission-commands.js'
 
 type CommandInput = Record<string, unknown>
 
@@ -38,8 +44,25 @@ export function createActionEngineCommands(pool: Connectable, missionId: string)
     archiveEmailTemplate: (input) => archiveMissionArtifact(pool, missionId, input, 'email_template'),
     archiveSequence: (input) => archiveMissionArtifact(pool, missionId, input, 'crm_sequence'),
     archiveAutomationFlow: (input) => archiveMissionArtifact(pool, missionId, input, 'automation_flow'),
+    inspectCampaignState: (input) => inspectCampaignState(pool, requiredString(input, 'organizationId'), missionId),
+    createCampaignDraft: (input) => createMissionCampaignDraft(pool, missionId, input),
+    generateCreativeDraft: (input) => createMissionCreativeDraft(pool, missionId, input),
+    attachCampaignCreativeDraft: (input) => attachMissionCreativeDraft(pool, missionId, input),
+    createLandingPageDraft: (input) => createMissionLandingPageDraft(pool, missionId, input),
+    createLeadFormDraft: (input) => createMissionLeadFormDraft(pool, missionId, input),
+    attachAcquisitionAsset: (input) => attachMissionAcquisitionAsset(pool, missionId, input),
+    createProviderCampaignPaused: (input) => createProviderCampaignPaused(pool, missionCommandContext(missionId, input), { versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'), approvedSubjectHash: requiredString(input,'approvedSubjectHash'), maxTotalBudgetBrl: requiredString(input,'maxTotalBudgetBrl') }),
+    activateProviderCampaign: (input) => activateProviderCampaign(pool, missionCommandContext(missionId, input), { versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'), approvedSubjectHash: requiredString(input,'approvedSubjectHash') }),
+    pauseProviderCampaign: (input) => pauseProviderCampaign(pool, missionCommandContext(missionId, input), { versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'), approvedSubjectHash: requiredString(input,'approvedSubjectHash') }),
   }
 }
+
+async function createMissionCampaignDraft(pool:Connectable,missionId:string,input:CommandInput){return transaction(pool,client=>createCampaignDraft(client,missionCommandContext(missionId,input),campaignArtifact(input)))}
+async function createMissionCreativeDraft(pool:Connectable,missionId:string,input:CommandInput){return transaction(pool,client=>generateCreativeDraft(client,missionCommandContext(missionId,input),{campaignVersionId:requiredString(input,'campaignVersionId'),position:requiredInteger(input,'position'),creative:creativeInput(input.creative)}))}
+async function attachMissionCreativeDraft(pool:Connectable,missionId:string,input:CommandInput){return transaction(pool,client=>attachCampaignCreativeDraft(client,missionCommandContext(missionId,input),{campaignVersionId:requiredString(input,'campaignVersionId'),creativeVersionId:requiredString(input,'creativeVersionId'),expectedContentHash:requiredString(input,'expectedContentHash')}))}
+async function createMissionLandingPageDraft(pool:Connectable,missionId:string,input:CommandInput){return transaction(pool,client=>createLandingPageDraft(client,missionCommandContext(missionId,input),{name:requiredString(input,'name'),slug:requiredString(input,'slug'),title:requiredString(input,'title'),primaryCtaType:ctaType(input.primaryCtaType),primaryCtaValue:requiredString(input,'primaryCtaValue'),content:recordInput(input.content,'content'),...(optionalString(input,'campaignId')?{campaignId:optionalString(input,'campaignId')!}:{})}))}
+async function createMissionLeadFormDraft(pool:Connectable,missionId:string,input:CommandInput){return transaction(pool,client=>createLeadFormDraft(client,missionCommandContext(missionId,input),{landingPageId:requiredString(input,'landingPageId'),name:requiredString(input,'name'),submitLabel:requiredString(input,'submitLabel'),successMessage:requiredString(input,'successMessage'),consentCode:requiredString(input,'consentCode'),consentVersion:requiredString(input,'consentVersion'),privacyPolicyVersion:requiredString(input,'privacyPolicyVersion'),fields:formFields(input.fields)}))}
+async function attachMissionAcquisitionAsset(pool:Connectable,missionId:string,input:CommandInput){return transaction(pool,client=>attachAcquisitionAsset(client,missionCommandContext(missionId,input),{campaignVersionId:requiredString(input,'campaignVersionId'),assetKind:assetKind(input.assetKind),...(optionalString(input,'sourceEntityId')?{sourceEntityId:optionalString(input,'sourceEntityId')!}:{}),payload:recordInput(input.payload,'payload'),validated:input.validated===true}))}
 
 async function createMissionEmailTemplate(pool: Connectable, missionId: string, input: CommandInput) {
   return transaction(pool, async (client) => {
@@ -344,6 +367,19 @@ function sequenceSteps(value: unknown) {
     return { templateVersionId: requiredString(item, 'templateVersionId'), delayMinutes, exitConditions: stringArray(item.exitConditions, 'exitConditions') }
   })
 }
+
+function requiredInteger(input:CommandInput,key:string){const value=Number(input[key]);if(!Number.isInteger(value)||value<0)throw new Error(`action_engine_command_${key}_invalid`);return value}
+function recordInput(value:unknown,key:string):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw new Error(`action_engine_command_${key}_invalid`);return value as Record<string,unknown>}
+function ctaType(value:unknown):'form'|'whatsapp'|'phone'|'external_url'{if(value==='form'||value==='whatsapp'||value==='phone'||value==='external_url')return value;throw new Error('action_engine_command_primaryCtaType_invalid')}
+function assetKind(value:unknown):'landing_page'|'lead_form'|'tracking'{if(value==='landing_page'||value==='lead_form'||value==='tracking')return value;throw new Error('action_engine_command_assetKind_invalid')}
+function creativeInput(value:unknown):CampaignLaunchArtifact['creatives'][number]{const item=recordInput(value,'creative');const format=requiredString(item,'format');if(!['image','video','carousel','text'].includes(format))throw new Error('action_engine_command_creative_format_invalid');return{format:format as CampaignLaunchArtifact['creatives'][number]['format'],headline:requiredString(item,'headline'),body:requiredString(item,'body'),sourceIds:stringArray(item.sourceIds,'sourceIds')}}
+function campaignArtifact(input:CommandInput):CampaignLaunchArtifact{
+  const platform=requiredString(input,'platform');if(platform!=='meta'&&platform!=='google')throw new Error('action_engine_command_platform_invalid')
+  const objective=requiredString(input,'objective');if(!['lead_generation','traffic','conversions','awareness'].includes(objective))throw new Error('action_engine_command_objective_invalid')
+  if(!Array.isArray(input.creatives))throw new Error('action_engine_command_creatives_invalid')
+  return{name:requiredString(input,'name'),objective:objective as CampaignLaunchArtifact['objective'],offer:requiredString(input,'offer'),audience:recordInput(input.audience,'audience'),platform,providerConnectionId:requiredString(input,'providerConnectionId'),dailyBudgetBrl:requiredString(input,'dailyBudgetBrl'),totalBudgetBrl:requiredString(input,'totalBudgetBrl'),startsAt:requiredString(input,'startsAt'),...(optionalString(input,'endsAt')?{endsAt:optionalString(input,'endsAt')!}:{}),creatives:input.creatives.map(creativeInput),...(optionalString(input,'landingPageId')?{landingPageId:optionalString(input,'landingPageId')!}:{}),...(optionalString(input,'leadFormId')?{leadFormId:optionalString(input,'leadFormId')!}:{}),trackingPlan:Object.fromEntries(Object.entries(recordInput(input.trackingPlan,'trackingPlan')).map(([key,value])=>[key,String(value)])),sourceIds:stringArray(input.sourceIds,'sourceIds')}
+}
+function formFields(value:unknown){if(!Array.isArray(value))throw new Error('action_engine_command_fields_invalid');return value.map(raw=>{const item=recordInput(raw,'field');return{fieldName:requiredString(item,'fieldName'),crmFieldKey:requiredString(item,'crmFieldKey'),required:item.required===true}})}
 
 function automationFlowInput(input: CommandInput): AutomationFlowDraft {
   const trigger = input.trigger
