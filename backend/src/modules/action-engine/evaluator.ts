@@ -1,6 +1,8 @@
-import { calculateMissionEconomics, type MissionEconomics } from './economics.js'
+import type { MissionEconomics } from './economics.js'
 import { getMission, recordEvaluation, type Queryable } from './repository.js'
 import type { MetricValue } from './types.js'
+import { PackMetricCollectorRegistry, type PackMetricCollector, type PackMetricSnapshot } from './metrics/collector.js'
+import { campaignLaunchMetricCollector } from './metrics/campaign-launch.js'
 
 export type EvaluationConclusion = 'continue' | 'pause' | 'block' | 'propose_replan' | 'succeed' | 'fail' | 'expire'
 
@@ -28,7 +30,7 @@ export function decideMissionConclusion(input: MissionEvaluationInput): { conclu
   return { conclusion: 'continue', reasons: input.signedRevenue.kind === 'unknown' ? ['metric_unknown_continue_observing'] : ['trajectory_acceptable'] }
 }
 
-export async function collectMissionMetrics(client: Queryable, missionId: string, organizationId: string) {
+async function collectRevenueRecoveryMetrics(client: Queryable, missionId: string, organizationId: string) {
   const [counts, persisted, human] = await Promise.all([
     client.query<{ observation_type: string; count: number | string }>(
       `SELECT observation_type, COUNT(*)::INT AS count FROM public.action_observations
@@ -73,29 +75,105 @@ export async function collectMissionMetrics(client: Queryable, missionId: string
   return metrics
 }
 
+const revenueRecoveryMetricCollector: PackMetricCollector = {
+  packKey: 'revenue_recovery',
+  async collect(client, mission) {
+    const metrics = await collectRevenueRecoveryMetrics(client, mission.id, mission.organizationId)
+    return {
+      packKey: 'revenue_recovery', measuredAt: new Date().toISOString(), metrics, evidence: {},
+      signals: {
+        criticalGuardrailBreached: false, killSwitchActive: false,
+        minimumSampleReached: false, offTrack: false,
+        requiredMetricUnknownIsBlocking: true, reasons: [],
+      },
+    }
+  },
+  evaluate({ mission, snapshot, now }) {
+    return decideMissionConclusion({
+      targetRevenueBrl: String(mission.parameters.targetRevenueBrl ?? '0'),
+      signedRevenue: snapshot.metrics.signed_revenue ?? { kind: 'unknown', reason: 'confirmed_revenue_snapshot_required', unit: 'BRL' },
+      deadlineAt: mission.deadlineAt, now,
+      criticalGuardrailBreached: snapshot.signals.criticalGuardrailBreached,
+      killSwitchActive: snapshot.signals.killSwitchActive,
+      minimumSampleReached: snapshot.signals.minimumSampleReached,
+      offTrack: snapshot.signals.offTrack,
+      requiredMetricUnknownIsBlocking: snapshot.signals.requiredMetricUnknownIsBlocking,
+    })
+  },
+}
+
+const funnelNurtureMetricCollector: PackMetricCollector = {
+  ...revenueRecoveryMetricCollector,
+  packKey: 'funnel_nurture',
+  evaluate({ mission, snapshot, now }) {
+    const demandValue = snapshot.metrics.qualified_demand_value_brl
+      ?? snapshot.metrics.signed_revenue
+      ?? { kind: 'unknown' as const, reason: 'qualified_demand_value_snapshot_required', unit: 'BRL' }
+    return decideMissionConclusion({
+      targetRevenueBrl: String(mission.parameters.targetRevenueBrl ?? '0'), signedRevenue: demandValue,
+      deadlineAt: mission.deadlineAt, now,
+      criticalGuardrailBreached: snapshot.signals.criticalGuardrailBreached,
+      killSwitchActive: snapshot.signals.killSwitchActive,
+      minimumSampleReached: snapshot.signals.minimumSampleReached,
+      offTrack: snapshot.signals.offTrack,
+      requiredMetricUnknownIsBlocking: snapshot.signals.requiredMetricUnknownIsBlocking,
+    })
+  },
+}
+
+export function createPackMetricCollectorRegistry(): PackMetricCollectorRegistry {
+  return new PackMetricCollectorRegistry()
+    .register(revenueRecoveryMetricCollector)
+    .register(funnelNurtureMetricCollector)
+    .register(campaignLaunchMetricCollector)
+}
+
+export async function collectPackMissionMetrics(client: Queryable, missionId: string, organizationId: string): Promise<PackMetricSnapshot> {
+  const mission = await getMission(client, missionId, organizationId)
+  if (!mission) throw new Error('mission_not_found')
+  const packKey = await loadMissionPackKey(client, mission.packVersionId)
+  return createPackMetricCollectorRegistry().get(packKey).collect(client, mission)
+}
+
+export async function collectMissionMetrics(client: Queryable, missionId: string, organizationId: string) {
+  return (await collectPackMissionMetrics(client, missionId, organizationId)).metrics
+}
+
 export async function evaluateMission(client: Queryable, input: {
   missionId: string; organizationId: string; checkpointKey: string; idempotencyKey: string;
   signedRevenue: MetricValue; criticalGuardrailBreached?: boolean; killSwitchActive?: boolean;
   minimumSampleReached?: boolean; offTrack?: boolean; requiredMetricUnknownIsBlocking?: boolean;
-  economics: MissionEconomics
+  economics: MissionEconomics; packSnapshot?: PackMetricSnapshot
 }) {
   const mission = await getMission(client, input.missionId, input.organizationId)
   if (!mission) throw new Error('mission_not_found')
-  const target = String(mission.parameters.targetRevenueBrl ?? '0')
-  const decision = decideMissionConclusion({
-    targetRevenueBrl: target, signedRevenue: input.signedRevenue, deadlineAt: mission.deadlineAt,
-    now: new Date().toISOString(), criticalGuardrailBreached: input.criticalGuardrailBreached ?? false,
-    killSwitchActive: input.killSwitchActive ?? false, minimumSampleReached: input.minimumSampleReached ?? false,
-    offTrack: input.offTrack ?? false, requiredMetricUnknownIsBlocking: input.requiredMetricUnknownIsBlocking ?? true,
-  })
+  const snapshot = input.packSnapshot
+  const decision = snapshot
+    ? createPackMetricCollectorRegistry().get(snapshot.packKey).evaluate({ mission, snapshot, economics: input.economics, now: new Date().toISOString() })
+    : decideMissionConclusion({
+      targetRevenueBrl: String(mission.parameters.targetRevenueBrl ?? '0'), signedRevenue: input.signedRevenue, deadlineAt: mission.deadlineAt,
+      now: new Date().toISOString(), criticalGuardrailBreached: input.criticalGuardrailBreached ?? false,
+      killSwitchActive: input.killSwitchActive ?? false, minimumSampleReached: input.minimumSampleReached ?? false,
+      offTrack: input.offTrack ?? false, requiredMetricUnknownIsBlocking: input.requiredMetricUnknownIsBlocking ?? true,
+    })
   const persistedDecision = ({ continue: 'continue', pause: 'pause', block: 'pause', propose_replan: 'replan', succeed: 'succeed', fail: 'fail', expire: 'expire' } as const)[decision.conclusion]
   const evaluation = await recordEvaluation(client, {
     organizationId: input.organizationId, missionId: input.missionId, planId: mission.activePlanId,
     checkpointKey: input.checkpointKey, idempotencyKey: input.idempotencyKey, decision: persistedDecision,
-    metricSnapshot: { signedRevenue: input.signedRevenue }, economicsSnapshot: input.economics,
+    metricSnapshot: snapshot?.metrics ?? { signedRevenue: input.signedRevenue }, economicsSnapshot: input.economics,
     rationale: { conclusion: decision.conclusion, reasons: decision.reasons },
   })
   return { ...evaluation, conclusion: decision.conclusion, reasons: decision.reasons }
+}
+
+async function loadMissionPackKey(client: Queryable, packVersionId: string): Promise<string> {
+  const result = await client.query<{ key: string }>(
+    `SELECT pack.key FROM public.action_pack_versions version
+     JOIN public.action_packs pack ON pack.id=version.pack_id WHERE version.id=$1 LIMIT 1`,
+    [packVersionId],
+  )
+  if (!result.rows[0]) throw new Error('mission_action_pack_unavailable')
+  return result.rows[0].key
 }
 
 function known(value: string, unit: string): MetricValue { return { kind: 'known', value: value as `${number}`, unit } }

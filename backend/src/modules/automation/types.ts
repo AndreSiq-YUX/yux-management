@@ -15,7 +15,7 @@ export type DomainEventEnvelope<TPayload extends Record<string, unknown> = Recor
   schemaVersion: 1
   organizationId: string
   crmInstanceId?: string
-  aggregateType: 'lead' | 'form_submission' | 'task' | 'sequence_enrollment' | 'email' | 'mission' | 'mission_action' | 'action_run' | 'approval' | 'unknown'
+  aggregateType: 'lead' | 'form_submission' | 'task' | 'sequence_enrollment' | 'email' | 'campaign' | 'mission' | 'mission_action' | 'action_run' | 'approval' | 'unknown'
   aggregateId: string
   leadId?: string
   correlationId: string

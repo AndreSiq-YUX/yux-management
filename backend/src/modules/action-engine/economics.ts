@@ -83,15 +83,20 @@ export function calculateHumanCost(minutes: string, hourlyRateBrl: string): stri
   return formatScaledDecimal((amountScale4 + 50n) / 100n, 2)
 }
 
-export async function collectMissionEconomics(client: Queryable, missionId: string, organizationId: string): Promise<MissionEconomics> {
+export async function collectMissionEconomics(
+  client: Queryable,
+  missionId: string,
+  organizationId: string,
+  overrides?: { producedValueBrl?: string; mediaSpendBrl?: string },
+): Promise<MissionEconomics> {
   const [metric, costs, actionCounts] = await Promise.all([
     client.query<{ numeric_value: string | null }>(
       `SELECT numeric_value::TEXT FROM public.action_mission_metrics
        WHERE mission_id = $1 AND organization_id = $2 AND metric_key = 'signed_revenue' AND value_kind = 'known' AND is_demo = FALSE
        ORDER BY measured_at DESC LIMIT 1`, [missionId, organizationId],
     ),
-    client.query<{ amount_brl: string }>(
-      `SELECT amount_brl::TEXT FROM public.action_cost_entries
+    client.query<{ amount_brl: string; category: CostCategory }>(
+      `SELECT amount_brl::TEXT,category FROM public.action_cost_entries
        WHERE mission_id = $1 AND organization_id = $2 AND nature IN ('actual','reversal')`, [missionId, organizationId],
     ),
     client.query<{ completed: number | string; human: number | string; human_minutes: string | null }>(
@@ -106,8 +111,11 @@ export async function collectMissionEconomics(client: Queryable, missionId: stri
   const minutes = parseScaledDecimal(String(actionCounts.rows[0]?.human_minutes ?? '0'), 2)
   const humanHours = formatScaledDecimal(divideScaled(minutes, parseScaledDecimal('60', 2), 2), 2)
   return calculateMissionEconomics({
-    value: metric.rows[0]?.numeric_value ?? '0',
-    costs: costs.rows.map((row) => row.amount_brl),
+    value: overrides?.producedValueBrl ?? metric.rows[0]?.numeric_value ?? '0',
+    costs: costs.rows
+      .filter(row => !overrides?.mediaSpendBrl || row.category !== 'media')
+      .map(row => row.amount_brl)
+      .concat(overrides?.mediaSpendBrl ? [overrides.mediaSpendBrl] : []),
     humanHours,
     completedActions: Number(actionCounts.rows[0]?.completed ?? 0),
     humanActions: Number(actionCounts.rows[0]?.human ?? 0),

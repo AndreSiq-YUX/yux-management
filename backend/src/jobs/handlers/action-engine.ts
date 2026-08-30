@@ -11,7 +11,7 @@ import { recordDomainEvent } from '../../modules/events/repository.js'
 import { executeActionRun, scheduleReadyActions } from '../../modules/action-engine/executor.js'
 import { collectMissionEconomics } from '../../modules/action-engine/economics.js'
 import { evaluateMission } from '../../modules/action-engine/evaluator.js'
-import { collectMissionMetrics } from '../../modules/action-engine/evaluator.js'
+import { collectPackMissionMetrics } from '../../modules/action-engine/evaluator.js'
 import { createActionEngineCommands } from '../../modules/action-engine/commands.js'
 import {
   ProviderEffectResolverRegistry,
@@ -191,20 +191,26 @@ export async function handleActionEngineCollectMetrics(pool: Pool, queue: AppJob
   )
   let snapshots = 0
   for (const mission of missions.rows) {
-    const metrics = await collectMissionMetrics(pool, mission.id, mission.organization_id)
-    const measuredAt = new Date().toISOString()
-    for (const [key, metric] of Object.entries(metrics)) {
+    const snapshot = await collectPackMissionMetrics(pool, mission.id, mission.organization_id)
+    for (const [key, metric] of Object.entries(snapshot.metrics)) {
+      const evidence = snapshot.evidence[key]
+      const attribution = evidence?.attribution
       await pool.query(
         `INSERT INTO public.action_mission_metrics (
-           organization_id, mission_id, metric_key, value_kind, numeric_value, unit, reason, source_type, measured_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,'mission_observer',$8)`,
+           organization_id, mission_id, metric_key, value_kind, numeric_value, unit, reason,
+           source_type, source_record_id, measured_at, attribution_status,
+           attribution_policy_version, attribution_policy_hash, attribution_event_ids
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [mission.organization_id, mission.id, key, metric.kind, metric.kind === 'known' ? metric.value : null,
-          metric.unit, metric.kind === 'known' ? null : metric.reason, measuredAt],
+          metric.unit, metric.kind === 'known' ? null : metric.reason,
+          evidence?.sourceType ?? 'mission_observer', evidence?.sourceRecordId ?? null, snapshot.measuredAt,
+          attribution?.status ?? 'not_applicable', attribution?.policyVersion ?? null,
+          attribution?.policyHash ?? null, attribution?.eventIds ?? []],
       )
       snapshots += 1
     }
     await queue.add('action-engine.evaluateMission', {
-      missionId: mission.id, organizationId: mission.organization_id, checkpointKey: `scheduled-${measuredAt.slice(0, 16)}`,
+      missionId: mission.id, organizationId: mission.organization_id, checkpointKey: `scheduled-${snapshot.measuredAt.slice(0, 16)}`,
     })
   }
   return { missions: missions.rows.length, snapshots }
@@ -225,14 +231,10 @@ export async function handleActionEngineEvaluation(pool: Pool, data: Record<stri
     const evaluating = current.status === 'active'
       ? await transitionMission(client, { missionId, organizationId, expectedVersion: current.version, toStatus: 'evaluating', actor: { type: 'system' }, reason: `evaluation:${checkpointKey}` })
       : current
-    const metric = await client.query<{ value_kind: string; numeric_value: string | null; reason: string | null }>(
-      `SELECT value_kind, numeric_value::TEXT, reason FROM public.action_mission_metrics
-       WHERE mission_id = $1 AND organization_id = $2 AND metric_key = 'signed_revenue'
-       ORDER BY measured_at DESC LIMIT 1`, [missionId, organizationId],
-    )
-    const signedRevenue = metric.rows[0]?.value_kind === 'known' && metric.rows[0].numeric_value !== null
-      ? { kind: 'known' as const, value: metric.rows[0].numeric_value as `${number}`, unit: 'BRL' }
-      : { kind: 'unknown' as const, reason: metric.rows[0]?.reason ?? 'confirmed_revenue_snapshot_required', unit: 'BRL' }
+    const packSnapshot = await collectPackMissionMetrics(client, missionId, organizationId)
+    const signedRevenue = packSnapshot.metrics.signed_revenue
+      ?? packSnapshot.metrics.attributed_revenue_brl
+      ?? { kind: 'unknown' as const, reason: 'confirmed_revenue_snapshot_required', unit: 'BRL' }
     const actionCounts = await client.query<{ completed: number | string; human: number | string; human_minutes: string | null }>(
       `SELECT COUNT(*) FILTER (WHERE run.status = 'succeeded')::INT AS completed,
               COUNT(*) FILTER (WHERE run.status = 'succeeded' AND step.capability_key = 'human.task.create')::INT AS human,
@@ -241,14 +243,23 @@ export async function handleActionEngineEvaluation(pool: Pool, data: Record<stri
        FROM public.action_runs run JOIN public.action_plan_steps step ON step.id = run.plan_step_id
        WHERE run.mission_id = $1 AND run.organization_id = $2`, [missionId, organizationId],
     )
-    const economics = await collectMissionEconomics(client, missionId, organizationId)
+    const economics = await collectMissionEconomics(client, missionId, organizationId, packSnapshot.packKey === 'campaign_launch' ? {
+      producedValueBrl: signedRevenue.kind === 'known' ? signedRevenue.value : '0',
+      ...(packSnapshot.metrics.spend_brl?.kind === 'known' ? { mediaSpendBrl: packSnapshot.metrics.spend_brl.value } : {}),
+    } : undefined)
     const completedActions = Number(actionCounts.rows[0]?.completed ?? 0)
     const targetRevenue = Number(current.parameters.targetRevenueBrl ?? 0)
     const observedRevenue = signedRevenue.kind === 'known' ? Number(signedRevenue.value) : Number.NaN
+    if (packSnapshot.packKey !== 'campaign_launch') {
+      packSnapshot.signals.minimumSampleReached = completedActions >= 20
+      packSnapshot.signals.offTrack = completedActions >= 20 && Number.isFinite(observedRevenue)
+        && targetRevenue > 0 && observedRevenue / targetRevenue < 0.25
+    }
     const evaluation = await evaluateMission(client, {
       missionId, organizationId, checkpointKey, idempotencyKey: `${missionId}:${checkpointKey}:${evaluating.version}`,
       signedRevenue, economics, minimumSampleReached: completedActions >= 20,
       offTrack: completedActions >= 20 && Number.isFinite(observedRevenue) && targetRevenue > 0 && observedRevenue / targetRevenue < 0.25,
+      packSnapshot,
     })
     if (current.status === 'active') {
       const nextStatus = ({ continue: 'active', pause: 'paused', block: 'blocked', propose_replan: 'pending_replan_approval', succeed: 'succeeded', fail: 'failed', expire: 'expired' } as const)[evaluation.conclusion]
