@@ -11,6 +11,8 @@ from .model_profiles import ModelProfile, build_model_trace
 from .providers import OpenRouterClient, ProviderRequestError
 from .funnel_nurture import FunnelNurtureError, FunnelNurtureSpecialistWorkflow
 from .campaign_launch import CampaignLaunchError, CampaignLaunchSpecialistWorkflow
+from .mission_router import MissionRouter, MissionRoutingError
+from .mission_verifier import CompositeMissionVerifier, MissionVerificationError
 
 
 class MissionSupervisorError(ValueError):
@@ -18,11 +20,13 @@ class MissionSupervisorError(ValueError):
 
 
 class MissionSupervisor:
-    def __init__(self, client: OpenRouterClient, profile: ModelProfile, funnel_nurture: FunnelNurtureSpecialistWorkflow | None = None, campaign_launch: CampaignLaunchSpecialistWorkflow | None = None) -> None:
+    def __init__(self, client: OpenRouterClient, profile: ModelProfile, funnel_nurture: FunnelNurtureSpecialistWorkflow | None = None, campaign_launch: CampaignLaunchSpecialistWorkflow | None = None, router: MissionRouter | None = None, verifier: CompositeMissionVerifier | None = None) -> None:
         self.client = client
         self.profile = profile
         self.funnel_nurture = funnel_nurture or FunnelNurtureSpecialistWorkflow(client, profile)
         self.campaign_launch = campaign_launch or CampaignLaunchSpecialistWorkflow(client, profile)
+        self.router = router or MissionRouter()
+        self.verifier = verifier or CompositeMissionVerifier()
 
     def compose_messages(self, value: dict[str, Any]) -> list[dict[str, str]]:
         envelope = {
@@ -44,6 +48,7 @@ class MissionSupervisor:
             "strategyContext": value.get("strategy_context") or {},
             "previousRevision": value.get("previous_revision"),
             "observations": value.get("observations") or [],
+            "missionRoute": value.get("mission_route") or {},
         }
         return [
             {
@@ -61,7 +66,13 @@ class MissionSupervisor:
         ]
 
     def propose(self, value: dict[str, Any]) -> dict[str, Any]:
-        messages = self.compose_messages(value)
+        try:
+            route = self.router.route(value)
+        except MissionRoutingError as error:
+            raise MissionSupervisorError(str(error)) from error
+        routed_value = dict(value)
+        routed_value["mission_route"] = route.model_dump()
+        messages = self.compose_messages(routed_value)
         try:
             response = self.client.chat_completion(
                 model=self.profile.model,
@@ -100,6 +111,15 @@ class MissionSupervisor:
                 except CampaignLaunchError as error:
                     raise MissionSupervisorError(str(error)) from error
                 proposal.plan = self._inject_campaign_launch_artifacts(proposal.plan, artifacts)
+            if len(proposal.selected_packs) > 1:
+                try:
+                    self.verifier.verify(value, route, {
+                        "selectedPacks": [pack.model_dump() for pack in proposal.selected_packs],
+                        "sourceIds": proposal.source_ids,
+                        "plan": proposal.plan,
+                    })
+                except MissionVerificationError as error:
+                    raise MissionSupervisorError(str(error)) from error
             try:
                 typed_plan = PlanWire.model_validate(proposal.plan).model_dump(by_alias=True)
             except ValidationError as error:
@@ -223,8 +243,6 @@ class MissionSupervisor:
         selected = {(pack.key, pack.version, pack.contentHash) for pack in proposal.selected_packs}
         if not selected.issubset(catalog):
             raise MissionSupervisorError("mission_supervisor_pack_not_allowed")
-        if proposal.kind == "plan" and len(selected) != 1:
-            raise MissionSupervisorError("mission_supervisor_composite_pack_not_supported")
 
     @staticmethod
     def _pack_catalog(value: dict[str, Any]) -> list[dict[str, Any]]:
