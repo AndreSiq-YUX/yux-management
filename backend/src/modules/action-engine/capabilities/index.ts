@@ -7,6 +7,11 @@ import { systemApprovalAwait, systemEvaluationCheckpoint, systemReadinessCheck, 
 import { crmSequenceEnroll, emailMessageQueue, omnichannelMessageDraft, whatsappTemplateQueue } from './communications.js'
 import { automationFlowExecute } from './automation.js'
 import { crmPipelineCreateDraft, crmPipelineInspect, crmPipelinePublish, crmPipelineSimulate } from './crm-funnel.js'
+import {
+  automationFlowCreateDraft, automationFlowPublish, automationFlowSimulate,
+  crmSequenceCreateDraft, crmSequencePublish, crmSequenceSimulate,
+  emailTemplateCreateDraft, emailTemplatePublish, emailTemplatesInspect,
+} from './email-nurture.js'
 
 export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
   return new CapabilityRegistry()
@@ -19,6 +24,15 @@ export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
     .register(crmPipelineSimulate)
     .register(crmPipelineCreateDraft)
     .register(crmPipelinePublish)
+    .register(emailTemplatesInspect)
+    .register(emailTemplateCreateDraft)
+    .register(emailTemplatePublish)
+    .register(crmSequenceCreateDraft)
+    .register(crmSequenceSimulate)
+    .register(crmSequencePublish)
+    .register(automationFlowCreateDraft)
+    .register(automationFlowSimulate)
+    .register(automationFlowPublish)
     .register(crmRecoveryCandidatesSearch)
     .register(crmLeadTimelineRead)
     .register(growthSegmentPreview)

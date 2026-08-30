@@ -189,13 +189,30 @@ async function updateLeadField(pool: Queryable, context: LeadCommandContext, inp
   return { field: input.field, value: input.value ?? null }
 }
 
-async function enrollLeadInSequence(pool: Queryable, context: LeadCommandContext, input: { sequenceId: string; existingEnrollment?: 'skip' | 'resume' | 'restart' }): Promise<AutomationActionResult> {
+async function enrollLeadInSequence(pool: Queryable, context: LeadCommandContext, input: { sequenceId: string; existingEnrollment?: 'skip' | 'resume' | 'restart'; requireEmailConsent?: boolean; checkEmailSuppression?: boolean }): Promise<AutomationActionResult> {
   requireLead(context)
   const sequence = await pool.query<{ id: string }>(
     `SELECT id FROM public.crm_sequences WHERE id = $1 AND organization_id = $2 AND is_active = TRUE LIMIT 1`,
     [input.sequenceId, context.organizationId],
   )
   if (!sequence.rows[0]) throw new Error('automation_sequence_not_found')
+
+  if (input.requireEmailConsent || input.checkEmailSuppression) {
+    const eligibility = await pool.query<{ email: string | null; consent_granted: boolean; suppressed: boolean }>(
+      `SELECT lead.email,
+         EXISTS (SELECT 1 FROM public.lead_channel_permissions permission
+           WHERE permission.organization_id=$2 AND permission.lead_id=lead.id AND permission.channel='email'
+             AND LOWER(permission.address)=LOWER(lead.email) AND permission.status='granted' AND permission.revoked_at IS NULL) AS consent_granted,
+         EXISTS (SELECT 1 FROM public.email_suppression_entries suppression
+           WHERE suppression.organization_id=$2 AND LOWER(suppression.email)=LOWER(lead.email)) AS suppressed
+        FROM public.leads lead WHERE lead.id=$1 AND lead.organization_id=$2 LIMIT 1`,
+      [context.leadId, context.organizationId],
+    )
+    const row = eligibility.rows[0]
+    if (!row?.email) throw new Error('automation_sequence_email_required')
+    if (input.requireEmailConsent && !row.consent_granted) throw new Error('automation_sequence_consent_required')
+    if (input.checkEmailSuppression && row.suppressed) throw new Error('automation_sequence_email_suppressed')
+  }
 
   const existing = await pool.query<{ id: string; status: string; current_step_index: number }>(
     `SELECT id, status, current_step_index

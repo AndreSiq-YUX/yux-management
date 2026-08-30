@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createPipelineDraft, validateFunnelDraft } from '../src/modules/crm/mission-commands.js'
 import { publishEmailTemplateVersion, validateEmailTemplateDraft } from '../src/modules/emailTemplates/mission-commands.js'
-import { simulateSequenceDraft, validateSequenceDraft } from '../src/modules/automations/mission-commands.js'
+import { buildAutomationRuntimeSnapshot, createAutomationFlowDraft, simulateSequenceDraft, validateSequenceDraft } from '../src/modules/automations/mission-commands.js'
 
 const context = {
   organizationId: '00000000-0000-4000-8000-000000000001', missionId: '00000000-0000-4000-8000-000000000002',
@@ -27,6 +27,32 @@ describe('Mission-safe revenue domain commands', () => {
     const result = await createPipelineDraft(db as never, context, { name: 'Funil', stages: [stage('lead'), stage('won', true)] })
     expect(result).toEqual(prior)
     expect(db.sql).toHaveLength(1)
+  })
+
+  it('deduplicates automation draft commands before any flow or enrollment mutation', async () => {
+    const prior = { entityId: 'flow-1', versionId: 'flow-version-1', status: 'draft', contentHash: 'd'.repeat(64), evidence: { activated: false, existingEnrollments: 0 } }
+    const db = new ScriptedDatabase([{ match: 'SELECT result FROM public.action_mission_command_results', rows: [{ result: prior }] }])
+    const result = await createAutomationFlowDraft(db as never, context, {
+      name: 'Entrada', trigger: { type: 'lead.created' }, eligibilityConditions: [],
+      sequenceVersionId: 'sequence-version-1', exitConditions: ['replied'],
+      consentPolicy: 'require_granted', suppressionPolicy: 'check_before_enrollment', dailyRunLimit: 100,
+    })
+    expect(result).toEqual(prior)
+    expect(db.sql).toHaveLength(1)
+  })
+
+  it('compiles the mission flow artifact into the executable runtime snapshot', () => {
+    const snapshot = buildAutomationRuntimeSnapshot({
+      name: 'Entrada', trigger: { type: 'lead.stage_changed', pipelineId: 'pipeline-1', stageId: 'stage-1' },
+      eligibilityConditions: [{ field: 'lead.status', operator: 'equals', value: 'open' }],
+      sequenceVersionId: 'sequence-version-1', exitConditions: ['replied'], consentPolicy: 'require_granted',
+      suppressionPolicy: 'check_before_enrollment', dailyRunLimit: 100,
+    }, 'sequence-1')
+    expect(snapshot.triggers).toEqual([{ triggerType: 'lead.stage_changed', config: { pipelineId: 'pipeline-1', stageId: 'stage-1' } }])
+    expect(snapshot.actions).toEqual([expect.objectContaining({
+      actionType: 'enroll_sequence',
+      payload: expect.objectContaining({ sequenceId: 'sequence-1', sequenceVersionId: 'sequence-version-1', requireEmailConsent: true, checkEmailSuppression: true }),
+    })])
   })
 
   it('fails closed on stale hashes and reports a disabled provider without activation', async () => {

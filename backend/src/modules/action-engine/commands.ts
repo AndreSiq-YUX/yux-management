@@ -5,6 +5,14 @@ import type { CapabilityContext } from './capability-registry.js'
 import type { Connectable, Queryable } from './repository.js'
 import { acquireMissionOwnership } from './execution-ownership.js'
 import { archiveMissionPipeline, createPipelineDraft, discardPipelineDraft, publishPipelineDraft } from '../crm/mission-commands.js'
+import { createEmailTemplateDraft as createMissionEmailTemplateDraft, publishEmailTemplateVersion } from '../emailTemplates/mission-commands.js'
+import {
+  createAutomationFlowDraft as createMissionAutomationFlowDraft,
+  createSequenceDraft as createMissionSequenceDraft,
+  publishAutomationFlowDraft, publishSequenceDraft,
+  simulateAutomationFlowDraft, simulateSequenceDraft,
+  type AutomationFlowDraft,
+} from '../automations/mission-commands.js'
 
 type CommandInput = Record<string, unknown>
 
@@ -19,7 +27,106 @@ export function createActionEngineCommands(pool: Connectable, missionId: string)
     publishPipelineDraft: (input) => publishMissionPipelineDraft(pool, missionId, input),
     discardPipelineDraft: (input) => discardMissionPipelineDraft(pool, missionId, input),
     archivePipeline: (input) => archiveMissionManagedPipeline(pool, missionId, input),
+    createEmailTemplateDraft: (input) => createMissionEmailTemplate(pool, missionId, input),
+    publishEmailTemplate: (input) => publishMissionEmailTemplate(pool, missionId, input),
+    createSequenceDraft: (input) => createMissionSequence(pool, missionId, input),
+    simulateSequenceDraft: (input) => simulateMissionSequence(pool, missionId, input),
+    publishSequence: (input) => publishMissionSequence(pool, missionId, input),
+    createAutomationFlowDraft: (input) => createMissionAutomationFlow(pool, missionId, input),
+    simulateAutomationFlow: (input) => simulateMissionAutomationFlow(pool, missionId, input),
+    publishAutomationFlow: (input) => publishMissionAutomationFlow(pool, missionId, input),
+    archiveEmailTemplate: (input) => archiveMissionArtifact(pool, missionId, input, 'email_template'),
+    archiveSequence: (input) => archiveMissionArtifact(pool, missionId, input, 'crm_sequence'),
+    archiveAutomationFlow: (input) => archiveMissionArtifact(pool, missionId, input, 'automation_flow'),
   }
+}
+
+async function createMissionEmailTemplate(pool: Connectable, missionId: string, input: CommandInput) {
+  return transaction(pool, async (client) => {
+    const context = missionCommandContext(missionId, input)
+    const result = await createMissionEmailTemplateDraft(client, context, {
+      name: requiredString(input, 'name'), subject: requiredString(input, 'subject'),
+      ...(optionalString(input, 'preheader') ? { preheader: optionalString(input, 'preheader')! } : {}),
+      bodyHtml: requiredString(input, 'bodyHtml'), bodyText: requiredString(input, 'bodyText'),
+      sourceIds: stringArray(input.sourceIds, 'sourceIds'), complianceNotes: stringArray(input.complianceNotes, 'complianceNotes'),
+    })
+    await own(client, context.organizationId, missionId, 'email_template', result.entityId, 'nurture_copy', ['email.template.publish'])
+    return result
+  })
+}
+
+async function publishMissionEmailTemplate(pool: Connectable, missionId: string, input: CommandInput) {
+  return transaction(pool, async (client) => {
+    const context = missionCommandContext(missionId, input)
+    const result = await publishEmailTemplateVersion(client, context, { templateId: requiredString(input, 'templateId'), expectedContentHash: requiredString(input, 'expectedContentHash') })
+    await own(client, context.organizationId, missionId, 'email_template', result.entityId, 'published_nurture_copy', ['email.template.publish'])
+    if (result.versionId) await own(client, context.organizationId, missionId, 'email_template_version', result.versionId, 'pinned_copy_version', [])
+    return result
+  })
+}
+
+async function createMissionSequence(pool: Connectable, missionId: string, input: CommandInput) {
+  return transaction(pool, async (client) => {
+    const context = missionCommandContext(missionId, input)
+    const result = await createMissionSequenceDraft(client, context, {
+      name: requiredString(input, 'name'), ...(optionalString(input, 'description') ? { description: optionalString(input, 'description')! } : {}),
+      ...(optionalString(input, 'conversionGoal') ? { conversionGoal: optionalString(input, 'conversionGoal')! } : {}),
+      steps: sequenceSteps(input.steps),
+    })
+    await own(client, context.organizationId, missionId, 'crm_sequence', result.entityId, 'nurture_sequence', ['crm.sequence.publish'])
+    await own(client, context.organizationId, missionId, 'crm_sequence_version', result.versionId, 'nurture_sequence_version', [])
+    return result
+  })
+}
+
+async function simulateMissionSequence(pool: Connectable, missionId: string, input: CommandInput) {
+  return simulateSequenceDraft(pool, missionCommandContext(missionId, input), {
+    sequenceId: requiredString(input, 'sequenceId'), expectedContentHash: requiredString(input, 'expectedContentHash'),
+  })
+}
+
+async function publishMissionSequence(pool: Connectable, missionId: string, input: CommandInput) {
+  return transaction(pool, async (client) => publishSequenceDraft(client, missionCommandContext(missionId, input), {
+    sequenceId: requiredString(input, 'sequenceId'), versionId: requiredString(input, 'versionId'), expectedContentHash: requiredString(input, 'expectedContentHash'),
+  }))
+}
+
+async function createMissionAutomationFlow(pool: Connectable, missionId: string, input: CommandInput) {
+  return transaction(pool, async (client) => {
+    const context = missionCommandContext(missionId, input)
+    const result = await createMissionAutomationFlowDraft(client, context, automationFlowInput(input))
+    await own(client, context.organizationId, missionId, 'automation_flow', result.entityId, 'nurture_entry_flow', ['automation.flow.publish'])
+    await own(client, context.organizationId, missionId, 'automation_flow_version', result.versionId, 'nurture_entry_flow_version', [])
+    return result
+  })
+}
+
+async function simulateMissionAutomationFlow(pool: Connectable, missionId: string, input: CommandInput) {
+  return simulateAutomationFlowDraft(pool, missionCommandContext(missionId, input), {
+    flowId: requiredString(input, 'flowId'), versionId: requiredString(input, 'versionId'), expectedContentHash: requiredString(input, 'expectedContentHash'),
+  })
+}
+
+async function publishMissionAutomationFlow(pool: Connectable, missionId: string, input: CommandInput) {
+  return transaction(pool, async (client) => publishAutomationFlowDraft(client, missionCommandContext(missionId, input), {
+    flowId: requiredString(input, 'flowId'), versionId: requiredString(input, 'versionId'), expectedContentHash: requiredString(input, 'expectedContentHash'),
+  }))
+}
+
+async function archiveMissionArtifact(pool: Connectable, missionId: string, input: CommandInput, kind: 'email_template' | 'crm_sequence' | 'automation_flow') {
+  const entityId = requiredString(input, 'entityId'); const context = missionCommandContext(missionId, input)
+  return transaction(pool, async (client) => {
+    if (kind === 'email_template') await client.query(`UPDATE public.email_templates SET status='archived',updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND mission_id=$3`, [entityId, context.organizationId, missionId])
+    if (kind === 'crm_sequence') {
+      await client.query(`UPDATE public.crm_sequences SET status='archived',is_active=FALSE,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND mission_id=$3`, [entityId, context.organizationId, missionId])
+      await client.query(`UPDATE public.crm_sequence_versions SET status='archived' WHERE sequence_id=$1 AND organization_id=$2 AND mission_id=$3`, [entityId, context.organizationId, missionId])
+    }
+    if (kind === 'automation_flow') {
+      await client.query(`UPDATE public.automation_flows SET status='archived',is_enabled=FALSE,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND mission_id=$3`, [entityId, context.organizationId, missionId])
+      await client.query(`UPDATE public.automation_flow_versions SET status='archived' WHERE flow_id=$1 AND mission_id=$2`, [entityId, missionId])
+    }
+    return { entityId, status: 'archived' }
+  })
 }
 
 async function createMissionPipelineDraft(pool: Connectable, missionId: string, input: CommandInput) {
@@ -219,6 +326,51 @@ function funnelStages(value: unknown) {
       exitCriteria: item.exitCriteria as string[], isWon: item.isWon === true, isLost: item.isLost === true,
     }
   })
+}
+
+function stringArray(value: unknown, key: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw new Error(`action_engine_command_${key}_invalid`)
+  return value as string[]
+}
+
+function sequenceSteps(value: unknown) {
+  if (!Array.isArray(value)) throw new Error('action_engine_command_steps_required')
+  return value.map((step) => {
+    if (!step || typeof step !== 'object') throw new Error('action_engine_command_sequence_step_invalid')
+    const item = step as Record<string, unknown>
+    const delayMinutes = Number(item.delayMinutes)
+    if (!Number.isInteger(delayMinutes)) throw new Error('action_engine_command_sequence_delay_invalid')
+    return { templateVersionId: requiredString(item, 'templateVersionId'), delayMinutes, exitConditions: stringArray(item.exitConditions, 'exitConditions') }
+  })
+}
+
+function automationFlowInput(input: CommandInput): AutomationFlowDraft {
+  const trigger = input.trigger
+  if (!trigger || typeof trigger !== 'object') throw new Error('action_engine_command_trigger_required')
+  const rawTrigger = trigger as Record<string, unknown>; const type = requiredString(rawTrigger, 'type')
+  let normalizedTrigger: AutomationFlowDraft['trigger']
+  if (type === 'lead.created') normalizedTrigger = { type }
+  else if (type === 'lead.stage_changed') normalizedTrigger = { type, pipelineId: requiredString(rawTrigger, 'pipelineId'), stageId: requiredString(rawTrigger, 'stageId') }
+  else if (type === 'lead.field_changed') normalizedTrigger = { type, field: requiredString(rawTrigger, 'field') }
+  else throw new Error('action_engine_command_trigger_invalid')
+  const conditions = input.eligibilityConditions
+  if (!Array.isArray(conditions)) throw new Error('action_engine_command_conditions_required')
+  const eligibilityConditions = conditions.map((condition) => {
+    if (!condition || typeof condition !== 'object') throw new Error('action_engine_command_condition_invalid')
+    const item = condition as Record<string, unknown>; const operator = requiredString(item, 'operator')
+    if (!['equals','not_equals','contains','greater_than','less_than','exists'].includes(operator)) throw new Error('action_engine_command_condition_operator_invalid')
+    return { field: requiredString(item, 'field'), operator: operator as AutomationFlowDraft['eligibilityConditions'][number]['operator'], ...(item.value !== undefined ? { value: item.value } : {}) }
+  })
+  return {
+    name: requiredString(input, 'name'), ...(optionalString(input, 'description') ? { description: optionalString(input, 'description')! } : {}),
+    trigger: normalizedTrigger, eligibilityConditions, sequenceVersionId: requiredString(input, 'sequenceVersionId'),
+    exitConditions: stringArray(input.exitConditions, 'exitConditions'), consentPolicy: requiredString(input, 'consentPolicy') as 'require_granted',
+    suppressionPolicy: requiredString(input, 'suppressionPolicy') as 'check_before_enrollment', dailyRunLimit: Number(input.dailyRunLimit),
+  }
+}
+
+async function own(client: Queryable, organizationId: string, missionId: string, entityType: string, entityId: string, role: string, allowedActionKeys: string[]) {
+  await acquireMissionOwnership(client, { organizationId, missionId, entityType, entityId, role, mode: 'exclusive', conflictPolicy: 'mission_wins', allowedActionKeys })
 }
 
 function deterministicUuid(seed: string): string {

@@ -30,6 +30,17 @@ export type CapabilityContext = {
     publishPipelineDraft?: (input: Record<string, unknown>) => Promise<unknown>
     discardPipelineDraft?: (input: Record<string, unknown>) => Promise<unknown>
     archivePipeline?: (input: Record<string, unknown>) => Promise<unknown>
+    createEmailTemplateDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    publishEmailTemplate?: (input: Record<string, unknown>) => Promise<unknown>
+    createSequenceDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    simulateSequenceDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    publishSequence?: (input: Record<string, unknown>) => Promise<unknown>
+    createAutomationFlowDraft?: (input: Record<string, unknown>) => Promise<unknown>
+    simulateAutomationFlow?: (input: Record<string, unknown>) => Promise<unknown>
+    publishAutomationFlow?: (input: Record<string, unknown>) => Promise<unknown>
+    archiveEmailTemplate?: (input: Record<string, unknown>) => Promise<unknown>
+    archiveSequence?: (input: Record<string, unknown>) => Promise<unknown>
+    archiveAutomationFlow?: (input: Record<string, unknown>) => Promise<unknown>
   }
 }
 

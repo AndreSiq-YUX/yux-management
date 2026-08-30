@@ -19,7 +19,7 @@ export type AutomationCommandServices = {
   createLeadTask: (context: LeadCommandContext, input: { title: string; description?: string; dueAt?: string; delayMinutes?: number; assignedTo?: string; priority?: string }) => Promise<AutomationActionResult>
   registerLeadActivity: (context: LeadCommandContext, input: { type?: string; title: string; description?: string }) => Promise<AutomationActionResult>
   updateLeadField: (context: LeadCommandContext, input: { field: string; value: unknown }) => Promise<AutomationActionResult>
-  enrollLeadInSequence: (context: LeadCommandContext, input: { sequenceId: string; existingEnrollment?: 'skip' | 'resume' | 'restart' }) => Promise<AutomationActionResult>
+  enrollLeadInSequence: (context: LeadCommandContext, input: { sequenceId: string; existingEnrollment?: 'skip' | 'resume' | 'restart'; requireEmailConsent?: boolean; checkEmailSuppression?: boolean }) => Promise<AutomationActionResult>
   pauseLeadSequence: (context: LeadCommandContext, input: { sequenceId?: string; enrollmentId?: string }) => Promise<AutomationActionResult>
   addLeadTag: (context: LeadCommandContext, input: { tagId?: string; tagName?: string }) => Promise<AutomationActionResult>
   sendEmail: (context: LeadCommandContext, input: Record<string, unknown>, lead?: AutomationLead | null, event?: DomainEventEnvelope) => Promise<AutomationActionResult>
@@ -82,6 +82,8 @@ export async function executeAutomationAction(input: ExecuteActionInput): Promis
       return services.enrollLeadInSequence(context, {
         sequenceId: requiredString(payload.sequenceId, 'automation_sequence_id_required'),
         existingEnrollment: normalizeEnrollmentMode(payload.existingEnrollment),
+        requireEmailConsent: payload.requireEmailConsent === true,
+        checkEmailSuppression: payload.checkEmailSuppression === true,
       })
     case 'pause_sequence':
       return services.pauseLeadSequence(context, {
