@@ -98,7 +98,7 @@ class CampaignLaunchSpecialistWorkflow:
         if not guardian.verdict.approved:
             raise CampaignLaunchError("campaign_launch_brand_compliance_rejected")
         self._validate_forbidden_terms(copy.creativeSet, guardian.verdict.forbiddenTerms)
-        self._validate_provider(strategy.brief.platform, value)
+        self._validate_provider(strategy.brief, value)
         self._validate_budget(strategy.brief, value)
 
         return CampaignLaunchArtifacts(
@@ -150,10 +150,19 @@ class CampaignLaunchSpecialistWorkflow:
         return next((context.get(key) for context in contexts if isinstance(context, dict) and context.get(key)), None)
 
     @staticmethod
-    def _validate_provider(platform: str, value: dict[str, Any]) -> None:
-        platforms = (value.get("readiness") or {}).get("providerPlatforms") or []
-        if platform not in platforms:
+    def _validate_provider(brief: CampaignBriefArtifact, value: dict[str, Any]) -> None:
+        readiness = value.get("readiness") or {}
+        platforms = readiness.get("providerPlatforms") or []
+        if brief.platform not in platforms:
             raise CampaignLaunchError("campaign_launch_provider_unavailable")
+        connections = readiness.get("providerConnections") or []
+        if not any(
+            isinstance(connection, dict)
+            and connection.get("id") == brief.providerConnectionId
+            and connection.get("platform") == brief.platform
+            for connection in connections
+        ):
+            raise CampaignLaunchError("campaign_launch_provider_connection_not_allowed")
 
     @staticmethod
     def _validate_budget(brief: CampaignBriefArtifact, value: dict[str, Any]) -> None:

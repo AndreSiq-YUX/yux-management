@@ -36,8 +36,8 @@ export async function startMission(pool: Connectable, input: {
     if (!mission) throw new Error('mission_not_found')
     if (mission.version !== input.expectedVersion) throw new Error('mission_version_conflict')
     if (mission.status !== 'ready' || !mission.activePlanId) throw new Error('mission_not_ready')
-    const plan = await client.query<{ id: string; status: string; pack_key: string }>(
-      `SELECT plan.id,plan.status,pack.key AS pack_key FROM public.action_plans plan
+    const plan = await client.query<{ id: string; status: string; pack_key: string; parameters: Record<string, unknown> }>(
+      `SELECT plan.id,plan.status,plan.parameters,pack.key AS pack_key FROM public.action_plans plan
        JOIN public.action_pack_versions version ON version.id=plan.pack_version_id
        JOIN public.action_packs pack ON pack.id=version.pack_id
        WHERE plan.id = $1 AND plan.mission_id = $2 AND plan.organization_id = $3 FOR UPDATE OF plan`,
@@ -45,12 +45,19 @@ export async function startMission(pool: Connectable, input: {
     )
     if (plan.rows[0]?.status !== 'approved') throw new Error('mission_plan_not_approved')
     const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture'
+    const campaignLaunch = plan.rows[0]?.pack_key === 'campaign_launch'
+    const campaignArtifacts = campaignLaunch && plan.rows[0]?.parameters.campaignLaunchArtifacts
+      && typeof plan.rows[0].parameters.campaignLaunchArtifacts === 'object'
+      ? plan.rows[0].parameters.campaignLaunchArtifacts as Record<string, unknown> : {}
+    const campaignBrief = campaignArtifacts.brief && typeof campaignArtifacts.brief === 'object'
+      ? campaignArtifacts.brief as Record<string, unknown> : {}
+    const providerConnectionId = typeof campaignBrief.providerConnectionId === 'string' ? campaignBrief.providerConnectionId : 'organization'
     await acquireResourceClaim(client, {
       organizationId: input.organizationId,
       missionId: input.missionId,
       missionLabel: mission.title,
-      resourceKey: funnelNurture ? 'crm.funnel_nurture_configuration' : 'crm.lead_population',
-      scope: funnelNurture ? 'organization_funnel_nurture' : 'inactive_revenue_recovery',
+      resourceKey: campaignLaunch ? 'campaign.provider_account' : funnelNurture ? 'crm.funnel_nurture_configuration' : 'crm.lead_population',
+      scope: campaignLaunch ? providerConnectionId : funnelNurture ? 'organization_funnel_nurture' : 'inactive_revenue_recovery',
       mode: 'exclusive',
       ttlSeconds: 900,
     })

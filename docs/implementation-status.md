@@ -1,7 +1,7 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-08-23 (repository audit plus locally validated Mission Supervisor
-Releases 0, 1A and 1B on the feature branch)
+Updated: 2026-08-30 (repository audit plus locally validated Mission Supervisor
+Releases 0–3 on the feature branch)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -20,12 +20,14 @@ the target VPS/Dokploy environment.
 > dependency or a claim of current deployment status.
 - Active frontend data layer: `/api/*` through `apiClient`, `backendDataClient`,
   `backendAuthService`, `backendDataService`, and module-specific services.
-- Mission Supervisor Releases 0, 1A and 1B are implemented and locally validated
-  through migration `0135`: frozen context, deterministic pack compilation,
+- Mission Supervisor Releases 0–3 are implemented and locally validated
+  through migration `0142`: frozen context, deterministic pack compilation,
   autonomy envelopes, decision summaries, notifications, shareable redacted
   shadow reports, structured feedback, budget burn-down, readiness correction
-  links and granular capability kill switches. This is a bounded planning and
-  decision slice, not yet the general autonomous agent. VPS migrations,
+  links, granular capability kill switches, a governed Funnel + Nurture pack and
+  a Campaign Launch pack with provider-paused creation, exact activation,
+  monitoring, attribution and containment. These are bounded verticals, not yet
+  the general autonomous agent. VPS migrations,
   authenticated role/channel QA and rollback rehearsal remain pending.
 - Current implementation boundary: committed `main` at `34b3af4`, including
   standalone external lead forms, CRM/client access stabilization and the
@@ -77,7 +79,7 @@ the target VPS/Dokploy environment.
 
 | Area | Status | Main Routes | Main Repo Evidence | Operational Notes |
 | --- | --- | --- | --- | --- |
-| Mission Supervisor Releases 0–2 | Implemented and locally validated | `/missions`, `/portal/missoes`, `/mission-simulation/review/:token`, `/api/action-engine/*` | Migrations `0128`–`0140`, safety/knowledge/decision foundations, `funnel_nurture@1.0.0`, CRM funnel/templates/sequences/flow capabilities, immutable output bindings, artifact review UI, versioned sector Recipe, manifest-owned disposable sandbox, adversarial corpus, E2E and release runbooks | Release 2 is the first bounded operational vertical: Funnel + Nurture. Apply migrations through `0140`, enable `action_engine` + `crm` + `automations` + `funnel_nurture_agent` only for the pilot, optionally enable `mission_sandbox`, release publication capabilities individually and complete authenticated VPS acceptance/rollback. Campaigns, composition and autonomous canary remain later releases. |
+| Mission Supervisor Releases 0–3 | Implemented and locally validated | `/missions`, `/portal/missoes`, `/mission-simulation/review/:token`, `/api/action-engine/*` | Migrations `0128`–`0142`, safety/knowledge/decision foundations, `funnel_nurture@1.0.0`, `campaign_launch@1.0.0`, immutable bindings, provider effect ledger/reconciliation, pack-driven artifacts/metrics/economics, versioned recipes, disposable sandbox, adversarial corpus, E2E and release runbooks | Releases 2–3 are bounded operational verticals. Apply migrations through `0142`; enable entitlements/policies per pilot; keep campaign create/activate disabled until provider-sandbox acceptance. Composite missions and bounded autonomous canary remain later releases. |
 | Platform foundation | Implemented | `/dashboard`, platform shell | Platform schema lineage, Fastify/Postgres repositories, `platformService`, module registry and platform store | Confirm the complete backend migration history and authenticated platform bootstrap in the target VPS. |
 | Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/channels`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | Admin platform schema lineage, backend admin routes/repositories, `adminPlatformService`, grouped navigation, Admin Hub pages and `docs/admin-yux-hub.md` | Active reads use the VPS API/Postgres path; production credentials and authenticated Admin QA remain required. |
 | Contracts, packages, modules, portal context | Implemented | `/contracts`, `/packages`, `/modules`, `/portal` | `20260601000000_contracts_modules_portal.sql`, `20260601010000_contract_rls_policies.sql`, `ContractsPage`, `PackagesPage`, `ModulesPage`, `PortalDashboardPage` | Portal access derives from active contract and enabled modules. |
@@ -158,12 +160,11 @@ Implemented and locally validated in the repository:
 - independent flags can contain decisions, notifications, simulation reports or
   feedback without deleting existing evidence.
 
-Operationally pending: deploy the branch, apply migrations `0128`–`0135`,
+Operationally pending: deploy the branch, apply migrations `0128`–`0142`,
 configure backend/worker/Harness and provider channels, run authenticated admin,
 client-owner and external-review acceptance, record real IDs/NFR samples and
-rehearse `docs/runbooks/yux-mission-decision-experience-rollback.md`. Releases
-2–5 (funnel+nurture, campaign launch, composite missions and bounded autonomy)
-remain planned and must not be claimed as implemented.
+rehearse the release runbooks. Composite missions and bounded autonomy
+(Releases 4–5) remain planned and must not be claimed as implemented.
 
 ### Security And Tenant Isolation Reverification
 

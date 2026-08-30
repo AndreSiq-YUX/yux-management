@@ -23,7 +23,7 @@ export const actionEngineService = {
     apiRequest<{ manifestId: string; status: string; deleted: string[]; modified: string[] }>(`${root}/sandbox-seeds/${manifestId}`, { method: 'DELETE', body: { organizationId } }),
   readiness: (input: {
     organizationId: string; contractId?: string; targetRevenueBrl: string; deadlineAt: string;
-    maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string; packKey?: 'revenue_recovery' | 'funnel_nurture';
+    maxTotalCostBrl: string; maxHumanHours: string; humanHourlyRateBrl: string; packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch';
   }) => apiRequest<MissionReadiness>(`${root}/readiness`, { method: 'POST', body: input }),
   listMissions: (organizationId: string, status?: MissionStatus) =>
     apiRequest<ActionMission[]>(`${root}/missions?${query({ organizationId, status })}`),

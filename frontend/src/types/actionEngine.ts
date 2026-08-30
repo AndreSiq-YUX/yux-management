@@ -300,7 +300,7 @@ export interface CreateMissionIntentInput {
   maxHumanHours: string
   maxExternalContacts?: number
   expectedValueBrl?: string
-  quickStart?: 'revenue_recovery' | 'funnel_nurture'
+  quickStart?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch'
   recipeSelection?: { key: string; version: number; contentHash: string }
 }
 

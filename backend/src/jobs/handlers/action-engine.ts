@@ -2,6 +2,7 @@ import type { AppEnv } from '../../config/env.js'
 import type { AppJobQueue } from '../../server.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from '../../modules/action-engine/packs/revenue-recovery-v0.js'
+import { CAMPAIGN_LAUNCH_PACK_V1 } from '../../modules/action-engine/packs/campaign-launch-v1.js'
 import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import type { ActionPackVersion } from '../../modules/action-engine/action-pack.js'
 import {
@@ -354,6 +355,12 @@ export async function handleActionEnginePlanMission(
        FROM public.action_observations WHERE mission_id = $1 AND organization_id = $2
        ORDER BY observed_at DESC LIMIT 100`, [missionId, organizationId],
     ) : { rows: [] }
+    const providerConnections = pack.key === CAMPAIGN_LAUNCH_PACK_V1.key
+      ? await pool.query<{ id: string; provider: string }>(
+        `SELECT id,provider FROM public.ad_provider_connections
+         WHERE organization_id=$1 AND status='connected' ORDER BY updated_at DESC`, [organizationId],
+      )
+      : { rows: [] }
     const planningStartedAt = Date.now()
     const rawPlan = await requestMissionPlan(env, {
       organization_id: organizationId,
@@ -365,7 +372,11 @@ export async function handleActionEnginePlanMission(
       },
       action_pack: serializablePack,
       pack_catalog: [serializablePack],
-      readiness: { ready: true, source: 'server_preflight' },
+      readiness: {
+        ready: true, source: 'server_preflight',
+        providerPlatforms: [...new Set(providerConnections.rows.map(row => row.provider))],
+        providerConnections: providerConnections.rows.map(row => ({ id: row.id, platform: row.provider })),
+      },
       baseline: builtContext.liveState, capabilities: capabilityCatalog,
       limits: mission.budget,
       strategy_context: {
@@ -583,6 +594,10 @@ async function loadMissionActionPack(pool: Pool, packVersionId: string): Promise
   if (row.key === REVENUE_RECOVERY_PACK_V0.key && row.semantic_version === REVENUE_RECOVERY_PACK_V0.semanticVersion) {
     if (row.content_hash !== REVENUE_RECOVERY_PACK_V0.contentHash) throw new Error('action_pack_hash_mismatch')
     return REVENUE_RECOVERY_PACK_V0
+  }
+  if (row.key === CAMPAIGN_LAUNCH_PACK_V1.key && row.semantic_version === CAMPAIGN_LAUNCH_PACK_V1.semanticVersion) {
+    if (row.content_hash !== CAMPAIGN_LAUNCH_PACK_V1.contentHash) throw new Error('action_pack_hash_mismatch')
+    return CAMPAIGN_LAUNCH_PACK_V1
   }
   const definition = row.definition
   const pack = {

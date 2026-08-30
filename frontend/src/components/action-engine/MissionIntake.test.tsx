@@ -15,6 +15,7 @@ describe('MissionIntake', () => {
     const { root } = await renderIntake(true)
     expect(document.body.textContent).toContain('O que você quer que a YUX realize?')
     expect(document.body.textContent).toContain('Funil + nutrição')
+    expect(document.body.textContent).toContain('Campanha completa')
     expect(document.body.textContent).toContain('Revenue Recovery')
     await click('Revenue Recovery')
     await click('Definir limites')
@@ -47,6 +48,17 @@ describe('MissionIntake', () => {
     const { root } = await renderIntake(true)
     await click('Funil + nutrição'); await click('Definir limites'); await click('Criar missão')
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ quickStart: 'funnel_nurture', mode: 'prepare', allowedModules: ['crm', 'automations', 'funnel_nurture_agent'] }))
+    act(() => root.unmount())
+  })
+
+  it('submits Campaign Launch in assisted mode with only its governed areas', async () => {
+    const create = vi.spyOn(actionEngineService, 'createMissionIntent').mockResolvedValue({ id: 'mission-campaign' } as ActionMission)
+    const { root } = await renderIntake(true)
+    await click('Campanha completa'); await click('Definir limites'); await click('Criar missão')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      quickStart: 'campaign_launch', mode: 'assisted',
+      allowedModules: ['campaigns', 'landing_pages', 'campaign_launch_agent'],
+    }))
     act(() => root.unmount())
   })
 

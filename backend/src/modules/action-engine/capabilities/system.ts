@@ -34,11 +34,13 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
     )
     checks.push({ key: 'organization', status: organization.rows[0] ? 'ready' : 'missing', detail: organization.rows[0] ? 'Organização encontrada.' : 'Organização ausente.' })
 
-    const crm = await context.query<{ id: string }>(
-      `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status = 'active' LIMIT 1`,
-      [context.organizationId],
-    )
-    checks.push({ key: 'crm', status: crm.rows[0] ? 'ready' : 'missing', detail: crm.rows[0] ? 'CRM ativo.' : 'CRM ativo não encontrado.' })
+    if (input.requiredModules.some((moduleKey) => ['crm','automations','funnel_nurture_agent'].includes(moduleKey))) {
+      const crm = await context.query<{ id: string }>(
+        `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status = 'active' LIMIT 1`,
+        [context.organizationId],
+      )
+      checks.push({ key: 'crm', status: crm.rows[0] ? 'ready' : 'missing', detail: crm.rows[0] ? 'CRM ativo.' : 'CRM ativo não encontrado.' })
+    }
 
     for (const moduleKey of input.requiredModules) {
       const module = await context.query<{ module_key: string }>(
@@ -54,11 +56,17 @@ export const systemReadinessCheck: CapabilityDefinition<z.infer<typeof readiness
     }
 
     for (const connectionKey of input.requiredConnections) {
-      const connection = await context.query<{ id: string }>(
-        `SELECT id FROM public.channel_connections
-         WHERE organization_id = $1 AND channel = $2 AND is_active = TRUE LIMIT 1`,
-        [context.organizationId, connectionKey],
-      )
+      const connection = connectionKey === 'ads_provider'
+        ? await context.query<{ id: string }>(
+          `SELECT id FROM public.ad_provider_connections
+           WHERE organization_id = $1 AND status = 'connected' LIMIT 1`,
+          [context.organizationId],
+        )
+        : await context.query<{ id: string }>(
+          `SELECT id FROM public.channel_connections
+           WHERE organization_id = $1 AND channel = $2 AND is_active = TRUE LIMIT 1`,
+          [context.organizationId, connectionKey],
+        )
       checks.push({ key: `connection:${connectionKey}`, status: connection.rows[0] ? 'ready' : 'missing', detail: connection.rows[0] ? 'Conexão ativa.' : 'Conexão ativa não encontrada.' })
     }
     return { output: { ready: checks.every((check) => check.status === 'ready'), checks }, effectProduced: false }

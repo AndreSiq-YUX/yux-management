@@ -1,5 +1,6 @@
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
+import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import type { CapabilityRegistry } from './capability-registry.js'
 import type { Queryable } from './repository.js'
 import type { MissionMode } from './types.js'
@@ -83,11 +84,12 @@ export async function evaluateMissionReadiness(
     agentHarnessHealthy: boolean
     mutationLeaseReady: boolean
     missionId?: string
-    packKey?: 'revenue_recovery' | 'funnel_nurture'
+    packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch'
   },
 ): Promise<MissionReadinessReport> {
   const checks: ReadinessCheck[] = []
   const funnelNurture = input.packKey === FUNNEL_NURTURE_PACK_V1.key
+  const campaignLaunch = input.packKey === CAMPAIGN_LAUNCH_PACK_V1.key
   const organization = await client.query<{ id: string; kind: string }>(
     `SELECT id, kind FROM public.organizations WHERE id = $1 LIMIT 1`, [input.organizationId],
   )
@@ -97,8 +99,11 @@ export async function evaluateMissionReadiness(
   let moduleEnabled = contractValid
   let automationsEnabled = contractValid
   let funnelNurtureEnabled = contractValid
+  let campaignsEnabled = contractValid
+  let landingPagesEnabled = contractValid
+  let campaignLaunchEnabled = contractValid
   if (input.contractId) {
-    const contract = await client.query<{ id: string; action_engine_enabled: boolean; automations_enabled: boolean; funnel_nurture_enabled: boolean }>(
+    const contract = await client.query<{ id: string; action_engine_enabled: boolean; automations_enabled: boolean; funnel_nurture_enabled: boolean; campaigns_enabled: boolean; landing_pages_enabled: boolean; campaign_launch_enabled: boolean }>(
       `SELECT contract.id,
               EXISTS (SELECT 1 FROM public.contract_modules module
                       WHERE module.contract_id = contract.id AND module.module_key = 'action_engine' AND module.enabled = TRUE) AS action_engine_enabled
@@ -106,6 +111,12 @@ export async function evaluateMissionReadiness(
                       WHERE module.contract_id = contract.id AND module.module_key = 'automations' AND module.enabled = TRUE) AS automations_enabled
               ,EXISTS (SELECT 1 FROM public.contract_modules module
                       WHERE module.contract_id = contract.id AND module.module_key = 'funnel_nurture_agent' AND module.enabled = TRUE) AS funnel_nurture_enabled
+              ,EXISTS (SELECT 1 FROM public.contract_modules module
+                      WHERE module.contract_id = contract.id AND module.module_key = 'campaigns' AND module.enabled = TRUE) AS campaigns_enabled
+              ,EXISTS (SELECT 1 FROM public.contract_modules module
+                      WHERE module.contract_id = contract.id AND module.module_key = 'landing_pages' AND module.enabled = TRUE) AS landing_pages_enabled
+              ,EXISTS (SELECT 1 FROM public.contract_modules module
+                      WHERE module.contract_id = contract.id AND module.module_key = 'campaign_launch_agent' AND module.enabled = TRUE) AS campaign_launch_enabled
        FROM public.contracts contract
        JOIN public.organizations organization ON organization.client_id = contract.client_id
        WHERE contract.id = $1 AND organization.id = $2 AND contract.status = 'active' LIMIT 1`,
@@ -115,6 +126,9 @@ export async function evaluateMissionReadiness(
     moduleEnabled = contract.rows[0]?.action_engine_enabled ?? false
     automationsEnabled = contract.rows[0]?.automations_enabled ?? false
     funnelNurtureEnabled = contract.rows[0]?.funnel_nurture_enabled ?? false
+    campaignsEnabled = contract.rows[0]?.campaigns_enabled ?? false
+    landingPagesEnabled = contract.rows[0]?.landing_pages_enabled ?? false
+    campaignLaunchEnabled = contract.rows[0]?.campaign_launch_enabled ?? false
   }
   checks.push(check(contractValid, 'contract_valid', 'contract_invalid', 'Contrato ativo e compatível.', 'Contrato ativo não encontrado para a organização.', '/platform/contracts'))
   checks.push(check(moduleEnabled, 'action_engine_enabled', 'action_engine_disabled', 'Action Engine habilitado.', 'Módulo Action Engine não habilitado no contrato.', '/platform/contracts'))
@@ -122,22 +136,29 @@ export async function evaluateMissionReadiness(
     checks.push(check(automationsEnabled, 'automations_enabled', 'automations_disabled', 'Automações habilitadas.', 'Módulo Automações não habilitado no contrato.', '/platform/contracts'))
     checks.push(check(funnelNurtureEnabled, 'funnel_nurture_entitled', 'funnel_nurture_not_entitled', 'Agente Funil + Nutrição habilitado.', 'Agente Funil + Nutrição não habilitado no contrato.', '/platform/contracts'))
   }
+  if (campaignLaunch) {
+    checks.push(check(campaignsEnabled, 'campaigns_enabled', 'campaigns_disabled', 'Campanhas habilitadas.', 'Módulo Campanhas não habilitado no contrato.', '/platform/contracts'))
+    checks.push(check(landingPagesEnabled, 'landing_pages_enabled', 'landing_pages_disabled', 'Landing Pages habilitadas.', 'Módulo Landing Pages não habilitado no contrato.', '/platform/contracts'))
+    checks.push(check(campaignLaunchEnabled, 'campaign_launch_entitled', 'campaign_launch_not_entitled', 'Agente de Campanhas habilitado.', 'Agente de Campanhas não habilitado no contrato.', '/platform/contracts'))
+  }
 
   const crm = await client.query<{ id: string }>(
     `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status = 'active' LIMIT 1`, [input.organizationId],
   )
-  checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
+  if (!campaignLaunch) checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
 
-  const claimTarget = funnelNurture
+  const claimTarget = campaignLaunch
+    ? { resourceKey: 'campaign.provider_account', scope: 'organization_campaign_launch' }
+    : funnelNurture
     ? { resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }
     : { resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }
   const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(
     `SELECT mission_id, mission_label, lease_expires_at
      FROM public.action_resource_claims
      WHERE organization_id = $1 AND ($2::UUID IS NULL OR mission_id <> $2) AND resource_key = $3
-       AND scope = $4 AND active = TRUE AND lease_expires_at > NOW()
+       AND ($5::BOOLEAN OR scope = $4) AND active = TRUE AND lease_expires_at > NOW()
      ORDER BY CASE mode WHEN 'exclusive' THEN 0 ELSE 1 END, acquired_at LIMIT 1`,
-    [input.organizationId, input.missionId ?? null, claimTarget.resourceKey, claimTarget.scope],
+    [input.organizationId, input.missionId ?? null, claimTarget.resourceKey, claimTarget.scope, campaignLaunch],
   )
   checks.push(resourceClaimReadinessCheck(claim.rows[0] ? {
     missionId: claim.rows[0].mission_id,
@@ -147,7 +168,7 @@ export async function evaluateMissionReadiness(
       : new Date(claim.rows[0].lease_expires_at).toISOString(),
   } : null))
 
-  if (!funnelNurture) {
+  if (!funnelNurture && !campaignLaunch) {
     const eligible = await client.query<{ count: number | string }>(
     `SELECT COUNT(*)::INT AS count FROM public.leads
      WHERE organization_id = $1 AND COALESCE(last_activity_at, updated_at, created_at) < NOW() - INTERVAL '7 days'`,
@@ -181,7 +202,13 @@ export async function evaluateMissionReadiness(
     [input.organizationId],
   )
   const connected = new Set(connections.rows.map((row) => row.channel))
-  if (funnelNurture) {
+  if (campaignLaunch) {
+    const provider = await client.query<{ provider: string }>(
+      `SELECT provider FROM public.ad_provider_connections
+       WHERE organization_id=$1 AND status='connected' ORDER BY updated_at DESC LIMIT 1`, [input.organizationId],
+    )
+    checks.push(check(Boolean(provider.rows[0]), 'ads_provider_connected', 'ads_provider_unavailable', 'Provedor de mídia conectado.', 'Conecte Meta Ads ou Google Ads antes de preparar a campanha.', '/integrations'))
+  } else if (funnelNurture) {
     checks.push(check(connected.has('email'), 'email_connected', 'email_unavailable', 'Conexão de e-mail ativa.', 'Conecte um provedor de e-mail antes de preparar a nutrição.', '/omnichannel/settings'))
   } else {
     checks.push(channelCheck(connected.has('email'), 'email', '/omnichannel/settings'))
@@ -196,7 +223,7 @@ export async function evaluateMissionReadiness(
   checks.push(check(input.agentHarnessHealthy, 'agent_harness_healthy', 'agent_harness_unavailable', 'Agent Harness disponível para planejamento.', 'Agent Harness indisponível; a missão não pode ser planejada.'))
   checks.push(check(input.mutationLeaseReady, 'mutation_lease_ready', 'mutation_lease_unavailable', 'Assinatura de mutações configurada.', 'A chave isolada de autorização de mutações não está configurada.'))
 
-  const expectedPack = funnelNurture ? FUNNEL_NURTURE_PACK_V1 : REVENUE_RECOVERY_PACK_V0
+  const expectedPack = campaignLaunch ? CAMPAIGN_LAUNCH_PACK_V1 : funnelNurture ? FUNNEL_NURTURE_PACK_V1 : REVENUE_RECOVERY_PACK_V0
   const pack = await client.query<{ content_hash: string }>(
     `SELECT version.content_hash FROM public.action_pack_versions version
      JOIN public.action_packs pack ON pack.id = version.pack_id
@@ -206,7 +233,7 @@ export async function evaluateMissionReadiness(
   )
   checks.push(check(pack.rows[0]?.content_hash === expectedPack.contentHash, `${expectedPack.key}_pack_ready`, `${expectedPack.key}_pack_missing_or_changed`, 'Action Pack publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
 
-  const availableChannels: MissionReadinessReport['availableChannels'] = funnelNurture ? ['email'] : ['human_task']
+  const availableChannels: MissionReadinessReport['availableChannels'] = campaignLaunch ? [] : funnelNurture ? ['email'] : ['human_task']
   return { ready: checks.every((item) => item.status !== 'block'), checks, availableChannels }
 }
 

@@ -7,6 +7,7 @@ import { validatePackParameters } from './action-pack.js'
 import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
+import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import { evaluateMissionReadiness, filterReadinessCorrectionLinks } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
@@ -15,7 +16,7 @@ import {
 } from './repository.js'
 import type { MissionStatus } from './types.js'
 import { getAction, listMissionActions, resolveHumanTask, retryAction, skipAction, startMission } from './executor.js'
-import { collectMissionMetrics } from './evaluator.js'
+import { collectMissionMetrics, collectPackMissionMetrics } from './evaluator.js'
 import { collectMissionEconomics } from './economics.js'
 import { releaseResourceClaims } from './resource-claims.js'
 import { buildActionEngineNfrSnapshot } from './operations-health.js'
@@ -65,7 +66,7 @@ const missionIntentCreate = z.object({
   objective: z.string().min(10).max(2000), mode: z.enum(['shadow','prepare','assisted','autonomous']).default('assisted'),
   deadlineAt: z.string().datetime(), allowedModules: z.array(z.string().min(1)).min(1).max(50),
   maxTotalCostBrl: decimal, maxHumanHours: decimal, maxExternalContacts: z.number().int().nonnegative().optional(),
-  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery','funnel_nurture']).optional(),
+  expectedValueBrl: decimal.optional(), quickStart: z.enum(['revenue_recovery','funnel_nurture','campaign_launch']).optional(),
   recipeSelection: z.object({ key: z.string().min(1).max(100), version: z.number().int().positive(), contentHash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
 })
 const clarificationAnswers = z.object({
@@ -126,7 +127,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/action-packs', async (request) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1)]
+    return [publicPack(REVENUE_RECOVERY_PACK_V0), publicPack(FUNNEL_NURTURE_PACK_V1), publicPack(CAMPAIGN_LAUNCH_PACK_V1)]
   })
 
   app.get('/mission-recipes', async (request, reply) => {
@@ -165,9 +166,10 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.get('/action-packs/:packKey/versions/:semanticVersion', async (request, reply) => {
     const ctx = requireAuth(request)
     requireAccess(ctx, 'action_engine.read')
-    const parsed = z.object({ packKey: z.enum(['revenue_recovery','funnel_nurture']), semanticVersion: z.string().min(1).max(40) }).safeParse(request.params)
+    const parsed = z.object({ packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch']), semanticVersion: z.string().min(1).max(40) }).safeParse(request.params)
     if (!parsed.success) return reply.code(404).send({ error: 'action_pack_not_found' })
     if (parsed.data.packKey === FUNNEL_NURTURE_PACK_V1.key && parsed.data.semanticVersion === FUNNEL_NURTURE_PACK_V1.semanticVersion) return publicPack(FUNNEL_NURTURE_PACK_V1)
+    if (parsed.data.packKey === CAMPAIGN_LAUNCH_PACK_V1.key && parsed.data.semanticVersion === CAMPAIGN_LAUNCH_PACK_V1.semanticVersion) return publicPack(CAMPAIGN_LAUNCH_PACK_V1)
     if (parsed.data.semanticVersion === '0.1.0') {
       const legacy = await getPublishedActionPackVersion(app.pg, parsed.data.packKey, parsed.data.semanticVersion)
       if (!legacy) return reply.code(404).send({ error: 'action_pack_not_found' })
@@ -293,7 +295,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const parsed = z.object({
       organizationId: uuid, contractId: uuid.optional(), targetRevenueBrl: decimal, deadlineAt: z.string().datetime(),
       maxTotalCostBrl: decimal, maxHumanHours: decimal, humanHourlyRateBrl: decimal,
-      packKey: z.enum(['revenue_recovery','funnel_nurture']).optional(),
+      packKey: z.enum(['revenue_recovery','funnel_nurture','campaign_launch']).optional(),
     }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_mission_readiness_request' })
     requireAccess(ctx, 'action_engine.write', { organizationId: parsed.data.organizationId })
@@ -382,12 +384,22 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       if (packKey === FUNNEL_NURTURE_PACK_V1.key && !(await hasFunnelNurtureEntitlement(app.pg, parsed.data.organizationId, parsed.data.contractId))) {
         return reply.code(403).send({ error: 'funnel_nurture_contract_flag_required' })
       }
+      if (packKey === CAMPAIGN_LAUNCH_PACK_V1.key && !(await hasCampaignLaunchEntitlement(app.pg, parsed.data.organizationId, parsed.data.contractId))) {
+        return reply.code(403).send({ error: 'campaign_launch_contract_flag_required' })
+      }
       const packVersion = packKey === FUNNEL_NURTURE_PACK_V1.key
         ? await ensureFunnelNurturePackVersion(app.pg, ctx.userId)
-        : await ensurePackVersion(app.pg, ctx.userId)
+        : packKey === CAMPAIGN_LAUNCH_PACK_V1.key
+          ? await ensureCampaignLaunchPackVersion(app.pg, ctx.userId)
+          : await ensurePackVersion(app.pg, ctx.userId)
       const expectedValue = parsed.data.expectedValueBrl ?? '1'
       const deadlineDays = Math.max(1, Math.min(180, Math.ceil((Date.parse(parsed.data.deadlineAt) - Date.now()) / 86_400_000)))
-      const parameters = {
+      const parameters = packKey === CAMPAIGN_LAUNCH_PACK_V1.key ? {
+        targetLeads: 50, maximumCplBrl: '100', observationDays: 30,
+        totalBudgetBrl: parsed.data.maxTotalCostBrl,
+        maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours,
+        humanHourlyRateBrl: '100',
+      } : {
         targetRevenueBrl: expectedValue, deadlineDays, inactiveDays: 60, canarySize: 20, maxPopulation: 100,
         maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours,
         humanHourlyRateBrl: '100', minimumValueCostRatio: '1', channels: ['human_task'] as const,
@@ -408,7 +420,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         },
         packSelection: {
           strategy: recipe ? 'versioned_recipe' : parsed.data.quickStart ? 'explicit_quick_start' : 'supervisor',
-          packs: [{ key: packKey, version: recipePack?.version ?? (packKey === FUNNEL_NURTURE_PACK_V1.key ? FUNNEL_NURTURE_PACK_V1.semanticVersion : REVENUE_RECOVERY_PACK_V0.semanticVersion) }],
+          packs: [{ key: packKey, version: recipePack?.version ?? packVersionForKey(packKey) }],
           ...(recipe ? { recipe: { key: recipe.key, version: recipe.version, contentHash: recipe.contentHash } } : {}),
         },
         budget: { maxTotalCostBrl: parsed.data.maxTotalCostBrl, maxHumanHours: parsed.data.maxHumanHours },
@@ -629,7 +641,13 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const query = organizationQuery.safeParse(request.query)
     if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_economics_query' })
     requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
-    const economics = await collectMissionEconomics(app.pg, params.data.missionId, query.data.organizationId)
+    const snapshot = await collectPackMissionMetrics(app.pg, params.data.missionId, query.data.organizationId)
+    const campaignRevenue = snapshot.metrics.attributed_revenue_brl
+    const campaignSpend = snapshot.metrics.spend_brl
+    const economics = await collectMissionEconomics(app.pg, params.data.missionId, query.data.organizationId, snapshot.packKey === 'campaign_launch' ? {
+      producedValueBrl: campaignRevenue?.kind === 'known' ? campaignRevenue.value : '0',
+      ...(campaignSpend?.kind === 'known' ? { mediaSpendBrl: campaignSpend.value } : {}),
+    } : undefined)
     const internal = ctx.role === 'yux_admin' || ctx.role === 'yux_operator'
     return internal ? economics : sanitizeEconomics(economics)
   })
@@ -649,7 +667,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       maxTotalCostBrl: mission.autonomyEnvelope.maxTotalCostBrl,
       maxHumanHours: mission.autonomyEnvelope.maxHumanHours,
       humanHourlyRateBrl: String(mission.parameters.humanHourlyRateBrl ?? mission.budget.humanHourlyRateBrl ?? '100'),
-      packKey: Array.isArray(mission.packSelection.packs) && (mission.packSelection.packs[0] as { key?: string } | undefined)?.key === 'funnel_nurture' ? 'funnel_nurture' : 'revenue_recovery',
+      packKey: missionPackKey(mission.packSelection),
       agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL), mutationLeaseReady: Boolean(app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
     })
     const allowedAreas = [
@@ -822,11 +840,34 @@ async function ensureFunnelNurturePackVersion(client: Queryable, createdBy: stri
   })
 }
 
-function selectIntentPack(quickStart: 'revenue_recovery' | 'funnel_nurture' | undefined, objective: string) {
+async function ensureCampaignLaunchPackVersion(client: Queryable, createdBy: string) {
+  const { parameters: _parameters, ...definition } = CAMPAIGN_LAUNCH_PACK_V1
+  return publishActionPackVersion(client, {
+    packKey: CAMPAIGN_LAUNCH_PACK_V1.key, name: 'Campaign Launch',
+    description: 'Criação e monitoramento governados de campanha paga, com ativação após aprovação exata.',
+    semanticVersion: CAMPAIGN_LAUNCH_PACK_V1.semanticVersion, outcomeType: CAMPAIGN_LAUNCH_PACK_V1.outcomeType,
+    definition: definition as unknown as Record<string, unknown>, contentHash: CAMPAIGN_LAUNCH_PACK_V1.contentHash, createdBy,
+  })
+}
+
+function selectIntentPack(quickStart: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' | undefined, objective: string) {
   if (quickStart) return quickStart
+  if (/(campanha|meta\s*ads?|google\s*ads?|m[ií]dia\s+paga|an[uú]ncios?)/iu.test(objective)) return CAMPAIGN_LAUNCH_PACK_V1.key
   return /(funil|pipeline|nutri[cç][aã]o|sequ[eê]ncia\s+de\s+e-?mails?|automati[sz].*e-?mails?)/iu.test(objective)
     ? FUNNEL_NURTURE_PACK_V1.key
     : REVENUE_RECOVERY_PACK_V0.key
+}
+
+function packVersionForKey(packKey: string) {
+  if (packKey === CAMPAIGN_LAUNCH_PACK_V1.key) return CAMPAIGN_LAUNCH_PACK_V1.semanticVersion
+  if (packKey === FUNNEL_NURTURE_PACK_V1.key) return FUNNEL_NURTURE_PACK_V1.semanticVersion
+  return REVENUE_RECOVERY_PACK_V0.semanticVersion
+}
+
+function missionPackKey(selection: Record<string, unknown>): 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch' {
+  const packs = Array.isArray(selection.packs) ? selection.packs : []
+  const key = packs[0] && typeof packs[0] === 'object' ? Reflect.get(packs[0], 'key') : undefined
+  return key === 'campaign_launch' ? 'campaign_launch' : key === 'funnel_nurture' ? 'funnel_nurture' : 'revenue_recovery'
 }
 
 async function hasFunnelNurtureEntitlement(client: Queryable, organizationId: string, contractId?: string) {
@@ -844,7 +885,22 @@ async function hasFunnelNurtureEntitlement(client: Queryable, organizationId: st
   return result.rows[0]?.entitled === true
 }
 
-function publicPack(pack: typeof REVENUE_RECOVERY_PACK_V0 | typeof FUNNEL_NURTURE_PACK_V1) {
+async function hasCampaignLaunchEntitlement(client: Queryable, organizationId: string, contractId?: string) {
+  const result = await client.query<{ entitled: boolean }>(
+    `SELECT organization.kind = 'yux' OR EXISTS (
+       SELECT 1 FROM public.contracts contract
+       JOIN public.contract_modules module ON module.contract_id = contract.id
+       WHERE contract.client_id = organization.client_id AND contract.status = 'active'
+         AND module.module_key = 'campaign_launch_agent' AND module.enabled = TRUE
+         AND ($2::UUID IS NULL OR contract.id = $2)
+     ) AS entitled
+     FROM public.organizations organization WHERE organization.id = $1 LIMIT 1`,
+    [organizationId, contractId ?? null],
+  )
+  return result.rows[0]?.entitled === true
+}
+
+function publicPack(pack: typeof REVENUE_RECOVERY_PACK_V0 | typeof FUNNEL_NURTURE_PACK_V1 | typeof CAMPAIGN_LAUNCH_PACK_V1) {
   const { parameters: _parameters, ...serializable } = pack
   return serializable
 }

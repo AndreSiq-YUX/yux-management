@@ -180,6 +180,8 @@ class MissionSupervisor:
             elif capability == "campaign.create_draft":
                 brief = dict(artifacts["brief"])
                 source_ids = brief.pop("sourceIds", [])
+                if brief.get("endsAt") is None:
+                    brief.pop("endsAt", None)
                 step_input.update(brief)
                 step_input["audience"] = artifacts["audience"]["targeting"]
                 step_input["creatives"] = artifacts["creativeSet"]["creatives"]

@@ -18,7 +18,7 @@ def request() -> dict:
         "mission": {"id": "mission-1", "objective": "Lançar campanha", "parameters": {}, "autonomyEnvelope": {"maxTotalCostBrl": "1000"}},
         "company_context": {"icp": "Compradores de imóveis em São Paulo", "offer": "Consultoria imobiliária"},
         "brand_rules": {"tone": "consultivo", "forbiddenTerms": ["lucro garantido"]},
-        "baseline": {"campaigns": []}, "readiness": {"providerPlatforms": ["meta"]},
+        "baseline": {"campaigns": []}, "readiness": {"providerPlatforms": ["meta"], "providerConnections": [{"id": "00000000-0000-4000-8000-000000000001", "platform": "meta"}]},
         "limits": {"maxMediaBudgetBrl": "1000"},
         "strategy_context": {"items": [{"id": "source-1", "content": "Atendimento consultivo sem promessa de retorno."}]},
         "allowed_source_ids": ["source-1"],
@@ -81,6 +81,12 @@ def test_rejects_unsupported_provider_and_budget_over_envelope() -> None:
         workflow(values)[0].generate(request())
 
 
+def test_rejects_provider_connection_not_present_in_readiness_snapshot() -> None:
+    values = responses(); values[0]["brief"]["providerConnectionId"] = "00000000-0000-4000-8000-000000000099"
+    with pytest.raises(CampaignLaunchError, match="provider_connection_not_allowed"):
+        workflow(values)[0].generate(request())
+
+
 def test_rejects_missing_tracking_unknown_evidence_and_prohibited_claim() -> None:
     values = responses(); values[3]["acquisition"]["trackingPlan"].pop("utm_campaign")
     with pytest.raises(CampaignLaunchError, match="measurement_analyst_contract_invalid"):
@@ -106,5 +112,6 @@ def test_supervisor_injects_campaign_artifacts_and_exact_bindings() -> None:
     assert enriched["resolvedParameters"]["campaignLaunchArtifacts"]["sourceIds"] == ["source-1"]
     assert enriched["steps"][1]["input"]["landingPageId"] == "binding:pack.draft_landing_page.entityId"
     assert enriched["steps"][2]["input"]["landingPageId"] == "binding:pack.draft_landing_page.entityId"
+    assert "endsAt" not in enriched["steps"][2]["input"]
     assert enriched["steps"][3]["input"]["expectedContentHash"] == "binding:pack.draft_campaign.contentHash"
     assert enriched["steps"][4]["input"]["versionId"] == "binding:pack.draft_campaign.versionId"
