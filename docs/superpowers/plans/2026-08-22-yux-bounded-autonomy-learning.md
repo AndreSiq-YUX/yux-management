@@ -126,24 +126,24 @@ Commit: `feat: enforce autonomous execution limits`
 - Consumes: campaign metrics, active autonomy grant and approved optimization capability allowlist.
 - Produces: scheduled evaluation, bounded bid/budget/creative recommendations, approval or execution.
 
-- [ ] **Step 1: Write optimization guardrail tests**
+- [x] **Step 1: Write optimization guardrail tests**
 
 Test insufficient sample, budget decrease, budget increase requiring approval, pause on tracking loss, creative recommendation, autonomous action within percentage ceiling and repeated checkpoint idempotency.
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run: `cd backend && npx vitest run tests/campaign-optimization-pack.test.ts`  
 Expected: FAIL because pack/capabilities are absent.
 
-- [ ] **Step 3: Define bounded optimization capabilities**
+- [x] **Step 3: Define bounded optimization capabilities**
 
 Allow campaign pause, approved percentage-limited budget adjustment and creative draft creation. Publication of new creative and any budget expansion beyond the grant require approval.
 
-- [ ] **Step 4: Schedule durable checkpoints**
+- [x] **Step 4: Schedule durable checkpoints**
 
 Create idempotent hourly/daily jobs according to pack parameters. A checkpoint records metrics and deterministic guardrail conclusion before requesting optional Harness analysis.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run: `cd backend && npx vitest run tests/campaign-optimization-pack.test.ts tests/campaign-launch-evaluator.test.ts && npm run type-check`  
 Expected: PASS.  

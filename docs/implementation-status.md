@@ -35,8 +35,11 @@ the target VPS/Dokploy environment.
   append-only revocation in migration `0144`, plus transactionally serialized
   cost/hour/contact usage, per-attempt reservations, provider-effect intent,
   one-off scope approval and automatic Mission pause/evaluation before an
-  unsafe effect. Autonomous effects must still remain disabled until continuous
-  optimization, governed learning, the control center and production canary are complete.
+  unsafe effect. The internal-pilot `campaign_optimization@1.0.0` pack now adds
+  deterministic hourly/daily checkpoints, tracking/sample/CPL/CTR guardrails,
+  draft-only creative variation, bounded budget decrease and approval-only
+  increase. Autonomous effects must still remain disabled until governed
+  learning, the control center and production canary are complete.
 - Current implementation boundary: committed `main` at `34b3af4`, including
   standalone external lead forms, CRM/client access stabilization and the
   transactional lead-orchestration foundation.
@@ -88,7 +91,7 @@ the target VPS/Dokploy environment.
 | Area | Status | Main Routes | Main Repo Evidence | Operational Notes |
 | --- | --- | --- | --- | --- |
 | Mission Supervisor Releases 0–4 | Implemented and locally validated | `/missions`, `/portal/missoes`, `/mission-simulation/review/:token`, `/api/action-engine/*` | Migrations `0128`–`0143`, safety/knowledge/decision foundations, `funnel_nurture@1.0.0`, `campaign_launch@1.0.0`, immutable composite manifests/bindings, provider effect ledger/reconciliation, pack-driven and aggregate metrics/economics, versioned recipes, disposable sandbox, adversarial corpus, E2E and release runbooks | Release 4 composes the two bounded verticals under one Mission. Apply migrations through `0143`; enable entitlements/policies per pilot; keep campaign create/activate disabled until provider-sandbox acceptance. Bounded autonomous canary remains Release 5. |
-| Mission Supervisor Release 5 bounded autonomy | Grants and final execution preflight implemented and locally validated | `/api/action-engine/missions/:missionId/autonomy-grants*` | Migration `0144`, immutable grant/event ledger, exact approval hash, expiry/revocation, cumulative actual/reserved usage, serialized final preflight, per-attempt reservation/reversal, provider-effect intent and atomic pause/evaluation | Do not enable autonomous effects yet. Continuous optimization, governed learning, control center and production canary remain pending. |
+| Mission Supervisor Release 5 bounded autonomy | Grants, final execution preflight and campaign optimization pack implemented and locally validated | `/api/action-engine/missions/:missionId/autonomy-grants*`, worker checkpoints | Migrations `0144`–`0145`, immutable grant/event ledger, serialized final preflight, cumulative reservations, provider-effect intent, `campaign_optimization@1.0.0`, deterministic checkpoint ledger and bounded optimization capabilities | Keep mutation capabilities disabled by default. Governed learning, control center, provider-sandbox acceptance and production canary remain pending. |
 | Platform foundation | Implemented | `/dashboard`, platform shell | Platform schema lineage, Fastify/Postgres repositories, `platformService`, module registry and platform store | Confirm the complete backend migration history and authenticated platform bootstrap in the target VPS. |
 | Admin YUX Hub | Implemented in repo | `/admin`, `/admin/integrations`, `/admin/channels`, `/admin/email`, `/admin/ai`, `/admin/modules-governance`, `/admin/health` | Admin platform schema lineage, backend admin routes/repositories, `adminPlatformService`, grouped navigation, Admin Hub pages and `docs/admin-yux-hub.md` | Active reads use the VPS API/Postgres path; production credentials and authenticated Admin QA remain required. |
 | Contracts, packages, modules, portal context | Implemented | `/contracts`, `/packages`, `/modules`, `/portal` | `20260601000000_contracts_modules_portal.sql`, `20260601010000_contract_rls_policies.sql`, `ContractsPage`, `PackagesPage`, `ModulesPage`, `PortalDashboardPage` | Portal access derives from active contract and enabled modules. |

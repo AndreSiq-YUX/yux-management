@@ -17,6 +17,7 @@ export const JOB_NAMES = [
   'action-engine.reconcileProviderEffect',
   'action-engine.expireWaits',
   'action-engine.collectMetrics',
+  'action-engine.campaignOptimizationCheckpoint',
   'action-engine.enforceRetention',
   'action-engine.evaluateMission',
   'action-engine.deliverDecisionNotification',

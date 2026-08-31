@@ -14,6 +14,10 @@ import {
 } from './email-nurture.js'
 import { campaignCreateDraft, campaignCreativeAttachDraft, campaignMetricsSnapshot, campaignProviderActivate, campaignProviderCreatePaused, campaignProviderPause, campaignStateInspect, marketingCreativeGenerateDraft } from './campaigns.js'
 import { campaignAcquisitionAttachDraft, campaignTrackingValidate, landingPageCreateDraft, leadFormConfigureDraft } from './acquisition.js'
+import {
+  campaignBudgetDecreaseBounded, campaignBudgetIncrease, campaignOptimizationEvaluate,
+  marketingCreativeOptimizationDraft,
+} from './campaign-optimization.js'
 
 export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
   return new CapabilityRegistry()
@@ -47,6 +51,10 @@ export function createActionEngineCapabilityRegistry(): CapabilityRegistry {
     .register(campaignProviderActivate)
     .register(campaignProviderPause)
     .register(campaignMetricsSnapshot)
+    .register(campaignOptimizationEvaluate)
+    .register(campaignBudgetDecreaseBounded)
+    .register(campaignBudgetIncrease)
+    .register(marketingCreativeOptimizationDraft)
     .register(crmRecoveryCandidatesSearch)
     .register(crmLeadTimelineRead)
     .register(growthSegmentPreview)

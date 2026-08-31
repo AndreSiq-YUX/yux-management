@@ -122,11 +122,21 @@ const funnelNurtureMetricCollector: PackMetricCollector = {
   },
 }
 
+const campaignOptimizationMetricCollector: PackMetricCollector = {
+  packKey: 'campaign_optimization',
+  async collect(client, mission) {
+    const snapshot = await campaignLaunchMetricCollector.collect(client, mission)
+    return { ...snapshot, packKey: 'campaign_optimization' }
+  },
+  evaluate: campaignLaunchMetricCollector.evaluate,
+}
+
 export function createPackMetricCollectorRegistry(): PackMetricCollectorRegistry {
   return new PackMetricCollectorRegistry()
     .register(revenueRecoveryMetricCollector)
     .register(funnelNurtureMetricCollector)
     .register(campaignLaunchMetricCollector)
+    .register(campaignOptimizationMetricCollector)
 }
 
 export async function collectPackMissionMetrics(client: Queryable, missionId: string, organizationId: string): Promise<PackMetricSnapshot> {

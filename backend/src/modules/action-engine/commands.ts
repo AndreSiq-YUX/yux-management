@@ -14,8 +14,8 @@ import {
   type AutomationFlowDraft,
 } from '../automations/mission-commands.js'
 import {
-  activateProviderCampaign, attachAcquisitionAsset, attachCampaignCreativeDraft, createCampaignDraft,
-  createProviderCampaignPaused, generateCreativeDraft, inspectCampaignState, pauseProviderCampaign,
+  activateProviderCampaign, adjustProviderCampaignBudget, attachAcquisitionAsset, attachCampaignCreativeDraft, createCampaignDraft,
+  createProviderCampaignPaused, generateCreativeDraft, generateOptimizationCreativeDraft, inspectCampaignState, pauseProviderCampaign,
 } from '../campaigns/commands.js'
 import type { CampaignLaunchArtifact } from '../campaigns/repository.js'
 import { createLandingPageDraft, createLeadFormDraft } from '../landing-pages/mission-commands.js'
@@ -54,6 +54,16 @@ export function createActionEngineCommands(pool: Connectable, missionId: string)
     createProviderCampaignPaused: (input) => createProviderCampaignPaused(pool, missionCommandContext(missionId, input), { versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'), approvedSubjectHash: requiredString(input,'approvedSubjectHash'), maxTotalBudgetBrl: requiredString(input,'maxTotalBudgetBrl') }),
     activateProviderCampaign: (input) => activateProviderCampaign(pool, missionCommandContext(missionId, input), { versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'), approvedSubjectHash: requiredString(input,'approvedSubjectHash') }),
     pauseProviderCampaign: (input) => pauseProviderCampaign(pool, missionCommandContext(missionId, input), { versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'), approvedSubjectHash: requiredString(input,'approvedSubjectHash') }),
+    adjustCampaignBudget: (input) => adjustProviderCampaignBudget(pool, missionCommandContext(missionId, input), {
+      versionId: requiredString(input,'versionId'), expectedContentHash: requiredString(input,'expectedContentHash'),
+      approvedSubjectHash: requiredString(input,'approvedSubjectHash'), currentDailyBudgetBrl: requiredString(input,'currentDailyBudgetBrl'),
+      nextDailyBudgetBrl: requiredString(input,'nextDailyBudgetBrl'), maxAdjustmentPercent: requiredString(input,'maxAdjustmentPercent'),
+      direction: input.direction === 'increase' ? 'increase' : 'decrease',
+      ...(optionalString(input,'providerBudgetResourceId')?{providerBudgetResourceId:optionalString(input,'providerBudgetResourceId')!}:{}),
+    }),
+    generateOptimizationCreativeDraft: (input) => transaction(pool, client => generateOptimizationCreativeDraft(client, missionCommandContext(missionId,input), {
+      campaignVersionId: requiredString(input,'campaignVersionId'), creative: creativeInput(input.creative),
+    })),
   }
 }
 

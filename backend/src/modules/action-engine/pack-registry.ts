@@ -16,6 +16,7 @@ const BUILTIN_ARTIFACT_CONTRACTS: Record<string, PackArtifactContract> = {
   revenue_recovery: { consumes: [], produces: [{ key: 'revenue_recovery.outcome', schemaVersion: 1 }] },
   funnel_nurture: { consumes: [], produces: [{ key: 'crm.funnel', schemaVersion: 1 }, { key: 'crm.nurture', schemaVersion: 1 }] },
   campaign_launch: { consumes: [{ key: 'crm.funnel', schemaVersion: 1, optional: true }], produces: [{ key: 'campaign.launch', schemaVersion: 1 }] },
+  campaign_optimization: { consumes: [{ key: 'campaign.launch', schemaVersion: 1, optional: false }], produces: [{ key: 'campaign.optimization_checkpoint', schemaVersion: 1 }] },
 }
 
 export class PublishedPackRegistry {

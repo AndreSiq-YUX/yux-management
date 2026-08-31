@@ -1,13 +1,15 @@
 import type { AppEnv } from '../../config/env.js'
+import { createHash } from 'node:crypto'
 import type { AppJobQueue } from '../../server.js'
 import { createActionEngineCapabilityRegistry } from '../../modules/action-engine/capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from '../../modules/action-engine/packs/revenue-recovery-v0.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from '../../modules/action-engine/packs/campaign-launch-v1.js'
+import { CAMPAIGN_OPTIMIZATION_PACK_V1 } from '../../modules/action-engine/packs/campaign-optimization-v1.js'
 import { FUNNEL_NURTURE_PACK_V1 } from '../../modules/action-engine/packs/funnel-nurture-v1.js'
 import { compileSupervisorPlan, diffMissionPlans, requestMissionPlan, type CompiledMissionPlan } from '../../modules/action-engine/planner.js'
 import type { ActionPackVersion } from '../../modules/action-engine/action-pack.js'
 import {
-  getMission, getPlan, insertMissionContextSnapshot, insertPlanRevision, recordApproval, transitionMission, type Queryable,
+  getMission, getPlan, insertMissionContextSnapshot, insertPlanRevision, recordApproval, recordEvaluation, transitionMission, type Queryable,
 } from '../../modules/action-engine/repository.js'
 import { recordDomainEvent } from '../../modules/events/repository.js'
 import { executeActionRun, scheduleReadyActions } from '../../modules/action-engine/executor.js'
@@ -28,6 +30,7 @@ import { createCapabilityManifest } from '../../modules/action-engine/capability
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
 import { buildMissionDecisionSummary } from '../../modules/action-engine/decision-summary.js'
 import { deliverDecisionNotification, enqueuePendingDecisionNotifications, persistDecisionNotificationSchedule } from '../../modules/action-engine/decision-notifications.js'
+import { decideCampaignOptimization } from '../../modules/action-engine/capabilities/campaign-optimization.js'
 
 type Pool = {
   query: Queryable['query']
@@ -224,6 +227,104 @@ export async function handleActionEngineCollectMetrics(pool: Pool, queue: AppJob
   return { missions: missions.rows.length, snapshots }
 }
 
+export async function handleCampaignOptimizationCheckpoints(pool: Pool, data: Record<string, unknown>) {
+  const now = typeof data.now === 'string' && Number.isFinite(Date.parse(data.now)) ? new Date(data.now) : new Date()
+  const requestedMissionId = typeof data.missionId === 'string' ? data.missionId : null
+  const candidates = await pool.query<{
+    mission_id: string; organization_id: string; plan_id: string; mission_version: number; parameters: Record<string, unknown>;
+    campaign_id: string; campaign_version_id: string; daily_budget_brl: string; spent_brl: string;
+    impressions: number | string; clicks: number | string; leads: number | string; tracking_known: boolean;
+  }>(
+    `SELECT mission.id AS mission_id,mission.organization_id,mission.active_plan_id AS plan_id,
+            mission.version AS mission_version,mission.parameters,campaign.id AS campaign_id,
+            campaign.active_mission_version_id AS campaign_version_id,campaign.daily_budget::TEXT AS daily_budget_brl,
+            COALESCE(campaign.spent,0)::TEXT AS spent_brl,COALESCE(campaign.impressions,0) AS impressions,
+            COALESCE(campaign.clicks,0) AS clicks,COALESCE(campaign.leads,0) AS leads,
+            (campaign.utm_source IS NOT NULL AND campaign.utm_medium IS NOT NULL AND campaign.utm_campaign IS NOT NULL) AS tracking_known
+     FROM public.action_missions mission
+     JOIN public.action_plans plan ON plan.id=mission.active_plan_id AND plan.status='active'
+     JOIN public.action_pack_versions pack_version ON pack_version.id=plan.pack_version_id
+     JOIN public.action_packs pack ON pack.id=pack_version.pack_id
+     JOIN public.campaigns campaign ON campaign.mission_id=mission.id AND campaign.organization_id=mission.organization_id
+       AND campaign.lifecycle_status='active'
+     WHERE mission.status='active' AND mission.mode='autonomous'
+       AND ($1::UUID IS NULL OR mission.id=$1)
+       AND (pack.key IN ('campaign_launch','campaign_optimization') OR EXISTS (
+         SELECT 1 FROM jsonb_array_elements(COALESCE(plan.compiled_payload->'packs','[]'::JSONB)) selected
+         WHERE selected->>'key' IN ('campaign_launch','campaign_optimization')
+       ))
+       AND EXISTS (
+         SELECT 1 FROM public.action_autonomy_grants grant
+         WHERE grant.mission_id=mission.id AND grant.organization_id=mission.organization_id
+           AND grant.starts_at <= $2 AND grant.expires_at > $2
+           AND EXISTS (SELECT 1 FROM public.action_autonomy_grant_events event WHERE event.grant_id=grant.id AND event.event_type='activated')
+           AND NOT EXISTS (SELECT 1 FROM public.action_autonomy_grant_events event WHERE event.grant_id=grant.id AND event.event_type='revoked')
+       )
+     ORDER BY mission.updated_at LIMIT 100`,
+    [requestedMissionId, now.toISOString()],
+  )
+  let recorded = 0
+  let duplicates = 0
+  let approvals = 0
+  let paused = 0
+  for (const row of candidates.rows) {
+    const frequency = row.parameters.checkpointFrequency === 'hourly' ? 'hourly' : 'daily'
+    const windowKey = frequency === 'hourly' ? now.toISOString().slice(0, 13) : now.toISOString().slice(0, 10)
+    const checkpointKey = `campaign-optimization:${frequency}:${windowKey}`
+    const decision = decideCampaignOptimization({
+      trackingKnown: row.tracking_known, impressions: Number(row.impressions), clicks: Number(row.clicks), leads: Number(row.leads),
+      spendBrl: String(row.spent_brl), currentDailyBudgetBrl: String(row.daily_budget_brl),
+      minimumImpressions: integerParameter(row.parameters.minimumImpressions, 1000),
+      minimumClicks: integerParameter(row.parameters.minimumClicks, 50),
+      minimumLeadsForScale: integerParameter(row.parameters.minimumLeadsForScale, 5),
+      minimumCtr: decimalParameter(row.parameters.minimumCtr, '0.01'),
+      targetCplBrl: decimalParameter(row.parameters.targetCplBrl, '50'),
+      maximumCplBrl: decimalParameter(row.parameters.maximumCplBrl, '100'),
+      maxBudgetAdjustmentPercent: decimalParameter(row.parameters.maxBudgetAdjustmentPercent, '10'),
+    })
+    const created = await transaction(pool, async (client) => {
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO public.action_campaign_optimization_checkpoints (
+           organization_id,mission_id,plan_id,campaign_id,campaign_version_id,checkpoint_key,window_started_at,
+           metric_snapshot,decision,rationale,proposed_action,requires_approval,status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT (mission_id,checkpoint_key) DO NOTHING RETURNING id`,
+        [row.organization_id,row.mission_id,row.plan_id,row.campaign_id,row.campaign_version_id,checkpointKey,
+          frequency === 'hourly' ? `${windowKey}:00:00.000Z` : `${windowKey}T00:00:00.000Z`,
+          { impressions:Number(row.impressions),clicks:Number(row.clicks),leads:Number(row.leads),spendBrl:row.spent_brl,trackingKnown:row.tracking_known,dailyBudgetBrl:row.daily_budget_brl },
+          decision.conclusion,{ reason:decision.reason,deterministic:true },decision,decision.requiresApproval,
+          decision.requiresApproval?'pending_approval':decision.conclusion==='observe'||decision.conclusion==='continue'?'observed':'action_proposed'],
+      )
+      if (!inserted.rows[0]) return false
+      const evaluationDecision = decision.conclusion === 'pause' ? 'pause'
+        : ['decrease_budget','increase_budget','creative_draft'].includes(decision.conclusion) ? 'replan' : 'continue'
+      await recordEvaluation(client, {
+        organizationId:row.organization_id,missionId:row.mission_id,planId:row.plan_id,checkpointKey,
+        idempotencyKey:`${row.mission_id}:${checkpointKey}`,decision:evaluationDecision,
+        metricSnapshot:{impressions:Number(row.impressions),clicks:Number(row.clicks),leads:Number(row.leads),trackingKnown:row.tracking_known},
+        economicsSnapshot:{spendBrl:row.spent_brl,currentDailyBudgetBrl:row.daily_budget_brl},rationale:{...decision,deterministic:true},
+      })
+      if (decision.requiresApproval) {
+        const subjectHash = createHash('sha256').update(stableCheckpoint({ missionId:row.mission_id,checkpointKey,decision })).digest('hex')
+        await recordApproval(client, {
+          organizationId:row.organization_id,missionId:row.mission_id,approvalType:'budget_increase',subjectHash,
+          requestedPayload:{ checkpointId:inserted.rows[0].id,campaignId:row.campaign_id,campaignVersionId:row.campaign_version_id,checkpointKey,decision },
+        })
+        approvals += 1
+      }
+      if (decision.conclusion === 'pause') {
+        await client.query(`UPDATE public.action_missions SET status='paused',version=version+1,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND status='active'`,[row.mission_id,row.organization_id])
+        await recordDomainEvent(client,{eventType:'mission.paused',organizationId:row.organization_id,aggregateType:'mission',aggregateId:row.mission_id,actor:{type:'system'},payload:{reason:decision.reason,checkpointKey,campaignId:row.campaign_id}})
+        paused += 1
+      }
+      return true
+    })
+    if (created) recorded += 1
+    else duplicates += 1
+  }
+  return { candidates: candidates.rows.length, recorded, duplicates, approvals, paused }
+}
+
 export async function handleActionEngineRetention(pool: Pool) {
   return enforceMissionRetention(pool)
 }
@@ -367,7 +468,7 @@ export async function handleActionEnginePlanMission(
        FROM public.action_observations WHERE mission_id = $1 AND organization_id = $2
        ORDER BY observed_at DESC LIMIT 100`, [missionId, organizationId],
     ) : { rows: [] }
-    const providerConnections = packs.some((item) => item.key === CAMPAIGN_LAUNCH_PACK_V1.key)
+    const providerConnections = packs.some((item) => [CAMPAIGN_LAUNCH_PACK_V1.key,CAMPAIGN_OPTIMIZATION_PACK_V1.key].includes(item.key))
       ? await pool.query<{ id: string; provider: string }>(
         `SELECT id,provider FROM public.ad_provider_connections
          WHERE organization_id=$1 AND status='connected' ORDER BY updated_at DESC`, [organizationId],
@@ -620,6 +721,10 @@ async function loadMissionActionPack(pool: Pool, packVersionId: string): Promise
     if (row.content_hash !== CAMPAIGN_LAUNCH_PACK_V1.contentHash) throw new Error('action_pack_hash_mismatch')
     return CAMPAIGN_LAUNCH_PACK_V1
   }
+  if (row.key === CAMPAIGN_OPTIMIZATION_PACK_V1.key && row.semantic_version === CAMPAIGN_OPTIMIZATION_PACK_V1.semanticVersion) {
+    if (row.content_hash !== CAMPAIGN_OPTIMIZATION_PACK_V1.contentHash) throw new Error('action_pack_hash_mismatch')
+    return CAMPAIGN_OPTIMIZATION_PACK_V1
+  }
   const definition = row.definition
   const pack = {
     ...definition,
@@ -673,6 +778,21 @@ async function loadMissionActionPacks(
     throw new Error('mission_pack_selection_duplicate')
   }
   return packs
+}
+
+function integerParameter(value: unknown, fallback: number) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback
+}
+
+function decimalParameter(value: unknown, fallback: string) {
+  const candidate = typeof value === 'string' || typeof value === 'number' ? String(value) : fallback
+  return /^\d+(?:\.\d+)?$/.test(candidate) ? candidate : fallback
+}
+
+function stableCheckpoint(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableCheckpoint).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value as Record<string, unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>`${JSON.stringify(key)}:${stableCheckpoint(item)}`).join(',')}}`
+  return JSON.stringify(value)
 }
 
 async function transaction<T>(pool: Pool, work: (client: Queryable) => Promise<T>): Promise<T> {

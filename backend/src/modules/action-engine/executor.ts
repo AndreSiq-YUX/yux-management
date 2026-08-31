@@ -56,7 +56,8 @@ export async function startMission(pool: Connectable, input: {
     const compositePacks = Array.isArray(plan.rows[0]?.compiled_payload.packs)
       ? plan.rows[0]!.compiled_payload.packs.map(item => item && typeof item === 'object' ? Reflect.get(item, 'key') : null) : []
     const funnelNurture = plan.rows[0]?.pack_key === 'funnel_nurture' || compositePacks.includes('funnel_nurture')
-    const campaignLaunch = plan.rows[0]?.pack_key === 'campaign_launch' || compositePacks.includes('campaign_launch')
+    const campaignLaunch = ['campaign_launch','campaign_optimization'].includes(plan.rows[0]?.pack_key)
+      || compositePacks.includes('campaign_launch') || compositePacks.includes('campaign_optimization')
     const campaignArtifacts = campaignLaunch && plan.rows[0]?.parameters.campaignLaunchArtifacts
       && typeof plan.rows[0].parameters.campaignLaunchArtifacts === 'object'
       ? plan.rows[0].parameters.campaignLaunchArtifacts as Record<string, unknown> : {}

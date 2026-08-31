@@ -122,4 +122,15 @@ export function validatePlanConformance(plan: ProposedMissionPlan, pack: ActionP
     const paused=plan.steps[pausedIndex];const activation=plan.steps[activationIndex]
     if(pausedIndex<0||approvalIndex<=pausedIndex||activationIndex<=approvalIndex||!paused?.approvalRequired||!activation?.approvalRequired)throw new Error('action_pack_campaign_activation_approval_missing')
   }
+  if (pack.key === 'campaign_optimization') {
+    const evaluationIndex = stepKeys.indexOf('pack.evaluate_guardrails')
+    const checkpointIndex = stepKeys.indexOf('pack.record_checkpoint')
+    const actions = plan.steps.filter((step) => step.extensionPoint === 'bounded_optimization_action')
+    if (evaluationIndex < 0 || checkpointIndex <= evaluationIndex || actions.length > 1
+      || actions.some((step) => stepKeys.indexOf(step.stepKey) <= evaluationIndex || stepKeys.indexOf(step.stepKey) >= checkpointIndex)) {
+      throw new Error('action_pack_campaign_optimization_boundary_invalid')
+    }
+    const increase = actions.find((step) => step.capabilityKey === 'campaign.budget.increase')
+    if (increase && !increase.approvalRequired) throw new Error('action_pack_campaign_budget_increase_approval_missing')
+  }
 }

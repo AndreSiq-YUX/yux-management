@@ -51,6 +51,8 @@ export type CapabilityContext = {
     createProviderCampaignPaused?: (input: Record<string, unknown>) => Promise<unknown>
     activateProviderCampaign?: (input: Record<string, unknown>) => Promise<unknown>
     pauseProviderCampaign?: (input: Record<string, unknown>) => Promise<unknown>
+    adjustCampaignBudget?: (input: Record<string, unknown>) => Promise<unknown>
+    generateOptimizationCreativeDraft?: (input: Record<string, unknown>) => Promise<unknown>
   }
 }
 
