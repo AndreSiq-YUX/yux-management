@@ -9,6 +9,9 @@ import { validateMissionPlanResponseWire } from './mission-wire-validator.js'
 import type { ClarificationQuestionWire, SelectedPackWire } from './generated/mission-wire.js'
 import type { AutonomyEnvelope } from './types.js'
 import { collectPlanInputBindingSteps, resolvePlanInputBindings } from './plan-input-bindings.js'
+import { compileCompositePlan, type CompositeArtifactBinding } from './composite-plan.js'
+import { createPublishedPackRegistry } from './pack-registry.js'
+import { resolvePackSelection } from './pack-resolver.js'
 
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/)
 const harnessStep = z.object({
@@ -48,6 +51,9 @@ export type CompiledMissionPlan = {
   sourceIds?: string[]
   selectedPacks?: SelectedPackWire[]
   capabilityCatalogHash?: string
+  packs?: Array<{ key: string; semanticVersion: string; contentHash: string; optional: boolean; order: number }>
+  artifactBindings?: CompositeArtifactBinding[]
+  aggregateEconomics?: HarnessMissionPlan['estimatedEconomics']
   steps: Array<ActionPlanStep & { timeoutSeconds: number; maxAttempts: number; outputBindings: Record<string, { fromStep: string; path: string }> }>
 }
 
@@ -157,7 +163,68 @@ export function compileSupervisorPlan(input: {
       throw new Error('mission_plan_pack_not_allowed')
     }
   }
-  if (proposal.selectedPacks.length !== 1) throw new Error('mission_composite_pack_not_supported')
+  if (proposal.selectedPacks.length !== input.packCatalog.length) throw new Error('mission_plan_pack_selection_mismatch')
+  if (proposal.selectedPacks.length > 1) {
+    const parsedCompositePlan = harnessPlan.safeParse(proposal.plan)
+    if (!parsedCompositePlan.success) throw new Error('mission_plan_contract_invalid')
+    const compositePlanProposal = parsedCompositePlan.data
+    const resolvedParameters = compositePlanProposal.resolvedParameters
+    const packParameters = objectValue(resolvedParameters.packParameters)
+    const packEconomics = objectValue(resolvedParameters.packEconomics)
+    const artifactBindings = compositeBindings(resolvedParameters.artifactBindings)
+    const selections = resolvePackSelection({
+      requested: proposal.selectedPacks.map((selected) => ({
+        key: selected.key, semanticVersion: selected.version, contentHash: selected.contentHash,
+      })),
+      catalog: createPublishedPackRegistry(input.packCatalog).list(),
+      entitledModules: input.autonomyEnvelope.allowedModules,
+      availableCapabilities: input.registry.listMetadata().map((item) => ({ key: item.key, version: item.version })),
+    })
+    const plans = selections.map((selection) => {
+      const rawSteps = compositePlanProposal.steps
+        .filter((step) => step.stepKey.startsWith(`${selection.key}.`))
+        .map((step) => deNamespaceStep(step, selection.key))
+      const economics = harnessPlan.shape.estimatedEconomics.safeParse(packEconomics[selection.key])
+      if (!economics.success) throw new Error(`mission_composite_pack_economics_invalid:${selection.key}`)
+      const specificParameters = objectValue(packParameters[selection.key])
+      return compileMissionPlan({
+        rawPlan: {
+          ...compositePlanProposal,
+          actionPack: { key: selection.key, version: selection.semanticVersion, templateHash: selection.contentHash },
+          resolvedParameters: { ...resolvedParameters, ...specificParameters },
+          deviations: compositePlanProposal.deviations
+            .filter((deviation) => deviation.extensionPoint.startsWith(`${selection.key}.`))
+            .map((deviation) => ({ ...deviation, extensionPoint: deviation.extensionPoint.slice(selection.key.length + 1) })),
+          estimatedEconomics: economics.data,
+          steps: rawSteps,
+        },
+        missionId: input.missionId, pack: selection.pack, registry: input.registry,
+        maxTotalCostBrl: input.maxTotalCostBrl,
+      })
+    })
+    const composite = compileCompositePlan({
+      missionId: input.missionId, selections, plans, bindings: artifactBindings,
+      contextHash: input.contextHash, sourceIds, allowedSourceIds: input.allowedSourceIds,
+      maxTotalCostBrl: input.maxTotalCostBrl,
+    })
+    const compositePackContentHash = createHash('sha256').update(stableSerialize(composite.packs)).digest('hex')
+    const allowedCapabilities = new Set(input.autonomyEnvelope.allowedCapabilityKeys)
+    if (allowedCapabilities.size > 0 && composite.steps.some((step) => !allowedCapabilities.has(step.capabilityKey))) {
+      throw new Error('mission_plan_capability_outside_envelope')
+    }
+    const compiled: CompiledMissionPlan = {
+      missionId: composite.missionId, packKey: 'composite', packVersion: '1.0.0',
+      packContentHash: compositePackContentHash, planHash: composite.planHash,
+      capabilityManifest: composite.capabilityManifest, capabilityManifestHash: composite.capabilityManifestHash,
+      parameters: resolvedParameters, deviations: compositePlanProposal.deviations,
+      estimatedEconomics: composite.aggregateEconomics, contextHash: composite.contextHash,
+      sourceIds: composite.sourceIds, selectedPacks: proposal.selectedPacks,
+      capabilityCatalogHash: input.capabilityCatalogHash, steps: composite.steps,
+      packs: composite.packs, artifactBindings: composite.artifactBindings,
+      aggregateEconomics: composite.aggregateEconomics,
+    }
+    return { kind: 'plan', compiled, selectedPacks: proposal.selectedPacks, sourceIds }
+  }
   const selected = proposal.selectedPacks[0]!
   const pack = catalog.get(packIdentity(selected.key, selected.version, selected.contentHash))!
   if (proposal.plan.actionPack.key !== selected.key || proposal.plan.actionPack.version !== selected.version
@@ -295,4 +362,45 @@ function stableSerialize(value: unknown): string {
 
 function packIdentity(key: string, version: string, contentHash: string): string {
   return `${key.trim()}@${version.trim()}#${contentHash}`
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function compositeBindings(value: unknown): CompositeArtifactBinding[] {
+  if (!Array.isArray(value)) throw new Error('mission_composite_bindings_invalid')
+  return value.map((binding) => {
+    const item = objectValue(binding)
+    const parsed = z.object({
+      fromPack: z.string().min(1), artifactKey: z.string().min(1), fromStepKey: z.string().min(1),
+      outputPath: z.string().min(1), toPack: z.string().min(1), toStepKey: z.string().min(1),
+      inputKey: z.string().min(1), schemaVersion: z.number().int().positive(),
+    }).safeParse(item)
+    if (!parsed.success) throw new Error('mission_composite_bindings_invalid')
+    return parsed.data
+  })
+}
+
+function deNamespaceStep(step: HarnessMissionPlan['steps'][number], packKey: string): HarnessMissionPlan['steps'][number] {
+  const prefix = `${packKey}.`
+  const localKey = (key: string) => key.startsWith(prefix) ? key.slice(prefix.length) : key
+  return {
+    ...step,
+    stepKey: localKey(step.stepKey),
+    dependsOn: step.dependsOn.filter((dependency) => dependency.startsWith(prefix)).map(localKey),
+    input: rewriteCompositeBindings(step.input, prefix) as Record<string, unknown>,
+    outputBindings: Object.fromEntries(Object.entries(step.outputBindings).map(([key, binding]) => [key, {
+      ...binding, fromStep: localKey(binding.fromStep),
+    }])),
+  }
+}
+
+function rewriteCompositeBindings(value: unknown, prefix: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => rewriteCompositeBindings(item, prefix))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, rewriteCompositeBindings(item, prefix)]))
+  }
+  if (typeof value === 'string' && value.startsWith(`binding:${prefix}`)) return `binding:${value.slice(`binding:${prefix}`.length)}`
+  return value
 }

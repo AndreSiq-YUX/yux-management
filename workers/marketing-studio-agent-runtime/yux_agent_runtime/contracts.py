@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -243,6 +244,75 @@ def validate_mission_plan(value: dict[str, Any], planning_input: dict[str, Any])
     economics = value.get("estimatedEconomics")
     if not isinstance(economics, dict) or economics.get("currency") != "BRL" or "totalExecutionCost" not in economics:
         raise AgentContractError("mission_plan_economics_invalid")
+    return value
+
+
+def validate_composite_mission_plan(
+    value: dict[str, Any],
+    planning_input: dict[str, Any],
+    selected_packs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Validate the shared wire shape without treating a composite as one pack."""
+    if value.get("schemaVersion") != 1:
+        raise AgentContractError("mission_plan_schema_version_invalid")
+    if value.get("missionId") != planning_input.get("mission", {}).get("id"):
+        raise AgentContractError("mission_plan_mission_mismatch")
+    proposed_pack = value.get("actionPack") or {}
+    if proposed_pack.get("key") != "composite" or proposed_pack.get("version") != "1.0.0":
+        raise AgentContractError("mission_composite_reference_invalid")
+    if not re.fullmatch(r"[a-f0-9]{64}", str(proposed_pack.get("templateHash") or "")):
+        raise AgentContractError("mission_composite_reference_invalid")
+
+    catalog = {
+        (str(item.get("key")), str(item.get("semanticVersion")), str(item.get("contentHash")))
+        for item in planning_input.get("pack_catalog") or []
+        if isinstance(item, dict)
+    }
+    selected = {
+        (str(item.get("key")), str(item.get("version")), str(item.get("contentHash")))
+        for item in selected_packs
+    }
+    if len(selected) < 2 or not selected.issubset(catalog):
+        raise AgentContractError("mission_composite_pack_mismatch")
+
+    capabilities = {
+        (str(item.get("key")), int(item.get("version", 0)))
+        for item in planning_input.get("capabilities") or []
+        if isinstance(item, dict)
+    }
+    pack_keys = {item[0] for item in selected}
+    steps = value.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise AgentContractError("mission_plan_steps_required")
+    keys = [str(step.get("stepKey") or "") for step in steps if isinstance(step, dict)]
+    if len(keys) != len(steps) or any(not key for key in keys) or len(set(keys)) != len(keys):
+        raise AgentContractError("mission_plan_step_key_invalid")
+    if any(not any(key.startswith(f"{pack_key}.") for pack_key in pack_keys) for key in keys):
+        raise AgentContractError("mission_composite_step_namespace_invalid")
+
+    graph: dict[str, list[str]] = {}
+    for step in steps:
+        identity = (str(step.get("capabilityKey") or ""), int(step.get("capabilityVersion") or 0))
+        if identity not in capabilities:
+            raise AgentContractError("mission_plan_capability_not_allowed")
+        dependencies = step.get("dependsOn") or []
+        if not isinstance(dependencies, list) or any(str(item) not in keys for item in dependencies):
+            raise AgentContractError("mission_plan_dependency_missing")
+        graph[str(step["stepKey"])] = [str(item) for item in dependencies]
+        if step.get("effect") in {"external", "destructive"} and step.get("approvalRequired") is not True:
+            raise AgentContractError("mission_plan_external_approval_required")
+    _assert_acyclic(graph)
+
+    resolved = value.get("resolvedParameters") or {}
+    pack_economics = resolved.get("packEconomics") or {}
+    if not isinstance(pack_economics, dict) or any(key not in pack_economics for key in pack_keys):
+        raise AgentContractError("mission_composite_pack_economics_invalid")
+    economics = value.get("estimatedEconomics")
+    if not isinstance(economics, dict) or economics.get("currency") != "BRL" or "totalExecutionCost" not in economics:
+        raise AgentContractError("mission_plan_economics_invalid")
+    maximum = float((planning_input.get("limits") or {}).get("maxTotalCostBrl") or 0)
+    if maximum and float(economics["totalExecutionCost"]) > maximum:
+        raise AgentContractError("mission_verifier_budget_exceeded")
     return value
 
 

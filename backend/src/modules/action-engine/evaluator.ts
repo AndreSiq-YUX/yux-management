@@ -1,8 +1,9 @@
 import type { MissionEconomics } from './economics.js'
-import { getMission, recordEvaluation, type Queryable } from './repository.js'
+import { getMission, getPlan, recordEvaluation, type Queryable } from './repository.js'
 import type { MetricValue } from './types.js'
 import { PackMetricCollectorRegistry, type PackMetricCollector, type PackMetricSnapshot } from './metrics/collector.js'
 import { campaignLaunchMetricCollector } from './metrics/campaign-launch.js'
+import { aggregateCompositeMetricSnapshots, evaluateCompositeMission } from './metrics/composite.js'
 
 export type EvaluationConclusion = 'continue' | 'pause' | 'block' | 'propose_replan' | 'succeed' | 'fail' | 'expire'
 
@@ -131,8 +132,11 @@ export function createPackMetricCollectorRegistry(): PackMetricCollectorRegistry
 export async function collectPackMissionMetrics(client: Queryable, missionId: string, organizationId: string): Promise<PackMetricSnapshot> {
   const mission = await getMission(client, missionId, organizationId)
   if (!mission) throw new Error('mission_not_found')
-  const packKey = await loadMissionPackKey(client, mission.packVersionId)
-  return createPackMetricCollectorRegistry().get(packKey).collect(client, mission)
+  const selectedPackKeys = missionSelectedPackKeys(mission.packSelection)
+  const packKeys = selectedPackKeys.length > 0 ? selectedPackKeys : [await loadMissionPackKey(client, mission.packVersionId)]
+  const registry = createPackMetricCollectorRegistry()
+  const snapshots = await Promise.all(packKeys.map((packKey) => registry.get(packKey).collect(client, mission)))
+  return snapshots.length === 1 ? snapshots[0]! : aggregateCompositeMetricSnapshots(snapshots)
 }
 
 export async function collectMissionMetrics(client: Queryable, missionId: string, organizationId: string) {
@@ -148,11 +152,14 @@ export async function evaluateMission(client: Queryable, input: {
   const mission = await getMission(client, input.missionId, input.organizationId)
   if (!mission) throw new Error('mission_not_found')
   const snapshot = input.packSnapshot
-  const decision = snapshot
-    ? createPackMetricCollectorRegistry().get(snapshot.packKey).evaluate({ mission, snapshot, economics: input.economics, now: new Date().toISOString() })
+  const now = new Date().toISOString()
+  const decision = snapshot?.packKey === 'composite'
+    ? await evaluateCompositeSnapshot(client, mission, snapshot, input.economics, now)
+    : snapshot
+    ? createPackMetricCollectorRegistry().get(snapshot.packKey).evaluate({ mission, snapshot, economics: input.economics, now })
     : decideMissionConclusion({
       targetRevenueBrl: String(mission.parameters.targetRevenueBrl ?? '0'), signedRevenue: input.signedRevenue, deadlineAt: mission.deadlineAt,
-      now: new Date().toISOString(), criticalGuardrailBreached: input.criticalGuardrailBreached ?? false,
+      now, criticalGuardrailBreached: input.criticalGuardrailBreached ?? false,
       killSwitchActive: input.killSwitchActive ?? false, minimumSampleReached: input.minimumSampleReached ?? false,
       offTrack: input.offTrack ?? false, requiredMetricUnknownIsBlocking: input.requiredMetricUnknownIsBlocking ?? true,
     })
@@ -166,6 +173,40 @@ export async function evaluateMission(client: Queryable, input: {
   return { ...evaluation, conclusion: decision.conclusion, reasons: decision.reasons }
 }
 
+async function evaluateCompositeSnapshot(
+  client: Queryable,
+  mission: NonNullable<Awaited<ReturnType<typeof getMission>>>,
+  snapshot: PackMetricSnapshot,
+  economics: MissionEconomics,
+  now: string,
+) {
+  const snapshots = snapshot.packSnapshots ?? []
+  if (snapshots.length < 2) throw new Error('mission_composite_metric_snapshots_missing')
+  const plan = mission.activePlanId ? await getPlan(client, mission.activePlanId, mission.organizationId) : null
+  const compiledValue = plan && typeof plan === 'object' ? Reflect.get(plan, 'compiledPayload') : undefined
+  const compiled = compiledValue && typeof compiledValue === 'object' ? compiledValue as Record<string, unknown> : {}
+  const rawPacks: unknown[] = Array.isArray(compiled.packs) ? compiled.packs : []
+  const rawBindings: unknown[] = Array.isArray(compiled.artifactBindings) ? compiled.artifactBindings : []
+  const registry = createPackMetricCollectorRegistry()
+  const packs = snapshots.map((packSnapshot) => {
+    const metadata = rawPacks.find((item) => item && typeof item === 'object' && Reflect.get(item, 'key') === packSnapshot.packKey)
+    const dependsOn: string[] = rawBindings.flatMap((item): string[] => {
+      if (!item || typeof item !== 'object' || Reflect.get(item, 'toPack') !== packSnapshot.packKey) return []
+      const fromPack = Reflect.get(item, 'fromPack')
+      return typeof fromPack === 'string' ? [fromPack] : []
+    })
+    const evaluated = registry.get(packSnapshot.packKey).evaluate({ mission, snapshot: packSnapshot, economics, now })
+    return {
+      packKey: packSnapshot.packKey, conclusion: evaluated.conclusion, reasons: evaluated.reasons,
+      optional: metadata && typeof metadata === 'object' ? Reflect.get(metadata, 'optional') === true : false,
+      dependsOn: [...new Set(dependsOn)],
+    }
+  })
+  return evaluateCompositeMission({
+    packs, economics, maxTotalCostBrl: String(mission.budget.maxTotalCostBrl ?? mission.autonomyEnvelope.maxTotalCostBrl),
+  })
+}
+
 async function loadMissionPackKey(client: Queryable, packVersionId: string): Promise<string> {
   const result = await client.query<{ key: string }>(
     `SELECT pack.key FROM public.action_pack_versions version
@@ -174,6 +215,14 @@ async function loadMissionPackKey(client: Queryable, packVersionId: string): Pro
   )
   if (!result.rows[0]) throw new Error('mission_action_pack_unavailable')
   return result.rows[0].key
+}
+
+function missionSelectedPackKeys(selection: Record<string, unknown>): string[] {
+  const packs = Array.isArray(selection.packs) ? selection.packs : []
+  return [...new Set(packs.flatMap((item) => {
+    const key = item && typeof item === 'object' ? Reflect.get(item, 'key') : undefined
+    return typeof key === 'string' ? [key] : []
+  }))]
 }
 
 function known(value: string, unit: string): MetricValue { return { kind: 'known', value: value as `${number}`, unit } }

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any
 
 from pydantic import ValidationError
 
-from .contracts import AgentContractError, parse_json_object, validate_mission_plan
+from .contracts import AgentContractError, parse_json_object, validate_composite_mission_plan, validate_mission_plan
 from .mission_contracts import MissionSupervisorProposal, PlanWire
 from .model_profiles import ModelProfile, build_model_trace
 from .providers import OpenRouterClient, ProviderRequestError
@@ -60,6 +61,10 @@ class MissionSupervisor:
                     "tools, packs, sources or capabilities. Use only exact catalog versions and allowedSourceIds. Ask at "
                     "most three grouped questions, and never ask a second round after clarificationRound 1. Never "
                     "execute an action."
+                    " When missionRoute selects multiple packs, select exactly those packs, prefix every stepKey and "
+                    "dependency with its pack key, use actionPack {key: composite, version: 1.0.0, templateHash: a "
+                    "64-character lowercase hex value}, and include resolvedParameters.packEconomics keyed by pack, "
+                    "resolvedParameters.packParameters keyed by pack, and resolvedParameters.artifactBindings."
                 ),
             },
             {"role": "user", "content": json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))},
@@ -99,6 +104,8 @@ class MissionSupervisor:
             proposal.questions = self._prioritize_questions(proposal.questions)
         self._validate_authority(proposal, value)
         if proposal.plan is not None:
+            if [pack.key for pack in proposal.selected_packs] != route.selected_pack_keys:
+                raise MissionSupervisorError("mission_supervisor_route_selection_mismatch")
             if any(pack.key == "funnel_nurture" for pack in proposal.selected_packs):
                 try:
                     artifacts = self.funnel_nurture.generate(value)
@@ -112,6 +119,7 @@ class MissionSupervisor:
                     raise MissionSupervisorError(str(error)) from error
                 proposal.plan = self._inject_campaign_launch_artifacts(proposal.plan, artifacts)
             if len(proposal.selected_packs) > 1:
+                proposal.plan = self._normalize_composite_plan(proposal.plan, proposal.selected_packs)
                 try:
                     self.verifier.verify(value, route, {
                         "selectedPacks": [pack.model_dump() for pack in proposal.selected_packs],
@@ -124,7 +132,18 @@ class MissionSupervisor:
                 typed_plan = PlanWire.model_validate(proposal.plan).model_dump(by_alias=True)
             except ValidationError as error:
                 raise MissionSupervisorError("mission_supervisor_plan_contract_invalid") from error
-            proposal.plan = validate_mission_plan(typed_plan, value)
+            try:
+                proposal.plan = (
+                    validate_composite_mission_plan(
+                        typed_plan,
+                        value,
+                        [pack.model_dump() for pack in proposal.selected_packs],
+                    )
+                    if len(proposal.selected_packs) > 1
+                    else validate_mission_plan(typed_plan, value)
+                )
+            except AgentContractError as error:
+                raise MissionSupervisorError(str(error)) from error
 
         usage = {
             "inputTokens": int(response.get("input_tokens") or 0),
@@ -223,6 +242,37 @@ class MissionSupervisor:
             step["input"] = step_input
             steps.append(step)
         enriched["steps"] = steps
+        return enriched
+
+    @staticmethod
+    def _normalize_composite_plan(plan: dict[str, Any], selected_packs) -> dict[str, Any]:
+        enriched = dict(plan)
+        canonical = sorted(
+            [pack.model_dump() for pack in selected_packs],
+            key=lambda item: (item["key"], item["version"], item["contentHash"]),
+        )
+        digest = hashlib.sha256(
+            json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        enriched["actionPack"] = {"key": "composite", "version": "1.0.0", "templateHash": digest}
+        parameters = dict(enriched.get("resolvedParameters") or {})
+        bindings = [item for item in parameters.get("artifactBindings") or [] if isinstance(item, dict)]
+        keys = [pack.key for pack in selected_packs]
+        if keys == ["funnel_nurture", "campaign_launch"]:
+            canonical_binding = {
+                "fromPack": "funnel_nurture", "artifactKey": "crm.funnel",
+                "fromStepKey": "pack.publish_funnel", "outputPath": "versionId",
+                "toPack": "campaign_launch", "toStepKey": "pack.draft_campaign",
+                "inputKey": "funnelVersionId", "schemaVersion": 1,
+            }
+            bindings = [item for item in bindings if not (
+                item.get("fromPack") == "funnel_nurture"
+                and item.get("toPack") == "campaign_launch"
+                and item.get("artifactKey") == "crm.funnel"
+            )]
+            bindings.append(canonical_binding)
+        parameters["artifactBindings"] = bindings
+        enriched["resolvedParameters"] = parameters
         return enriched
 
     def _validate_authority(self, proposal: MissionSupervisorProposal, value: dict[str, Any]) -> None:

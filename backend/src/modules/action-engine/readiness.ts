@@ -85,11 +85,13 @@ export async function evaluateMissionReadiness(
     mutationLeaseReady: boolean
     missionId?: string
     packKey?: 'revenue_recovery' | 'funnel_nurture' | 'campaign_launch'
+    packKeys?: Array<'revenue_recovery' | 'funnel_nurture' | 'campaign_launch'>
   },
 ): Promise<MissionReadinessReport> {
   const checks: ReadinessCheck[] = []
-  const funnelNurture = input.packKey === FUNNEL_NURTURE_PACK_V1.key
-  const campaignLaunch = input.packKey === CAMPAIGN_LAUNCH_PACK_V1.key
+  const selectedPackKeys = new Set(input.packKeys ?? (input.packKey ? [input.packKey] : [REVENUE_RECOVERY_PACK_V0.key]))
+  const funnelNurture = selectedPackKeys.has(FUNNEL_NURTURE_PACK_V1.key)
+  const campaignLaunch = selectedPackKeys.has(CAMPAIGN_LAUNCH_PACK_V1.key)
   const organization = await client.query<{ id: string; kind: string }>(
     `SELECT id, kind FROM public.organizations WHERE id = $1 LIMIT 1`, [input.organizationId],
   )
@@ -145,28 +147,30 @@ export async function evaluateMissionReadiness(
   const crm = await client.query<{ id: string }>(
     `SELECT id FROM public.crm_instances WHERE organization_id = $1 AND status = 'active' LIMIT 1`, [input.organizationId],
   )
-  if (!campaignLaunch) checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
+  if (funnelNurture || !campaignLaunch) checks.push(check(Boolean(crm.rows[0]), 'crm_available', 'crm_unavailable', 'CRM ativo.', 'Nenhuma instância CRM ativa.', '/crm/settings'))
 
-  const claimTarget = campaignLaunch
-    ? { resourceKey: 'campaign.provider_account', scope: 'organization_campaign_launch' }
-    : funnelNurture
-    ? { resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }
-    : { resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }
-  const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(
-    `SELECT mission_id, mission_label, lease_expires_at
-     FROM public.action_resource_claims
-     WHERE organization_id = $1 AND ($2::UUID IS NULL OR mission_id <> $2) AND resource_key = $3
-       AND ($5::BOOLEAN OR scope = $4) AND active = TRUE AND lease_expires_at > NOW()
-     ORDER BY CASE mode WHEN 'exclusive' THEN 0 ELSE 1 END, acquired_at LIMIT 1`,
-    [input.organizationId, input.missionId ?? null, claimTarget.resourceKey, claimTarget.scope, campaignLaunch],
-  )
-  checks.push(resourceClaimReadinessCheck(claim.rows[0] ? {
-    missionId: claim.rows[0].mission_id,
-    missionLabel: claim.rows[0].mission_label,
-    leaseExpiresAt: claim.rows[0].lease_expires_at instanceof Date
-      ? claim.rows[0].lease_expires_at.toISOString()
-      : new Date(claim.rows[0].lease_expires_at).toISOString(),
-  } : null))
+  const claimTargets = [
+    ...(funnelNurture ? [{ resourceKey: 'crm.funnel_nurture_configuration', scope: 'organization_funnel_nurture' }] : []),
+    ...(campaignLaunch ? [{ resourceKey: 'campaign.provider_account', scope: 'organization_campaign_launch' }] : []),
+    ...(!funnelNurture && !campaignLaunch ? [{ resourceKey: 'crm.lead_population', scope: 'inactive_revenue_recovery' }] : []),
+  ]
+  for (const claimTarget of claimTargets) {
+    const claim = await client.query<{ mission_id: string; mission_label: string; lease_expires_at: string | Date }>(
+      `SELECT mission_id, mission_label, lease_expires_at
+       FROM public.action_resource_claims
+       WHERE organization_id = $1 AND ($2::UUID IS NULL OR mission_id <> $2) AND resource_key = $3
+         AND active = TRUE AND lease_expires_at > NOW()
+       ORDER BY CASE mode WHEN 'exclusive' THEN 0 ELSE 1 END, acquired_at LIMIT 1`,
+      [input.organizationId, input.missionId ?? null, claimTarget.resourceKey],
+    )
+    checks.push(resourceClaimReadinessCheck(claim.rows[0] ? {
+      missionId: claim.rows[0].mission_id,
+      missionLabel: claim.rows[0].mission_label,
+      leaseExpiresAt: claim.rows[0].lease_expires_at instanceof Date
+        ? claim.rows[0].lease_expires_at.toISOString()
+        : new Date(claim.rows[0].lease_expires_at).toISOString(),
+    } : null))
+  }
 
   if (!funnelNurture && !campaignLaunch) {
     const eligible = await client.query<{ count: number | string }>(
@@ -208,9 +212,10 @@ export async function evaluateMissionReadiness(
        WHERE organization_id=$1 AND status='connected' ORDER BY updated_at DESC LIMIT 1`, [input.organizationId],
     )
     checks.push(check(Boolean(provider.rows[0]), 'ads_provider_connected', 'ads_provider_unavailable', 'Provedor de mídia conectado.', 'Conecte Meta Ads ou Google Ads antes de preparar a campanha.', '/integrations'))
-  } else if (funnelNurture) {
+  }
+  if (funnelNurture) {
     checks.push(check(connected.has('email'), 'email_connected', 'email_unavailable', 'Conexão de e-mail ativa.', 'Conecte um provedor de e-mail antes de preparar a nutrição.', '/omnichannel/settings'))
-  } else {
+  } else if (!campaignLaunch) {
     checks.push(channelCheck(connected.has('email'), 'email', '/omnichannel/settings'))
     checks.push(channelCheck(connected.has('whatsapp'), 'whatsapp', '/omnichannel/settings'))
   }
@@ -223,15 +228,17 @@ export async function evaluateMissionReadiness(
   checks.push(check(input.agentHarnessHealthy, 'agent_harness_healthy', 'agent_harness_unavailable', 'Agent Harness disponível para planejamento.', 'Agent Harness indisponível; a missão não pode ser planejada.'))
   checks.push(check(input.mutationLeaseReady, 'mutation_lease_ready', 'mutation_lease_unavailable', 'Assinatura de mutações configurada.', 'A chave isolada de autorização de mutações não está configurada.'))
 
-  const expectedPack = campaignLaunch ? CAMPAIGN_LAUNCH_PACK_V1 : funnelNurture ? FUNNEL_NURTURE_PACK_V1 : REVENUE_RECOVERY_PACK_V0
-  const pack = await client.query<{ content_hash: string }>(
-    `SELECT version.content_hash FROM public.action_pack_versions version
-     JOIN public.action_packs pack ON pack.id = version.pack_id
-     WHERE pack.key = $1 AND version.semantic_version = $2
-       AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
-    [expectedPack.key, expectedPack.semanticVersion],
-  )
-  checks.push(check(pack.rows[0]?.content_hash === expectedPack.contentHash, `${expectedPack.key}_pack_ready`, `${expectedPack.key}_pack_missing_or_changed`, 'Action Pack publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
+  const definitions = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1]
+  for (const expectedPack of definitions.filter((item) => selectedPackKeys.has(item.key))) {
+    const pack = await client.query<{ content_hash: string }>(
+      `SELECT version.content_hash FROM public.action_pack_versions version
+       JOIN public.action_packs pack ON pack.id = version.pack_id
+       WHERE pack.key = $1 AND version.semantic_version = $2
+         AND version.status IN ('published_for_internal_pilot','published') LIMIT 1`,
+      [expectedPack.key, expectedPack.semanticVersion],
+    )
+    checks.push(check(pack.rows[0]?.content_hash === expectedPack.contentHash, `${expectedPack.key}_pack_ready`, `${expectedPack.key}_pack_missing_or_changed`, 'Action Pack publicado com hash esperado.', 'Pack publicado ausente ou com hash divergente.'))
+  }
 
   const availableChannels: MissionReadinessReport['availableChannels'] = campaignLaunch ? [] : funnelNurture ? ['email'] : ['human_task']
   return { ready: checks.every((item) => item.status !== 'block'), checks, availableChannels }

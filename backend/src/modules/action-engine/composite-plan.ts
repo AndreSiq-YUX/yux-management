@@ -60,6 +60,10 @@ export function compileCompositePlan(input: {
     ...step,
     stepKey: namespaced(selection.key, step.stepKey),
     dependsOn: step.dependsOn.map(dependency => namespaced(selection.key, dependency)),
+    parameters: namespaceRuntimeBindings(step.parameters, selection.key) as Record<string, unknown>,
+    outputBindings: Object.fromEntries(Object.entries(step.outputBindings).map(([key, binding]) => [key, {
+      ...binding, fromStep: namespaced(selection.key, binding.fromStep),
+    }])),
     ...(step.extensionPoint ? { extensionPoint: `${selection.key}.${step.extensionPoint}` } : {}),
   })))
   for (const binding of input.bindings) {
@@ -115,5 +119,11 @@ function aggregate(values: Array<Record<string, unknown>>) {
 function scaled(value: string) { const [whole, fraction = ''] = value.split('.'); return BigInt(whole || '0') * 1_000_000n + BigInt(fraction.slice(0, 6).padEnd(6, '0') || '0') }
 function decimal(value: bigint) { const sign=value<0n?'-':'';const absolute=value<0n?-value:value;const whole=absolute/1_000_000n;const fraction=(absolute%1_000_000n).toString().padStart(6,'0').replace(/0+$/,'');return `${sign}${whole}${fraction?`.${fraction}`:''}` }
 function namespaced(packKey: string, stepKey: string) { return `${packKey}.${stepKey}` }
+function namespaceRuntimeBindings(value: unknown, packKey: string): unknown {
+  if (Array.isArray(value)) return value.map(item => namespaceRuntimeBindings(item, packKey))
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string,unknown>).map(([key,item])=>[key,namespaceRuntimeBindings(item,packKey)]))
+  if (typeof value === 'string' && value.startsWith('binding:')) return `binding:${packKey}.${value.slice('binding:'.length)}`
+  return value
+}
 function bindingOrder(a: CompositeArtifactBinding,b: CompositeArtifactBinding){return `${a.fromPack}:${a.artifactKey}:${a.toPack}:${a.inputKey}`.localeCompare(`${b.fromPack}:${b.artifactKey}:${b.toPack}:${b.inputKey}`)}
 function stable(value: unknown): string { if(Array.isArray(value))return`[${value.map(stable).join(',')}]`;if(value&&typeof value==='object')return`{${Object.entries(value as Record<string,unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>`${JSON.stringify(key)}:${stable(item)}`).join(',')}}`;return JSON.stringify(value) }

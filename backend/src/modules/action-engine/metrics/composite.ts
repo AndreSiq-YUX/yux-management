@@ -21,6 +21,7 @@ export function aggregateCompositeMetricSnapshots(snapshots: PackMetricSnapshot[
   if (new Set(snapshots.map(item => item.packKey)).size !== snapshots.length) throw new Error('mission_composite_metric_pack_duplicate')
   return {
     packKey: 'composite', measuredAt,
+    packSnapshots: snapshots.map(snapshot => ({ ...snapshot })),
     metrics: Object.fromEntries(snapshots.flatMap(snapshot => Object.entries(snapshot.metrics).map(([key,value]) => [`${snapshot.packKey}.${key}`,value]))),
     evidence: Object.fromEntries(snapshots.flatMap(snapshot => Object.entries(snapshot.evidence).map(([key,value]) => [`${snapshot.packKey}.${key}`,value]))),
     signals: {

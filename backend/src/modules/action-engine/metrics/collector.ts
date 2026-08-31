@@ -28,6 +28,7 @@ export type PackMetricSnapshot = {
     providerPaused?: boolean
     reasons: string[]
   }
+  packSnapshots?: PackMetricSnapshot[]
 }
 
 export type PackEvaluationInput = {
