@@ -298,6 +298,598 @@
       "title": "EstimatedEconomicsWire",
       "type": "object"
     },
+    "MissionBriefWire": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptanceCriteria": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 100,
+          "title": "Acceptancecriteria",
+          "type": "array"
+        },
+        "constraints": {
+          "additionalProperties": true,
+          "title": "Constraints",
+          "type": "object"
+        },
+        "deadlineAt": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadlineat"
+        },
+        "maxExternalContacts": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxexternalcontacts"
+        },
+        "maxHumanHours": {
+          "anyOf": [
+            {
+              "pattern": "^\\d+(\\.\\d{1,6})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxhumanhours"
+        },
+        "maxTotalCostBrl": {
+          "anyOf": [
+            {
+              "pattern": "^\\d+(\\.\\d{1,6})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxtotalcostbrl"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "shadow",
+                "prepare",
+                "assisted",
+                "autonomous"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "objective": {
+          "default": "",
+          "maxLength": 8000,
+          "title": "Objective",
+          "type": "string"
+        },
+        "packKeys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Packkeys",
+          "type": "array"
+        },
+        "requestedOutcome": {
+          "default": "",
+          "maxLength": 240,
+          "title": "Requestedoutcome",
+          "type": "string"
+        },
+        "scopeHints": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Scopehints",
+          "type": "array"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "MissionBriefWire",
+      "type": "object"
+    },
+    "MissionContextReadinessWire": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "$ref": "#/$defs/MissionConversationAssumptionWire"
+          },
+          "maxItems": 100,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "knownFacts": {
+          "items": {
+            "$ref": "#/$defs/MissionConversationKnownFactWire"
+          },
+          "maxItems": 100,
+          "title": "Knownfacts",
+          "type": "array"
+        },
+        "missing": {
+          "items": {
+            "$ref": "#/$defs/MissionConversationMissingContextWire"
+          },
+          "maxItems": 100,
+          "title": "Missing",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "needs_information",
+            "needs_configuration",
+            "ready_for_brief_confirmation",
+            "ready_for_plan"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "MissionContextReadinessWire",
+      "type": "object"
+    },
+    "MissionConversationAssumptionWire": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "sourceRef": {
+          "anyOf": [
+            {
+              "pattern": "^(yux|customer|memory):[A-Za-z0-9._:@/-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourceref"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "MissionConversationAssumptionWire",
+      "type": "object"
+    },
+    "MissionConversationKnownFactWire": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "sourceRef": {
+          "pattern": "^(yux|customer|memory):[A-Za-z0-9._:@/-]+$",
+          "title": "Sourceref",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "sourceRef"
+      ],
+      "title": "MissionConversationKnownFactWire",
+      "type": "object"
+    },
+    "MissionConversationMissingContextWire": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "company",
+            "brand",
+            "offer",
+            "audience",
+            "budget",
+            "deadline",
+            "integration",
+            "permission",
+            "consent"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "correctionKey": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correctionkey"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "requiredFor": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Requiredfor",
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "category",
+        "reason"
+      ],
+      "title": "MissionConversationMissingContextWire",
+      "type": "object"
+    },
+    "MissionConversationQuestionWire": {
+      "additionalProperties": false,
+      "properties": {
+        "answerType": {
+          "enum": [
+            "text",
+            "number",
+            "currency",
+            "date",
+            "single_choice",
+            "multiple_choice",
+            "boolean"
+          ],
+          "title": "Answertype",
+          "type": "string"
+        },
+        "choices": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Choices",
+          "type": "array"
+        },
+        "defaultSourceRef": {
+          "anyOf": [
+            {
+              "pattern": "^(yux|customer|memory):[A-Za-z0-9._:@/-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaultsourceref"
+        },
+        "defaultValue": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaultvalue"
+        },
+        "key": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "priority": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "whyNeeded": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Whyneeded",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "whyNeeded",
+        "priority",
+        "answerType"
+      ],
+      "title": "MissionConversationQuestionWire",
+      "type": "object"
+    },
+    "MissionConversationTranscriptMessageWire": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "agent"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "MissionConversationTranscriptMessageWire",
+      "type": "object"
+    },
+    "MissionConversationTurnRequestWire": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedActionPacks": {
+          "items": {
+            "$ref": "#/$defs/SelectedPackWire"
+          },
+          "maxItems": 20,
+          "title": "Allowedactionpacks",
+          "type": "array"
+        },
+        "allowedCapabilityKeys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Allowedcapabilitykeys",
+          "type": "array"
+        },
+        "audience": {
+          "enum": [
+            "internal_operator",
+            "client_user"
+          ],
+          "title": "Audience",
+          "type": "string"
+        },
+        "client_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Id"
+        },
+        "contract_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contract Id"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "currentBrief": {
+          "additionalProperties": true,
+          "title": "Currentbrief",
+          "type": "object"
+        },
+        "operationalContext": {
+          "additionalProperties": true,
+          "title": "Operationalcontext",
+          "type": "object"
+        },
+        "organization_id": {
+          "minLength": 1,
+          "title": "Organization Id",
+          "type": "string"
+        },
+        "rollingSummary": {
+          "default": "",
+          "maxLength": 8000,
+          "title": "Rollingsummary",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "transcript": {
+          "items": {
+            "$ref": "#/$defs/MissionConversationTranscriptMessageWire"
+          },
+          "maxItems": 20,
+          "title": "Transcript",
+          "type": "array"
+        },
+        "user_message": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "User Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "organization_id",
+        "conversation_id",
+        "audience",
+        "user_message"
+      ],
+      "title": "MissionConversationTurnRequestWire",
+      "type": "object"
+    },
+    "MissionConversationTurnResponseWire": {
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "$ref": "#/$defs/MissionBriefWire"
+        },
+        "contextHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Contexthash",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "message",
+            "questions",
+            "brief_confirmation",
+            "blocked"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/MissionConversationQuestionWire"
+          },
+          "maxItems": 3,
+          "title": "Questions",
+          "type": "array"
+        },
+        "readiness": {
+          "$ref": "#/$defs/MissionContextReadinessWire"
+        },
+        "reply": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Reply",
+          "type": "string"
+        },
+        "retrievalTraceId": {
+          "minLength": 1,
+          "title": "Retrievaltraceid",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/MissionSourceRefWire"
+          },
+          "maxItems": 100,
+          "title": "Sources",
+          "type": "array"
+        },
+        "suggestedActions": {
+          "items": {
+            "$ref": "#/$defs/MissionSuggestedActionWire"
+          },
+          "maxItems": 8,
+          "title": "Suggestedactions",
+          "type": "array"
+        },
+        "understood": {
+          "additionalProperties": true,
+          "title": "Understood",
+          "type": "object"
+        },
+        "usage": {
+          "$ref": "#/$defs/ModelUsageWire"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "reply",
+        "readiness",
+        "brief",
+        "retrievalTraceId",
+        "contextHash",
+        "usage"
+      ],
+      "title": "MissionConversationTurnResponseWire",
+      "type": "object"
+    },
     "MissionPlanRequestWire": {
       "additionalProperties": false,
       "properties": {
@@ -476,6 +1068,185 @@
         }
       ],
       "title": "MissionPlanResponseWire",
+      "type": "object"
+    },
+    "MissionSourceRefWire": {
+      "additionalProperties": false,
+      "properties": {
+        "contentHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Contenthash",
+          "type": "string"
+        },
+        "displayMode": {
+          "enum": [
+            "named",
+            "generic",
+            "hidden"
+          ],
+          "title": "Displaymode",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "strategy_card",
+            "strategy_chunk",
+            "knowledge_source",
+            "knowledge_chunk",
+            "mission_memory"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "ref": {
+          "pattern": "^(yux|customer|memory):[A-Za-z0-9._:@/-]+$",
+          "title": "Ref",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 240,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "visibility": {
+          "enum": [
+            "internal_only",
+            "client_safe",
+            "internal",
+            "external",
+            "both"
+          ],
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "id",
+        "version",
+        "contentHash",
+        "visibility",
+        "title",
+        "displayMode"
+      ],
+      "title": "MissionSourceRefWire",
+      "type": "object"
+    },
+    "MissionSuggestedActionWire": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityKey": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capabilitykey"
+        },
+        "correctionKey": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correctionkey"
+        },
+        "key": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "quick_reply",
+            "open_correction",
+            "confirm_brief",
+            "cancel"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "packKey": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packkey"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "kind"
+      ],
+      "title": "MissionSuggestedActionWire",
+      "type": "object"
+    },
+    "ModelUsageWire": {
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": {
+          "minimum": 0,
+          "title": "Inputtokens",
+          "type": "integer"
+        },
+        "outputTokens": {
+          "minimum": 0,
+          "title": "Outputtokens",
+          "type": "integer"
+        },
+        "totalTokens": {
+          "minimum": 0,
+          "title": "Totaltokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "totalTokens"
+      ],
+      "title": "ModelUsageWire",
       "type": "object"
     },
     "OutputBindingWire": {
@@ -774,6 +1545,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "conversationRequest": {
+      "$ref": "#/$defs/MissionConversationTurnRequestWire"
+    },
+    "conversationResponse": {
+      "$ref": "#/$defs/MissionConversationTurnResponseWire"
+    },
     "request": {
       "$ref": "#/$defs/MissionPlanRequestWire"
     },
@@ -783,7 +1560,9 @@
   },
   "required": [
     "request",
-    "response"
+    "response",
+    "conversationRequest",
+    "conversationResponse"
   ],
   "title": "YUX Mission Supervisor Wire Contract v1",
   "type": "object"

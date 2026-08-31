@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
-import type { MissionPlanResponseWire } from './generated/mission-wire.js'
+import type { MissionConversationTurnResponseWire, MissionPlanResponseWire } from './generated/mission-wire.js'
 
 type MissionWireSchema = Record<string, unknown> & { $id: string }
 
@@ -10,6 +10,7 @@ const schema = loadMissionWireSchema()
 const ajv = new Ajv2020({ allErrors: true, discriminator: true, strict: true })
 ajv.addSchema(schema)
 const responseValidator = requireResponseValidator()
+const conversationResponseValidator = requireConversationResponseValidator()
 
 export function validateMissionPlanResponseWire(value: unknown): MissionPlanResponseWire {
   if (responseValidator(value)) return value as MissionPlanResponseWire
@@ -20,6 +21,17 @@ export function validateMissionPlanResponseWire(value: unknown): MissionPlanResp
 
 export function getMissionPlanResponseValidator(): ValidateFunction<unknown> {
   return responseValidator
+}
+
+export function validateMissionConversationTurnResponseWire(value: unknown): MissionConversationTurnResponseWire {
+  if (conversationResponseValidator(value)) return value as MissionConversationTurnResponseWire
+  const error = new Error('mission_conversation_wire_response_invalid') as Error & { validationErrors?: ErrorObject[] | null }
+  error.validationErrors = conversationResponseValidator.errors
+  throw error
+}
+
+export function getMissionConversationTurnResponseValidator(): ValidateFunction<unknown> {
+  return conversationResponseValidator
 }
 
 function loadMissionWireSchema(): MissionWireSchema {
@@ -39,5 +51,11 @@ function loadMissionWireSchema(): MissionWireSchema {
 function requireResponseValidator(): ValidateFunction<unknown> {
   const validator = ajv.getSchema(`${schema.$id}#/$defs/MissionPlanResponseWire`)
   if (!validator) throw new Error('mission_wire_response_schema_missing')
+  return validator
+}
+
+function requireConversationResponseValidator(): ValidateFunction<unknown> {
+  const validator = ajv.getSchema(`${schema.$id}#/$defs/MissionConversationTurnResponseWire`)
+  if (!validator) throw new Error('mission_conversation_wire_response_schema_missing')
   return validator
 }
