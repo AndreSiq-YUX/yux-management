@@ -12,6 +12,7 @@ const env = {
 const orgA = '00000000-0000-4000-8000-000000000001'
 const orgB = '00000000-0000-4000-8000-000000000002'
 const missionId = '00000000-0000-4000-8000-000000000003'
+const conversationId = '00000000-0000-4000-8000-000000000030'
 
 class Store implements AuthStore {
   hash = ''
@@ -27,6 +28,18 @@ class Pool {
     if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] as T[] }
     if (sql.includes('FROM public.memberships') && sql.includes('SELECT organization_id')) return { rows: [{ organization_id: orgA }] as T[] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [{ module_key: 'action_engine' }] as T[] }
+    if (sql.includes('INSERT INTO public.action_mission_conversations')) return { rows: [{
+      id: conversationId, organization_id: orgA, contract_id: null, mission_id: null,
+      status: 'collecting_context', title: 'Quero uma campanha', current_brief: {}, context_readiness: {},
+      last_context_hash: null, last_harness_run_id: null, version: 1,
+      created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(), updated_at: new Date(), completed_at: null,
+    }] as T[] }
+    if (sql.includes('INSERT INTO public.action_mission_conversation_messages')) return { rows: [{
+      id: '00000000-0000-4000-8000-000000000031', organization_id: orgA, conversation_id: conversationId,
+      sequence: 1, actor_type: 'user', message_kind: 'text', content: 'Quero uma campanha',
+      structured_payload: {}, source_refs: [], client_message_id: 'client-message-1', harness_run_id: null,
+      created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(),
+    }] as T[] }
     if (sql.includes("definition->'metricSpec'")) return { rows: [{ metric_spec: {}, content_hash: 'a'.repeat(64) }] as T[] }
     if (sql.includes('FROM public.action_missions') && sql.includes('FOR UPDATE')) {
       return { rows: [{
@@ -64,6 +77,29 @@ function auth(role: AuthUser['role']) {
 }
 
 describe('Action Engine routes', () => {
+  it('accepts a Mission conversation, persists the first message and queues processing', async () => {
+    const session = auth('yux_admin')
+    const added: Array<{ name: string; data: Record<string, unknown>; options?: { jobId?: string } }> = []
+    const conversationQueue: AppJobQueue = {
+      async add(name, data, options) { added.push({ name, data, options }); return { id: options?.jobId } },
+      async close() {},
+    }
+    app = await buildServer(env, { authStore: session.store, pool: new Pool() as never, jobQueue: conversationQueue })
+    const response = await app.inject({
+      method: 'POST', url: '/api/action-engine/mission-conversations', headers: {
+        ...session.headers, 'idempotency-key': 'conversation-create-1',
+      },
+      payload: { organizationId: orgA, message: 'Quero uma campanha', clientMessageId: 'client-message-1' },
+    })
+    expect(response.statusCode).toBe(202)
+    expect(response.json().conversation.id).toBe(conversationId)
+    expect(added).toHaveLength(1)
+    expect(added[0]).toMatchObject({
+      name: 'action-engine.processMissionConversation',
+      data: { conversationId, organizationId: orgA, requestedVersion: 1, audience: 'internal_operator' },
+    })
+  })
+
   it('requires authentication for the capability catalog', async () => {
     app = await buildServer(env, { authStore: new Store(), pool: new Pool() as never, jobQueue: queue })
     const response = await app.inject({ method: 'GET', url: '/api/action-engine/capabilities' })

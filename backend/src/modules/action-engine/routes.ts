@@ -32,6 +32,20 @@ import { createPublishedPackRegistry } from './pack-registry.js'
 import { approveAutonomyGrant, listAutonomyGrants, requestAutonomyGrant, revokeAutonomyGrant } from './autonomy-grants.js'
 import { listMissionLearning, reviewMissionLearningMemory } from './learning.js'
 import { completeShadowExperiment, createShadowExperiment, decideShadowExperiment, listLearningExperiments } from './experiments.js'
+import {
+  appendUserConversationMessage,
+  cancelMissionConversation,
+  createMissionConversation,
+  getMissionConversation,
+} from './mission-conversations.js'
+import {
+  appendMissionConversationMessageSchema,
+  cancelMissionConversationSchema,
+  createMissionConversationSchema,
+  missionConversationParamsSchema,
+  missionConversationQuerySchema,
+} from './mission-conversation-schemas.js'
+import { createBullMqJobId } from '../../jobs/queue.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -330,6 +344,83 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       agentHarnessHealthy: Boolean(app.config.YUX_AGENT_RUNTIME_URL),
       mutationLeaseReady: Boolean(app.config.ACTION_ENGINE_MUTATION_LEASE_SECRET),
     })
+  })
+
+  app.post('/mission-conversations', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const ctx = requireAuth(request)
+    const body = createMissionConversationSchema.safeParse(request.body)
+    if (!body.success) return reply.code(400).send({ error: 'invalid_mission_conversation' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
+    if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })
+    try {
+      const conversation = await createMissionConversation(app.pg as never, {
+        organizationId: body.data.organizationId,
+        contractId: body.data.contractId,
+        title: body.data.title ?? body.data.message.slice(0, 120),
+        firstMessage: body.data.message,
+        firstMessageClientId: body.data.clientMessageId,
+        createdBy: ctx.userId,
+        idempotencyKey,
+      })
+      const job = await app.jobQueue.add('action-engine.processMissionConversation', {
+        conversationId: conversation.id,
+        organizationId: conversation.organizationId,
+        requestedVersion: conversation.version,
+        audience: isInternalMissionActor(ctx.role) ? 'internal_operator' : 'client_user',
+      }, { jobId: createBullMqJobId('mission-conversation', conversation.id, conversation.version) })
+      return reply.code(202).send({ conversation, jobId: job.id })
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.get('/mission-conversations/:conversationId', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionConversationParamsSchema.safeParse(request.params)
+    const query = missionConversationQuerySchema.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_mission_conversation_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    const conversation = await getMissionConversation(app.pg, params.data.conversationId, query.data.organizationId)
+    if (!conversation) return reply.code(404).send({ error: 'mission_conversation_not_found' })
+    return conversation
+  })
+
+  app.post('/mission-conversations/:conversationId/messages', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionConversationParamsSchema.safeParse(request.params)
+    const body = appendMissionConversationMessageSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_conversation_message' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try {
+      const conversation = await appendUserConversationMessage(app.pg as never, {
+        organizationId: body.data.organizationId, conversationId: params.data.conversationId,
+        expectedVersion: body.data.expectedVersion, clientMessageId: body.data.clientMessageId,
+        content: body.data.message, createdBy: ctx.userId,
+      })
+      const job = await app.jobQueue.add('action-engine.processMissionConversation', {
+        conversationId: conversation.id, organizationId: conversation.organizationId,
+        requestedVersion: conversation.version,
+        audience: isInternalMissionActor(ctx.role) ? 'internal_operator' : 'client_user',
+      }, { jobId: createBullMqJobId('mission-conversation', conversation.id, conversation.version) })
+      return reply.code(202).send({ conversation, jobId: job.id })
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.post('/mission-conversations/:conversationId/cancel', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionConversationParamsSchema.safeParse(request.params)
+    const body = cancelMissionConversationSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_conversation_cancel' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    try {
+      return await cancelMissionConversation(app.pg as never, {
+        organizationId: body.data.organizationId, conversationId: params.data.conversationId,
+        expectedVersion: body.data.expectedVersion,
+      })
+    } catch (error) { return sendDomainError(reply, error) }
   })
 
   app.get('/missions', async (request, reply) => {
@@ -1114,6 +1205,10 @@ function readIdempotencyKey(value: string | string[] | undefined): string | null
   return key?.trim().slice(0, 200) || null
 }
 
+function isInternalMissionActor(role: string): boolean {
+  return role === 'yux_admin' || role === 'yux_operator' || role === 'admin'
+}
+
 async function transaction<T>(pool: FastifyInstance['pg'], work: (client: Queryable) => Promise<T>): Promise<T> {
   const client = await pool.connect()
   try {
@@ -1148,6 +1243,12 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_recipe_not_found: 404, mission_recipe_hash_mismatch: 409, mission_recipe_pack_unavailable: 409,
     mission_recipe_pack_selection_invalid: 409, mission_recipe_non_editable_default_changed: 409, mission_sandbox_not_entitled: 403,
     sandbox_manifest_not_found: 404, sandbox_seed_persistence_failed: 500,
+    mission_conversation_not_found: 404,
+    mission_conversation_version_conflict: 409,
+    mission_conversation_idempotency_conflict: 409,
+    mission_conversation_not_writable: 409,
+    mission_conversation_not_cancellable: 409,
+    mission_conversation_already_attached: 409,
   }
   return reply.code(statusCode[code] ?? 500).send({ error: statusCode[code] ? code : 'internal_error' })
 }

@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { JOB_NAMES, createBullMqJobId, createIdempotencyKey } from '../src/jobs/queue.js'
 
 describe('job idempotency', () => {
+  it('registers durable Mission conversation processing', () => {
+    expect(JOB_NAMES).toContain('action-engine.processMissionConversation')
+    expect(createIdempotencyKey('action-engine.processMissionConversation', {
+      conversationId: 'conversation-1', organizationId: 'org-1', requestedVersion: 2,
+    })).toBe(createIdempotencyKey('action-engine.processMissionConversation', {
+      requestedVersion: 2, organizationId: 'org-1', conversationId: 'conversation-1',
+    }))
+  })
   it('registers provider-effect reconciliation as a durable job', () => {
     expect(JOB_NAMES).toContain('action-engine.reconcileProviderEffect')
     expect(createIdempotencyKey('action-engine.reconcileProviderEffect', {

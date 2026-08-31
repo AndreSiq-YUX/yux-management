@@ -15,7 +15,7 @@ import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
 import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './jobs/handlers/company-intelligence.js'
-import { handleActionEngineCollectMetrics, handleActionEngineDecisionNotification, handleActionEngineDecisionNotificationDispatch, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEngineLearning, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule, handleCampaignOptimizationCheckpoints } from './jobs/handlers/action-engine.js'
+import { handleActionEngineCollectMetrics, handleActionEngineDecisionNotification, handleActionEngineDecisionNotificationDispatch, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEngineLearning, handleActionEnginePlanMission, handleActionEngineProcessMissionConversation, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule, handleCampaignOptimizationCheckpoints } from './jobs/handlers/action-engine.js'
 
 type WorkerResult = {
   ok: true
@@ -48,6 +48,7 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'automation.dispatch') { await handleAutomationDispatch(pool, env, job.data); return { ok: true } }
   if (job.name === 'events.dispatchPending') { await handleDomainEventDispatch(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.planMission') { await handleActionEnginePlanMission(pool, env, job.data, maintenanceQueue); return { ok: true } }
+  if (job.name === 'action-engine.processMissionConversation') { await handleActionEngineProcessMissionConversation(pool, env, job.data); return { ok: true } }
   if (job.name === 'action-engine.scheduleReadyActions') { await handleActionEngineSchedule(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.executeAction') { await handleActionEngineExecute(pool, maintenanceQueue, job.data, `worker:${job.id ?? 'unknown'}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET); return { ok: true } }
   if (job.name === 'action-engine.reconcileProviderEffect') { await handleActionEngineReconcileProviderEffect(pool, maintenanceQueue, job.data); return { ok: true } }

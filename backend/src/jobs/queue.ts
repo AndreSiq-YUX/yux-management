@@ -12,6 +12,7 @@ export const JOB_NAMES = [
   'events.consume.scoring',
   'events.consume.missionObserver',
   'action-engine.planMission',
+  'action-engine.processMissionConversation',
   'action-engine.scheduleReadyActions',
   'action-engine.executeAction',
   'action-engine.reconcileProviderEffect',

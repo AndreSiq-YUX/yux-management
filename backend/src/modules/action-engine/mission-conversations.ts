@@ -237,6 +237,46 @@ export async function attachMissionToConversation(pool: Connectable, input: {
   })
 }
 
+export async function cancelMissionConversation(pool: Connectable, input: {
+  organizationId: string
+  conversationId: string
+  expectedVersion: number
+}): Promise<MissionConversation> {
+  return inTransaction(pool, async (client) => {
+    const current = await lockConversation(client, input.conversationId, input.organizationId)
+    if (current.status === 'cancelled') return getRequiredMissionConversation(client, input.conversationId, input.organizationId)
+    if (current.mission_id || ['planning', 'awaiting_plan_approval', 'converted'].includes(current.status)) {
+      throw new Error('mission_conversation_not_cancellable')
+    }
+    if (current.version !== input.expectedVersion) throw new Error('mission_conversation_version_conflict')
+    const updated = await client.query<ConversationRow>(
+      `UPDATE public.action_mission_conversations
+       SET status = 'cancelled', completed_at = NOW(), version = version + 1
+       WHERE id = $1 AND organization_id = $2 AND version = $3
+       RETURNING ${CONVERSATION_COLUMNS}`,
+      [input.conversationId, input.organizationId, input.expectedVersion],
+    )
+    if (!updated.rows[0]) throw new Error('mission_conversation_version_conflict')
+    return getRequiredMissionConversation(client, input.conversationId, input.organizationId)
+  })
+}
+
+export async function recordMissionConversationProcessingError(client: Queryable, input: {
+  organizationId: string
+  conversationId: string
+  expectedVersion: number
+  errorCode: string
+}): Promise<void> {
+  await client.query(
+    `UPDATE public.action_mission_conversations
+     SET context_readiness = context_readiness || jsonb_build_object(
+       'processingError', jsonb_build_object('code', $4, 'retryable', TRUE, 'recordedAt', NOW())
+     )
+     WHERE id = $1 AND organization_id = $2 AND version = $3 AND status = 'collecting_context'`,
+    [input.conversationId, input.organizationId, input.expectedVersion, input.errorCode],
+  )
+}
+
 async function lockConversation(client: Queryable, conversationId: string, organizationId: string): Promise<ConversationRow> {
   const result = await client.query<ConversationRow>(
     `SELECT ${CONVERSATION_COLUMNS} FROM public.action_mission_conversations

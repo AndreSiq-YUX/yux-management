@@ -32,10 +32,136 @@ import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-re
 import { buildMissionDecisionSummary } from '../../modules/action-engine/decision-summary.js'
 import { deliverDecisionNotification, enqueuePendingDecisionNotifications, persistDecisionNotificationSchedule } from '../../modules/action-engine/decision-notifications.js'
 import { decideCampaignOptimization } from '../../modules/action-engine/capabilities/campaign-optimization.js'
+import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js'
+import { buildMissionOperationalContext } from '../../modules/action-engine/context-builder.js'
+import {
+  completeAgentConversationTurn,
+  getMissionConversation,
+  recordMissionConversationProcessingError,
+} from '../../modules/action-engine/mission-conversations.js'
+import { verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
+import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../modules/action-engine/generated/mission-wire.js'
+import type { MissionConversationMessage } from '../../modules/action-engine/types.js'
 
 type Pool = {
   query: Queryable['query']
   connect(): Promise<Queryable & { release(): void }>
+}
+
+export async function handleActionEngineProcessMissionConversation(
+  pool: Pool,
+  env: AppEnv,
+  data: Record<string, unknown>,
+  dependencies: {
+    invokeTurn?: (env: AppEnv, request: MissionConversationTurnRequestWire) => Promise<MissionConversationTurnResponseWire>
+  } = {},
+) {
+  const conversationId = typeof data.conversationId === 'string' ? data.conversationId : ''
+  const organizationId = typeof data.organizationId === 'string' ? data.organizationId : ''
+  const requestedVersion = Number(data.requestedVersion)
+  const audience = data.audience === 'internal_operator' ? 'internal_operator' : 'client_user'
+  if (!conversationId || !organizationId || !Number.isInteger(requestedVersion) || requestedVersion < 1) {
+    throw new Error('mission_conversation_job_invalid')
+  }
+  const conversation = await getMissionConversation(pool, conversationId, organizationId)
+  if (!conversation || conversation.version !== requestedVersion || conversation.status !== 'collecting_context') {
+    return { skipped: true, reason: 'mission_conversation_job_stale' }
+  }
+  const userMessage = [...conversation.messages].reverse().find((message) => message.actorType === 'user')
+  if (!userMessage) throw new Error('mission_conversation_user_message_missing')
+  const registry = createActionEngineCapabilityRegistry()
+  const metadata = registry.listMetadata()
+  const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
+  const allowedModules = stringArray(conversation.currentBrief.allowedModules)
+  const operational = await buildMissionOperationalContext(pool, {
+    organizationId,
+    ...(conversation.contractId ? { contractId: conversation.contractId } : {}),
+    query: userMessage.content,
+    requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages'],
+    capabilityManifest: manifest.entries,
+    packKeys: stringArray(conversation.currentBrief.packKeys),
+  })
+  const tenant = await pool.query<{ client_id: string | null }>(
+    `SELECT client_id FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
+  )
+  const bounded = boundTranscript(conversation.messages)
+  const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1]
+  const request: MissionConversationTurnRequestWire = {
+    schemaVersion: 1,
+    organization_id: organizationId,
+    client_id: tenant.rows[0]?.client_id ?? undefined,
+    contract_id: conversation.contractId,
+    conversation_id: conversation.id,
+    audience,
+    user_message: userMessage.content,
+    transcript: bounded.transcript as MissionConversationTurnRequestWire['transcript'],
+    rollingSummary: bounded.rollingSummary,
+    currentBrief: conversation.currentBrief,
+    operationalContext: operational,
+    allowedActionPacks: packs.map((pack) => ({
+      key: pack.key, version: pack.semanticVersion, contentHash: pack.contentHash,
+    })) as MissionConversationTurnRequestWire['allowedActionPacks'],
+    allowedCapabilityKeys: manifest.entries.map((item) => item.key),
+  }
+  const startedAt = Date.now()
+  try {
+    const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request)
+    await verifyMissionKnowledgeContext(pool, {
+      organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
+    })
+    const status = response.kind === 'brief_confirmation'
+      ? 'brief_confirmation'
+      : response.kind === 'blocked' ? 'blocked' : 'awaiting_user'
+    const messageKind = response.kind === 'questions'
+      ? 'question'
+      : response.kind === 'brief_confirmation' ? 'brief' : response.kind === 'blocked' ? 'error' : 'text'
+    const updated = await completeAgentConversationTurn(pool, {
+      organizationId, conversationId, expectedVersion: requestedVersion, status, messageKind,
+      content: response.reply,
+      structuredPayload: {
+        kind: response.kind, understood: response.understood, questions: response.questions,
+        readiness: response.readiness, brief: response.brief, suggestedActions: response.suggestedActions,
+        usage: response.usage, latencyMs: Date.now() - startedAt,
+      },
+      sourceRefs: (response.sources ?? []) as unknown as Array<Record<string, unknown>>,
+      harnessRunId: response.retrievalTraceId,
+      contextHash: response.contextHash,
+      currentBrief: response.brief as unknown as Record<string, unknown>,
+      contextReadiness: response.readiness as unknown as Record<string, unknown>,
+    })
+    return { skipped: false, conversation: updated }
+  } catch (error) {
+    await recordMissionConversationProcessingError(pool, {
+      organizationId, conversationId, expectedVersion: requestedVersion,
+      errorCode: safeConversationError(error),
+    })
+    throw error
+  }
+}
+
+function boundTranscript(messages: MissionConversationMessage[]) {
+  const recent = messages.slice(-20)
+  let remaining = 20_000
+  const transcript = recent.map((message) => {
+    const content = message.content.slice(0, Math.max(0, remaining))
+    remaining -= content.length
+    return { role: message.actorType === 'user' ? 'user' as const : 'agent' as const, content }
+  }).filter((message) => message.content.length > 0)
+  const older = messages.slice(0, Math.max(0, messages.length - 20))
+  const rollingSummary = older.map((message) => `${message.actorType}: ${message.content}`).join('\n').slice(-8_000)
+  return { transcript, rollingSummary }
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function safeConversationError(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'unknown'
+  if (message.includes('timeout') || message.includes('aborted')) return 'harness_timeout'
+  if (message.includes('mission_conversation_runtime_503')) return 'harness_unavailable'
+  if (message.includes('mission_source_')) return 'source_verification_failed'
+  return 'conversation_processing_failed'
 }
 
 export async function handleActionEngineSchedule(pool: Pool, queue: AppJobQueue, data: Record<string, unknown>) {
