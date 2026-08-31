@@ -269,6 +269,7 @@ class SupabaseStrategyKnowledgeStore:
 class StrategyRetrievalService:
     store: StrategyKnowledgeStore
     max_context_chars: int = 5000
+    embedding_service: Any | None = None
 
     def retrieve_strategy_context(
         self,
@@ -286,6 +287,10 @@ class StrategyRetrievalService:
         query_embedding: list[float] | None = None,
     ) -> dict[str, Any]:
         clean_query = " ".join(query.split())
+        embedding_status = "provided" if query_embedding is not None else "unavailable"
+        if query_embedding is None and self.embedding_service is not None:
+            query_embedding = self.embedding_service.embed_query(clean_query)
+            embedding_status = "available" if query_embedding is not None else "unavailable"
         query_tokens = _tokens(clean_query)
         filters = {
             "profile_key": profile_key,
@@ -293,6 +298,7 @@ class StrategyRetrievalService:
             "intent": intent,
             "portal_safe": portal_safe,
             "include_images": include_images,
+            "embedding_status": embedding_status,
         }
 
         tenant_visible = lambda records: self._filter_tenant_records(
@@ -348,6 +354,7 @@ class StrategyRetrievalService:
             "stage": stage,
             "include_images": include_images,
             "portal_safe": portal_safe,
+            "embedding_status": embedding_status,
             "filters": filters,
             "result_card_ids": [item["id"] for item in cards if item.get("id")],
             "result_chunk_ids": [item["id"] for item in chunks if item.get("id")],

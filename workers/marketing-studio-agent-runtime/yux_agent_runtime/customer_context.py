@@ -118,10 +118,17 @@ class CustomerContextService:
             "brand_rules": brand_rules,
             "visual_identity": (brand or {}).get("visual_identity") or {},
             "products": [self._product_summary(item) for item in products[:10]],
+            "product_profiles": [self._safe_product(item) for item in products[:10]],
             "knowledge_snippets": snippets,
             "company_chunks": context_items,
             "company_context_source_ids": source_ids,
             "brand_profile_id": brand.get("id") if brand else None,
+            "context_coverage": {
+                "company": bool(company),
+                "brand": bool(brand),
+                "products": len(products),
+                "customerKnowledge": len(context_items),
+            },
         }
 
     @staticmethod
@@ -279,3 +286,20 @@ class CustomerContextService:
             for part in (product.get("name"), product.get("description"), product.get("value_proposition"))
             if str(part or "").strip()
         )[:1000]
+
+    @staticmethod
+    def _safe_product(product: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: product.get(key)
+            for key in (
+                "id",
+                "name",
+                "description",
+                "value_proposition",
+                "target_audience",
+                "proof_points",
+                "objections",
+                "cta",
+            )
+            if product.get(key) not in (None, "", [], {})
+        }

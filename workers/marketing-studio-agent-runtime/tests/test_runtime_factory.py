@@ -2,11 +2,30 @@ import json
 import unittest
 
 from yux_agent_runtime.providers import OpenRouterClient
-from yux_agent_runtime.runtime_factory import build_strategy_workflow_engine
+from yux_agent_runtime.runtime_factory import RuntimeStrategyKnowledgeStore, build_strategy_workflow_engine
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 
 
 class RuntimeFactoryTest(unittest.TestCase):
+    def test_runtime_strategy_store_joins_latest_card_and_chunk_embeddings(self):
+        store = InMemoryAgentRuntimeStore({
+            "yux_strategy_concept_cards": [{"id": "card-1", "concept": "Card"}],
+            "yux_strategy_source_chunks": [{"id": "chunk-1", "chunk_text": "Chunk"}],
+            "yux_strategy_card_embeddings": [
+                {"card_id": "card-1", "embedding_values": [0.0, 1.0], "content_hash": "old", "created_at": "2026-01-01"},
+                {"card_id": "card-1", "embedding_values": [1.0, 0.0], "content_hash": "new", "created_at": "2026-02-01"},
+            ],
+            "yux_strategy_chunk_embeddings": [
+                {"chunk_id": "chunk-1", "embedding_values": [0.5, 0.5], "content_hash": "chunk", "created_at": "2026-02-01"},
+            ],
+        })
+
+        knowledge = RuntimeStrategyKnowledgeStore(store)
+
+        self.assertEqual(knowledge.list_cards()[0]["embedding_values"], [1.0, 0.0])
+        self.assertEqual(knowledge.list_cards()[0]["embedding_content_hash"], "new")
+        self.assertEqual(knowledge.list_chunks()[0]["embedding_values"], [0.5, 0.5])
+
     def test_factory_loads_profile_route_rag_workflow_and_autonomy_from_store(self):
         store = InMemoryAgentRuntimeStore({
             "yux_strategy_agent_profiles": [{

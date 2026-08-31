@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from yux_agent_runtime.api import create_app
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 from yux_agent_runtime.workflow import estimate_workflow_credits
+from yux_agent_runtime.mission_contracts import MissionConversationTurnResponseWire
+from yux_agent_runtime.providers import ProviderRequestError
 
 
 AUTH = {"Authorization": "Bearer test-runtime-token"}
@@ -50,8 +52,29 @@ class EstimateWorkflowCreditsTest(unittest.TestCase):
 
 
 class ApiCreditsTest(unittest.TestCase):
-    def _client(self, store: BillingStore) -> TestClient:
-        return TestClient(create_app(store))
+    def _client(self, store: BillingStore, conversation_workflow=None) -> TestClient:
+        return TestClient(create_app(store, mission_conversation_workflow=conversation_workflow))
+
+    @staticmethod
+    def _mission_turn_request():
+        return {
+            "schemaVersion": 1, "organization_id": "org-1", "client_id": "client-1",
+            "contract_id": "contract-1", "conversation_id": "conversation-1",
+            "audience": "client_user", "user_message": "Quero uma campanha",
+            "transcript": [], "rollingSummary": "", "currentBrief": {},
+            "operationalContext": {}, "allowedActionPacks": [], "allowedCapabilityKeys": [],
+        }
+
+    @staticmethod
+    def _conversation_response():
+        return MissionConversationTurnResponseWire.model_validate({
+            "schemaVersion": 1, "kind": "message", "reply": "Vamos começar.",
+            "understood": {}, "questions": [],
+            "readiness": {"status": "needs_information", "knownFacts": [], "assumptions": [], "missing": []},
+            "brief": {"objective": "", "requestedOutcome": ""}, "suggestedActions": [], "sources": [],
+            "retrievalTraceId": "trace-1", "contextHash": "a" * 64,
+            "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+        })
 
     def test_execute_workflow_ignores_caller_estimate_and_debits_server_value(self):
         store = BillingStore()
@@ -140,6 +163,57 @@ class ApiCreditsTest(unittest.TestCase):
         jobs = store.tables["agent_queue_jobs"]
         self.assertEqual(jobs[0]["status"], "dead_letter")
         self.assertEqual(jobs[0]["last_error"], "insufficient_ai_credits_or_invalid_wallet")
+
+    def test_mission_conversation_turn_debits_one_server_side_credit(self):
+        class Conversation:
+            def respond(self, _request):
+                return ApiCreditsTest._conversation_response()
+
+        store = BillingStore()
+        response = self._client(store, Conversation()).post(
+            "/missions/conversations/turn", headers=AUTH, json=self._mission_turn_request()
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["retrievalTraceId"], "trace-1")
+        self.assertEqual(store.reservations[0]["credits"], 1)
+        self.assertEqual(store.reservations[0]["action"], "agent_runtime_mission_conversation_turn")
+
+    def test_mission_conversation_turn_returns_402_before_provider_when_credits_are_insufficient(self):
+        class Conversation:
+            called = False
+
+            def respond(self, _request):
+                self.called = True
+                return ApiCreditsTest._conversation_response()
+
+        conversation = Conversation()
+        response = self._client(BillingStore(balance=0), conversation).post(
+            "/missions/conversations/turn", headers=AUTH, json=self._mission_turn_request()
+        )
+
+        self.assertEqual(response.status_code, 402)
+        self.assertFalse(conversation.called)
+
+    def test_mission_conversation_turn_maps_contract_and_provider_failures(self):
+        class InvalidContract:
+            def respond(self, _request):
+                raise ValueError("mission_conversation_question_keys_duplicate")
+
+        class UnavailableProvider:
+            def respond(self, _request):
+                raise ProviderRequestError("timeout")
+
+        invalid = self._client(BillingStore(), InvalidContract()).post(
+            "/missions/conversations/turn", headers=AUTH, json=self._mission_turn_request()
+        )
+        unavailable = self._client(BillingStore(), UnavailableProvider()).post(
+            "/missions/conversations/turn", headers=AUTH, json=self._mission_turn_request()
+        )
+
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(unavailable.status_code, 503)
+        self.assertEqual(unavailable.json()["detail"], "mission_conversation_provider_unavailable")
 
 
 if __name__ == "__main__":

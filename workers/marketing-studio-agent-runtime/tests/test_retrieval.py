@@ -269,6 +269,46 @@ class RetrievalTest(unittest.TestCase):
         )
         self.assertNotIn("card-org-b", {item["id"] for item in result["cards"]})
 
+    def test_uses_existing_embedding_service_and_records_semantic_availability(self):
+        class Embeddings:
+            def embed_query(self, _query):
+                return [1.0, 0.0]
+
+        cards = [
+            {**CARDS[0], "id": "card-keyword", "embedding_values": [0.0, 1.0]},
+            {**CARDS[0], "id": "card-semantic", "concept": "Outro conceito", "embedding_values": [1.0, 0.0]},
+        ]
+        service = StrategyRetrievalService(
+            InMemoryStrategyKnowledgeStore(cards=cards),
+            embedding_service=Embeddings(),
+        )
+        result = service.retrieve_strategy_context(
+            profile_key="growth_strategist", organization_id="org-1", client_id="client-1",
+            intent="diagnosis", stage="recurring_customer", query="recorrencia",
+            max_cards=2, max_chunks=0,
+        )
+
+        self.assertEqual(result["cards"][0]["id"], "card-semantic")
+        self.assertEqual(result["retrieval_log"]["embedding_status"], "available")
+
+    def test_keeps_keyword_fallback_when_embedding_is_unavailable(self):
+        class Embeddings:
+            def embed_query(self, _query):
+                return None
+
+        service = StrategyRetrievalService(
+            InMemoryStrategyKnowledgeStore(cards=CARDS, chunks=CHUNKS),
+            embedding_service=Embeddings(),
+        )
+        result = service.retrieve_strategy_context(
+            profile_key="ai_sdr_comercial_1", organization_id=None, client_id=None,
+            intent="qualification", stage="raised_hand", query="spin qualificacao",
+            max_cards=2, max_chunks=2,
+        )
+
+        self.assertEqual(result["cards"][0]["id"], "card-sdr-spin")
+        self.assertEqual(result["retrieval_log"]["embedding_status"], "unavailable")
+
 
 if __name__ == "__main__":
     unittest.main()

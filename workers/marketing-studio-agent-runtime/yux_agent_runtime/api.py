@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
@@ -15,6 +15,8 @@ from .runtime_factory import build_mission_supervisor, build_strategy_workflow_e
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
+from .mission_contracts import MissionConversationTurnRequestWire
+from .mission_conversation import MissionConversationWorkflow
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
 
 
@@ -93,6 +95,7 @@ def create_app(
     store: AgentRuntimeStore | None = None,
     knowledge_service: KnowledgeIntelligenceService | None = None,
     mission_supervisor: MissionSupervisor | None = None,
+    mission_conversation_workflow: MissionConversationWorkflow | None = None,
 ) -> FastAPI:
     if not _runtime_token():
         raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
@@ -104,6 +107,7 @@ def create_app(
     engine: StrategyWorkflowEngine | None = StrategyWorkflowEngine(runtime_store) if store is not None else None
     curator = knowledge_service or KnowledgeIntelligenceService.from_env()
     supervisor = mission_supervisor
+    conversation = mission_conversation_workflow
 
     def workflow_engine() -> StrategyWorkflowEngine:
         nonlocal engine
@@ -116,6 +120,12 @@ def create_app(
         if supervisor is None:
             supervisor = build_mission_supervisor(runtime_store)
         return supervisor
+
+    def conversation_workflow() -> MissionConversationWorkflow:
+        nonlocal conversation
+        if conversation is None:
+            conversation = MissionConversationWorkflow(workflow_engine())
+        return conversation
 
     def validate_tenant(organization_id: str | None, client_id: str | None = None, contract_id: str | None = None) -> None:
         if not organization_id:
@@ -187,6 +197,34 @@ def create_app(
         except MissionSupervisorError as error:
             status_code = 503 if str(error) == "mission_supervisor_model_unavailable" else 422
             raise HTTPException(status_code=status_code, detail=str(error)) from error
+
+    @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])
+    def mission_conversation_turn(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        try:
+            reserve_billable_credits(
+                organization_id=request.organization_id,
+                client_id=request.client_id,
+                contract_id=request.contract_id,
+                credits=1,
+                action="agent_runtime_mission_conversation_turn",
+            )
+        except RuntimeError as error:
+            raise HTTPException(status_code=402, detail=str(error)) from error
+        try:
+            response = conversation_workflow().respond(request)
+            return response.model_dump()
+        except (ValidationError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except ProviderRequestError as error:
+            raise HTTPException(status_code=503, detail="mission_conversation_provider_unavailable") from error
+        except RuntimeError as error:
+            if str(error) in (
+                "agent_harness_not_configured",
+                "agent_provider_output_required",
+            ) or str(error).startswith("strategy_profile_not_configured"):
+                raise HTTPException(status_code=503, detail="mission_conversation_provider_unavailable") from error
+            raise
 
     @app.post("/knowledge/curate", dependencies=[Depends(require_runtime_token)])
     def curate_knowledge(request: CurateKnowledgeRequest) -> dict[str, Any]:

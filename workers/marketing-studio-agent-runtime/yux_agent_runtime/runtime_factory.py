@@ -83,14 +83,53 @@ class RuntimeStrategyKnowledgeStore:
         return normalized
 
     def list_cards(self) -> list[dict[str, Any]]:
-        return self._normalize_profile_access(
-            self.store.list("yux_strategy_concept_cards", limit=self.candidate_limit)
+        return self._with_latest_embedding(
+            self._normalize_profile_access(
+                self.store.list("yux_strategy_concept_cards", limit=self.candidate_limit)
+            ),
+            self.store.list("yux_strategy_card_embeddings", limit=self.candidate_limit * 3),
+            "card_id",
         )
 
     def list_chunks(self) -> list[dict[str, Any]]:
-        return self._normalize_profile_access(
-            self.store.list("yux_strategy_source_chunks", limit=self.candidate_limit)
+        return self._with_latest_embedding(
+            self._normalize_profile_access(
+                self.store.list("yux_strategy_source_chunks", limit=self.candidate_limit)
+            ),
+            self.store.list("yux_strategy_chunk_embeddings", limit=self.candidate_limit * 3),
+            "chunk_id",
         )
+
+    @staticmethod
+    def _with_latest_embedding(
+        records: list[dict[str, Any]],
+        embeddings: list[dict[str, Any]],
+        foreign_key: str,
+    ) -> list[dict[str, Any]]:
+        latest: dict[str, dict[str, Any]] = {}
+        for embedding in embeddings:
+            record_id = str(embedding.get(foreign_key) or "")
+            if not record_id:
+                continue
+            current = latest.get(record_id)
+            if current is None or str(embedding.get("created_at") or "") > str(current.get("created_at") or ""):
+                latest[record_id] = embedding
+        return [
+            {
+                **record,
+                **(
+                    {
+                        "embedding_values": latest[str(record.get("id"))].get("embedding_values")
+                        or latest[str(record.get("id"))].get("embedding"),
+                        "embedding_content_hash": latest[str(record.get("id"))].get("content_hash"),
+                        "embedding_model": latest[str(record.get("id"))].get("embedding_model"),
+                    }
+                    if str(record.get("id")) in latest
+                    else {}
+                ),
+            }
+            for record in records
+        ]
 
     def list_assets(self) -> list[dict[str, Any]]:
         return self._normalize_profile_access(
@@ -210,7 +249,11 @@ def build_strategy_workflow_engine(
         budget_policies=_active(store.list("agent_budget_policies", limit=500)),
         llm_client=llm_client or OpenRouterClient.from_env(),
     )
-    retrieval = StrategyRetrievalService(RuntimeStrategyKnowledgeStore(store))
+    embedding_service = QueryEmbeddingService(JinaClient.from_env())
+    retrieval = StrategyRetrievalService(
+        RuntimeStrategyKnowledgeStore(store),
+        embedding_service=embedding_service,
+    )
     workflows = _latest_by(_active(store.list("strategy_workflow_specs", limit=200)), "workflow_key")
     autonomy_policies = _active(store.list("agent_autonomy_policies", limit=1000))
     return StrategyWorkflowEngine(
@@ -218,7 +261,7 @@ def build_strategy_workflow_engine(
         harness=harness,
         agent_profiles=agents,
         retrieval_service=retrieval,
-        customer_context_service=CustomerContextService(store, embedding_service=QueryEmbeddingService(JinaClient.from_env())),
+        customer_context_service=CustomerContextService(store, embedding_service=embedding_service),
         workflow_specs=workflows,
         default_autonomy_policies=autonomy_policies,
     )

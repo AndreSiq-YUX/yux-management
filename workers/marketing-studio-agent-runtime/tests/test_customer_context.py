@@ -15,7 +15,12 @@ class CustomerContextTest(unittest.TestCase):
                 {"id": "brand-a", "organization_id": "org-a", "contract_id": "contract-a", "status": "active", "tone_of_voice": "consultivo", "brand_voice_summary": "Clara e direta", "vocabulary_dont": ["garantido"], "forbidden_topics": ["resultado garantido"], "compliance_notes": "Não prometer resultados.", "visual_guidelines": "minimalista", "visual_identity": {"logoUrl": "https://yux.com.br/logo.svg", "colors": ["#6d28d9"]}},
                 {"id": "brand-b", "organization_id": "org-b", "contract_id": "contract-b", "status": "active", "brand_voice_summary": "Marca B"},
             ],
-            "marketing_products_services": [{"id": "product-a", "organization_id": "org-a", "status": "active", "name": "Radar YUX", "description": "Captação ativa"}],
+            "marketing_products_services": [{
+                "id": "product-a", "organization_id": "org-a", "status": "active",
+                "name": "Radar YUX", "description": "Captação ativa",
+                "target_audience": "PMEs locais", "proof_points": ["prospecção contextual"],
+                "objections": ["não tenho tempo"], "cta": "Solicitar diagnóstico",
+            }],
             "knowledge_sources": [
                 {"id": "source-a", "organization_id": "org-a", "status": "published", "visibility": "both", "allowed_agent_profile_keys": [], "blocked_agent_profile_keys": []},
                 {"id": "source-blocked", "organization_id": "org-a", "status": "published", "visibility": "both", "allowed_agent_profile_keys": [], "blocked_agent_profile_keys": ["ai_sdr_comercial_1"]},
@@ -54,6 +59,13 @@ class CustomerContextTest(unittest.TestCase):
         self.assertEqual(result["visual_identity"]["colors"], ["#6d28d9"])
         self.assertEqual(result["brand_rules"]["visual_identity"]["logoUrl"], "https://yux.com.br/logo.svg")
         self.assertIn("Identidade visual", result["brand_summary"])
+        self.assertEqual(result["product_profiles"][0]["target_audience"], "PMEs locais")
+        self.assertEqual(result["product_profiles"][0]["proof_points"], ["prospecção contextual"])
+        self.assertEqual(result["product_profiles"][0]["objections"], ["não tenho tempo"])
+        self.assertEqual(result["product_profiles"][0]["cta"], "Solicitar diagnóstico")
+        self.assertEqual(result["context_coverage"], {
+            "company": True, "brand": True, "products": 1, "customerKnowledge": 2,
+        })
 
     def test_prefers_semantically_matching_approved_curated_fact(self):
         class Embeddings:
