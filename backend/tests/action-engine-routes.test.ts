@@ -102,6 +102,22 @@ describe('Action Engine routes', () => {
     expect(read.statusCode).toBe(403)
   })
 
+  it('denies autonomy grant and kill-switch mutations without policy permission', async () => {
+    const session = auth('client_admin')
+    app = await buildServer(env, { authStore: session.store, pool: new Pool() as never, jobQueue: queue })
+    const [grant, killSwitch] = await Promise.all([
+      app.inject({ method: 'POST', url: `/api/action-engine/missions/${missionId}/autonomy-grants`, headers: session.headers, payload: {
+        organizationId: orgA, expectedMissionVersion: 2,
+        envelope: { mode: 'autonomous', allowedModules: ['crm'], allowedCapabilityKeys: ['crm.pipeline.draft'], maxTotalCostBrl: '100', maxHumanHours: '2', maxExternalContacts: 10, expiresAt: '2030-01-01T00:00:00.000Z', alwaysRequireApprovalFor: [] },
+      } }),
+      app.inject({ method: 'POST', url: `/api/action-engine/missions/${missionId}/capability-controls`, headers: session.headers, payload: {
+        organizationId: orgA, capabilityKey: 'crm.pipeline.draft', capabilityVersion: 1, disabled: true, reason: 'Contenção preventiva',
+      } }),
+    ])
+    expect(grant.statusCode).toBe(403)
+    expect(killSwitch.statusCode).toBe(403)
+  })
+
   it('requires an idempotency key on mission creation', async () => {
     const session = auth('yux_admin')
     app = await buildServer(env, { authStore: session.store, pool: new Pool() as never, jobQueue: queue })

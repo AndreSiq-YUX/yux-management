@@ -54,6 +54,7 @@ const controls: Controls = {
   ] },
   capabilities: [{ capabilityKey: 'email.send', capabilityVersion: 1, disabled: false }, { capabilityKey: 'crm.pipeline.draft', capabilityVersion: 1, disabled: false }],
   canManagePolicy: true,
+  autonomy: { grants: [], usage: { costBrl: '96', humanMinutes: '30', externalContacts: 4, unresolvedExternalEffects: 0 }, remaining: null, health: { status: 'healthy', warnings: [] } },
 }
 
 async function render(value: Controls, onCapabilityControl = vi.fn()) {

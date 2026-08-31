@@ -8,7 +8,7 @@ import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
-import { evaluateMissionReadiness, filterReadinessCorrectionLinks } from './readiness.js'
+import { evaluateMissionReadiness, filterReadinessCorrectionLinks, summarizeAutonomyHealth } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
   getPublishedActionPackVersion, publishActionPackVersion, transitionMission, updateMissionDraft,
@@ -17,7 +17,8 @@ import {
 import type { MissionStatus } from './types.js'
 import { getAction, listMissionActions, resolveHumanTask, retryAction, skipAction, startMission } from './executor.js'
 import { collectMissionMetrics, collectPackMissionMetrics } from './evaluator.js'
-import { collectMissionEconomics } from './economics.js'
+import { collectAutonomyUsage, collectMissionEconomics } from './economics.js'
+import { calculateAutonomyRemaining } from './autonomous-preflight.js'
 import { releaseResourceClaims } from './resource-claims.js'
 import { buildActionEngineNfrSnapshot } from './operations-health.js'
 import { createSimulationReport, getPublicSimulationReport, getPublicSimulationReportPdf, recordSimulationFeedback, revokeSimulationReport } from './simulation-reports.js'
@@ -757,11 +758,35 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       canAccess(ctx, 'crm.write', { organizationId: query.data.organizationId }) ? 'crm' : null,
       canAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId }) ? 'missions' : null,
     ].filter((item): item is string => Boolean(item))
-    const [budget, capabilities] = await Promise.all([
+    const [budget, capabilities, grants, usage] = await Promise.all([
       collectMissionBudgetBurnDown(app.pg, mission.id, query.data.organizationId),
       listMissionCapabilityControls(app.pg, { missionId: mission.id, organizationId: query.data.organizationId }),
+      listAutonomyGrants(app.pg, mission.id, query.data.organizationId),
+      collectAutonomyUsage(app.pg, mission.id, query.data.organizationId),
     ])
-    return { budget, readiness: { ...readiness, checks: filterReadinessCorrectionLinks(readiness.checks, allowedAreas) }, capabilities, canManagePolicy: canAccess(ctx, 'action_engine.policy.manage', { organizationId: query.data.organizationId }) }
+    const controllingGrant = grants.find(item => item.status === 'active') ?? grants.find(item => item.status === 'pending') ?? grants[0]
+    const remaining = controllingGrant ? calculateAutonomyRemaining(controllingGrant, usage) : null
+    const remainingSeconds = controllingGrant ? Math.max(0, Math.floor((Date.parse(controllingGrant.expiresAt) - Date.now()) / 1000)) : 0
+    const health = summarizeAutonomyHealth(readiness.checks, usage.unresolvedExternalEffects)
+    return {
+      budget,
+      readiness: { ...readiness, checks: filterReadinessCorrectionLinks(readiness.checks, allowedAreas) },
+      capabilities,
+      canManagePolicy: canAccess(ctx, 'action_engine.policy.manage', { organizationId: query.data.organizationId }),
+      autonomy: {
+        grants: grants.map(item => ({
+          id:item.id, grantVersion:item.grantVersion, missionVersion:item.missionVersion, envelope:item.envelope,
+          envelopeHash:item.envelopeHash, status:item.status, startsAt:item.startsAt, expiresAt:item.expiresAt,
+          approvedAt:item.approvedAt, revokedAt:item.revokedAt, revocationReason:item.revocationReason,
+        })),
+        usage: {
+          costBrl: usage.costBrl, humanMinutes: usage.humanMinutes, externalContacts: usage.externalContacts,
+          unresolvedExternalEffects: usage.unresolvedExternalEffects,
+        },
+        remaining: remaining ? { ...remaining, seconds: remainingSeconds } : null,
+        health,
+      },
+    }
   })
 
   app.post('/missions/:missionId/capability-controls', async (request, reply) => {

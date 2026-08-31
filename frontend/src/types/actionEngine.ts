@@ -262,6 +262,28 @@ export interface MissionOperationalControls {
   readiness: MissionReadiness
   capabilities: MissionCapabilityControl[]
   canManagePolicy: boolean
+  autonomy: MissionAutonomyControlStatus
+}
+
+export interface MissionAutonomyGrant {
+  id: string
+  grantVersion: number
+  missionVersion: number
+  envelope: AutonomyEnvelope
+  envelopeHash: string
+  status: 'pending' | 'active' | 'revoked' | 'expired'
+  startsAt: string
+  expiresAt: string
+  approvedAt?: string
+  revokedAt?: string
+  revocationReason?: string
+}
+
+export interface MissionAutonomyControlStatus {
+  grants: MissionAutonomyGrant[]
+  usage: { costBrl: string; humanMinutes: string; externalContacts: number; unresolvedExternalEffects: number }
+  remaining: { costBrl: string; humanMinutes: string; externalContacts: number; seconds: number } | null
+  health: { status: 'healthy' | 'degraded' | 'blocked'; warnings: Array<{ code: string; message: string }> }
 }
 
 export type LearningRecommendationType = 'pack_change' | 'prompt_change' | 'policy_change' | 'knowledge_candidate'

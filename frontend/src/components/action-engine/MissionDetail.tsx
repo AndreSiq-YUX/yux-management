@@ -6,7 +6,7 @@ import { MissionDecisionSummary, readDecisionSummary } from './MissionDecisionSu
 import { MissionExecutionTimeline } from './MissionExecutionTimeline'
 import { MissionMetricsPanel } from './MissionMetricsPanel'
 import { MissionGuardrailsPanel } from './MissionGuardrailsPanel'
-import { MissionOperationalControls } from './MissionOperationalControls'
+import { AutonomyControlCenter } from './AutonomyControlCenter'
 import { MissionPlanPanel } from './MissionPlanPanel'
 import { MissionTechnicalProof } from './MissionTechnicalProof'
 import { MissionStatusBadge } from './MissionStatusBadge'
@@ -14,7 +14,7 @@ import { MissionArtifactsPanel } from './MissionArtifactsPanel'
 import { isCompositeMissionPlan } from './CompositeMissionPlan'
 import { MissionSpecialistTrace } from './MissionSpecialistTrace'
 import { availableMissionCommands, formatBrl, formatMissionDate, missionModeLabel, missionStatusMeta } from '@/lib/action-engine/missionRules'
-import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionArtifact, MissionCapabilityControl, MissionEconomics, MissionMetrics, MissionOperationalControls as OperationalControls, MissionPlan } from '@/types/actionEngine'
+import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionArtifact, MissionAutonomyGrant, MissionCapabilityControl, MissionEconomics, MissionMetrics, MissionOperationalControls as OperationalControls, MissionPlan } from '@/types/actionEngine'
 
 type MissionDetailProps = {
   mission: ActionMission; plan: MissionPlan | null; actions: MissionActionRun[]; approvals: MissionApproval[];
@@ -27,6 +27,9 @@ type MissionDetailProps = {
   onApprovalDecision: (approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', reasonKey?: DecisionReasonKey, comment?: string) => void;
   onRetryAction: (action: MissionActionRun) => void; onResolveHuman: (action: MissionActionRun) => void;
   onCapabilityControl: (capability: MissionCapabilityControl, disabled: boolean, reason: string) => void;
+  onRequestAutonomyGrant: () => void;
+  onApproveAutonomyGrant: (grant: MissionAutonomyGrant) => void;
+  onRevokeAutonomyGrant: (grant: MissionAutonomyGrant, reason: string) => void;
   onRefreshArtifacts: () => void;
 }
 
@@ -52,7 +55,7 @@ export function MissionDetail(props: MissionDetailProps) {
       <MissionArtifactsPanel artifacts={props.artifacts} canWrite={canWrite} showTechnicalProof={props.showTechnicalProof} onRefresh={props.onRefreshArtifacts} refreshing={busy === 'artifacts'} />
       <MissionMetricsPanel metrics={metrics} metricSpec={mission.metricSpec} showTechnicalProof={props.showTechnicalProof} />
       {isCampaignLaunch ? <MissionGuardrailsPanel metrics={metrics} metricSpec={mission.metricSpec} status={mission.status} /> : null}
-      {props.operationalControls ? <MissionOperationalControls controls={props.operationalControls} busyCapability={busy?.replace('capability:', '')} onCapabilityControl={props.onCapabilityControl} /> : null}
+      {props.operationalControls ? <AutonomyControlCenter mission={mission} controls={props.operationalControls} canWrite={canWrite} busy={busy} onPause={() => props.onCommand('pause')} onRequestGrant={props.onRequestAutonomyGrant} onApproveGrant={props.onApproveAutonomyGrant} onRevokeGrant={props.onRevokeAutonomyGrant} onCapabilityControl={props.onCapabilityControl} /> : null}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]"><MissionExecutionTimeline actions={actions} canWrite={canWrite} busyActionId={busy?.replace('action:', '')} onRetry={props.onRetryAction} onResolveHuman={props.onResolveHuman} /><MissionApprovalsPanel approvals={approvals} canWrite={canWrite} busyApprovalId={busy?.replace('approval:', '')} onDecision={props.onApprovalDecision} /></div>
       <MissionEconomicsPanel economics={economics} />
     </div>

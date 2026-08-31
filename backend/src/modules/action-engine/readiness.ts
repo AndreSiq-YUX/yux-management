@@ -19,6 +19,25 @@ export type MissionReadinessReport = {
   availableChannels: Array<'human_task' | 'email' | 'whatsapp'>
 }
 
+export type AutonomyHealthSummary = {
+  status: 'healthy' | 'degraded' | 'blocked'
+  warnings: Array<{ code: string; message: string }>
+}
+
+export function summarizeAutonomyHealth(checks: ReadinessCheck[], unresolvedExternalEffects: number): AutonomyHealthSummary {
+  const relevant = checks.filter(item => item.status !== 'pass' && (
+    item.code.includes('provider') || item.code.includes('connection') || item.code.includes('harness')
+    || item.code.includes('lease') || item.code.includes('permission')
+  ))
+  const warnings = relevant.map(({ code, message }) => ({ code, message }))
+  if (unresolvedExternalEffects > 0) warnings.unshift({
+    code: 'external_effect_unresolved',
+    message: `${unresolvedExternalEffects} efeito(s) externo(s) aguardam reconciliação; novas mutações autônomas devem permanecer pausadas.`,
+  })
+  const blocked = unresolvedExternalEffects > 0 || relevant.some(item => item.status === 'block')
+  return { status: blocked ? 'blocked' : warnings.length > 0 ? 'degraded' : 'healthy', warnings }
+}
+
 export async function evaluateCapabilityReadiness(
   registry: CapabilityRegistry,
   input: {
