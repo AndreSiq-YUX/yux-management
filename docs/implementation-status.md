@@ -171,13 +171,28 @@ Implemented and locally validated in the repository:
   reason while unrelated capabilities remain active;
 - independent flags can contain decisions, notifications, simulation reports or
   feedback without deleting existing evidence.
+- autonomy grants are immutable and versioned; the final preflight rechecks
+  cumulative cost, human time, contacts, grant expiry, exact capability policy,
+  mutation lease and unresolved provider effects before each autonomous effect;
+- campaign optimization is limited to published capabilities and durable
+  checkpoints; learning produces tenant-scoped reviewable memory and shadow
+  recommendations that cannot modify production directly;
+- the admin learning workspace gates promotion on shadow comparison and the
+  golden corpus, while the Mission autonomy control center exposes the exact
+  grant hash, remaining envelope, provider health, pause, revoke and
+  capability-version containment controls;
+- adversarial acceptance covers prompt/tool escalation, cross-tenant context,
+  secret redaction, malformed model output, stale decisions, budget and
+  cancellation races, mutation-lease expiry, provider outage and duplicate
+  reconciliation.
 
-Operationally pending: deploy the branch, apply migrations `0128`–`0143`,
+Operationally pending: deploy the branch, apply migrations `0128`–`0147`,
 configure backend/worker/Harness and provider channels, run authenticated admin,
 client-owner and external-review acceptance, record real IDs/NFR samples and
-rehearse the release runbooks. Composite Missions (Release 4) are locally
-implemented; bounded autonomous canary (Release 5) remains planned and must not
-be claimed as implemented.
+rehearse the release runbooks. Composite Missions and the bounded-autonomy code
+path are locally implemented and validated. The staged live canary remains
+pending and must not be claimed as production-accepted before the rollout record
+contains authenticated Mission/provider evidence.
 
 ### Security And Tenant Isolation Reverification
 

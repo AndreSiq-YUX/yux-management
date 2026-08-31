@@ -21,12 +21,20 @@ export function redactMissionTelemetry(
     }
     if (!STRUCTURED_FIELDS.has(key) || key === 'missionId') continue
     if (key === 'errorCode') {
-      result[key] = String(value ?? 'unknown').slice(0, 120).replace(/[^a-zA-Z0-9_.:-]/g, '_')
+      result[key] = sanitizeErrorCode(value)
     } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
       result[key] = value
     }
   }
   return result
+}
+
+function sanitizeErrorCode(value: unknown): string {
+  return String(value ?? 'unknown')
+    .replace(/Bearer\s+\S+/gi, 'Bearer_[redacted]')
+    .replace(/(token|secret|password|api[_-]?key)[=:._-]+\S+/gi, '$1_[redacted]')
+    .slice(0, 120)
+    .replace(/[^a-zA-Z0-9_.:[\]-]/g, '_')
 }
 
 export function redactMissionTelemetryForExport(

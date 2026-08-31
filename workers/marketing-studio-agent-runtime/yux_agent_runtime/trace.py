@@ -18,16 +18,21 @@ def stable_hash(payload: Any) -> str:
 
 
 _CONTENT_KEYS = {"message", "body", "content", "content_text", "user_input", "text"}
+_SECRET_KEYS = {"authorization", "api_key", "apikey", "access_token", "refresh_token", "secret", "token", "credential", "password", "cookie"}
 
 
 def _redact_text(value: str) -> str:
     import re
 
     value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[email redacted]", value, flags=re.IGNORECASE)
-    return re.sub(r"(?<!\w)\+?\d[\d\s().-]{7,}\d", "[phone redacted]", value)
+    value = re.sub(r"(?<!\w)\+?\d[\d\s().-]{7,}\d", "[phone redacted]", value)
+    value = re.sub(r"\bBearer\s+\S+", "Bearer [secret redacted]", value, flags=re.IGNORECASE)
+    return re.sub(r"\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+", "[secret redacted]", value, flags=re.IGNORECASE)
 
 
 def sanitize_trace_payload(value: Any, key: str = "") -> Any:
+    if key.lower() in _SECRET_KEYS:
+        return "[secret redacted]"
     if isinstance(value, dict):
         return {str(item_key): sanitize_trace_payload(item_value, str(item_key)) for item_key, item_value in value.items()}
     if isinstance(value, list):

@@ -154,7 +154,7 @@ Commit: `feat: add bounded campaign optimization missions`
 ### Task 4: Create governed operational memory and learning recommendations
 
 **Files:**
-- Create: `backend/src/db/migrations/0139_mission_learning_recommendations.sql`
+- Create: `backend/src/db/migrations/0146_mission_learning_recommendations.sql`
 - Create: `backend/src/modules/action-engine/learning.ts`
 - Modify: `backend/src/modules/action-engine/context-builder.ts`
 - Create: `workers/marketing-studio-agent-runtime/yux_agent_runtime/mission_learning.py`
@@ -165,16 +165,16 @@ Commit: `feat: add bounded campaign optimization missions`
 - Consumes: completed Mission outcomes, interventions, approvals, costs, evaluations and evidence.
 - Produces: tenant-scoped memory summaries and immutable `LearningRecommendation` records.
 
-- [ ] **Step 1: Write non-self-modification tests**
+- [x] **Step 1: Write non-self-modification tests**
 
 Assert a completed Mission creates a recommendation; duplicate outcome is idempotent; another tenant is isolated; recommendation cannot update prompt/pack/policy; only approved outcome summaries enter future context.
 
-- [ ] **Step 2: Run TypeScript and Python tests and verify failure**
+- [x] **Step 2: Run TypeScript and Python tests and verify failure**
 
 Run: `cd backend && npx vitest run tests/action-engine-learning.test.ts`; `cd workers/marketing-studio-agent-runtime && python -m pytest tests/test_mission_learning.py -q`  
 Expected: FAIL with missing learning components.
 
-- [ ] **Step 3: Define recommendation contract**
+- [x] **Step 3: Define recommendation contract**
 
 ```ts
 type LearningRecommendation = {
@@ -187,11 +187,11 @@ type LearningRecommendation = {
 }
 ```
 
-- [ ] **Step 4: Feed only approved memory summaries into context**
+- [x] **Step 4: Feed only approved memory summaries into context**
 
 Context Builder includes compact outcome patterns scoped to organization and relevant pack. Raw conversations, hidden prompts and rejected recommendations are excluded.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run both focused suites, then full backend and Python suites.  
 Expected: PASS.  
@@ -202,6 +202,7 @@ Commit: `feat: add governed mission learning memory`
 ### Task 5: Add shadow experiments and admin promotion workflow
 
 **Files:**
+- Create: `backend/src/db/migrations/0147_mission_learning_experiments.sql`
 - Create: `backend/src/modules/action-engine/experiments.ts`
 - Modify: `backend/src/modules/action-engine/routes.ts`
 - Create: `frontend/src/components/action-engine/MissionLearningPanel.tsx`
@@ -214,24 +215,24 @@ Commit: `feat: add governed mission learning memory`
 - Consumes: learning recommendation and production baseline.
 - Produces: shadow experiment, measured comparison, admin decision and versioned promotion request.
 
-- [ ] **Step 1: Write workflow and permission tests**
+- [x] **Step 1: Write workflow and permission tests**
 
 Cover create shadow experiment, no production effect, result comparison, admin-only approval, rejected experiment, pack/prompt version creation request and audit trail.
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run focused backend/frontend tests.  
 Expected: FAIL because experiment workflow/UI are absent.
 
-- [ ] **Step 3: Implement experiment service**
+- [x] **Step 3: Implement experiment service**
 
 Shadow experiments replay sanitized context and recorded inputs against a candidate configuration; they never call mutation/provider capabilities. Store metrics and context/config hashes. Promotion additionally runs the complete golden corpus and blocks on any schema, safety, tenant, protected-node, attribution or unapproved cost/latency regression.
 
-- [ ] **Step 4: Implement admin review UI**
+- [x] **Step 4: Implement admin review UI**
 
 Show evidence, baseline/candidate metrics, cost and risk. Approval creates a versioned change request; it does not directly overwrite a published artifact.
 
-- [ ] **Step 5: Run tests/build and commit**
+- [x] **Step 5: Run tests/build and commit**
 
 Run backend/frontend focused tests and frontend build.  
 Expected: PASS.  
@@ -253,24 +254,24 @@ Commit: `feat: add mission learning shadow experiments`
 - Consumes: grants, envelope usage, health, kill switches, approvals and incidents.
 - Produces: grant request/revoke, Mission pause and explainable live autonomy status.
 
-- [ ] **Step 1: Write UI and API authorization tests**
+- [x] **Step 1: Write UI and API authorization tests**
 
 Cover envelope preview, remaining budget/contacts/time, exact approval hash, revoke, kill switch, client role, expired grant and degraded provider warning.
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run frontend control-center test and backend route test.  
 Expected: FAIL because control center is absent.
 
-- [ ] **Step 3: Add safe operational endpoints**
+- [x] **Step 3: Add safe operational endpoints**
 
 Return aggregate usage and health without PII. Grant/revoke/kill-switch mutations require explicit permissions and audit events.
 
-- [ ] **Step 4: Implement UI and incident runbook**
+- [x] **Step 4: Implement UI and incident runbook**
 
 Provide one-click Mission pause and grant revoke, but require confirmation for global/organization/pack/capability-version kill switches. Runbook specifies the residual post-dispatch lease window, provider reconciliation, cost reversal and claims released last.
 
-- [ ] **Step 5: Run tests/build and commit**
+- [x] **Step 5: Run tests/build and commit**
 
 Expected: focused tests and frontend build PASS.  
 Commit: `feat: add mission autonomy control center`
@@ -289,11 +290,11 @@ Commit: `feat: add mission autonomy control center`
 - Consumes: all prior releases and Tasks 1–6.
 - Produces: signed-off production canary and complete-program acceptance evidence.
 
-- [ ] **Step 1: Add adversarial and failure-injection tests**
+- [x] **Step 1: Add adversarial and failure-injection tests**
 
 Cover prompt injection, cross-tenant retrieval, tool escalation, secret exfiltration attempt, malformed model JSON, database/Redis/provider outage, duplicate callbacks, stale approval, cancellation race and budget race.
 
-- [ ] **Step 2: Run complete automated verification**
+- [x] **Step 2: Run complete automated verification**
 
 Run all backend/frontend/Python tests, type-checks and production builds.  
 Expected: all PASS; modified-file lint PASS.
@@ -310,3 +311,5 @@ Trigger Mission pause, grant revoke, exact capability kill switch, expired mutat
 
 Record acceptance criteria, Mission IDs, pack/context/catalog/attribution hashes, produced value, cost, human hours, approvals, mutation leases, incidents, golden benchmark and rollback evidence. Apply the spec's objective rollback triggers and update status only after authenticated production verification.  
 Commit: `feat: complete bounded autonomous mission supervisor`
+
+> Repository acceptance is complete through Step 2. Steps 3–5 remain operational gates: they require an authenticated VPS deployment, a real internal Mission and provider evidence, and therefore cannot be satisfied by local tests or documentation alone.

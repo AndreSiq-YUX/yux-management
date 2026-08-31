@@ -78,7 +78,6 @@ import { StrategyEnginePage } from '@/pages/platform/StrategyEnginePage'
 import { ClientConversionsPage } from '@/pages/platform/ClientConversionsPage'
 import { ContractsPage } from '@/pages/platform/ContractsPage'
 import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
-import { ModuleSurfacePage } from '@/pages/platform/ModuleSurfacePage'
 import { ModulesPage } from '@/pages/platform/ModulesPage'
 import { PackagesPage } from '@/pages/platform/PackagesPage'
 
