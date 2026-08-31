@@ -27,6 +27,8 @@ describe('Campaign Optimization Action Pack v1', () => {
     expect(sql).toContain('action_campaign_optimization_checkpoints')
     expect(sql).toContain(CAMPAIGN_OPTIMIZATION_PACK_V1.contentHash)
     expect(sql).toContain('campaign_optimization_agent')
+    expect(sql).toContain('private.rls_can_access_organization(organization_id)')
+    expect(sql).not.toContain('public.app_can_access_organization')
   })
 
   it('accepts the protected topology and requires exact approval for an increase extension', () => {

@@ -27,8 +27,8 @@ ALTER TABLE public.action_campaign_optimization_checkpoints ENABLE ROW LEVEL SEC
 ALTER TABLE public.action_campaign_optimization_checkpoints FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS action_campaign_optimization_checkpoints_tenant ON public.action_campaign_optimization_checkpoints;
 CREATE POLICY action_campaign_optimization_checkpoints_tenant ON public.action_campaign_optimization_checkpoints
-  USING (public.app_can_access_organization(organization_id))
-  WITH CHECK (public.app_can_access_organization(organization_id));
+  USING (private.rls_can_access_organization(organization_id))
+  WITH CHECK (private.rls_can_access_organization(organization_id));
 
 INSERT INTO public.action_packs (key, name, description)
 VALUES ('campaign_optimization', 'Campaign Optimization', 'Avalia campanhas continuamente e propõe uma única ação limitada por checkpoint.')

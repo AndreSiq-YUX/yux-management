@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -57,6 +57,20 @@ async function createMigrations(files: Record<string, string>) {
 }
 
 describe('migration runner', () => {
+  it('references the canonical private organization access helper in mission migrations', async () => {
+    const migrationFiles = [
+      '0143_composite_mission_manifests.sql',
+      '0144_mission_autonomy_grants.sql',
+      '0145_campaign_optimization_pack.sql',
+    ]
+
+    for (const migrationFile of migrationFiles) {
+      const sql = await readFile(new URL(`../src/db/migrations/${migrationFile}`, import.meta.url), 'utf8')
+      expect(sql).toContain('private.rls_can_access_organization(organization_id)')
+      expect(sql).not.toContain('public.app_can_access_organization')
+    }
+  })
+
   it('lists sql migration files in lexical order', async () => {
     const migrationsDir = await createMigrations({
       '0002_second.sql': 'SELECT 2;',

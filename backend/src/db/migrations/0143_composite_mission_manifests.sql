@@ -23,7 +23,7 @@ ALTER TABLE public.action_plan_artifact_bindings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.action_plan_artifact_bindings FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS action_plan_artifact_bindings_tenant ON public.action_plan_artifact_bindings;
 CREATE POLICY action_plan_artifact_bindings_tenant ON public.action_plan_artifact_bindings
-  USING (public.app_can_access_organization(organization_id))
-  WITH CHECK (public.app_can_access_organization(organization_id));
+  USING (private.rls_can_access_organization(organization_id))
+  WITH CHECK (private.rls_can_access_organization(organization_id));
 
 COMMIT;

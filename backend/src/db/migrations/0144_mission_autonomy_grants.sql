@@ -58,11 +58,11 @@ ALTER TABLE public.action_autonomy_grant_events FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS action_autonomy_grants_tenant ON public.action_autonomy_grants;
 CREATE POLICY action_autonomy_grants_tenant ON public.action_autonomy_grants
-  USING (public.app_can_access_organization(organization_id))
-  WITH CHECK (public.app_can_access_organization(organization_id));
+  USING (private.rls_can_access_organization(organization_id))
+  WITH CHECK (private.rls_can_access_organization(organization_id));
 DROP POLICY IF EXISTS action_autonomy_grant_events_tenant ON public.action_autonomy_grant_events;
 CREATE POLICY action_autonomy_grant_events_tenant ON public.action_autonomy_grant_events
-  USING (public.app_can_access_organization(organization_id))
-  WITH CHECK (public.app_can_access_organization(organization_id));
+  USING (private.rls_can_access_organization(organization_id))
+  WITH CHECK (private.rls_can_access_organization(organization_id));
 
 COMMIT;
