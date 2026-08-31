@@ -28,6 +28,7 @@ import { buildMissionArtifactProjections } from './mission-artifacts.js'
 import { listMissionRecipes, resolveMissionRecipe } from './recipes.js'
 import { cleanupMissionSandbox, seedMissionSandbox } from './sandbox-seeder.js'
 import { createPublishedPackRegistry } from './pack-registry.js'
+import { approveAutonomyGrant, listAutonomyGrants, requestAutonomyGrant, revokeAutonomyGrant } from './autonomy-grants.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -555,6 +556,47 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       metricSpec: pack.rows[0]?.metric_spec ?? {},
       packContentHash: pack.rows[0]?.content_hash ?? null,
     }
+  })
+
+  app.get('/missions/:missionId/autonomy-grants', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const query = organizationQuery.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_autonomy_grant_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    return listAutonomyGrants(app.pg, params.data.missionId, query.data.organizationId)
+  })
+
+  app.post('/missions/:missionId/autonomy-grants', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const body = z.object({ organizationId:uuid,expectedMissionVersion:z.number().int().positive(),envelope:autonomyEnvelope,startsAt:z.string().datetime().optional() }).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_autonomy_grant_request' })
+    requireAccess(ctx, 'action_engine.policy.manage', { organizationId: body.data.organizationId })
+    try {
+      const grant = await transaction(app.pg, client => requestAutonomyGrant(client, registry, { missionId:params.data.missionId,...body.data,requestedBy:ctx.userId }))
+      return reply.code(201).send(grant)
+    } catch (error) { return sendDomainError(reply,error) }
+  })
+
+  app.post('/missions/:missionId/autonomy-grants/:grantId/approve', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = z.object({missionId:uuid,grantId:uuid}).safeParse(request.params)
+    const body = z.object({organizationId:uuid,expectedMissionVersion:z.number().int().positive(),subjectHash:z.string().regex(/^[a-f0-9]{64}$/)}).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error:'invalid_autonomy_grant_approval' })
+    requireAccess(ctx,'action_engine.policy.manage',{organizationId:body.data.organizationId})
+    try { return await transaction(app.pg,client=>approveAutonomyGrant(client,{...params.data,...body.data,approvedBy:ctx.userId})) }
+    catch(error){return sendDomainError(reply,error)}
+  })
+
+  app.post('/missions/:missionId/autonomy-grants/:grantId/revoke', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = z.object({missionId:uuid,grantId:uuid}).safeParse(request.params)
+    const body = z.object({organizationId:uuid,reason:z.string().trim().min(3).max(1000)}).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error:'invalid_autonomy_grant_revocation' })
+    requireAccess(ctx,'action_engine.policy.manage',{organizationId:body.data.organizationId})
+    try { return await transaction(app.pg,client=>revokeAutonomyGrant(client,{...params.data,...body.data,revokedBy:ctx.userId})) }
+    catch(error){return sendDomainError(reply,error)}
   })
 
   app.patch('/missions/:missionId', async (request, reply) => {

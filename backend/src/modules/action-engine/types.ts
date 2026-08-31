@@ -62,6 +62,28 @@ export type AutonomyEnvelope = {
   alwaysRequireApprovalFor: string[]
 }
 
+export type AutonomyGrantStatus = 'pending' | 'active' | 'revoked' | 'expired'
+
+export type AutonomyGrant = {
+  id: string
+  organizationId: string
+  missionId: string
+  grantVersion: number
+  missionVersion: number
+  envelope: AutonomyEnvelope
+  envelopeHash: string
+  status: AutonomyGrantStatus
+  startsAt: string
+  expiresAt: string
+  requestedBy: string
+  approvedBy?: string
+  approvedAt?: string
+  revokedBy?: string
+  revokedAt?: string
+  revocationReason?: string
+  createdAt: string
+}
+
 export type MissionContextSnapshot = {
   id: string
   organizationId: string
