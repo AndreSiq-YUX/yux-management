@@ -43,6 +43,54 @@ export type OwnershipMode = 'observe' | 'shared' | 'exclusive'
 export type OwnershipConflictPolicy = 'allow_disjoint' | 'mission_wins' | 'block_new'
 export type MissionMode = 'shadow' | 'prepare' | 'assisted' | 'autonomous'
 
+export type MissionConversationStatus =
+  | 'collecting_context'
+  | 'awaiting_user'
+  | 'brief_confirmation'
+  | 'planning'
+  | 'awaiting_plan_approval'
+  | 'converted'
+  | 'blocked'
+  | 'cancelled'
+
+export type MissionConversationActorType = 'user' | 'agent' | 'system'
+export type MissionConversationMessageKind = 'text' | 'question' | 'brief' | 'plan' | 'status' | 'error'
+
+export type MissionConversationMessage = {
+  id: string
+  organizationId: string
+  conversationId: string
+  sequence: number
+  actorType: MissionConversationActorType
+  messageKind: MissionConversationMessageKind
+  content: string
+  structuredPayload: Record<string, unknown>
+  sourceRefs: Array<Record<string, unknown>>
+  clientMessageId?: string
+  harnessRunId?: string
+  createdBy?: string
+  createdAt: string
+}
+
+export type MissionConversation = {
+  id: string
+  organizationId: string
+  contractId?: string
+  missionId?: string
+  status: MissionConversationStatus
+  title: string
+  currentBrief: Record<string, unknown>
+  contextReadiness: Record<string, unknown>
+  lastContextHash?: string
+  lastHarnessRunId?: string
+  version: number
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+  messages: MissionConversationMessage[]
+}
+
 export type MissionGoal = {
   statement: string
   requestedOutcome: string
