@@ -30,6 +30,30 @@ export const approvalTypeLabel: Record<string, string> = {
 
 export const missionModeLabel: Record<string, string> = { assisted: 'Assistido', prepare: 'Preparação', shadow: 'Simulação', autonomous: 'Autônomo' }
 
+const missionOutcomeLabels: Record<string, string> = {
+  recovered_revenue: 'Recuperar receita de oportunidades existentes',
+  revenue_recovery: 'Recuperar receita de oportunidades existentes',
+  funnel_nurture: 'Criar funil e nutrição comercial',
+  campaign_launch: 'Criar e lançar uma campanha completa',
+  supervisor_interpreted_outcome: 'Resultado a definir com o agente',
+}
+
+const missionPackLabels: Record<string, string> = {
+  revenue_recovery: 'Recuperação de receita',
+  funnel_nurture: 'Funil e nutrição',
+  campaign_launch: 'Campanha completa',
+  campaign_optimization: 'Otimização de campanha',
+  composite: 'Missão integrada',
+}
+
+export function formatMissionOutcome(value: string) {
+  return missionOutcomeLabels[value] ?? 'Resultado definido no pedido'
+}
+
+export function formatMissionPack(value: string) {
+  return missionPackLabels[value] ?? 'Plano orientado pelo agente'
+}
+
 export function missionProgress(actions: MissionActionRun[]) {
   if (!actions.length) return 0
   const complete = actions.filter(action => ['succeeded', 'skipped', 'cancelled'].includes(action.status)).length
