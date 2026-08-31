@@ -13,8 +13,8 @@ services:
 
   yux-backend-api:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile.dokploy
     expose:
       - "4000"
     environment:
@@ -30,6 +30,8 @@ services:
       YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
       PROVIDER_SECRET_ENCRYPTION_KEY_B64: ${PROVIDER_SECRET_ENCRYPTION_KEY_B64:?PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required}
+      ACTION_ENGINE_MUTATION_LEASE_SECRET: ${ACTION_ENGINE_MUTATION_LEASE_SECRET:?ACTION_ENGINE_MUTATION_LEASE_SECRET is required}
+      ACTION_ENGINE_TELEMETRY_REDACTION_KEY: ${ACTION_ENGINE_TELEMETRY_REDACTION_KEY:?ACTION_ENGINE_TELEMETRY_REDACTION_KEY is required}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_MARKETING_OAUTH_REDIRECT_URI: ${META_MARKETING_OAUTH_REDIRECT_URI:-}
@@ -65,8 +67,8 @@ services:
 
   yux-backend-worker:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile.dokploy
     command: ["node", "dist/src/worker.js"]
     environment:
       NODE_ENV: production
@@ -78,6 +80,9 @@ services:
       YUX_AGENT_RUNTIME_URL: ${YUX_AGENT_RUNTIME_URL:-http://yux-agent-harness-runtime:8080}
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
       PROVIDER_SECRET_ENCRYPTION_KEY_B64: ${PROVIDER_SECRET_ENCRYPTION_KEY_B64:?PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required}
+      ACTION_ENGINE_MUTATION_LEASE_SECRET: ${ACTION_ENGINE_MUTATION_LEASE_SECRET:?ACTION_ENGINE_MUTATION_LEASE_SECRET is required}
+      ACTION_ENGINE_TELEMETRY_REDACTION_KEY: ${ACTION_ENGINE_TELEMETRY_REDACTION_KEY:?ACTION_ENGINE_TELEMETRY_REDACTION_KEY is required}
+      MISSION_LEARNING_INTERVAL_MS: ${MISSION_LEARNING_INTERVAL_MS:-3600000}
       META_APP_SECRET: ${META_APP_SECRET:-}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
       OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}

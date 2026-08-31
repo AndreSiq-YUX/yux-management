@@ -112,9 +112,6 @@ Thumbs.db
 *.backup.gz
 controle.txt
 
-# Docker
-.dockerignore
-
 # Vercel
 .vercel
 
