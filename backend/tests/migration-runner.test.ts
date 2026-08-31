@@ -69,6 +69,13 @@ describe('migration runner', () => {
       expect(sql).toContain('private.rls_can_access_organization(organization_id)')
       expect(sql).not.toContain('public.app_can_access_organization')
     }
+
+    const autonomySql = await readFile(
+      new URL('../src/db/migrations/0144_mission_autonomy_grants.sql', import.meta.url),
+      'utf8',
+    )
+    expect(autonomySql).toContain('REFERENCES public.users(id)')
+    expect(autonomySql).not.toContain('public.user_profiles')
   })
 
   it('lists sql migration files in lexical order', async () => {
