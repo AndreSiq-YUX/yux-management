@@ -92,6 +92,8 @@ class CustomerContextService:
                     "source_scope": "organization",
                     "source_locator": item.get("source_locator"),
                     "retrieval_score": item.get("retrieval_score"),
+                    "updated_at": str(item.get("updated_at") or item.get("created_at") or ""),
+                    "content_hash": item.get("content_hash"),
                 }
                 for item in ranked_curated[: self.max_snippets]
             ]
@@ -105,6 +107,7 @@ class CustomerContextService:
                     "section_key": entry.get("title") or "knowledge",
                     "chunk_text": str(entry.get("body") or "")[:1600],
                     "source_scope": "organization",
+                    "updated_at": str(entry.get("updated_at") or entry.get("created_at") or ""),
                 }
                 for entry in ranked[: self.max_snippets]
             ]

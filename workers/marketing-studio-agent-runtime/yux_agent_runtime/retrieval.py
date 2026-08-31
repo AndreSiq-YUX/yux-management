@@ -182,6 +182,7 @@ def _compact_record(record_type: str, record: dict[str, Any], score: dict[str, f
         "stage_tags": _string_list(record.get("stage_tags")),
         "retrieval_tags": _string_list(record.get("retrieval_tags")),
         "allowed_agent_profile_keys": _string_list(record.get("allowed_agent_profile_keys")),
+        "updated_at": _text(record.get("updated_at") or record.get("created_at")),
         "score": score,
     }
     if record_type == "card":
@@ -285,6 +286,7 @@ class StrategyRetrievalService:
         include_images: bool = False,
         portal_safe: bool = False,
         query_embedding: list[float] | None = None,
+        approved_only: bool = False,
     ) -> dict[str, Any]:
         clean_query = " ".join(query.split())
         embedding_status = "provided" if query_embedding is not None else "unavailable"
@@ -315,6 +317,7 @@ class StrategyRetrievalService:
             query_tokens=query_tokens,
             portal_safe=portal_safe,
             query_embedding=query_embedding,
+            approved_only=approved_only,
         )[: max(0, max_cards)]
         ranked_chunks = self._rank_records(
             "chunk",
@@ -324,6 +327,7 @@ class StrategyRetrievalService:
             query_tokens=query_tokens,
             portal_safe=portal_safe,
             query_embedding=query_embedding,
+            approved_only=approved_only,
         )[: max(0, max_chunks)]
         ranked_assets = []
         if include_images:
@@ -335,6 +339,7 @@ class StrategyRetrievalService:
                 query_tokens=query_tokens,
                 portal_safe=portal_safe,
                 query_embedding=query_embedding,
+                approved_only=approved_only,
             )
 
         cards, chunks, assets, context_text = self._apply_context_budget(ranked_cards, ranked_chunks, ranked_assets)
@@ -412,6 +417,7 @@ class StrategyRetrievalService:
         query_tokens: TokenSet,
         portal_safe: bool,
         query_embedding: list[float] | None,
+        approved_only: bool,
     ) -> list[dict[str, Any]]:
         scored: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
         fields = {
@@ -433,6 +439,8 @@ class StrategyRetrievalService:
             if not _is_visible(record, portal_safe):
                 continue
             if not _is_review_usable(record, portal_safe):
+                continue
+            if approved_only and record.get("human_review_status") != "approved":
                 continue
             if not _is_profile_allowed(record, profile_key):
                 continue

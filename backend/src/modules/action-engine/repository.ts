@@ -168,9 +168,21 @@ export async function insertMissionContextSnapshot(client: Queryable, input: {
   capabilityManifest: Array<Record<string, unknown>>
   capabilityCatalogHash: string
   sourceIds: string[]
+  harnessRetrievalTraceId?: string
+  harnessKnowledgeContextHash?: string
 }): Promise<MissionContextSnapshot> {
+  const harnessRetrieval = input.harnessRetrievalTraceId && input.harnessKnowledgeContextHash
+    ? {
+        traceId: input.harnessRetrievalTraceId,
+        knowledgeContextHash: input.harnessKnowledgeContextHash,
+      }
+    : undefined
   const canonical = {
-    query: input.query.trim(), companyContext: input.companyContext,
+    query: input.query.trim(),
+    companyContext: {
+      ...input.companyContext,
+      ...(harnessRetrieval ? { _harnessRetrieval: harnessRetrieval } : {}),
+    },
     knowledgeItems: input.knowledgeItems, strategyItems: input.strategyItems,
     approvedLearningMemory: input.approvedLearningMemory,
     liveState: input.liveState, capabilityManifest: input.capabilityManifest,
@@ -819,13 +831,20 @@ function mapMission(row: MissionRow): ActionMission {
 }
 
 function mapContextSnapshot(row: ContextSnapshotRow): MissionContextSnapshot {
+  const retrieval = row.company_context?._harnessRetrieval as { traceId?: unknown; knowledgeContextHash?: unknown } | undefined
+  const companyContext = { ...(row.company_context ?? {}) }
+  delete companyContext._harnessRetrieval
   return {
     id: row.id, organizationId: row.organization_id, missionId: row.mission_id,
-    contextHash: row.context_hash, query: row.query, companyContext: row.company_context ?? {},
+    contextHash: row.context_hash, query: row.query, companyContext,
     knowledgeItems: row.knowledge_items ?? [], strategyItems: row.strategy_items ?? [],
     approvedLearningMemory: row.approved_learning_memory ?? [],
     liveState: row.live_state ?? {}, capabilityManifest: row.capability_manifest ?? [],
     capabilityCatalogHash: row.capability_catalog_hash, sourceIds: row.source_ids ?? [],
+    ...(typeof retrieval?.traceId === 'string' ? { harnessRetrievalTraceId: retrieval.traceId } : {}),
+    ...(typeof retrieval?.knowledgeContextHash === 'string'
+      ? { harnessKnowledgeContextHash: retrieval.knowledgeContextHash }
+      : {}),
     createdAt: toIso(row.created_at),
   }
 }

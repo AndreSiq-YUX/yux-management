@@ -284,6 +284,7 @@ class StrategyWorkflowEngine:
                     max_chunks=int(agent.get("max_chunks") or 4),
                     include_images=False,
                     portal_safe=False,
+                    approved_only=workflow_key == "mission_intake_conversation",
                 )
             company_context: dict[str, Any] = {}
             if self.customer_context_service is not None:

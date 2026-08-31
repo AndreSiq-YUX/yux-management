@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from hashlib import sha256
+import json
 from typing import TYPE_CHECKING, Any
 
 from .mission_contracts import (
@@ -28,7 +31,20 @@ def _text(value: Any) -> str:
 
 
 def _source_version(item: dict[str, Any]) -> str:
-    return _text(item.get("updated_at") or item.get("embedding_content_hash") or item.get("version") or "1")
+    updated_at = item.get("updated_at")
+    if isinstance(updated_at, datetime):
+        return str(max(1, int(updated_at.timestamp())))
+    if updated_at:
+        try:
+            return str(max(1, int(datetime.fromisoformat(_text(updated_at).replace("Z", "+00:00")).timestamp())))
+        except ValueError:
+            pass
+    return _text(item.get("embedding_content_hash") or item.get("version") or "1")
+
+
+def _canonical_hash(value: Any) -> str:
+    serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def build_mission_source_catalog(
@@ -61,7 +77,7 @@ def build_mission_source_catalog(
                 kind="knowledge_chunk" if is_customer else kind,
                 id=clean_id,
                 version=_source_version(raw),
-                contentHash=stable_hash({
+                contentHash=_canonical_hash({
                     "id": clean_id,
                     "version": _source_version(raw),
                     "content": raw.get("chunk_text") or raw.get("concept") or raw.get("title"),

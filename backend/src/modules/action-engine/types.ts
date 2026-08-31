@@ -181,6 +181,8 @@ export type MissionContextSnapshot = {
   capabilityManifest: Array<Record<string, unknown>>
   capabilityCatalogHash: string
   sourceIds: string[]
+  harnessRetrievalTraceId?: string
+  harnessKnowledgeContextHash?: string
   createdAt: string
 }
 

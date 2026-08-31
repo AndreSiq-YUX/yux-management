@@ -186,6 +186,31 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertEqual(yux_source.title, "Diagnóstico antes do canal")
         self.assertEqual(yux_source.displayMode, "named")
 
+    def test_mission_intake_uses_only_approved_yux_doctrine(self):
+        store = self.make_store()
+        store.tables["yux_strategy_concept_cards"].append({
+            "id": "card-pending", "concept": "Rascunho interno", "category": "growth",
+            "status": "active", "visibility": "internal_only", "human_review_status": "pending",
+            "allowed_agent_profile_keys": ["growth_strategist"],
+        })
+        captured = []
+
+        def transport(_url, _headers, payload, _method):
+            captured.append(payload)
+            body = {
+                "kind": "message", "reply": "Vamos começar.", "understood": {}, "questions": [],
+                "readiness": {"status": "needs_information", "knownFacts": [], "assumptions": [], "missing": []},
+                "brief": {"objective": "", "requestedOutcome": ""}, "suggestedActions": [], "sourceRefs": [],
+            }
+            return {"model": payload["model"], "choices": [{"message": {"content": json.dumps(body)}}], "usage": {}}
+
+        workflow = MissionConversationWorkflow(build_strategy_workflow_engine(
+            store, OpenRouterClient(api_key="test", transport=transport)
+        ))
+        workflow.respond(request())
+
+        self.assertNotIn("Rascunho interno", json.dumps(captured[0], ensure_ascii=False))
+
 
 if __name__ == "__main__":
     unittest.main()
