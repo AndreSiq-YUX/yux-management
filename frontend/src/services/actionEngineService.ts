@@ -4,6 +4,7 @@ import type {
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
   MissionArtifact, MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
   MissionRecipe, PublicSimulationReport, SandboxSeedManifest, SimulationReportShare,
+  LearningExperiment, MissionLearningWorkspace,
 } from '@/types/actionEngine'
 
 function query(params: Record<string, string | number | undefined>) {
@@ -84,4 +85,14 @@ export const actionEngineService = {
   submitSimulationFeedback: (token: string, input: { reviewerName: string; decision: 'support' | 'request_changes' | 'reject'; reasonKey?: DecisionReasonKey; comment?: string }) =>
     apiRequest<{ id: string; decision: string; createdAt: string; executionApproved: false }>(`${root}/public/simulation-reports/${encodeURIComponent(token)}/feedback`, { method: 'POST', body: input }),
   simulationPdfHref: (token: string) => `/api${root}/public/simulation-reports/${encodeURIComponent(token)}/pdf`,
+  listLearning: (organizationId: string) => apiRequest<Pick<MissionLearningWorkspace,'memories'|'recommendations'>>(`${root}/learning?${query({organizationId})}`),
+  reviewLearningMemory: (organizationId:string,memoryId:string,decision:'approved'|'rejected') =>
+    apiRequest(`${root}/learning/memories/${memoryId}/review`,{method:'POST',body:{organizationId,decision}}),
+  listLearningExperiments: (organizationId:string) => apiRequest<Pick<MissionLearningWorkspace,'experiments'|'promotions'>>(`${root}/learning/experiments?${query({organizationId})}`),
+  createLearningExperiment: (organizationId:string,recommendationId:string,candidateConfig:Record<string,unknown>) =>
+    apiRequest<LearningExperiment>(`${root}/learning/recommendations/${recommendationId}/experiments`,{method:'POST',body:{organizationId,candidateConfig}}),
+  completeLearningExperiment: (organizationId:string,experimentId:string,input:{candidateMetrics:Record<string,string>;goldenCorpusHash:string;goldenGatePassed:boolean}) =>
+    apiRequest<LearningExperiment>(`${root}/learning/experiments/${experimentId}/complete`,{method:'POST',body:{organizationId,...input}}),
+  decideLearningExperiment: (organizationId:string,experimentId:string,decision:'approved'|'rejected') =>
+    apiRequest(`${root}/learning/experiments/${experimentId}/decision`,{method:'POST',body:{organizationId,decision}}),
 }

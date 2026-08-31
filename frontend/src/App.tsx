@@ -87,6 +87,7 @@ const MissionDetailPage = lazy(() => import('@/pages/action-engine/MissionDetail
 const PortalMissionsPage = lazy(() => import('@/pages/client-portal/PortalMissionsPage').then(module => ({ default: module.PortalMissionsPage })))
 const PortalMissionDetailPage = lazy(() => import('@/pages/client-portal/PortalMissionDetailPage').then(module => ({ default: module.PortalMissionDetailPage })))
 const MissionSimulationReviewPage = lazy(() => import('@/pages/public/MissionSimulationReviewPage').then(module => ({ default: module.MissionSimulationReviewPage })))
+const MissionLearningPage = lazy(() => import('@/pages/platform/MissionLearningPage').then(module => ({ default: module.MissionLearningPage })))
 
 function LazyPage({ children }: { children: ReactNode }) {
   return <Suspense fallback={<main className="grid min-h-64 place-items-center text-sm text-slate-500">Carregando missões...</main>}>{children}</Suspense>
@@ -158,6 +159,7 @@ function App() {
             <Route path="admin/health" element={<RequireRole roles={['admin']}><AdminHealthPage /></RequireRole>} />
             <Route path="admin/modules-governance" element={<RequireRole roles={['admin']}><AdminModuleGovernancePage /></RequireRole>} />
             <Route path="admin/limits" element={<RequireRole roles={['admin']}><AdminLimitsPage /></RequireRole>} />
+            <Route path="admin/mission-learning" element={<RequireRole roles={['admin']}><LazyPage><MissionLearningPage /></LazyPage></RequireRole>} />
             <Route path="contracts" element={<RequireRole roles={['admin']}><ContractsPage /></RequireRole>} />
             <Route path="client-conversions" element={<RequireRole roles={['admin']}><ClientConversionsPage /></RequireRole>} />
             <Route path="packages" element={<RequireRole roles={['admin']}><PackagesPage /></RequireRole>} />

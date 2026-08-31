@@ -30,6 +30,7 @@ import { cleanupMissionSandbox, seedMissionSandbox } from './sandbox-seeder.js'
 import { createPublishedPackRegistry } from './pack-registry.js'
 import { approveAutonomyGrant, listAutonomyGrants, requestAutonomyGrant, revokeAutonomyGrant } from './autonomy-grants.js'
 import { listMissionLearning, reviewMissionLearningMemory } from './learning.js'
+import { completeShadowExperiment, createShadowExperiment, decideShadowExperiment, listLearningExperiments } from './experiments.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -856,6 +857,44 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     requireAccess(ctx,'action_engine.policy.manage',{organizationId:body.data.organizationId})
     try { return await reviewMissionLearningMemory(app.pg,{...body.data,memoryId:params.data.memoryId,actorId:ctx.userId}) }
     catch (error) { return sendDomainError(reply,error) }
+  })
+
+  app.get('/learning/experiments', async (request, reply) => {
+    const ctx=requireAuth(request)
+    const query=organizationQuery.safeParse(request.query)
+    if(!query.success)return reply.code(400).send({error:'invalid_learning_experiment_query'})
+    requireAccess(ctx,'action_engine.read',{organizationId:query.data.organizationId})
+    return listLearningExperiments(app.pg,query.data.organizationId)
+  })
+
+  app.post('/learning/recommendations/:recommendationId/experiments', async (request, reply) => {
+    const ctx=requireAuth(request)
+    const params=z.object({recommendationId:uuid}).safeParse(request.params)
+    const body=z.object({organizationId:uuid,candidateConfig:z.record(z.string(),z.unknown())}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_learning_experiment_create'})
+    requireAccess(ctx,'action_engine.policy.manage',{organizationId:body.data.organizationId})
+    try{return reply.code(201).send(await createShadowExperiment(app.pg,{...body.data,recommendationId:params.data.recommendationId,createdBy:ctx.userId}))}
+    catch(error){return sendDomainError(reply,error)}
+  })
+
+  app.post('/learning/experiments/:experimentId/complete', async (request, reply) => {
+    const ctx=requireAuth(request)
+    const params=z.object({experimentId:uuid}).safeParse(request.params)
+    const body=z.object({organizationId:uuid,candidateMetrics:z.record(z.string(),z.string()),goldenCorpusHash:z.string().regex(/^[a-f0-9]{64}$/),goldenGatePassed:z.boolean()}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_learning_experiment_result'})
+    if(ctx.role!=='yux_admin')return reply.code(403).send({error:'learning_experiment_admin_required'})
+    try{return await completeShadowExperiment(app.pg,{...body.data,experimentId:params.data.experimentId})}
+    catch(error){return sendDomainError(reply,error)}
+  })
+
+  app.post('/learning/experiments/:experimentId/decision', async (request, reply) => {
+    const ctx=requireAuth(request)
+    const params=z.object({experimentId:uuid}).safeParse(request.params)
+    const body=z.object({organizationId:uuid,decision:z.enum(['approved','rejected'])}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_learning_experiment_decision'})
+    if(ctx.role!=='yux_admin')return reply.code(403).send({error:'learning_experiment_admin_required'})
+    try{return await decideShadowExperiment(app.pg,{...body.data,experimentId:params.data.experimentId,actorId:ctx.userId})}
+    catch(error){return sendDomainError(reply,error)}
   })
 
   app.post('/actions/:actionId/retry', async (request, reply) => {

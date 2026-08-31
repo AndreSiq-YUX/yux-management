@@ -63,6 +63,7 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
       { label: 'Integracoes Globais', href: '/admin/integrations' },
       { label: 'IA / Modelos / Custos', href: '/admin/ai' },
       { label: 'Strategy Engine', href: '/admin/strategy-engine' },
+      { label: 'Aprendizado de Missões', href: '/admin/mission-learning' },
       { label: 'Canais', href: '/admin/channels' },
       { label: 'Email', href: '/admin/email' },
       { label: 'Modelos de Email', href: '/admin/email/templates' },

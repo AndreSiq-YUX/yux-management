@@ -264,6 +264,80 @@ export interface MissionOperationalControls {
   canManagePolicy: boolean
 }
 
+export type LearningRecommendationType = 'pack_change' | 'prompt_change' | 'policy_change' | 'knowledge_candidate'
+export type LearningRecommendationStatus = 'proposed' | 'shadow_testing' | 'approved' | 'rejected' | 'promoted'
+
+export interface MissionLearningMemory {
+  id: string
+  organizationId: string
+  missionId: string
+  packKey: string
+  packVersion: string
+  outcomeHash: string
+  summary: Record<string, unknown>
+  evidenceIds: string[]
+  reviewStatus: 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string
+  reviewedAt?: string
+  createdAt: string
+}
+
+export interface LearningRecommendation {
+  id: string
+  organizationId: string
+  missionId: string
+  memorySummaryId: string
+  recommendationType: LearningRecommendationType
+  targetKey: string
+  rationale: string
+  evidenceIds: string[]
+  expectedImpact: Record<string, string>
+  recommendationHash: string
+  status: LearningRecommendationStatus
+  createdAt: string
+}
+
+export interface LearningExperiment {
+  id: string
+  organizationId: string
+  recommendationId: string
+  contextSnapshotId?: string
+  baselineHash: string
+  candidateConfig: Record<string, unknown>
+  candidateConfigHash: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'rejected'
+  baselineMetrics: Record<string, string>
+  candidateMetrics: Record<string, string>
+  comparison: { passed?: boolean; deltas?: Record<string, string>; regressions?: string[] }
+  goldenCorpusHash?: string
+  goldenGatePassed?: boolean
+  productionEffectsObserved: false
+  failureReason?: string
+  createdBy: string
+  createdAt: string
+}
+
+export interface LearningPromotionRequest {
+  id: string
+  organizationId: string
+  recommendationId: string
+  experimentId: string
+  changeType: LearningRecommendationType
+  targetKey: string
+  requestedChange: Record<string, unknown>
+  requestedChangeHash: string
+  status: 'pending' | 'approved' | 'rejected' | 'implemented'
+  requestedBy: string
+  createdAt: string
+}
+
+export interface MissionLearningWorkspace {
+  memories: MissionLearningMemory[]
+  recommendations: LearningRecommendation[]
+  experiments: LearningExperiment[]
+  promotions: LearningPromotionRequest[]
+}
+
 export interface MissionReadinessCheck {
   code: string
   status: 'pass' | 'warn' | 'block'
