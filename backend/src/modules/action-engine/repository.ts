@@ -151,6 +151,7 @@ type ContextSnapshotRow = {
   id: string; organization_id: string; mission_id: string; context_hash: string; query: string;
   company_context: Record<string, unknown>; knowledge_items: Array<Record<string, unknown>>;
   strategy_items: Array<Record<string, unknown>>; live_state: Record<string, unknown>;
+  approved_learning_memory: Array<Record<string, unknown>>;
   capability_manifest: Array<Record<string, unknown>>; capability_catalog_hash: string;
   source_ids: string[]; created_at: string | Date;
 }
@@ -162,6 +163,7 @@ export async function insertMissionContextSnapshot(client: Queryable, input: {
   companyContext: Record<string, unknown>
   knowledgeItems: Array<Record<string, unknown>>
   strategyItems: Array<Record<string, unknown>>
+  approvedLearningMemory: Array<Record<string, unknown>>
   liveState: Record<string, unknown>
   capabilityManifest: Array<Record<string, unknown>>
   capabilityCatalogHash: string
@@ -170,6 +172,7 @@ export async function insertMissionContextSnapshot(client: Queryable, input: {
   const canonical = {
     query: input.query.trim(), companyContext: input.companyContext,
     knowledgeItems: input.knowledgeItems, strategyItems: input.strategyItems,
+    approvedLearningMemory: input.approvedLearningMemory,
     liveState: input.liveState, capabilityManifest: input.capabilityManifest,
     capabilityCatalogHash: input.capabilityCatalogHash, sourceIds: [...new Set(input.sourceIds)].sort(),
   }
@@ -177,11 +180,11 @@ export async function insertMissionContextSnapshot(client: Queryable, input: {
   const inserted = await client.query<ContextSnapshotRow>(
     `INSERT INTO public.action_mission_context_snapshots (
        organization_id, mission_id, context_hash, query, company_context, knowledge_items,
-       strategy_items, live_state, capability_manifest, capability_catalog_hash, source_ids
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       strategy_items, approved_learning_memory, live_state, capability_manifest, capability_catalog_hash, source_ids
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (mission_id, context_hash) DO NOTHING RETURNING *`,
     [input.organizationId, input.missionId, contextHash, canonical.query, canonical.companyContext,
-      canonical.knowledgeItems, canonical.strategyItems, canonical.liveState, canonical.capabilityManifest,
+      canonical.knowledgeItems, canonical.strategyItems, canonical.approvedLearningMemory, canonical.liveState, canonical.capabilityManifest,
       canonical.capabilityCatalogHash, canonical.sourceIds],
   )
   let row = inserted.rows[0]
@@ -820,6 +823,7 @@ function mapContextSnapshot(row: ContextSnapshotRow): MissionContextSnapshot {
     id: row.id, organizationId: row.organization_id, missionId: row.mission_id,
     contextHash: row.context_hash, query: row.query, companyContext: row.company_context ?? {},
     knowledgeItems: row.knowledge_items ?? [], strategyItems: row.strategy_items ?? [],
+    approvedLearningMemory: row.approved_learning_memory ?? [],
     liveState: row.live_state ?? {}, capabilityManifest: row.capability_manifest ?? [],
     capabilityCatalogHash: row.capability_catalog_hash, sourceIds: row.source_ids ?? [],
     createdAt: toIso(row.created_at),

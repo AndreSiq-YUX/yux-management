@@ -119,5 +119,9 @@ __all__ = [
     "review_content_quality",
 ]
 from .mission import MissionPlanRequest, compose_mission_planning_prompt, plan_mission
+from .mission_learning import MissionLearningInput, LearningRecommendationArtifact, build_mission_learning_recommendation
 
-__all__ += ["MissionPlanRequest", "compose_mission_planning_prompt", "plan_mission"]
+__all__ += [
+    "MissionPlanRequest", "compose_mission_planning_prompt", "plan_mission",
+    "MissionLearningInput", "LearningRecommendationArtifact", "build_mission_learning_recommendation",
+]

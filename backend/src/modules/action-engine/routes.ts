@@ -29,6 +29,7 @@ import { listMissionRecipes, resolveMissionRecipe } from './recipes.js'
 import { cleanupMissionSandbox, seedMissionSandbox } from './sandbox-seeder.js'
 import { createPublishedPackRegistry } from './pack-registry.js'
 import { approveAutonomyGrant, listAutonomyGrants, requestAutonomyGrant, revokeAutonomyGrant } from './autonomy-grants.js'
+import { listMissionLearning, reviewMissionLearningMemory } from './learning.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -837,6 +838,24 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     if (!query.success) return reply.code(400).send({ error: 'invalid_decision_feedback_query' })
     requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
     return exportDecisionFeedbackLearningEvidence(app.pg, query.data.organizationId)
+  })
+
+  app.get('/learning', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const query = z.object({ organizationId:uuid,status:z.enum(['proposed','shadow_testing','approved','rejected','promoted']).optional(),limit:z.coerce.number().int().positive().max(200).optional() }).safeParse(request.query)
+    if (!query.success) return reply.code(400).send({ error:'invalid_mission_learning_query' })
+    requireAccess(ctx,'action_engine.read',{organizationId:query.data.organizationId})
+    return listMissionLearning(app.pg,query.data)
+  })
+
+  app.post('/learning/memories/:memoryId/review', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = z.object({memoryId:uuid}).safeParse(request.params)
+    const body = z.object({organizationId:uuid,decision:z.enum(['approved','rejected'])}).safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error:'invalid_mission_learning_review' })
+    requireAccess(ctx,'action_engine.policy.manage',{organizationId:body.data.organizationId})
+    try { return await reviewMissionLearningMemory(app.pg,{...body.data,memoryId:params.data.memoryId,actorId:ctx.userId}) }
+    catch (error) { return sendDomainError(reply,error) }
   })
 
   app.post('/actions/:actionId/retry', async (request, reply) => {

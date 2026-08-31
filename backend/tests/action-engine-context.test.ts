@@ -14,6 +14,7 @@ function database(reverse = false) {
     if (sql.includes('knowledge_publications')) return { rows: reverse ? [...knowledge].reverse() : knowledge }
     if (sql.includes('yux_strategy_concept_cards')) return { rows: [{ id: 'card-1', updated_at: '2026-08-01T00:00:00Z', concept: 'Priorize valor', decision_rules: ['meça'], recommended_actions: ['teste'], metadata: {} }] }
     if (sql.includes('contract_modules')) return { rows: [{ module_key: 'crm' }, { module_key: 'automation' }] }
+    if (sql.includes('action_mission_memory_summaries')) return { rows: [{ id:'memory-1',pack_key:'funnel_nurture',pack_version:'1.0.0',outcome_hash:'d'.repeat(64),summary:{ terminalStatus:'succeeded',pattern:'approved only' } }] }
     if (sql.includes('crm_pipelines')) return { rows: [{ id: 'pipeline-1', name: 'Principal', is_default: true }] }
     if (sql.includes('FROM public.leads')) return { rows: [{ total: 10, inactive: 4 }] }
     if (sql.includes('automation_flows')) return { rows: [{ id: 'flow-1', status: 'published', is_enabled: true }] }
@@ -33,11 +34,14 @@ describe('frozen Mission context', () => {
     expect(first.knowledgeItems.map((item) => item.id)).toEqual(['entry-1','entry-2'])
     expect(first.allowedModules).toEqual(['automations','crm'])
     expect(first.liveState).toMatchObject({ campaigns: { available: false, reason: 'module_not_allowed' } })
+    expect(first.learningMemoryItems).toEqual([{ id:'memory-1',packKey:'funnel_nurture',packVersion:'1.0.0',outcomeHash:'d'.repeat(64),summary:{ terminalStatus:'succeeded',pattern:'approved only' } }])
     expect(JSON.stringify(first)).not.toMatch(/secret@example|11999999999|internal_notes/)
     const knowledgeSql = firstDb.query.mock.calls.find(([sql]) => String(sql).includes('knowledge_publications'))?.[0]
     expect(knowledgeSql).toContain("entry.status = 'published'")
     expect(knowledgeSql).toContain("source.visibility IN ('external','both')")
     expect(knowledgeSql).toContain('blocked_agent_profile_keys')
+    const learningSql = firstDb.query.mock.calls.find(([sql]) => String(sql).includes('action_mission_memory_summaries'))?.[0]
+    expect(learningSql).toContain("review_status='approved'")
   })
 
   it('keeps tenants in the hash and never queries knowledge without organization scope', async () => {

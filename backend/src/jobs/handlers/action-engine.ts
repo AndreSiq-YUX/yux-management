@@ -26,6 +26,7 @@ import { releaseResourceClaims } from '../../modules/action-engine/resource-clai
 import { reservePlanningCall, settlePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
 import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
 import { buildMissionContext } from '../../modules/action-engine/context-builder.js'
+import { processCompletedMissionLearning } from '../../modules/action-engine/learning.js'
 import { createCapabilityManifest } from '../../modules/action-engine/capability-manifest.js'
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
 import { buildMissionDecisionSummary } from '../../modules/action-engine/decision-summary.js'
@@ -329,6 +330,11 @@ export async function handleActionEngineRetention(pool: Pool) {
   return enforceMissionRetention(pool)
 }
 
+export async function handleActionEngineLearning(pool: Pool, data: Record<string, unknown>) {
+  const limit = typeof data.limit === 'number' ? Math.max(1,Math.min(Math.floor(data.limit),200)) : 50
+  return processCompletedMissionLearning(pool,limit)
+}
+
 export async function handleActionEngineEvaluation(pool: Pool, data: Record<string, unknown>, queue?: AppJobQueue) {
   const missionId = stringField(data, 'missionId')
   const organizationId = stringField(data, 'organizationId')
@@ -424,10 +430,12 @@ export async function handleActionEnginePlanMission(
     agentProfileKey: 'mission_supervisor',
     requestedModules: mission.autonomyEnvelope.allowedModules,
     capabilityManifest: manifest.entries,
+    packKeys: packs.map(item=>item.key),
   })
   const contextSnapshot = await transaction(pool, (client) => insertMissionContextSnapshot(client, {
     organizationId, missionId, query: builtContext.query, companyContext: builtContext.companyContext,
     knowledgeItems: builtContext.knowledgeItems, strategyItems: builtContext.strategyItems,
+    approvedLearningMemory: builtContext.learningMemoryItems,
     liveState: builtContext.liveState,
     capabilityManifest: builtContext.capabilityManifest as unknown as Array<Record<string, unknown>>,
     capabilityCatalogHash: builtContext.capabilityCatalogHash, sourceIds: builtContext.sourceIds,

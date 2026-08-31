@@ -6,6 +6,7 @@ export type BuiltMissionContext = {
   query: string
   companyContext: Record<string, unknown>
   strategyItems: Array<{ id: string; version: number; contentHash: string }>
+  learningMemoryItems: Array<{ id: string; packKey: string; packVersion: string; outcomeHash: string; summary: Record<string, unknown> }>
   knowledgeItems: Array<{ id: string; sourceId: string; contentHash: string; visibility: string; excerpt: string }>
   liveState: Record<string, unknown>
   capabilityManifest: CapabilityManifestEntry[]
@@ -22,8 +23,9 @@ export async function buildMissionContext(client: Queryable, input: {
   agentProfileKey: string
   requestedModules: string[]
   capabilityManifest: CapabilityManifestEntry[]
+  packKeys?: string[]
 }): Promise<BuiltMissionContext> {
-  const [company, knowledge, strategy, entitlements] = await Promise.all([
+  const [company, knowledge, strategy, entitlements, learningMemory] = await Promise.all([
     client.query<Record<string, unknown>>(
       `SELECT legal_name, trade_name, description, website_url, industry, positioning,
               differentiators, service_regions, business_hours, social_links, updated_at
@@ -54,6 +56,14 @@ export async function buildMissionContext(client: Queryable, input: {
         `SELECT module_key FROM public.contract_modules
          WHERE contract_id = $1 AND enabled = TRUE ORDER BY module_key`, [input.contractId])
       : Promise.resolve({ rows: input.requestedModules.map((module_key) => ({ module_key })) }),
+    client.query<{ id: string; pack_key: string; pack_version: string; outcome_hash: string; summary: Record<string, unknown> }>(
+      `SELECT id,pack_key,pack_version,outcome_hash,summary
+       FROM public.action_mission_memory_summaries
+       WHERE organization_id=$1 AND review_status='approved'
+         AND (CARDINALITY($2::TEXT[])=0 OR pack_key=ANY($2::TEXT[]))
+       ORDER BY reviewed_at DESC,id LIMIT 10`,
+      [input.organizationId,[...new Set(input.packKeys ?? [])].sort()],
+    ),
   ])
 
   const entitled = new Set(entitlements.rows.map((row) => normalizeModule(row.module_key)))
@@ -74,13 +84,17 @@ export async function buildMissionContext(client: Queryable, input: {
     version: Math.max(1, Math.floor(Date.parse(String(row.updated_at)) / 1000)),
     contentHash: hashCanonical({ concept: row.concept, decisionRules: row.decision_rules, recommendedActions: row.recommended_actions, metadata: row.metadata }),
   })).sort((a, b) => a.id.localeCompare(b.id))
+  const learningMemoryItems = learningMemory.rows.map(row=>({
+    id:row.id,packKey:row.pack_key,packVersion:row.pack_version,outcomeHash:row.outcome_hash,
+    summary:row.summary,
+  })).sort((a,b)=>a.id.localeCompare(b.id))
   const liveState = await collectMissionBaseline(client, { organizationId: input.organizationId, allowedModules })
   const capabilityManifest = [...input.capabilityManifest].sort((a, b) => `${a.key}@${a.version}`.localeCompare(`${b.key}@${b.version}`))
   const capabilityCatalogHash = hashCanonical(capabilityManifest)
   const query = input.query.trim().slice(0, 2_000)
   const sourceIds = [...new Set(knowledgeItems.map((item) => item.sourceId))].sort()
-  const contextHash = hashCanonical({ organizationId: input.organizationId, query, companyContext, strategyItems, knowledgeItems, liveState, capabilityManifest, capabilityCatalogHash, allowedModules })
-  return { query, companyContext, strategyItems, knowledgeItems, liveState, capabilityManifest, capabilityCatalogHash, contextHash, sourceIds, allowedModules }
+  const contextHash = hashCanonical({ organizationId: input.organizationId, query, companyContext, strategyItems, knowledgeItems, learningMemoryItems, liveState, capabilityManifest, capabilityCatalogHash, allowedModules })
+  return { query, companyContext, strategyItems, knowledgeItems, learningMemoryItems, liveState, capabilityManifest, capabilityCatalogHash, contextHash, sourceIds, allowedModules }
 }
 
 function sanitizeCompanyContext(row: Record<string, unknown>): Record<string, unknown> {

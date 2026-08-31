@@ -84,6 +84,41 @@ export type AutonomyGrant = {
   createdAt: string
 }
 
+export type LearningRecommendationType = 'pack_change' | 'prompt_change' | 'policy_change' | 'knowledge_candidate'
+export type LearningRecommendationStatus = 'proposed' | 'shadow_testing' | 'approved' | 'rejected' | 'promoted'
+
+export type MissionLearningMemory = {
+  id: string
+  organizationId: string
+  missionId: string
+  packKey: string
+  packVersion: string
+  outcomeHash: string
+  summary: Record<string, unknown>
+  evidenceIds: string[]
+  reviewStatus: 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string
+  reviewedAt?: string
+  createdAt: string
+}
+
+export type LearningRecommendation = {
+  id: string
+  organizationId: string
+  missionId: string
+  memorySummaryId: string
+  recommendationType: LearningRecommendationType
+  targetKey: string
+  rationale: string
+  evidenceIds: string[]
+  expectedImpact: Record<string, string>
+  recommendationHash: string
+  status: LearningRecommendationStatus
+  decidedBy?: string
+  decidedAt?: string
+  createdAt: string
+}
+
 export type MissionContextSnapshot = {
   id: string
   organizationId: string
@@ -93,6 +128,7 @@ export type MissionContextSnapshot = {
   companyContext: Record<string, unknown>
   knowledgeItems: Array<Record<string, unknown>>
   strategyItems: Array<Record<string, unknown>>
+  approvedLearningMemory: Array<Record<string, unknown>>
   liveState: Record<string, unknown>
   capabilityManifest: Array<Record<string, unknown>>
   capabilityCatalogHash: string

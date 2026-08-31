@@ -15,7 +15,7 @@ import { handleEmailSend } from './jobs/handlers/email.js'
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './jobs/handlers/domain-events.js'
 import { handleRadarOpportunityAnalysis } from './jobs/handlers/radar.js'
 import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './jobs/handlers/company-intelligence.js'
-import { handleActionEngineCollectMetrics, handleActionEngineDecisionNotification, handleActionEngineDecisionNotificationDispatch, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule, handleCampaignOptimizationCheckpoints } from './jobs/handlers/action-engine.js'
+import { handleActionEngineCollectMetrics, handleActionEngineDecisionNotification, handleActionEngineDecisionNotificationDispatch, handleActionEngineEvaluation, handleActionEngineExecute, handleActionEngineExpireWaits, handleActionEngineLearning, handleActionEnginePlanMission, handleActionEngineReconcileProviderEffect, handleActionEngineRetention, handleActionEngineSchedule, handleCampaignOptimizationCheckpoints } from './jobs/handlers/action-engine.js'
 
 type WorkerResult = {
   ok: true
@@ -57,6 +57,7 @@ async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise
   if (job.name === 'action-engine.expireWaits') { await handleActionEngineExpireWaits(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.collectMetrics') { await handleActionEngineCollectMetrics(pool, maintenanceQueue, job.data); return { ok: true } }
   if (job.name === 'action-engine.campaignOptimizationCheckpoint') { await handleCampaignOptimizationCheckpoints(pool, job.data); return { ok: true } }
+  if (job.name === 'action-engine.generateLearning') { await handleActionEngineLearning(pool, job.data); return { ok: true } }
   if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }
   if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver') {
     await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
@@ -88,6 +89,7 @@ const domainEventDispatchIntervalMs = Number(process.env.DOMAIN_EVENT_DISPATCH_I
 const actionWaitIntervalMs = Number(process.env.ACTION_ENGINE_WAIT_INTERVAL_MS || 60_000)
 const actionMetricsIntervalMs = Number(process.env.ACTION_ENGINE_METRICS_INTERVAL_MS || 5 * 60_000)
 const campaignOptimizationIntervalMs = Number(process.env.CAMPAIGN_OPTIMIZATION_INTERVAL_MS || 60 * 60_000)
+const missionLearningIntervalMs = Number(process.env.MISSION_LEARNING_INTERVAL_MS || 60 * 60_000)
 
 const scheduler = setInterval(() => {
   void runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })).catch((error) => {
@@ -135,10 +137,12 @@ function scheduleActionEngineMaintenance() {
   const waitWindow = Math.floor(Date.now() / actionWaitIntervalMs)
   const metricWindow = Math.floor(Date.now() / actionMetricsIntervalMs)
   const optimizationWindow = Math.floor(Date.now() / campaignOptimizationIntervalMs)
+  const learningWindow = Math.floor(Date.now() / missionLearningIntervalMs)
   return Promise.all([
     maintenanceQueue.add('action-engine.expireWaits', { window: waitWindow, limit: 100 }, { jobId: createBullMqJobId('action-engine-expire-waits', waitWindow) }),
     maintenanceQueue.add('action-engine.collectMetrics', { window: metricWindow }, { jobId: createBullMqJobId('action-engine-collect-metrics', metricWindow) }),
     maintenanceQueue.add('action-engine.campaignOptimizationCheckpoint', { window: optimizationWindow }, { jobId: createBullMqJobId('action-engine-campaign-optimization', optimizationWindow) }),
+    maintenanceQueue.add('action-engine.generateLearning', { window: learningWindow, limit: 50 }, { jobId: createBullMqJobId('action-engine-generate-learning', learningWindow) }),
     maintenanceQueue.add('action-engine.dispatchDecisionNotifications', { window: waitWindow, limit: 100 }, { jobId: createBullMqJobId('action-engine-decision-dispatch', waitWindow) }),
   ])
 }
