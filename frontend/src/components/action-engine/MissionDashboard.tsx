@@ -42,7 +42,7 @@ export function MissionDashboard({ missions, economicsByMission = {}, detailHref
           <span className="text-xs font-semibold text-slate-500">{missions.length} no total</span>
         </div>
         {missions.length === 0 ? (
-          <div className="grid min-h-64 place-items-center p-8 text-center"><div><ShieldCheck className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-4 font-semibold text-slate-900">Nenhuma missão criada</h3><p className="mt-2 text-sm text-slate-500">Comece pelo Revenue Recovery Pack v0 e valide o fluxo governado.</p></div></div>
+          <div className="grid min-h-64 place-items-center p-8 text-center"><div><ShieldCheck className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-4 font-semibold text-slate-900">Nenhuma missão criada</h3><p className="mt-2 text-sm text-slate-500">Descreva o resultado desejado ou comece por um dos packs disponíveis.</p>{canCreate ? <button type="button" onClick={onCreate} className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700"><Plus className="h-4 w-4" /> Criar primeira missão</button> : null}</div></div>
         ) : (
           <div className="divide-y divide-slate-200">
             {missions.map(mission => {

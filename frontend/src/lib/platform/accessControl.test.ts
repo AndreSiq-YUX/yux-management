@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canAccessModule,
+  canManageMissionsInWorkspace,
   hasEveryPermission,
   hasPermission,
   isModuleEnabled,
@@ -84,6 +85,19 @@ describe('access control', () => {
     }
 
     expect(canAccessModule(module, campaignRole, ['campaigns'])).toBe(true)
+  })
+
+  it('preserves YUX operator write access inside a client workspace', () => {
+    const clientReadOnlyRole: PlatformRole = {
+      key: 'client_admin',
+      name: 'Client Admin',
+      scope: 'client',
+      permissions: ['action_engine.read'],
+    }
+
+    expect(canManageMissionsInWorkspace('admin', clientReadOnlyRole)).toBe(true)
+    expect(canManageMissionsInWorkspace('manager', clientReadOnlyRole)).toBe(true)
+    expect(canManageMissionsInWorkspace('client', clientReadOnlyRole)).toBe(false)
   })
 })
 

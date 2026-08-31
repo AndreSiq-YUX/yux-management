@@ -31,6 +31,15 @@ export function canManageMissions(role: PlatformRole | null) {
   return hasPermission(role, 'action_engine.write')
 }
 
+export function canManageMissionsInWorkspace(
+  authenticatedRole: 'admin' | 'manager' | 'client' | undefined,
+  workspaceRole: PlatformRole | null,
+) {
+  return authenticatedRole === 'admin'
+    || authenticatedRole === 'manager'
+    || canManageMissions(workspaceRole)
+}
+
 export function canReadMissionEconomics(role: PlatformRole | null) {
   return hasPermission(role, 'action_engine.economics.read')
 }
