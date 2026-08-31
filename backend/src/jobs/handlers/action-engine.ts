@@ -11,7 +11,7 @@ import {
 } from '../../modules/action-engine/repository.js'
 import { recordDomainEvent } from '../../modules/events/repository.js'
 import { executeActionRun, scheduleReadyActions } from '../../modules/action-engine/executor.js'
-import { collectMissionEconomics } from '../../modules/action-engine/economics.js'
+import { collectMissionEconomics, releaseAutonomyUsageReservations } from '../../modules/action-engine/economics.js'
 import { evaluateMission } from '../../modules/action-engine/evaluator.js'
 import { collectPackMissionMetrics } from '../../modules/action-engine/evaluator.js'
 import { createActionEngineCommands } from '../../modules/action-engine/commands.js'
@@ -67,6 +67,9 @@ export async function handleActionEngineExecute(
       effectId: result.reconciliation.effectId,
       organizationId: result.reconciliation.organizationId,
     }, { delay: 15_000 })
+  }
+  if (result.containment) {
+    await queue.add('action-engine.collectMetrics', { missionId, organizationId, reason: result.containment.reason })
   }
   if (result.status === 'succeeded' || result.status === 'failed' || result.status === 'skipped') {
     await queue.add('action-engine.scheduleReadyActions', { missionId })
@@ -125,6 +128,9 @@ async function finalizeReconciledAction(
     const row = action.rows[0]
     if (!row || !['blocked', 'running'].includes(row.status)) return
     const status = outcome === 'created' ? 'succeeded' : 'failed'
+    await releaseAutonomyUsageReservations(client, {
+      organizationId, runId: actionRunId, reason: `provider_effect_confirmed_${outcome}`,
+    })
     await client.query(
       `UPDATE public.action_runs
        SET status = $3, output = CASE WHEN $3 = 'succeeded' THEN $4::jsonb ELSE output END,

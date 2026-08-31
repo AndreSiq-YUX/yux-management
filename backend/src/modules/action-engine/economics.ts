@@ -1,4 +1,5 @@
 import { recordCostEntry, type Queryable } from './repository.js'
+import type { AutonomyUsageSnapshot } from './autonomous-preflight.js'
 
 export type CostCategory = 'ai' | 'provider' | 'media' | 'human' | 'external_service' | 'infrastructure_variable'
 export type CostNature = 'estimated' | 'reserved' | 'actual' | 'reversal'
@@ -120,6 +121,133 @@ export async function collectMissionEconomics(
     completedActions: Number(actionCounts.rows[0]?.completed ?? 0),
     humanActions: Number(actionCounts.rows[0]?.human ?? 0),
   })
+}
+
+export async function collectAutonomyUsage(
+  client: Queryable,
+  missionId: string,
+  organizationId: string,
+  currentRunId?: string,
+): Promise<AutonomyUsageSnapshot> {
+  const [ledger, contacts, capabilityCounts, unresolved] = await Promise.all([
+    client.query<{ cost_brl: string | null; human_minutes: string | null }>(
+      `SELECT COALESCE(SUM(amount_brl),0)::TEXT AS cost_brl,
+              COALESCE(SUM(COALESCE(human_minutes,0)),0)::TEXT AS human_minutes
+       FROM public.action_cost_entries
+       WHERE mission_id = $1 AND organization_id = $2
+         AND nature IN ('reserved','actual','reversal')`,
+      [missionId, organizationId],
+    ),
+    client.query<{ count: number | string }>(
+      `SELECT GREATEST(
+         (SELECT COUNT(*) FROM public.action_observations
+          WHERE mission_id = $1 AND organization_id = $2 AND observation_type = 'external_message_sent'),
+         (SELECT COUNT(*) FROM public.action_runs run
+          JOIN public.action_plan_steps step ON step.id = run.plan_step_id
+          WHERE run.mission_id = $1 AND run.organization_id = $2 AND run.status = 'succeeded'
+            AND step.capability_key IN ('email.message.queue','whatsapp.template.queue')),
+         (SELECT COUNT(*) FROM public.action_external_effects effect
+          WHERE effect.mission_id = $1 AND effect.organization_id = $2 AND effect.status = 'confirmed_created'
+            AND effect.capability_key IN ('email.message.queue','whatsapp.template.queue'))
+       )::INT AS count`,
+      [missionId, organizationId],
+    ),
+    client.query<{ capability_key: string; count: number | string }>(
+      `SELECT step.capability_key,COUNT(*)::INT AS count
+       FROM public.action_runs run JOIN public.action_plan_steps step ON step.id = run.plan_step_id
+       WHERE run.mission_id = $1 AND run.organization_id = $2 AND run.status = 'succeeded'
+       GROUP BY step.capability_key`,
+      [missionId, organizationId],
+    ),
+    client.query<{ count: number | string }>(
+      `SELECT COUNT(*)::INT AS count FROM public.action_external_effects
+       WHERE mission_id = $1 AND organization_id = $2
+         AND status IN ('reserved','dispatched','unknown','reconciling','manual_review')
+         AND ($3::UUID IS NULL OR run_id <> $3)`,
+      [missionId, organizationId, currentRunId ?? null],
+    ),
+  ])
+  return {
+    costBrl: String(ledger.rows[0]?.cost_brl ?? '0'),
+    humanMinutes: String(ledger.rows[0]?.human_minutes ?? '0'),
+    externalContacts: Number(contacts.rows[0]?.count ?? 0),
+    capabilityCounts: Object.fromEntries(capabilityCounts.rows.map((row) => [row.capability_key, Number(row.count)])),
+    unresolvedExternalEffects: Number(unresolved.rows[0]?.count ?? 0),
+  }
+}
+
+export async function reserveAutonomyUsage(client: Queryable, input: {
+  organizationId: string
+  missionId: string
+  runId: string
+  attemptId: string
+  capabilityKey: string
+  costBrl: string
+  humanMinutes: string
+}) {
+  if (parseScaledDecimal(input.costBrl, 6) === 0n && parseScaledDecimal(input.humanMinutes, 2) === 0n) return null
+  return recordCostEntry(client, {
+    organizationId: input.organizationId,
+    missionId: input.missionId,
+    runId: input.runId,
+    attemptId: input.attemptId,
+    category: parseScaledDecimal(input.humanMinutes, 2) > 0n ? 'human' : 'external_service',
+    nature: 'reserved',
+    sourceType: 'autonomy_preflight',
+    sourceRecordId: input.attemptId,
+    sourceEventKey: `${input.attemptId}:autonomy-usage:reserved`,
+    idempotencyKey: `${input.attemptId}:autonomy-usage:reserved`,
+    amountOriginal: input.costBrl,
+    currencyOriginal: 'BRL',
+    exchangeRateToBrl: '1',
+    amountBrl: input.costBrl,
+    humanMinutes: input.humanMinutes,
+    metadata: { capabilityKey: input.capabilityKey, finalPreflight: true },
+  })
+}
+
+export async function releaseAutonomyUsageReservations(client: Queryable, input: {
+  organizationId: string
+  runId: string
+  reason: string
+  actorId?: string
+}) {
+  const reservations = await client.query<{
+    id: string; organization_id: string; mission_id: string; run_id: string | null; attempt_id: string | null;
+    category: CostCategory; source_type: string; source_record_id: string; source_event_key: string;
+    amount_original: string; currency_original: string; exchange_rate_to_brl: string; amount_brl: string;
+    human_minutes: string | null; human_hourly_rate_brl: string | null; metadata: Record<string, unknown>;
+  }>(
+    `SELECT entry.id,entry.organization_id,entry.mission_id,entry.run_id,entry.attempt_id,entry.category,
+            entry.source_type,entry.source_record_id,entry.source_event_key,entry.amount_original::TEXT,
+            entry.currency_original,entry.exchange_rate_to_brl::TEXT,entry.amount_brl::TEXT,
+            entry.human_minutes::TEXT,entry.human_hourly_rate_brl::TEXT,entry.metadata
+     FROM public.action_cost_entries entry
+     WHERE entry.organization_id = $1 AND entry.run_id = $2 AND entry.nature = 'reserved'
+       AND entry.source_type = 'autonomy_preflight'
+       AND NOT EXISTS (SELECT 1 FROM public.action_cost_entries reversal WHERE reversal.reverses_entry_id = entry.id)
+     FOR UPDATE OF entry`,
+    [input.organizationId, input.runId],
+  )
+  for (const row of reservations.rows) {
+    await reverseCostEntry(client, {
+      original: {
+        id: row.id, organizationId: row.organization_id, missionId: row.mission_id,
+        ...(row.run_id ? { runId: row.run_id } : {}), ...(row.attempt_id ? { attemptId: row.attempt_id } : {}),
+        category: row.category, nature: 'reserved', sourceType: row.source_type,
+        sourceRecordId: row.source_record_id, sourceEventKey: row.source_event_key,
+        idempotencyKey: `${row.id}:original`, amountOriginal: row.amount_original,
+        currencyOriginal: row.currency_original, exchangeRateToBrl: row.exchange_rate_to_brl,
+        amountBrl: row.amount_brl, ...(row.human_minutes ? { humanMinutes: row.human_minutes } : {}),
+        ...(row.human_hourly_rate_brl ? { humanHourlyRateBrl: row.human_hourly_rate_brl } : {}),
+        metadata: row.metadata,
+      },
+      sourceEventKey: `${row.id}:autonomy-usage:released`,
+      idempotencyKey: `${row.id}:autonomy-usage:released`,
+      actorId: input.actorId ?? 'system',
+    })
+  }
+  return { released: reservations.rows.length, reason: input.reason }
 }
 
 export async function recordCapabilityCosts(client: Queryable, entries: CostEntryInput[]) {

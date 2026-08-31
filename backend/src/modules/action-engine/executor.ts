@@ -1,14 +1,19 @@
 import { createHash } from 'node:crypto'
 import type { AppJobQueue } from '../../server.js'
 import type { CapabilityContext, CapabilityDefinition, CapabilityRegistry } from './capability-registry.js'
-import { createActionRuns, getMission, recordApproval, transitionMission, type Connectable, type Queryable } from './repository.js'
+import { createActionRuns, getMission, recordApproval, recordEvaluation, transitionMission, type Connectable, type Queryable } from './repository.js'
 import type { ActionRunStatus } from './types.js'
 import { recordDomainEvent } from '../events/repository.js'
-import { recordCapabilityCosts } from './economics.js'
+import {
+  collectAutonomyUsage,
+  recordCapabilityCosts,
+  releaseAutonomyUsageReservations,
+  reserveAutonomyUsage,
+} from './economics.js'
 import {
   markExternalEffectDispatched,
   markExternalEffectUnknown,
-  reserveExternalEffect,
+  reserveExternalEffectInTransaction,
   resolveExternalEffect,
   type ExternalEffect,
 } from './external-effects.js'
@@ -18,6 +23,8 @@ import { consumeMutationLease, issueMutationLease } from './mutation-leases.js'
 import { loadKillSwitchState, resolveCapabilityDecision } from './capability-policy.js'
 import { resolvePlanInputBindings } from './plan-input-bindings.js'
 import { resolveCompositeActionInput } from './composite-execution.js'
+import { getActiveAutonomyGrant } from './autonomy-grants.js'
+import { estimateAutonomousEffectUsage, evaluateAutonomousPreflight, type AutonomyUsageSnapshot } from './autonomous-preflight.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -124,7 +131,12 @@ export async function executeActionRun(
   pool: Connectable,
   registry: CapabilityRegistry,
   input: { actionRunId: string; organizationId: string; workerId: string; commands?: CapabilityContext['commands']; mutationLeaseSecret?: string },
-): Promise<{ status: ActionRunStatus; duplicate?: boolean; reconciliation?: { effectId: string; organizationId: string } }> {
+): Promise<{
+  status: ActionRunStatus
+  duplicate?: boolean
+  reconciliation?: { effectId: string; organizationId: string }
+  containment?: { reason: string }
+}> {
   const claimed = await transaction(pool, async (client) => {
     const result = await client.query<ActionRow>(
       `UPDATE public.action_runs run SET status = 'running', claimed_at = NOW(), claimed_by = $3, updated_at = NOW()
@@ -208,10 +220,16 @@ export async function executeActionRun(
   let mutationLease: string | undefined
   let fencingToken: string | undefined
   let executionActorId: string | undefined
+  let issuedExternalEffect: ExternalEffect | null = null
   let dryRun = false
   try {
     const issued = await transaction(pool, async (client) => {
+      await client.query(
+        `SELECT id FROM public.action_missions WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+        [claimed.action.mission_id, input.organizationId],
+      )
       const currentMission = await getMission(client, claimed.action.mission_id, input.organizationId)
+      if (!currentMission) throw new Error('mission_not_found')
       const consentChannel = capability.key === 'email.message.queue' ? 'email'
         : capability.key === 'whatsapp.template.queue' ? 'whatsapp' : null
       const consentEvidenceId = typeof claimed.action.input.consentEvidenceId === 'string' ? claimed.action.input.consentEvidenceId : null
@@ -222,9 +240,12 @@ export async function executeActionRun(
           organizationId: input.organizationId, packKey: claimed.action.pack_key,
           packVersion: claimed.action.pack_version, capabilityKey: capability.key, capabilityVersion: capability.version,
         }),
-        client.query<{ approved: boolean; decided_by: string | null }>(
+        client.query<{ approved: boolean; approved_scope_grant_ids: string[]; decided_by: string | null }>(
           `SELECT EXISTS (SELECT 1 FROM public.action_approvals
              WHERE run_id = $1 AND organization_id = $2 AND status = 'approved') AS approved,
+             COALESCE((SELECT ARRAY_AGG(requested_payload->>'grantId')
+               FROM public.action_approvals WHERE run_id = $1 AND organization_id = $2
+                 AND status = 'approved' AND approval_type = 'scope_change'),ARRAY[]::TEXT[]) AS approved_scope_grant_ids,
              (SELECT decided_by FROM public.action_approvals
                WHERE run_id = $1 AND organization_id = $2 AND status = 'approved'
                ORDER BY decided_at DESC LIMIT 1) AS decided_by`,
@@ -232,7 +253,7 @@ export async function executeActionRun(
         ),
         client.query<{ total: string }>(
           `SELECT COALESCE(SUM(amount_brl),0)::TEXT AS total FROM public.action_cost_entries
-           WHERE mission_id = $1 AND organization_id = $2 AND nature IN ('estimated','actual','reversal')`,
+           WHERE mission_id = $1 AND organization_id = $2 AND nature IN ('reserved','actual','reversal')`,
           [claimed.action.mission_id, input.organizationId],
         ),
         capability.requiredConnections.length === 0
@@ -283,8 +304,44 @@ export async function executeActionRun(
             [input.organizationId, currentMission?.contractId ?? null],
           ),
       ])
-      const envelope = currentMission?.autonomyEnvelope
+      const envelope = currentMission.autonomyEnvelope
       const allowedCapabilityKeys = envelope?.allowedCapabilityKeys ?? []
+      const approved = approval.rows[0]?.approved === true
+      let autonomousGrantExpiresAt: string | undefined
+      let projectedAutonomyUsage = { costBrl: '0', humanMinutes: '0', externalContacts: 0 }
+      if (currentMission.mode === 'autonomous') {
+        const [grant, usage] = await Promise.all([
+          getActiveAutonomyGrant(client, claimed.action.mission_id, input.organizationId),
+          collectAutonomyUsage(client, claimed.action.mission_id, input.organizationId, input.actionRunId),
+        ])
+        projectedAutonomyUsage = estimateAutonomousEffectUsage(capability.key, claimed.action.input)
+        const autonomousDecision = evaluateAutonomousPreflight({
+          missionMode: currentMission.mode,
+          grant,
+          usage,
+          capability: { key: capability.key, effect: capability.effect, requiredModules: capability.requiredModules },
+          projected: projectedAutonomyUsage,
+          scopeExpansionApproved: Boolean(grant?.id && approval.rows[0]?.approved_scope_grant_ids?.includes(grant.id)),
+        })
+        autonomousGrantExpiresAt = grant?.expiresAt
+        if (autonomousDecision.outcome === 'pause') {
+          await containAutonomousExecution(client, {
+            organizationId: input.organizationId, missionId: claimed.action.mission_id,
+            planId: claimed.action.plan_id, actionRunId: input.actionRunId,
+            attemptId: claimed.attemptId, reason: autonomousDecision.reason, usage,
+          })
+          return { outcome: 'contained' as const, reason: autonomousDecision.reason }
+        }
+        if (autonomousDecision.outcome === 'approval') {
+          await requestAutonomousScopeApproval(client, {
+            organizationId: input.organizationId, missionId: claimed.action.mission_id,
+            actionRunId: input.actionRunId, attemptId: claimed.attemptId,
+            capabilityKey: capability.key, grantId: grant?.id,
+          })
+          return { outcome: 'approval' as const, reason: autonomousDecision.reason }
+        }
+        if (autonomousDecision.outcome === 'deny') throw new Error(autonomousDecision.reason)
+      }
       const decision = resolveCapabilityDecision({
         capability: {
           key: capability.key, approval: capability.approval, effect: capability.effect,
@@ -296,7 +353,10 @@ export async function executeActionRun(
         requiredConnectionsHealthy: connections.rows[0]?.healthy === true,
         legalOrConsentAllowed: consent.rows[0]?.allowed === true,
         budgetAvailable: Number(costs.rows[0]?.total ?? 0) <= Number(envelope?.maxTotalCostBrl ?? 0),
-        missionMode: currentMission?.mode ?? 'assisted', missionActive: currentMission?.status === 'active',
+        missionMode: currentMission.mode, missionActive: currentMission.status === 'active',
+        autonomyGrantRequired: currentMission.mode === 'autonomous',
+        autonomyGrantActive: currentMission.mode !== 'autonomous' || Boolean(autonomousGrantExpiresAt),
+        autonomyGrantExpiresAt: autonomousGrantExpiresAt,
         envelopeExpiresAt: envelope?.expiresAt,
         actorPermissions: capability.requiredPermissions ?? [],
         capabilityAllowedByEnvelope: (allowedCapabilityKeys.length === 0 || allowedCapabilityKeys.includes(capability.key))
@@ -305,11 +365,20 @@ export async function executeActionRun(
         alwaysRequireApprovalFor: envelope?.alwaysRequireApprovalFor,
       })
       if (decision.outcome !== 'allow') throw new Error(decision.reason)
-      if (decision.requiresApproval && approval.rows[0]?.approved !== true) throw new Error('capability_approval_required')
-      const actorId = approval.rows[0]?.decided_by ?? currentMission?.createdBy
-      if (decision.dryRun || capability.effect === 'none') return { decision, actorId }
+      if (decision.requiresApproval && !approved) throw new Error('capability_approval_required')
+      const actorId = approval.rows[0]?.decided_by ?? currentMission.createdBy
+      if (decision.dryRun || capability.effect === 'none') {
+        return { outcome: 'issued' as const, decision, actorId, externalEffect: undefined }
+      }
       if (!input.mutationLeaseSecret || !claimed.attemptId || !claimed.action.capability_definition_hash) {
         throw new Error('mutation_lease_signing_unavailable')
+      }
+      if (currentMission.mode === 'autonomous') {
+        await reserveAutonomyUsage(client, {
+          organizationId: input.organizationId, missionId: claimed.action.mission_id,
+          runId: input.actionRunId, attemptId: claimed.attemptId, capabilityKey: capability.key,
+          costBrl: projectedAutonomyUsage.costBrl, humanMinutes: projectedAutonomyUsage.humanMinutes,
+        })
       }
       const currentFencingToken = await getMissionFencingToken(client, claimed.action.mission_id, input.organizationId)
       const lease = await issueMutationLease(client, input.mutationLeaseSecret, {
@@ -323,12 +392,34 @@ export async function executeActionRun(
         token: lease.token, secret: input.mutationLeaseSecret, expected: lease.claims,
         organizationId: input.organizationId,
       })
-      return { decision, token: lease.token, fencingToken: currentFencingToken, actorId }
+      const reservedEffect = capability.effect === 'external' || capability.effect === 'destructive'
+        ? await reserveExternalEffectInTransaction(client, {
+          organizationId: input.organizationId,
+          missionId: claimed.action.mission_id,
+          planId: claimed.action.plan_id,
+          runId: input.actionRunId,
+          attemptId: claimed.attemptId,
+          capabilityKey: capability.key,
+          capabilityVersion: capability.version,
+          providerKey: capability.requiredConnections[0] ?? capability.key.split('.')[0]!,
+          providerIdempotencyKey: claimed.action.idempotency_key,
+          requestHash: hashSubject(stableSerialize(claimed.action.input)),
+          requestMetadata: { actionRunId: input.actionRunId, attemptNumber: claimed.attemptNumber },
+          reconciliationDeadlineAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        })
+        : null
+      return {
+        outcome: 'issued' as const, decision, token: lease.token, fencingToken: currentFencingToken, actorId,
+        externalEffect: reservedEffect?.effect,
+      }
     })
+    if (issued.outcome === 'contained') return { status: 'blocked', containment: { reason: issued.reason } }
+    if (issued.outcome === 'approval') return { status: 'blocked' }
     dryRun = issued.decision.dryRun
     mutationLease = issued.token
     fencingToken = issued.fencingToken
     executionActorId = issued.actorId
+    issuedExternalEffect = issued.externalEffect ?? null
   } catch (error) {
     await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, safeError(error))
     return { status: 'blocked' }
@@ -336,21 +427,11 @@ export async function executeActionRun(
 
   let externalEffect: ExternalEffect | null = null
   if ((capability.effect === 'external' || capability.effect === 'destructive') && !dryRun) {
-    const reserved = await reserveExternalEffect(pool, {
-      organizationId: input.organizationId,
-      missionId: claimed.action.mission_id,
-      planId: claimed.action.plan_id,
-      runId: input.actionRunId,
-      attemptId: claimed.attemptId,
-      capabilityKey: capability.key,
-      capabilityVersion: capability.version,
-      providerKey: capability.requiredConnections[0] ?? capability.key.split('.')[0],
-      providerIdempotencyKey: claimed.action.idempotency_key,
-      requestHash: hashSubject(stableSerialize(claimed.action.input)),
-      requestMetadata: { actionRunId: input.actionRunId, attemptNumber: claimed.attemptNumber },
-      reconciliationDeadlineAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-    })
-    externalEffect = reserved.effect
+    externalEffect = issuedExternalEffect
+    if (!externalEffect) {
+      await markBlocked(pool, input.actionRunId, input.organizationId, claimed.attemptId, 'external_effect_reservation_missing')
+      return { status: 'blocked' }
+    }
     if (externalEffect.status !== 'reserved') {
       if (externalEffect.status === 'dispatched') {
         externalEffect = await markExternalEffectUnknown(pool, {
@@ -363,6 +444,7 @@ export async function executeActionRun(
       }
       if (externalEffect.status === 'confirmed_created' || externalEffect.status === 'confirmed_failed') {
         const recoveredStatus = externalEffect.status === 'confirmed_created' ? 'succeeded' : 'failed'
+        await releaseRunAutonomyReservations(pool, input.actionRunId, input.organizationId, 'provider_effect_recovered')
         await finishFromConfirmedExternalEffect(pool, {
           actionRunId: input.actionRunId,
           organizationId: input.organizationId,
@@ -406,6 +488,11 @@ export async function executeActionRun(
       })
     }
     await transaction(pool, async (client) => {
+      if (claimed.action.capability_key !== 'human.task.create') {
+        await releaseAutonomyUsageReservations(client, {
+          organizationId: input.organizationId, runId: input.actionRunId, reason: 'capability_completed',
+        })
+      }
       if (result.costHints?.length) {
         await recordCapabilityCosts(client, result.costHints.map((cost, index) => ({
           organizationId: input.organizationId, missionId: claimed.action.mission_id, runId: input.actionRunId,
@@ -463,6 +550,9 @@ export async function executeActionRun(
     }
     const retryable = !externalEffect && isRetryable(error) && claimed.attemptNumber < 3
     await transaction(pool, async (client) => {
+      await releaseAutonomyUsageReservations(client, {
+        organizationId: input.organizationId, runId: input.actionRunId, reason: 'capability_failed',
+      })
       await client.query(`UPDATE public.action_run_attempts SET status = 'failed', error_code = $2, error_message = $3, completed_at = NOW() WHERE id = $1`, [claimed.attemptId, retryable ? 'transient' : 'execution_failed', safeError(error)])
       await client.query(
         `UPDATE public.action_runs SET status = $2, available_at = CASE WHEN $2 = 'retry_scheduled' THEN NOW() + INTERVAL '30 seconds' ELSE available_at END,
@@ -551,6 +641,9 @@ export async function resolveHumanTask(pool: Connectable, input: {
     const rate = String(row.budget.humanHourlyRateBrl ?? '')
     if (!rate) throw new Error('human_cost_rate_missing')
     const { recordHumanTaskCost } = await import('./economics.js')
+    await releaseAutonomyUsageReservations(client, {
+      organizationId: input.organizationId, runId: input.actionId, reason: 'human_task_resolved', actorId: input.actorId,
+    })
     await recordHumanTaskCost(client, {
       organizationId: input.organizationId, missionId: row.mission_id, runId: input.actionId,
       sourceType: 'human_task', sourceRecordId: input.actionId, sourceEventKey: `${row.idempotency_key}:human:resolved`,
@@ -574,6 +667,107 @@ async function markBlocked(pool: Connectable, actionRunId: string, organizationI
   await transaction(pool, async (client) => {
     if (attemptId) await client.query(`UPDATE public.action_run_attempts SET status = 'failed', error_code = 'preflight_blocked', error_message = $2, completed_at = NOW() WHERE id = $1`, [attemptId, reason])
     await client.query(`UPDATE public.action_runs SET status = 'blocked', last_error = $3, updated_at = NOW() WHERE id = $1 AND organization_id = $2`, [actionRunId, organizationId, reason])
+  })
+}
+
+async function releaseRunAutonomyReservations(
+  pool: Connectable,
+  actionRunId: string,
+  organizationId: string,
+  reason: string,
+) {
+  return transaction(pool, (client) => releaseAutonomyUsageReservations(client, {
+    organizationId, runId: actionRunId, reason,
+  }))
+}
+
+async function containAutonomousExecution(client: Queryable, input: {
+  organizationId: string
+  missionId: string
+  planId: string
+  actionRunId: string
+  attemptId?: string
+  reason: string
+  usage: AutonomyUsageSnapshot
+}) {
+  if (input.attemptId) {
+    await client.query(
+      `UPDATE public.action_run_attempts SET status = 'failed', error_code = 'autonomy_preflight_contained',
+              error_message = $2, completed_at = NOW() WHERE id = $1`,
+      [input.attemptId, input.reason],
+    )
+  }
+  await client.query(
+    `UPDATE public.action_runs SET status = 'blocked', last_error = $3, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2`,
+    [input.actionRunId, input.organizationId, input.reason],
+  )
+  await client.query(
+    `UPDATE public.action_missions SET status = 'paused', version = version + 1, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2 AND status = 'active'`,
+    [input.missionId, input.organizationId],
+  )
+  await recordEvaluation(client, {
+    organizationId: input.organizationId,
+    missionId: input.missionId,
+    planId: input.planId,
+    checkpointKey: `autonomy-preflight:${input.actionRunId}`,
+    idempotencyKey: `autonomy-preflight:${input.actionRunId}:${input.reason}`,
+    decision: 'pause',
+    metricSnapshot: {
+      externalContacts: input.usage.externalContacts,
+      capabilityCounts: input.usage.capabilityCounts,
+      unresolvedExternalEffects: input.usage.unresolvedExternalEffects,
+    },
+    economicsSnapshot: { costBrl: input.usage.costBrl, humanMinutes: input.usage.humanMinutes },
+    rationale: { reason: input.reason, finalPreflight: true },
+  })
+  await recordDomainEvent(client, {
+    eventType: 'mission.paused', organizationId: input.organizationId,
+    aggregateType: 'mission', aggregateId: input.missionId, actor: { type: 'system' },
+    payload: { reason: input.reason, actionRunId: input.actionRunId, finalPreflight: true },
+  })
+}
+
+async function requestAutonomousScopeApproval(client: Queryable, input: {
+  organizationId: string
+  missionId: string
+  actionRunId: string
+  attemptId?: string
+  capabilityKey: string
+  grantId?: string
+}) {
+  const subjectHash = hashSubject(stableSerialize({
+    missionId: input.missionId,
+    actionRunId: input.actionRunId,
+    capabilityKey: input.capabilityKey,
+    grantId: input.grantId ?? null,
+    exception: 'autonomy_scope_expansion',
+  }))
+  if (input.attemptId) {
+    await client.query(
+      `UPDATE public.action_run_attempts SET status = 'cancelled', error_code = 'autonomy_scope_approval_required',
+              error_message = 'autonomy_scope_expansion_requires_approval', completed_at = NOW() WHERE id = $1`,
+      [input.attemptId],
+    )
+  }
+  await client.query(
+    `UPDATE public.action_runs SET status = 'waiting_approval', last_error = 'autonomy_scope_expansion_requires_approval',
+            updated_at = NOW() WHERE id = $1 AND organization_id = $2`,
+    [input.actionRunId, input.organizationId],
+  )
+  await recordApproval(client, {
+    organizationId: input.organizationId,
+    missionId: input.missionId,
+    runId: input.actionRunId,
+    approvalType: 'scope_change',
+    subjectHash,
+    requestedPayload: {
+      actionRunId: input.actionRunId,
+      capabilityKey: input.capabilityKey,
+      grantId: input.grantId ?? null,
+      reason: 'autonomy_scope_expansion_requires_approval',
+    },
   })
 }
 

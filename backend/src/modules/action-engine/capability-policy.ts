@@ -23,6 +23,9 @@ export type CapabilityPolicyInput = {
   budgetAvailable: boolean
   missionMode: MissionMode
   missionActive?: boolean
+  autonomyGrantRequired?: boolean
+  autonomyGrantActive?: boolean
+  autonomyGrantExpiresAt?: string
   envelopeExpiresAt?: string
   now?: Date
   actorPermissions?: readonly string[]
@@ -40,6 +43,15 @@ export function resolveCapabilityDecision(input: CapabilityPolicyInput): Capabil
   if (input.policy?.killSwitch) return deny('capability_kill_switch_active', input.policy.id)
   if (input.policy && !input.policy.enabled) return deny('capability_disabled', input.policy.id)
   if (input.missionActive === false) return deny('mission_not_active')
+  if (input.missionMode === 'autonomous' && input.autonomyGrantRequired && !input.autonomyGrantActive) {
+    return deny('autonomy_grant_inactive')
+  }
+  if (input.missionMode === 'autonomous' && input.autonomyGrantExpiresAt) {
+    const grantExpiresAt = Date.parse(input.autonomyGrantExpiresAt)
+    if (!Number.isFinite(grantExpiresAt) || grantExpiresAt <= (input.now ?? new Date()).getTime()) {
+      return deny('autonomy_grant_expired')
+    }
+  }
   if (input.envelopeExpiresAt) {
     const expiresAt = Date.parse(input.envelopeExpiresAt)
     if (!Number.isFinite(expiresAt) || expiresAt <= (input.now ?? new Date()).getTime()) return deny('mission_autonomy_envelope_expired')

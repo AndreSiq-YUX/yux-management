@@ -60,7 +60,7 @@ type ExternalEffectRow = {
   created?: boolean
 }
 
-export async function reserveExternalEffect(pool: Connectable, input: {
+export type ReserveExternalEffectInput = {
   organizationId: string
   missionId: string
   planId?: string
@@ -73,9 +73,20 @@ export async function reserveExternalEffect(pool: Connectable, input: {
   requestHash: string
   requestMetadata?: Record<string, unknown>
   reconciliationDeadlineAt: string
-}): Promise<{ effect: ExternalEffect; created: boolean }> {
-  return transaction(pool, async (client) => {
-    const result = await client.query<ExternalEffectRow>(
+}
+
+export async function reserveExternalEffect(
+  pool: Connectable,
+  input: ReserveExternalEffectInput,
+): Promise<{ effect: ExternalEffect; created: boolean }> {
+  return transaction(pool, (client) => reserveExternalEffectInTransaction(client, input))
+}
+
+export async function reserveExternalEffectInTransaction(
+  client: Queryable,
+  input: ReserveExternalEffectInput,
+): Promise<{ effect: ExternalEffect; created: boolean }> {
+  const result = await client.query<ExternalEffectRow>(
       `WITH inserted AS (
          INSERT INTO public.action_external_effects (
            organization_id, mission_id, plan_id, run_id, attempt_id, capability_key, capability_version,
@@ -95,16 +106,15 @@ export async function reserveExternalEffect(pool: Connectable, input: {
         input.capabilityKey, input.capabilityVersion, input.providerKey, input.providerIdempotencyKey,
         input.requestHash, input.requestMetadata ?? {}, input.reconciliationDeadlineAt],
     )
-    const row = result.rows[0]
-    if (!row) throw new Error('external_effect_reservation_failed')
-    if (row.request_hash !== input.requestHash || row.provider_key !== input.providerKey || row.mission_id !== input.missionId) {
-      throw new Error('external_effect_idempotency_conflict')
-    }
-    if (row.created) {
-      await appendEffectEvent(client, row, null, 'reserved', 'effect_reserved', { requestHash: input.requestHash })
-    }
-    return { effect: mapEffect(row), created: row.created === true }
-  })
+  const row = result.rows[0]
+  if (!row) throw new Error('external_effect_reservation_failed')
+  if (row.request_hash !== input.requestHash || row.provider_key !== input.providerKey || row.mission_id !== input.missionId) {
+    throw new Error('external_effect_idempotency_conflict')
+  }
+  if (row.created) {
+    await appendEffectEvent(client, row, null, 'reserved', 'effect_reserved', { requestHash: input.requestHash })
+  }
+  return { effect: mapEffect(row), created: row.created === true }
 }
 
 export async function markExternalEffectDispatched(pool: Connectable, input: {

@@ -139,7 +139,7 @@ export async function getActiveAutonomyGrant(client: Queryable, missionId: strin
 
 export async function listAutonomyGrants(client: Queryable, missionId: string, organizationId: string): Promise<AutonomyGrant[]> {
   const result = await client.query<GrantRow>(`${grantSelect('grant.mission_id=$1 AND grant.organization_id=$2')} ORDER BY grant.grant_version DESC`, [missionId, organizationId])
-  return result.rows.map(mapGrant)
+  return result.rows.map((row) => mapGrant(row))
 }
 
 function grantSelect(where: string) {

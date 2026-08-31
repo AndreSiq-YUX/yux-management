@@ -36,16 +36,16 @@
 - Consumes: Mission, actor permission, contract entitlement and requested autonomy envelope.
 - Produces: immutable `AutonomyGrant`, approval hash, activation/revocation and expiry.
 
-- [ ] **Step 1: Write grant lifecycle and scope tests**
+- [x] **Step 1: Write grant lifecycle and scope tests**
 
 Cover request, exact approval, activation, expiry, revocation, scope reduction, forbidden capability, budget/contact ceilings, another tenant and stale Mission version.
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run: `cd backend && npx vitest run tests/action-engine-autonomy-grants.test.ts`  
 Expected: FAIL because grants do not exist.
 
-- [ ] **Step 3: Add immutable grant storage**
+- [x] **Step 3: Add immutable grant storage**
 
 ```ts
 type AutonomyGrant = {
@@ -62,11 +62,11 @@ type AutonomyGrant = {
 
 Use append-only grant history; changes create a new version and approval.
 
-- [ ] **Step 4: Add request/approve/revoke routes**
+- [x] **Step 4: Add request/approve/revoke routes**
 
 Require platform or delegated client permission. Revocation is immediate and emits an event consumed by the worker.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run: `cd backend && npx vitest run tests/action-engine-autonomy-grants.test.ts tests/action-engine-routes.test.ts && npm run type-check`  
 Expected: PASS.  
@@ -87,24 +87,24 @@ Commit: `feat: add governed mission autonomy grants`
 - Consumes: active grant, cumulative cost/contacts/hours, capability metadata, current provider/consent/ownership state.
 - Produces: allow, approval, pause or deny immediately before effect.
 
-- [ ] **Step 1: Write boundary and race tests**
+- [x] **Step 1: Write boundary and race tests**
 
 Cover exactly-at-limit, over-limit, expired during queue wait, revoked during retry, provider degraded, consent removed, ownership conflict, stale fencing token, expired/replayed mutation lease, provider effect already dispatched, budget entry race and duplicate attempt.
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run: `cd backend && npx vitest run tests/action-engine-autonomous-preflight.test.ts`  
 Expected: FAIL because active grants are not checked.
 
-- [ ] **Step 3: Add cumulative envelope usage query**
+- [x] **Step 3: Add cumulative envelope usage query**
 
 Return actual/reserved cost, human minutes, external contacts, capability counts and remaining allowance using transactional ledger rows. Unknown provider effect reconciliation denies another effect until resolved.
 
-- [ ] **Step 4: Apply preflight and automatic containment**
+- [x] **Step 4: Apply preflight and automatic containment**
 
 An exceeded critical limit atomically pauses the Mission, records evaluation reason and skips provider invocation. Noncritical scope expansion creates approval instead. If dispatch was already accepted inside the residual lease window, mark or retain the effect as `unknown|confirmed_created`, contain pausable providers and reconcile before releasing claims.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run: `cd backend && npx vitest run tests/action-engine-autonomous-preflight.test.ts tests/action-engine-execution.test.ts tests/action-engine-economics.test.ts && npm run type-check`  
 Expected: PASS.  
