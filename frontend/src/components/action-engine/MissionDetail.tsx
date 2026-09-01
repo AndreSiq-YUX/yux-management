@@ -13,14 +13,19 @@ import { MissionStatusBadge } from './MissionStatusBadge'
 import { MissionArtifactsPanel } from './MissionArtifactsPanel'
 import { isCompositeMissionPlan } from './CompositeMissionPlan'
 import { MissionSpecialistTrace } from './MissionSpecialistTrace'
+import { MissionNowCard } from './MissionNowCard'
+import { MissionActivityFeed } from './MissionActivityFeed'
 import { availableMissionCommands, formatBrl, formatMissionDate, formatMissionOutcome, formatMissionPack, missionModeLabel, missionStatusMeta } from '@/lib/action-engine/missionRules'
-import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionApproval, MissionArtifact, MissionAutonomyGrant, MissionCapabilityControl, MissionEconomics, MissionMetrics, MissionOperationalControls as OperationalControls, MissionPlan, MissionStatus } from '@/types/actionEngine'
+import type { ActionMission, DecisionReasonKey, MissionActionRun, MissionActivityItem, MissionApproval, MissionArtifact, MissionAutonomyGrant, MissionCapabilityControl, MissionEconomics, MissionMetrics, MissionOperationalControls as OperationalControls, MissionPlan, MissionStatus } from '@/types/actionEngine'
 
 type MissionDetailProps = {
   mission: ActionMission; plan: MissionPlan | null; actions: MissionActionRun[]; approvals: MissionApproval[];
   metrics: MissionMetrics; economics: MissionEconomics | null; backHref: string; canWrite: boolean; showTechnicalProof: boolean; busy?: string;
   operationalControls: OperationalControls | null;
   artifacts: MissionArtifact[];
+  activity?: MissionActivityItem[];
+  conversationHref?: string;
+  artifactHref?: (artifact: { kind: string; entityId?: string }) => string | undefined;
   onCommand: (command: 'qualify' | 'plan' | 'start' | 'pause' | 'resume' | 'evaluate' | 'cancel') => void;
   onApprovePlan: (approval: MissionApproval) => void;
   onShareSimulation: () => void;
@@ -49,11 +54,12 @@ export function MissionDetail(props: MissionDetailProps) {
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold uppercase tracking-[0.14em] text-[#2563EB]">{sourceLabel}</span><MissionStatusBadge {...meta} /></div><h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{mission.title}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{mission.goal.statement || mission.objective}</p></div>{canWrite && <div className="flex flex-wrap gap-2">{mission.mode === 'shadow' && plan ? <Command label="Compartilhar simulação" icon={Share2} busy={false} variant="outline" onClick={props.onShareSimulation} /> : null}{commands.qualify && <Command label="Continuar pedido" icon={ShieldCheck} busy={busy === 'qualify'} onClick={() => props.onCommand('qualify')} />}{commands.plan && <Command label={mission.status === 'blocked' ? 'Tentar novamente' : 'Gerar plano'} icon={RefreshCw} busy={busy === 'plan'} onClick={() => props.onCommand('plan')} />}{commands.start && <Command label="Iniciar" icon={Play} busy={busy === 'start'} onClick={() => props.onCommand('start')} />}{commands.pause && <Command label="Pausar" icon={PauseCircle} busy={busy === 'pause'} variant="outline" onClick={() => props.onCommand('pause')} />}{commands.resume && <Command label="Retomar" icon={PlayCircle} busy={busy === 'resume'} onClick={() => props.onCommand('resume')} />}{commands.evaluate && <Command label="Avaliar agora" icon={RefreshCw} busy={busy === 'evaluate'} variant="outline" onClick={() => props.onCommand('evaluate')} />}{commands.cancel && <Command label="Cancelar" icon={XCircle} busy={busy === 'cancel'} variant="ghost" onClick={() => props.onCommand('cancel')} />}</div>}</div>
         <div className="mt-5 grid border border-slate-200 bg-white sm:grid-cols-2 lg:grid-cols-4"><Summary label="Resultado esperado" value={formatMissionOutcome(mission.goal.requestedOutcome)} /><Summary label="Prazo" value={formatMissionDate(mission.deadlineAt)} /><Summary label="Custo máximo" value={formatBrl(mission.autonomyEnvelope.maxTotalCostBrl)} /><Summary label="Modo" value={missionModeLabel[mission.mode] ?? mission.mode} /></div>
       </header>
-      {!plan ? <MissionPrePlanState status={mission.status} /> : <>
-        {decisionSummary && planApproval ? <><MissionDecisionSummary summary={decisionSummary} approvalSubjectHash={planApproval.subjectHash} canApprove={canWrite} busy={busy === 'approve-plan'} onApprove={() => props.onApprovePlan(planApproval)} />{props.showTechnicalProof ? <MissionTechnicalProof summary={decisionSummary} plan={plan} /> : null}</> : <MissionPlanPanel plan={plan} />}
-        {decisionSummary && isCompositeMissionPlan(plan) ? <MissionPlanPanel plan={plan} technical={props.showTechnicalProof} /> : null}
-        {isCompositeMissionPlan(plan) ? <MissionSpecialistTrace plan={plan} /> : null}
-        <MissionArtifactsPanel artifacts={props.artifacts} canWrite={canWrite} showTechnicalProof={props.showTechnicalProof} onRefresh={props.onRefreshArtifacts} refreshing={busy === 'artifacts'} />
+      <MissionNowCard mission={mission} activity={props.activity ?? []} approvals={approvals} conversationHref={props.conversationHref} />
+      {!plan ? <><MissionPrePlanState status={mission.status} /><MissionActivityFeed activity={props.activity ?? []} artifactHref={props.artifactHref} /></> : <>
+        {decisionSummary && planApproval ? <MissionDecisionSummary summary={decisionSummary} approvalSubjectHash={planApproval.subjectHash} canApprove={canWrite} busy={busy === 'approve-plan'} onApprove={() => props.onApprovePlan(planApproval)} /> : null}
+        {props.showTechnicalProof ? <details className="rounded-xl border border-slate-200 bg-white"><summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-700">Detalhes técnicos, DAG e provas de integridade</summary><div className="space-y-6 border-t border-slate-200 p-5">{decisionSummary ? <MissionTechnicalProof summary={decisionSummary} plan={plan} /> : null}<MissionPlanPanel plan={plan} technical />{isCompositeMissionPlan(plan) ? <MissionSpecialistTrace plan={plan} /> : null}</div></details> : !decisionSummary ? <MissionPlanPanel plan={plan} /> : null}
+        <MissionArtifactsPanel artifacts={props.artifacts} canWrite={canWrite} showTechnicalProof={props.showTechnicalProof} onRefresh={props.onRefreshArtifacts} refreshing={busy === 'artifacts'} destinationHref={props.artifactHref} />
+        <MissionActivityFeed activity={props.activity ?? []} artifactHref={props.artifactHref} />
         <MissionMetricsPanel metrics={metrics} metricSpec={mission.metricSpec} showTechnicalProof={props.showTechnicalProof} />
         {isCampaignLaunch ? <MissionGuardrailsPanel metrics={metrics} metricSpec={mission.metricSpec} status={mission.status} /> : null}
         {props.operationalControls ? <AutonomyControlCenter mission={mission} controls={props.operationalControls} canWrite={canWrite} busy={busy} onPause={() => props.onCommand('pause')} onRequestGrant={props.onRequestAutonomyGrant} onApproveGrant={props.onApproveAutonomyGrant} onRevokeGrant={props.onRevokeAutonomyGrant} onCapabilityControl={props.onCapabilityControl} /> : null}

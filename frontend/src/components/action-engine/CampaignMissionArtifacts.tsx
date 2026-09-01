@@ -7,9 +7,10 @@ type CampaignMissionArtifactsProps = {
   artifacts: MissionArtifact[]
   canWrite: boolean
   showTechnicalProof: boolean
+  destinationHref?: (artifact: { kind: string; entityId?: string }) => string | undefined
 }
 
-export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalProof }: CampaignMissionArtifactsProps) {
+export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalProof, destinationHref }: CampaignMissionArtifactsProps) {
   const brief = byKind(artifacts, 'campaign_brief')
   const audience = byKind(artifacts, 'campaign_audience')
   const creatives = artifacts.filter(artifact => artifact.kind === 'campaign_creative')
@@ -71,8 +72,8 @@ export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalPro
         </ArtifactSection>
 
         <ArtifactSection icon={Link2} title="Captação">
-          <AssetLink icon={FileText} label="Landing page" artifact={landing} href={stringOrUndefined(landing?.data.previewUrl ?? tracking?.data.landing_page_url)} />
-          <AssetLink icon={Target} label="Formulário" artifact={form} />
+          <AssetLink icon={FileText} label="Landing page" artifact={landing} href={stringOrUndefined(landing?.data.previewUrl ?? tracking?.data.landing_page_url) ?? (landing?.entityId ? destinationHref?.(landing) : undefined)} />
+          <AssetLink icon={Target} label="Formulário" artifact={form} href={form?.entityId ? destinationHref?.(form) : undefined} />
         </ArtifactSection>
 
         <ArtifactSection icon={ShieldCheck} title="Tracking" className="lg:col-span-2">

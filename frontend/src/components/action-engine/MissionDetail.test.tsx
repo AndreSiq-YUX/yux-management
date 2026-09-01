@@ -49,6 +49,10 @@ describe('MissionDetail', () => {
     })
 
     expect(container.textContent).toContain('Pedido recebido')
+    expect(container.textContent).toContain('Acontecendo agora')
+    expect(container.textContent).toContain('O que você pediu')
+    expect(container.textContent).toContain('O que o agente entendeu')
+    expect(container.textContent).toContain('Nenhuma decisão pendente agora')
     expect(container.textContent).toContain('Continuar pedido')
     expect(container.textContent).toContain('Resultado a definir com o agente')
     expect(container.textContent).not.toContain('supervisor interpreted outcome')

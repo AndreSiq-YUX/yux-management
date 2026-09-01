@@ -51,6 +51,7 @@ import {
   missionConversationQuerySchema,
 } from './mission-conversation-schemas.js'
 import { createBullMqJobId } from '../../jobs/queue.js'
+import { listMissionActivity } from './mission-activity.js'
 
 const uuid = z.string().uuid()
 const decimal = z.string().regex(/^\d+(\.\d{1,6})?$/)
@@ -683,6 +684,20 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       metricSpec: pack.rows[0]?.metric_spec ?? {},
       packContentHash: pack.rows[0]?.content_hash ?? null,
     }
+  })
+
+  app.get('/missions/:missionId/activity', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionParams.safeParse(request.params)
+    const parsed = organizationQuery.safeParse(request.query)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_mission_activity_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: parsed.data.organizationId })
+    try {
+      return await listMissionActivity(app.pg, {
+        organizationId: parsed.data.organizationId, missionId: params.data.missionId,
+        includeTechnicalEvidence: ctx.role === 'yux_admin' || ctx.role === 'yux_operator',
+      })
+    } catch (error) { return sendDomainError(reply, error) }
   })
 
   app.get('/missions/:missionId/autonomy-grants', async (request, reply) => {

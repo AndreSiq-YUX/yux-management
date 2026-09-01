@@ -133,6 +133,18 @@ export interface MissionConversationPlanReference {
   sources: string[]
 }
 
+export interface MissionActivityItem {
+  id: string
+  kind: 'request' | 'context' | 'planning' | 'decision' | 'artifact' | 'action' | 'mission'
+  state: 'info' | 'active' | 'waiting' | 'success' | 'warning' | 'error'
+  title: string
+  description: string
+  occurredAt: string
+  decision?: { approvalId: string; status: string; reason?: string }
+  artifact?: { kind: string; title: string; status: string; entityId?: string; versionId?: string }
+  technicalEvidence?: Record<string, unknown>
+}
+
 export interface MissionGoal {
   statement: string
   requestedOutcome: string

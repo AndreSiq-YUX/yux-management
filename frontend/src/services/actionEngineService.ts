@@ -2,7 +2,7 @@ import { apiRequest } from '@/lib/apiClient'
 import type {
   ActionMission, ActionPack, ClarificationAnswerInput, CreateMissionInput, CreateMissionIntentInput, DecisionReasonKey,
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
-  MissionArtifact, MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
+  MissionActivityItem, MissionArtifact, MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
   MissionAutonomyGrant,
   MissionConversation,
   MissionRecipe, PublicSimulationReport, SandboxSeedManifest, SimulationReportShare,
@@ -70,6 +70,8 @@ export const actionEngineService = {
     apiRequest<ActionMission[]>(`${root}/missions?${query({ organizationId, status })}`),
   getMission: (missionId: string, organizationId: string) =>
     apiRequest<ActionMission>(`${root}/missions/${missionId}?${query({ organizationId })}`),
+  listMissionActivity: (missionId: string, organizationId: string) =>
+    apiRequest<MissionActivityItem[]>(`${root}/missions/${missionId}/activity?${query({ organizationId })}`),
   createMission: (input: CreateMissionInput) => apiRequest<ActionMission>(`${root}/missions`, {
     method: 'POST', body: input, headers: { 'Idempotency-Key': crypto.randomUUID() },
   }),
