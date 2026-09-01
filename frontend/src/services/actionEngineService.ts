@@ -4,6 +4,7 @@ import type {
   MissionActionRun, MissionApproval, MissionContextPreview, MissionEconomics, MissionMetrics,
   MissionArtifact, MissionOperationalControls, MissionPlan, MissionReadiness, MissionStatus,
   MissionAutonomyGrant,
+  MissionConversation,
   MissionRecipe, PublicSimulationReport, SandboxSeedManifest, SimulationReportShare,
   LearningExperiment, MissionLearningWorkspace,
 } from '@/types/actionEngine'
@@ -17,6 +18,32 @@ function query(params: Record<string, string | number | undefined>) {
 const root = '/action-engine'
 
 export const actionEngineService = {
+  createMissionConversation: (input: {
+    organizationId: string; contractId?: string; title?: string; message: string;
+    clientMessageId?: string; idempotencyKey?: string;
+  }) => {
+    const clientMessageId = input.clientMessageId ?? crypto.randomUUID()
+    const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID()
+    return apiRequest<{ conversation: MissionConversation; jobId: string | null }>(`${root}/mission-conversations`, {
+      method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { ...input, clientMessageId, idempotencyKey: undefined },
+    })
+  },
+  listMissionConversations: (organizationId: string) =>
+    apiRequest<MissionConversation[]>(`${root}/mission-conversations?${query({ organizationId })}`),
+  getMissionConversation: (conversationId: string, organizationId: string) =>
+    apiRequest<MissionConversation>(`${root}/mission-conversations/${conversationId}?${query({ organizationId })}`),
+  appendMissionConversationMessage: (conversationId: string, input: {
+    organizationId: string; expectedVersion: number; message: string; clientMessageId?: string;
+  }) => apiRequest<{ conversation: MissionConversation; jobId: string | null }>(`${root}/mission-conversations/${conversationId}/messages`, {
+    method: 'POST', body: { ...input, clientMessageId: input.clientMessageId ?? crypto.randomUUID() },
+  }),
+  confirmMissionConversationBrief: (conversationId: string, input: {
+    organizationId: string; expectedVersion: number; briefHash: string;
+  }) => apiRequest<{ conversation: MissionConversation; missionId: string; jobId: string | null }>(`${root}/mission-conversations/${conversationId}/confirm`, {
+    method: 'POST', body: input,
+  }),
+  cancelMissionConversation: (conversationId: string, input: { organizationId: string; expectedVersion: number }) =>
+    apiRequest<MissionConversation>(`${root}/mission-conversations/${conversationId}/cancel`, { method: 'POST', body: input }),
   listPacks: () => apiRequest<ActionPack[]>(`${root}/action-packs`),
   listRecipes: (organizationId: string) => apiRequest<MissionRecipe[]>(`${root}/mission-recipes?${query({ organizationId })}`),
   seedRecipeSandbox: (organizationId: string, recipe: Pick<MissionRecipe, 'key' | 'version'>) =>

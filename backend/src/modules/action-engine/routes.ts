@@ -37,6 +37,7 @@ import {
   cancelMissionConversation,
   createMissionConversation,
   getMissionConversation,
+  listMissionConversations,
 } from './mission-conversations.js'
 import {
   appendMissionConversationMessageSchema,
@@ -373,6 +374,14 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       }, { jobId: createBullMqJobId('mission-conversation', conversation.id, conversation.version) })
       return reply.code(202).send({ conversation, jobId: job.id })
     } catch (error) { return sendDomainError(reply, error) }
+  })
+
+  app.get('/mission-conversations', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const query = missionConversationQuerySchema.safeParse(request.query)
+    if (!query.success) return reply.code(400).send({ error: 'invalid_mission_conversation_query' })
+    requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
+    return listMissionConversations(app.pg, query.data.organizationId)
   })
 
   app.get('/mission-conversations/:conversationId', async (request, reply) => {

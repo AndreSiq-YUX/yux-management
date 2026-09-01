@@ -120,6 +120,34 @@ export async function getMissionConversation(
   return mapConversation(conversation.rows[0], messages.rows)
 }
 
+export async function listMissionConversations(
+  client: Queryable,
+  organizationId: string,
+): Promise<MissionConversation[]> {
+  const conversations = await client.query<ConversationRow>(
+    `SELECT ${CONVERSATION_COLUMNS} FROM public.action_mission_conversations
+     WHERE organization_id = $1
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 50`,
+    [organizationId],
+  )
+  if (!conversations.rows.length) return []
+  const ids = conversations.rows.map((row) => row.id)
+  const messages = await client.query<MessageRow>(
+    `SELECT ${MESSAGE_COLUMNS} FROM public.action_mission_conversation_messages
+     WHERE organization_id = $1 AND conversation_id = ANY($2::uuid[])
+     ORDER BY conversation_id ASC, sequence ASC`,
+    [organizationId, ids],
+  )
+  const byConversation = new Map<string, MessageRow[]>()
+  for (const message of messages.rows) {
+    const current = byConversation.get(message.conversation_id) ?? []
+    current.push(message)
+    byConversation.set(message.conversation_id, current)
+  }
+  return conversations.rows.map((row) => mapConversation(row, byConversation.get(row.id) ?? []))
+}
+
 export async function appendUserConversationMessage(pool: Connectable, input: {
   organizationId: string
   conversationId: string

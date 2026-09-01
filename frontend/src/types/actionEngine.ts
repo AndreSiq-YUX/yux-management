@@ -9,6 +9,120 @@ export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'changes_requ
 export type MissionMode = 'shadow' | 'prepare' | 'assisted' | 'autonomous'
 export type DecisionReasonKey = 'wrong_icp' | 'wrong_tone' | 'cost_too_high' | 'scope_too_broad' | 'scope_too_narrow' | 'timing_wrong' | 'channel_wrong' | 'compliance_risk' | 'outcome_wrong' | 'other'
 
+export type MissionConversationStatus =
+  | 'collecting_context' | 'awaiting_user' | 'brief_confirmation' | 'planning'
+  | 'awaiting_plan_approval' | 'converted' | 'blocked' | 'cancelled'
+
+export interface MissionConversationSource {
+  ref: string
+  kind: 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory'
+  id: string
+  version: string
+  contentHash: string
+  visibility: 'internal_only' | 'client_safe' | 'internal' | 'external' | 'both'
+  title: string
+  displayMode: 'named' | 'generic' | 'hidden'
+}
+
+export interface MissionConversationQuestion {
+  key: string
+  label: string
+  whyNeeded: string
+  priority: number
+  answerType: 'text' | 'number' | 'currency' | 'date' | 'single_choice' | 'multiple_choice' | 'boolean'
+  choices?: string[]
+  defaultValue?: unknown
+  defaultSourceRef?: string
+}
+
+export interface MissionConversationMissingContext {
+  key: string
+  category: 'company' | 'brand' | 'offer' | 'audience' | 'budget' | 'deadline' | 'integration' | 'permission' | 'consent'
+  reason: string
+  requiredFor?: string[]
+  correctionKey?: string
+}
+
+export interface MissionConversationReadiness {
+  status: 'needs_information' | 'needs_configuration' | 'ready_for_brief_confirmation' | 'ready_for_plan'
+  knownFacts?: Array<{ key: string; value: unknown; sourceRef: string }>
+  assumptions?: Array<{ key: string; value: unknown; sourceRef?: string }>
+  missing?: MissionConversationMissingContext[]
+  processingError?: string
+}
+
+export interface MissionConversationBrief {
+  title?: string | null
+  objective?: string
+  requestedOutcome?: string
+  scopeHints?: string[]
+  constraints?: Record<string, unknown>
+  acceptanceCriteria?: Array<Record<string, unknown>>
+  packKeys?: string[]
+  deadlineAt?: string | null
+  maxTotalCostBrl?: string | null
+  maxHumanHours?: string | null
+  maxExternalContacts?: number | null
+  mode?: MissionMode | null
+}
+
+export interface MissionConversationSuggestedAction {
+  key: string
+  label: string
+  kind: 'quick_reply' | 'open_correction' | 'confirm_brief' | 'cancel'
+  payload?: Record<string, unknown>
+  correctionKey?: string
+  capabilityKey?: string
+  packKey?: string
+}
+
+export interface MissionConversationMessagePayload {
+  kind?: 'message' | 'questions' | 'brief_confirmation' | 'blocked'
+  understood?: Record<string, unknown>
+  questions?: MissionConversationQuestion[]
+  readiness?: MissionConversationReadiness
+  brief?: MissionConversationBrief
+  suggestedActions?: MissionConversationSuggestedAction[]
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
+  latencyMs?: number
+  [key: string]: unknown
+}
+
+export interface MissionConversationMessage {
+  id: string
+  organizationId: string
+  conversationId: string
+  sequence: number
+  actorType: 'user' | 'agent' | 'system'
+  messageKind: 'text' | 'question' | 'brief' | 'plan' | 'status' | 'error'
+  content: string
+  structuredPayload: MissionConversationMessagePayload
+  sourceRefs: MissionConversationSource[]
+  clientMessageId?: string
+  harnessRunId?: string
+  createdBy?: string
+  createdAt: string
+}
+
+export interface MissionConversation {
+  id: string
+  organizationId: string
+  contractId?: string
+  missionId?: string
+  status: MissionConversationStatus
+  title: string
+  currentBrief: MissionConversationBrief
+  contextReadiness: MissionConversationReadiness | Record<string, unknown>
+  lastContextHash?: string
+  lastHarnessRunId?: string
+  version: number
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+  messages: MissionConversationMessage[]
+}
+
 export interface MissionGoal {
   statement: string
   requestedOutcome: string

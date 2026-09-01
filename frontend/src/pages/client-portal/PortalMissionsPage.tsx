@@ -11,5 +11,5 @@ export function PortalMissionsPage() {
   const authenticatedRole = useAuthStore(state => state.user?.role)
   const portalPath = usePortalWorkspacePath()
   if (!organization) return <p className="text-sm text-slate-500">Carregando workspace...</p>
-  return <MissionsWorkspace organizationId={organization.id} contractId={contractId} canWrite={canManageMissionsInWorkspace(authenticatedRole, role)} detailHref={id => portalPath(`/portal/missoes/${id}`)} />
+  return <MissionsWorkspace organizationId={organization.id} contractId={contractId} canWrite={canManageMissionsInWorkspace(authenticatedRole, role)} detailHref={id => portalPath(`/portal/missoes/${id}`)} conversationHref={id => portalPath(`/portal/missoes/conversas/${id}`)} />
 }

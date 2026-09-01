@@ -83,8 +83,10 @@ import { PackagesPage } from '@/pages/platform/PackagesPage'
 
 const MissionsPage = lazy(() => import('@/pages/action-engine/MissionsPage').then(module => ({ default: module.MissionsPage })))
 const MissionDetailPage = lazy(() => import('@/pages/action-engine/MissionDetailPage').then(module => ({ default: module.MissionDetailPage })))
+const MissionConversationPage = lazy(() => import('@/pages/action-engine/MissionConversationPage').then(module => ({ default: module.MissionConversationPage })))
 const PortalMissionsPage = lazy(() => import('@/pages/client-portal/PortalMissionsPage').then(module => ({ default: module.PortalMissionsPage })))
 const PortalMissionDetailPage = lazy(() => import('@/pages/client-portal/PortalMissionDetailPage').then(module => ({ default: module.PortalMissionDetailPage })))
+const PortalMissionConversationPage = lazy(() => import('@/pages/client-portal/PortalMissionConversationPage').then(module => ({ default: module.PortalMissionConversationPage })))
 const MissionSimulationReviewPage = lazy(() => import('@/pages/public/MissionSimulationReviewPage').then(module => ({ default: module.MissionSimulationReviewPage })))
 const MissionLearningPage = lazy(() => import('@/pages/platform/MissionLearningPage').then(module => ({ default: module.MissionLearningPage })))
 
@@ -178,6 +180,7 @@ function App() {
             <Route path="support" element={<SupportPage />} />
             <Route path="finance" element={<FinancePage />} />
             <Route path="missions" element={<LazyPage><MissionsPage /></LazyPage>} />
+            <Route path="missions/conversations/:conversationId" element={<LazyPage><MissionConversationPage /></LazyPage>} />
             <Route path="missions/:missionId" element={<LazyPage><MissionDetailPage /></LazyPage>} />
             <Route path="blueprints" element={<RequireRole roles={['admin']}><BlueprintsPage /></RequireRole>} />
 
@@ -220,6 +223,7 @@ function App() {
               <Route path="projetos/aprovacoes" element={<PortalApprovalsPage />} />
               <Route path="projetos/documentos" element={<PortalDocumentsPage />} />
               <Route path="missoes" element={<LazyPage><PortalMissionsPage /></LazyPage>} />
+              <Route path="missoes/conversas/:conversationId" element={<LazyPage><PortalMissionConversationPage /></LazyPage>} />
               <Route path="missoes/:missionId" element={<LazyPage><PortalMissionDetailPage /></LazyPage>} />
 
               <Route path="relatorios" element={<PortalReportsPage />} />
@@ -269,6 +273,7 @@ function App() {
             <Route path="portal/projetos/aprovacoes" element={<PortalApprovalsPage />} />
             <Route path="portal/projetos/documentos" element={<PortalDocumentsPage />} />
             <Route path="portal/missoes" element={<LazyPage><PortalMissionsPage /></LazyPage>} />
+            <Route path="portal/missoes/conversas/:conversationId" element={<LazyPage><PortalMissionConversationPage /></LazyPage>} />
             <Route path="portal/missoes/:missionId" element={<LazyPage><PortalMissionDetailPage /></LazyPage>} />
 
             <Route path="portal/relatorios" element={<PortalReportsPage />} />
