@@ -5,7 +5,7 @@ import { MissionConversationComposer } from './MissionConversationComposer'
 import { MissionConversationThread } from './MissionConversationThread'
 import { MissionContextDrawer } from './MissionContextDrawer'
 import { actionEngineService } from '@/services/actionEngineService'
-import type { MissionConversation, MissionConversationMessage, MissionConversationMissingContext } from '@/types/actionEngine'
+import type { DecisionReasonKey, MissionConversation, MissionConversationMessage, MissionConversationMissingContext, MissionConversationPlanReference } from '@/types/actionEngine'
 
 type Props = {
   conversationId: string
@@ -104,16 +104,42 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   }
 
   const confirmBrief = async () => {
-    if (!conversation?.lastContextHash) return
+    if (!conversation?.briefHash) return
     setAcceptedTurn(conversation.version)
     try {
       const result = await actionEngineService.confirmMissionConversationBrief(conversation.id, {
-        organizationId, expectedVersion: conversation.version, briefHash: conversation.lastContextHash,
+        organizationId, expectedVersion: conversation.version, briefHash: conversation.briefHash,
       })
       setConversation(result.conversation)
     } catch (cause) {
       setError(readError(cause)); setAcceptedTurn(null)
     }
+  }
+
+  const approvePlan = async (reference: MissionConversationPlanReference) => {
+    if (!conversation?.missionId) return
+    setAcceptedTurn(conversation.version); setError(null)
+    try {
+      await actionEngineService.approveMissionConversationPlan({
+        organizationId, missionId: conversation.missionId, planId: reference.planId,
+        approvalId: reference.approvalId, expectedMissionVersion: reference.missionVersion,
+        subjectHash: reference.subjectHash,
+      })
+      await load()
+    } catch (cause) { setError(readError(cause)); setAcceptedTurn(null) }
+  }
+
+  const requestPlanChanges = async (reference: MissionConversationPlanReference, reasonKey: DecisionReasonKey, comment?: string) => {
+    if (!conversation) return
+    setAcceptedTurn(conversation.version); setError(null)
+    try {
+      await actionEngineService.decideApproval(organizationId, {
+        id: reference.approvalId, missionId: conversation.missionId ?? '', planId: reference.planId,
+        approvalType: 'plan', status: 'pending', subjectHash: reference.subjectHash,
+        requestedPayload: {}, createdAt: new Date().toISOString(),
+      }, 'changes_requested', reasonKey, comment)
+      await load()
+    } catch (cause) { setError(readError(cause)); setAcceptedTurn(null) }
   }
 
   const cancel = async () => {
@@ -126,7 +152,8 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   if (loading) return <div className="grid min-h-[520px] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div>
   if (!conversation) return <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error ?? 'Conversa não encontrada.'}</div>
   const processing = POLLING_STATUSES.has(conversation.status) || acceptedTurn != null
-  const writable = canWrite && !['cancelled', 'converted', 'awaiting_plan_approval'].includes(conversation.status)
+  const canInteract = canWrite && !['cancelled', 'converted'].includes(conversation.status)
+  const writable = canInteract && conversation.status !== 'awaiting_plan_approval'
   const liveStatus = processing ? 'O agente está consultando a estratégia YUX e o contexto da empresa.' : statusLabel(conversation.status)
 
   return (
@@ -144,7 +171,7 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <MissionConversationThread conversation={conversation} processing={processing} canWrite={writable} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : undefined} correctionHref={correctionHref} />
+        <MissionConversationThread conversation={conversation} processing={processing} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionHref={correctionHref} />
         <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-red-600"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-slate-50 p-3 text-center text-sm text-slate-500">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-slate-400">Nada é executado externamente sem passar pelas regras e aprovações do Action Engine.</p></div></div>
       </div>
       <p aria-live="polite" className="sr-only">{liveStatus}</p>

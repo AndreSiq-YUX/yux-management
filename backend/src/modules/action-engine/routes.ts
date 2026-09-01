@@ -35,13 +35,17 @@ import { completeShadowExperiment, createShadowExperiment, decideShadowExperimen
 import {
   appendUserConversationMessage,
   cancelMissionConversation,
+  confirmMissionConversationBrief,
   createMissionConversation,
   getMissionConversation,
   listMissionConversations,
+  markMissionConversationPlanApproved,
+  returnMissionConversationToUser,
 } from './mission-conversations.js'
 import {
   appendMissionConversationMessageSchema,
   cancelMissionConversationSchema,
+  confirmMissionConversationBriefSchema,
   createMissionConversationSchema,
   missionConversationParamsSchema,
   missionConversationQuerySchema,
@@ -432,6 +436,26 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     } catch (error) { return sendDomainError(reply, error) }
   })
 
+  app.post('/mission-conversations/:conversationId/confirm', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionConversationParamsSchema.safeParse(request.params)
+    const body = confirmMissionConversationBriefSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_conversation_confirmation' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    if (app.config.MISSION_SUPERVISOR_ENABLED === false) return reply.code(503).send({ error: 'mission_supervisor_disabled' })
+    try {
+      const result = await confirmMissionConversationBrief(app.pg as never, {
+        organizationId: body.data.organizationId, conversationId: params.data.conversationId,
+        expectedVersion: body.data.expectedVersion, briefHash: body.data.briefHash, confirmedBy: ctx.userId,
+      })
+      const job = await app.jobQueue.add('action-engine.planMission', {
+        missionId: result.mission.id, organizationId: result.mission.organizationId,
+        requestedVersion: result.mission.version,
+      }, { jobId: createBullMqJobId('mission-conversation-plan', result.mission.id, result.mission.version) })
+      return reply.code(202).send({ conversation: result.conversation, missionId: result.mission.id, jobId: job.id ?? null })
+    } catch (error) { return sendDomainError(reply, error) }
+  })
+
   app.get('/missions', async (request, reply) => {
     const ctx = requireAuth(request)
     const parsed = z.object({ organizationId: uuid, status: z.union([status, z.array(status)]).optional(), limit: z.coerce.number().int().optional(), offset: z.coerce.number().int().optional() }).safeParse(request.query)
@@ -777,6 +801,13 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         approvalId: body.data.approvalId, expectedMissionVersion: body.data.expectedMissionVersion,
         subjectHash: body.data.subjectHash, decidedBy: ctx.userId, reason: body.data.reason,
       })
+      try {
+        await transaction(app.pg, client => markMissionConversationPlanApproved(client, {
+          organizationId: body.data.organizationId, missionId: body.data.missionId, planId: params.data.planId,
+        }))
+      } catch (projectionError) {
+        request.log.error({ err: projectionError, missionId: body.data.missionId }, 'mission conversation approval projection failed')
+      }
       if (mission.status === 'active') await app.jobQueue.add('action-engine.scheduleReadyActions', { missionId: mission.id })
       return mission
     } catch (error) { return sendDomainError(reply, error) }
@@ -953,6 +984,16 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         reason: body.data.comment || body.data.reasonKey || 'Aprovado pela operação',
         reasonKey: body.data.reasonKey, decidedBy: ctx.userId,
       })
+      if (result.status === 'changes_requested') {
+        try {
+          await transaction(app.pg, client => returnMissionConversationToUser(client, {
+            organizationId: body.data.organizationId, missionId: result.missionId,
+            approvalId: params.data.approvalId, reason: body.data.comment || body.data.reasonKey || 'Alterações solicitadas',
+          }))
+        } catch (projectionError) {
+          request.log.error({ err: projectionError, missionId: result.missionId }, 'mission conversation change request projection failed')
+        }
+      }
       if (result.runId && result.status === 'approved') await app.jobQueue.add('action-engine.executeAction', { actionRunId: result.runId, organizationId: body.data.organizationId, missionId: result.missionId })
       return result
     } catch (error) { return sendDomainError(reply, error) }
@@ -1258,6 +1299,17 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_conversation_not_writable: 409,
     mission_conversation_not_cancellable: 409,
     mission_conversation_already_attached: 409,
+    mission_conversation_brief_not_confirmable: 409,
+    mission_conversation_brief_changed: 409,
+    mission_conversation_pack_selection_invalid: 409,
+    mission_conversation_pack_unavailable: 409,
+    mission_conversation_pack_not_entitled: 403,
+    mission_conversation_deadline_required: 409,
+    mission_conversation_objective_required: 409,
+    mission_conversation_icp_required: 409,
+    mission_conversation_offer_required: 409,
+    mission_conversation_platform_required: 409,
+    mission_conversation_provider_required: 409,
   }
   return reply.code(statusCode[code] ?? 500).send({ error: statusCode[code] ? code : 'internal_error' })
 }

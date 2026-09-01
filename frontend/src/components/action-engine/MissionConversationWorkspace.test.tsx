@@ -88,7 +88,7 @@ async function renderWorkspace() {
 function conversation({ status, withAgent = false }: { status: MissionConversation['status']; withAgent?: boolean }): MissionConversation {
   const base: MissionConversation = {
     id: '00000000-0000-4000-8000-000000000010', organizationId: '00000000-0000-4000-8000-000000000001', status,
-    title: 'Campanha de aquisição', currentBrief: {}, contextReadiness: { status: 'needs_information' }, version: withAgent ? 2 : 1,
+    title: 'Campanha de aquisição', currentBrief: {}, briefHash: 'a'.repeat(64), contextReadiness: { status: 'needs_information' }, version: withAgent ? 2 : 1,
     createdBy: 'user-1', createdAt: '2026-08-31T12:00:00.000Z', updatedAt: '2026-08-31T12:00:00.000Z',
     messages: [{ id: 'message-1', organizationId: '00000000-0000-4000-8000-000000000001', conversationId: '00000000-0000-4000-8000-000000000010', sequence: 1, actorType: 'user', messageKind: 'text', content: 'Quero criar uma campanha completa', structuredPayload: {}, sourceRefs: [], createdAt: '2026-08-31T12:00:00.000Z' }],
   }

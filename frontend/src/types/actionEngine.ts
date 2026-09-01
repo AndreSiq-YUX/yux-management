@@ -77,7 +77,7 @@ export interface MissionConversationSuggestedAction {
 }
 
 export interface MissionConversationMessagePayload {
-  kind?: 'message' | 'questions' | 'brief_confirmation' | 'blocked'
+  kind?: 'message' | 'questions' | 'brief_confirmation' | 'plan' | 'blocked'
   understood?: Record<string, unknown>
   questions?: MissionConversationQuestion[]
   readiness?: MissionConversationReadiness
@@ -112,6 +112,7 @@ export interface MissionConversation {
   status: MissionConversationStatus
   title: string
   currentBrief: MissionConversationBrief
+  briefHash: string
   contextReadiness: MissionConversationReadiness | Record<string, unknown>
   lastContextHash?: string
   lastHarnessRunId?: string
@@ -121,6 +122,15 @@ export interface MissionConversation {
   updatedAt: string
   completedAt?: string
   messages: MissionConversationMessage[]
+}
+
+export interface MissionConversationPlanReference {
+  planId: string
+  approvalId: string
+  subjectHash: string
+  missionVersion: number
+  decisionSummary: MissionDecisionSummary
+  sources: string[]
 }
 
 export interface MissionGoal {

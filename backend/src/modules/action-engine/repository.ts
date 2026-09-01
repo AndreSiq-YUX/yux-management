@@ -40,9 +40,7 @@ const MISSION_COLUMNS = `id, organization_id, contract_id, pack_version_id, stat
   title, objective, goal, autonomy_envelope, pack_selection, parameters, budget, deadline_at, active_plan_id, version,
   created_by, created_at, updated_at`
 
-export async function createMission(
-  pool: Connectable,
-  input: {
+export type CreateMissionRecordInput = {
     organizationId: string
     contractId?: string | null
     packVersionId: string
@@ -57,9 +55,19 @@ export async function createMission(
     deadlineAt?: string | null
     createdBy: string
     idempotencyKey: string
-  },
+}
+
+export async function createMission(
+  pool: Connectable,
+  input: CreateMissionRecordInput,
 ): Promise<ActionMission> {
-  return inTransaction(pool, async (client) => {
+  return inTransaction(pool, (client) => createMissionInTransaction(client, input))
+}
+
+export async function createMissionInTransaction(
+  client: Queryable,
+  input: CreateMissionRecordInput,
+): Promise<ActionMission> {
     const result = await client.query<MissionRow>(
       `INSERT INTO public.action_missions (
          organization_id, contract_id, pack_version_id, title, objective, mode,
@@ -96,7 +104,6 @@ export async function createMission(
       payload: { status: mission.status, packVersionId: mission.packVersionId, mode: mission.mode },
     })
     return mission
-  })
 }
 
 export async function getMission(client: Queryable, missionId: string, organizationId: string): Promise<ActionMission | null> {

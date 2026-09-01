@@ -24,3 +24,9 @@ export const cancelMissionConversationSchema = z.object({
   organizationId: uuid,
   expectedVersion: z.number().int().positive(),
 })
+
+export const confirmMissionConversationBriefSchema = z.object({
+  organizationId: uuid,
+  expectedVersion: z.number().int().positive(),
+  briefHash: z.string().regex(/^[a-f0-9]{64}$/),
+})

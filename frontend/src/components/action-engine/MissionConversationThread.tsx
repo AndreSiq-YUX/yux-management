@@ -2,7 +2,8 @@ import { Bot, ExternalLink, Loader2, RotateCcw, Sparkles, UserRound } from 'luci
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
 import { MissionBriefCard } from './MissionBriefCard'
-import type { MissionConversation, MissionConversationMissingContext } from '@/types/actionEngine'
+import { MissionConversationPlanCard } from './MissionConversationPlanCard'
+import type { DecisionReasonKey, MissionConversation, MissionConversationMissingContext, MissionConversationPlanReference } from '@/types/actionEngine'
 
 type Props = {
   conversation: MissionConversation
@@ -11,10 +12,12 @@ type Props = {
   onQuickReply: (message: string) => void
   onConfirmBrief?: () => void
   onRetry?: () => void
+  onApprovePlan?: (reference: MissionConversationPlanReference) => void
+  onRequestPlanChanges?: (reference: MissionConversationPlanReference, reasonKey: DecisionReasonKey, comment?: string) => void
   correctionHref?: (missing: MissionConversationMissingContext) => string | undefined
 }
 
-export function MissionConversationThread({ conversation, processing, canWrite, onQuickReply, onConfirmBrief, onRetry, correctionHref }: Props) {
+export function MissionConversationThread({ conversation, processing, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionHref }: Props) {
   const processingError = typeof conversation.contextReadiness.processingError === 'string'
     ? conversation.contextReadiness.processingError
     : null
@@ -40,6 +43,7 @@ export function MissionConversationThread({ conversation, processing, canWrite, 
                   {!isUser && missing.length ? <div className="mt-4 space-y-2">{missing.map(item => <MissingContextCard correctionHref={correctionHref?.(item)} item={item} key={item.key} />)}</div> : null}
                   {!isUser && actions.length ? <div className="mt-4 flex flex-wrap gap-2">{actions.map(action => action.kind === 'quick_reply' ? <button className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100" key={action.key} onClick={() => onQuickReply(action.label)} type="button">{action.label}</button> : null)}</div> : null}
                   {!isUser && message.messageKind === 'brief' && payload.brief ? <MissionBriefCard brief={payload.brief} disabled={!canWrite || processing} onConfirm={canWrite && onConfirmBrief ? onConfirmBrief : undefined} /> : null}
+                  {!isUser && message.messageKind === 'plan' && onApprovePlan && onRequestPlanChanges ? <MissionConversationPlanCard payload={payload} canApprove={canWrite} busy={processing} onApprove={onApprovePlan} onRequestChanges={onRequestPlanChanges} /> : null}
                 </MessageContent>
               </div>
             </Message>

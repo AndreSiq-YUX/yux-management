@@ -80,6 +80,7 @@ export type MissionConversation = {
   status: MissionConversationStatus
   title: string
   currentBrief: Record<string, unknown>
+  briefHash: string
   contextReadiness: Record<string, unknown>
   lastContextHash?: string
   lastHarnessRunId?: string

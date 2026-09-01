@@ -25,7 +25,6 @@ import {
 import { releaseResourceClaims } from '../../modules/action-engine/resource-claims.js'
 import { reservePlanningCall, settlePlanningCall, type PlanningCycleBudget } from '../../modules/action-engine/planning-cycle.js'
 import { enforceMissionRetention } from '../../modules/action-engine/retention.js'
-import { buildMissionContext } from '../../modules/action-engine/context-builder.js'
 import { processCompletedMissionLearning } from '../../modules/action-engine/learning.js'
 import { createCapabilityManifest } from '../../modules/action-engine/capability-manifest.js'
 import { redactMissionTelemetry } from '../../modules/action-engine/telemetry-redaction.js'
@@ -36,10 +35,13 @@ import { invokeMissionConversationTurn } from '../../lib/agent-runtime-client.js
 import { buildMissionOperationalContext } from '../../modules/action-engine/context-builder.js'
 import {
   completeAgentConversationTurn,
+  getMissionConversationForMission,
   getMissionConversation,
+  projectMissionConversationPlanningResult,
   recordMissionConversationProcessingError,
 } from '../../modules/action-engine/mission-conversations.js'
-import { verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
+import { composeVerifiedMissionContext, verifyMissionKnowledgeContext } from '../../modules/action-engine/mission-source-verifier.js'
+import type { MissionSourceRefWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../../modules/action-engine/generated/mission-wire.js'
 import type { MissionConversationMessage } from '../../modules/action-engine/types.js'
 
@@ -550,7 +552,7 @@ export async function handleActionEnginePlanMission(
     registry,
     capabilityCatalog.map((item) => ({ key: item.key, version: item.version })),
   )
-  const builtContext = await buildMissionContext(pool, {
+  const operationalContext = await buildMissionOperationalContext(pool, {
     organizationId, ...(mission.contractId ? { contractId: mission.contractId } : {}),
     query: `${mission.goal.statement}\n${mission.goal.requestedOutcome}`,
     agentProfileKey: 'mission_supervisor',
@@ -558,13 +560,64 @@ export async function handleActionEnginePlanMission(
     capabilityManifest: manifest.entries,
     packKeys: packs.map(item=>item.key),
   })
+  const linkedConversation = await getMissionConversationForMission(pool, missionId, organizationId)
+  let planningContext = {
+    query: operationalContext.query,
+    companyContext: operationalContext.companyContext as Record<string, unknown>,
+    knowledgeItems: operationalContext.knowledgeItems as Array<Record<string, unknown>>,
+    strategyItems: operationalContext.strategyItems as Array<Record<string, unknown>>,
+    learningMemoryItems: operationalContext.learningMemoryItems as Array<Record<string, unknown>>,
+    liveState: { ...operationalContext.liveState, providerHealth: operationalContext.providerHealth },
+    capabilityManifest: operationalContext.capabilityManifest,
+    capabilityCatalogHash: operationalContext.capabilityCatalogHash,
+    sourceIds: operationalContext.sourceIds,
+    contextHash: operationalContext.contextHash,
+    harnessRetrievalTraceId: undefined as string | undefined,
+    harnessKnowledgeContextHash: undefined as string | undefined,
+  }
+  if (linkedConversation?.lastHarnessRunId && linkedConversation.lastContextHash) {
+    const latestGroundedMessage = [...linkedConversation.messages].reverse().find(message => message.actorType === 'agent' && message.sourceRefs.length)
+    const sourceRefs = (latestGroundedMessage?.sourceRefs ?? []) as unknown as MissionSourceRefWire[]
+    const audience = sourceRefs.some(source => source.kind.startsWith('knowledge_') && source.visibility === 'internal')
+      ? 'internal_operator' as const : 'client_user' as const
+    const verified = await verifyMissionKnowledgeContext(pool, {
+      organizationId, audience, sourceRefs, agentProfileKey: 'growth_strategist',
+    })
+    const allowedSourceIds = [...new Set([
+      ...verified.sources.map(source => source.id), ...verified.sourceIds,
+    ])].sort()
+    const composed = composeVerifiedMissionContext({
+      organizationId,
+      companyContext: companyContextFromConversation(linkedConversation.contextReadiness),
+      operational: operationalContext,
+      knowledge: { ...verified, sourceIds: allowedSourceIds },
+      harnessRetrievalTraceId: linkedConversation.lastHarnessRunId,
+      harnessKnowledgeContextHash: linkedConversation.lastContextHash,
+    })
+    planningContext = {
+      query: operationalContext.query,
+      companyContext: composed.companyContext,
+      knowledgeItems: composed.knowledgeItems,
+      strategyItems: composed.strategyItems,
+      learningMemoryItems: composed.approvedLearningMemory,
+      liveState: composed.liveState,
+      capabilityManifest: composed.capabilityManifest,
+      capabilityCatalogHash: composed.capabilityCatalogHash,
+      sourceIds: composed.sourceIds,
+      contextHash: composed.contextHash,
+      harnessRetrievalTraceId: composed.harnessRetrievalTraceId,
+      harnessKnowledgeContextHash: composed.harnessKnowledgeContextHash,
+    }
+  }
   const contextSnapshot = await transaction(pool, (client) => insertMissionContextSnapshot(client, {
-    organizationId, missionId, query: builtContext.query, companyContext: builtContext.companyContext,
-    knowledgeItems: builtContext.knowledgeItems, strategyItems: builtContext.strategyItems,
-    approvedLearningMemory: builtContext.learningMemoryItems,
-    liveState: builtContext.liveState,
-    capabilityManifest: builtContext.capabilityManifest as unknown as Array<Record<string, unknown>>,
-    capabilityCatalogHash: builtContext.capabilityCatalogHash, sourceIds: builtContext.sourceIds,
+    organizationId, missionId, query: planningContext.query, companyContext: planningContext.companyContext,
+    knowledgeItems: planningContext.knowledgeItems, strategyItems: planningContext.strategyItems,
+    approvedLearningMemory: planningContext.learningMemoryItems,
+    liveState: planningContext.liveState,
+    capabilityManifest: planningContext.capabilityManifest as unknown as Array<Record<string, unknown>>,
+    capabilityCatalogHash: planningContext.capabilityCatalogHash, sourceIds: planningContext.sourceIds,
+    ...(planningContext.harnessRetrievalTraceId ? { harnessRetrievalTraceId: planningContext.harnessRetrievalTraceId } : {}),
+    ...(planningContext.harnessKnowledgeContextHash ? { harnessKnowledgeContextHash: planningContext.harnessKnowledgeContextHash } : {}),
   }))
   const planningBudget: PlanningCycleBudget = {
     maxCalls: 8,
@@ -575,7 +628,7 @@ export async function handleActionEnginePlanMission(
   }
   const planningEstimate = { calls: 1, inputTokens: 12_000, outputTokens: 2_500, costBrl: '5', latencyMs: 60_000 }
   const planningCycle = await transaction(pool, async (client) => {
-    const contextHash = builtContext.contextHash
+    const contextHash = planningContext.contextHash
     const created = await client.query<{ id: string }>(
       `INSERT INTO public.action_planning_cycles (
          organization_id, mission_id, plan_revision, context_hash, pack_key, pack_version, budget
@@ -624,15 +677,15 @@ export async function handleActionEnginePlanMission(
         providerPlatforms: [...new Set(providerConnections.rows.map(row => row.provider))],
         providerConnections: providerConnections.rows.map(row => ({ id: row.id, platform: row.provider })),
       },
-      baseline: builtContext.liveState, capabilities: capabilityCatalog,
+      baseline: planningContext.liveState, capabilities: capabilityCatalog,
       limits: mission.budget,
       strategy_context: {
-        companyContext: builtContext.companyContext,
-        strategyItems: builtContext.strategyItems,
-        knowledgeItems: builtContext.knowledgeItems,
+        companyContext: planningContext.companyContext,
+        strategyItems: planningContext.strategyItems,
+        knowledgeItems: planningContext.knowledgeItems,
       },
       context_snapshot_id: contextSnapshot.id,
-      allowed_source_ids: builtContext.sourceIds,
+      allowed_source_ids: planningContext.sourceIds,
       asked_question_keys: Array.isArray(mission.packSelection.askedQuestionKeys)
         ? mission.packSelection.askedQuestionKeys.filter((key): key is string => typeof key === 'string')
         : [],
@@ -682,7 +735,7 @@ export async function handleActionEnginePlanMission(
       maxTotalCostBrl: String(mission.budget.maxTotalCostBrl ?? mission.autonomyEnvelope.maxTotalCostBrl ?? '0'),
       allowedSourceIds: contextSnapshot.sourceIds, contextHash: contextSnapshot.contextHash,
       capabilityCatalogHash: contextSnapshot.capabilityCatalogHash,
-      expectedCapabilityCatalogHash: builtContext.capabilityCatalogHash,
+      expectedCapabilityCatalogHash: planningContext.capabilityCatalogHash,
       autonomyEnvelope: mission.autonomyEnvelope,
     })
     await pool.query(
@@ -711,6 +764,22 @@ export async function handleActionEnginePlanMission(
         await recordDomainEvent(client, {
           eventType: 'mission.clarification_requested', organizationId, aggregateType: 'mission', aggregateId: missionId,
           actor: { type: 'system' }, payload: { questions: compileResult.questions, contextSnapshotId: contextSnapshot.id },
+        })
+        await projectMissionConversationPlanningResult(client, {
+          organizationId, missionId, status: 'awaiting_user', messageKind: 'question',
+          content: `Antes de fechar o plano, preciso confirmar: ${compileResult.questions.map(question => question.label).join(' ')}`,
+          structuredPayload: {
+            kind: 'questions', projectionKey: `planning-clarification:${contextSnapshot.id}`,
+            questions: compileResult.questions, brief: linkedConversation?.currentBrief ?? mission.goal,
+            readiness: {
+              status: 'needs_information', knownFacts: [], assumptions: [],
+              missing: compileResult.questions.map(question => ({ key: question.key, category: 'company', reason: question.whyNeeded, requiredFor: packs.map(item => item.key) })),
+            },
+          },
+          contextReadiness: {
+            status: 'needs_information',
+            missing: compileResult.questions.map(question => ({ key: question.key, category: 'company', reason: question.whyNeeded, requiredFor: packs.map(item => item.key) })),
+          },
         })
         return { skipped: 'clarification_required' }
       })
@@ -772,6 +841,20 @@ export async function handleActionEnginePlanMission(
           actor: { type: 'system' }, reason: 'plan_compiled_and_verified',
         })
       }
+      await projectMissionConversationPlanningResult(client, {
+        organizationId, missionId, status: 'awaiting_plan_approval', messageKind: 'plan',
+        content: 'O plano está pronto. Revise os impactos, custos e aprovações antes de autorizar.',
+        structuredPayload: {
+          kind: 'plan', projectionKey: `plan:${plan.id}`, planId: plan.id, approvalId: approval.id,
+          subjectHash: decisionSummary.decisionSubjectHash, missionVersion: isReplan ? current.version : requestedVersion + 1,
+          decisionSummary, plan: {
+            id: plan.id, revision: plan.revision, planHash: compiled.planHash,
+            packContentHash: compiled.packContentHash, estimatedEconomics: compiled.estimatedEconomics,
+            steps: compiled.steps, deviations: compiled.deviations,
+          },
+          sources: planningContext.sourceIds,
+        },
+      })
       return { planId: plan.id, approvalId: approval.id }
     })
     if (queue && 'approvalId' in planningResult && planningResult.approvalId) {
@@ -786,6 +869,12 @@ export async function handleActionEnginePlanMission(
           missionId, organizationId, expectedVersion: requestedVersion, toStatus: isReplan ? 'paused' : 'blocked',
           actor: { type: 'system' }, reason: safeErrorCode(error),
         })
+        await projectMissionConversationPlanningResult(client, {
+          organizationId, missionId, status: 'blocked', messageKind: 'error',
+          content: 'Não consegui preparar um plano seguro com o contexto atual. Revise as pendências e tente novamente.',
+          structuredPayload: { kind: 'blocked', projectionKey: `planning-blocked:${requestedVersion}`, errorCode: safeErrorCode(error) },
+          contextReadiness: { status: 'needs_configuration', missing: [], processingError: safeErrorCode(error) },
+        })
       }
     })
     throw error
@@ -796,6 +885,17 @@ function stringField(data: Record<string, unknown>, key: string): string {
   const value = data[key]
   if (typeof value !== 'string' || !value) throw new Error(`${key}_required`)
   return value
+}
+
+function companyContextFromConversation(readiness: Record<string, unknown>): Record<string, unknown> {
+  const facts = Array.isArray(readiness.knownFacts) ? readiness.knownFacts : []
+  const companyContext = Object.fromEntries(facts.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const item = value as Record<string, unknown>
+    return typeof item.key === 'string' ? [[item.key, item.value]] : []
+  }))
+  const assumptions = Array.isArray(readiness.assumptions) ? readiness.assumptions : []
+  return assumptions.length ? { ...companyContext, assumptions } : companyContext
 }
 
 function numberField(data: Record<string, unknown>, key: string): number {

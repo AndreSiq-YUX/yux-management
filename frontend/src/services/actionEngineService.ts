@@ -17,6 +17,16 @@ function query(params: Record<string, string | number | undefined>) {
 
 const root = '/action-engine'
 
+function approvePlanReference(input: { organizationId: string; missionId: string; planId: string; approvalId: string; expectedMissionVersion: number; subjectHash: string }) {
+  return apiRequest<ActionMission>(`${root}/plans/${input.planId}/submit`, {
+    method: 'POST', body: {
+      organizationId: input.organizationId, missionId: input.missionId, approvalId: input.approvalId,
+      expectedMissionVersion: input.expectedMissionVersion, subjectHash: input.subjectHash,
+      decision: 'approved', reason: 'Impactos e plano revisados e aprovados na conversa da missão',
+    },
+  })
+}
+
 export const actionEngineService = {
   createMissionConversation: (input: {
     organizationId: string; contractId?: string; title?: string; message: string;
@@ -44,6 +54,8 @@ export const actionEngineService = {
   }),
   cancelMissionConversation: (conversationId: string, input: { organizationId: string; expectedVersion: number }) =>
     apiRequest<MissionConversation>(`${root}/mission-conversations/${conversationId}/cancel`, { method: 'POST', body: input }),
+  approveMissionConversationPlan: (input: { organizationId: string; missionId: string; planId: string; approvalId: string; expectedMissionVersion: number; subjectHash: string }) =>
+    approvePlanReference(input),
   listPacks: () => apiRequest<ActionPack[]>(`${root}/action-packs`),
   listRecipes: (organizationId: string) => apiRequest<MissionRecipe[]>(`${root}/mission-recipes?${query({ organizationId })}`),
   seedRecipeSandbox: (organizationId: string, recipe: Pick<MissionRecipe, 'key' | 'version'>) =>
@@ -83,11 +95,9 @@ export const actionEngineService = {
   }),
   listPlans: (missionId: string, organizationId: string) => apiRequest<MissionPlan[]>(`${root}/missions/${missionId}/plans?${query({ organizationId })}`),
   getPlan: (planId: string, organizationId: string) => apiRequest<MissionPlan>(`${root}/plans/${planId}?${query({ organizationId })}`),
-  approvePlan: (mission: ActionMission, plan: MissionPlan, approval: MissionApproval) => apiRequest<ActionMission>(`${root}/plans/${plan.id}/submit`, {
-    method: 'POST', body: {
-      organizationId: mission.organizationId, missionId: mission.id, approvalId: approval.id,
-      expectedMissionVersion: mission.version, subjectHash: approval.subjectHash, decision: 'approved', reason: 'Impacto e plano protegidos revisados e aprovados',
-    },
+  approvePlan: (mission: ActionMission, plan: MissionPlan, approval: MissionApproval) => approvePlanReference({
+    organizationId: mission.organizationId, missionId: mission.id, planId: plan.id, approvalId: approval.id,
+    expectedMissionVersion: mission.version, subjectHash: approval.subjectHash,
   }),
   listActions: (missionId: string, organizationId: string) => apiRequest<MissionActionRun[]>(`${root}/missions/${missionId}/actions?${query({ organizationId })}`),
   listArtifacts: (missionId: string, organizationId: string) => apiRequest<MissionArtifact[]>(`${root}/missions/${missionId}/artifacts?${query({ organizationId })}`),
