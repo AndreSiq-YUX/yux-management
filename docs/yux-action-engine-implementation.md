@@ -1,8 +1,10 @@
 # YUX Action Engine MVP — Documento de Implementação
 
-**Status:** implementação local concluída; pré-deploy  
-**Data de consolidação:** 2026-08-21  
-**Pack:** `revenue_recovery@0.1.0`
+**Status:** implementação conversacional concluída; rollout controlado
+
+**Data de consolidação:** 2026-08-31
+
+**Packs:** `revenue_recovery@0.2.0`, `funnel_nurture@1`, `campaign_launch@1`
 
 ## 1. Resultado entregue
 
@@ -20,14 +22,15 @@ A implementação local cobre:
 - Action Engine como owner da intenção e automações como subprocessos;
 - ledger append-only de custos, inclusive trabalho humano e reversals;
 - métricas que preservam `unknown` e economia sem float monetário;
-- operação interna e portal/workspace com lista, wizard e detalhe de missões;
+- operação interna e portal/workspace com conversa de intake e Mission Room orientada ao responsável;
 - health operacional e runbook de rollout.
 
 ## 2. Arquitetura implementada
 
 ```text
-React (Missões)
+React (conversa de Missão + Mission Room)
   -> Fastify /api/action-engine
+    -> Agent Harness /missions/conversations/respond: interpretação e seleção de conhecimento
     -> Postgres: missão, plano, actions, approvals, ownership, custos e observações
     -> BullMQ: planner, scheduler, execução, waits, métricas e avaliação
     -> Agent Harness /missions/plan: proposta estruturada
@@ -36,6 +39,10 @@ React (Missões)
 ```
 
 Postgres continua sendo a fonte de verdade. Jobs podem ser repetidos; idempotency keys, locks, plan hash e preflight impedem que a fila seja tratada como estado de negócio.
+
+O intake não usa mais um formulário como fronteira principal. A conversa coleta no máximo três perguntas agrupadas por turno, apresenta um briefing compreensível e somente o converte em Mission quando o usuário confirma o hash exato da versão exibida. A criação da Mission, o vínculo com a conversa e a transição para `planning` são atômicos e idempotentes. A aprovação continua pertencendo ao Action Engine; o chat apenas projeta a mesma aprovação e o mesmo `decisionSubjectHash`.
+
+O Action Engine não implementa retrieval paralelo. O Harness existente seleciona Strategy Packs, conteúdo YUX aprovado e conhecimento do cliente; o backend revalida tenant, publicação, visibilidade, versão e content hash antes de congelar o snapshot usado pelo planner. A especificação delta está em `docs/superpowers/specs/2026-08-31-yux-conversational-mission-harness-integration-design.md`.
 
 ## 3. Mapa de código
 
@@ -53,6 +60,8 @@ Postgres continua sendo a fonte de verdade. Jobs podem ser repetidos; idempotenc
 | Jobs | `backend/src/jobs/handlers/action-engine.ts`, `backend/src/worker.ts` |
 | Schema | `backend/src/db/migrations/0128_action_engine_foundation.sql` |
 | Agent Harness | `workers/marketing-studio-agent-runtime/yux_agent_runtime/mission.py` |
+| Conversa e integração com Harness | `backend/src/modules/action-engine/mission-conversations.ts`, `mission-source-verifier.ts` |
+| Mission Room e atividade | `backend/src/modules/action-engine/mission-activity.ts`, `frontend/src/components/action-engine/MissionNowCard.tsx` |
 | UI compartilhada | `frontend/src/components/action-engine/` |
 | Rotas interna/portal | `frontend/src/pages/action-engine/`, `frontend/src/pages/client-portal/PortalMission*` |
 
@@ -63,6 +72,12 @@ Leitura: catálogo de capabilities, Action Packs, missions, revisions, actions, 
 Commands: criar/editar draft, qualificar, planejar, aprovar plano, iniciar, pausar, retomar, cancelar, avaliar, decidir aprovação, repetir action, ignorar extensão e concluir tarefa humana.
 
 Toda rota exige sessão, organização autorizada e módulo `action_engine`. Mutations de lifecycle usam a versão esperada da Mission. Clientes recebem apenas a visão econômica pública; custos internos, taxa horária e margem não são serializados.
+
+As rotas de conversa são `POST/GET /mission-conversations`, `POST /mission-conversations/:id/messages`, `POST /mission-conversations/:id/confirm` e `POST /mission-conversations/:id/cancel`. Novos turnos dependem de `MISSION_CONVERSATIONS_ENABLED` e, quando configurada, da allowlist de tenants. Leituras permanecem disponíveis durante rollback para preservar o histórico. `GET /missions/:id/activity` projeta a linha do tempo a partir dos ledgers existentes, sem uma segunda tabela de atividade de UI.
+
+## 4.1 Experiência de decisão
+
+A tela responde primeiro: o que foi pedido, o que o agente entendeu, o que acontece agora e qual decisão falta. Entregáveis conhecidos recebem links para CRM, campanhas, landing pages, formulários ou automações. DAG, versões, hashes e evidências ficam sob progressive disclosure. Não há execução externa anterior à aprovação aplicável; efeitos irreversíveis continuam explicitamente destacados.
 
 ## 5. Hierarquia com Automations
 

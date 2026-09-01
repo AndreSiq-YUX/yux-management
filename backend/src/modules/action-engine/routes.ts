@@ -20,7 +20,7 @@ import { collectMissionMetrics, collectPackMissionMetrics } from './evaluator.js
 import { collectAutonomyUsage, collectMissionEconomics } from './economics.js'
 import { calculateAutonomyRemaining } from './autonomous-preflight.js'
 import { releaseResourceClaims } from './resource-claims.js'
-import { buildActionEngineNfrSnapshot } from './operations-health.js'
+import { buildActionEngineNfrSnapshot, buildMissionConversationHealthSnapshot } from './operations-health.js'
 import { createSimulationReport, getPublicSimulationReport, getPublicSimulationReportPdf, recordSimulationFeedback, revokeSimulationReport } from './simulation-reports.js'
 import { DECISION_REASON_KEYS, exportDecisionFeedbackLearningEvidence } from './decision-feedback.js'
 import { collectMissionBudgetBurnDown } from './budget-alerts.js'
@@ -38,6 +38,7 @@ import {
   confirmMissionConversationBrief,
   createMissionConversation,
   getMissionConversation,
+  isMissionConversationRolloutEnabled,
   listMissionConversations,
   markMissionConversationPlanApproved,
   returnMissionConversationToUser,
@@ -229,7 +230,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const parsed = organizationQuery.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_action_engine_health_query' })
     requireAccess(ctx, 'action_engine.read', { organizationId: parsed.data.organizationId })
-    const [missions, actions, approvals, pack, planningLatency, executionHealth, snapshots, staleEnvelopes, actionsByMode] = await Promise.all([
+    const [missions, actions, approvals, pack, planningLatency, executionHealth, snapshots, staleEnvelopes, actionsByMode, conversationRows] = await Promise.all([
       app.pg.query<{ status: string; count: number | string }>(
         `SELECT status, COUNT(*)::INT AS count FROM public.action_missions
          WHERE organization_id = $1 GROUP BY status`, [parsed.data.organizationId],
@@ -276,12 +277,55 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
          FROM public.action_missions mission LEFT JOIN public.action_runs run ON run.mission_id = mission.id
          WHERE mission.organization_id = $1 GROUP BY mission.mode`, [parsed.data.organizationId],
       ),
+      app.pg.query<{
+        status: string; created_at: string | Date; updated_at: string | Date; first_agent_at: string | Date | null;
+        confirmed_at: string | Date | null; first_plan_at: string | Date | null; user_turns: number | string;
+        agent_turns: number | string; question_count: number | string; total_tokens: number | string;
+        processing_failures: number | string; mission_id: string | null; mission_cost_brl: string | number | null; readiness_status: string | null;
+      }>(
+        `SELECT conversation.status,conversation.created_at,conversation.updated_at,conversation.mission_id,
+                conversation.context_readiness->>'status' AS readiness_status,
+                messages.first_agent_at,messages.user_turns,messages.agent_turns,messages.question_count,messages.total_tokens,
+                CASE WHEN conversation.context_readiness ? 'processingError' THEN 1 ELSE 0 END AS processing_failures,
+                confirmed.confirmed_at,planned.first_plan_at,cost.mission_cost_brl
+         FROM public.action_mission_conversations conversation
+         LEFT JOIN LATERAL (
+           SELECT MIN(created_at) FILTER (WHERE actor_type='agent') AS first_agent_at,
+                  COUNT(*) FILTER (WHERE actor_type='user')::INT AS user_turns,
+                  COUNT(*) FILTER (WHERE actor_type='agent')::INT AS agent_turns,
+                  COALESCE(SUM(jsonb_array_length(COALESCE(structured_payload->'questions','[]'::JSONB))) FILTER (WHERE actor_type='agent'),0)::INT AS question_count,
+                  COALESCE(SUM(CASE WHEN COALESCE(structured_payload->'usage'->>'totalTokens','') ~ '^[0-9]+$' THEN (structured_payload->'usage'->>'totalTokens')::INT ELSE 0 END),0)::INT AS total_tokens
+           FROM public.action_mission_conversation_messages WHERE conversation_id=conversation.id AND organization_id=conversation.organization_id
+         ) messages ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT MIN(occurred_at) AS confirmed_at FROM public.domain_events
+           WHERE organization_id=conversation.organization_id AND aggregate_id=conversation.mission_id AND event_type='mission.conversation_brief_confirmed'
+         ) confirmed ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT MIN(created_at) AS first_plan_at FROM public.action_plans
+           WHERE organization_id=conversation.organization_id AND mission_id=conversation.mission_id
+         ) planned ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(amount_brl) FILTER (WHERE nature='actual'),0) AS mission_cost_brl FROM public.action_cost_entries
+           WHERE organization_id=conversation.organization_id AND mission_id=conversation.mission_id
+         ) cost ON TRUE
+         WHERE conversation.organization_id=$1 AND conversation.created_at > NOW() - INTERVAL '24 hours'
+         ORDER BY conversation.created_at DESC LIMIT 1000`,
+        [parsed.data.organizationId],
+      ),
     ])
     const nfr = buildActionEngineNfrSnapshot({
       planningLatencyMs: planningLatency.rows.map(row => Number(row.latency_ms)),
       executionLatencyMs: executionHealth.rows.map(row => Number(row.latency_ms)),
       executorAvailable: executionHealth.rows.map(row => row.available),
     })
+    const conversationHealth = buildMissionConversationHealthSnapshot(conversationRows.rows.map(row => ({
+      status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, firstAgentAt: row.first_agent_at,
+      confirmedAt: row.confirmed_at, firstPlanAt: row.first_plan_at, userTurns: Number(row.user_turns),
+      agentTurns: Number(row.agent_turns), questionCount: Number(row.question_count), totalTokens: Number(row.total_tokens),
+      processingFailures: Number(row.processing_failures), missionId: row.mission_id, missionCostBrl: row.mission_cost_brl,
+      readinessStatus: row.readiness_status,
+    })))
     return {
       status: pack.rows[0]?.content_hash === REVENUE_RECOVERY_PACK_V0.contentHash ? 'ready' : 'degraded',
       agentHarnessConfigured: Boolean(app.config.YUX_AGENT_RUNTIME_URL),
@@ -296,6 +340,10 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         decisionNotificationsEnabled: app.config.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false,
         simulationReportsEnabled: app.config.MISSION_SIMULATION_REPORTS_ENABLED !== false,
         decisionFeedbackEnabled: app.config.MISSION_DECISION_FEEDBACK_ENABLED !== false,
+        missionConversationsEnabled: isMissionConversationRolloutEnabled(app.config, parsed.data.organizationId),
+        missionConversationsTenantAllowlistConfigured: Boolean(app.config.MISSION_CONVERSATIONS_TENANT_ALLOWLIST),
+        missionConversationsMaxTurns: app.config.MISSION_CONVERSATIONS_MAX_TURNS ?? 6,
+        missionConversationsPollMaxSeconds: app.config.MISSION_CONVERSATIONS_POLL_MAX_SECONDS ?? 5,
       },
       planner: {
         available: app.config.MISSION_SUPERVISOR_ENABLED !== false && Boolean(app.config.YUX_AGENT_RUNTIME_URL && app.config.YUX_AGENT_RUNTIME_TOKEN),
@@ -307,6 +355,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       staleAutonomyEnvelopes: Number(staleEnvelopes.rows[0]?.count ?? 0),
       actionsByMode: Object.fromEntries(actionsByMode.rows.map(row => [row.mode, Number(row.count)])),
       nfr,
+      missionConversations: conversationHealth,
     }
   })
 
@@ -359,6 +408,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const body = createMissionConversationSchema.safeParse(request.body)
     if (!body.success) return reply.code(400).send({ error: 'invalid_mission_conversation' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    if (!isMissionConversationRolloutEnabled(app.config, body.data.organizationId)) return reply.code(503).send({ error: 'mission_conversations_disabled' })
     const idempotencyKey = readIdempotencyKey(request.headers['idempotency-key'])
     if (!idempotencyKey) return reply.code(400).send({ error: 'idempotency_key_required' })
     try {
@@ -408,11 +458,12 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const body = appendMissionConversationMessageSchema.safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_conversation_message' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    if (!isMissionConversationRolloutEnabled(app.config, body.data.organizationId)) return reply.code(503).send({ error: 'mission_conversations_disabled' })
     try {
       const conversation = await appendUserConversationMessage(app.pg as never, {
         organizationId: body.data.organizationId, conversationId: params.data.conversationId,
         expectedVersion: body.data.expectedVersion, clientMessageId: body.data.clientMessageId,
-        content: body.data.message, createdBy: ctx.userId,
+        content: body.data.message, createdBy: ctx.userId, maxTurns: app.config.MISSION_CONVERSATIONS_MAX_TURNS ?? 6,
       })
       const job = await app.jobQueue.add('action-engine.processMissionConversation', {
         conversationId: conversation.id, organizationId: conversation.organizationId,
@@ -443,6 +494,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const body = confirmMissionConversationBriefSchema.safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_conversation_confirmation' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    if (!isMissionConversationRolloutEnabled(app.config, body.data.organizationId)) return reply.code(503).send({ error: 'mission_conversations_disabled' })
     if (app.config.MISSION_SUPERVISOR_ENABLED === false) return reply.code(503).send({ error: 'mission_supervisor_disabled' })
     try {
       const result = await confirmMissionConversationBrief(app.pg as never, {
@@ -567,7 +619,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         packVersionId: packVersion.id, title: parsed.data.title?.trim() || parsed.data.objective.slice(0, 120),
         objective: parsed.data.objective, mode: parsed.data.mode, parameters,
         goal: {
-          statement: parsed.data.objective, requestedOutcome: parsed.data.quickStart ?? 'supervisor_interpreted_outcome',
+          statement: parsed.data.objective, requestedOutcome: parsed.data.quickStart ?? 'outcome_to_be_defined',
           scopeHints: parsed.data.allowedModules, constraints: {}, acceptanceCriteria: [],
         },
         autonomyEnvelope: {
@@ -1319,6 +1371,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_conversation_pack_selection_invalid: 409,
     mission_conversation_pack_unavailable: 409,
     mission_conversation_pack_not_entitled: 403,
+    mission_conversation_turn_limit_reached: 409,
     mission_conversation_deadline_required: 409,
     mission_conversation_objective_required: 409,
     mission_conversation_icp_required: 409,

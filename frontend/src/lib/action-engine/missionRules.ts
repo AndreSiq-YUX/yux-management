@@ -36,6 +36,7 @@ const missionOutcomeLabels: Record<string, string> = {
   funnel_nurture: 'Criar funil e nutrição comercial',
   campaign_launch: 'Criar e lançar uma campanha completa',
   supervisor_interpreted_outcome: 'Resultado a definir com o agente',
+  outcome_to_be_defined: 'Resultado a definir com o agente',
 }
 
 const missionPackLabels: Record<string, string> = {

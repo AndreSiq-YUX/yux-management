@@ -73,7 +73,7 @@ describe('Mission conversation job handler', () => {
   it('builds context, calls Harness once and atomically completes the accepted turn', async () => {
     const pool = new Pool()
     const invokeTurn = vi.fn(async (_env: AppEnv, _request: import('../src/modules/action-engine/generated/mission-wire.js').MissionConversationTurnRequestWire) => response)
-    const result = await handleActionEngineProcessMissionConversation(pool as never, {} as AppEnv, {
+    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, {
       conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
     }, { invokeTurn })
 
@@ -90,7 +90,7 @@ describe('Mission conversation job handler', () => {
   it('skips stale or replayed versions before calling Harness', async () => {
     const pool = new Pool(); pool.version = 3; pool.status = 'awaiting_user'
     const invokeTurn = vi.fn(async (_env: AppEnv, _request: import('../src/modules/action-engine/generated/mission-wire.js').MissionConversationTurnRequestWire) => response)
-    const result = await handleActionEngineProcessMissionConversation(pool as never, {} as AppEnv, {
+    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, {
       conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
     }, { invokeTurn })
     expect(result).toEqual({ skipped: true, reason: 'mission_conversation_job_stale' })

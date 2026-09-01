@@ -7,7 +7,7 @@ import { actionEngineService } from '@/services/actionEngineService'
 import type { MissionConversation } from '@/types/actionEngine'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
-afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
+afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 describe('MissionsWorkspace', () => {
   it('uses conversation as the primary entry and shows active requests above the portfolio', async () => {
@@ -32,6 +32,18 @@ describe('MissionsWorkspace', () => {
     await change(textarea, 'Quero lançar uma campanha para captar PMEs.')
     await clickByLabel('Enviar mensagem')
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ message: 'Quero lançar uma campanha para captar PMEs.' }))
+    act(() => root.unmount())
+  })
+
+  it('opens the legacy intake when compatibility mode is enabled', async () => {
+    vi.stubEnv('VITE_MISSION_FORM_COMPATIBILITY', 'true')
+    vi.spyOn(actionEngineService, 'listMissions').mockResolvedValue([])
+    vi.spyOn(actionEngineService, 'listMissionConversations').mockResolvedValue([])
+    const { root } = await renderWorkspace()
+    expect(document.body.textContent).not.toContain('Conversar com o agente')
+    await click('Criar missão')
+    expect(document.body.textContent).toContain('Descreva o resultado desejado')
+    expect(document.body.textContent).not.toContain('Pode explicar do seu jeito')
     act(() => root.unmount())
   })
 })

@@ -80,7 +80,7 @@ function draftMission(): ActionMission {
     objective: 'Criar uma campanha para captar pequenas e médias empresas em Londrina.',
     goal: {
       statement: 'Criar uma campanha para captar pequenas e médias empresas em Londrina.',
-      requestedOutcome: 'supervisor_interpreted_outcome',
+      requestedOutcome: 'outcome_to_be_defined',
       scopeHints: ['campaigns'],
       constraints: {},
       acceptanceCriteria: [],

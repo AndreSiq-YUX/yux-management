@@ -8,6 +8,7 @@ import { buildServer } from '../src/server.js'
 const env = {
   NODE_ENV: 'test' as const, PORT: 4000, DATABASE_URL: 'postgresql://localhost/test', REDIS_URL: 'redis://localhost:6379',
   SESSION_COOKIE_NAME: 'yux_session', SESSION_SECRET: 'test-secret-value-with-at-least-32-chars', CORS_ORIGIN: 'http://localhost:3000',
+  MISSION_CONVERSATIONS_ENABLED: true, MISSION_CONVERSATIONS_MAX_TURNS: 6, MISSION_CONVERSATIONS_POLL_MAX_SECONDS: 5,
 }
 const orgA = '00000000-0000-4000-8000-000000000001'
 const orgB = '00000000-0000-4000-8000-000000000002'

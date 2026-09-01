@@ -73,6 +73,17 @@ describe('MissionConversationWorkspace', () => {
     expect(append.mock.calls[1][1].clientMessageId).toBe(append.mock.calls[0][1].clientMessageId)
     act(() => root.unmount())
   })
+
+  it('renders hostile message markup as inert content', async () => {
+    const data = conversation({ status: 'awaiting_user' })
+    data.messages[0]!.content = '<script>window.__missionInjected=true</script><img src=x onerror="window.__missionInjected=true">'
+    vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    const { root } = await renderWorkspace()
+    expect(document.body.querySelector('script')).toBeNull()
+    expect(document.body.querySelector('img')).toBeNull()
+    expect((window as unknown as { __missionInjected?: boolean }).__missionInjected).toBeUndefined()
+    act(() => root.unmount())
+  })
 })
 
 async function renderWorkspace() {

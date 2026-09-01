@@ -37,6 +37,7 @@ import {
   completeAgentConversationTurn,
   getMissionConversationForMission,
   getMissionConversation,
+  isMissionConversationRolloutEnabled,
   projectMissionConversationPlanningResult,
   recordMissionConversationProcessingError,
 } from '../../modules/action-engine/mission-conversations.js'
@@ -64,6 +65,9 @@ export async function handleActionEngineProcessMissionConversation(
   const audience = data.audience === 'internal_operator' ? 'internal_operator' : 'client_user'
   if (!conversationId || !organizationId || !Number.isInteger(requestedVersion) || requestedVersion < 1) {
     throw new Error('mission_conversation_job_invalid')
+  }
+  if (!isMissionConversationRolloutEnabled(env, organizationId)) {
+    return { skipped: true, reason: 'mission_conversations_disabled' }
   }
   const conversation = await getMissionConversation(pool, conversationId, organizationId)
   if (!conversation || conversation.version !== requestedVersion || conversation.status !== 'collecting_context') {

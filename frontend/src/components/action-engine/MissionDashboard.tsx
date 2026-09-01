@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, CircleDollarSign, Clock3, Gauge, MessageCircle, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Bot, CircleDollarSign, Clock3, Gauge, MessageCircle, Plus, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { MissionStatusBadge } from './MissionStatusBadge'
 import { formatBrl, formatMissionDate, missionStatusMeta } from '@/lib/action-engine/missionRules'
@@ -12,9 +12,10 @@ type MissionDashboardProps = {
   conversationHref?: (conversationId: string) => string
   canCreate: boolean
   onCreate: () => void
+  creationMode?: 'conversation' | 'form'
 }
 
-export function MissionDashboard({ missions, conversations = [], economicsByMission = {}, detailHref, conversationHref = id => id, canCreate, onCreate }: MissionDashboardProps) {
+export function MissionDashboard({ missions, conversations = [], economicsByMission = {}, detailHref, conversationHref = id => id, canCreate, onCreate, creationMode = 'conversation' }: MissionDashboardProps) {
   const active = missions.filter(mission => ['active', 'planning', 'ready', 'pending_plan_approval', 'evaluating'].includes(mission.status)).length
   const pending = missions.filter(mission => mission.status.includes('approval')).length
   const produced = missions.reduce((sum, mission) => sum + Number(economicsByMission[mission.id]?.producedValueBrl ?? 0), 0)
@@ -28,7 +29,7 @@ export function MissionDashboard({ missions, conversations = [], economicsByMiss
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Missões</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Objetivos de receita transformados em execução governada, mensurável e reutilizável.</p>
         </div>
-        {canCreate && <button onClick={onCreate} className="inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700"><MessageCircle className="h-4 w-4" /> Conversar com o agente</button>}
+        {canCreate && <CreateButton creationMode={creationMode} onClick={onCreate} />}
       </header>
 
       <section className="grid border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
@@ -46,7 +47,7 @@ export function MissionDashboard({ missions, conversations = [], economicsByMiss
           <span className="text-xs font-semibold text-slate-500">{missions.length} no total</span>
         </div>
         {missions.length === 0 ? (
-          <div className="grid min-h-64 place-items-center p-8 text-center"><div><ShieldCheck className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-4 font-semibold text-slate-900">Nenhuma missão criada</h3><p className="mt-2 text-sm text-slate-500">Converse com o agente sobre o resultado desejado. A missão aparecerá aqui após você confirmar o briefing.</p>{canCreate ? <button type="button" onClick={onCreate} className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700"><MessageCircle className="h-4 w-4" /> Conversar com o agente</button> : null}</div></div>
+          <div className="grid min-h-64 place-items-center p-8 text-center"><div><ShieldCheck className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-4 font-semibold text-slate-900">Nenhuma missão criada</h3><p className="mt-2 text-sm text-slate-500">{creationMode === 'conversation' ? 'Converse com o agente sobre o resultado desejado. A missão aparecerá aqui após você confirmar o briefing.' : 'Preencha os dados da missão para iniciar o fluxo governado.'}</p>{canCreate ? <span className="mt-5 inline-flex"><CreateButton creationMode={creationMode} onClick={onCreate} /></span> : null}</div></div>
         ) : (
           <div className="divide-y divide-slate-200">
             {missions.map(mission => {
@@ -66,6 +67,11 @@ export function MissionDashboard({ missions, conversations = [], economicsByMiss
       </section>
     </div>
   )
+}
+
+function CreateButton({ creationMode, onClick }: { creationMode: 'conversation' | 'form'; onClick: () => void }) {
+  const Icon = creationMode === 'conversation' ? MessageCircle : Plus
+  return <button type="button" onClick={onClick} className="inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700"><Icon className="h-4 w-4" /> {creationMode === 'conversation' ? 'Conversar com o agente' : 'Criar missão'}</button>
 }
 
 function conversationStatus(status: MissionConversation['status']) {

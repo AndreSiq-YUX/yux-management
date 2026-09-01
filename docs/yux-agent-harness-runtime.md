@@ -23,6 +23,21 @@ Evento
   -> trace + learning signal
 ```
 
+O mesmo Harness também atende o intake conversacional de Missões. Isso é um novo workflow do runtime existente, não um segundo agente nem uma segunda base de conhecimento:
+
+```text
+Conversa de Missão
+  -> contexto operacional e de empresa preparado pelo backend
+  -> retrieval e políticas existentes do Harness
+  -> Strategy Packs YUX + conhecimento publicado do cliente
+  -> resposta estruturada: entendimento, até 3 perguntas, readiness, briefing e fontes
+  -> revalidação determinística das fontes no backend
+  -> confirmação humana
+  -> planner existente + compilador e executor do Action Engine
+```
+
+O Harness propõe interpretação, fontes e plano. Ele não ganha capabilities de mutação por causa da conversa. O Action Engine continua sendo o proprietário da intenção, do orçamento, das aprovações, da execução, da pausa e do replanejamento.
+
 ## Operacao Na Plataforma
 
 - `/admin/strategy-engine`: governa Strategy Packs, perfis, modelos, workflows,
@@ -61,12 +76,16 @@ O runtime deve priorizar itens aprovados de packs publicados. Documentos e
 chunks brutos ficam como apoio de auditoria e recuperacao, nao como substituto
 da metodologia operacional curada.
 
+Conteúdo futuro, incluindo livros e playbooks como *The Black Book*, entra pelo fluxo normal de ingestão, curadoria, publicação e binding do Harness. Depois de publicado para o perfil/workflow correto, esse conhecimento pode fundamentar conversas de Missão sem ingestão, índice ou seleção paralela no Action Engine. Conteúdo específico do cliente segue o mesmo princípio, sempre limitado à organização, contrato, visibilidade e perfil do agente.
+
 ## Endpoints
 
 - `GET /health`: healthcheck.
 - `POST /events/ingest`: recebe evento normalizado de WhatsApp/omnichannel e cria job.
 - `POST /jobs/process-next`: processa o proximo job da fila local.
 - `POST /workflows/execute`: executa workflow estrategico diretamente.
+- `POST /missions/conversations/respond`: responde um turno de intake com contrato estruturado, fontes e readiness.
+- `POST /missions/plan`: propõe o plano para compilação determinística no Action Engine.
 
 Os endpoints mutaveis exigem `Authorization: Bearer <token>`. O processo nao
 inicia sem `YUX_AGENT_RUNTIME_TOKEN`, nem sem `DATABASE_URL`: o Postgres da
@@ -84,6 +103,8 @@ wallet e ledger na mesma transacao.
 - `DATABASE_URL`: conexao interna com o Postgres do Portal YUX.
 - `OPENROUTER_API_KEY`: modelos LLM via OpenRouter.
 - `JINA_API_KEY`: leitura, busca e grounding.
+
+O contrato de conversa é gerado de uma fonte única e validado nos dois runtimes. O corpus congelado em `golden-missions/conversations/corpus.json` bloqueia promoção quando há drift de contrato, fonte de outro tenant, sugestão de capability não autorizada, mais de três perguntas, pergunta repetida ou regressão de custo/latência acima de 20% sem exceção aprovada.
 
 ## Deploy Dokploy
 
