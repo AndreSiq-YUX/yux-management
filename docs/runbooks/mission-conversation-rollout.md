@@ -21,6 +21,8 @@ MISSION_CONVERSATIONS_MAX_TURNS=6
 MISSION_CONVERSATIONS_POLL_MAX_SECONDS=5
 ```
 
+No deploy por Compose, as quatro variáveis precisam chegar tanto ao `yux-backend-api` quanto ao `yux-backend-worker`. O arquivo `docker-compose.dokploy.yml` faz esse encaminhamento; depois de alterar os valores no Dokploy, é necessário redeploy dos dois serviços.
+
 Durante o canário, use `MISSION_CONVERSATIONS_ENABLED=true` e coloque somente o UUID da organização YUX na allowlist. Separe vários UUIDs por vírgula. Allowlist vazia com a flag ligada habilita todos os tenants, portanto não deve ser usada antes da liberação geral.
 
 O modo de compatibilidade do frontend é definido no build:
@@ -29,7 +31,7 @@ O modo de compatibilidade do frontend é definido no build:
 VITE_MISSION_FORM_COMPATIBILITY=false
 ```
 
-Quando publicado com `true`, o botão principal muda para **Criar missão** e abre diretamente o formulário anterior. Como essa variável é incorporada ao build, a alteração exige novo deploy do frontend.
+Quando publicado com `true`, o botão principal muda para **Criar missão** e abre diretamente o formulário anterior. Como essa variável é incorporada ao build, a alteração exige novo deploy do frontend. O Compose usa `true` por padrão para manter o rollout seguro; durante o canário conversacional, defina explicitamente `VITE_MISSION_FORM_COMPATIBILITY=false`.
 
 ## Ordem de implantação
 
