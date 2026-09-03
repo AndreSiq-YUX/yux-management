@@ -97,7 +97,7 @@ class MissionConversationWorkflowTest(unittest.TestCase):
             }],
         })
 
-    def make_workflow(self, captured):
+    def make_workflow(self, captured, store=None):
         def transport(_url, _headers, payload, _method):
             captured.append(payload)
             body = {
@@ -140,7 +140,7 @@ class MissionConversationWorkflowTest(unittest.TestCase):
             }
 
         engine = build_strategy_workflow_engine(
-            self.make_store(), OpenRouterClient(api_key="test", transport=transport)
+            store or self.make_store(), OpenRouterClient(api_key="test", transport=transport)
         )
         return MissionConversationWorkflow(engine)
 
@@ -177,6 +177,17 @@ class MissionConversationWorkflowTest(unittest.TestCase):
 
         self.assertEqual(first.contextHash, second.contextHash)
         self.assertNotEqual(first.retrievalTraceId, second.retrievalTraceId)
+
+    def test_trace_links_to_mission_conversation_without_using_support_conversation_fk(self):
+        store = self.make_store()
+        workflow = self.make_workflow([], store)
+
+        workflow.respond(request())
+
+        run = store.tables["agent_execution_runs"][0]
+        self.assertIsNone(run["conversation_id"])
+        self.assertEqual(run["mission_conversation_id"], "conversation-a")
+        self.assertEqual(run["run_source"], "mission_intake")
 
     def test_internal_operator_receives_named_internal_yux_evidence(self):
         captured = []
