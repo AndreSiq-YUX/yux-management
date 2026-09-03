@@ -81,6 +81,39 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertEqual(response.suggestedActions[0].label, "Criar rascunho do funil no CRM")
         self.assertNotIn("untrusted.capability", [action.key for action in response.suggestedActions])
 
+    def test_normalizes_provider_summary_shape_into_governed_questions(self):
+        typed_request = MissionConversationTurnRequestWire.model_validate(request())
+        response = normalize_mission_conversation_response(
+            {
+                "kind": "mission_intake_conversation_summary",
+                "reply": "Preciso entender melhor o público e os canais.",
+                "understood": True,
+                "questions": [
+                    "Qual é o perfil do público-alvo que deseja captar?",
+                    "Quais canais de comunicação deseja usar?",
+                    "Há uma meta específica para a captação?",
+                ],
+                "readiness": "aguardando respostas para finalizar recomendações",
+                "brief": "O usuário busca sugestões para captação de clientes.",
+                "suggestedActions": [],
+                "sourceRefs": [],
+            },
+            request=typed_request,
+            retrieval_context={},
+            retrieval_trace_id="run-2",
+            provider={},
+        )
+
+        self.assertEqual(response.kind, "questions")
+        self.assertEqual(len(response.questions), 3)
+        self.assertEqual(response.questions[0].answerType, "text")
+        self.assertEqual(response.questions[0].key, "clarification_1")
+        self.assertEqual(response.readiness.status, "needs_information")
+        self.assertEqual(response.readiness.missing[0].category, "audience")
+        self.assertEqual(response.readiness.missing[1].category, "integration")
+        self.assertTrue(response.understood["summary"])
+        self.assertEqual(response.brief.objective, request()["currentBrief"]["objective"])
+
     def make_store(self):
         return InMemoryAgentRuntimeStore(tables={
             "yux_strategy_agent_profiles": [{

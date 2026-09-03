@@ -94,6 +94,127 @@ def _normalize_suggested_actions(
     return normalized
 
 
+def _question_category(label: str) -> str:
+    normalized = label.casefold()
+    if any(term in normalized for term in ("orçamento", "orcamento", "investimento", "verba")):
+        return "budget"
+    if any(term in normalized for term in ("prazo", "data", "quando")):
+        return "deadline"
+    if any(term in normalized for term in ("integra", "ferramenta", "canal", "canais")):
+        return "integration"
+    if any(term in normalized for term in ("público", "publico", "audiência", "audiencia", "perfil")):
+        return "audience"
+    if any(term in normalized for term in ("oferta", "produto", "serviço", "servico")):
+        return "offer"
+    return "company"
+
+
+def _question_answer_type(label: str) -> str:
+    category = _question_category(label)
+    if category == "budget":
+        return "currency"
+    if category == "deadline":
+        return "date"
+    return "text"
+
+
+def _normalize_questions(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for index, raw in enumerate(value[:3], start=1):
+        if isinstance(raw, dict):
+            normalized.append(dict(raw))
+            continue
+        label = _text(raw)[:1_000]
+        if not label:
+            continue
+        normalized.append({
+            "key": f"clarification_{index}",
+            "label": label,
+            "whyNeeded": "Essa informação é necessária para qualificar e planejar a missão com segurança.",
+            "priority": index,
+            "answerType": _question_answer_type(label),
+            "choices": [],
+        })
+    return normalized
+
+
+def _normalize_readiness(value: Any, questions: list[dict[str, Any]]) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if questions:
+        missing = []
+        for question in questions:
+            label = _text(question.get("label"))
+            missing.append({
+                "key": _text(question.get("key")),
+                "category": _question_category(label),
+                "reason": label,
+                "requiredFor": ["mission_planning"],
+            })
+        return {
+            "status": "needs_information",
+            "knownFacts": [],
+            "assumptions": [],
+            "missing": missing,
+        }
+    return {
+        "status": "ready_for_brief_confirmation",
+        "knownFacts": [],
+        "assumptions": [],
+        "missing": [],
+    }
+
+
+def _normalize_brief(value: Any, request: MissionConversationTurnRequestWire) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    current = request.currentBrief if isinstance(request.currentBrief, dict) else {}
+    summary = _text(value)
+    objective = _text(current.get("objective") or request.user_message)[:8_000]
+    title = _text(current.get("title")) or objective[:240]
+    return {
+        "title": title[:240] or None,
+        "objective": objective,
+        "requestedOutcome": (summary or _text(current.get("requestedOutcome")))[:240],
+        "scopeHints": [],
+        "constraints": {},
+        "acceptanceCriteria": [],
+        "packKeys": [],
+        "mode": "assisted",
+    }
+
+
+def _normalize_provider_shape(
+    parsed: dict[str, Any],
+    request: MissionConversationTurnRequestWire,
+) -> dict[str, Any]:
+    normalized = dict(parsed)
+    questions = _normalize_questions(normalized.get("questions"))
+    readiness = _normalize_readiness(normalized.get("readiness"), questions)
+    understood = normalized.get("understood")
+    if not isinstance(understood, dict):
+        understood = {"summary": _text(understood)} if _text(understood) else {}
+    kind = _text(normalized.get("kind"))
+    if kind not in {"message", "questions", "brief_confirmation", "blocked"}:
+        kind = "questions" if questions else (
+            "brief_confirmation"
+            if readiness.get("status") in {"ready_for_brief_confirmation", "ready_for_plan"}
+            else "message"
+        )
+    if kind == "questions" and not questions:
+        kind = "message"
+    normalized.update({
+        "kind": kind,
+        "understood": understood,
+        "questions": questions,
+        "readiness": readiness,
+        "brief": _normalize_brief(normalized.get("brief"), request),
+    })
+    return normalized
+
+
 def build_mission_source_catalog(
     retrieval_context: dict[str, Any] | None,
     audience: str,
@@ -144,6 +265,7 @@ def normalize_mission_conversation_response(
     retrieval_trace_id: str,
     provider: dict[str, Any],
 ) -> MissionConversationTurnResponseWire:
+    parsed = _normalize_provider_shape(parsed, request)
     source_catalog = build_mission_source_catalog(retrieval_context, request.audience)
     by_ref = {source.ref: source for source in source_catalog}
     selected_refs: list[str] = []
