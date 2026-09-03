@@ -40,6 +40,18 @@ class FakeConnection:
 
 
 class RuntimeCreditPolicyTest(unittest.TestCase):
+    def test_postgres_arrays_stay_native_while_json_fields_are_serialized(self):
+        store = PostgresAgentRuntimeStore("postgresql://test")
+
+        self.assertEqual(
+            store._value("yux_strategy_retrieval_queries", "result_card_ids", []),
+            [],
+        )
+        self.assertEqual(
+            json.loads(store._value("yux_strategy_retrieval_queries", "filters", {"stages": []})),
+            {"stages": []},
+        )
+
     def test_strategy_embedding_tables_are_read_only_runtime_dependencies(self):
         store = PostgresAgentRuntimeStore("postgresql://test")
 

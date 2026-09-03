@@ -93,6 +93,16 @@ class PostgresAgentRuntimeStore:
         "marketing_knowledge_chunks", "ai_assistant_knowledge_links",
         "ai_assistant_safety_rules",
     }
+    postgres_array_columns = {
+        ("agent_execution_steps", "warnings"),
+        ("agent_context_snapshots", "card_ids"),
+        ("agent_context_snapshots", "chunk_ids"),
+        ("agent_context_snapshots", "asset_ids"),
+        ("strategy_subagent_runs", "allowed_tools"),
+        ("yux_strategy_retrieval_queries", "result_card_ids"),
+        ("yux_strategy_retrieval_queries", "result_chunk_ids"),
+        ("yux_strategy_retrieval_queries", "result_asset_ids"),
+    }
 
     def __init__(self, database_url: str | None = None):
         self.database_url = database_url or os.getenv("DATABASE_URL", "")
@@ -116,8 +126,10 @@ class PostgresAgentRuntimeStore:
             raise ValueError(f"unsupported_runtime_table:{table}")
         return table
 
-    @staticmethod
-    def _value(value: Any) -> Any:
+    @classmethod
+    def _value(cls, table: str, column: str, value: Any) -> Any:
+        if (table, column) in cls.postgres_array_columns and isinstance(value, list):
+            return value
         if isinstance(value, (dict, list)):
             return json.dumps(value)
         return value
@@ -135,7 +147,7 @@ class PostgresAgentRuntimeStore:
     def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         table = self._table(table, write=True)
         columns = list(payload.keys())
-        values = [self._value(payload[column]) for column in columns]
+        values = [self._value(table, column, payload[column]) for column in columns]
         placeholders = ", ".join(["%s"] * len(columns))
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(
@@ -148,7 +160,7 @@ class PostgresAgentRuntimeStore:
         table = self._table(table, write=True)
         columns = list(payload.keys())
         assignments = ", ".join(f"{column} = %s" for column in columns)
-        values = [self._value(payload[column]) for column in columns] + [record_id]
+        values = [self._value(table, column, payload[column]) for column in columns] + [record_id]
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(f"UPDATE public.{table} SET {assignments} WHERE id = %s RETURNING *", values)
             row = cursor.fetchone()
@@ -161,7 +173,7 @@ class PostgresAgentRuntimeStore:
         filters = {key: value for key, value in (filters or {}).items() if value is not None}
         where = " AND ".join(f"{key} = %s" for key in filters) or "TRUE"
         suffix = " LIMIT %s" if limit is not None else ""
-        values = [self._value(value) for value in filters.values()] + ([limit] if limit is not None else [])
+        values = [self._value(table, column, value) for column, value in filters.items()] + ([limit] if limit is not None else [])
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(f"SELECT * FROM public.{table} WHERE {where}{suffix}", values)
             return [self._row(dict(row)) for row in cursor.fetchall()]
