@@ -40,6 +40,18 @@ class FakeConnection:
 
 
 class RuntimeCreditPolicyTest(unittest.TestCase):
+    def test_strategy_embedding_tables_are_read_only_runtime_dependencies(self):
+        store = PostgresAgentRuntimeStore("postgresql://test")
+
+        for table in (
+            "yux_strategy_card_embeddings",
+            "yux_strategy_chunk_embeddings",
+            "yux_strategy_asset_embeddings",
+        ):
+            self.assertEqual(store._table(table), table)
+            with self.assertRaises(ValueError):
+                store._table(table, write=True)
+
     def test_unlimited_wallet_is_metered_without_balance_deduction(self):
         cursor = FakeCursor()
         store = PostgresAgentRuntimeStore("postgresql://test")
