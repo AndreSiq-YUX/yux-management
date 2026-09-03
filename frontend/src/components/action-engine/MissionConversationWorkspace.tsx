@@ -149,9 +149,32 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
     } catch (cause) { setError(readError(cause)) }
   }
 
+  const retryProcessing = async () => {
+    if (!conversation || acceptedTurn != null) return
+    setAcceptedTurn(conversation.version)
+    setError(null)
+    try {
+      const result = await actionEngineService.retryMissionConversationProcessing(conversation.id, {
+        organizationId, expectedVersion: conversation.version,
+      })
+      setConversation(result.conversation)
+      pollingAttempt.current = 0
+    } catch (cause) {
+      setError(readError(cause))
+      setAcceptedTurn(null)
+      await load().catch(() => undefined)
+    }
+  }
+
   if (loading) return <div className="grid min-h-[520px] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div>
   if (!conversation) return <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error ?? 'Conversa não encontrada.'}</div>
-  const processing = POLLING_STATUSES.has(conversation.status) || acceptedTurn != null
+  const recordedProcessingError = typeof conversation.contextReadiness.processingError === 'string'
+    ? conversation.contextReadiness.processingError
+    : null
+  const staleProcessing = conversation.status === 'collecting_context'
+    && Date.now() - Date.parse(conversation.updatedAt) >= 30_000
+  const processingError = recordedProcessingError ?? (staleProcessing ? 'conversation_processing_stalled' : null)
+  const processing = (POLLING_STATUSES.has(conversation.status) && !processingError) || acceptedTurn != null
   const canInteract = canWrite && !['cancelled', 'converted'].includes(conversation.status)
   const writable = canInteract && conversation.status !== 'awaiting_plan_approval'
   const liveStatus = processing ? 'O agente está consultando a estratégia YUX e o contexto da empresa.' : statusLabel(conversation.status)
@@ -171,7 +194,7 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <MissionConversationThread conversation={conversation} processing={processing} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionHref={correctionHref} />
+        <MissionConversationThread conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionHref={correctionHref} />
         <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-red-600"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-slate-50 p-3 text-center text-sm text-slate-500">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-slate-400">Nada é executado externamente sem passar pelas regras e aprovações do Action Engine.</p></div></div>
       </div>
       <p aria-live="polite" className="sr-only">{liveStatus}</p>

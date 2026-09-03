@@ -41,6 +41,31 @@ class Pool {
       structured_payload: {}, source_refs: [], client_message_id: 'client-message-1', harness_run_id: null,
       created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(),
     }] as T[] }
+    if (sql.includes('FROM public.action_mission_conversations') && sql.includes('FOR UPDATE')) return { rows: [{
+      id: conversationId, organization_id: orgA, contract_id: null, mission_id: null,
+      status: 'blocked', title: 'Quero uma campanha', current_brief: {},
+      context_readiness: { processingError: 'insufficient_ai_credits' },
+      last_context_hash: null, last_harness_run_id: null, version: 1,
+      created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(), updated_at: new Date(), completed_at: null,
+    }] as T[] }
+    if (sql.includes("context_readiness = context_readiness - 'processingError'")) return { rows: [{
+      id: conversationId, organization_id: orgA, contract_id: null, mission_id: null,
+      status: 'collecting_context', title: 'Quero uma campanha', current_brief: {}, context_readiness: {},
+      last_context_hash: null, last_harness_run_id: null, version: 1,
+      created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(), updated_at: new Date(), completed_at: null,
+    }] as T[] }
+    if (sql.includes('FROM public.action_mission_conversations') && sql.includes('LIMIT 1')) return { rows: [{
+      id: conversationId, organization_id: orgA, contract_id: null, mission_id: null,
+      status: 'collecting_context', title: 'Quero uma campanha', current_brief: {}, context_readiness: {},
+      last_context_hash: null, last_harness_run_id: null, version: 1,
+      created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(), updated_at: new Date(), completed_at: null,
+    }] as T[] }
+    if (sql.includes('FROM public.action_mission_conversation_messages') && sql.includes('ORDER BY sequence ASC')) return { rows: [{
+      id: '00000000-0000-4000-8000-000000000031', organization_id: orgA, conversation_id: conversationId,
+      sequence: 1, actor_type: 'user', message_kind: 'text', content: 'Quero uma campanha',
+      structured_payload: {}, source_refs: [], client_message_id: 'client-message-1', harness_run_id: null,
+      created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(),
+    }] as T[] }
     if (sql.includes("definition->'metricSpec'")) return { rows: [{ metric_spec: {}, content_hash: 'a'.repeat(64) }] as T[] }
     if (sql.includes('FROM public.action_missions') && sql.includes('FOR UPDATE')) {
       return { rows: [{
@@ -99,6 +124,26 @@ describe('Action Engine routes', () => {
       name: 'action-engine.processMissionConversation',
       data: { conversationId, organizationId: orgA, requestedVersion: 1, audience: 'internal_operator' },
     })
+  })
+
+  it('requeues a failed conversation without appending a duplicate user message', async () => {
+    const session = auth('yux_admin')
+    const added: Array<{ name: string; data: Record<string, unknown> }> = []
+    const conversationQueue: AppJobQueue = {
+      async add(name, data) { added.push({ name, data }); return { id: 'retry-job' } },
+      async close() {},
+    }
+    app = await buildServer(env, { authStore: session.store, pool: new Pool() as never, jobQueue: conversationQueue })
+    const response = await app.inject({
+      method: 'POST', url: `/api/action-engine/mission-conversations/${conversationId}/retry`,
+      headers: session.headers, payload: { organizationId: orgA, expectedVersion: 1 },
+    })
+    expect(response.statusCode).toBe(202)
+    expect(response.json().conversation.status).toBe('collecting_context')
+    expect(added).toEqual([expect.objectContaining({
+      name: 'action-engine.processMissionConversation',
+      data: expect.objectContaining({ conversationId, organizationId: orgA, requestedVersion: 1 }),
+    })])
   })
 
   it('requires authentication for the capability catalog', async () => {

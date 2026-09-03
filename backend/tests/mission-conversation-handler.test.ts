@@ -52,6 +52,10 @@ class Pool {
       return { rows: [message] as T[] }
     }
     if (sql.includes('UPDATE public.action_mission_conversations')) {
+      if (sql.includes("SET status = 'blocked'")) {
+        this.status = 'blocked'
+        return { rows: [] as T[] }
+      }
       this.version += 1; this.status = 'awaiting_user'
       return { rows: [conversationRow({ version: this.version, status: this.status })] as T[] }
     }
@@ -95,5 +99,16 @@ describe('Mission conversation job handler', () => {
     }, { invokeTurn })
     expect(result).toEqual({ skipped: true, reason: 'mission_conversation_job_stale' })
     expect(invokeTurn).not.toHaveBeenCalled()
+  })
+
+  it('turns insufficient credits into a visible retryable blocked state', async () => {
+    const pool = new Pool()
+    const invokeTurn = vi.fn(async () => { throw new Error('mission_conversation_runtime_402') })
+    const result = await handleActionEngineProcessMissionConversation(pool as never, { MISSION_CONVERSATIONS_ENABLED: true } as AppEnv, {
+      conversationId, organizationId, requestedVersion: 2, audience: 'client_user',
+    }, { invokeTurn })
+    expect(result).toEqual({ skipped: false, blocked: true, reason: 'insufficient_ai_credits' })
+    expect(pool.status).toBe('blocked')
+    expect(pool.calls.some(sql => sql.includes("jsonb_build_object('processingError', $4::TEXT)"))).toBe(true)
   })
 })

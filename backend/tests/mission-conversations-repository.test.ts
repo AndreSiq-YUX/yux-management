@@ -4,6 +4,8 @@ import {
   attachMissionToConversation,
   completeAgentConversationTurn,
   createMissionConversation,
+  recordMissionConversationProcessingError,
+  retryMissionConversationProcessing,
 } from '../src/modules/action-engine/mission-conversations.js'
 import type { Connectable, Queryable } from '../src/modules/action-engine/repository.js'
 
@@ -157,5 +159,29 @@ describe('Mission conversation repository', () => {
     await expect(attachMissionToConversation(different.pool, {
       organizationId: 'org-1', conversationId: 'conversation-1', missionId: 'mission-2', expectedVersion: 4,
     })).rejects.toThrow('mission_conversation_already_attached')
+  })
+
+  it('records a typed processing error and exposes the conversation for an explicit retry', async () => {
+    const recording = scriptedPool([
+      { match: "context_readiness = context_readiness || jsonb_build_object('processingError', $4::TEXT)", rows: [] },
+    ])
+    await recordMissionConversationProcessingError(recording.pool, {
+      organizationId: 'org-1', conversationId: 'conversation-1', expectedVersion: 1,
+      errorCode: 'insufficient_ai_credits',
+    })
+    expect(recording.calls[0]?.sql).toContain("SET status = 'blocked'")
+    expect(recording.calls[0]?.params?.[3]).toBe('insufficient_ai_credits')
+
+    const retrying = scriptedPool([
+      { match: 'FOR UPDATE', rows: [conversationRow({ status: 'blocked', context_readiness: { processingError: 'insufficient_ai_credits' } })] },
+      { match: "context_readiness = context_readiness - 'processingError'", rows: [conversationRow({ status: 'collecting_context', context_readiness: {} })] },
+      { match: 'WHERE id = $1 AND organization_id = $2', rows: [conversationRow({ status: 'collecting_context', context_readiness: {} })] },
+      { match: 'ORDER BY sequence ASC', rows: [messageRow()] },
+    ])
+    const retried = await retryMissionConversationProcessing(retrying.pool, {
+      organizationId: 'org-1', conversationId: 'conversation-1', expectedVersion: 1,
+    })
+    expect(retried.status).toBe('collecting_context')
+    expect(retried.contextReadiness.processingError).toBeUndefined()
   })
 })

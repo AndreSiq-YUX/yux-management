@@ -75,42 +75,42 @@ export async function handleActionEngineProcessMissionConversation(
   }
   const userMessage = [...conversation.messages].reverse().find((message) => message.actorType === 'user')
   if (!userMessage) throw new Error('mission_conversation_user_message_missing')
-  const registry = createActionEngineCapabilityRegistry()
-  const metadata = registry.listMetadata()
-  const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
-  const allowedModules = stringArray(conversation.currentBrief.allowedModules)
-  const operational = await buildMissionOperationalContext(pool, {
-    organizationId,
-    ...(conversation.contractId ? { contractId: conversation.contractId } : {}),
-    query: userMessage.content,
-    requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages'],
-    capabilityManifest: manifest.entries,
-    packKeys: stringArray(conversation.currentBrief.packKeys),
-  })
-  const tenant = await pool.query<{ client_id: string | null }>(
-    `SELECT client_id FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
-  )
-  const bounded = boundTranscript(conversation.messages)
-  const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1]
-  const request: MissionConversationTurnRequestWire = {
-    schemaVersion: 1,
-    organization_id: organizationId,
-    client_id: tenant.rows[0]?.client_id ?? undefined,
-    contract_id: conversation.contractId,
-    conversation_id: conversation.id,
-    audience,
-    user_message: userMessage.content,
-    transcript: bounded.transcript as MissionConversationTurnRequestWire['transcript'],
-    rollingSummary: bounded.rollingSummary,
-    currentBrief: conversation.currentBrief,
-    operationalContext: operational,
-    allowedActionPacks: packs.map((pack) => ({
-      key: pack.key, version: pack.semanticVersion, contentHash: pack.contentHash,
-    })) as MissionConversationTurnRequestWire['allowedActionPacks'],
-    allowedCapabilityKeys: manifest.entries.map((item) => item.key),
-  }
   const startedAt = Date.now()
   try {
+    const registry = createActionEngineCapabilityRegistry()
+    const metadata = registry.listMetadata()
+    const manifest = createCapabilityManifest(registry, metadata.map((item) => ({ key: item.key, version: item.version })))
+    const allowedModules = stringArray(conversation.currentBrief.allowedModules)
+    const operational = await buildMissionOperationalContext(pool, {
+      organizationId,
+      ...(conversation.contractId ? { contractId: conversation.contractId } : {}),
+      query: userMessage.content,
+      requestedModules: allowedModules.length ? allowedModules : ['crm', 'automations', 'campaigns', 'landing_pages'],
+      capabilityManifest: manifest.entries,
+      packKeys: stringArray(conversation.currentBrief.packKeys),
+    })
+    const tenant = await pool.query<{ client_id: string | null }>(
+      `SELECT client_id FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
+    )
+    const bounded = boundTranscript(conversation.messages)
+    const packs = [REVENUE_RECOVERY_PACK_V0, FUNNEL_NURTURE_PACK_V1, CAMPAIGN_LAUNCH_PACK_V1, CAMPAIGN_OPTIMIZATION_PACK_V1]
+    const request: MissionConversationTurnRequestWire = {
+      schemaVersion: 1,
+      organization_id: organizationId,
+      client_id: tenant.rows[0]?.client_id ?? undefined,
+      contract_id: conversation.contractId,
+      conversation_id: conversation.id,
+      audience,
+      user_message: userMessage.content,
+      transcript: bounded.transcript as MissionConversationTurnRequestWire['transcript'],
+      rollingSummary: bounded.rollingSummary,
+      currentBrief: conversation.currentBrief,
+      operationalContext: operational,
+      allowedActionPacks: packs.map((pack) => ({
+        key: pack.key, version: pack.semanticVersion, contentHash: pack.contentHash,
+      })) as MissionConversationTurnRequestWire['allowedActionPacks'],
+      allowedCapabilityKeys: manifest.entries.map((item) => item.key),
+    }
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request)
     await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
@@ -137,11 +137,12 @@ export async function handleActionEngineProcessMissionConversation(
     })
     return { skipped: false, conversation: updated }
   } catch (error) {
+    const errorCode = safeConversationError(error)
     await recordMissionConversationProcessingError(pool, {
       organizationId, conversationId, expectedVersion: requestedVersion,
-      errorCode: safeConversationError(error),
+      errorCode,
     })
-    throw error
+    return { skipped: false, blocked: true, reason: errorCode }
   }
 }
 
@@ -165,6 +166,7 @@ function stringArray(value: unknown): string[] {
 function safeConversationError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown'
   if (message.includes('timeout') || message.includes('aborted')) return 'harness_timeout'
+  if (message.includes('mission_conversation_runtime_402')) return 'insufficient_ai_credits'
   if (message.includes('mission_conversation_runtime_503')) return 'harness_unavailable'
   if (message.includes('mission_source_')) return 'source_verification_failed'
   return 'conversation_processing_failed'

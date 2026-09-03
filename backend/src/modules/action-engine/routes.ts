@@ -41,6 +41,7 @@ import {
   isMissionConversationRolloutEnabled,
   listMissionConversations,
   markMissionConversationPlanApproved,
+  retryMissionConversationProcessing,
   returnMissionConversationToUser,
 } from './mission-conversations.js'
 import {
@@ -476,6 +477,34 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
       return reply.code(202).send({ conversation, jobId: job.id })
     } catch (error) {
       request.log.error({ err: error, organizationId: body.data.organizationId, conversationId: params.data.conversationId }, 'mission conversation message failed')
+      return sendDomainError(reply, error)
+    }
+  })
+
+  app.post('/mission-conversations/:conversationId/retry', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = missionConversationParamsSchema.safeParse(request.params)
+    const body = cancelMissionConversationSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_mission_conversation_retry' })
+    requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
+    if (!isMissionConversationRolloutEnabled(app.config, body.data.organizationId)) return reply.code(503).send({ error: 'mission_conversations_disabled' })
+    try {
+      const conversation = await retryMissionConversationProcessing(app.pg as never, {
+        organizationId: body.data.organizationId,
+        conversationId: params.data.conversationId,
+        expectedVersion: body.data.expectedVersion,
+      })
+      const job = await app.jobQueue.add('action-engine.processMissionConversation', {
+        conversationId: conversation.id,
+        organizationId: conversation.organizationId,
+        requestedVersion: conversation.version,
+        audience: isInternalMissionActor(ctx.role) ? 'internal_operator' : 'client_user',
+      }, { jobId: createBullMqJobId('mission-conversation-retry', conversation.id, conversation.version, Date.now()) })
+      return reply.code(202).send({ conversation, jobId: job.id })
+    } catch (error) {
+      request.log.error({ err: error, organizationId: body.data.organizationId, conversationId: params.data.conversationId }, 'mission conversation retry failed')
       return sendDomainError(reply, error)
     }
   })
@@ -1370,6 +1399,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_conversation_version_conflict: 409,
     mission_conversation_idempotency_conflict: 409,
     mission_conversation_not_writable: 409,
+    mission_conversation_processing_not_retryable: 409,
     mission_conversation_not_cancellable: 409,
     mission_conversation_already_attached: 409,
     mission_conversation_brief_not_confirmable: 409,

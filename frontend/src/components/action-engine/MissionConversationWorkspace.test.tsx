@@ -84,6 +84,21 @@ describe('MissionConversationWorkspace', () => {
     expect((window as unknown as { __missionInjected?: boolean }).__missionInjected).toBeUndefined()
     act(() => root.unmount())
   })
+
+  it('explains exhausted credits and retries processing without resending the message', async () => {
+    const data = conversation({ status: 'blocked' })
+    data.contextReadiness.processingError = 'insufficient_ai_credits'
+    vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    const retry = vi.spyOn(actionEngineService, 'retryMissionConversationProcessing').mockResolvedValue({
+      conversation: { ...data, status: 'collecting_context', contextReadiness: { status: 'needs_information' } },
+      jobId: 'job-retry',
+    })
+    const { root } = await renderWorkspace()
+    expect(document.body.textContent).toContain('Os créditos de IA deste contrato acabaram')
+    await click('Tentar novamente sem reenviar')
+    expect(retry).toHaveBeenCalledWith(data.id, { organizationId: data.organizationId, expectedVersion: data.version })
+    act(() => root.unmount())
+  })
 })
 
 async function renderWorkspace() {
@@ -100,7 +115,7 @@ function conversation({ status, withAgent = false }: { status: MissionConversati
   const base: MissionConversation = {
     id: '00000000-0000-4000-8000-000000000010', organizationId: '00000000-0000-4000-8000-000000000001', status,
     title: 'Campanha de aquisição', currentBrief: {}, briefHash: 'a'.repeat(64), contextReadiness: { status: 'needs_information' }, version: withAgent ? 2 : 1,
-    createdBy: 'user-1', createdAt: '2026-08-31T12:00:00.000Z', updatedAt: '2026-08-31T12:00:00.000Z',
+    createdBy: 'user-1', createdAt: '2026-08-31T12:00:00.000Z', updatedAt: new Date().toISOString(),
     messages: [{ id: 'message-1', organizationId: '00000000-0000-4000-8000-000000000001', conversationId: '00000000-0000-4000-8000-000000000010', sequence: 1, actorType: 'user', messageKind: 'text', content: 'Quero criar uma campanha completa', structuredPayload: {}, sourceRefs: [], createdAt: '2026-08-31T12:00:00.000Z' }],
   }
   if (withAgent) base.messages.push({

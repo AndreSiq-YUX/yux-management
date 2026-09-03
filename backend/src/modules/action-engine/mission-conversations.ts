@@ -405,12 +405,39 @@ export async function recordMissionConversationProcessingError(client: Queryable
 }): Promise<void> {
   await client.query(
     `UPDATE public.action_mission_conversations
-     SET context_readiness = context_readiness || jsonb_build_object(
-       'processingError', jsonb_build_object('code', $4, 'retryable', TRUE, 'recordedAt', NOW())
-     )
+     SET status = 'blocked',
+         context_readiness = context_readiness || jsonb_build_object('processingError', $4::TEXT),
+         updated_at = NOW()
      WHERE id = $1 AND organization_id = $2 AND version = $3 AND status = 'collecting_context'`,
     [input.conversationId, input.organizationId, input.expectedVersion, input.errorCode],
   )
+}
+
+export async function retryMissionConversationProcessing(pool: Connectable, input: {
+  organizationId: string
+  conversationId: string
+  expectedVersion: number
+}): Promise<MissionConversation> {
+  return inTransaction(pool, async (client) => {
+    const current = await lockConversation(client, input.conversationId, input.organizationId)
+    if (current.version !== input.expectedVersion) throw new Error('mission_conversation_version_conflict')
+    const processingError = current.context_readiness?.processingError
+    const hasRecordedError = typeof processingError === 'string' && Boolean(processingError.trim())
+    const staleCollecting = current.status === 'collecting_context'
+      && Date.now() - new Date(current.updated_at).getTime() >= 30_000
+    if (!(current.status === 'blocked' && hasRecordedError) && !staleCollecting) {
+      throw new Error('mission_conversation_processing_not_retryable')
+    }
+    const updated = await client.query<ConversationRow>(
+      `UPDATE public.action_mission_conversations
+       SET status = 'collecting_context', context_readiness = context_readiness - 'processingError', updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND version = $3
+       RETURNING ${CONVERSATION_COLUMNS}`,
+      [input.conversationId, input.organizationId, input.expectedVersion],
+    )
+    if (!updated.rows[0]) throw new Error('mission_conversation_version_conflict')
+    return getRequiredMissionConversation(client, input.conversationId, input.organizationId)
+  })
 }
 
 export async function projectMissionConversationPlanningResult(client: Queryable, input: {

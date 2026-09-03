@@ -27,6 +27,14 @@ describe('actionEngineService mission conversations', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/api/action-engine/mission-conversations/conversation-1/confirm')
     expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({ organizationId: 'org-1', expectedVersion: 5, briefHash: 'brief-hash' })
   })
+
+  it('retries asynchronous processing without resending the user message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ conversation: {}, jobId: 'job-retry' }, 202))
+    vi.stubGlobal('fetch', fetchMock)
+    await actionEngineService.retryMissionConversationProcessing('conversation-1', { organizationId: 'org-1', expectedVersion: 4 })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/action-engine/mission-conversations/conversation-1/retry')
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({ organizationId: 'org-1', expectedVersion: 4 })
+  })
 })
 
 function jsonResponse(body: unknown, status = 200) {

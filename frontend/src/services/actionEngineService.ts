@@ -54,6 +54,8 @@ export const actionEngineService = {
   }),
   cancelMissionConversation: (conversationId: string, input: { organizationId: string; expectedVersion: number }) =>
     apiRequest<MissionConversation>(`${root}/mission-conversations/${conversationId}/cancel`, { method: 'POST', body: input }),
+  retryMissionConversationProcessing: (conversationId: string, input: { organizationId: string; expectedVersion: number }) =>
+    apiRequest<{ conversation: MissionConversation; jobId: string | null }>(`${root}/mission-conversations/${conversationId}/retry`, { method: 'POST', body: input }),
   approveMissionConversationPlan: (input: { organizationId: string; missionId: string; planId: string; approvalId: string; expectedMissionVersion: number; subjectHash: string }) =>
     approvePlanReference(input),
   listPacks: () => apiRequest<ActionPack[]>(`${root}/action-packs`),

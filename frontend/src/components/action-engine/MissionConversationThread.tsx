@@ -8,6 +8,7 @@ import type { DecisionReasonKey, MissionConversation, MissionConversationMissing
 type Props = {
   conversation: MissionConversation
   processing: boolean
+  processingError?: string | null
   canWrite: boolean
   onQuickReply: (message: string) => void
   onConfirmBrief?: () => void
@@ -17,10 +18,7 @@ type Props = {
   correctionHref?: (missing: MissionConversationMissingContext) => string | undefined
 }
 
-export function MissionConversationThread({ conversation, processing, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionHref }: Props) {
-  const processingError = typeof conversation.contextReadiness.processingError === 'string'
-    ? conversation.contextReadiness.processingError
-    : null
+export function MissionConversationThread({ conversation, processing, processingError, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionHref }: Props) {
   return (
     <Conversation className="min-h-0 bg-slate-50/70">
       <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-7 sm:px-6">
@@ -50,11 +48,18 @@ export function MissionConversationThread({ conversation, processing, canWrite, 
           )
         })}
         {processing ? <div className="flex items-start gap-3" aria-label="Agente analisando"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-600 text-white"><Bot className="h-4 w-4" /></span><div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm"><Loader2 className="h-4 w-4 animate-spin text-blue-600" />Consultando estratégia YUX e contexto da empresa…</div></div> : null}
-        {processingError && !processing ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p>Não consegui concluir esta análise agora. Sua mensagem foi salva.</p>{canWrite && onRetry ? <button className="mt-3 inline-flex items-center gap-2 font-semibold text-amber-900 hover:underline" onClick={onRetry} type="button"><RotateCcw className="h-4 w-4" />Tentar novamente sem reenviar</button> : null}</div> : null}
+        {processingError && !processing ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p>{processingErrorMessage(processingError)}</p>{canWrite && onRetry ? <button className="mt-3 inline-flex items-center gap-2 font-semibold text-amber-900 hover:underline" onClick={onRetry} type="button"><RotateCcw className="h-4 w-4" />Tentar novamente sem reenviar</button> : null}</div> : null}
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
   )
+}
+
+function processingErrorMessage(code: string) {
+  if (code === 'insufficient_ai_credits') return 'Os créditos de IA deste contrato acabaram. Sua mensagem foi salva; recarregue os créditos e tente novamente sem reenviar.'
+  if (code === 'harness_unavailable') return 'O agente de estratégia está temporariamente indisponível. Sua mensagem foi salva.'
+  if (code === 'harness_timeout' || code === 'conversation_processing_stalled') return 'A análise demorou mais do que o esperado. Sua mensagem foi salva.'
+  return 'Não consegui concluir esta análise agora. Sua mensagem foi salva.'
 }
 
 function MissingContextCard({ item, correctionHref }: { item: MissionConversationMissingContext; correctionHref?: string }) {
