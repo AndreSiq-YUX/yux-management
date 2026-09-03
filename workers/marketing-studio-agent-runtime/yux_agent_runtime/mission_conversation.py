@@ -26,6 +26,15 @@ MISSION_INTAKE_WORKFLOW_SPEC = {
 }
 
 
+_SUGGESTED_ACTION_LABELS = {
+    "campaign.create_draft": "Criar rascunho da campanha",
+    "crm.pipeline.create_draft": "Criar rascunho do funil no CRM",
+    "crm.sequence.create_draft": "Criar rascunho da sequência de e-mails",
+    "landing_page.create_draft": "Criar rascunho da landing page",
+    "lead_form.configure_draft": "Configurar rascunho do formulário de leads",
+}
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -45,6 +54,44 @@ def _source_version(item: dict[str, Any]) -> str:
 def _canonical_hash(value: Any) -> str:
     serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _normalize_suggested_actions(
+    value: Any,
+    allowed_capability_keys: list[str],
+) -> list[dict[str, Any]]:
+    """Expand the provider's capability-key shorthand into the strict wire shape."""
+    if not isinstance(value, list):
+        return []
+    allowed = set(allowed_capability_keys)
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in value:
+        if isinstance(raw, dict):
+            action = dict(raw)
+            key = _text(action.get("key"))
+        else:
+            capability_key = _text(raw)
+            if not capability_key or capability_key not in allowed:
+                continue
+            key = capability_key
+            action = {
+                "key": key,
+                "label": _SUGGESTED_ACTION_LABELS.get(
+                    capability_key,
+                    capability_key.replace(".", " ").replace("_", " ").capitalize(),
+                ),
+                "kind": "quick_reply",
+                "capabilityKey": capability_key,
+                "payload": {"suggestedActionKey": capability_key},
+            }
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(action)
+        if len(normalized) == 8:
+            break
+    return normalized
 
 
 def build_mission_source_catalog(
@@ -131,6 +178,10 @@ def normalize_mission_conversation_response(
         "sources": [source.model_dump() for source in source_catalog],
         "operational": request.operationalContext,
     })
+    parsed["suggestedActions"] = _normalize_suggested_actions(
+        parsed.get("suggestedActions"),
+        request.allowedCapabilityKeys,
+    )
     payload = {
         **parsed,
         "schemaVersion": 1,

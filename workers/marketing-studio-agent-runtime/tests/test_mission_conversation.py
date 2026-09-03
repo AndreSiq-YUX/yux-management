@@ -1,7 +1,11 @@
 import json
 import unittest
 
-from yux_agent_runtime.mission_conversation import MissionConversationWorkflow
+from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
+from yux_agent_runtime.mission_conversation import (
+    MissionConversationWorkflow,
+    normalize_mission_conversation_response,
+)
 from yux_agent_runtime.providers import OpenRouterClient
 from yux_agent_runtime.runtime_factory import build_strategy_workflow_engine
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
@@ -28,6 +32,55 @@ def request(audience="client_user"):
 
 
 class MissionConversationWorkflowTest(unittest.TestCase):
+    def test_normalizes_allowed_capability_key_shorthand_from_provider(self):
+        typed_request = MissionConversationTurnRequestWire.model_validate({
+            **request(),
+            "allowedCapabilityKeys": [
+                "crm.pipeline.create_draft",
+                "campaign.create_draft",
+            ],
+        })
+        parsed = {
+            "kind": "message",
+            "reply": "Posso estruturar o funil e a campanha.",
+            "understood": {},
+            "questions": [],
+            "readiness": {
+                "status": "needs_information",
+                "knownFacts": [],
+                "assumptions": [],
+                "missing": [],
+            },
+            "brief": {
+                "title": "Captação",
+                "objective": "Captar clientes",
+                "requestedOutcome": "Leads qualificados",
+            },
+            "suggestedActions": [
+                "crm.pipeline.create_draft",
+                "campaign.create_draft",
+                "untrusted.capability",
+                "campaign.create_draft",
+            ],
+            "sourceRefs": [],
+        }
+
+        response = normalize_mission_conversation_response(
+            parsed,
+            request=typed_request,
+            retrieval_context={},
+            retrieval_trace_id="run-1",
+            provider={"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+        )
+
+        self.assertEqual(
+            [action.capabilityKey for action in response.suggestedActions],
+            ["crm.pipeline.create_draft", "campaign.create_draft"],
+        )
+        self.assertEqual(response.suggestedActions[0].kind, "quick_reply")
+        self.assertEqual(response.suggestedActions[0].label, "Criar rascunho do funil no CRM")
+        self.assertNotIn("untrusted.capability", [action.key for action in response.suggestedActions])
+
     def make_store(self):
         return InMemoryAgentRuntimeStore(tables={
             "yux_strategy_agent_profiles": [{
