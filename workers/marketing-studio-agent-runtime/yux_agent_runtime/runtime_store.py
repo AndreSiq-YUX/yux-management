@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from decimal import Decimal
 import json
 import os
 from typing import Any, Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 
 def _with_id(payload: dict[str, Any]) -> dict[str, Any]:
@@ -131,18 +133,38 @@ class PostgresAgentRuntimeStore:
         if (table, column) in cls.postgres_array_columns and isinstance(value, list):
             return value
         if isinstance(value, (dict, list)):
-            return json.dumps(value)
+            return json.dumps(value, default=cls._json_default)
         return value
 
     @staticmethod
-    def _row(row: dict[str, Any]) -> dict[str, Any]:
+    def _json_default(value: Any) -> Any:
+        if isinstance(value, UUID):
+            return str(value)
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return float(value)
+        raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+    @classmethod
+    def _json_safe(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key): cls._json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._json_safe(item) for item in value]
+        if isinstance(value, (UUID, datetime, date, Decimal)):
+            return cls._json_default(value)
+        return value
+
+    @classmethod
+    def _row(cls, row: dict[str, Any]) -> dict[str, Any]:
         for key, value in list(row.items()):
             if isinstance(value, str) and value[:1] in ("{", "["):
                 try:
                     row[key] = json.loads(value)
                 except json.JSONDecodeError:
                     pass
-        return row
+        return cls._json_safe(row)
 
     def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         table = self._table(table, write=True)

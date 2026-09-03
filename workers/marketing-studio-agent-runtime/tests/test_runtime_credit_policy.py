@@ -1,5 +1,8 @@
 import json
 import unittest
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID
 
 from yux_agent_runtime.runtime_store import PostgresAgentRuntimeStore
 
@@ -40,6 +43,21 @@ class FakeConnection:
 
 
 class RuntimeCreditPolicyTest(unittest.TestCase):
+    def test_postgres_rows_are_normalized_for_json_prompts_and_traces(self):
+        store = PostgresAgentRuntimeStore("postgresql://test")
+        row = store._row({
+            "id": UUID("00000000-0000-0000-0000-000000000001"),
+            "created_at": datetime(2026, 9, 2, 23, 0, tzinfo=UTC),
+            "score": Decimal("0.75"),
+            "payload": {"owner_id": UUID("00000000-0000-0000-0000-000000000002")},
+        })
+
+        self.assertEqual(row["id"], "00000000-0000-0000-0000-000000000001")
+        self.assertEqual(row["created_at"], "2026-09-02T23:00:00+00:00")
+        self.assertEqual(row["score"], 0.75)
+        self.assertEqual(row["payload"]["owner_id"], "00000000-0000-0000-0000-000000000002")
+        json.dumps(row)
+
     def test_postgres_arrays_stay_native_while_json_fields_are_serialized(self):
         store = PostgresAgentRuntimeStore("postgresql://test")
 
