@@ -56,6 +56,8 @@ describe('Mission conversation repository', () => {
 
     expect(result.messages).toHaveLength(1)
     expect(result.messages[0]?.clientMessageId).toBe('client-message-1')
+    const messageInsert = fake.calls.find(item => item.sql.includes('INSERT INTO public.action_mission_conversation_messages'))
+    expect(messageInsert?.params?.[7]).toBe('[]')
     expect(fake.calls.map(item => item.sql)).toEqual(expect.arrayContaining(['BEGIN', 'COMMIT']))
     expect(fake.calls.every(item => !item.params || item.params.includes('org-1'))).toBe(true)
     expect(fake.remaining).toHaveLength(0)
@@ -134,6 +136,8 @@ describe('Mission conversation repository', () => {
 
     expect(result.status).toBe('awaiting_user')
     expect(result.messages.at(-1)?.harnessRunId).toBe('run-1')
+    const messageInsert = fake.calls.find(item => item.sql.includes('INSERT INTO public.action_mission_conversation_messages'))
+    expect(messageInsert?.params?.[7]).toBe('[{"ref":"yux:card-1"}]')
   })
 
   it('attaches the same Mission idempotently and rejects a different Mission', async () => {

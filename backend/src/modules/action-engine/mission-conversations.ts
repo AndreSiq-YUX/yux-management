@@ -568,7 +568,7 @@ async function insertMessage(client: Queryable, input: {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING ${MESSAGE_COLUMNS}`,
     [input.organizationId, input.conversationId, input.sequence, input.actorType, input.messageKind,
-      input.content.trim(), input.structuredPayload, input.sourceRefs, input.clientMessageId ?? null,
+      input.content.trim(), input.structuredPayload, JSON.stringify(input.sourceRefs), input.clientMessageId ?? null,
       input.harnessRunId ?? null, input.createdBy ?? null],
   )
   if (!result.rows[0]) throw new Error('mission_conversation_message_insert_failed')

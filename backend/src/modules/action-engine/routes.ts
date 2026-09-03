@@ -428,7 +428,10 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         audience: isInternalMissionActor(ctx.role) ? 'internal_operator' : 'client_user',
       }, { jobId: createBullMqJobId('mission-conversation', conversation.id, conversation.version) })
       return reply.code(202).send({ conversation, jobId: job.id })
-    } catch (error) { return sendDomainError(reply, error) }
+    } catch (error) {
+      request.log.error({ err: error, organizationId: body.data.organizationId }, 'mission conversation creation failed')
+      return sendDomainError(reply, error)
+    }
   })
 
   app.get('/mission-conversations', async (request, reply) => {
@@ -471,7 +474,10 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
         audience: isInternalMissionActor(ctx.role) ? 'internal_operator' : 'client_user',
       }, { jobId: createBullMqJobId('mission-conversation', conversation.id, conversation.version) })
       return reply.code(202).send({ conversation, jobId: job.id })
-    } catch (error) { return sendDomainError(reply, error) }
+    } catch (error) {
+      request.log.error({ err: error, organizationId: body.data.organizationId, conversationId: params.data.conversationId }, 'mission conversation message failed')
+      return sendDomainError(reply, error)
+    }
   })
 
   app.post('/mission-conversations/:conversationId/cancel', async (request, reply) => {

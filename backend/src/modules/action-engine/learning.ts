@@ -197,7 +197,7 @@ const OUTCOME_QUERY = `SELECT mission.id AS mission_id,mission.organization_id,m
     ORDER BY evaluation.evaluated_at) FROM public.action_evaluations evaluation
     WHERE evaluation.mission_id=mission.id AND evaluation.organization_id=mission.organization_id),'[]'::JSONB) AS evaluations,
   COALESCE((SELECT JSONB_AGG(JSONB_BUILD_OBJECT('id',approval.id::TEXT,'type',approval.approval_type,'status',approval.status)
-    ORDER BY approval.requested_at) FROM public.action_approvals approval
+    ORDER BY approval.created_at) FROM public.action_approvals approval
     WHERE approval.mission_id=mission.id AND approval.organization_id=mission.organization_id),'[]'::JSONB) AS approvals,
   JSONB_BUILD_OBJECT(
     'total',(SELECT COUNT(*) FROM public.action_runs run WHERE run.mission_id=mission.id),
