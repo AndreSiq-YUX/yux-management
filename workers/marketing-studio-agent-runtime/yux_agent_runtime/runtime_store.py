@@ -216,12 +216,15 @@ class PostgresAgentRuntimeStore:
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(
                 """UPDATE public.ai_credit_wallets
-                      SET current_balance = current_balance - %s,
+                      SET current_balance = CASE
+                            WHEN is_unlimited THEN current_balance
+                            ELSE current_balance - %s
+                          END,
                           monthly_used = monthly_used + %s,
                           updated_at = NOW()
                     WHERE organization_id = %s AND client_id = %s AND contract_id = %s
-                      AND current_balance >= %s
-                    RETURNING id, current_balance, monthly_used""",
+                      AND (is_unlimited OR current_balance >= %s)
+                    RETURNING id, current_balance, monthly_used, is_unlimited""",
                 [credits, credits, organization_id, client_id, contract_id, credits],
             )
             wallet = cursor.fetchone()
@@ -233,7 +236,13 @@ class PostgresAgentRuntimeStore:
                      action, credits_charged, status, metadata
                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,'succeeded',%s::jsonb)
                    RETURNING id""",
-                [organization_id, client_id, contract_id, wallet["id"], workflow_run_id, action, credits, json.dumps({"source": "agent_runtime"})],
+                [organization_id, client_id, contract_id, wallet["id"], workflow_run_id, action, credits, json.dumps({"source": "agent_runtime", "unlimited": bool(wallet["is_unlimited"])})],
             )
             ledger = cursor.fetchone()
-            return {"reserved": credits, "wallet_id": wallet["id"], "ledger_id": ledger["id"], "current_balance": wallet["current_balance"]}
+            return {
+                "reserved": credits,
+                "wallet_id": wallet["id"],
+                "ledger_id": ledger["id"],
+                "current_balance": wallet["current_balance"],
+                "unlimited": bool(wallet["is_unlimited"]),
+            }
