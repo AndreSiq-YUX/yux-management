@@ -114,6 +114,47 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertTrue(response.understood["summary"])
         self.assertEqual(response.brief.objective, request()["currentBrief"]["objective"])
 
+    def test_normalizes_priority_labels_and_missing_context_keys(self):
+        typed_request = MissionConversationTurnRequestWire.model_validate(request())
+        response = normalize_mission_conversation_response(
+            {
+                "kind": "questions",
+                "reply": "Preciso confirmar três pontos.",
+                "understood": {"objective": "captação"},
+                "questions": [{
+                    "key": "target_audience",
+                    "label": "Qual é o público-alvo?",
+                    "whyNeeded": "Define a segmentação.",
+                    "priority": "high",
+                    "answerType": "text",
+                }, {
+                    "key": "current_tools",
+                    "label": "Quais ferramentas já estão conectadas?",
+                    "priority": "medium",
+                }],
+                "readiness": {
+                    "status": "needs_information",
+                    "knownFacts": [],
+                    "assumptions": [],
+                    "missing": ["target_audience", "main_goal", "current_tools"],
+                },
+                "brief": {"objective": "Captar clientes", "requestedOutcome": "Leads"},
+                "suggestedActions": [],
+                "sourceRefs": [],
+            },
+            request=typed_request,
+            retrieval_context={},
+            retrieval_trace_id="run-3",
+            provider={},
+        )
+
+        self.assertEqual([question.priority for question in response.questions], [1, 2])
+        self.assertEqual(response.questions[1].answerType, "text")
+        self.assertEqual(
+            [missing.category for missing in response.readiness.missing],
+            ["audience", "company", "integration"],
+        )
+
     def make_store(self):
         return InMemoryAgentRuntimeStore(tables={
             "yux_strategy_agent_profiles": [{

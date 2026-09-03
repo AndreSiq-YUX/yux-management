@@ -100,9 +100,9 @@ def _question_category(label: str) -> str:
         return "budget"
     if any(term in normalized for term in ("prazo", "data", "quando")):
         return "deadline"
-    if any(term in normalized for term in ("integra", "ferramenta", "canal", "canais")):
+    if any(term in normalized for term in ("integra", "ferramenta", "canal", "canais", "tool")):
         return "integration"
-    if any(term in normalized for term in ("público", "publico", "audiência", "audiencia", "perfil")):
+    if any(term in normalized for term in ("público", "publico", "audiência", "audiencia", "perfil", "audience")):
         return "audience"
     if any(term in normalized for term in ("oferta", "produto", "serviço", "servico")):
         return "offer"
@@ -124,7 +124,38 @@ def _normalize_questions(value: Any) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for index, raw in enumerate(value[:3], start=1):
         if isinstance(raw, dict):
-            normalized.append(dict(raw))
+            question = dict(raw)
+            label = _text(question.get("label") or question.get("question"))[:1_000]
+            if not label:
+                continue
+            priority = question.get("priority")
+            if not isinstance(priority, int):
+                priority = {
+                    "high": 1,
+                    "alta": 1,
+                    "medium": 2,
+                    "média": 2,
+                    "media": 2,
+                    "low": 3,
+                    "baixa": 3,
+                }.get(_text(priority).casefold(), index)
+            answer_type = _text(question.get("answerType"))
+            if answer_type not in {
+                "text", "number", "currency", "date", "single_choice",
+                "multiple_choice", "boolean",
+            }:
+                answer_type = _question_answer_type(label)
+            question.update({
+                "key": _text(question.get("key"))[:120] or f"clarification_{index}",
+                "label": label,
+                "whyNeeded": _text(question.get("whyNeeded"))[:1_000]
+                or "Essa informação é necessária para qualificar e planejar a missão com segurança.",
+                "priority": max(1, min(100, priority)),
+                "answerType": answer_type,
+                "choices": question.get("choices") if isinstance(question.get("choices"), list) else [],
+            })
+            question.pop("question", None)
+            normalized.append(question)
             continue
         label = _text(raw)[:1_000]
         if not label:
@@ -142,7 +173,53 @@ def _normalize_questions(value: Any) -> list[dict[str, Any]]:
 
 def _normalize_readiness(value: Any, questions: list[dict[str, Any]]) -> dict[str, Any]:
     if isinstance(value, dict):
-        return dict(value)
+        readiness = dict(value)
+        raw_missing = readiness.get("missing")
+        normalized_missing: list[dict[str, Any]] = []
+        if isinstance(raw_missing, list):
+            for index, raw in enumerate(raw_missing[:100], start=1):
+                if isinstance(raw, dict):
+                    missing = dict(raw)
+                    key = _text(missing.get("key")) or f"missing_{index}"
+                    reason = _text(missing.get("reason")) or key.replace("_", " ")
+                    category = _text(missing.get("category"))
+                    if category not in {
+                        "company", "brand", "offer", "audience", "budget", "deadline",
+                        "integration", "permission", "consent",
+                    }:
+                        category = _question_category(f"{key} {reason}")
+                    missing.update({
+                        "key": key,
+                        "category": category,
+                        "reason": reason[:1_000],
+                        "requiredFor": missing.get("requiredFor")
+                        if isinstance(missing.get("requiredFor"), list)
+                        else ["mission_planning"],
+                    })
+                    normalized_missing.append(missing)
+                    continue
+                key = _text(raw)
+                if key:
+                    normalized_missing.append({
+                        "key": key,
+                        "category": _question_category(key),
+                        "reason": f"Precisamos confirmar {key.replace('_', ' ')}.",
+                        "requiredFor": ["mission_planning"],
+                    })
+        readiness["missing"] = normalized_missing
+        readiness["knownFacts"] = (
+            readiness.get("knownFacts") if isinstance(readiness.get("knownFacts"), list) else []
+        )
+        readiness["assumptions"] = (
+            readiness.get("assumptions") if isinstance(readiness.get("assumptions"), list) else []
+        )
+        status = _text(readiness.get("status"))
+        if status not in {
+            "needs_information", "needs_configuration",
+            "ready_for_brief_confirmation", "ready_for_plan",
+        }:
+            readiness["status"] = "needs_information" if normalized_missing or questions else "ready_for_brief_confirmation"
+        return readiness
     if questions:
         missing = []
         for question in questions:
