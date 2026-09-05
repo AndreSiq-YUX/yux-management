@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yux.com.br/contracts/workspace/v1/workspace.schema.json",
+  "title": "WorkspaceContractsV1",
+  "oneOf": [{ "$ref": "#/$defs/WorkspaceContextV1" }, { "$ref": "#/$defs/CorrectionTargetV1" }],
+  "$defs": {
+    "Uuid": { "type": "string", "format": "uuid" },
+    "WorkspaceContextV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion","organizationId","kind","contractId","role","moduleKeys","canConfigure","missionCreation"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "organizationId": { "$ref": "#/$defs/Uuid" },
+        "kind": { "enum": ["internal_growth","client"] },
+        "contractId": { "anyOf": [{ "$ref": "#/$defs/Uuid" }, { "type": "null" }] },
+        "role": { "enum": ["yux_admin","yux_operator","client_admin","client_member"] },
+        "moduleKeys": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "canConfigure": { "type": "boolean" },
+        "missionCreation": { "type": "object", "additionalProperties": false, "required": ["mode","reasonCode"], "properties": {
+          "mode": { "enum": ["conversation","form","unavailable"] }, "reasonCode": { "type": ["string","null"] }
+        } }
+      }
+    },
+    "CorrectionTargetV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key","organizationId","entityId","fieldKeys","returnTo"],
+      "properties": {
+        "key": { "enum": ["company_profile","knowledge","channel_connection","mission_brief","contract_modules","provider_connection"] },
+        "organizationId": { "$ref": "#/$defs/Uuid" }, "entityId": { "anyOf": [{ "$ref": "#/$defs/Uuid" }, { "type": "null" }] },
+        "fieldKeys": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "returnTo": { "type": "object", "additionalProperties": false, "required": ["kind","id"], "properties": {
+          "kind": { "enum": ["mission","conversation"] }, "id": { "$ref": "#/$defs/Uuid" }
+        } }
+      }
+    }
+  }
+}

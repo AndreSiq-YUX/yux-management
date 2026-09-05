@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yux.com.br/contracts/knowledge/v1/knowledge.schema.json",
+  "title": "KnowledgeContractV1",
+  "oneOf": [
+    { "$ref": "#/$defs/KnowledgeQueryV1" },
+    { "$ref": "#/$defs/RetrievalResultV1" },
+    { "$ref": "#/$defs/PublishKnowledgeV1" },
+    { "$ref": "#/$defs/KnowledgeIngestionStateV1" }
+  ],
+  "$defs": {
+    "Uuid": { "type": "string", "format": "uuid" },
+    "Sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "KnowledgeQueryV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion","organizationId","contractId","profileKey","audience","moduleKey","workflowKey","channel","queryText","matchLimit"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "organizationId": { "$ref": "#/$defs/Uuid" },
+        "contractId": { "anyOf": [{ "$ref": "#/$defs/Uuid" }, { "type": "null" }] },
+        "profileKey": { "type": "string", "minLength": 1 },
+        "audience": { "enum": ["internal_operator","client_user","external_contact"] },
+        "moduleKey": { "type": "string", "minLength": 1 },
+        "workflowKey": { "type": ["string","null"] }, "channel": { "type": ["string","null"] },
+        "queryText": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "matchLimit": { "type": "integer", "minimum": 1, "maximum": 20 }
+      }
+    },
+    "KnowledgeSourceRefV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace","id","publicationId","itemId","documentId","sourceLocator","contentHash","knowledgePolicyVersion","useMode"],
+      "properties": {
+        "namespace": { "enum": ["strategy","company"] }, "id": { "$ref": "#/$defs/Uuid" },
+        "publicationId": { "$ref": "#/$defs/Uuid" }, "itemId": { "$ref": "#/$defs/Uuid" },
+        "documentId": { "anyOf": [{ "$ref": "#/$defs/Uuid" }, { "type": "null" }] },
+        "sourceLocator": { "type": ["string","null"] }, "contentHash": { "$ref": "#/$defs/Sha256" },
+        "knowledgePolicyVersion": { "const": 1 }, "useMode": { "enum": ["internal_reasoning","quotable"] }
+      }
+    },
+    "RetrievalResultV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion","status","reasonCode","retrievalMode","queryId","sources","contextHash","elapsedMs"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "status": { "enum": ["ok","empty","degraded","unavailable"] },
+        "reasonCode": { "type": ["string","null"] }, "retrievalMode": { "enum": ["hybrid","lexical","none"] },
+        "queryId": { "$ref": "#/$defs/Uuid" }, "sources": { "type": "array", "items": { "$ref": "#/$defs/KnowledgeSourceRefV1" } },
+        "contextHash": { "$ref": "#/$defs/Sha256" }, "elapsedMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "PublishKnowledgeV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion","organizationId","expectedVersion","itemIds","policy","snapshotHash"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "organizationId": { "$ref": "#/$defs/Uuid" },
+        "expectedVersion": { "type": "integer", "minimum": 0 },
+        "itemIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/Uuid" } },
+        "policy": { "type": "object", "additionalProperties": false, "required": ["audiences","allowedProfiles","blockedProfiles"], "properties": {
+          "audiences": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["internal_operator","client_user","external_contact"] } },
+          "allowedProfiles": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+          "blockedProfiles": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+        } },
+        "snapshotHash": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "KnowledgeIngestionStateV1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion","documentId","status","attempt","leaseUntil","errorCode"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "documentId": { "$ref": "#/$defs/Uuid" },
+        "status": { "enum": ["uploaded","queued","processing","ready_for_review","published","degraded","failed"] },
+        "attempt": { "type": "integer", "minimum": 0 }, "leaseUntil": { "type": ["string","null"], "format": "date-time" },
+        "errorCode": { "type": ["string","null"] }
+      }
+    }
+  }
+}

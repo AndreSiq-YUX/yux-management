@@ -1,0 +1,12 @@
+{
+  "valid": [{
+    "schemaVersion": 1, "organizationId": "10000000-0000-4000-8000-000000000001", "contractId": null,
+    "profileKey": "growth_strategist", "audience": "internal_operator", "moduleKey": "marketing_studio",
+    "workflowKey": null, "channel": null, "queryText": "garantia exclusiva", "matchLimit": 3
+  }],
+  "invalid": [
+    { "name": "unknown-field", "value": { "schemaVersion": 1, "organizationId": "10000000-0000-4000-8000-000000000001", "contractId": null, "profileKey": "growth_strategist", "audience": "external_contact", "moduleKey": "marketing_studio", "workflowKey": null, "channel": null, "queryText": "x", "matchLimit": 3, "internalText": "private" } },
+    { "name": "limit-zero", "value": { "schemaVersion": 1, "organizationId": "10000000-0000-4000-8000-000000000001", "contractId": null, "profileKey": "growth_strategist", "audience": "client_user", "moduleKey": "marketing_studio", "workflowKey": null, "channel": null, "queryText": "x", "matchLimit": 0 } },
+    { "name": "limit-21", "value": { "schemaVersion": 1, "organizationId": "10000000-0000-4000-8000-000000000001", "contractId": null, "profileKey": "growth_strategist", "audience": "client_user", "moduleKey": "marketing_studio", "workflowKey": null, "channel": null, "queryText": "x", "matchLimit": 21 } }
+  ]
+}

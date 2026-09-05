@@ -41,7 +41,8 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npm run generate:mission-contracts
-      - run: git diff --exit-code -- ../contracts/mission-supervisor src/modules/action-engine/generated
+      - run: npm run generate:platform-contracts
+      - run: git diff --exit-code -- ../contracts/mission-supervisor ../contracts/knowledge ../contracts/workspace src/modules/action-engine/generated src/contracts/generated ../frontend/src/types/generated
       - run: npm run type-check
       - run: npm test
 
