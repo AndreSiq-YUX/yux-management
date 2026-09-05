@@ -55,6 +55,8 @@ type BuildServerOptions = {
   pool?: pg.Pool
   jobQueue?: AppJobQueue
   redisPing?: () => Promise<string>
+  closePoolOnClose?: boolean
+  closeQueueOnClose?: boolean
 }
 
 export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerOptions = {}) {
@@ -68,8 +70,8 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   app.decorate('redisPing', options.redisPing ?? (() => pingRedis(env.REDIS_URL)))
   app.decorate('authStore', options.authStore ?? createPgAuthStore(pool))
   app.addHook('onClose', async () => {
-    await pool.end()
-    await queue.close()
+    if (options.closePoolOnClose ?? !options.pool) await pool.end()
+    if (options.closeQueueOnClose ?? !options.jobQueue) await queue.close()
   })
 
   await app.register(helmet)

@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/index.js",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "type-check": "tsc --noEmit",
     "generate:mission-contracts": "tsx scripts/generate-mission-wire-types.ts",
     "migrate": "tsx scripts/apply-migrations.ts",

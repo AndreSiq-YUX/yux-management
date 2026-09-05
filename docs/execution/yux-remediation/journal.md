@@ -30,8 +30,9 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | Tarefa | Estado | Observação |
 | --- | --- | --- |
 | T01 | aceita | Baseline reconciliado e registrado |
-| T02 | em execução | Próxima unidade funcional |
-| T03–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T02 | implementada aguardando aceite | Stack/CI criados; execução local real bloqueada por ausência de Docker e credencial descartável do PostgreSQL local |
+| T03 | em execução | Próxima unidade funcional |
+| T04–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -42,3 +43,15 @@ frontend type-check: PASS
 frontend tests: PASS, 528 PASS
 ```
 
+## T02 — Prova de integração persistente
+
+- Estado: implementada aguardando aceite no job com serviços descartáveis.
+- Commit inicial: `df6d335`.
+- Achado: YUX-20.
+- Reprodução anterior: `buildServer` selecionava fila sem efeitos em `NODE_ENV=test`; o dispatcher do worker era uma função privada acoplada às dependências globais do processo; a CI não iniciava PostgreSQL/Redis.
+- Decisão: extrair um único dispatcher injetável e usá-lo no worker produtivo e no rig; manter banco, autenticação, handlers e BullMQ reais; substituir somente o limite HTTP externo.
+- Entregas: Compose efêmero PostgreSQL 17/Redis 7, rig autenticado, fixture A/B, servidor de provedor determinístico, teste de persistência/reinício, configuração Vitest separada e job de CI com captura de logs.
+- Verificação local: type-check backend passou; testes afetados de CRM e Company Intelligence passaram (8/8).
+- Limitação de aceite local: Docker não está instalado. PostgreSQL 17 e Redis existem localmente, mas o PostgreSQL exige senha e não há credencial de teste disponível no ambiente. Nenhuma base existente foi sondada além de uma tentativa sem senha contra `postgres`, e nenhuma foi alterada.
+- Próxima prova automática: `npm --prefix backend run test:integration -- tests/integration/stack.test.ts` no job `Backend integration`.
+- Risco remanescente: o teste persistente precisa executar no runner Linux/Docker antes de T02 mudar para `aceita`; as tarefas seguintes podem usar suas interfaces e manter esse gate aberto.

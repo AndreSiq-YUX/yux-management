@@ -45,6 +45,39 @@ jobs:
       - run: npm run type-check
       - run: npm test
 
+  backend-integration:
+    name: Backend integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - name: Start isolated PostgreSQL and Redis
+        run: docker compose --project-name yux-integration -f docker-compose.integration.yml up -d --wait
+      - name: Run persistent integration tests
+        run: npm run test:integration
+        working-directory: backend
+        env:
+          YUX_INTEGRATION_DATABASE_URL: postgresql://yux_test:yux_test_password@127.0.0.1:55432/yux_test_integration
+          YUX_INTEGRATION_REDIS_URL: redis://:yux_test_redis_password@127.0.0.1:56379/0
+          YUX_INTEGRATION_COMPOSE_PROJECT: yux-integration
+      - name: Capture service logs
+        if: failure()
+        run: docker compose --project-name yux-integration -f docker-compose.integration.yml logs --no-color > integration-services.log
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: backend-integration-services
+          path: integration-services.log
+      - name: Stop isolated services
+        if: always()
+        run: docker compose --project-name yux-integration -f docker-compose.integration.yml down --volumes --remove-orphans
+
   agent-runtime:
     name: Agent Runtime
     runs-on: ubuntu-latest
