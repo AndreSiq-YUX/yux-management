@@ -19,36 +19,35 @@ export const contextPlugin = fp(async (app) => {
     const user = await app.authStore.findUserBySession(hashSessionToken(token), new Date())
     if (!user) return
 
-    const [memberships, modules] = await Promise.all([
-      app.pg.query<{ organization_id: string }>(
-        `SELECT organization_id
-         FROM public.memberships
-         WHERE user_id = $1`,
-        [user.id],
-      ),
-      app.pg.query<{ module_key: string }>(
+    const memberships = await app.pg.query<{ organization_id: string }>(
+      `SELECT organization_id
+       FROM public.memberships
+       WHERE user_id = $1`,
+      [user.id],
+    )
+    const organizationIds = memberships.rows.map((row) => row.organization_id)
+    const role = user.role as UserRole
+    enterDatabaseRequestContext({ role, organizationIds, serviceRole: 'api' })
+
+    const modules = organizationIds.length > 0 || role === 'yux_admin' || role === 'yux_operator'
+      ? await app.pg.query<{ module_key: string }>(
         `SELECT DISTINCT cm.module_key
          FROM public.contract_modules cm
          JOIN public.contracts c ON c.id = cm.contract_id
          JOIN public.organizations o ON o.client_id = c.client_id
          JOIN public.memberships m ON m.organization_id = o.id
-         WHERE m.user_id = $1
+        WHERE m.user_id = $1
            AND c.status = 'active'
            AND cm.enabled = TRUE`,
         [user.id],
-      ),
-    ])
+      )
+      : { rows: [] }
 
     request.ctx = {
       userId: user.id,
-      role: user.role as UserRole,
-      organizationIds: memberships.rows.map((row) => row.organization_id),
+      role,
+      organizationIds,
       enabledModuleKeys: modules.rows.map((row) => row.module_key),
     }
-    enterDatabaseRequestContext({
-      role: request.ctx.role,
-      organizationIds: request.ctx.organizationIds,
-      serviceRole: 'api',
-    })
   })
 })
