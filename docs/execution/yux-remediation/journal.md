@@ -32,8 +32,9 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T01 | aceita | Baseline reconciliado e registrado |
 | T02 | implementada aguardando aceite | Stack/CI criados; execução local real bloqueada por ausência de Docker e credencial descartável do PostgreSQL local |
 | T03 | implementada aguardando aceite | Unidade transacional/checksum validados em testes unitários; cenários PostgreSQL aguardam stack descartável |
-| T04 | em execução | Próxima unidade |
-| T05–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T04 | bloqueada por dependência | Contrato/runbooks implementados; faltam destino de backup, domínio e ensaio autorizado na infraestrutura |
+| T05 | em execução | Independente do bloqueio operacional de T04 |
+| T06–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -69,3 +70,14 @@ frontend tests: PASS, 528 PASS
 - Verificação preparada: teste PostgreSQL para rollback físico, dois migradores concorrentes, checksum e legado não atestado.
 - Documentação: `docs/runbooks/yux-migrations.md` explicita operações incompatíveis com transação e proíbe exceção silenciosa para `CREATE INDEX CONCURRENTLY`.
 - Risco remanescente: instalação limpa/upgrade em cópia sanitizada continuam no gate de integração e de rollout; nenhuma migration já existente foi alterada.
+
+## T04 — Recuperação e acesso administrativo
+
+- Estado: bloqueada por dependência operacional, com artefatos de implementação prontos.
+- Commit inicial: `f80f74a`.
+- Achados: YUX-25 e YUX-32.
+- Decisão: formalizar RPO ≤ 1 hora e RTO ≤ 4 horas; backup reúne PostgreSQL, materiais, originais de conhecimento, anexos omnichannel, Redis/AOF auxiliar, versões/digests e referência de custódia. Restore inicia sem worker, schedulers ou efeitos externos.
+- Entregas: schema estrito do manifesto, runbook de backup/restore, runbook de acesso administrativo HTTPS, inventário dos volumes marcado no Compose e vínculo no runbook da VPS.
+- Verificação local: type-check passou; 2/2 testes do schema passaram, incluindo rejeição de ativos ausentes, efeitos habilitados e valor semelhante a segredo.
+- Dependências externas ausentes: destino/retensão de backup, inventário de backups externos, domínio administrativo definitivo, acesso à VPS/Dokploy, digests implantados e responsável/revisor do ensaio.
+- Critério para desbloqueio: fornecer/confirmar esses dados e executar restore isolado e mudança de acesso com caminho de manutenção já validado. Nenhuma alegação de restauração ou TLS produtivo foi feita.

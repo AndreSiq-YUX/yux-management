@@ -146,7 +146,17 @@ services:
 
 volumes:
   yux_postgres_data:
+    labels:
+      yux.backup.required: "postgres"
   yux_redis_data:
+    labels:
+      yux.backup.required: "redis-aof"
   yux_materials_data:
+    labels:
+      yux.backup.required: "materials"
   yux_omnichannel_attachments_data:
+    labels:
+      yux.backup.required: "omnichannel-attachments"
   yux_company_knowledge_data:
+    labels:
+      yux.backup.required: "company-knowledge"

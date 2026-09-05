@@ -1,5 +1,10 @@
 # Backend VPS Runbook
 
+> Para backups/restauração use `docs/runbooks/yux-backup-restore.md`. Para TLS,
+> fechamento de portas e acesso de manutenção use
+> `docs/runbooks/yux-admin-access.md`. O Compose atual usa `expose`; não publique
+> API, PostgreSQL ou Redis diretamente no host.
+
 ## Production Domains
 
 - Frontend e API: `https://hub.yux.com.br`
