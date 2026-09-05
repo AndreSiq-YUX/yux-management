@@ -117,3 +117,11 @@ frontend tests: PASS, 528 PASS
 - Commit: `9b9ad82`.
 - Entregas: schemas JSON v1 de conhecimento/workspace, corpus positivo/negativo, geração determinística TS para backend/frontend, modelos Pydantic e serialização canônica/hash no runtime.
 - Verificação local: validação AJV, validação Pydantic, Unicode/ordem de chaves/arrays e type-checks passaram. A CI agora regenera e exige diff vazio.
+
+## Regressão do lote T01–T08
+
+- Backend unitário: 152 arquivos e 615 testes aprovados; os testes persistentes ficam exclusivamente na configuração de integração.
+- Frontend: 124 arquivos e 529 testes aprovados; type-check aprovado.
+- Runtime Python: 167 testes aprovados e 1 teste live explicitamente ignorado; os novos testes de escopo e contrato estão incluídos.
+- Integração persistente: não executada localmente porque Docker não está instalado e não existe credencial para uma base PostgreSQL descartável. O job de CI está preparado para executar os cenários com PostgreSQL 17/Redis 7.
+- Gate: T09 não deve começar sobre contratos/RLS ainda não exercitados no banco real; é necessário executar o job `Backend integration` ou disponibilizar o stack descartável equivalente.
