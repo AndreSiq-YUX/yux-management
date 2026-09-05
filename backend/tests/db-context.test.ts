@@ -29,6 +29,7 @@ describe('context-aware PostgreSQL pool', () => {
 
     expect(raw.client.calls).toEqual([
       { sql: 'BEGIN', values: undefined },
+      { sql: "SELECT set_config('app.service_role', $1, true)", values: ['api'] },
       { sql: "SELECT set_config('app.current_role', $1, true)", values: ['client_admin'] },
       { sql: "SELECT set_config('app.current_orgs', $1, true)", values: ['{00000000-0000-4000-8000-000000000001}'] },
       { sql: 'SELECT * FROM public.leads', values: undefined },
@@ -51,10 +52,26 @@ describe('context-aware PostgreSQL pool', () => {
     )
     expect(raw.client.calls.map(call => call.sql)).toEqual([
       'BEGIN',
+      "SELECT set_config('app.service_role', $1, true)",
       "SELECT set_config('app.current_role', $1, true)",
       "SELECT set_config('app.current_orgs', $1, true)",
       'SELECT * FROM public.conversations',
       'COMMIT',
     ])
+  })
+
+  it('fails closed for a tenant role without a valid organization', async () => {
+    const raw = new FakePool()
+    const pool = createContextAwarePool(raw as never)
+
+    await expect(runWithDatabaseRequestContext(
+      { role: 'client_member', organizationIds: [] },
+      () => pool.query('SELECT * FROM public.leads'),
+    )).rejects.toThrow('database_organization_context_required')
+
+    await expect(runWithDatabaseRequestContext(
+      { role: 'client_member', organizationIds: ['not-a-uuid'] },
+      () => pool.query('SELECT * FROM public.leads'),
+    )).rejects.toThrow('invalid_database_organization_context')
   })
 })

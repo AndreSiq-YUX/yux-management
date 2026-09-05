@@ -48,6 +48,7 @@ export const contextPlugin = fp(async (app) => {
     enterDatabaseRequestContext({
       role: request.ctx.role,
       organizationIds: request.ctx.organizationIds,
+      serviceRole: 'api',
     })
   })
 })

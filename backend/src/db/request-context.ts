@@ -4,6 +4,7 @@ import type { UserRole } from '../http/request-context.js'
 export type DatabaseRequestContext = {
   role: UserRole
   organizationIds: string[]
+  serviceRole?: 'api' | 'worker' | 'runtime'
 }
 
 const storage = new AsyncLocalStorage<DatabaseRequestContext>()

@@ -14,6 +14,13 @@ export const fixtureIds = {
 } as const
 
 export const fixturePassword = 'integration-password'
+export const integrationRolePassword = 'integration-service-password'
+
+export async function provisionIntegrationServiceRoles(pool: pg.Pool) {
+  await pool.query(`ALTER ROLE yux_api PASSWORD '${integrationRolePassword}'`)
+  await pool.query(`ALTER ROLE yux_worker PASSWORD '${integrationRolePassword}'`)
+  await pool.query(`ALTER ROLE yux_runtime PASSWORD '${integrationRolePassword}'`)
+}
 
 export const fixtureUsers = {
   yux_admin: { id: '40000000-0000-4000-8000-000000000001', email: 'yux-admin@integration.test', role: 'yux_admin', name: 'YUX Admin' },
@@ -92,6 +99,12 @@ export async function seedIntegrationFixtures(pool: pg.Pool) {
        CROSS JOIN (VALUES ('marketing_studio'),('crm'),('automations'),('whatsapp_ai')) modules(module_key)
        ON CONFLICT (contract_id,module_key) DO UPDATE SET enabled=TRUE`,
       [fixtureIds.contractA, fixtureIds.contractB],
+    )
+    await client.query(
+      `INSERT INTO public.organization_company_profiles (organization_id,legal_name,trade_name,description)
+       VALUES ($1,'Empresa A Ltda','Empresa A','Tenant A'),($2,'Empresa B Ltda','Empresa B','Tenant B')
+       ON CONFLICT (organization_id) DO UPDATE SET legal_name=EXCLUDED.legal_name,trade_name=EXCLUDED.trade_name,description=EXCLUDED.description`,
+      [fixtureIds.organizationA, fixtureIds.organizationB],
     )
 
     await client.query(

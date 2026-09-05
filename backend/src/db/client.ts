@@ -1,14 +1,14 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
 import { loadEnv } from '../config/env.js'
-import { getDatabaseRequestContext } from './request-context.js'
+import { getDatabaseRequestContext, type DatabaseRequestContext } from './request-context.js'
 import * as schema from './schema/index.js'
 
 const { Pool } = pg
 
 export function createPool(databaseUrl = loadEnv().DATABASE_URL) {
   const pool = new Pool({ connectionString: databaseUrl })
-  return createContextAwarePool(pool)
+  return createContextAwarePool(pool, normalizeServiceRole(process.env.YUX_DATABASE_SERVICE_ROLE))
 }
 
 /**
@@ -17,7 +17,7 @@ export function createPool(databaseUrl = loadEnv().DATABASE_URL) {
  * time, so setting a session variable on the shared pool would leak context
  * across concurrent HTTP requests.
  */
-export function createContextAwarePool(pool: pg.Pool): pg.Pool {
+export function createContextAwarePool(pool: pg.Pool, defaultServiceRole: 'api' | 'worker' | 'runtime' = 'api'): pg.Pool {
   const wrapped = Object.create(pool) as pg.Pool
   const rawQuery = pool.query.bind(pool)
 
@@ -30,8 +30,7 @@ export function createContextAwarePool(pool: pg.Pool): pg.Pool {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query("SELECT set_config('app.current_role', $1, true)", [context.role])
-      await client.query("SELECT set_config('app.current_orgs', $1, true)", [`{${context.organizationIds.join(',')}}`])
+      await configureContext(client, context, defaultServiceRole)
       const result = await client.query(...args as Parameters<typeof client.query>)
       await client.query('COMMIT')
       return result
@@ -54,8 +53,7 @@ export function createContextAwarePool(pool: pg.Pool): pg.Pool {
       const result = await client.query(...args as Parameters<typeof client.query>)
       const statement = typeof args[0] === 'string' ? args[0] : ''
       if (!configured && /^\s*begin\b/i.test(statement)) {
-        await client.query("SELECT set_config('app.current_role', $1, true)", [context.role])
-        await client.query("SELECT set_config('app.current_orgs', $1, true)", [`{${context.organizationIds.join(',')}}`])
+        await configureContext(client, context, defaultServiceRole)
         configured = true
       }
       return result
@@ -64,6 +62,29 @@ export function createContextAwarePool(pool: pg.Pool): pg.Pool {
   }) as pg.Pool['connect']
 
   return wrapped
+}
+
+async function configureContext(
+  client: Pick<pg.PoolClient, 'query'>,
+  context: DatabaseRequestContext,
+  defaultServiceRole: 'api' | 'worker' | 'runtime',
+) {
+  const organizationIds = context.organizationIds.map((value) => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new Error('invalid_database_organization_context')
+    }
+    return value.toLowerCase()
+  })
+  if (!['yux_admin', 'yux_operator'].includes(context.role) && organizationIds.length === 0) {
+    throw new Error('database_organization_context_required')
+  }
+  await client.query("SELECT set_config('app.service_role', $1, true)", [context.serviceRole ?? defaultServiceRole])
+  await client.query("SELECT set_config('app.current_role', $1, true)", [context.role])
+  await client.query("SELECT set_config('app.current_orgs', $1, true)", [`{${organizationIds.join(',')}}`])
+}
+
+function normalizeServiceRole(value: string | undefined): 'api' | 'worker' | 'runtime' {
+  return value === 'worker' || value === 'runtime' ? value : 'api'
 }
 
 export function createDb(databaseUrl?: string) {

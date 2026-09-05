@@ -80,6 +80,9 @@ export async function applyMigrations(pool: MigrationPool, migrationsDir: string
       await client.query('BEGIN')
       try {
         log.log(`applying ${version} from ${file} (${sql.length} chars)`)
+        await client.query("SELECT set_config('app.service_role', 'migrator', true)")
+        await client.query("SELECT set_config('app.current_role', 'yux_admin', true)")
+        await client.query("SELECT set_config('app.current_orgs', '{}', true)")
         await client.query(sql)
         await client.query(
           `INSERT INTO schema_migrations(version,checksum_sha256,checksum_algorithm,verification_origin)
@@ -116,7 +119,7 @@ export function migrationChecksum(normalizedSql: string) {
 export async function runMigrations() {
   const dirname = path.dirname(fileURLToPath(import.meta.url))
   const migrationsDir = path.resolve(dirname, '../src/db/migrations')
-  const pool = createPool()
+  const pool = createPool(process.env.MIGRATOR_DATABASE_URL || undefined)
 
   try {
     await applyMigrations(pool, migrationsDir)

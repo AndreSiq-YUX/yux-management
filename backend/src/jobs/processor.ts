@@ -49,8 +49,13 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
   const { pool, env, maintenanceQueue } = dependencies
 
   return async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise<WorkerResult> {
-    return runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, async () => {
-      if (!isJobName(job.name)) throw new Error(`Unknown job name: ${job.name}`)
+    if (!isJobName(job.name)) throw new Error(`Unknown job name: ${job.name}`)
+    const organizationId = organizationIdFromJob(job.data)
+    return runWithDatabaseRequestContext({
+      role: organizationId ? 'client_member' : 'yux_operator',
+      organizationIds: organizationId ? [organizationId] : [],
+      serviceRole: 'worker',
+    }, async () => {
 
       if (job.name === 'crm.sequence.dispatchDue') {
         await runCrmSequenceScheduler(pool, {
@@ -107,4 +112,13 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
       throw new Error(`No handler registered for ${job.name}`)
     })
   }
+}
+
+function organizationIdFromJob(data: QueueJobData) {
+  const value = data.organizationId ?? data.organization_id
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error('invalid_job_organization_context')
+  }
+  return value.toLowerCase()
 }

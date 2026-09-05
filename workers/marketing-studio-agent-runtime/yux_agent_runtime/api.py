@@ -127,12 +127,25 @@ def create_app(
             conversation = MissionConversationWorkflow(workflow_engine())
         return conversation
 
-    def validate_tenant(organization_id: str | None, client_id: str | None = None, contract_id: str | None = None) -> None:
+    def validate_tenant(
+        organization_id: str | None,
+        client_id: str | None = None,
+        contract_id: str | None = None,
+        *,
+        profile_key: str | None = None,
+        audience: str = "client_user",
+    ) -> None:
         if not organization_id:
             raise HTTPException(status_code=422, detail="organization_id is required")
         checker = getattr(runtime_store, "validate_tenant", None)
         if callable(checker) and not checker(organization_id, client_id, contract_id):
             raise HTTPException(status_code=403, detail="invalid tenant context")
+        set_scope = getattr(runtime_store, "set_tenant_scope", None)
+        if callable(set_scope):
+            try:
+                set_scope(organization_id, contract_id=contract_id, profile_key=profile_key, audience=audience)
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
 
     def reserve_billable_credits(
         *,
@@ -163,13 +176,19 @@ def create_app(
 
     @app.post("/events/ingest", dependencies=[Depends(require_runtime_token)])
     def ingest_event(request: IngestEventRequest) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="ai_sdr_comercial_1", audience="external_contact")
         payload = {**request.payload, **request.model_dump(exclude={"payload"})}
         return queue.ingest_event(payload)
 
     @app.post("/workflows/execute", dependencies=[Depends(require_runtime_token)])
     def execute_workflow(request: ExecuteWorkflowRequest) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        validate_tenant(
+            request.organization_id,
+            request.client_id,
+            request.contract_id,
+            profile_key=request.profile_key,
+            audience="internal_operator" if request.source == "strategy_admin" else "client_user",
+        )
         credits_required = estimate_workflow_credits(request.workflow_spec, request.mode, request.source)
         try:
             credits = reserve_billable_credits(
@@ -186,7 +205,7 @@ def create_app(
 
     @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
     def create_mission_plan(request: MissionPlanRequest) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_supervisor")
         # The harness returns a proposal only. It never persists Action Engine
         # rows or produces an external effect.
         try:
@@ -200,7 +219,7 @@ def create_app(
 
     @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])
     def mission_conversation_turn(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_conversation", audience=request.audience)
         try:
             reserve_billable_credits(
                 organization_id=request.organization_id,
@@ -228,7 +247,7 @@ def create_app(
 
     @app.post("/knowledge/curate", dependencies=[Depends(require_runtime_token)])
     def curate_knowledge(request: CurateKnowledgeRequest) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="strategy_curator", audience="internal_operator")
         total_chars = sum(len(item.body) for item in request.sections)
         if total_chars > 120_000:
             raise HTTPException(status_code=413, detail="knowledge_curation_input_too_large")
@@ -239,7 +258,7 @@ def create_app(
 
     @app.post("/knowledge/extract-company-profile", dependencies=[Depends(require_runtime_token)])
     def extract_company_profile(request: ExtractCompanyProfileRequest) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id)
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="strategy_curator", audience="internal_operator")
         total_chars = sum(len(item.content) for item in request.pages)
         if total_chars > 400_000:
             raise HTTPException(status_code=413, detail="website_extraction_input_too_large")
@@ -253,12 +272,21 @@ def create_app(
 
     @app.post("/jobs/process-next", dependencies=[Depends(require_runtime_token)])
     def process_next_job(worker_id: str = "api-worker") -> dict[str, Any]:
+        set_internal_scope = getattr(runtime_store, "set_internal_scope", None)
+        if callable(set_internal_scope):
+            set_internal_scope()
         job = queue.claim_next_job(worker_id)
         if not job:
             return {"processed": False, "reason": "empty_queue"}
         payload = job.get("payload") or {}
         try:
-            validate_tenant(job.get("organization_id"), job.get("client_id"), job.get("contract_id"))
+            validate_tenant(
+                job.get("organization_id"),
+                job.get("client_id"),
+                job.get("contract_id"),
+                profile_key=str(payload.get("profile_key") or "ai_sdr_comercial_1"),
+                audience="external_contact",
+            )
             try:
                 credits = reserve_billable_credits(
                     organization_id=job.get("organization_id"),

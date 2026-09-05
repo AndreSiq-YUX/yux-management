@@ -4,12 +4,13 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
 import pg from 'pg'
+import { createContextAwarePool } from '../../../src/db/client.js'
 import { buildServer, type AppJobQueue } from '../../../src/server.js'
 import { loadEnv } from '../../../src/config/env.js'
 import { createJobProcessor } from '../../../src/jobs/processor.js'
 import { DEFAULT_QUEUE_NAME, createIdempotencyKey, createQueue, createRedisConnection, createWorker, type JobName, type QueueJobData } from '../../../src/jobs/queue.js'
 import { applyMigrations } from '../../../scripts/apply-migrations.js'
-import { fixtureIds, fixturePassword, fixtureUsers, seedIntegrationFixtures } from './fixtures.js'
+import { fixtureIds, fixturePassword, fixtureUsers, integrationRolePassword, provisionIntegrationServiceRoles, seedIntegrationFixtures } from './fixtures.js'
 import { createTestProviderServer, type ProviderCall } from './provider-server.js'
 
 const execFileAsync = promisify(execFile)
@@ -34,6 +35,7 @@ export type IntegrationRig = {
   stopRedis(): Promise<void>
   startRedis(): Promise<void>
   providerCalls(): Promise<ProviderCall[]>
+  serviceDatabaseUrl(role: 'yux_api'|'yux_worker'|'yux_runtime'): string
   close(): Promise<void>
 }
 
@@ -48,11 +50,14 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
   const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 8 })
-  await assertPersistentServices(pool, redisUrl)
+  const migrationPool = new pg.Pool({ connectionString: databaseUrl, max: 8 })
+  await assertPersistentServices(migrationPool, redisUrl)
   const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/db/migrations')
-  await applyMigrations(pool, migrationsDir, { log: () => undefined })
-  await seedIntegrationFixtures(pool)
+  await applyMigrations(migrationPool, migrationsDir, { log: () => undefined })
+  await provisionIntegrationServiceRoles(migrationPool)
+  await seedIntegrationFixtures(migrationPool)
+  const apiPool = createContextAwarePool(new pg.Pool({ connectionString: serviceDatabaseUrl(databaseUrl, 'yux_api'), max: 8 }), 'api')
+  const workerPool = createContextAwarePool(new pg.Pool({ connectionString: serviceDatabaseUrl(databaseUrl, 'yux_worker'), max: 4 }), 'worker')
 
   const queue = createQueue(DEFAULT_QUEUE_NAME, createRedisConnection(redisUrl), { prefix: 'yux-integration' })
   await queue.waitUntilReady()
@@ -80,7 +85,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     },
     close: async () => { await queue.close() },
   }
-  let app = await createApp(pool, appQueue, env)
+  let app = await createApp(apiPool, appQueue, env)
   const cookies = new Map<TestRole, string>()
 
   return {
@@ -108,9 +113,9 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
       } as any)
       return { statusCode: response.statusCode, body: parseBody(response.body) }
     },
-    sql: (text, values) => pool.query(text, values),
+    sql: (text, values) => migrationPool.query(text, values),
     async workerTick() {
-      const processor = createJobProcessor({ pool, env, maintenanceQueue: appQueue })
+      const processor = createJobProcessor({ pool: workerPool, env, maintenanceQueue: appQueue })
       const worker = createWorker(DEFAULT_QUEUE_NAME, processor, createRedisConnection(redisUrl), {
         prefix: 'yux-integration',
         concurrency: 1,
@@ -124,18 +129,28 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     async restartApi() {
       await app.close()
       cookies.clear()
-      app = await createApp(pool, appQueue, env)
+      app = await createApp(apiPool, appQueue, env)
     },
     stopRedis: () => controlRedis('stop'),
     startRedis: () => controlRedis('start'),
     providerCalls: async () => provider.calls(),
+    serviceDatabaseUrl: (role) => serviceDatabaseUrl(databaseUrl, role),
     async close() {
       await app.close()
       await queue.close()
-      await pool.end()
+      await apiPool.end()
+      await workerPool.end()
+      await migrationPool.end()
       await provider.close()
     },
   }
+}
+
+function serviceDatabaseUrl(databaseUrl: string, role: 'yux_api'|'yux_worker'|'yux_runtime') {
+  const url = new URL(databaseUrl)
+  url.username = role
+  url.password = integrationRolePassword
+  return url.toString()
 }
 
 async function createApp(pool: pg.Pool, jobQueue: AppJobQueue, env: ReturnType<typeof loadEnv>): Promise<FastifyInstance> {

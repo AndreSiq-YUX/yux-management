@@ -249,6 +249,7 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
         sourceId: shell.sourceId,
         documentId: shell.documentId,
         sourceType: 'manual',
+        organizationId: params.data.organizationId,
       })
       await markKnowledgeProcessingState(app.pg, shell.documentId, 'indexing')
       return reply.code(202).send({ ...(await getKnowledgeDocument(app.pg, shell.documentId)), jobId: job.id })
@@ -273,6 +274,7 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
       sourceId: shell.sourceId,
       documentId: shell.documentId,
       sourceType: 'url',
+      organizationId: params.data.organizationId,
     })
     return reply.code(202).send({ ...(await getKnowledgeDocument(app.pg, shell.documentId)), jobId: job.id })
   })
@@ -317,6 +319,7 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
         sourceId: shell.sourceId,
         documentId: shell.documentId,
         sourceType: 'file',
+        organizationId: params.data.organizationId,
       })
       return reply.code(202).send({ ...(await getKnowledgeDocument(app.pg, shell.documentId)), jobId: job.id })
     } catch (error) {

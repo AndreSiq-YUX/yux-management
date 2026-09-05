@@ -19,7 +19,7 @@ const campaignOptimizationIntervalMs = Number(process.env.CAMPAIGN_OPTIMIZATION_
 const missionLearningIntervalMs = Number(process.env.MISSION_LEARNING_INTERVAL_MS || 60 * 60_000)
 
 const scheduler = setInterval(() => {
-  void runWithDatabaseRequestContext({ role: 'yux_admin', organizationIds: [] }, () => runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })).catch((error) => {
+  void runWithDatabaseRequestContext({ role: 'yux_operator', organizationIds: [], serviceRole: 'worker' }, () => runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })).catch((error) => {
     console.error('[worker] crm sequence scheduler failed', error)
   })
 }, schedulerIntervalMs)

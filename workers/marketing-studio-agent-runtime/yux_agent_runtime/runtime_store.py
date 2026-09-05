@@ -3,10 +3,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from contextvars import ContextVar
 import json
 import os
 from typing import Any, Protocol
 from uuid import UUID, uuid4
+
+
+@dataclass(frozen=True)
+class RuntimeDatabaseScope:
+    role: str
+    organization_ids: tuple[str, ...]
+    contract_id: str = ""
+    profile_key: str = ""
+    audience: str = ""
+
+
+_runtime_database_scope: ContextVar[RuntimeDatabaseScope] = ContextVar(
+    "runtime_database_scope",
+    default=RuntimeDatabaseScope(role="yux_operator", organization_ids=()),
+)
 
 
 def _with_id(payload: dict[str, Any]) -> dict[str, Any]:
@@ -114,7 +130,42 @@ class PostgresAgentRuntimeStore:
     def _connection(self):
         import psycopg
 
-        return psycopg.connect(self.database_url)
+        connection = psycopg.connect(self.database_url)
+        scope = _runtime_database_scope.get()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT set_config('app.service_role', 'runtime', true)")
+            cursor.execute("SELECT set_config('app.current_role', %s, true)", [scope.role])
+            cursor.execute("SELECT set_config('app.current_orgs', %s, true)", ["{" + ",".join(scope.organization_ids) + "}"])
+            cursor.execute("SELECT set_config('app.current_contract_id', %s, true)", [scope.contract_id])
+            cursor.execute("SELECT set_config('app.current_profile_key', %s, true)", [scope.profile_key])
+            cursor.execute("SELECT set_config('app.current_audience', %s, true)", [scope.audience])
+        return connection
+
+    def set_internal_scope(self) -> None:
+        _runtime_database_scope.set(RuntimeDatabaseScope(role="yux_operator", organization_ids=()))
+
+    def set_tenant_scope(
+        self,
+        organization_id: str,
+        *,
+        contract_id: str | None = None,
+        profile_key: str | None = None,
+        audience: str | None = None,
+    ) -> None:
+        try:
+            canonical_organization_id = str(UUID(organization_id))
+            canonical_contract_id = str(UUID(contract_id)) if contract_id else ""
+        except (ValueError, TypeError, AttributeError) as error:
+            raise ValueError("invalid_runtime_database_scope") from error
+        if audience and audience not in {"internal_operator", "client_user", "external_contact"}:
+            raise ValueError("invalid_runtime_audience")
+        _runtime_database_scope.set(RuntimeDatabaseScope(
+            role="client_member",
+            organization_ids=(canonical_organization_id,),
+            contract_id=canonical_contract_id,
+            profile_key=profile_key or "",
+            audience=audience or "",
+        ))
 
     @staticmethod
     def _row_factory():
@@ -219,6 +270,7 @@ class PostgresAgentRuntimeStore:
 
     def validate_tenant(self, organization_id: str, client_id: str | None = None, contract_id: str | None = None) -> bool:
         """Check every supplied tenant reference belongs to the organization."""
+        self.set_internal_scope()
         with self._connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """SELECT EXISTS (
