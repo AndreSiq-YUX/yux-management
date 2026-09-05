@@ -9,12 +9,7 @@
 ## D-002 — Numeração de migrations
 
 - Status: decidida.
-- Decisão: preservar `0001`–`0152` sem alteração e reservar inicialmente:
-  - `0153_migration_integrity_metadata.sql`, somente se a evolução de `schema_migrations` exigir SQL versionado;
-  - `0154_service_roles_and_rls.sql`;
-  - `0155_job_leases_and_attempts.sql`;
-  - `0156_strategy_publications.sql`;
-  - `0157_knowledge_retrieval_policy.sql`.
+- Decisão: preservar `0001`–`0152` sem alteração. A integridade do migrador não exigiu migration própria; `0153_service_roles_and_tenant_scope.sql` foi usada para papéis/RLS. As próximas reservas são `0154` para leases/tentativas, `0155` para publicações e `0156` para política de retrieval.
 - Motivo: o repositório contém 55 arquivos de migration e `0152` é o maior número presente no início da execução. O nome final será ajustado à implementação real; número reservado não obriga criar migration vazia.
 
 ## D-003 — Ambiente de integração
@@ -39,4 +34,3 @@
 - Status: registrada.
 - Compose atual: criação conversacional desativada por padrão no backend, formulário de compatibilidade ativado por padrão no frontend, curadoria de conhecimento ativada e limite de site configurado em 30 páginas.
 - Regra: presença/configuração não será apresentada como validação operacional; nenhum segredo será copiado para manifestos ou logs.
-

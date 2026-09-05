@@ -34,8 +34,10 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T03 | implementada aguardando aceite | Unidade transacional/checksum validados em testes unitários; cenários PostgreSQL aguardam stack descartável |
 | T04 | bloqueada por dependência | Contrato/runbooks implementados; faltam destino de backup, domínio e ensaio autorizado na infraestrutura |
 | T05 | implementada aguardando aceite | Alias corrigido; integração PostgreSQL preparada |
-| T06 | bloqueada por dependência | Requer aceite/decisões de T04 para troca operacional de credenciais |
-| T07–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T06 | implementada aguardando aceite | Papéis, grants, RLS e contexto Node/Python implementados; troca de credenciais do piloto depende dos segredos operacionais |
+| T07 | implementada aguardando aceite | Mutações governadas bloqueadas no endpoint genérico; revisões têm projeção segura e fallback isolado |
+| T08 | implementada aguardando aceite | Schemas canônicos, tipos TS gerados, modelos Python e corpus comum adicionados |
+| T09–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -93,3 +95,25 @@ frontend tests: PASS, 528 PASS
 - Verificação local: type-check passou; 18/18 testes de grants e preflight passaram.
 - Verificação preparada: integração cria grants ativo, expirado e revogado, executa `getAutonomyGrant`, `getActiveAutonomyGrant`, `listAutonomyGrants` e chama o checkpoint no PostgreSQL real.
 - Risco remanescente: o cenário com campanha elegível e métricas suficientes/insuficientes será confirmado no gate persistente; os 3.330 jobs históricos não foram reenviados.
+
+## T06 — Papéis de serviço e contexto de tenant
+
+- Estado: implementada aguardando aceite persistente e troca controlada no piloto.
+- Commit: `ed5ff5b`.
+- Entregas: logins sem privilégios elevados, grants mínimos do runtime, policies restritivas, credencial exclusiva por serviço no Compose, contexto por transação no Node e por `ContextVar`/conexão no Python, organização obrigatória nos jobs de tenant e teste A/B com os logins reais.
+- Verificação local: type-check backend passou; 9/9 testes de contexto/migrador e 13/13 testes Python afetados passaram.
+- Gate aberto: o runner Docker executará a matriz SQL real; a troca de segredos da VPS permanece dependente de T04 e não foi simulada.
+
+## T07 — Política de operação e revisões do portal
+
+- Estado: implementada aguardando integração persistente.
+- Commit: `7e90303`.
+- Entregas: política nominal por operação, bloqueio de mutações genéricas em conhecimento governado, proteção de campos de publicação, endpoint de revisão por contrato com projeção sem notas internas/payloads e isolamento de falhas opcionais no hook.
+- Verificação local: type-check backend/frontend passou; teste frontend de degradação seletiva passou. Integração A/B e tentativa de publicação genérica estão no job persistente.
+
+## T08 — Contratos compartilhados
+
+- Estado: implementada aguardando execução completa de CI.
+- Commit: `9b9ad82`.
+- Entregas: schemas JSON v1 de conhecimento/workspace, corpus positivo/negativo, geração determinística TS para backend/frontend, modelos Pydantic e serialização canônica/hash no runtime.
+- Verificação local: validação AJV, validação Pydantic, Unicode/ordem de chaves/arrays e type-checks passaram. A CI agora regenera e exige diff vazio.
