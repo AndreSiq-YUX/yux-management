@@ -72,6 +72,16 @@ async function createMigrations(files: Record<string, string>) {
 }
 
 describe('migration runner', () => {
+  it('keeps the email template foreign key idempotent after the consolidated baseline', async () => {
+    const migrationSql = await readFile(
+      new URL('../src/db/migrations/0106_email_template_management.sql', import.meta.url),
+      'utf8',
+    )
+
+    expect(migrationSql).toContain("conname = 'email_templates_published_version_fk'")
+    expect(migrationSql).toContain("conrelid = 'public.email_templates'::regclass")
+  })
+
   it('references the canonical private organization access helper in mission migrations', async () => {
     const migrationFiles = [
       '0143_composite_mission_manifests.sql',

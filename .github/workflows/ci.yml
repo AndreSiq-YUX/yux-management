@@ -91,8 +91,10 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
-          cache-dependency-path: workers/marketing-studio-agent-runtime/requirements.txt
-      - run: pip install -r requirements.txt
+          cache-dependency-path: |
+            workers/marketing-studio-agent-runtime/requirements.txt
+            workers/marketing-studio-agent-runtime/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
       - run: python scripts/export_mission_contracts.py --check
       - run: python -m pytest tests
       - run: python scripts/run_golden_missions.py --output golden-missions/report.json

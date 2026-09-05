@@ -45,11 +45,22 @@ CREATE TABLE IF NOT EXISTS public.email_template_versions (
   UNIQUE (template_id, version_number)
 );
 
-ALTER TABLE public.email_templates
-  ADD CONSTRAINT email_templates_published_version_fk
-  FOREIGN KEY (published_version_id)
-  REFERENCES public.email_template_versions(id)
-  ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'email_templates_published_version_fk'
+      AND conrelid = 'public.email_templates'::regclass
+  ) THEN
+    ALTER TABLE public.email_templates
+      ADD CONSTRAINT email_templates_published_version_fk
+      FOREIGN KEY (published_version_id)
+      REFERENCES public.email_template_versions(id)
+      ON DELETE SET NULL;
+  END IF;
+END
+$$;
 
 ALTER TABLE public.email_send_requests
   ADD COLUMN IF NOT EXISTS template_id UUID REFERENCES public.email_templates(id) ON DELETE SET NULL,
