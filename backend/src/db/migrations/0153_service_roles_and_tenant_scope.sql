@@ -117,6 +117,11 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', target_table);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('DROP POLICY IF EXISTS yux_service_tenant_access ON public.%I', target_table);
+    EXECUTE format(
+      'CREATE POLICY yux_service_tenant_access ON public.%I AS PERMISSIVE FOR ALL TO yux_api,yux_worker,yux_runtime USING (organization_id IS NOT NULL AND private.rls_can_access_organization(organization_id)) WITH CHECK (organization_id IS NOT NULL AND private.rls_can_access_organization(organization_id))',
+      target_table
+    );
     EXECUTE format('DROP POLICY IF EXISTS yux_tenant_scope ON public.%I', target_table);
     EXECUTE format(
       'CREATE POLICY yux_tenant_scope ON public.%I AS RESTRICTIVE FOR ALL USING (organization_id IS NOT NULL AND private.rls_can_access_organization(organization_id)) WITH CHECK (organization_id IS NOT NULL AND private.rls_can_access_organization(organization_id))',
@@ -128,6 +133,18 @@ $$;
 
 ALTER TABLE public.agent_execution_steps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_execution_steps FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS yux_service_tenant_access ON public.agent_execution_steps;
+CREATE POLICY yux_service_tenant_access ON public.agent_execution_steps AS PERMISSIVE FOR ALL TO yux_api,yux_worker,yux_runtime
+  USING (EXISTS (
+    SELECT 1 FROM public.agent_execution_runs run
+    WHERE run.id = agent_execution_steps.run_id
+      AND private.rls_can_access_organization(run.organization_id)
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM public.agent_execution_runs run
+    WHERE run.id = agent_execution_steps.run_id
+      AND private.rls_can_access_organization(run.organization_id)
+  ));
 DROP POLICY IF EXISTS yux_tenant_scope ON public.agent_execution_steps;
 CREATE POLICY yux_tenant_scope ON public.agent_execution_steps AS RESTRICTIVE FOR ALL
   USING (EXISTS (
@@ -153,6 +170,13 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', target_table);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('DROP POLICY IF EXISTS yux_service_tenant_access ON public.%I', target_table);
+    EXECUTE format(
+      'CREATE POLICY yux_service_tenant_access ON public.%I AS PERMISSIVE FOR ALL TO yux_api,yux_worker,yux_runtime USING (EXISTS (SELECT 1 FROM public.agent_execution_runs run WHERE run.id = %I.run_id AND private.rls_can_access_organization(run.organization_id))) WITH CHECK (EXISTS (SELECT 1 FROM public.agent_execution_runs run WHERE run.id = %I.run_id AND private.rls_can_access_organization(run.organization_id)))',
+      target_table,
+      target_table,
+      target_table
+    );
     EXECUTE format('DROP POLICY IF EXISTS yux_tenant_scope ON public.%I', target_table);
     EXECUTE format(
       'CREATE POLICY yux_tenant_scope ON public.%I AS RESTRICTIVE FOR ALL USING (EXISTS (SELECT 1 FROM public.agent_execution_runs run WHERE run.id = %I.run_id AND private.rls_can_access_organization(run.organization_id))) WITH CHECK (EXISTS (SELECT 1 FROM public.agent_execution_runs run WHERE run.id = %I.run_id AND private.rls_can_access_organization(run.organization_id)))',

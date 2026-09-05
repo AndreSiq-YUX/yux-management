@@ -84,6 +84,18 @@ describe('migration runner', () => {
     expect(initSql).toContain('CREATE ROLE service_role NOLOGIN')
   })
 
+  it('keeps a role-scoped permissive RLS policy alongside restrictive tenant enforcement', async () => {
+    const migrationSql = await readFile(
+      new URL('../src/db/migrations/0153_service_roles_and_tenant_scope.sql', import.meta.url),
+      'utf8',
+    )
+
+    expect(migrationSql).toContain('CREATE POLICY yux_service_tenant_access')
+    expect(migrationSql).toContain('AS PERMISSIVE FOR ALL TO yux_api,yux_worker,yux_runtime')
+    expect(migrationSql).toContain('CREATE POLICY yux_tenant_scope')
+    expect(migrationSql).toContain('AS RESTRICTIVE FOR ALL')
+  })
+
   it('keeps the email template foreign key idempotent after the consolidated baseline', async () => {
     const migrationSql = await readFile(
       new URL('../src/db/migrations/0106_email_template_management.sql', import.meta.url),
