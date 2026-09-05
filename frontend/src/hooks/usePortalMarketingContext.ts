@@ -70,6 +70,37 @@ const fallback = async <T,>(promise: Promise<T>, value: T): Promise<T> => {
   }
 }
 
+export async function loadPortalMarketingContextData(
+  contractId: string,
+  options: PortalMarketingContextOptions = {},
+): Promise<PortalMarketingContextState> {
+  const [
+    contents, settings, calendarItems, reviews, brandProfile, productsServices,
+    knowledgeDocuments, knowledgeMatches, campaigns, creativeSuggestions,
+    publishingConnections, agents, workflowRuns,
+  ] = await Promise.all([
+    marketingStudioService.getPortalContents(contractId),
+    marketingStudioService.getSettings(contractId),
+    marketingStudioService.getCalendarItems({ contractId }),
+    fallback(marketingStudioService.getReviews({ contractId }), []),
+    marketingStudioService.getBrandProfile(contractId),
+    marketingStudioService.getProductsServices({ contractId }),
+    marketingStudioService.getKnowledgeDocuments({ contractId }),
+    fallback(marketingStudioService.searchKnowledge(contractId, '', 3), []),
+    options.includeCampaigns ? fallback(campaignService.getPortalCampaigns(contractId), []) : Promise.resolve([]),
+    options.includeOperations ? fallback(marketingStudioService.getCampaignCreativeSuggestions({ contractId }), []) : Promise.resolve([]),
+    options.includeOperations ? fallback(marketingStudioService.getPublishingConnections({ contractId }), []) : Promise.resolve([]),
+    options.includeOperations ? fallback(marketingStudioService.getAgents({ contractId }), []) : Promise.resolve([]),
+    options.includeOperations ? fallback(marketingStudioService.getWorkflowRuns({ contractId }), []) : Promise.resolve([]),
+  ])
+  return {
+    contents, settings, calendarItems, reviews,
+    brandProfile: brandProfile ? sanitizeBrandProfileForPortal(brandProfile) : null,
+    productsServices, knowledgeDocuments, knowledgeMatches, campaigns,
+    creativeSuggestions, publishingConnections, agents, workflowRuns,
+  }
+}
+
 export function usePortalMarketingContext(options: PortalMarketingContextOptions = {}) {
   const activeContract = usePlatformStore(state => state.activeContract)
   const organization = usePlatformStore(state => state.organization)
@@ -97,51 +128,7 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
     setError(null)
 
     try {
-      const [
-        contents,
-        settings,
-        calendarItems,
-        reviews,
-        brandProfile,
-        productsServices,
-        knowledgeDocuments,
-        knowledgeMatches,
-        campaigns,
-        creativeSuggestions,
-        publishingConnections,
-        agents,
-        workflowRuns,
-      ] = await Promise.all([
-        marketingStudioService.getPortalContents(activeContract.id),
-        marketingStudioService.getSettings(activeContract.id),
-        marketingStudioService.getCalendarItems({ contractId: activeContract.id }),
-        marketingStudioService.getReviews({ contractId: activeContract.id }),
-        marketingStudioService.getBrandProfile(activeContract.id),
-        marketingStudioService.getProductsServices({ contractId: activeContract.id }),
-        marketingStudioService.getKnowledgeDocuments({ contractId: activeContract.id }),
-        fallback(marketingStudioService.searchKnowledge(activeContract.id, '', 3), []),
-        includeCampaigns ? fallback(campaignService.getPortalCampaigns(activeContract.id), []) : Promise.resolve([]),
-        includeOperations ? fallback(marketingStudioService.getCampaignCreativeSuggestions({ contractId: activeContract.id }), []) : Promise.resolve([]),
-        includeOperations ? fallback(marketingStudioService.getPublishingConnections({ contractId: activeContract.id }), []) : Promise.resolve([]),
-        includeOperations ? fallback(marketingStudioService.getAgents({ contractId: activeContract.id }), []) : Promise.resolve([]),
-        includeOperations ? fallback(marketingStudioService.getWorkflowRuns({ contractId: activeContract.id }), []) : Promise.resolve([]),
-      ])
-
-      setState({
-        contents,
-        settings,
-        calendarItems,
-        reviews,
-        brandProfile: brandProfile ? sanitizeBrandProfileForPortal(brandProfile) : null,
-        productsServices,
-        knowledgeDocuments,
-        knowledgeMatches,
-        campaigns,
-        creativeSuggestions,
-        publishingConnections,
-        agents,
-        workflowRuns,
-      })
+      setState(await loadPortalMarketingContextData(activeContract.id, { includeCampaigns, includeOperations }))
     } catch (loadError) {
       console.error('Erro ao carregar contexto de marketing do portal:', loadError)
       setState(emptyState)

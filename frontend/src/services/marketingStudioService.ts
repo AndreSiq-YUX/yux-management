@@ -1598,13 +1598,12 @@ export const marketingStudioService = {
   },
 
   async getReviews(filters?: { contentItemId?: string; contractId?: string }) {
+    if (filters?.contractId && !filters.contentItemId) {
+      const data = await apiRequest<any[]>(`/marketing-studio/portal/reviews?contractId=${encodeURIComponent(filters.contractId)}`)
+      return (data || []).map(mapMarketingContentReview)
+    }
     let query = marketingStudioDataClient.from('content_reviews').select(REVIEW_SELECT).order('created_at', { ascending: false })
     if (filters?.contentItemId) query = query.eq('content_item_id', filters.contentItemId)
-    if (filters?.contractId) {
-      const contentIds = (await marketingStudioService.getContents({ contractId: filters.contractId })).map(content => content.id)
-      if (!contentIds.length) return []
-      query = query.in('content_item_id', contentIds)
-    }
     const { data, error } = await query
     if (error) throw error
     return (data || []).map(mapMarketingContentReview)

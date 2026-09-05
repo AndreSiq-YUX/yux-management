@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import { getContractOrganizationId } from '../../http/contract-organization.js'
 import { requireAuth, requireMembership } from '../../http/guards.js'
+import { requirePlatformOperation } from '../../http/operation-policy.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 
@@ -116,6 +117,27 @@ export async function registerMarketingStudioRoutes(app: FastifyInstance) {
        FROM public.content_items
        WHERE contract_id = $1 AND organization_id = $2
        ORDER BY updated_at DESC`,
+      [parsed.data.contractId, organizationId],
+    )
+    return rows
+  })
+
+  app.get('/portal/reviews', async (request, reply) => {
+    const parsed = portalContractQuerySchema.safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_review_query' })
+    const organizationId = await getContractOrganizationId(app.pg, parsed.data.contractId)
+    if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
+    requireMembership(request, organizationId)
+    const ctx = requireAuth(request)
+    requirePlatformOperation(ctx, 'knowledge.read', 'marketing_studio')
+    const { rows } = await app.pg.query(
+      `SELECT review.id, review.content_item_id, review.reviewer_id, review.status,
+              review.quality_score, review.comments, review.checklist, review.decided_at,
+              review.created_at, review.updated_at
+       FROM public.content_reviews review
+       JOIN public.content_items content ON content.id = review.content_item_id
+       WHERE content.contract_id = $1 AND content.organization_id = $2
+       ORDER BY review.created_at DESC`,
       [parsed.data.contractId, organizationId],
     )
     return rows

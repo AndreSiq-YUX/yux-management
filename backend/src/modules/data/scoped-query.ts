@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { forbidden } from '../../http/errors.js'
 import type { RequestContext } from '../../http/request-context.js'
+import { assertClientGenericMutationAllowed } from '../../http/operation-policy.js'
 import { executeDataQuery, type DataQuery } from './routes.js'
 
 type DataOperation = DataQuery['operation']
@@ -26,9 +27,11 @@ export async function executeScopedDataQuery(
   ctx: RequestContext,
   query: DataQuery,
   tables: ScopedTableRules,
+  moduleKey = 'marketing_studio',
 ) {
   const rule = tables[query.table]
   if (!rule) throw forbidden()
+  assertClientGenericMutationAllowed(ctx, query.table, query.operation, query.values, moduleKey)
 
   if (ctx.role === 'yux_admin' || ctx.role === 'yux_operator') {
     return executeDataQuery(app, query)
