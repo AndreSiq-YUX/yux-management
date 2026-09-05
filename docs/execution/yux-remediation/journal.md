@@ -33,8 +33,9 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T02 | implementada aguardando aceite | Stack/CI criados; execução local real bloqueada por ausência de Docker e credencial descartável do PostgreSQL local |
 | T03 | implementada aguardando aceite | Unidade transacional/checksum validados em testes unitários; cenários PostgreSQL aguardam stack descartável |
 | T04 | bloqueada por dependência | Contrato/runbooks implementados; faltam destino de backup, domínio e ensaio autorizado na infraestrutura |
-| T05 | em execução | Independente do bloqueio operacional de T04 |
-| T06–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T05 | implementada aguardando aceite | Alias corrigido; integração PostgreSQL preparada |
+| T06 | bloqueada por dependência | Requer aceite/decisões de T04 para troca operacional de credenciais |
+| T07–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -81,3 +82,14 @@ frontend tests: PASS, 528 PASS
 - Verificação local: type-check passou; 2/2 testes do schema passaram, incluindo rejeição de ativos ausentes, efeitos habilitados e valor semelhante a segredo.
 - Dependências externas ausentes: destino/retensão de backup, inventário de backups externos, domínio administrativo definitivo, acesso à VPS/Dokploy, digests implantados e responsável/revisor do ensaio.
 - Critério para desbloqueio: fornecer/confirmar esses dados e executar restore isolado e mudança de acesso com caminho de manutenção já validado. Nenhuma alegação de restauração ou TLS produtivo foi feita.
+
+## T05 — SQL de autonomia e checkpoint
+
+- Estado: implementada aguardando aceite PostgreSQL.
+- Commit inicial: `16654a3`.
+- Achado: YUX-31.
+- Reprodução: todas as consultas de leitura e o checkpoint usavam `grant` como alias sem aspas, palavra reservada no PostgreSQL.
+- Decisão: substituir integralmente o alias por `autonomy_grant`, sem alterar assinaturas, estados ou regras de autorização.
+- Verificação local: type-check passou; 18/18 testes de grants e preflight passaram.
+- Verificação preparada: integração cria grants ativo, expirado e revogado, executa `getAutonomyGrant`, `getActiveAutonomyGrant`, `listAutonomyGrants` e chama o checkpoint no PostgreSQL real.
+- Risco remanescente: o cenário com campanha elegível e métricas suficientes/insuficientes será confirmado no gate persistente; os 3.330 jobs históricos não foram reenviados.

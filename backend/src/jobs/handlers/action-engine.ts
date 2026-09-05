@@ -389,11 +389,11 @@ export async function handleCampaignOptimizationCheckpoints(pool: Pool, data: Re
          WHERE selected->>'key' IN ('campaign_launch','campaign_optimization')
        ))
        AND EXISTS (
-         SELECT 1 FROM public.action_autonomy_grants grant
-         WHERE grant.mission_id=mission.id AND grant.organization_id=mission.organization_id
-           AND grant.starts_at <= $2 AND grant.expires_at > $2
-           AND EXISTS (SELECT 1 FROM public.action_autonomy_grant_events event WHERE event.grant_id=grant.id AND event.event_type='activated')
-           AND NOT EXISTS (SELECT 1 FROM public.action_autonomy_grant_events event WHERE event.grant_id=grant.id AND event.event_type='revoked')
+         SELECT 1 FROM public.action_autonomy_grants autonomy_grant
+         WHERE autonomy_grant.mission_id=mission.id AND autonomy_grant.organization_id=mission.organization_id
+           AND autonomy_grant.starts_at <= $2 AND autonomy_grant.expires_at > $2
+           AND EXISTS (SELECT 1 FROM public.action_autonomy_grant_events event WHERE event.grant_id=autonomy_grant.id AND event.event_type='activated')
+           AND NOT EXISTS (SELECT 1 FROM public.action_autonomy_grant_events event WHERE event.grant_id=autonomy_grant.id AND event.event_type='revoked')
        )
      ORDER BY mission.updated_at LIMIT 100`,
     [requestedMissionId, now.toISOString()],

@@ -128,29 +128,29 @@ export async function revokeAutonomyGrant(client: Queryable, input: {
 }
 
 export async function getAutonomyGrant(client: Queryable, grantId: string, organizationId: string): Promise<AutonomyGrant | null> {
-  const result = await client.query<GrantRow>(grantSelect('grant.id=$1 AND grant.organization_id=$2'), [grantId, organizationId])
+  const result = await client.query<GrantRow>(grantSelect('autonomy_grant.id=$1 AND autonomy_grant.organization_id=$2'), [grantId, organizationId])
   return result.rows[0] ? mapGrant(result.rows[0]) : null
 }
 
 export async function getActiveAutonomyGrant(client: Queryable, missionId: string, organizationId: string, now = new Date()): Promise<AutonomyGrant | null> {
-  const result = await client.query<GrantRow>(`${grantSelect('grant.mission_id=$1 AND grant.organization_id=$2')} ORDER BY grant.grant_version DESC`, [missionId, organizationId])
+  const result = await client.query<GrantRow>(`${grantSelect('autonomy_grant.mission_id=$1 AND autonomy_grant.organization_id=$2')} ORDER BY autonomy_grant.grant_version DESC`, [missionId, organizationId])
   return result.rows.map(row=>mapGrant(row,now)).find(grant => grant.status === 'active' && Date.parse(grant.startsAt) <= now.getTime() && Date.parse(grant.expiresAt) > now.getTime()) ?? null
 }
 
 export async function listAutonomyGrants(client: Queryable, missionId: string, organizationId: string): Promise<AutonomyGrant[]> {
-  const result = await client.query<GrantRow>(`${grantSelect('grant.mission_id=$1 AND grant.organization_id=$2')} ORDER BY grant.grant_version DESC`, [missionId, organizationId])
+  const result = await client.query<GrantRow>(`${grantSelect('autonomy_grant.mission_id=$1 AND autonomy_grant.organization_id=$2')} ORDER BY autonomy_grant.grant_version DESC`, [missionId, organizationId])
   return result.rows.map((row) => mapGrant(row))
 }
 
 function grantSelect(where: string) {
-  return `SELECT grant.*,COALESCE(ARRAY_AGG(event.event_type ORDER BY event.occurred_at) FILTER (WHERE event.id IS NOT NULL),ARRAY[]::TEXT[]) AS event_types,
+  return `SELECT autonomy_grant.*,COALESCE(ARRAY_AGG(event.event_type ORDER BY event.occurred_at) FILTER (WHERE event.id IS NOT NULL),ARRAY[]::TEXT[]) AS event_types,
     (ARRAY_AGG(event.actor_id ORDER BY event.occurred_at) FILTER (WHERE event.event_type='approved'))[1] AS approved_by,
     (ARRAY_AGG(event.occurred_at ORDER BY event.occurred_at) FILTER (WHERE event.event_type='approved'))[1] AS approved_at,
     (ARRAY_AGG(event.actor_id ORDER BY event.occurred_at DESC) FILTER (WHERE event.event_type='revoked'))[1] AS revoked_by,
     (ARRAY_AGG(event.occurred_at ORDER BY event.occurred_at DESC) FILTER (WHERE event.event_type='revoked'))[1] AS revoked_at,
     (ARRAY_AGG(event.reason ORDER BY event.occurred_at DESC) FILTER (WHERE event.event_type='revoked'))[1] AS revocation_reason
-    FROM public.action_autonomy_grants grant LEFT JOIN public.action_autonomy_grant_events event ON event.grant_id=grant.id
-    WHERE ${where} GROUP BY grant.id`
+    FROM public.action_autonomy_grants autonomy_grant LEFT JOIN public.action_autonomy_grant_events event ON event.grant_id=autonomy_grant.id
+    WHERE ${where} GROUP BY autonomy_grant.id`
 }
 
 function mapGrant(row: GrantRow,now=new Date()): AutonomyGrant {
