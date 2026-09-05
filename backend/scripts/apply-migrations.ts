@@ -1,14 +1,21 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 import { createPool } from '../src/db/client.js'
 
 type MigrationQueryResult = {
   rowCount: number | null
+  rows?: Array<Record<string, unknown>>
+}
+
+type MigrationClient = {
+  query(sql: string, params?: unknown[]): Promise<MigrationQueryResult>
+  release(): void
 }
 
 type MigrationPool = {
-  query(sql: string, params?: unknown[]): Promise<MigrationQueryResult>
+  connect(): Promise<MigrationClient>
 }
 
 export type MigrationLog = Pick<Console, 'log'>
@@ -16,9 +23,18 @@ export type MigrationLog = Pick<Console, 'log'>
 export const ensureSchemaMigrationsSql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version TEXT PRIMARY KEY,
-  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-)
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  checksum_sha256 TEXT,
+  checksum_algorithm TEXT,
+  verification_origin TEXT NOT NULL DEFAULT 'legacy_unverified'
+);
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT;
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum_algorithm TEXT;
+ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS verification_origin TEXT NOT NULL DEFAULT 'legacy_unverified';
 `
+
+export const MIGRATION_LOCK_KEY = 98152026
+export const MIGRATION_CHECKSUM_ALGORITHM = 'sha256:utf8:lf:bom-and-nul-removed:trim-start:v1'
 
 export async function listMigrationFiles(migrationsDir: string) {
   const files = await readdir(migrationsDir)
@@ -26,36 +42,75 @@ export async function listMigrationFiles(migrationsDir: string) {
 }
 
 export async function applyMigrations(pool: MigrationPool, migrationsDir: string, log: MigrationLog = console) {
-  await pool.query(ensureSchemaMigrationsSql)
+  const client = await pool.connect()
+  let lockAcquired = false
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY])
+    lockAcquired = true
+    await client.query(ensureSchemaMigrationsSql)
+    const files = await listMigrationFiles(migrationsDir)
 
-  const files = await listMigrationFiles(migrationsDir)
+    for (const file of files) {
+      const version = file.replace(/\.sql$/, '')
+      const sql = normalizeMigrationSql(await readFile(path.join(migrationsDir, file), 'utf8'))
+      const checksumSha256 = migrationChecksum(sql)
+      const existing = await client.query(
+        `SELECT checksum_sha256, checksum_algorithm, verification_origin
+         FROM schema_migrations
+         WHERE version = $1`,
+        [version],
+      )
 
-  for (const file of files) {
-    const version = file.replace(/\.sql$/, '')
-    const existing = await pool.query('SELECT 1 FROM schema_migrations WHERE version = $1', [version])
+      if (existing.rowCount) {
+        const recordedChecksum = existing.rows?.[0]?.checksum_sha256
+        const recordedAlgorithm = existing.rows?.[0]?.checksum_algorithm
+        const verificationOrigin = existing.rows?.[0]?.verification_origin
+        if (typeof recordedChecksum === 'string' && recordedChecksum !== checksumSha256) {
+          throw new Error(`migration_checksum_mismatch:${version}`)
+        }
+        if (typeof recordedChecksum === 'string' && recordedAlgorithm !== MIGRATION_CHECKSUM_ALGORITHM) {
+          throw new Error(`migration_checksum_algorithm_mismatch:${version}`)
+        }
+        if (recordedChecksum == null && verificationOrigin !== 'legacy_unverified') {
+          throw new Error(`migration_checksum_missing:${version}`)
+        }
+        continue
+      }
 
-    if (existing.rowCount) {
-      continue
+      await client.query('BEGIN')
+      try {
+        log.log(`applying ${version} from ${file} (${sql.length} chars)`)
+        await client.query(sql)
+        await client.query(
+          `INSERT INTO schema_migrations(version,checksum_sha256,checksum_algorithm,verification_origin)
+           VALUES ($1,$2,$3,'repository_artifact')`,
+          [version, checksumSha256, MIGRATION_CHECKSUM_ALGORITHM],
+        )
+        await client.query('COMMIT')
+        log.log(`applied ${version}`)
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined)
+        throw error
+      }
     }
-
-    const sql = normalizeMigrationSql(await readFile(path.join(migrationsDir, file), 'utf8'))
-
-    await pool.query('BEGIN')
-    try {
-      log.log(`applying ${version} from ${file} (${sql.length} chars)`)
-      await pool.query(sql)
-      await pool.query('INSERT INTO schema_migrations(version) VALUES ($1)', [version])
-      await pool.query('COMMIT')
-      log.log(`applied ${version}`)
-    } catch (error) {
-      await pool.query('ROLLBACK')
-      throw error
+  } finally {
+    if (lockAcquired) {
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]).catch(() => undefined)
     }
+    client.release()
   }
 }
 
-function normalizeMigrationSql(sql: string) {
-  return sql.replace(/^\uFEFF/, '').replace(/\u0000/g, '').trimStart()
+export function normalizeMigrationSql(sql: string) {
+  return sql
+    .replace(/^\uFEFF/, '')
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trimStart()
+}
+
+export function migrationChecksum(normalizedSql: string) {
+  return createHash('sha256').update(normalizedSql, 'utf8').digest('hex')
 }
 
 export async function runMigrations() {

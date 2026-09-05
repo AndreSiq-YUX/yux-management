@@ -37,13 +37,17 @@ export type IntegrationRig = {
   close(): Promise<void>
 }
 
-export async function createIntegrationRig(): Promise<IntegrationRig> {
+export function getIntegrationDatabaseUrl() {
   const databaseUrl = process.env.YUX_INTEGRATION_DATABASE_URL
     || 'postgresql://yux_test:yux_test_password@127.0.0.1:55432/yux_test_integration'
+  assertSafeIntegrationDatabase(databaseUrl)
+  return databaseUrl
+}
+
+export async function createIntegrationRig(): Promise<IntegrationRig> {
+  const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
-  assertSafeIntegrationDatabase(databaseUrl)
-
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 8 })
   await assertPersistentServices(pool, redisUrl)
   const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/db/migrations')

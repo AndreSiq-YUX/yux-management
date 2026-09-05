@@ -31,8 +31,9 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | --- | --- | --- |
 | T01 | aceita | Baseline reconciliado e registrado |
 | T02 | implementada aguardando aceite | Stack/CI criados; execução local real bloqueada por ausência de Docker e credencial descartável do PostgreSQL local |
-| T03 | em execução | Próxima unidade funcional |
-| T04–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T03 | implementada aguardando aceite | Unidade transacional/checksum validados em testes unitários; cenários PostgreSQL aguardam stack descartável |
+| T04 | em execução | Próxima unidade |
+| T05–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -55,3 +56,16 @@ frontend tests: PASS, 528 PASS
 - Limitação de aceite local: Docker não está instalado. PostgreSQL 17 e Redis existem localmente, mas o PostgreSQL exige senha e não há credencial de teste disponível no ambiente. Nenhuma base existente foi sondada além de uma tentativa sem senha contra `postgres`, e nenhuma foi alterada.
 - Próxima prova automática: `npm --prefix backend run test:integration -- tests/integration/stack.test.ts` no job `Backend integration`.
 - Risco remanescente: o teste persistente precisa executar no runner Linux/Docker antes de T02 mudar para `aceita`; as tarefas seguintes podem usar suas interfaces e manter esse gate aberto.
+
+## T03 — Executor de migrations atômico e verificável
+
+- Estado: implementada aguardando aceite PostgreSQL.
+- Commit inicial: `2efeb96`.
+- Achados: YUX-14, YUX-20 e YUX-21.
+- Reprodução anterior: `BEGIN`, SQL, registro e `COMMIT` eram enviados por `Pool.query`, sem garantia de usar a mesma conexão; não havia lock nem identidade do artefato.
+- Decisão: reservar um `PoolClient`, adquirir lock consultivo de sessão, verificar/aplicar todo o lote no mesmo client e liberar em `finally`. Cada arquivo continua com transação própria dentro do lock.
+- Integridade: algoritmo registrado como `sha256:utf8:lf:bom-and-nul-removed:trim-start:v1`; histórico antigo sem hash permanece `legacy_unverified`; divergência de hash/algoritmo bloqueia o deploy.
+- Verificação local: type-check passou; 6/6 testes unitários do migrador passaram, incluindo rollback, liberação de lock/client e checksum divergente.
+- Verificação preparada: teste PostgreSQL para rollback físico, dois migradores concorrentes, checksum e legado não atestado.
+- Documentação: `docs/runbooks/yux-migrations.md` explicita operações incompatíveis com transação e proíbe exceção silenciosa para `CREATE INDEX CONCURRENTLY`.
+- Risco remanescente: instalação limpa/upgrade em cópia sanitizada continuam no gate de integração e de rollout; nenhuma migration já existente foi alterada.

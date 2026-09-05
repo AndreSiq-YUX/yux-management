@@ -11,22 +11,37 @@ type QueryCall = {
 
 class FakePool {
   calls: QueryCall[] = []
-  appliedVersions = new Set<string>()
+  appliedVersions = new Map<string, string | null>()
   failOnSql?: string
 
-  async query(sql: string, params?: unknown[]) {
+  async connect() {
+    return {
+      query: (sql: string, params?: unknown[]) => this.query(sql, params),
+      release: () => { this.calls.push({ sql: 'RELEASE' }) },
+    }
+  }
+
+  private async query(sql: string, params?: unknown[]) {
     this.calls.push({ sql, params })
 
     if (this.failOnSql && sql.includes(this.failOnSql)) {
       throw new Error('migration failed')
     }
 
-    if (sql === 'SELECT 1 FROM schema_migrations WHERE version = $1') {
-      return { rowCount: this.appliedVersions.has(String(params?.[0])) ? 1 : 0, rows: [] }
+    if (sql.includes('SELECT checksum_sha256, checksum_algorithm, verification_origin')) {
+      const version = String(params?.[0])
+      const checksum = this.appliedVersions.get(version)
+      return checksum === undefined
+        ? { rowCount: 0, rows: [] }
+        : { rowCount: 1, rows: [{
+            checksum_sha256: checksum,
+            checksum_algorithm: checksum ? 'sha256:utf8:lf:bom-and-nul-removed:trim-start:v1' : null,
+            verification_origin: checksum ? 'repository_artifact' : 'legacy_unverified',
+          }] }
     }
 
-    if (sql === 'INSERT INTO schema_migrations(version) VALUES ($1)') {
-      this.appliedVersions.add(String(params?.[0]))
+    if (sql.includes('INSERT INTO schema_migrations(version,checksum_sha256,checksum_algorithm,verification_origin)')) {
+      this.appliedVersions.set(String(params?.[0]), String(params?.[1]))
     }
 
     return { rowCount: 0, rows: [] }
@@ -98,7 +113,7 @@ describe('migration runner', () => {
 
     await applyMigrations(pool, migrationsDir, { log: (message) => logs.push(String(message)) })
 
-    expect(pool.appliedVersions).toEqual(new Set(['0001_first', '0002_second']))
+    expect([...pool.appliedVersions.keys()]).toEqual(['0001_first', '0002_second'])
     expect(logs).toEqual([
       'applying 0001_first from 0001_first.sql (9 chars)',
       'applied 0001_first',
@@ -106,17 +121,20 @@ describe('migration runner', () => {
       'applied 0002_second',
     ])
     expect(pool.calls.map((call) => call.sql)).toEqual([
+      'SELECT pg_advisory_lock($1)',
       expect.stringContaining('CREATE TABLE IF NOT EXISTS schema_migrations'),
-      'SELECT 1 FROM schema_migrations WHERE version = $1',
+      expect.stringContaining('SELECT checksum_sha256, checksum_algorithm, verification_origin'),
       'BEGIN',
       'SELECT 1;',
-      'INSERT INTO schema_migrations(version) VALUES ($1)',
+      expect.stringContaining('INSERT INTO schema_migrations(version,checksum_sha256,checksum_algorithm,verification_origin)'),
       'COMMIT',
-      'SELECT 1 FROM schema_migrations WHERE version = $1',
+      expect.stringContaining('SELECT checksum_sha256, checksum_algorithm, verification_origin'),
       'BEGIN',
       'SELECT 2;',
-      'INSERT INTO schema_migrations(version) VALUES ($1)',
+      expect.stringContaining('INSERT INTO schema_migrations(version,checksum_sha256,checksum_algorithm,verification_origin)'),
       'COMMIT',
+      'SELECT pg_advisory_unlock($1)',
+      'RELEASE',
     ])
   })
 
@@ -126,11 +144,11 @@ describe('migration runner', () => {
       '0002_second.sql': 'SELECT 2;',
     })
     const pool = new FakePool()
-    pool.appliedVersions.add('0001_first')
+    pool.appliedVersions.set('0001_first', null)
 
     await applyMigrations(pool, migrationsDir, { log: () => undefined })
 
-    expect(pool.appliedVersions).toEqual(new Set(['0001_first', '0002_second']))
+    expect([...pool.appliedVersions.keys()]).toEqual(['0001_first', '0002_second'])
     expect(pool.calls.map((call) => call.sql)).not.toContain('SELECT 1;')
     expect(pool.calls.map((call) => call.sql)).toContain('SELECT 2;')
   })
@@ -146,6 +164,21 @@ describe('migration runner', () => {
 
     expect(pool.calls.map((call) => call.sql)).toContain('ROLLBACK')
     expect(pool.calls.map((call) => call.sql)).not.toContain('COMMIT')
-    expect(pool.appliedVersions).toEqual(new Set())
+    expect(pool.appliedVersions).toEqual(new Map())
+    expect(pool.calls.map((call) => call.sql)).toContain('SELECT pg_advisory_unlock($1)')
+    expect(pool.calls.map((call) => call.sql)).toContain('RELEASE')
+  })
+
+  it('rejects a changed migration when a verified checksum exists', async () => {
+    const migrationsDir = await createMigrations({ '0001_first.sql': 'SELECT 1;' })
+    const pool = new FakePool()
+    pool.appliedVersions.set('0001_first', '0'.repeat(64))
+
+    await expect(applyMigrations(pool, migrationsDir, { log: () => undefined }))
+      .rejects.toThrow('migration_checksum_mismatch:0001_first')
+
+    expect(pool.calls.map((call) => call.sql)).not.toContain('BEGIN')
+    expect(pool.calls.map((call) => call.sql)).toContain('SELECT pg_advisory_unlock($1)')
+    expect(pool.calls.map((call) => call.sql)).toContain('RELEASE')
   })
 })
