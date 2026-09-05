@@ -15,6 +15,7 @@ services:
       timeout: 3s
       retries: 30
     volumes:
+      - ./backend/tests/integration/support/postgres-init.sql:/docker-entrypoint-initdb.d/010-yux-compatibility-roles.sql:ro
       - yux_test_postgres_data:/var/lib/postgresql/data
     networks: [yux_test_network]
 
@@ -39,4 +40,3 @@ networks:
 volumes:
   yux_test_postgres_data:
   yux_test_redis_data:
-

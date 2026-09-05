@@ -72,6 +72,18 @@ async function createMigrations(files: Record<string, string>) {
 }
 
 describe('migration runner', () => {
+  it('provisions the Supabase compatibility roles required by standalone PostgreSQL integration tests', async () => {
+    const initSql = await readFile(
+      new URL('./integration/support/postgres-init.sql', import.meta.url),
+      'utf8',
+    )
+
+    expect(initSql).toContain("rolname = 'authenticated'")
+    expect(initSql).toContain('CREATE ROLE authenticated NOLOGIN')
+    expect(initSql).toContain("rolname = 'service_role'")
+    expect(initSql).toContain('CREATE ROLE service_role NOLOGIN')
+  })
+
   it('keeps the email template foreign key idempotent after the consolidated baseline', async () => {
     const migrationSql = await readFile(
       new URL('../src/db/migrations/0106_email_template_management.sql', import.meta.url),
