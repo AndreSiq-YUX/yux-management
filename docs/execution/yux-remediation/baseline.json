@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-05T19:23:00-03:00",
+  "repository": {
+    "head": "000f8bce9c923c2c4f78c307efe58479eb7deb4a",
+    "auditedBase": "000f8bce9c923c2c4f78c307efe58479eb7deb4a",
+    "sourceBranch": "codex/company-intelligence-active-prospecting",
+    "executionBranch": "codex/yux-remediation-integrated",
+    "trackedDiffFromAuditedBase": false,
+    "preExistingUntrackedStatePreserved": true
+  },
+  "runtime": {
+    "node": "22 (CI contract)",
+    "pythonCi": "3.13 (pre-correction)",
+    "pythonContainer": "3.12",
+    "postgres": "17-alpine",
+    "redis": "7-alpine"
+  },
+  "migrations": {
+    "directory": "backend/src/db/migrations",
+    "fileCount": 55,
+    "highestVersion": "0152",
+    "appliedProductionVersion": "unknown; do not infer from repository",
+    "existingFilesImmutable": true,
+    "reservedVersions": ["0153", "0154", "0155", "0156", "0157"]
+  },
+  "deployment": {
+    "composeFile": "docker-compose.dokploy.yml",
+    "services": [
+      "yux-frontend",
+      "yux-backend-api",
+      "yux-backend-worker",
+      "yux-postgres",
+      "yux-redis",
+      "yux-agent-harness-runtime"
+    ],
+    "persistentVolumes": [
+      "yux_postgres_data",
+      "yux_redis_data",
+      "yux_materials_data",
+      "yux_omnichannel_attachments_data",
+      "yux_company_knowledge_data"
+    ],
+    "imageDigests": "unknown",
+    "productionMigrationState": "unknown",
+    "productionFailureRates": "not recalculated from retained job windows"
+  },
+  "configurationPresence": {
+    "missionConversationsEnabledDefault": false,
+    "missionFormCompatibilityDefault": true,
+    "knowledgeCurationEnabledDefault": true,
+    "knowledgeWebsiteMaxPagesDefault": 30,
+    "databaseUrlRequired": true,
+    "redisPasswordRequired": true,
+    "runtimeTokenRequired": true,
+    "providerEncryptionKeyRequired": true
+  },
+  "baselineChecks": {
+    "backendTypeCheck": { "status": "passed" },
+    "backendTests": {
+      "status": "failed",
+      "passed": 609,
+      "failed": 1,
+      "knownFailure": "tests/auth.test.ts > auth helpers > hashes and verifies passwords timed out at 5000ms"
+    },
+    "frontendTypeCheck": { "status": "passed" },
+    "frontendTests": { "status": "passed", "passed": 528, "failed": 0 }
+  },
+  "externalDecisions": {
+    "secureAdminDomain": "unknown",
+    "backupDestination": "unknown",
+    "vpsResources": "unknown",
+    "externalBackupInventory": "unknown",
+    "providerTestAccounts": "unknown"
+  },
+  "findingTaskCoverage": {
+    "YUX-01": ["T16", "T17", "T30"],
+    "YUX-02": ["T16", "T19", "T20", "T21"],
+    "YUX-03": ["T08", "T20"],
+    "YUX-04": ["T07", "T19", "T20"],
+    "YUX-05": ["T20"],
+    "YUX-06": ["T09", "T17", "T18", "T30"],
+    "YUX-07": ["T07", "T26"],
+    "YUX-08": ["T23", "T27"],
+    "YUX-09": ["T11"],
+    "YUX-10": ["T09", "T10"],
+    "YUX-11": ["T12", "T25"],
+    "YUX-12": ["T06", "T07", "T19"],
+    "YUX-13": ["T13"],
+    "YUX-14": ["T03"],
+    "YUX-15": ["T14"],
+    "YUX-16": ["T19", "T27"],
+    "YUX-17": ["T15", "T27"],
+    "YUX-18": ["T18", "T21", "T22"],
+    "YUX-19": ["T24"],
+    "YUX-20": ["T02", "T31"],
+    "YUX-21": ["T01", "T32"],
+    "YUX-22": ["T29"],
+    "YUX-23": ["T28"],
+    "YUX-24": ["T28"],
+    "YUX-25": ["T04", "T15", "T30", "T32"],
+    "YUX-26": ["T08", "T15", "T23"],
+    "YUX-27": ["T06"],
+    "YUX-28": ["T26"],
+    "YUX-29": ["T25"],
+    "YUX-30": ["T23"],
+    "YUX-31": ["T05", "T30"],
+    "YUX-32": ["T04"]
+  },
+  "reproducibleCommands": [
+    "npm --prefix backend run type-check",
+    "npm --prefix backend test",
+    "npm --prefix frontend run type-check",
+    "npm --prefix frontend test"
+  ]
+}

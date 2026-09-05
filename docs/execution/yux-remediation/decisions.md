@@ -1,0 +1,42 @@
+# Decisões de execução — correções integradas YUX Hub
+
+## D-001 — Base e isolamento do trabalho
+
+- Status: decidida.
+- Decisão: usar `000f8bce9c923c2c4f78c307efe58479eb7deb4a` como base reconciliada e a branch `codex/yux-remediation-integrated` para as correções.
+- Motivo: o HEAD é exatamente o commit auditado e não há alterações versionadas locais; os arquivos não versionados pertencem ao usuário e permanecem fora do escopo.
+
+## D-002 — Numeração de migrations
+
+- Status: decidida.
+- Decisão: preservar `0001`–`0152` sem alteração e reservar inicialmente:
+  - `0153_migration_integrity_metadata.sql`, somente se a evolução de `schema_migrations` exigir SQL versionado;
+  - `0154_service_roles_and_rls.sql`;
+  - `0155_job_leases_and_attempts.sql`;
+  - `0156_strategy_publications.sql`;
+  - `0157_knowledge_retrieval_policy.sql`.
+- Motivo: o repositório contém 55 arquivos de migration e `0152` é o maior número presente no início da execução. O nome final será ajustado à implementação real; número reservado não obriga criar migration vazia.
+
+## D-003 — Ambiente de integração
+
+- Status: decidida.
+- Decisão: o ambiente descartável usará PostgreSQL 17 e Redis 7 reais, nomes/volumes exclusivos de teste e bloqueio explícito de hosts/bancos que não atendam ao prefixo `yux_test_`. Provedores externos serão substituídos somente na borda por servidor HTTP determinístico.
+- Motivo: cumprir o contrato de T02 sem apresentar mocks de persistência ou fila como prova de integração.
+
+## D-004 — Dados operacionais não disponíveis localmente
+
+- Status: pendente de ambiente, sem bloquear tarefas locais.
+- Itens pendentes: domínio administrativo seguro definitivo; destino e custódia de backup; CPU/memória/armazenamento da VPS; inventário de backups externos; digests efetivamente implantados; contas de teste/live dos provedores.
+- Tratamento: T04 não será declarada aceita sem ensaio real de restauração e acesso; T11/T13/T22/T31 usarão provedores controlados localmente e manterão separado qualquer aceite live.
+
+## D-005 — Metas operacionais iniciais
+
+- Status: decidida para ensaio.
+- Decisão: RPO alvo de até 1 hora e RTO alvo de até 4 horas, como definido no plano. Qualquer ajuste exige medição e justificativa registradas antes do piloto.
+
+## D-006 — Flags e configuração observadas
+
+- Status: registrada.
+- Compose atual: criação conversacional desativada por padrão no backend, formulário de compatibilidade ativado por padrão no frontend, curadoria de conhecimento ativada e limite de site configurado em 30 páginas.
+- Regra: presença/configuração não será apresentada como validação operacional; nenhum segredo será copiado para manifestos ou logs.
+
