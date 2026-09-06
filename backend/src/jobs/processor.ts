@@ -51,8 +51,9 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
   return async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise<WorkerResult> {
     if (!isJobName(job.name)) throw new Error(`Unknown job name: ${job.name}`)
     const organizationId = organizationIdFromJob(job.data)
+    const internalEventJob = job.name.startsWith('events.')
     return runWithDatabaseRequestContext({
-      role: organizationId ? 'client_member' : 'yux_operator',
+      role: internalEventJob || !organizationId ? 'yux_operator' : 'client_member',
       organizationIds: organizationId ? [organizationId] : [],
       serviceRole: 'worker',
     }, async () => {
@@ -93,7 +94,7 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
       if (job.name === 'action-engine.campaignOptimizationCheckpoint') { await handleCampaignOptimizationCheckpoints(pool, job.data); return { ok: true } }
       if (job.name === 'action-engine.generateLearning') { await handleActionEngineLearning(pool, job.data); return { ok: true } }
       if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }
-      if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver') {
+      if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver' || job.name === 'events.consume.omnichannel') {
         await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
         return { ok: true }
       }

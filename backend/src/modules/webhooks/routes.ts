@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { createHash } from 'node:crypto'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { normalizeWhatsAppInbound, validateWhatsAppSignature } from '../../lib/edge-compat/whatsappProvider.js'
 import { recordEmailDomainEvent, recordEmailSendEvent } from '../email-delivery/service.js'
+import { recordDomainEvent } from '../events/repository.js'
 import { z } from 'zod'
 
 function queryString(value: unknown) {
@@ -47,37 +49,71 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_webhook_payload' })
     }
 
-    let normalized: ReturnType<typeof normalizeWhatsAppInbound>
+    let provisional: ReturnType<typeof normalizeWhatsAppInbound>
     try {
-      const provisional = normalizeWhatsAppInbound(payload)
-      const connectionResult = await app.pg.query<{ id: string; organization_id: string }>(
-        `SELECT id, organization_id FROM public.channel_connections
-         WHERE phone_number_id = $1 AND channel = 'whatsapp' LIMIT 1`,
-        [provisional.phoneNumberId],
-      )
-      const connection = connectionResult.rows[0]
-      if (!connection) return reply.code(200).send({ accepted: true, ignored: 'unknown_phone_number' })
-      normalized = normalizeWhatsAppInbound(payload, { connectionId: connection.id })
-      const inserted = await app.pg.query<{ id: string }>(
-        `INSERT INTO public.channel_webhook_events (connection_id, external_event_id, event_type, idempotency_key, sanitized_payload)
-         VALUES ($1,$2,$3,$4,$5::jsonb)
-         ON CONFLICT (idempotency_key) DO NOTHING
-         RETURNING id`,
-        [connection.id, normalized.externalEventId, normalized.eventType, normalized.idempotencyKey, JSON.stringify(normalized.sanitizedPayload)],
-      )
-      const event = inserted.rows[0]
-      if (!event) return reply.code(200).send({ accepted: true, duplicate: true })
-      await app.jobQueue.add('omnichannel.processMessage', {
-        eventId: event.id,
-        connectionId: connection.id,
-        organizationId: connection.organization_id,
-        inbound: normalized,
-      })
-      return reply.code(200).send({ accepted: true })
+      provisional = normalizeWhatsAppInbound(payload)
     } catch (error) {
-      request.log.warn(error, 'meta webhook payload ignored')
+      request.log.info({ error }, 'unsupported Meta webhook payload ignored')
       return reply.code(200).send({ accepted: true, ignored: 'unsupported_payload' })
     }
+
+    const connectionResult = await runWithDatabaseRequestContext(
+      { role: 'yux_operator', organizationIds: [], serviceRole: 'api' },
+      () => app.pg.query<{ id: string; organization_id: string }>(
+        `SELECT id, organization_id FROM public.channel_connections
+         WHERE phone_number_id = $1 AND channel = 'whatsapp' AND is_active = TRUE LIMIT 1`,
+        [provisional.phoneNumberId],
+      ),
+    )
+    const connection = connectionResult.rows[0]
+    if (!connection) return reply.code(200).send({ accepted: true, ignored: 'unknown_phone_number' })
+    const normalized = normalizeWhatsAppInbound(payload, { connectionId: connection.id })
+
+    const stored = await runWithDatabaseRequestContext(
+      { role: 'yux_operator', organizationIds: [connection.organization_id], serviceRole: 'api' },
+      async () => {
+        const client = await app.pg.connect()
+        try {
+          await client.query('BEGIN')
+          const inserted = await client.query<{ id: string }>(
+            `INSERT INTO public.channel_webhook_events (
+               connection_id, external_event_id, event_type, idempotency_key, sanitized_payload
+             ) VALUES ($1,$2,$3,$4,$5::jsonb)
+             ON CONFLICT (idempotency_key) DO NOTHING
+             RETURNING id`,
+            [connection.id, normalized.externalEventId, normalized.eventType, normalized.idempotencyKey, JSON.stringify(normalized.sanitizedPayload)],
+          )
+          const duplicate = !inserted.rows[0]
+          const existing = inserted.rows[0] ?? (await client.query<{ id: string }>(
+            `SELECT id FROM public.channel_webhook_events
+              WHERE idempotency_key = $1 AND connection_id = $2
+              LIMIT 1`,
+            [normalized.idempotencyKey, connection.id],
+          )).rows[0]
+          if (!existing) throw new Error('channel_webhook_event_conflict')
+
+          await recordDomainEvent(client, {
+            eventId: existing.id,
+            eventType: 'omnichannel.inbound.received',
+            organizationId: connection.organization_id,
+            aggregateType: 'channel_webhook_event',
+            aggregateId: existing.id,
+            actor: { type: 'provider', id: 'meta_whatsapp' },
+            occurredAt: normalized.occurredAt,
+            payload: { webhookEventId: existing.id },
+          })
+          await client.query('COMMIT')
+          return { duplicate, eventId: existing.id }
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => undefined)
+          throw error
+        } finally {
+          client.release()
+        }
+      },
+    )
+    request.log.info({ eventId: stored.eventId, duplicate: stored.duplicate }, 'Meta webhook persisted')
+    return reply.code(200).send({ accepted: true, duplicate: stored.duplicate })
   })
 
   app.post('/smtp2go', {

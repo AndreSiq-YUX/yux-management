@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fanOutDomainEvent } from '../src/modules/events/dispatcher.js'
+import { consumersForEvent, fanOutDomainEvent } from '../src/modules/events/dispatcher.js'
 import { claimPendingEvents, recordDomainEvent } from '../src/modules/events/repository.js'
 import { createDomainEventEnvelope, DomainEventError } from '../src/modules/events/types.js'
 import { handleCrmScoringEvent } from '../src/jobs/handlers/crm-scoring.js'
@@ -133,6 +133,15 @@ describe('domain event envelope and transactional outbox', () => {
 })
 
 describe('domain event fan-out', () => {
+  it('adds the omnichannel consumer only for persisted inbound events', () => {
+    expect(consumersForEvent({ eventType: 'form.submitted' })).toEqual([
+      'automation', 'scoring', 'mission_observer',
+    ])
+    expect(consumersForEvent({ eventType: 'omnichannel.inbound.received' })).toEqual([
+      'automation', 'scoring', 'mission_observer', 'omnichannel',
+    ])
+  })
+
   it('creates one delivery and one job for each independent consumer', async () => {
     const client = new FakeClient()
     client.query = async function<T = Record<string, unknown>>(sql: string, params?: unknown[]) {

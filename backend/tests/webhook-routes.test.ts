@@ -25,8 +25,10 @@ const emailIds = {
 
 class FakePool {
   emailEventSeen = false
+  calls: string[] = []
 
   async query(sql: string) {
+    this.calls.push(sql)
     if (sql.includes('WHERE phone_number_id')) return { rows: [] }
     if (sql.includes('email_suppression_entries')) return { rows: [] }
     if (sql.includes('FROM public.email_send_requests')) return {
@@ -70,13 +72,31 @@ describe('Meta webhook routes', () => {
   })
 
   it('rejects an invalid signature before parsing or tenant lookup', async () => {
-    app = await buildServer(env, { pool: new FakePool() as never, jobQueue })
+    const pool = new FakePool()
+    app = await buildServer(env, { pool: pool as never, jobQueue })
     const response = await app.inject({
       method: 'POST', url: '/api/webhooks/meta/channel-event', payload,
       headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=invalid' },
     })
     expect(response.statusCode).toBe(401)
     expect(response.json()).toEqual({ error: 'invalid_webhook_signature' })
+    expect(pool.calls).toHaveLength(0)
+  })
+
+  it('does not acknowledge an operational database failure as an unsupported payload', async () => {
+    const pool = new FakePool()
+    pool.query = async (sql: string) => {
+      pool.calls.push(sql)
+      throw new Error('database unavailable')
+    }
+    app = await buildServer(env, { pool: pool as never, jobQueue })
+    const signature = createHmac('sha256', env.META_APP_SECRET).update(payload).digest('hex')
+    const response = await app.inject({
+      method: 'POST', url: '/api/webhooks/meta/channel-event', payload,
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': `sha256=${signature}` },
+    })
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).not.toMatchObject({ accepted: true, ignored: 'unsupported_payload' })
   })
 
   it('stores SMTP2GO bounce events only with its webhook secret', async () => {

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -29,6 +30,7 @@ export type IntegrationRig = {
     missionA: string
   }
   request(role: TestRole, method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, body?: unknown): Promise<TestResponse>
+  rawRequest(method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, body: string, headers?: Record<string, string>): Promise<TestResponse>
   sql(text: string, values?: unknown[]): Promise<{ rows: any[]; rowCount: number | null }>
   workerTick(): Promise<void>
   restartApi(): Promise<void>
@@ -75,6 +77,8 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     KNOWLEDGE_CURATION_ENABLED: 'false',
     ACTION_ENGINE_MUTATION_LEASE_SECRET: 'integration-mutation-lease-secret-32-chars',
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',
+    META_APP_SECRET: 'integration-meta-app-secret',
+    META_WEBHOOK_VERIFY_TOKEN: 'integration-meta-verify-token',
   })
   const appQueue: AppJobQueue = {
     add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }) {
@@ -113,8 +117,13 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
       } as any)
       return { statusCode: response.statusCode, body: parseBody(response.body) }
     },
+    async rawRequest(method, url, body, headers = {}) {
+      const response = await app.inject({ method, url, payload: body, headers })
+      return { statusCode: response.statusCode, body: parseBody(response.body) }
+    },
     sql: (text, values) => migrationPool.query(text, values),
     async workerTick() {
+      await appQueue.add('events.dispatchPending', { limit: 100, integrationTick: randomUUID() })
       const processor = createJobProcessor({ pool: workerPool, env, maintenanceQueue: appQueue })
       const worker = createWorker(DEFAULT_QUEUE_NAME, processor, createRedisConnection(redisUrl), {
         prefix: 'yux-integration',

@@ -1,4 +1,5 @@
 import type { AppEnv } from '../../config/env.js'
+import type pg from 'pg'
 import {
   claimDelivery,
   completeDelivery,
@@ -12,6 +13,7 @@ import type { AutomationJobQueue } from '../../modules/automation/types.js'
 import { handleCrmScoringEvent } from './crm-scoring.js'
 import { handleAutomationDispatch } from './automation.js'
 import { observeDomainEvent } from '../../modules/action-engine/observer.js'
+import { handleInboundMessage } from './omnichannel.js'
 
 type DomainEventJobData = {
   eventId?: unknown
@@ -34,12 +36,14 @@ export async function handleDomainEventDelivery(
   pool: { connect: () => Promise<any>; query: (...args: any[]) => Promise<any> },
   env: AppEnv,
   data: DomainEventJobData,
-  queue?: DomainEventQueue & AutomationJobQueue,
+  queue?: DomainEventQueue & AutomationJobQueue & {
+    add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>): Promise<unknown>
+  },
 ): Promise<{ ok: true; duplicate?: boolean; result?: Record<string, unknown> }> {
   const deliveryId = stringValue(data.deliveryId)
   const eventId = stringValue(data.eventId)
   const consumerKey = stringValue(data.consumerKey)
-  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer'].includes(consumerKey)) {
+  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer', 'omnichannel'].includes(consumerKey)) {
     throw new Error('domain_event_delivery_context_required')
   }
 
@@ -68,17 +72,19 @@ export async function handleDomainEventDelivery(
     () => renewDeliveryLease(pool, deliveryId, leaseOwner, attempt),
   )
   try {
-    const result = consumerKey === 'scoring'
-      ? await handleCrmScoringEvent(event, pool)
-      : consumerKey === 'mission_observer'
-        ? await observeDomainEvent(pool, event)
-        : await handleAutomationDispatch(pool, env, {
-        event: {
-          ...event,
-          type: event.eventType,
-          eventId: event.eventId,
-        },
-        }, queue)
+    const result = consumerKey === 'omnichannel'
+      ? await consumeOmnichannelInbound(pool, env, event, attempt, queue)
+      : consumerKey === 'scoring'
+        ? await handleCrmScoringEvent(event, pool)
+        : consumerKey === 'mission_observer'
+          ? await observeDomainEvent(pool, event)
+          : await handleAutomationDispatch(pool, env, {
+          event: {
+            ...event,
+            type: event.eventType,
+            eventId: event.eventId,
+          },
+          }, queue)
     const completed = await completeDelivery(pool, deliveryId, leaseOwner, attempt, result)
     if (!completed) throw new Error('domain_event_delivery_claim_lost')
     return { ok: true, result }
@@ -88,6 +94,26 @@ export async function handleDomainEventDelivery(
   } finally {
     await stopHeartbeat()
   }
+}
+
+async function consumeOmnichannelInbound(
+  pool: Pick<pg.Pool, 'query'>,
+  env: AppEnv,
+  event: Awaited<ReturnType<typeof getDomainEvent>>,
+  attempt: number,
+  queue?: { add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>): Promise<unknown> },
+) {
+  if (event.eventType !== 'omnichannel.inbound.received' || event.aggregateType !== 'channel_webhook_event') {
+    throw new Error('omnichannel_domain_event_type_required')
+  }
+  const webhookEventId = stringValue(event.payload.webhookEventId)
+  if (!webhookEventId || webhookEventId !== event.aggregateId) {
+    throw new Error('omnichannel_webhook_event_reference_required')
+  }
+  return handleInboundMessage(pool, env, {
+    eventId: webhookEventId,
+    recoverProcessing: attempt > 1,
+  }, queue)
 }
 
 function stringValue(value: unknown): string {

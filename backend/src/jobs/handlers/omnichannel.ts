@@ -3,7 +3,7 @@ import type { AppEnv } from '../../config/env.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { buildSafeAiFallback } from '../../lib/edge-compat/omnichannel.js'
 import { loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
-import { sendWhatsAppTemplateMessage, sendWhatsAppTextMessage } from '../../lib/edge-compat/whatsappProvider.js'
+import { normalizeWhatsAppInbound, sendWhatsAppTemplateMessage, sendWhatsAppTextMessage } from '../../lib/edge-compat/whatsappProvider.js'
 import { evaluateBrandGuardrails, resolveOmnichannelAssistantContext } from '../../modules/omnichannel/assistant-context.js'
 
 type Row = Record<string, unknown>
@@ -15,43 +15,131 @@ export async function handleInboundMessage(
   data: Row,
   queue?: { add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>): Promise<unknown> },
 ) {
-  const inbound = record(data.inbound)
   const eventId = String(data.eventId || '')
-  const organizationId = String(data.organizationId || '')
-  const connectionId = String(data.connectionId || inbound.connectionId || '')
-  if (!eventId || !organizationId || !connectionId) throw new Error('inbound_message_context_required')
-  const claimed = await pool.query<{ id: string }>(`UPDATE public.channel_webhook_events SET status = 'processing' WHERE id = $1 AND status = 'received' RETURNING id`, [eventId])
-  if (!claimed.rows[0]) return { duplicate: true }
-  const contact = record(inbound.contact); const message = record(inbound.message)
-  const externalId = String(contact.externalId || '')
-  const contacts = await pool.query<{ id: string }>(`SELECT id FROM public.omnichannel_contacts WHERE organization_id = $1 AND external_identities->>'providerExternalId' = $2 LIMIT 1`, [organizationId, externalId])
-  const contactId = contacts.rows[0]?.id || (await pool.query<{ id: string }>(`INSERT INTO public.omnichannel_contacts (organization_id, display_name, phone, external_identities) VALUES ($1,$2,$3,$4::jsonb) RETURNING id`, [organizationId, String(contact.displayName || externalId || 'Contato'), contact.phone || null, JSON.stringify({ providerExternalId: externalId })])).rows[0]?.id
-  if (!contactId) throw new Error('contact_creation_failed')
-  const conversations = await pool.query<{ id: string; response_mode: string }>(`SELECT id, response_mode FROM public.conversations WHERE organization_id = $1 AND contact_id = $2 AND connection_id = $3 AND status <> 'resolved' ORDER BY updated_at DESC LIMIT 1`, [organizationId, contactId, connectionId])
-  const createdConversation = conversations.rows[0] || (await pool.query<{ id: string; response_mode: string }>(`INSERT INTO public.conversations (organization_id, contact_id, connection_id, channel, status, response_mode, last_message_at) VALUES ($1,$2,$3,'whatsapp','open','assisted',NOW()) RETURNING id, response_mode`, [organizationId, contactId, connectionId])).rows[0]
-  const conversationId = createdConversation?.id
-  const inserted = await pool.query<{ id: string }>(`INSERT INTO public.messages (conversation_id, connection_id, direction, author_type, content_type, body, external_message_id, delivery_status, metadata) VALUES ($1,$2,'inbound','contact',$3,$4,$5,'delivered',$6::jsonb) ON CONFLICT DO NOTHING RETURNING id`, [conversationId, connectionId, String(message.contentType || 'text'), message.body || null, message.externalMessageId || null, JSON.stringify(message.metadata || {})])
-  await pool.query(`UPDATE public.channel_webhook_events SET status = 'processed', processed_at = NOW() WHERE id = $1`, [eventId])
-  const inboundMessageId = inserted.rows[0]?.id
-  if (inboundMessageId) {
-    await pool.query(
-      `INSERT INTO public.radar_outreach_events (
-         organization_id, opportunity_id, lead_id, channel, event_type, notes
-       )
-       SELECT plan.organization_id, plan.radar_opportunity_id, plan.lead_id, 'whatsapp', 'contact_replied', $2
-       FROM public.prospecting_plans plan
-       JOIN public.conversations conversation ON conversation.lead_id = plan.lead_id
-       WHERE conversation.id = $1 AND plan.status = 'active'`,
-      [conversationId, `message:${inboundMessageId}`],
-    )
-  }
-  if (!inboundMessageId || !String(message.body || '').trim() || createdConversation?.response_mode === 'manual') {
-    return { conversationId, messageId: inboundMessageId, runtime: { skipped: true } }
-  }
+  if (!eventId) throw new Error('inbound_message_event_required')
+  const persisted = await pool.query<{
+    id: string
+    status: string
+    sanitized_payload: Row
+    connection_id: string
+    organization_id: string
+    channel: string
+    is_active: boolean
+  }>(
+    `SELECT event.id, event.status, event.sanitized_payload,
+            connection.id AS connection_id, connection.organization_id,
+            connection.channel, connection.is_active
+       FROM public.channel_webhook_events event
+       JOIN public.channel_connections connection ON connection.id = event.connection_id
+      WHERE event.id = $1
+      LIMIT 1`,
+    [eventId],
+  )
+  const legacyInbound = record(data.inbound)
+  const webhookEvent = persisted.rows[0] ?? (
+    Object.keys(legacyInbound).length > 0 && data.organizationId && data.connectionId
+      ? {
+          id: eventId,
+          status: 'received',
+          sanitized_payload: {},
+          connection_id: String(data.connectionId),
+          organization_id: String(data.organizationId),
+          channel: 'whatsapp',
+          is_active: true,
+        }
+      : null
+  )
+  if (!webhookEvent) throw new Error('channel_webhook_event_not_found')
+  if (webhookEvent.status === 'processed') return { duplicate: true }
+  if (webhookEvent.channel !== 'whatsapp' || !webhookEvent.is_active) throw new Error('channel_webhook_connection_unavailable')
 
-  const assistantContext = await resolveOmnichannelAssistantContext(pool, organizationId)
-  const runtime: Row = env.YUX_AGENT_RUNTIME_URL
-    ? await invokeAgentRuntime<Row>(env, '/workflows/execute', {
+  const recoverProcessing = data.recoverProcessing === true
+  const claimed = await pool.query<{ id: string }>(
+    `UPDATE public.channel_webhook_events
+        SET status = 'processing', protected_error_text = NULL
+      WHERE id = $1
+        AND (status IN ('received', 'failed') OR ($2::boolean AND status = 'processing'))
+      RETURNING id`,
+    [eventId, recoverProcessing],
+  )
+  if (!claimed.rows[0]) throw new Error('channel_webhook_event_in_progress')
+
+  const organizationId = webhookEvent.organization_id
+  const connectionId = webhookEvent.connection_id
+  let inbound: ReturnType<typeof normalizeWhatsAppInbound> | Row
+  if (Object.keys(legacyInbound).length > 0 && !persisted.rows[0]) {
+    inbound = legacyInbound
+  } else {
+    try {
+      inbound = normalizeWhatsAppInbound(webhookEvent.sanitized_payload, { connectionId })
+    } catch (error) {
+      await pool.query(
+        `UPDATE public.channel_webhook_events
+            SET status = 'failed', protected_error_text = $2
+          WHERE id = $1 AND status = 'processing'`,
+        [eventId, safeError(error)],
+      ).catch(() => undefined)
+      throw error
+    }
+  }
+  const contact = record(inbound.contact)
+  const message = record(inbound.message)
+  const externalId = String(contact.externalId || '')
+
+  try {
+    const contacts = await pool.query<{ id: string }>(`SELECT id FROM public.omnichannel_contacts WHERE organization_id = $1 AND external_identities->>'providerExternalId' = $2 LIMIT 1`, [organizationId, externalId])
+    const contactId = contacts.rows[0]?.id || (await pool.query<{ id: string }>(`INSERT INTO public.omnichannel_contacts (organization_id, display_name, phone, external_identities) VALUES ($1,$2,$3,$4::jsonb) RETURNING id`, [organizationId, String(contact.displayName || externalId || 'Contato'), contact.phone || null, JSON.stringify({ providerExternalId: externalId })])).rows[0]?.id
+    if (!contactId) throw new Error('contact_creation_failed')
+    const conversations = await pool.query<{ id: string; response_mode: string }>(`SELECT id, response_mode FROM public.conversations WHERE organization_id = $1 AND contact_id = $2 AND connection_id = $3 AND status <> 'resolved' ORDER BY updated_at DESC LIMIT 1`, [organizationId, contactId, connectionId])
+    const createdConversation = conversations.rows[0] || (await pool.query<{ id: string; response_mode: string }>(`INSERT INTO public.conversations (organization_id, contact_id, connection_id, channel, status, response_mode, last_message_at) VALUES ($1,$2,$3,'whatsapp','open','assisted',NOW()) RETURNING id, response_mode`, [organizationId, contactId, connectionId])).rows[0]
+    const conversationId = createdConversation?.id
+    if (!conversationId) throw new Error('conversation_creation_failed')
+    const inserted = await pool.query<{ id: string }>(`INSERT INTO public.messages (conversation_id, connection_id, direction, author_type, content_type, body, external_message_id, delivery_status, metadata) VALUES ($1,$2,'inbound','contact',$3,$4,$5,'delivered',$6::jsonb) ON CONFLICT DO NOTHING RETURNING id`, [conversationId, connectionId, String(message.contentType || 'text'), message.body || null, message.externalMessageId || null, JSON.stringify(message.metadata || {})])
+    const existingMessage = inserted.rows[0] ? null : await pool.query<{ id: string }>(
+      `SELECT id FROM public.messages
+        WHERE connection_id = $1 AND external_message_id = $2
+        LIMIT 1`,
+      [connectionId, message.externalMessageId || null],
+    )
+    const inboundMessageId = inserted.rows[0]?.id || existingMessage?.rows[0]?.id
+    if (!inboundMessageId) throw new Error('inbound_message_persistence_failed')
+    if (inserted.rows[0]) {
+      await pool.query(
+        `INSERT INTO public.radar_outreach_events (
+           organization_id, opportunity_id, lead_id, channel, event_type, notes
+         )
+         SELECT plan.organization_id, plan.radar_opportunity_id, plan.lead_id, 'whatsapp', 'contact_replied', $2
+         FROM public.prospecting_plans plan
+         JOIN public.conversations conversation ON conversation.lead_id = plan.lead_id
+         WHERE conversation.id = $1 AND plan.status = 'active'`,
+        [conversationId, `message:${inboundMessageId}`],
+      )
+    }
+
+    const priorAiMessage = await pool.query<{ id: string; metadata: Row }>(
+      `SELECT id, metadata FROM public.messages
+        WHERE conversation_id = $1 AND direction = 'outbound' AND author_type = 'ai'
+          AND metadata->>'inboundMessageId' = $2
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [conversationId, inboundMessageId],
+    )
+    if (priorAiMessage.rows[0]) {
+      if (priorAiMessage.rows[0].metadata?.approvalStatus === 'approved' && queue) {
+        await queue.add('omnichannel.dispatchOutbound', { messageId: priorAiMessage.rows[0].id, source: 'ai_autonomy' })
+      }
+      await markWebhookEventProcessed(pool, eventId)
+      return { conversationId, messageId: inboundMessageId, aiMessageId: priorAiMessage.rows[0].id, duplicate: true }
+    }
+
+    if (!String(message.body || '').trim() || createdConversation?.response_mode === 'manual') {
+      await markWebhookEventProcessed(pool, eventId)
+      return { conversationId, messageId: inboundMessageId, runtime: { skipped: true } }
+    }
+
+    const assistantContext = await resolveOmnichannelAssistantContext(pool, organizationId)
+    const runtime: Row = env.YUX_AGENT_RUNTIME_URL
+      ? await invokeAgentRuntime<Row>(env, '/workflows/execute', {
         organization_id: organizationId,
         client_id: assistantContext.clientId,
         contract_id: assistantContext.contractId,
@@ -61,24 +149,24 @@ export async function handleInboundMessage(
         profile_key: assistantContext.profileKey,
         source: 'whatsapp',
         mode: 'conversation_turn',
-      })
-    : buildSafeAiFallback(new Error('agent_runtime_not_configured')) as unknown as Row
-  const synthesis = record(runtime.synthesis)
-  const reply = record(synthesis.reply)
-  const classification = record(synthesis.classification)
-  const policy = record(runtime.policy)
-  const replyBody = String(reply.body || '').trim()
-  const brandGuardrail = evaluateBrandGuardrails(replyBody, assistantContext.brandRules)
-  const automaticSendAllowed = policy.should_send === true
-    && createdConversation?.response_mode === 'automatic'
-    && !brandGuardrail.blocked
-  let aiMessageId: string | undefined
+        })
+      : buildSafeAiFallback(new Error('agent_runtime_not_configured')) as unknown as Row
+    const synthesis = record(runtime.synthesis)
+    const reply = record(synthesis.reply)
+    const classification = record(synthesis.classification)
+    const policy = record(runtime.policy)
+    const replyBody = String(reply.body || '').trim()
+    const brandGuardrail = evaluateBrandGuardrails(replyBody, assistantContext.brandRules)
+    const automaticSendAllowed = policy.should_send === true
+      && createdConversation?.response_mode === 'automatic'
+      && !brandGuardrail.blocked
+    let aiMessageId: string | undefined
 
-  if (replyBody) {
-    const approvalStatus = automaticSendAllowed
-      ? 'approved'
-      : policy.blocked === true || brandGuardrail.blocked ? 'blocked' : 'waiting_approval'
-    const aiMessage = await pool.query<{ id: string }>(
+    if (replyBody) {
+      const approvalStatus = automaticSendAllowed
+        ? 'approved'
+        : policy.blocked === true || brandGuardrail.blocked ? 'blocked' : 'waiting_approval'
+      const aiMessage = await pool.query<{ id: string }>(
       `INSERT INTO public.messages (
          conversation_id, connection_id, direction, author_type, content_type, body, delivery_status, metadata
        ) VALUES ($1,$2,'outbound','ai','text',$3,'queued',$4::jsonb)
@@ -101,18 +189,18 @@ export async function handleInboundMessage(
           inboundMessageId,
         }),
       ],
-    )
-    aiMessageId = aiMessage.rows[0]?.id
-    if (aiMessageId && automaticSendAllowed && queue) {
-      await queue.add('omnichannel.dispatchOutbound', { messageId: aiMessageId, source: 'ai_autonomy' })
+      )
+      aiMessageId = aiMessage.rows[0]?.id
+      if (aiMessageId && automaticSendAllowed && queue) {
+        await queue.add('omnichannel.dispatchOutbound', { messageId: aiMessageId, source: 'ai_autonomy' })
+      }
     }
-  }
 
-  const shouldHandoff = policy.should_handoff === true
-    || policy.blocked === true
-    || brandGuardrail.blocked
-    || runtime.fallbackUsed === true
-  await pool.query(
+    const shouldHandoff = policy.should_handoff === true
+      || policy.blocked === true
+      || brandGuardrail.blocked
+      || runtime.fallbackUsed === true
+    await pool.query(
     `UPDATE public.conversations
      SET status = CASE WHEN $2::boolean THEN 'waiting_human' ELSE status END,
          classification = COALESCE($3, classification),
@@ -127,9 +215,9 @@ export async function handleInboundMessage(
       typeof classification.sentiment === 'string' ? classification.sentiment : null,
       typeof synthesis.qualification === 'object' ? `Proxima acao: ${String(record(synthesis.qualification).nextBestAction || '')}` : null,
     ],
-  )
-  if (shouldHandoff) {
-    await pool.query(
+    )
+    if (shouldHandoff) {
+      await pool.query(
       `INSERT INTO public.handoff_events (conversation_id, trigger, outcome)
        VALUES ($1,$2,$3::jsonb)`,
       [
@@ -139,9 +227,28 @@ export async function handleInboundMessage(
           : brandGuardrail.blocked ? 'brand_guardrail_blocked' : policy.blocked === true ? 'ai_policy_blocked' : 'ai_policy_handoff',
         JSON.stringify({ policy, brandGuardrail, aiMessageId }),
       ],
-    )
+      )
+    }
+    await markWebhookEventProcessed(pool, eventId)
+    return { conversationId, messageId: inboundMessageId, aiMessageId, runtime }
+  } catch (error) {
+    await pool.query(
+      `UPDATE public.channel_webhook_events
+          SET status = 'failed', protected_error_text = $2
+        WHERE id = $1 AND status = 'processing'`,
+      [eventId, safeError(error)],
+    ).catch(() => undefined)
+    throw error
   }
-  return { conversationId, messageId: inboundMessageId, aiMessageId, runtime }
+}
+
+async function markWebhookEventProcessed(pool: Pick<pg.Pool, 'query'>, eventId: string) {
+  await pool.query(
+    `UPDATE public.channel_webhook_events
+        SET status = 'processed', processed_at = NOW(), protected_error_text = NULL
+      WHERE id = $1`,
+    [eventId],
+  )
 }
 
 export async function handleOutboundMessage(pool: Pick<pg.Pool, 'query'>, data: Row) {

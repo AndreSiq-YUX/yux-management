@@ -8,12 +8,14 @@ import { createBullMqJobId } from '../../jobs/queue.js'
 import type { ClaimedDomainEvent } from './types.js'
 import { createLeaseOwner } from '../../jobs/leases.js'
 
-export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring', 'mission_observer'] as const
+export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring', 'mission_observer', 'omnichannel'] as const
 export type DomainEventConsumerKey = (typeof DOMAIN_EVENT_CONSUMERS)[number]
+
+const STANDARD_DOMAIN_EVENT_CONSUMERS: readonly DomainEventConsumerKey[] = ['automation', 'scoring', 'mission_observer']
 
 export type DomainEventQueue = {
   add(
-    name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver',
+    name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver' | 'events.consume.omnichannel',
     data: { eventId: string; deliveryId: string; consumerKey: DomainEventConsumerKey; organizationId: string },
     options?: { jobId?: string },
   ): Promise<unknown>
@@ -61,7 +63,7 @@ export async function fanOutDomainEvent(
   pool: { connect: () => Promise<any> },
   queue: DomainEventQueue,
   event: ClaimedDomainEvent,
-  consumers: readonly DomainEventConsumerKey[] = DOMAIN_EVENT_CONSUMERS,
+  consumers: readonly DomainEventConsumerKey[] = consumersForEvent(event),
 ): Promise<void> {
   let deliveries: Awaited<ReturnType<typeof ensureEventDeliveries>>
   const client = await pool.connect()
@@ -83,7 +85,8 @@ export async function fanOutDomainEvent(
     await queue.add(
       consumerKey === 'automation' ? 'events.consume.automation'
         : consumerKey === 'scoring' ? 'events.consume.scoring'
-          : 'events.consume.missionObserver',
+          : consumerKey === 'mission_observer' ? 'events.consume.missionObserver'
+            : 'events.consume.omnichannel',
       { eventId: event.eventId, deliveryId: delivery.id, consumerKey, organizationId: event.organizationId },
       { jobId: createBullMqJobId(consumerKey, event.eventId) },
     )
@@ -106,4 +109,10 @@ export async function fanOutDomainEvent(
   } finally {
     completionClient.release()
   }
+}
+
+export function consumersForEvent(event: Pick<ClaimedDomainEvent, 'eventType'>): readonly DomainEventConsumerKey[] {
+  return event.eventType === 'omnichannel.inbound.received'
+    ? [...STANDARD_DOMAIN_EVENT_CONSUMERS, 'omnichannel']
+    : STANDARD_DOMAIN_EVENT_CONSUMERS
 }
