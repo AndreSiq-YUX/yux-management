@@ -303,7 +303,7 @@ async function getTaskForUpdate(pool: Queryable, user: TaskActor, taskId: string
          SELECT 1 FROM public.memberships membership
          WHERE membership.user_id = $1 AND membership.organization_id = task.organization_id
        ))
-     FOR UPDATE`,
+     FOR UPDATE OF task`,
     [user.id, taskId, isInternal(user)],
   )
   const task = result.rows[0]
