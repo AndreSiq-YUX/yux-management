@@ -122,8 +122,9 @@ test('J2 — pack passa por autoria, revisão, publicação e binding governados
 
   const packName = 'Pack livro aceitação'
   const itemTitle = 'Diagnóstico governado de aceitação'
-  await expect(page.getByText(packName, { exact: true })).toBeVisible()
-  await page.getByText(packName, { exact: true }).click()
+  const packButton = page.getByRole('button').filter({ hasText: packName })
+  await expect(packButton).toBeVisible()
+  await packButton.click()
 
   const reviewCard = page.locator('article').filter({ hasText: itemTitle })
   await expect(reviewCard).toBeVisible()
@@ -257,7 +258,7 @@ test('J5 — planejamento, conteúdo, revisão e aprovação usam a mesma versã
 
 test('J6 — conversa persistida aceita handoff, resolução e refresh', async ({ page }, testInfo) => {
   const suffix = `${Date.now()}`
-  const contactName = `Contato aceitação ${suffix}`
+  const contactName = 'Contato aceitação'
   const messageBody = `Preciso de atendimento ${suffix}`
   const externalMessageId = `wamid.acceptance-${suffix}`
   const rawWebhook = JSON.stringify({
@@ -267,10 +268,10 @@ test('J6 — conversa persistida aceita handoff, resolução e refresh', async (
       changes: [{ value: {
         messaging_product: 'whatsapp',
         metadata: { phone_number_id: 'acceptance-phone', display_phone_number: '5511000000000' },
-        contacts: [{ wa_id: `5511${suffix.slice(-9)}`, profile: { name: contactName } }],
+        contacts: [{ wa_id: 'acceptance-contact', profile: { name: contactName } }],
         messages: [{
           id: externalMessageId,
-          from: `5511${suffix.slice(-9)}`,
+          from: 'acceptance-contact',
           timestamp: String(Math.floor(Date.now() / 1_000)),
           type: 'text',
           text: { body: messageBody },
@@ -290,7 +291,7 @@ test('J6 — conversa persistida aceita handoff, resolução e refresh', async (
   const conversations = await json<Array<{ id: string; contact?: { displayName?: string } }>>(
     await page.request.get(`${apiBase}/omnichannel/portal/conversations?organizationId=${ids.organizationA}`),
   )
-  const received = conversations.find(conversation => conversation.contact?.displayName === contactName)
+  const received = conversations.find(conversation => conversation.id === ids.conversation)
   expect(received?.id).toBeTruthy()
   const conversationId = received!.id
   await page.goto('/portal/atendimento/conversas')

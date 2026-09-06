@@ -23,6 +23,12 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
         ids.otherTask, fixtureUsers.client_member_A.id],
     )
     await rig.sql(
+      `UPDATE public.lead_tasks
+       SET updated_at = '2026-09-06T22:44:46.123456Z'::timestamptz
+       WHERE id = $1`,
+      [ids.crmTask],
+    )
+    await rig.sql(
       `INSERT INTO public.projects (id,name,client_id,status,priority,type,start_date,expected_end_date)
        VALUES ($1,'Projeto fila diária',$2,'ACTIVE','MEDIUM','OTHER',CURRENT_DATE,CURRENT_DATE + 30)`,
       [ids.project, '20000000-0000-4000-8000-000000000001'],
@@ -89,6 +95,40 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
       organizationId: rig.ids.organizationA, expectedVersion: otherVersion, evidence: { note: 'tentativa indevida' }, minutesSpent: 5,
     })
     expect(wrongAssignee.statusCode).toBe(403)
+
+    const crmItem = listed.body.items.find((item: { sourceId: string }) => item.sourceId === ids.crmTask)
+    expect(crmItem.version).toBe('2026-09-06T22:44:46.123Z')
+    const crmCompletion = {
+      organizationId: rig.ids.organizationA,
+      expectedVersion: crmItem.version,
+      evidence: { note: 'Contato retornado com sucesso' },
+      minutesSpent: 7,
+    }
+    const completedCrmTask = await rig.request(
+      'yux_operator',
+      'POST',
+      `/api/workspace/work-items/crm_task/${ids.crmTask}/complete`,
+      crmCompletion,
+    )
+    expect(completedCrmTask.statusCode).toBe(200)
+    expect(completedCrmTask.body).toMatchObject({ sourceType: 'crm_task', sourceId: ids.crmTask, status: 'completed' })
+    const repeatedCrmCompletion = await rig.request(
+      'yux_operator',
+      'POST',
+      `/api/workspace/work-items/crm_task/${ids.crmTask}/complete`,
+      crmCompletion,
+    )
+    expect(repeatedCrmCompletion.statusCode).toBe(409)
+    const persistedCrmTask = await rig.sql(
+      `SELECT status, metadata #> '{workItemCompletion,evidence}' AS evidence,
+              (SELECT COUNT(*)::int FROM public.domain_events event
+               WHERE event.aggregate_id = $1 AND event.event_type = 'lead.task_completed') AS completion_count
+       FROM public.lead_tasks WHERE id = $1`,
+      [ids.crmTask],
+    )
+    expect(persistedCrmTask.rows[0]).toMatchObject({
+      status: 'completed', evidence: crmCompletion.evidence, completion_count: 1,
+    })
 
     const missingEvidence = await rig.request('yux_operator', 'POST', `/api/workspace/work-items/mission_human_task/${ids.observation}/complete`, {
       organizationId: rig.ids.organizationA, expectedVersion: '2026-09-05T00:00:00.000Z', evidence: {}, minutesSpent: 12,

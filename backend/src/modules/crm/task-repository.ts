@@ -239,7 +239,8 @@ export async function completeCrmTask(pool: Queryable, user: TaskActor, input: {
      SET status = 'completed', completed_at = $2, cancelled_at = NULL,
          metadata = jsonb_set(task.metadata, '{workItemCompletion}', $3::jsonb, TRUE),
          updated_by = $4, updated_at = NOW()
-     WHERE task.id = $1 AND task.status = 'pending' AND task.updated_at = $5::timestamptz
+     WHERE task.id = $1 AND task.status = 'pending'
+       AND date_trunc('milliseconds', task.updated_at) = date_trunc('milliseconds', $5::timestamptz)
      RETURNING task.id, task.organization_id, task.lead_id, task.enrollment_id,
                task.title, task.description, task.status, task.priority, task.due_at,
                task.completed_at, task.cancelled_at, task.assigned_to, task.updated_at,

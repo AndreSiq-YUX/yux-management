@@ -83,6 +83,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(cors, {
     origin: env.CORS_ORIGIN,
     credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })
   await app.register(rateLimit, {
     global: true,

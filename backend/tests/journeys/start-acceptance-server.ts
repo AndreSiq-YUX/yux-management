@@ -102,8 +102,8 @@ async function seedAcceptanceRecords() {
   await rig.sql(
     `INSERT INTO public.conversations (
        id,organization_id,contact_id,connection_id,channel,status,response_mode,last_message_at
-     ) VALUES ($1,$2,$3,$4,'whatsapp','open','automatic',NOW())
-     ON CONFLICT (id) DO UPDATE SET status='open', response_mode='automatic', assigned_user_id=NULL,
+     ) VALUES ($1,$2,$3,$4,'whatsapp','open','manual',NOW())
+     ON CONFLICT (id) DO UPDATE SET status='open', response_mode='manual', assigned_user_id=NULL,
        team_id=NULL, last_message_at=NOW(), resolved_at=NULL`,
     [acceptanceIds.conversation, fixtureIds.organizationA, acceptanceIds.contact, acceptanceIds.connection],
   )

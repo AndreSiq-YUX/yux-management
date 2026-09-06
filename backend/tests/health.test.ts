@@ -40,4 +40,21 @@ describe('health routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ status: 'ready', service: 'yux-backend-api' })
   })
+
+  it('allows every HTTP mutation method used by the browser client', async () => {
+    app = await buildServer(testEnv, { pool: pool as never, jobQueue: queue, redisPing: async () => 'PONG' })
+
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/company-intelligence/organizations/10000000-0000-4000-8000-000000000001/profile',
+      headers: {
+        origin: testEnv.CORS_ORIGIN,
+        'access-control-request-method': 'PUT',
+      },
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(response.headers['access-control-allow-origin']).toBe(testEnv.CORS_ORIGIN)
+    expect(response.headers['access-control-allow-methods']).toBe('GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS')
+  })
 })
