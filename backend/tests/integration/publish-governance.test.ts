@@ -94,7 +94,7 @@ async function verifyCompanyPublication(rig: Awaited<ReturnType<typeof createInt
   const approvedId = randomUUID()
   const rejectedId = randomUUID()
   const raw = 'A empresa atende todo o Brasil com suporte consultivo.'
-  await rig.sql(`UPDATE public.knowledge_sources SET status='indexed',governance_version=1 WHERE id=$1`, [sourceId])
+  await rig.sql(`UPDATE public.knowledge_sources SET status='review',governance_version=1 WHERE id=$1`, [sourceId])
   await rig.sql(`UPDATE public.marketing_knowledge_documents SET status='indexed' WHERE id=$1`, [rig.ids.documentA])
   await rig.sql(
     `INSERT INTO public.knowledge_entries (id,organization_id,source_id,title,body,status) VALUES ($1,$2,$3,'Documento governado',$4,'draft')`,
