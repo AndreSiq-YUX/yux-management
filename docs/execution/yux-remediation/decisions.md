@@ -189,3 +189,13 @@
 - Fronteira: autenticação, papel, contexto do workspace e shell permanecem anteriores à importação da página. Página, gráfico, canvas e editor são tardios quando não participam da primeira ação; dividir código não desloca autorização para o componente carregado.
 - Recuperação: falha de versão de chunk mantém o shell e oferece refresh explícito. Estado ainda não salvo que seja compatível fica em armazenamento da mesma aba, cercado por organização, contrato ou fluxo; sucesso da gravação limpa o rascunho.
 - Motivo: reduzir transferência inicial sem produzir tela branca, consulta desnecessária, perda de trabalho ou mistura de contexto entre clientes.
+
+## D-027 — Reconciliação histórica é manifestada, limitada e orientada pelo estado atual
+
+- Status: decidida.
+- Autoridade: o banco atual determina a classe e a versão; a fila não autoriza reprocessamento. Cada proposta contém somente metadados operacionais permitidos e recebe hash próprio dentro de um manifesto ligado à identidade do banco.
+- Aplicação: arquivo intacto, hash aprovado e lote explícito de até 20 são obrigatórios. A versão é conferida novamente antes da ação; divergência termina `skipped`. O mesmo manifesto continua itens pendentes e devolve o resultado já persistido para itens concluídos.
+- Automação permitida: upload sem bytes volta ao envio no mesmo registro; curadoria órfã só retoma com origem íntegra e job estável; learning/checkpoint somente retomam com a elegibilidade atual demonstrada. Nenhuma dessas ações pode inferir conteúdo pelo nome do arquivo.
+- Preservação: cancelamento, espera do usuário, falha sem identidade segura e efeito externo desconhecido são decisões de negócio ou do reconciliador do provedor. O comando genérico não reabre missão, não reenvia contato e não repete efeito ambíguo.
+- Auditoria e retorno: identidade e resultado concluído são imutáveis e não podem ser apagados. Recuperação é por entidade e pelo mesmo manifesto; limpar a fila ou sobrepor o banco atual com uma restauração não é estratégia de retorno.
+- Liberação: o ensaio isolado comprova a mecânica, mas produção exige uma restauração recente, recoleta em leitura, relatório de deltas e aprovação do hash efetivamente gerado contra o ambiente real.

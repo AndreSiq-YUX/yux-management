@@ -385,3 +385,15 @@ frontend tests: PASS, 528 PASS
 - Piloto sintético: em Chromium 390×844 e preview de produção local, LCP da visão geral foi 80 ms, CLS 0,03 e a primeira ação da missão levou 24 ms. Uma missão abriu com comandos utilizáveis e o planejamento parcialmente preenchido sobreviveu ao refresh.
 - Verificação local: 137 arquivos/562 testes frontend, type-check, build e orçamento aprovados. O lint permaneceu em 560 erros históricos e reduziu de 27 para 26 avisos sem nova assinatura.
 - Aceite persistente: execução GitHub Actions `34056093562`, commit `c7fa8ce`, conclusão `success` nos sete jobs.
+
+## T30 — Reconciliação do estado histórico por classe
+
+- Estado: mecanismo e ensaio isolado aceitos; execução em produção deliberadamente não realizada.
+- Commits: `b3be958` e `bf87441`.
+- Manifesto: leitura por padrão, no máximo 20 itens, identidade do banco, versão esperada, hash por item e hash global. Aplicação exige arquivo intacto, hash aprovado e limite explícito; uma versão concorrente é ignorada, nunca forçada.
+- Destinos: upload sem bytes retorna ao fluxo de envio conservando o registro como origem; curadoria órfã só retoma após conferir a fonte e usa job estável. Falha degradada, agente falho, conversa aguardando usuário, missão cancelada, mensagem antiga e efeito externo desconhecido preservam o estado e exigem a decisão apropriada.
+- Auditoria: manifesto, itens, motivos e resultados são persistentes. Identidades e resultados concluídos não podem ser reescritos; exclusão é bloqueada. Queda entre o cancelamento seguro da execução órfã e a fila pode ser retomada pelo marcador do mesmo manifesto.
+- Ensaio: um lote de cinco ficou parcial e a continuação concluiu os dois itens restantes. Uma mudança concorrente terminou `skipped`; conhecimento e learning receberam um job cada; nova aplicação retornou zero itens tratados e zero jobs adicionais.
+- Verificação local: type-check, build e 655 testes backend aprovados. A integração local não iniciou por ausência dos serviços isolados.
+- Aceite persistente: execução GitHub Actions `34057271273`, conclusão `success` nos sete jobs; o cenário PostgreSQL/Redis novo passou em Backend integration.
+- Próximo passo operacional: recoletar produção em `--dry-run` somente na janela aprovada, após repetir o ensaio em uma restauração recente. Nenhum `--apply` de produção foi feito nesta tarefa.
