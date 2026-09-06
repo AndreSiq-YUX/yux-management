@@ -157,7 +157,7 @@ async function createWhatsAppSequenceFixture(
   }, providerKey)
   await rig.sql(
     `UPDATE public.channel_connections
-        SET protected_metadata_references = jsonb_build_object('accessTokenReference', $2)
+        SET protected_metadata_references = jsonb_build_object('accessTokenReference', $2::text)
       WHERE id = $1`,
     [connectionId, secret.reference],
   )
