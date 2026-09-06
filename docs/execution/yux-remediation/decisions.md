@@ -66,3 +66,10 @@
 - Decisão: separar cargas em quatro filas por classe, conservando nome e identidade do job. `yux-jobs` é somente compatibilidade de drenagem; a API nova não publica em dois destinos. A liderança dos schedulers depende de advisory lock PostgreSQL, não da quantidade de containers.
 - Limite inicial: 2 workers lógicos interativos, 1 de ingestão, 2 externos e 1 de manutenção por processo. A serialização local por organização/provedor é suficiente apenas para a topologia inicial de uma réplica por classe; escala horizontal exige limitador distribuído e nova evidência.
 - Motivo: evitar que curadoria longa bloqueie atendimento e impedir que escala operacional multiplique timers ou efeitos externos.
+
+## D-012 — Saúde não é presença de configuração
+
+- Status: decidida.
+- Decisão: liveness responde apenas pelo processo; readiness básica cobre banco e Redis; saúde operacional autenticada cobre workers, filas, outbox, Harness e provedores. Falha terminal histórica continua visível como contagem, mas não mantém incidente atual aberto sozinha.
+- Credenciais: banco ativo com segredo decifrável prevalece sobre ambiente permitido. Ausência ou segredo inválido cai para ambiente sem expor valor. `verifiedAt` só será preenchido por teste operacional explícito do provedor.
+- Custos: ausência de preço ou usage é `NULL` e `unavailable` com motivo; zero fica reservado a medição verdadeira de custo zero.

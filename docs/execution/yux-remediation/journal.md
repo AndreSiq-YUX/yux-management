@@ -209,3 +209,14 @@ frontend tests: PASS, 528 PASS
 - Rollout: o Compose cria workers separados por classe, mantém o dreno legado no interativo e habilita scheduler apenas no worker de manutenção. O roteiro de observação e retorno está em `docs/runbooks/yux-queue-rollout.md`.
 - Verificação local: build, type-check e 154 arquivos/628 testes backend aprovados. Docker não está disponível neste computador.
 - Aceite persistente: execução GitHub Actions `34005013449`, commit `d0f056c`, conclusão `success`. `queue-isolation.test.ts` comprovou atendimento interativo durante ingestão ocupada, uma única execução para identidade externa duplicada após reinício e eleição/transferência de um único scheduler. Os testes de integração anteriores e os gates de backend, frontend e Agent Runtime permaneceram aprovados.
+
+## T15 — Saúde operacional, configuração efetiva e custos
+
+- Estado: aceita.
+- Commits: `6cff348`, `d6048c8`, `92ae882`, `b6341f5`, `1bd8b77` e correção de propagação do contexto `3af0f74`.
+- Achados: YUX-17, YUX-25 e YUX-26.
+- Decisão: liveness e readiness básica permanecem independentes do snapshot operacional autenticado. O snapshot mede heartbeat de processo, idade das quatro filas, leases abandonados, falhas históricas, Harness autenticado, origem efetiva de credenciais e a última medição de uso/custo.
+- Configuração: a resolução compartilhada prioriza segredo ativo e decifrável do banco, depois variável de ambiente permitida e por fim indisponibilidade. `configured` nunca preenche `verifiedAt`; segredo e conteúdo de cliente não entram na resposta.
+- Medição: heartbeat a cada 30 segundos e stale após 90; custo desconhecido persiste `NULL` com motivo. Leituras e embeddings Jina registram modelo, correlação e uso disponível; health do Harness exige token e não faz inferência paga.
+- Verificação local: 154 arquivos/628 testes backend, type-check e 168 testes Python aprovados, com 1 teste live ignorado.
+- Aceite persistente: execução GitHub Actions `34006289729`, commit `3af0f74`, conclusão `success`. O cenário persistente comprovou API pronta junto de worker atrasado, lease abandonado, falha terminal histórica separada, Harness indisponível, origem ambiente/banco, medição incompleta com custo nulo e ausência de segredos. Backend, frontend e Agent Runtime também permaneceram aprovados.
