@@ -2,7 +2,7 @@ import type pg from 'pg'
 import type { AppEnv } from '../../config/env.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { buildSafeAiFallback } from '../../lib/edge-compat/omnichannel.js'
-import { loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
+import { decodeProviderSecretEncryptionKey, loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
 import { normalizeWhatsAppInbound, sendWhatsAppTemplateMessage, sendWhatsAppTextMessage } from '../../lib/edge-compat/whatsappProvider.js'
 import { evaluateBrandGuardrails, resolveOmnichannelAssistantContext } from '../../modules/omnichannel/assistant-context.js'
 
@@ -87,6 +87,32 @@ export async function handleInboundMessage(
   const externalId = String(contact.externalId || '')
 
   try {
+    if (String(inbound.eventType || '') === 'message.updated') {
+      const providerStatus = String(record(message.metadata).status || message.body || '').toLowerCase()
+      const deliveryStatus = ['sent', 'delivered', 'read', 'failed'].includes(providerStatus)
+        ? providerStatus
+        : null
+      if (!deliveryStatus) throw new Error('whatsapp_delivery_status_unsupported')
+      const updated = await pool.query<{ id: string; metadata: Row }>(
+        `UPDATE public.messages
+            SET delivery_status = $3, updated_at = NOW()
+          WHERE connection_id = $1 AND external_message_id = $2 AND direction = 'outbound'
+          RETURNING id, metadata`,
+        [connectionId, message.externalMessageId || null, deliveryStatus],
+      )
+      const executionId = updated.rows[0]?.metadata?.executionId
+      if (typeof executionId === 'string') {
+        await pool.query(
+          `UPDATE public.automation_executions
+              SET payload = payload || jsonb_build_object('deliveryStatus', $2)
+            WHERE id = $1`,
+          [executionId, deliveryStatus],
+        )
+      }
+      await markWebhookEventProcessed(pool, eventId)
+      return { receipt: true, matched: Boolean(updated.rows[0]), messageId: updated.rows[0]?.id, deliveryStatus }
+    }
+
     const contacts = await pool.query<{ id: string }>(`SELECT id FROM public.omnichannel_contacts WHERE organization_id = $1 AND external_identities->>'providerExternalId' = $2 LIMIT 1`, [organizationId, externalId])
     const contactId = contacts.rows[0]?.id || (await pool.query<{ id: string }>(`INSERT INTO public.omnichannel_contacts (organization_id, display_name, phone, external_identities) VALUES ($1,$2,$3,$4::jsonb) RETURNING id`, [organizationId, String(contact.displayName || externalId || 'Contato'), contact.phone || null, JSON.stringify({ providerExternalId: externalId })])).rows[0]?.id
     if (!contactId) throw new Error('contact_creation_failed')
@@ -251,16 +277,40 @@ async function markWebhookEventProcessed(pool: Pick<pg.Pool, 'query'>, eventId: 
   )
 }
 
-export async function handleOutboundMessage(pool: Pick<pg.Pool, 'query'>, data: Row) {
+export async function handleOutboundMessage(
+  pool: Pick<pg.Pool, 'query'>,
+  data: Row,
+  options: { graphBaseUrl?: string; providerSecretEncryptionKey?: string } = {},
+) {
   const messageId = String(data.messageId || ''); if (!messageId) throw new Error('messageId is required')
   const previous = await pool.query<{ id: string; status: string }>(`SELECT id, status FROM public.outbound_message_runs WHERE message_id = $1 ORDER BY created_at DESC LIMIT 1`, [messageId])
   if (previous.rows[0]?.status === 'sent' || previous.rows[0]?.status === 'delivered') return { duplicate: true, runId: previous.rows[0].id }
   // Never issue a second provider request while the previous attempt has no terminal result.
   // A recovery process can explicitly mark stale attempts failed before re-dispatching them.
   if (previous.rows[0]?.status === 'processing') return { inProgress: true, runId: previous.rows[0].id }
-  const message = await pool.query<{ id: string; conversation_id: string; organization_id: string; connection_id: string | null; body: string | null; direction: string; author_type: string; content_type: string; metadata: Row; channel: string; phone: string | null; phone_number_id: string | null; protected_metadata_references: Row }>(
+  const message = await pool.query<{ id: string; conversation_id: string; organization_id: string; connection_id: string | null; body: string | null; direction: string; author_type: string; content_type: string; metadata: Row; channel: string; phone: string | null; phone_number_id: string | null; protected_metadata_references: Row; consent_metadata: Row; inside_customer_window: boolean; opted_out: boolean; permission_revoked: boolean }>(
     `SELECT m.id, m.conversation_id, c.organization_id, m.connection_id, m.body, m.direction, m.author_type, m.content_type, m.metadata,
-            c.channel, contact.phone, connection.phone_number_id, connection.protected_metadata_references
+            c.channel, contact.phone, contact.consent_metadata,
+            connection.phone_number_id, connection.protected_metadata_references,
+            EXISTS (
+              SELECT 1 FROM public.messages inbound
+               WHERE inbound.conversation_id = c.id AND inbound.direction = 'inbound'
+                 AND inbound.created_at >= NOW() - INTERVAL '24 hours'
+            ) AS inside_customer_window,
+            EXISTS (
+              SELECT 1 FROM public.prospecting_plans plan
+              JOIN public.radar_compliance_logs compliance
+                ON compliance.opportunity_id = plan.radar_opportunity_id
+               AND compliance.organization_id = plan.organization_id
+               AND compliance.opt_out = TRUE
+               WHERE plan.id::text = m.metadata->>'prospectingPlanId'
+            ) AS opted_out,
+            EXISTS (
+              SELECT 1 FROM public.lead_channel_permissions permission
+               WHERE permission.organization_id = c.organization_id
+                 AND permission.lead_id = c.lead_id
+                 AND permission.channel = 'whatsapp' AND permission.status = 'revoked'
+            ) AS permission_revoked
        FROM public.messages m
        JOIN public.conversations c ON c.id = m.conversation_id
        JOIN public.omnichannel_contacts contact ON contact.id = c.contact_id
@@ -271,15 +321,40 @@ export async function handleOutboundMessage(pool: Pick<pg.Pool, 'query'>, data: 
   if (row.author_type === 'ai' && row.metadata?.approvalStatus !== 'approved') throw new Error('ai_message_approval_required')
   if (row.channel !== 'whatsapp' || !row.connection_id) throw new Error('unsupported_outbound_channel')
   if (!row.body?.trim() || !row.phone || !row.phone_number_id) throw new Error('outbound_message_provider_context_required')
+  const crmSequenceMessage = row.metadata?.source === 'crm_sequence'
+  const explicitConsent = row.metadata?.recipientOptIn === true
+    || row.consent_metadata?.whatsappOptIn === true
+    || row.consent_metadata?.whatsapp_opt_in === true
+  const templateName = typeof row.metadata?.templateName === 'string' ? row.metadata.templateName.trim() : ''
+  const policyBlock = crmSequenceMessage && !explicitConsent ? 'whatsapp_consent_required'
+    : crmSequenceMessage && (row.opted_out || row.permission_revoked) ? 'recipient_opted_out'
+      : crmSequenceMessage && row.content_type !== 'template' && !row.inside_customer_window ? 'whatsapp_template_required_outside_window'
+        : crmSequenceMessage && row.content_type === 'template' && !templateName ? 'whatsapp_template_name_required'
+          : null
+  if (policyBlock) {
+    await pool.query(
+      `UPDATE public.messages
+          SET delivery_status = 'failed', metadata = metadata || jsonb_build_object('dispatchBlockedReason', $2), updated_at = NOW()
+        WHERE id = $1`,
+      [messageId, policyBlock],
+    )
+    return { sent: false, blocked: true, reason: policyBlock }
+  }
   const run = await pool.query<{ id: string }>(`INSERT INTO public.outbound_message_runs (organization_id, conversation_id, message_id, attempt_number, adapter_key, status) VALUES ($1,$2,$3,COALESCE((SELECT MAX(attempt_number)+1 FROM public.outbound_message_runs WHERE message_id=$3),1),'worker','processing') RETURNING id`, [row.organization_id, row.conversation_id, row.id])
-  await pool.query(`UPDATE public.messages SET delivery_status = 'queued', updated_at = NOW() WHERE id = $1`, [messageId])
+  await pool.query(`UPDATE public.messages SET delivery_status = 'processing', updated_at = NOW() WHERE id = $1`, [messageId])
   const runId = run.rows[0]?.id
   try {
     const reference = typeof row.protected_metadata_references?.accessTokenReference === 'string'
       ? row.protected_metadata_references.accessTokenReference
       : ''
     if (!reference) throw new Error('whatsapp_access_token_reference_required')
-    const accessToken = await loadProviderSecretFromPool(pool, reference)
+    const accessToken = await loadProviderSecretFromPool(
+      pool,
+      reference,
+      options.providerSecretEncryptionKey
+        ? decodeProviderSecretEncryptionKey(options.providerSecretEncryptionKey)
+        : undefined,
+    )
     if (accessToken.expired) throw new Error('whatsapp_access_token_expired')
     const response = row.content_type === 'template'
       ? await sendWhatsAppTemplateMessage({
@@ -289,8 +364,17 @@ export async function handleOutboundMessage(pool: Pick<pg.Pool, 'query'>, data: 
           components: Array.isArray(row.metadata.components) ? row.metadata.components as Row[] : undefined,
           phoneNumberId: row.phone_number_id,
           accessToken: accessToken.value,
+          graphBaseUrl: options.graphBaseUrl,
+          intentId: messageId,
         })
-      : await sendWhatsAppTextMessage({ to: row.phone, body: row.body, phoneNumberId: row.phone_number_id, accessToken: accessToken.value })
+      : await sendWhatsAppTextMessage({
+          to: row.phone,
+          body: row.body,
+          phoneNumberId: row.phone_number_id,
+          accessToken: accessToken.value,
+          graphBaseUrl: options.graphBaseUrl,
+          intentId: messageId,
+        })
     if (!response.ok) throw new Error(response.error || `whatsapp_provider_http_${response.status}`)
     await pool.query(
       `UPDATE public.outbound_message_runs
@@ -299,6 +383,16 @@ export async function handleOutboundMessage(pool: Pick<pg.Pool, 'query'>, data: 
       [runId, JSON.stringify({ provider: 'meta_whatsapp', phoneNumberId: row.phone_number_id, to: '[redacted]' }), JSON.stringify(response.data || {})],
     )
     await pool.query(`UPDATE public.messages SET delivery_status = 'sent', external_message_id = COALESCE($2, external_message_id), updated_at = NOW() WHERE id = $1`, [messageId, extractExternalMessageId(response.data)])
+    if (typeof row.metadata?.executionId === 'string') {
+      await pool.query(
+        `UPDATE public.automation_executions
+            SET payload = payload || jsonb_build_object(
+              'deliveryStatus', 'provider_accepted', 'providerMessageId', $2::text
+            )
+          WHERE id = $1`,
+        [row.metadata.executionId, extractExternalMessageId(response.data)],
+      )
+    }
     if (typeof row.metadata?.prospectingPlanId === 'string') {
       await pool.query(
         `INSERT INTO public.radar_outreach_events (
@@ -313,6 +407,15 @@ export async function handleOutboundMessage(pool: Pick<pg.Pool, 'query'>, data: 
   } catch (error) {
     await pool.query(`UPDATE public.outbound_message_runs SET status = 'failed', protected_error_text = $2, updated_at = NOW() WHERE id = $1`, [runId, safeError(error)])
     await pool.query(`UPDATE public.messages SET delivery_status = 'failed', updated_at = NOW() WHERE id = $1`, [messageId])
+    if (typeof row.metadata?.executionId === 'string') {
+      await pool.query(
+        `UPDATE public.automation_executions
+            SET last_error = $2,
+                payload = payload || jsonb_build_object('deliveryStatus', 'failed')
+          WHERE id = $1`,
+        [row.metadata.executionId, safeError(error)],
+      )
+    }
     throw error
   }
 }

@@ -76,6 +76,22 @@ class FakeClient {
         }],
       }
     }
+    if (sql.includes('INSERT INTO public.domain_events') && sql.includes('dispatch_status')) {
+      return {
+        rows: [{
+          id: values?.[0], organization_id: ids.org, crm_instance_id: null,
+          event_type: values?.[3], schema_version: 1, aggregate_type: 'sequence_execution',
+          aggregate_id: ids.execution, lead_id: ids.lead, correlation_id: ids.execution,
+          causation_id: null, depth: 0, actor: { type: 'system' },
+          occurred_at: '2026-06-27T12:00:00.000Z', automation_trace: [], payload: values?.[14],
+          dispatch_status: 'pending', attempt_count: 0, available_at: '2026-06-27T12:00:00.000Z',
+          dispatched_at: null, last_error: null, lease_owner: null, lease_until: null,
+          processing_stage: 'pending', processor_version: 'domain-event-dispatch:v1', failure_class: null,
+          created_at: '2026-06-27T12:00:00.000Z',
+        }],
+      }
+    }
+    if (sql.includes('INSERT INTO public.domain_events')) return { rows: [{ id: 'email-event-1' }] }
     if (sql.includes('INSERT INTO public.email_send_events')) return { rows: [{ id: '00000000-0000-4000-8000-000000000009' }] }
     if (sql.includes('FROM public.channel_connections')) return { rows: [{ id: 'connection-1' }] }
     if (sql.includes('FROM public.omnichannel_contacts')) return { rows: [{ id: 'contact-1' }] }
@@ -141,7 +157,7 @@ describe('crm sequence scheduler', () => {
     expect(pool.failedQueries).toEqual([])
   })
 
-  it('queues sequence emails through the internal email delivery request', async () => {
+  it('persists sequence email intent and outbox event without calling n8n', async () => {
     const pool = new FakePool('email')
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = []
     const fetchImpl: typeof fetch = async (url, init) => {
@@ -159,9 +175,12 @@ describe('crm sequence scheduler', () => {
     expect(fetchCalls).toHaveLength(0)
     const emailRequest = pool.client.queries.find((query) => query.sql.includes('INSERT INTO public.email_send_requests'))
     expect(emailRequest?.values).toEqual(expect.arrayContaining([ids.org, ids.lead, 'operational', 'lead@yux.com.br', 'Ligar para o lead']))
+    const dispatchEvent = pool.client.queries.find(query => query.sql.includes('INSERT INTO public.domain_events') && query.sql.includes('dispatch_status'))
+    expect(dispatchEvent?.values?.[3]).toBe('crm.sequence.delivery_requested')
+    expect(dispatchEvent?.values?.[14]).toMatchObject({ executionId: ids.execution, channel: 'email' })
   })
 
-  it('queues WhatsApp sequence messages through native Omnichannel', async () => {
+  it('persists WhatsApp sequence intent for recoverable native dispatch', async () => {
     const pool = new FakePool('whatsapp')
     const add = vi.fn(async () => ({}))
 
@@ -171,8 +190,10 @@ describe('crm sequence scheduler', () => {
     })
 
     expect(result).toMatchObject({ whatsappMessageId: 'message-1' })
-    expect(add).toHaveBeenCalledWith('omnichannel.dispatchOutbound', { messageId: 'message-1' })
+    expect(add).not.toHaveBeenCalled()
     expect(pool.client.queries.some(query => query.sql.includes('INSERT INTO public.messages'))).toBe(true)
     expect(pool.client.queries.some(query => query.sql.includes('N8N'))).toBe(false)
+    const dispatchEvent = pool.client.queries.find(query => query.sql.includes('INSERT INTO public.domain_events') && query.sql.includes('dispatch_status'))
+    expect(dispatchEvent?.values?.[14]).toMatchObject({ executionId: ids.execution, channel: 'whatsapp', messageId: 'message-1' })
   })
 })

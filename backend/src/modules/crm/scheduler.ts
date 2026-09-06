@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import type pg from 'pg'
-import { queueEmailRequest, sendEmailRequest } from '../email-delivery/service.js'
+import { queueEmailRequest } from '../email-delivery/service.js'
+import { recordDomainEvent } from '../events/repository.js'
 import { resolveProspectingEligibility } from '../prospecting/repository.js'
 
 export type CrmSequenceSchedulerOptions = {
@@ -114,15 +115,17 @@ export async function enqueueMissingDueExecutions(pool: pg.Pool, options: CrmSeq
        ) s ON TRUE
      )
      INSERT INTO public.automation_executions (
-       organization_id, lead_id, enrollment_id, step_id, action_type, payload, scheduled_at
+       organization_id, lead_id, enrollment_id, step_id, action_type, payload, scheduled_at, dispatch_identity
      )
      SELECT organization_id, lead_id, enrollment_id, step_id, action_type,
        jsonb_build_object(
          'subject', subject,
          'body', body,
          'prospectingPlanId', CASE WHEN manual_note LIKE 'prospecting-plan:%' THEN split_part(manual_note, ':', 2) ELSE NULL END
-       ) || COALESCE(metadata, '{}'::jsonb), next_execution_at
+       ) || COALESCE(metadata, '{}'::jsonb), next_execution_at,
+       format('sequence:%s:step:%s', enrollment_id, step_id)
      FROM next_steps
+     ON CONFLICT (dispatch_identity) DO NOTHING
      RETURNING id`,
     [now.toISOString(), limit],
   )
@@ -186,6 +189,12 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
     const actionResult = await executeSequenceAction(client, execution, options)
     emailRequestId = actionResult?.emailRequestId ?? null
     whatsappMessageId = actionResult?.whatsappMessageId ?? null
+    if (emailRequestId) {
+      await recordSequenceDeliveryRequested(client, execution, 'email', emailRequestId)
+    }
+    if (whatsappMessageId) {
+      await recordSequenceDeliveryRequested(client, execution, 'whatsapp', whatsappMessageId)
+    }
     if (textValue(execution.payload.prospectingPlanId) && (emailRequestId || whatsappMessageId)) {
       await client.query(
         `INSERT INTO public.radar_outreach_events (
@@ -198,24 +207,22 @@ export async function processSequenceExecution(pool: pg.Pool, executionId: strin
     }
     await client.query(
       `UPDATE public.automation_executions
-       SET status = 'completed', completed_at = $2
+       SET status = 'completed', completed_at = $2,
+           payload = payload || CASE
+             WHEN $3::text IS NOT NULL THEN jsonb_build_object(
+               'deliveryStatus', 'scheduled', 'deliveryChannel', 'email', 'deliveryIntentId', $3::text
+             )
+             WHEN $4::text IS NOT NULL THEN jsonb_build_object(
+               'deliveryStatus', 'scheduled', 'deliveryChannel', 'whatsapp', 'deliveryIntentId', $4::text
+             )
+             ELSE '{}'::jsonb
+           END
        WHERE id = $1`,
-      [executionId, (options.now ?? new Date()).toISOString()],
+      [executionId, (options.now ?? new Date()).toISOString(), emailRequestId, whatsappMessageId],
     )
     await enqueueNextStep(client, execution, options.now ?? new Date())
 
-    if (emailRequestId && options.emailJobQueue) {
-      await options.emailJobQueue.add('email.send', { requestId: emailRequestId })
-    }
-    if (whatsappMessageId && options.whatsappJobQueue) {
-      await options.whatsappJobQueue.add('omnichannel.dispatchOutbound', { messageId: whatsappMessageId })
-    }
     await client.query('COMMIT')
-
-    if (emailRequestId && !options.emailJobQueue) {
-      const keyMaterial = options.emailKeyMaterial ?? process.env.SESSION_SECRET
-      if (keyMaterial) await sendEmailRequest(pool, emailRequestId, keyMaterial)
-    }
     return { success: true, emailRequestId, whatsappMessageId }
   } catch (error) {
     await client.query('ROLLBACK')
@@ -350,6 +357,7 @@ async function executeSequenceAction(
         JSON.stringify({
           source: 'crm_sequence', executionId: execution.id, enrollmentId: execution.enrollment_id,
           prospectingPlanId: textValue(payload.prospectingPlanId) || undefined,
+          recipientOptIn: payload.recipientOptIn === true,
           approvalStatus: 'approved', templateName: templateName || undefined,
           languageCode: textValue(payload.languageCode) || 'pt_BR',
           components: Array.isArray(payload.components) ? payload.components : undefined,
@@ -381,6 +389,29 @@ async function executeSequenceAction(
   })
   if (!response.ok) throw new Error(`CRM webhook returned ${response.status}`)
   return undefined
+}
+
+async function recordSequenceDeliveryRequested(
+  client: Pick<pg.PoolClient, 'query'>,
+  execution: ExecutionRow,
+  channel: 'email' | 'whatsapp',
+  intentId: string,
+) {
+  return recordDomainEvent(client, {
+    eventId: deterministicUuid(`crm.sequence.delivery_requested:${execution.id}:${channel}`),
+    eventType: 'crm.sequence.delivery_requested',
+    organizationId: execution.organization_id,
+    aggregateType: 'sequence_execution',
+    aggregateId: execution.id,
+    leadId: execution.lead_id,
+    correlationId: execution.id,
+    actor: { type: 'system' },
+    payload: {
+      executionId: execution.id,
+      channel,
+      ...(channel === 'email' ? { requestId: intentId } : { messageId: intentId }),
+    },
+  })
 }
 
 async function resolveEmailTemplate(client: pg.PoolClient, organizationId: string, payload: Record<string, unknown>) {
@@ -464,12 +495,9 @@ async function enqueueNextStep(client: pg.PoolClient, execution: ExecutionRow, n
   )
   await client.query(
     `INSERT INTO public.automation_executions (
-       organization_id, lead_id, enrollment_id, step_id, action_type, payload, scheduled_at
-     )
-     SELECT $1, $2, $3, $4, $5, $6::jsonb, $7
-     WHERE NOT EXISTS (
-       SELECT 1 FROM public.automation_executions WHERE enrollment_id = $3 AND step_id = $4
-     )`,
+       organization_id, lead_id, enrollment_id, step_id, action_type, payload, scheduled_at, dispatch_identity
+     ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, format('sequence:%s:step:%s', $3::uuid, $4::uuid))
+     ON CONFLICT (dispatch_identity) DO NOTHING`,
     [
       execution.organization_id,
       execution.lead_id,

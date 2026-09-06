@@ -51,9 +51,13 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
   return async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise<WorkerResult> {
     if (!isJobName(job.name)) throw new Error(`Unknown job name: ${job.name}`)
     const organizationId = organizationIdFromJob(job.data)
-    const internalEventJob = job.name.startsWith('events.')
+    const internalSystemJob = job.name.startsWith('events.')
+      || job.name.startsWith('crm.sequence.')
+      || job.name === 'email.send'
+      || job.name === 'omnichannel.dispatchOutbound'
+      || job.name === 'omnichannel.retryOutbound'
     return runWithDatabaseRequestContext({
-      role: internalEventJob || !organizationId ? 'yux_operator' : 'client_member',
+      role: internalSystemJob || !organizationId ? 'yux_operator' : 'client_member',
       organizationIds: organizationId ? [organizationId] : [],
       serviceRole: 'worker',
     }, async () => {
@@ -94,7 +98,7 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
       if (job.name === 'action-engine.campaignOptimizationCheckpoint') { await handleCampaignOptimizationCheckpoints(pool, job.data); return { ok: true } }
       if (job.name === 'action-engine.generateLearning') { await handleActionEngineLearning(pool, job.data); return { ok: true } }
       if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }
-      if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver' || job.name === 'events.consume.omnichannel') {
+      if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver' || job.name === 'events.consume.omnichannel' || job.name === 'events.consume.crmDispatch') {
         await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
         return { ok: true }
       }
@@ -102,7 +106,13 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
       if (job.name === 'email.send') { await handleEmailSend(pool, job.data); return { ok: true } }
       if (job.name === 'provider.functionInvoke') { await handleProviderFunction(pool, job.data); return { ok: true } }
       if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data, maintenanceQueue); return { ok: true } }
-      if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') { await handleOutboundMessage(pool, job.data); return { ok: true } }
+      if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') {
+        await handleOutboundMessage(pool, job.data, {
+          graphBaseUrl: env.META_GRAPH_BASE_URL,
+          providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64,
+        })
+        return { ok: true }
+      }
       if (job.name === 'strategy.adminChat') { await handleStrategyAdminChat(pool, env, job.data); return { ok: true } }
       if (job.name === 'radar.analyzeOpportunity') { await handleRadarOpportunityAnalysis(pool, env, job.data); return { ok: true } }
       if (job.name === 'company-intelligence.indexKnowledge') { await handleKnowledgeIndexing(pool, env, job.data); return { ok: true } }

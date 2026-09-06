@@ -14,6 +14,7 @@ import { handleCrmScoringEvent } from './crm-scoring.js'
 import { handleAutomationDispatch } from './automation.js'
 import { observeDomainEvent } from '../../modules/action-engine/observer.js'
 import { handleInboundMessage } from './omnichannel.js'
+import { handleCrmSequenceDeliveryRequested } from './crm-dispatch.js'
 
 type DomainEventJobData = {
   eventId?: unknown
@@ -37,13 +38,17 @@ export async function handleDomainEventDelivery(
   env: AppEnv,
   data: DomainEventJobData,
   queue?: DomainEventQueue & AutomationJobQueue & {
-    add(name: 'omnichannel.dispatchOutbound', data: Record<string, unknown>): Promise<unknown>
+    add(
+      name: 'email.send' | 'omnichannel.dispatchOutbound',
+      data: Record<string, unknown>,
+      options?: { jobId?: string },
+    ): Promise<unknown>
   },
 ): Promise<{ ok: true; duplicate?: boolean; result?: Record<string, unknown> }> {
   const deliveryId = stringValue(data.deliveryId)
   const eventId = stringValue(data.eventId)
   const consumerKey = stringValue(data.consumerKey)
-  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer', 'omnichannel'].includes(consumerKey)) {
+  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer', 'omnichannel', 'crm_dispatch'].includes(consumerKey)) {
     throw new Error('domain_event_delivery_context_required')
   }
 
@@ -72,8 +77,10 @@ export async function handleDomainEventDelivery(
     () => renewDeliveryLease(pool, deliveryId, leaseOwner, attempt),
   )
   try {
-    const result = consumerKey === 'omnichannel'
-      ? await consumeOmnichannelInbound(pool, env, event, attempt, queue)
+    const result = consumerKey === 'crm_dispatch'
+      ? await handleCrmSequenceDeliveryRequested(pool, event, queue)
+      : consumerKey === 'omnichannel'
+        ? await consumeOmnichannelInbound(pool, env, event, attempt, queue)
       : consumerKey === 'scoring'
         ? await handleCrmScoringEvent(event, pool)
         : consumerKey === 'mission_observer'

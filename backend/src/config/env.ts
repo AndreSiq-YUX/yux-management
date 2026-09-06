@@ -49,6 +49,7 @@ const envSchema = z.object({
   MISSION_CONVERSATIONS_POLL_MAX_SECONDS: z.coerce.number().int().min(1).max(30).optional(),
   META_APP_SECRET: optionalString,
   META_APP_ID: optionalString,
+  META_GRAPH_BASE_URL: optionalUrl,
   META_MARKETING_OAUTH_REDIRECT_URI: optionalUrl,
   META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: optionalString,
   META_WEBHOOK_VERIFY_TOKEN: optionalString,

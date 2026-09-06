@@ -140,6 +140,9 @@ describe('domain event fan-out', () => {
     expect(consumersForEvent({ eventType: 'omnichannel.inbound.received' })).toEqual([
       'automation', 'scoring', 'mission_observer', 'omnichannel',
     ])
+    expect(consumersForEvent({ eventType: 'crm.sequence.delivery_requested' })).toEqual([
+      'crm_dispatch',
+    ])
   })
 
   it('creates one delivery and one job for each independent consumer', async () => {

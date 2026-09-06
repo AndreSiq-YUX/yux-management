@@ -188,6 +188,17 @@ export async function sendEmailRequest(
        WHERE id = $1`,
       [request.id, providerResult.providerMessageId ?? null],
     )
+    if (typeof request.metadata.executionId === 'string') {
+      await pool.query(
+        `UPDATE public.automation_executions
+            SET last_error = NULL,
+                payload = payload || jsonb_build_object(
+                  'deliveryStatus', 'provider_accepted', 'providerMessageId', $2::text
+                )
+          WHERE id = $1`,
+        [request.metadata.executionId, providerResult.providerMessageId ?? null],
+      )
+    }
     await recordEmailSendEvent(pool, request, 'sent', providerResult.providerMessageId ?? null, { status: 'sent' })
     await recordEmailDomainEvent(pool, {
       eventType: 'email.sent',
@@ -219,6 +230,15 @@ export async function sendEmailRequest(
      WHERE id = $1`,
     [request.id, errorMessage],
   )
+  if (typeof request.metadata.executionId === 'string') {
+    await pool.query(
+      `UPDATE public.automation_executions
+          SET last_error = $2,
+              payload = payload || jsonb_build_object('deliveryStatus', 'failed')
+        WHERE id = $1`,
+      [request.metadata.executionId, errorMessage],
+    )
+  }
   await recordEmailSendEvent(pool, request, 'failed', null, { reason: providerResult.reason })
   await recordEmailDomainEvent(pool, {
     eventType: 'email.failed',

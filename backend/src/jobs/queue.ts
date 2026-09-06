@@ -12,6 +12,7 @@ export const JOB_NAMES = [
   'events.consume.scoring',
   'events.consume.missionObserver',
   'events.consume.omnichannel',
+  'events.consume.crmDispatch',
   'action-engine.planMission',
   'action-engine.processMissionConversation',
   'action-engine.scheduleReadyActions',

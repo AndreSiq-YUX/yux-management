@@ -17,6 +17,8 @@ export interface WhatsAppSendInput extends WhatsAppTextInput {
   phoneNumberId?: string | null
   accessToken?: string | null
   graphVersion?: string
+  graphBaseUrl?: string
+  intentId?: string
   fetchFn?: typeof fetch
 }
 
@@ -35,6 +37,8 @@ export interface WhatsAppTemplateSendInput extends WhatsAppTemplateInput {
   phoneNumberId?: string | null
   accessToken?: string | null
   graphVersion?: string
+  graphBaseUrl?: string
+  intentId?: string
   fetchFn?: typeof fetch
 }
 
@@ -183,8 +187,8 @@ export function buildWhatsAppTemplatePayload(input: WhatsAppTemplateInput) {
   }
 }
 
-export function buildWhatsAppMessagesUrl(phoneNumberId: string, graphVersion = 'v20.0') {
-  return `https://graph.facebook.com/${graphVersion}/${requiredString(phoneNumberId, 'phoneNumberId')}/messages`
+export function buildWhatsAppMessagesUrl(phoneNumberId: string, graphVersion = 'v20.0', graphBaseUrl = 'https://graph.facebook.com') {
+  return `${graphBaseUrl.replace(/\/$/, '')}/${graphVersion}/${requiredString(phoneNumberId, 'phoneNumberId')}/messages`
 }
 
 function timingSafeEqual(a: string, b: string) {
@@ -230,11 +234,12 @@ export async function sendWhatsAppTextMessage(input: WhatsAppSendInput) {
   const payload = buildWhatsAppTextPayload(input)
   const request = input.fetchFn || fetch
   try {
-    const response = await request(buildWhatsAppMessagesUrl(input.phoneNumberId, input.graphVersion), {
+    const response = await request(buildWhatsAppMessagesUrl(input.phoneNumberId, input.graphVersion, input.graphBaseUrl), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${input.accessToken}`,
         'Content-Type': 'application/json',
+        ...(input.intentId ? { 'X-YUX-Intent-ID': input.intentId } : {}),
       },
       body: JSON.stringify(payload),
     })
@@ -269,9 +274,13 @@ export async function sendWhatsAppTemplateMessage(input: WhatsAppTemplateSendInp
   const payload = buildWhatsAppTemplatePayload(input)
   const request = input.fetchFn || fetch
   try {
-    const response = await request(buildWhatsAppMessagesUrl(input.phoneNumberId, input.graphVersion), {
+    const response = await request(buildWhatsAppMessagesUrl(input.phoneNumberId, input.graphVersion, input.graphBaseUrl), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${input.accessToken}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        'Content-Type': 'application/json',
+        ...(input.intentId ? { 'X-YUX-Intent-ID': input.intentId } : {}),
+      },
       body: JSON.stringify(payload),
     })
     const data = await response.json().catch(() => ({}))

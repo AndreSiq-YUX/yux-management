@@ -44,7 +44,11 @@ export async function createTestProviderServer(): Promise<TestProviderServer> {
     }
 
     response.writeHead(202, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ accepted: true, intentId }))
+    response.end(JSON.stringify(
+      request.url?.endsWith('/messages')
+        ? { messaging_product: 'whatsapp', messages: [{ id: `provider-${intentId}` }] }
+        : { accepted: true, intentId },
+    ))
   })
 
   await new Promise<void>((resolve, reject) => {
@@ -86,4 +90,3 @@ function closeServer(server: Server) {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
-

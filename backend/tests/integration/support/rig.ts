@@ -79,6 +79,8 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',
     META_APP_SECRET: 'integration-meta-app-secret',
     META_WEBHOOK_VERIFY_TOKEN: 'integration-meta-verify-token',
+    META_GRAPH_BASE_URL: provider.baseUrl,
+    PROVIDER_SECRET_ENCRYPTION_KEY_B64: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
   })
   const appQueue: AppJobQueue = {
     add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }) {

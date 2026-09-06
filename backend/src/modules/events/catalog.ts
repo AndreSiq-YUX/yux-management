@@ -12,6 +12,8 @@ export const DOMAIN_EVENT_TYPES = [
   'lead.sequence_enrolled',
   'lead.sequence_paused',
   'lead.sequence_completed',
+  'crm.sequence.delivery_requested',
+  'omnichannel.inbound.received',
   'email.queued',
   'email.sent',
   'email.failed',
