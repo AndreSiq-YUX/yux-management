@@ -303,3 +303,16 @@ frontend tests: PASS, 528 PASS
 - Verificação local: 189 testes Python aprovados, com 1 teste live opt-in ignorado; uma simulação determinística percorreu as 144 chamadas pelo Harness e confirmou checkpoints, custo não nulo e identidade governada das fontes.
 - Verificação remota: execução GitHub Actions `34041257460`, commit `a7d4545`, conclusão `success` nos jobs Backend, Backend integration, Frontend e Agent Runtime.
 - Bloqueio remanescente: falta disponibilizar a credencial OpenRouter no ambiente e autorizar explicitamente o teto da execução paga; depois disso ainda são necessários dois avaliadores cegos. Até lá, `acceptance.status` permanece `not_evaluated` e nenhum ganho é alegado.
+
+## T23 — Contexto único do workspace e correção em contexto
+
+- Estado: aceita.
+- Commit: `8835a01`.
+- Achados: YUX-08, YUX-26 e YUX-30.
+- Reprodução: o frontend inferia módulos e papel do workspace, a organização interna dependia de contrato para abrir canais, a oferta de conversa dependia de flag local e links livres de correção podiam apontar para páginas sem os campos solicitados. Falha de criação também substituía a leitura da carteira por um erro, e o contraste da mensagem do usuário ficou ilegível quando verificado no navegador.
+- Decisão: `GET /api/workspace/organizations/:organizationId/context` é a autoridade para organização, contrato, papel, módulos, configuração e modo de criação. O contrato técnico interno ativo é apenas reutilizado quando existe; nenhum contrato comercial é criado. A fronteira traduz `yux_operator` para o papel legado `yux_manager` somente ao consultar catálogo de permissões, preservando `yux_operator` no contrato público.
+- Correções: `CorrectionTargetV1` substitui `fixHref` nas respostas operacionais e é resolvido por mapa fechado. `targetAudience`, `desiredChannels` e `automationGoal` recebem rótulos humanos; respostas de briefing permanecem na missão. O painel salva pela própria conversa, o Harness revalida, retry conserva texto/identidade e indisponibilidade mantém a carteira com alternativa permitida.
+- Canais e pertença: workspace interno opera canais sem contrato comercial; leitura continua disponível ao papel habilitado, mas alteração fica desativada quando `canConfigure=false`. A API deriva a organização da conexão antes da autorização. Criação de conversa rejeita contrato ativo pertencente a outra organização.
+- Verificação local: backend com 158 arquivos/649 testes aprovados; frontend com 128 arquivos/546 testes aprovados; type-checks e builds aprovados. O browser percorreu criação conversacional, correção inline de “Público-alvo”, retorno à mesma conversa e refresh, em 1440×1000 e 390×844, sem erro relevante de console ou overlay. A revisão visual encontrou e corrigiu o contraste das mensagens; as capturas ficaram temporárias fora do repositório.
+- Aceite persistente: execução GitHub Actions `34043197976`, commit `8835a01`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration. O teste PostgreSQL real comprovou workspace interno, cliente A, membro somente leitura, operador e negação ao cliente B.
+- Risco remanescente: OAuth Meta e provedores externos não fizeram parte desta tarefa; seus testes permanecem nos fluxos próprios. Destinos antigos sem equivalente seguro em `CorrectionTargetV1` ficam sem link acionável, em vez de transportar URL arbitrária.

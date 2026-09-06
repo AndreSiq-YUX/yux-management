@@ -131,3 +131,12 @@
 - Custo: cada caso possui estimativa positiva; o runner exige teto em reais, recusa o lote antes da primeira chamada quando a reserva excede o teto e conserva checkpoints durante a execução. Custo ausente no provedor usa a estimativa declarada, nunca zero; custo em dólar usa conversão explícita quando fornecida.
 - Avaliação: dois arquivos JSONL devem pertencer a avaliadores distintos e cegos ao tratamento. Divergência superior a um ponto exige desempate justificado; gates críticos e a validade estrutural das referências usam a decisão mais conservadora.
 - Limite: a infraestrutura pode ser aceita sem alegar ganho. A T22 permanece aguardando execução enquanto não houver credencial OpenRouter disponível e autorização explícita para o teto inicial de R$ 100.
+
+## D-020 — O servidor é a autoridade do contexto e dos destinos de correção
+
+- Status: decidida.
+- Contexto: `WorkspaceContextV1` é resolvido no backend a partir da organização persistida, contrato ativo, módulos, papel e permissões. O frontend não mantém uma lista privilegiada própria nem decide elegibilidade da conversa. `conversation`, `form` e `unavailable` são modos explícitos da API; formulário não é fallback silencioso.
+- Compatibilidade de papel: a autenticação e o contrato público conservam `yux_operator`; somente a consulta ao catálogo legado traduz esse valor para `yux_manager`. A mesma tradução é usada pelo store ao localizar o objeto visual de papel.
+- Contrato interno: organização de crescimento não exige contrato comercial. Quando possuir cliente técnico legado e contrato ativo correspondente, o ID é reutilizado; ausência retorna `null` e nunca dispara criação automática.
+- Correção: respostas de API emitem `CorrectionTargetV1`, e o frontend produz caminho apenas a partir de chaves e campos enumerados. URLs antigas, campos desconhecidos e destinos sem equivalente seguro não viram navegação. Respostas coletadas durante a missão são persistidas no briefing da própria conversa, salvo escolha explícita futura por uma alteração mais ampla do perfil da empresa.
+- Motivo: evitar divergência entre interface e autorização, acesso cruzado por IDs relacionados e perda de contexto causada por encaminhamento do usuário a telas técnicas ou destinos controlados por texto externo.
