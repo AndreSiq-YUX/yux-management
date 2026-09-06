@@ -149,3 +149,12 @@
 - Concorrência: a versão esperada e o bloqueio da linha impedem duas conclusões. A intervenção humana muda a ação para sucesso, registra custo e evento uma única vez e só então agenda a continuação da missão.
 - Isolamento: toda leitura e escrita da fila fixa explicitamente a organização já autorizada no contexto do banco. Operadores só concluem tarefa de outro responsável quando são administradores; papéis de cliente permanecem limitados ao workspace e à visibilidade de cada origem.
 - Motivo: oferecer um único lugar de trabalho sem sincronização frágil de estados, preservar auditoria e permitir retirar a projeção sem perder tarefas ou histórico.
+
+## D-022 — O desenho da automação não é autoridade de execução
+
+- Status: decidida.
+- Autoridade: gatilhos, condições, ações e versões persistidas continuam sendo as entidades executáveis. O grafo é uma representação editável e precisa ser validado no servidor contra tipos registrados, dependências, ciclos, limites e configuração antes de produzir uma versão publicável.
+- Separação: salvar mantém rascunho; simular registra correspondência, condições, ações planejadas e bloqueios sem criar execução; ativar fixa um snapshot imutável; pausar impede novos efeitos. Duplicar copia configuração e filhos numa transação, com nova identidade e estado desativado.
+- Execução: cada evento possui registro canônico antes de entrar na fila. `flow_id + event_id` e a identidade de cada efeito impedem repetição; o runtime carrega a versão ativa fixada e mantém os IDs dos blocos históricos apenas como dados do snapshot, sem depender de linhas mutáveis.
+- Acesso: toda escrita exige `automations.write` na organização explícita do workspace. Membro somente leitura, organização alheia e IDs relacionados a outro tenant não atravessam a fronteira. A rota do portal não inventa organização local nem amplia o papel recebido do servidor.
+- Motivo: tornar o editor utilizável sem transformar posição visual, estado React ou payload do navegador em permissão para executar efeitos externos.

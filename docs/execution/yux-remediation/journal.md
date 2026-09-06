@@ -329,3 +329,15 @@ frontend tests: PASS, 528 PASS
 - Verificação local: backend com 159 arquivos/651 testes aprovados; frontend com 129 arquivos/547 testes aprovados; type-checks e builds aprovados. A revisão no navegador percorreu a fila e o formulário em desktop e mobile sem erro de console; as capturas permaneceram temporárias fora do repositório.
 - Aceite persistente: execução GitHub Actions `34046216968`, commit `ede5f51`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration. O PostgreSQL real comprovou as três origens, isolamento entre organizações, responsável incorreto, evidência obrigatória, conclusão concorrente, persistência de 17 minutos e uma única transição da ação.
 - Retorno seguro: a projeção e sua rota visual podem ser retiradas sem apagar ou migrar as tarefas canônicas dos três domínios.
+
+## T25 — Automações conectadas ao editor e executor reais
+
+- Estado: aceita.
+- Commit principal: `e721398`; estabilizações persistentes: `30b5305`, `40dd595` e `55cd982`.
+- Achados: YUX-29, YUX-11 e YUX-15.
+- Jornada: a rota oferecida no portal abre o workspace real de automações e conserva organização, contrato, papel e módulos do `WorkspaceContextV1`. Criar, editar, validar, salvar versão, ativar, pausar, duplicar, simular e consultar execuções usam as entidades canônicas existentes; não há estado paralelo no navegador.
+- Segurança: validação do grafo ocorre no backend e cobre tipos registrados, entradas obrigatórias, arestas, ciclos, limites e ações externas. Simulação persiste resultado seguro sem criar execução ou consumir limite. Ativação cria snapshot imutável; o executor usa essa versão aprovada e não interpreta o desenho visual como autorização.
+- Operação: rascunho, simulação e ativação são comandos separados. Duplicação é atômica e nasce desativada; pausa bloqueia novos efeitos sem apagar histórico. Eventos manuais recebem identidade persistida antes do despacho, e reprocessamento usa os índices idempotentes existentes.
+- Verificação local: 654 testes backend e 549 frontend aprovados; type-checks e builds também aprovados. O ambiente local não possui Docker, por isso a jornada PostgreSQL/Redis foi fechada no runner isolado.
+- Aceite persistente: execução GitHub Actions `34048715613`, commit `55cd982`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration. O cenário comprovou refresh, simulação sem efeito, versão imutável, execução, pausa, duplicação, grafo inválido recuperável e isolamento entre duas organizações.
+- Retorno seguro: desativar os comandos de criação/ativação mantém consulta, versões e execuções históricas intactas; nenhuma reversão exige reativar um fluxo anterior.
