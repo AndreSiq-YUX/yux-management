@@ -729,8 +729,9 @@ function mapAuditEvent(row: any) {
   }
 }
 
-function deriveSecretKey(_legacyKeyMaterial: string) {
-  const explicitKey = process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+function deriveSecretKey(keyMaterial: string) {
+  const explicitlySupplied = keyMaterial.startsWith('provider-key:') ? keyMaterial.slice('provider-key:'.length) : undefined
+  const explicitKey = explicitlySupplied || process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
   if (!explicitKey) throw new Error('PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required for provider secrets')
   const decoded = Buffer.from(explicitKey, 'base64')
   if (decoded.length !== 32) throw new Error('PROVIDER_SECRET_ENCRYPTION_KEY_B64 must decode to 32 bytes')

@@ -22,7 +22,11 @@ export async function resolveEffectiveProviderCredential(
   )
   const row = selected.rows[0]
   if (row?.status === 'active' && row.secret_reference) {
-    const value = await loadPlatformProviderSecret(pool,row.id,'api_key',env.SESSION_SECRET).catch(()=>null)
+    const value = await loadPlatformProviderSecret(
+      pool,row.id,'api_key',env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+        ? `provider-key:${env.PROVIDER_SECRET_ENCRYPTION_KEY_B64}`
+        : env.SESSION_SECRET,
+    ).catch(()=>null)
     if (value) return {configured:true,source:'database',value,providerConnectionId:row.id}
   }
   const value = providerKey === 'jina_ai' ? env.JINA_API_KEY : env.SMTP2GO_API_KEY
