@@ -173,3 +173,11 @@
 - Acesso: o rastreio é cercado pela organização e, para papéis de cliente, exige `portal_safe=true`. Consulta interna não fica acessível por inferência através da listagem da biblioteca.
 - Onboarding: valor já confirmado nunca é selecionado automaticamente. A aplicação compara o valor capturado na sugestão com o valor corrente e recusa concorrência, preservando a alteração mais recente para nova revisão humana.
 - Continuidade: destinos de retorno continuam derivados do mapa fechado de `CorrectionTargetV1` e aceitam apenas identificadores UUID válidos.
+
+## D-025 — O runtime contém apenas o necessário para executar
+
+- Status: decidida.
+- Dependências: locks e hashes são a autoridade de instalação. Produção, teste e tooling Python permanecem separados; atualizações incompatíveis não são aplicadas por correção automática forçada.
+- Imagens: a base é fixada por versão e digest, mas uma ferramenta presente somente para construir ou instalar não permanece no estágio final. Por isso o frontend usa Nginx slim, o agente usa Python Alpine sem root e o backend remove npm/npx depois de materializar `node_modules` de produção.
+- Segurança: toda imagem final é examinada por advisory e pacote. High/critical falha a CI com evidência explícita; o SBOM CycloneDX é produzido por imagem. Exceção futura exige alcance analisado, responsável, justificativa e prazo, em vez de desativar o gate.
+- Lint: a baseline representa dívida mensurável, não aprovação. Uma alteração pode manter ou reduzir as assinaturas existentes, nunca criar outra ou elevar a contagem sem uma decisão registrada.

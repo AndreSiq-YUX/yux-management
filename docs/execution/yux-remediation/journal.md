@@ -362,3 +362,14 @@ frontend tests: PASS, 528 PASS
 - Acessibilidade e continuidade: erros relevantes usam anúncio semântico, o painel de contexto recebe foco, fecha por Escape e devolve o foco. O layout foi testado em 390 px e o destino fechado de `CorrectionTargetV1` conserva o retorno à missão ou conversa.
 - Verificação local: 655 testes backend e 559 frontend aprovados, além de type-checks, builds, lint direcionado e checagem de patch.
 - Aceite persistente: execução GitHub Actions `34051548840`, commit `c7b9a04`, conclusão `success` nos quatro jobs, incluindo a prova PostgreSQL/Redis de rastreio e escopo.
+
+## T28 — Dependências, imagens e lint reproduzíveis
+
+- Estado: aceita.
+- Commits de implementação e estabilização: `2c7aa85`, `7ef13da`, `6fa10a6`, `094742d` e `9c73afe`.
+- Dependências: locks Node foram renovados sem `--force`; produção do backend ficou sem advisories conhecidos e o frontend sem high/critical. O runtime Python possui locks separados de produção, teste e tooling, todos com hashes e validados em Python 3.13.
+- Imagens: versões e digests estão fixados. Os runtimes usam Nginx slim, Python Alpine sem root e Node sem npm/npx. Revisões corrigidas de OpenSSL e `libuuid` são explícitas; cada imagem final é analisada e recebe SBOM CycloneDX.
+- Lint: a dívida histórica virou baseline por assinatura e contagem. O gate rejeita nova ocorrência ou aumento, sem suppressions genéricas; os achados introduzidos pela atualização do analisador foram corrigidos.
+- Reprodutibilidade: duas instalações e duas compilações Node produziram árvores e hashes idênticos. A instalação Python limpa com hashes passou em `pip check`, 189 testes e 15 cenários dourados.
+- Riscos residuais: React Router 6 e Vite 5 conservam advisories documentados e delimitados no relatório de T28, com migração incompatível prevista até 2026-09-30. Nenhum high/critical alcança as dependências ou imagens de produção.
+- Aceite persistente: execução GitHub Actions `34054082691`, commit `9c73afe`, conclusão `success` nos sete jobs, incluindo três builds de imagem, três scans sem high/critical e três SBOMs.
