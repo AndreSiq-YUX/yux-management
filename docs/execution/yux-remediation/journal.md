@@ -255,3 +255,14 @@ frontend tests: PASS, 528 PASS
 - Governança: hash canônico e similaridade evitam duplicidade e sinalizam possível merge/conflito somente dentro do pack. Conteúdo bruto nunca vira autorizado em modo degradado. Propostas permanecem `proposed` até operador aprovar, rejeitar ou editar com motivo; a fonte fica visível na tela.
 - Verificação local: builds e type-checks aprovados; 631 testes backend antes do teste canônico adicional, 534 frontend e 171 Python aprovados; contratos e 15 cenários dourados aprovados; lint direcionado sem achados.
 - Aceite persistente: execução GitHub Actions `34034664537`, commit `9673d38`, conclusão `success`. Os quatro jobs passaram; a integração persistente aprovou 24 cenários, incluindo interrupção/retomada, ausência de duplicata, evidência, contraindicação e revisão humana.
+
+## T19 — Governança salva e publicação atômica
+
+- Estado: aceita.
+- Commit inicial: `b313d4f`; correções dos dados isolados de teste e da política do outbox: `af5725a`, `247daeb` e `50f0b85`.
+- Atomicidade: estratégia e conhecimento empresarial recebem versão esperada, público, perfis permitidos/bloqueados e IDs aprovados. Uma única transação valida papel, versão, itens e evidências, grava snapshot/hash imutável, materializa a projeção, atualiza o ponteiro corrente e emite o evento de domínio.
+- Segurança: conflito de versão retorna 409; item rejeitado, evidência inválida, conteúdo bruto e publicação sem seleção aprovada são recusados. O outbox aceita `client_admin` somente em contexto de API e somente para a organização da requisição; membros, worker e runtime não ganharam permissão de escrita.
+- Projeção: cards e embeddings são materializados com identidade da release. Falha de projeção desfaz release e ponteiro; enquanto T20 não validar fallback lexical, embedding pronto continua obrigatório. Edição posterior não altera o snapshot publicado.
+- Interface: os diálogos exibem público e perfis efetivos, permitem confirmar exatamente os itens aprovados e mostram versão e hash salvos. O atalho de publicação raw degradada foi removido.
+- Verificação local: type-checks, builds, 632 testes backend e 536 testes frontend aprovados; contratos regenerados sem diferença e lint direcionado sem achados.
+- Aceite persistente: execução GitHub Actions `34036365107`, commit `50f0b85`, conclusão `success`. Backend, frontend, Agent Runtime e 25 testes de integração passaram, incluindo concorrência, permissão negada, item rejeitado, rollback da projeção, publicação empresarial e histórico imutável.

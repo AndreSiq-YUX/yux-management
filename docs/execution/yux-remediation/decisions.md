@@ -96,3 +96,12 @@
 - Identidade: o hash canônico do tipo, título, princípio e evidências é independente da ordem das chaves JSON. Duplicidade exata é impedida por pack; similaridade apenas cria conflito para decisão humana e nunca cruza escopos.
 - Recuperação e custo: hashes de entrada identificam checkpoints de extração, lote de curadoria e embedding. Resultado já concluído é reutilizado em retries; uso conhecido é registrado atomicamente com o checkpoint. Não se promete deduplicar cobrança externa quando a chamada cai antes de devolver um resultado persistível.
 - Publicação: o modelo só propõe. Aprovação, rejeição ou edição exige usuário autenticado, motivo e nova validação da evidência; somente T19 poderá materializar uma release publicada.
+
+## D-016 — Governança confirmada faz parte da publicação
+
+- Status: decidida.
+- Decisão: público, perfis permitidos, perfis bloqueados e conjunto exato de itens aprovados pertencem ao snapshot imutável e ao hash da publicação. O ponteiro corrente e a versão de governança avançam apenas depois que validação, projeção e evento forem concluídos na mesma transação.
+- Concorrência: a interface envia `expectedVersion`; edição ou publicação concorrente perde com 409 e precisa reabrir o estado efetivo. Repetir conteúdo idêntico não ressuscita nem amplia permissões anteriores.
+- Conteúdo: publicação degradada de texto bruto não é uma opção operacional. Conhecimento manual segue permitido somente depois de virar proposta revisada com evidência verificável. Até a validação explícita de T20, a projeção estratégica não declara fallback lexical quando o embedding estiver indisponível.
+- Outbox: administradores de cliente podem emitir o evento da publicação exclusivamente pelo contexto `api` com organização cercada pela RLS. Papéis internos conservam o fluxo existente; membro, worker e runtime permanecem sem esse direito.
+- Retorno: retirar o ponteiro corrente desativa a versão sem modificar o snapshot histórico e sem reativar regra mais ampla.
