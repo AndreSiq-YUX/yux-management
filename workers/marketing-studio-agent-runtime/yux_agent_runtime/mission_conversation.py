@@ -40,6 +40,8 @@ def _text(value: Any) -> str:
 
 
 def _source_version(item: dict[str, Any]) -> str:
+    if item.get("publication_id"):
+        return _text(item.get("publication_id"))
     updated_at = item.get("updated_at")
     if isinstance(updated_at, datetime):
         return str(max(1, int(updated_at.timestamp())))
@@ -310,26 +312,41 @@ def build_mission_source_catalog(
             if ref in seen:
                 continue
             seen.add(ref)
-            visibility = _text(raw.get("visibility")) or ("both" if is_customer else "internal_only")
+            governed = bool(raw.get("publication_id"))
+            visibility = _text(raw.get("visibility")) or (
+                ("both" if raw.get("use_mode") == "quotable" else "internal")
+                if governed and is_customer else
+                ("client_safe" if governed and raw.get("use_mode") == "quotable" else "internal_only")
+                if governed else
+                ("both" if is_customer else "internal_only")
+            )
             internal_yux_for_client = not is_customer and audience == "client_user" and visibility == "internal_only"
             title = (
                 "Metodologia YUX"
                 if internal_yux_for_client
                 else _text(raw.get("title") or raw.get("concept") or raw.get("section_key") or "Conhecimento da empresa")
             )
+            content = raw.get("content") or raw.get("_context") or raw.get("chunk_text") or raw.get("concept") or raw.get("title")
             sources.append(MissionSourceRefWire(
                 ref=ref,
-                kind="knowledge_chunk" if is_customer else kind,
+                kind="knowledge_chunk" if is_customer else ("strategy_card" if governed else kind),
                 id=clean_id,
                 version=_source_version(raw),
                 contentHash=_canonical_hash({
                     "id": clean_id,
                     "version": _source_version(raw),
-                    "content": raw.get("chunk_text") or raw.get("concept") or raw.get("title"),
+                    "content": content,
                 }),
                 visibility=visibility,
                 title=title or ("Contexto da empresa" if is_customer else "Metodologia YUX"),
                 displayMode="generic" if internal_yux_for_client else "named",
+                **({
+                    "publicationId": _text(raw.get("publication_id")),
+                    "itemId": _text(raw.get("item_id")),
+                    "knowledgePolicyVersion": int(raw.get("knowledge_policy_version") or 1),
+                    "useMode": _text(raw.get("use_mode")),
+                    "bindingFingerprint": _text(raw.get("binding_fingerprint")),
+                } if governed else {}),
             ))
     return sources
 

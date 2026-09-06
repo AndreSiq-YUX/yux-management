@@ -114,6 +114,7 @@ export async function handleActionEngineProcessMissionConversation(
     const response = await (dependencies.invokeTurn ?? invokeMissionConversationTurn)(env, request)
     await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs: response.sources ?? [], agentProfileKey: 'growth_strategist',
+      contractId: conversation.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
     })
     const status = response.kind === 'brief_confirmation'
       ? 'brief_confirmation'
@@ -588,6 +589,7 @@ export async function handleActionEnginePlanMission(
       ? 'internal_operator' as const : 'client_user' as const
     const verified = await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs, agentProfileKey: 'growth_strategist',
+      contractId: mission.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
     })
     const allowedSourceIds = [...new Set([
       ...verified.sources.map(source => source.id), ...verified.sourceIds,

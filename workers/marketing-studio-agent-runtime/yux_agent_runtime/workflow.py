@@ -45,6 +45,17 @@ DEFAULT_SUBAGENTS = [
 ]
 
 
+def resolve_retrieval_audience(source: str, requested_audience: str | None = None) -> str:
+    """Resolve the canonical knowledge-policy audience for every runtime consumer."""
+    if source == "mission_intake" and requested_audience in ("internal_operator", "client_user"):
+        return requested_audience
+    if source == "strategy_admin":
+        return "internal_operator"
+    if source in ("whatsapp", "webchat", "instagram", "messenger"):
+        return "external_contact"
+    return "client_user"
+
+
 WORKFLOW_BY_MODE = {
     "diagnostic_48h": "diagnostic_48h",
     "initial_analysis": "diagnostic_48h",
@@ -273,10 +284,7 @@ class StrategyWorkflowEngine:
 
             supplied_channel = str((retrieval_context or {}).get("delivery_channel") or "").lower() or None
             requested_audience = (retrieval_context or {}).get("audience")
-            retrieval_audience = requested_audience if requested_audience in ("internal_operator", "client_user", "external_contact") else (
-                "internal_operator" if source == "strategy_admin" else
-                "external_contact" if source in ("whatsapp", "webchat", "instagram", "messenger") else "client_user"
-            )
+            retrieval_audience = resolve_retrieval_audience(source, requested_audience)
             retrieved: dict[str, Any] = {}
             if self.retrieval_service is not None:
                 agent = self.agent_profiles.get(profile_key) or {}

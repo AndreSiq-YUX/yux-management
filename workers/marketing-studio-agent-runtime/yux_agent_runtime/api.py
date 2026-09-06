@@ -18,7 +18,7 @@ from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .mission_contracts import MissionConversationTurnRequestWire
 from .mission_conversation import MissionConversationWorkflow
-from .workflow import StrategyWorkflowEngine, estimate_workflow_credits
+from .workflow import StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
 
 
 logger = logging.getLogger(__name__)
@@ -200,12 +200,14 @@ def create_app(
 
     @app.post("/workflows/execute", dependencies=[Depends(require_runtime_token)])
     def execute_workflow(request: ExecuteWorkflowRequest) -> dict[str, Any]:
+        requested_audience = (request.retrieval_context or {}).get("audience")
+        workflow_audience = resolve_retrieval_audience(request.source, requested_audience)
         validate_tenant(
             request.organization_id,
             request.client_id,
             request.contract_id,
             profile_key=request.profile_key,
-            audience="internal_operator" if request.source == "strategy_admin" else "client_user",
+            audience=workflow_audience,
         )
         credits_required = estimate_workflow_credits(request.workflow_spec, request.mode, request.source)
         try:
@@ -237,7 +239,7 @@ def create_app(
 
     @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])
     def mission_conversation_turn(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="mission_conversation", audience=request.audience)
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="growth_strategist", audience=request.audience)
         try:
             reserve_billable_credits(
                 organization_id=request.organization_id,

@@ -81,11 +81,14 @@ class CustomerContextService:
                     "document_id": item.get("document_id"),
                     "section_key": item.get("source_locator") or "knowledge",
                     "chunk_text": str(item.get("content") or "")[:1600],
+                    "content": str(item.get("content") or ""),
                     "source_scope": "organization",
                     "source_locator": item.get("source_locator"),
                     "retrieval_score": item.get("combined_score"),
                     "source_content_hash": item.get("source_content_hash"),
                     "use_mode": item.get("use_mode"),
+                    "binding_fingerprint": item.get("binding_fingerprint"),
+                    "knowledge_policy_version": 1,
                 }
                 for item in records
             ]

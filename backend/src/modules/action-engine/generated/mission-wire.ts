@@ -831,12 +831,17 @@ export type Status = 'needs_information' | 'needs_configuration' | 'ready_for_br
 export type Reply = string
 export type Retrievaltraceid = string
 export type Schemaversion1 = 1
+export type Bindingfingerprint = string | null
 export type Contenthash1 = string
 export type Displaymode = 'named' | 'generic' | 'hidden'
 export type Id = string
+export type Itemid = string | null
 export type Kind1 = 'strategy_card' | 'strategy_chunk' | 'knowledge_source' | 'knowledge_chunk' | 'mission_memory'
+export type Knowledgepolicyversion = 1 | null
+export type Publicationid = string | null
 export type Ref = string
 export type Title1 = string
+export type Usemode = ('internal_reasoning' | 'quotable') | null
 export type Version1 = string
 export type Visibility = 'internal_only' | 'client_safe' | 'internal' | 'external' | 'both'
 /**
@@ -1105,12 +1110,17 @@ export interface MissionConversationMissingContextWire {
   requiredFor?: Requiredfor
 }
 export interface MissionSourceRefWire {
+  bindingFingerprint?: Bindingfingerprint
   contentHash: Contenthash1
   displayMode: Displaymode
   id: Id
+  itemId?: Itemid
   kind: Kind1
+  knowledgePolicyVersion?: Knowledgepolicyversion
+  publicationId?: Publicationid
   ref: Ref
   title: Title1
+  useMode?: Usemode
   version: Version1
   visibility: Visibility
 }

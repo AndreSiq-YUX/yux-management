@@ -1073,6 +1073,19 @@
     "MissionSourceRefWire": {
       "additionalProperties": false,
       "properties": {
+        "bindingFingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bindingfingerprint"
+        },
         "contentHash": {
           "pattern": "^[a-f0-9]{64}$",
           "title": "Contenthash",
@@ -1092,6 +1105,19 @@
           "title": "Id",
           "type": "string"
         },
+        "itemId": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Itemid"
+        },
         "kind": {
           "enum": [
             "strategy_card",
@@ -1103,6 +1129,32 @@
           "title": "Kind",
           "type": "string"
         },
+        "knowledgePolicyVersion": {
+          "anyOf": [
+            {
+              "const": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledgepolicyversion"
+        },
+        "publicationId": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publicationid"
+        },
         "ref": {
           "pattern": "^(yux|customer|memory):[A-Za-z0-9._:@/-]+$",
           "title": "Ref",
@@ -1113,6 +1165,22 @@
           "minLength": 1,
           "title": "Title",
           "type": "string"
+        },
+        "useMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "internal_reasoning",
+                "quotable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usemode"
         },
         "version": {
           "minLength": 1,

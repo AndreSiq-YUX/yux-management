@@ -50,6 +50,79 @@ const refs = [
   source({ ref: 'customer:chunk-1', id: 'chunk-1', kind: 'knowledge_chunk' }),
 ]
 
+const governedIds = {
+  strategyCard: '11111111-1111-4111-8111-111111111111',
+  strategyPublication: '22222222-2222-4222-8222-222222222222',
+  strategyItem: '33333333-3333-4333-8333-333333333333',
+  customerChunk: '44444444-4444-4444-8444-444444444444',
+  customerPublication: '55555555-5555-4555-8555-555555555555',
+}
+const governedContent = {
+  strategy: 'Diagnóstico publicado\nEvita campanha prematura\nvalidar oferta\nmapear público',
+  customer: 'Oferta publicada e aprovada para PMEs.',
+}
+const governedFingerprints = { strategy: 'a'.repeat(64), customer: 'b'.repeat(64) }
+
+function governedSourceRefs(): MissionSourceRefWire[] {
+  return [{
+    ref: `yux:${governedIds.strategyCard}`,
+    kind: 'strategy_card',
+    id: governedIds.strategyCard,
+    version: governedIds.strategyPublication,
+    contentHash: hashCanonical({
+      id: governedIds.strategyCard,
+      version: governedIds.strategyPublication,
+      content: governedContent.strategy,
+    }),
+    visibility: 'client_safe', title: 'Diagnóstico publicado', displayMode: 'named',
+    publicationId: governedIds.strategyPublication, itemId: governedIds.strategyItem,
+    knowledgePolicyVersion: 1, useMode: 'quotable', bindingFingerprint: governedFingerprints.strategy,
+  }, {
+    ref: `customer:${governedIds.customerChunk}`,
+    kind: 'knowledge_chunk',
+    id: governedIds.customerChunk,
+    version: governedIds.customerPublication,
+    contentHash: hashCanonical({
+      id: governedIds.customerChunk,
+      version: governedIds.customerPublication,
+      content: governedContent.customer,
+    }),
+    visibility: 'internal', title: 'Oferta publicada', displayMode: 'named',
+    publicationId: governedIds.customerPublication, itemId: governedIds.customerChunk,
+    knowledgePolicyVersion: 1, useMode: 'internal_reasoning', bindingFingerprint: governedFingerprints.customer,
+  }]
+}
+
+function governedDatabase(change: { bindingRemoved?: boolean } = {}) {
+  const query = vi.fn(async (sql: string) => {
+    if (sql.includes('yux_strategy_pack_releases')) return { rows: change.bindingRemoved ? [] : [{
+      id: governedIds.strategyCard,
+      publication_id: governedIds.strategyPublication,
+      item_id: governedIds.strategyItem,
+      content: governedContent.strategy,
+      visibility: 'client_safe',
+      title: 'Diagnóstico publicado',
+      use_mode: 'quotable',
+      binding_fingerprint: governedFingerprints.strategy,
+    }] }
+    if (sql.includes('knowledge_publications')) return { rows: [{
+      id: governedIds.customerChunk,
+      publication_id: governedIds.customerPublication,
+      item_id: governedIds.customerChunk,
+      document_id: '66666666-6666-4666-8666-666666666666',
+      contract_id: '77777777-7777-4777-8777-777777777777',
+      content: governedContent.customer,
+      title: 'Oferta publicada',
+      source_id: '88888888-8888-4888-8888-888888888888',
+      visibility: 'both',
+      use_mode: 'internal_reasoning',
+      binding_fingerprint: governedFingerprints.customer,
+    }] }
+    throw new Error(`unexpected query: ${sql}`)
+  })
+  return { query }
+}
+
 describe('Harness-selected Mission source verification', () => {
   it('verifies the exact selected sources without reranking or adding records', async () => {
     const db = database()
@@ -81,6 +154,53 @@ describe('Harness-selected Mission source verification', () => {
       organizationId: 'org-1', audience: 'client_user',
       sourceRefs: [{ ...refs[0]!, contentHash: 'f'.repeat(64) }],
     })).rejects.toThrow('mission_source_verification_failed:yux:card-1')
+  })
+
+  it('verifies the immutable publication, item, policy and effective binding selected by the harness', async () => {
+    const db = governedDatabase()
+    const result = await verifyMissionKnowledgeContext(db as never, {
+      organizationId: '99999999-9999-4999-8999-999999999999',
+      contractId: '77777777-7777-4777-8777-777777777777',
+      audience: 'client_user',
+      workflowKey: 'mission_intake_conversation',
+      sourceRefs: governedSourceRefs(),
+    })
+
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        ref: `yux:${governedIds.strategyCard}`,
+        publicationId: governedIds.strategyPublication,
+        itemId: governedIds.strategyItem,
+        bindingFingerprint: governedFingerprints.strategy,
+      }),
+      expect.objectContaining({
+        ref: `customer:${governedIds.customerChunk}`,
+        publicationId: governedIds.customerPublication,
+        itemId: governedIds.customerChunk,
+        bindingFingerprint: governedFingerprints.customer,
+      }),
+    ]))
+    expect(db.query).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects a governed rule when its effective binding no longer exists', async () => {
+    await expect(verifyMissionKnowledgeContext(governedDatabase({ bindingRemoved: true }) as never, {
+      organizationId: '99999999-9999-4999-8999-999999999999',
+      contractId: '77777777-7777-4777-8777-777777777777',
+      audience: 'client_user',
+      workflowKey: 'mission_intake_conversation',
+      sourceRefs: governedSourceRefs(),
+    })).rejects.toThrow(`mission_source_verification_failed:yux:${governedIds.strategyCard}`)
+  })
+
+  it('rejects a governed source when its content hash diverges from the publication projection', async () => {
+    const [strategy] = governedSourceRefs()
+    await expect(verifyMissionKnowledgeContext(governedDatabase() as never, {
+      organizationId: '99999999-9999-4999-8999-999999999999',
+      audience: 'client_user',
+      workflowKey: 'mission_intake_conversation',
+      sourceRefs: [{ ...strategy!, contentHash: 'f'.repeat(64) }],
+    })).rejects.toThrow(`mission_source_verification_failed:yux:${governedIds.strategyCard}`)
   })
 
   it('maps correction links from a server allowlist and ignores arbitrary model URLs', () => {

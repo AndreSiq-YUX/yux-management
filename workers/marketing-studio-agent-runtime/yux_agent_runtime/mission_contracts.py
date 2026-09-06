@@ -108,6 +108,26 @@ class MissionSourceRefWire(StrictWireModel):
     visibility: Literal["internal_only", "client_safe", "internal", "external", "both"]
     title: str = Field(min_length=1, max_length=240)
     displayMode: Literal["named", "generic", "hidden"]
+    publicationId: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    itemId: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    knowledgePolicyVersion: Literal[1] | None = None
+    useMode: Literal["internal_reasoning", "quotable"] | None = None
+    bindingFingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_governed_identity(self) -> "MissionSourceRefWire":
+        governed = (
+            self.publicationId,
+            self.itemId,
+            self.knowledgePolicyVersion,
+            self.useMode,
+            self.bindingFingerprint,
+        )
+        if any(value is not None for value in governed) and not all(value is not None for value in governed):
+            raise ValueError("mission_source_governed_identity_incomplete")
+        if self.kind == "mission_memory" and any(value is not None for value in governed):
+            raise ValueError("mission_memory_governed_identity_forbidden")
+        return self
 
 
 class MissionConversationKnownFactWire(StrictWireModel):

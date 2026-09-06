@@ -562,6 +562,9 @@ class StrategyRetrievalService:
             "source_locator": record.get("source_locator"),
             "source_content_hash": record.get("source_content_hash"),
             "use_mode": record.get("use_mode"),
+            "binding_fingerprint": record.get("binding_fingerprint"),
+            "knowledge_policy_version": 1,
+            "content": content,
             "lexical_score": record.get("lexical_score"),
             "vector_score": record.get("vector_score"),
             "score": {
