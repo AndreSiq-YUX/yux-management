@@ -92,6 +92,12 @@
     }
   ],
   "suites": {
+    "releasePreparation": {
+      "status": "passed",
+      "commit": "d066704a4c608a2a8135b032380abe6305931343",
+      "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34067099016",
+      "jobsPassed": 8
+    },
     "technicalAcceptance": {
       "status": "passed",
       "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34065960262",

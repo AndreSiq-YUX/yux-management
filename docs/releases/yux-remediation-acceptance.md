@@ -8,6 +8,9 @@ Atualizado em 2026-09-06. Estado: **bloqueado; nenhum piloto implantado**.
 - Aceite técnico: commit `8d759a2cd1bb8ff92e1291865709ec4ecb4f6a29`.
 - GitHub Actions: execução `34065960262`, oito jobs aprovados; J1–J7 técnicos
   passaram e a integração persistente passou 23 arquivos/33 testes.
+- Preparação T32: commits `6e8191b` e `d066704`; execução `34067099016`
+  aprovada nos oito jobs. O segundo commit adicionou uma única repetição para
+  falha transitória do instalador de SBOM, mantendo a segunda falha bloqueante.
 - Manifesto: `docs/releases/yux-remediation-manifest.json`, validado na CI.
 - Release implantável: ainda sem commit final, digests, hash final do manifesto,
   backup restaurado ou organizações aprovadas.
