@@ -68,7 +68,9 @@ test('J1 — perfil e fonte de conhecimento persistem após refresh', async ({ p
   const tradeName = `Empresa A Aceitação ${Date.now()}`
   await page.goto('/portal/empresa/perfil')
   await expect(page.getByRole('heading', { name: 'Perfil da Empresa' })).toBeVisible()
+  await expect(page.getByLabel('Nome da marca')).toHaveValue('Empresa A')
   await page.getByLabel('Nome da marca').fill(tradeName)
+  await expect(page.getByRole('button', { name: 'Salvar alterações' })).toBeEnabled()
   const profileResponse = page.waitForResponse(response => (
     response.url() === `${apiBase}/company-intelligence/organizations/${ids.organizationA}/profile`
     && response.request().method() === 'PUT'
@@ -299,9 +301,19 @@ test('J6 — conversa persistida aceita handoff, resolução e refresh', async (
   await page.goto('/portal/atendimento/conversas')
   await expect(page.getByText(contactName, { exact: true }).first()).toBeVisible()
   await expect(page.getByText(messageBody, { exact: true })).toBeVisible()
+  const handoffResponse = page.waitForResponse(response => (
+    response.url() === `${apiBase}/omnichannel/handoff`
+    && response.request().method() === 'POST'
+  ))
   await page.getByRole('button', { name: 'Handoff Humano' }).click()
+  expect((await handoffResponse).ok()).toBeTruthy()
   await expect(page.getByText('Handoff solicitado')).toBeVisible()
+  const resolveResponse = page.waitForResponse(response => (
+    response.url() === `${apiBase}/omnichannel/conversations/${conversationId}`
+    && response.request().method() === 'PATCH'
+  ))
   await page.getByRole('button', { name: 'Resolver' }).click()
+  expect((await resolveResponse).ok()).toBeTruthy()
   await expect(page.getByText('Conversa resolvida')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: 'Reabrir' })).toBeVisible()

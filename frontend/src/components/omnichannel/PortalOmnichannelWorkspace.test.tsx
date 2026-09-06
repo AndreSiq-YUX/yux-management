@@ -4,7 +4,20 @@ import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { PortalOmnichannelWorkspace } from './PortalOmnichannelWorkspace'
+import { omnichannelService } from '@/services/omnichannelService'
 import type { OmnichannelMessageView, PortalOmnichannelConversationSummary } from '@/services/omnichannelService'
+
+vi.mock('@/services/omnichannelService', () => ({
+  omnichannelService: {
+    getMessages: vi.fn(),
+  },
+}))
+
+vi.mock('@/services/aiAssistantService', () => ({
+  aiAssistantService: {
+    getActiveAssistant: vi.fn().mockResolvedValue(null),
+  },
+}))
 
 const conversation: PortalOmnichannelConversationSummary = {
   id: 'conversation-portal-1',
@@ -146,6 +159,23 @@ describe('PortalOmnichannelWorkspace', () => {
       organizationId: 'client-org-1',
       channel: 'webchat',
     }))
+
+    act(() => root.unmount())
+  })
+
+  it('loads a conversation timeline only once when messages are not provided', async () => {
+    vi.clearAllMocks()
+    vi.mocked(omnichannelService.getMessages).mockResolvedValue(messages)
+    const { container, root } = renderWorkspace({ messagesByConversation: undefined })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(omnichannelService.getMessages).toHaveBeenCalledTimes(1)
+    expect(omnichannelService.getMessages).toHaveBeenCalledWith('conversation-portal-1')
+    expect(container.textContent).toContain('Preciso falar com suporte.')
 
     act(() => root.unmount())
   })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,11 +14,17 @@ interface CompanyProfileFormProps {
 }
 
 export function CompanyProfileForm({ profile, saving = false, onSave }: CompanyProfileFormProps) {
-  const [draft, setDraft] = useState<CompanyProfileInput>(() => editable(profile))
+  const initialDraft = editable(profile)
+  const [draft, setDraft] = useState<CompanyProfileInput>(initialDraft)
   const [dirty, setDirty] = useState(false)
+  const persistedProfileFingerprint = useRef(JSON.stringify(initialDraft))
 
   useEffect(() => {
-    setDraft(editable(profile))
+    const nextDraft = editable(profile)
+    const nextFingerprint = JSON.stringify(nextDraft)
+    if (persistedProfileFingerprint.current === nextFingerprint) return
+    persistedProfileFingerprint.current = nextFingerprint
+    setDraft(nextDraft)
     setDirty(false)
   }, [profile])
 

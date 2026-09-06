@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { ConversationList } from './ConversationList'
@@ -18,6 +18,8 @@ import type {
 import type { ResponseMode } from '@/types/omnichannel'
 
 type SummaryItem = { id: string; name: string }
+
+const EMPTY_MESSAGES_BY_CONVERSATION: Record<string, OmnichannelMessageView[]> = {}
 
 interface PortalMetrics {
   totalConversations: number
@@ -50,7 +52,7 @@ export interface PortalOmnichannelWorkspaceProps {
 export function PortalOmnichannelWorkspace({
   organizationId,
   conversations: controlledConversations,
-  messagesByConversation = {},
+  messagesByConversation = EMPTY_MESSAGES_BY_CONVERSATION,
   metrics: controlledMetrics,
   queues: controlledQueues = [],
   users = [],
@@ -73,6 +75,7 @@ export function PortalOmnichannelWorkspace({
   const [teams, setTeams] = useState<SummaryItem[]>([])
   const [assistant, setAssistant] = useState<AiAssistantSettings | null>(null)
   const [loading, setLoading] = useState(!controlledConversations)
+  const messageLoadsInFlight = useRef(new Set<string>())
 
   const conversations = controlledConversations || loadedConversations
 
@@ -149,14 +152,21 @@ export function PortalOmnichannelWorkspace({
   useEffect(() => { loadAssistant() }, [loadAssistant])
 
   useEffect(() => {
-    if (!selectedConversationId || messagesByConversation[selectedConversationId]) return
+    if (
+      !selectedConversationId
+      || messagesByConversation[selectedConversationId]
+      || loadedMessages[selectedConversationId]
+      || messageLoadsInFlight.current.has(selectedConversationId)
+    ) return
+    messageLoadsInFlight.current.add(selectedConversationId)
     omnichannelService.getMessages(selectedConversationId)
       .then(nextMessages => setLoadedMessages(current => ({ ...current, [selectedConversationId]: nextMessages })))
       .catch(error => {
         console.error('Erro ao carregar mensagens do portal:', error)
         toast.error('Erro ao carregar mensagens')
       })
-  }, [messagesByConversation, selectedConversationId])
+      .finally(() => messageLoadsInFlight.current.delete(selectedConversationId))
+  }, [loadedMessages, messagesByConversation, selectedConversationId])
 
   useEffect(() => {
     setFilters(current => ({ ...current, organizationId }))

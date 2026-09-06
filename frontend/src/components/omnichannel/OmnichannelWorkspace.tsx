@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { ChannelSimulator } from './ChannelSimulator'
 import { ConversationComposer } from './ConversationComposer'
@@ -18,6 +18,9 @@ import type {
 import type { ResponseMode } from '@/types/omnichannel'
 
 type SummaryItem = { id: string; name: string }
+
+const EMPTY_MESSAGES_BY_CONVERSATION: Record<string, OmnichannelMessageView[]> = {}
+const EMPTY_AI_RUNS_BY_CONVERSATION: Record<string, OmnichannelAiRunView[]> = {}
 
 export interface OmnichannelWorkspaceProps {
   organizationId: string
@@ -42,8 +45,8 @@ export interface OmnichannelWorkspaceProps {
 export function OmnichannelWorkspace({
   organizationId,
   conversations: controlledConversations,
-  messagesByConversation = {},
-  aiRunsByConversation = {},
+  messagesByConversation = EMPTY_MESSAGES_BY_CONVERSATION,
+  aiRunsByConversation = EMPTY_AI_RUNS_BY_CONVERSATION,
   queues: controlledQueues,
   teams: controlledTeams,
   users = [],
@@ -67,6 +70,7 @@ export function OmnichannelWorkspace({
   const [selectedId, setSelectedId] = useState<string>()
   const [loading, setLoading] = useState(!controlledConversations)
   const [assistant, setAssistant] = useState<AiAssistantSettings | null>(null)
+  const messageLoadsInFlight = useRef(new Set<string>())
 
   const hasPersistedOrganization = useMemo(() => {
     return Boolean(organizationId && organizationId !== 'local-yux' && organizationId.includes('-'))
@@ -146,14 +150,21 @@ export function OmnichannelWorkspace({
   useEffect(() => { loadAssistant() }, [loadAssistant])
 
   useEffect(() => {
-    if (!selectedConversationId || messagesByConversation[selectedConversationId]) return
+    if (
+      !selectedConversationId
+      || messagesByConversation[selectedConversationId]
+      || loadedMessages[selectedConversationId]
+      || messageLoadsInFlight.current.has(selectedConversationId)
+    ) return
+    messageLoadsInFlight.current.add(selectedConversationId)
     omnichannelService.getMessages(selectedConversationId)
       .then(nextMessages => setLoadedMessages(current => ({ ...current, [selectedConversationId]: nextMessages })))
       .catch(error => {
         console.error('Erro ao carregar mensagens omnichannel:', error)
         toast.error('Erro ao carregar mensagens')
       })
-  }, [messagesByConversation, selectedConversationId])
+      .finally(() => messageLoadsInFlight.current.delete(selectedConversationId))
+  }, [loadedMessages, messagesByConversation, selectedConversationId])
 
   useEffect(() => {
     setFilters(current => ({ ...current, organizationId }))

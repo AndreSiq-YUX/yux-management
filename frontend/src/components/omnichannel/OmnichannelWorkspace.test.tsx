@@ -27,6 +27,12 @@ vi.mock('@/services/omnichannelService', () => ({
   },
 }))
 
+vi.mock('@/services/aiAssistantService', () => ({
+  aiAssistantService: {
+    getActiveAssistant: vi.fn().mockResolvedValue(null),
+  },
+}))
+
 const conversation: OmnichannelConversationSummary = {
   id: 'conversation-1',
   organizationId,
@@ -263,6 +269,23 @@ describe('OmnichannelWorkspace', () => {
       channel: 'whatsapp',
       organizationId,
     }))
+
+    act(() => root.unmount())
+  })
+
+  it('loads a conversation timeline only once when messages are not provided', async () => {
+    vi.clearAllMocks()
+    vi.mocked(omnichannelService.getMessages).mockResolvedValue(messages)
+    const { container, root } = renderWorkspace({ messagesByConversation: undefined })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(omnichannelService.getMessages).toHaveBeenCalledTimes(1)
+    expect(omnichannelService.getMessages).toHaveBeenCalledWith('conversation-1')
+    expect(container.textContent).toContain('Quero falar com uma pessoa')
 
     act(() => root.unmount())
   })
