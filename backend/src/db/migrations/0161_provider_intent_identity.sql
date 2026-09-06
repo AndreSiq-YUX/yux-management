@@ -11,6 +11,43 @@ ALTER TABLE public.approval_requests DROP CONSTRAINT IF EXISTS approval_requests
 ALTER TABLE public.approval_requests ADD CONSTRAINT approval_requests_target_type_check
   CHECK (target_type IN ('deliverable','document','creative','campaign_provider_mutation'));
 
+CREATE OR REPLACE FUNCTION private.validate_approval_request_target()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.target_type = 'deliverable' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.project_deliverables deliverable
+       WHERE deliverable.id = NEW.target_id
+         AND deliverable.project_id = NEW.project_id
+         AND deliverable.is_client_visible
+    ) THEN
+      RAISE EXCEPTION 'Approval target must be a visible deliverable from the same project';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.target_type = 'campaign_provider_mutation' THEN
+    IF NEW.provider_intent_id IS NULL OR NEW.provider_payload_hash IS NULL OR NOT EXISTS (
+      SELECT 1 FROM public.campaigns campaign
+      JOIN public.projects project ON project.id = NEW.project_id
+       WHERE campaign.id = NEW.target_id
+         AND campaign.client_id = project.client_id
+    ) THEN
+      RAISE EXCEPTION 'Provider mutation approval must identify an intent, payload and campaign from the same client project';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Approval target type % is not available yet', NEW.target_type;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.validate_approval_request_target() FROM PUBLIC;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_requests_provider_intent
   ON public.approval_requests(provider_intent_id)
   WHERE provider_intent_id IS NOT NULL;
