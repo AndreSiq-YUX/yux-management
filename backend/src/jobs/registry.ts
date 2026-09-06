@@ -33,6 +33,7 @@ import {
 } from './handlers/providers.js'
 import { handleRadarOpportunityAnalysis } from './handlers/radar.js'
 import { handleStrategyAdminChat } from './handlers/strategy.js'
+import { handleStrategyIndexKnowledge } from '../modules/strategy-engine/ingestion.js'
 import { createIdempotencyKey, type JobName, type JobQueueClass, type QueueJobData } from './queue.js'
 
 export type RegisteredJobQueue = {
@@ -128,6 +129,7 @@ export const jobRegistry = {
   'events.consume.missionObserver': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
   'events.consume.omnichannel': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
   'events.consume.crmDispatch': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
+  'events.consume.strategyIngestion': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
   'action-engine.planMission': registered('interactive', 180_000, ({ pool, env, queue }, data) => handleActionEnginePlanMission(pool, env, data, queue)),
   'action-engine.processMissionConversation': registered('interactive', 180_000, ({ pool, env }, data) => handleActionEngineProcessMissionConversation(pool, env, data)),
   'action-engine.scheduleReadyActions': registered('interactive', 60_000, ({ pool, queue }, data) => handleActionEngineSchedule(pool, queue, data)),
@@ -164,6 +166,11 @@ export const jobRegistry = {
   }), providerSyncPayload),
   'email.send': registered('external', 120_000, ({ pool }, data) => handleEmailSend(pool, data)),
   'strategy.adminChat': registered('interactive', 180_000, ({ pool, env }, data) => handleStrategyAdminChat(pool, env, data)),
+  'strategy.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleStrategyIndexKnowledge(pool, data, { storageRoot: env.KNOWLEDGE_STORAGE_DIR, signal }), z.object({
+    ingestionId: uuid,
+    documentId: uuid,
+    organizationId: uuid,
+  }).passthrough()),
   'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
   'company-intelligence.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleKnowledgeIndexing(pool, env, data, { signal })),
   'company-intelligence.discoverWebsite': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleWebsiteOnboarding(pool, env, data, { signal })),

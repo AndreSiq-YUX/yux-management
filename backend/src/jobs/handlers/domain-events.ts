@@ -15,6 +15,7 @@ import { handleAutomationDispatch } from './automation.js'
 import { observeDomainEvent } from '../../modules/action-engine/observer.js'
 import { handleInboundMessage } from './omnichannel.js'
 import { handleCrmSequenceDeliveryRequested } from './crm-dispatch.js'
+import { createBullMqJobId } from '../queue.js'
 
 type DomainEventJobData = {
   eventId?: unknown
@@ -43,12 +44,18 @@ export async function handleDomainEventDelivery(
       data: Record<string, unknown>,
       options?: { jobId?: string },
     ): Promise<unknown>
+  } & {
+    add(
+      name: 'strategy.indexKnowledge',
+      data: Record<string, unknown>,
+      options?: { jobId?: string },
+    ): Promise<unknown>
   },
 ): Promise<{ ok: true; duplicate?: boolean; result?: Record<string, unknown> }> {
   const deliveryId = stringValue(data.deliveryId)
   const eventId = stringValue(data.eventId)
   const consumerKey = stringValue(data.consumerKey)
-  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer', 'omnichannel', 'crm_dispatch'].includes(consumerKey)) {
+  if (!deliveryId || !eventId || !['automation', 'scoring', 'mission_observer', 'omnichannel', 'crm_dispatch', 'strategy_ingestion'].includes(consumerKey)) {
     throw new Error('domain_event_delivery_context_required')
   }
 
@@ -77,7 +84,9 @@ export async function handleDomainEventDelivery(
     () => renewDeliveryLease(pool, deliveryId, leaseOwner, attempt),
   )
   try {
-    const result = consumerKey === 'crm_dispatch'
+    const result = consumerKey === 'strategy_ingestion'
+      ? await consumeStrategyIngestion(event, queue)
+      : consumerKey === 'crm_dispatch'
       ? await handleCrmSequenceDeliveryRequested(pool, event, queue)
       : consumerKey === 'omnichannel'
         ? await consumeOmnichannelInbound(pool, env, event, attempt, queue)
@@ -101,6 +110,25 @@ export async function handleDomainEventDelivery(
   } finally {
     await stopHeartbeat()
   }
+}
+
+async function consumeStrategyIngestion(
+  event: Awaited<ReturnType<typeof getDomainEvent>>,
+  queue?: { add(name: 'strategy.indexKnowledge', data: Record<string, unknown>, options?: { jobId?: string }): Promise<unknown> },
+) {
+  if (event.eventType !== 'strategy.ingestion.queued' || event.aggregateType !== 'task') {
+    throw new Error('strategy_ingestion_domain_event_type_required')
+  }
+  if (!queue) throw new Error('strategy_ingestion_queue_required')
+  const ingestionId = stringValue(event.payload.ingestionId)
+  const documentId = stringValue(event.payload.documentId)
+  if (!ingestionId || ingestionId !== event.aggregateId || !documentId) throw new Error('strategy_ingestion_event_reference_required')
+  await queue.add(
+    'strategy.indexKnowledge',
+    { ingestionId, documentId, organizationId: event.organizationId },
+    { jobId: createBullMqJobId('strategy-index', ingestionId) },
+  )
+  return { ingestionId, documentId, queued: true }
 }
 
 async function consumeOmnichannelInbound(

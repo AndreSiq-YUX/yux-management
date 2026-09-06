@@ -431,11 +431,23 @@ export interface StrategyIngestionJob {
   fileName?: string
   status: string
   currentStep: string
+  mimeType?: string
+  byteSize?: number
+  sha256?: string
+  attempt: number
+  recoverableError?: { message: string; recoverable: boolean }
   proposedCounts: Record<string, unknown>
   errorMessage?: string
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
+}
+
+export interface StrategyIngestionUploadInput {
+  packId: string
+  sourceName: string
+  sourceKind: string
+  file: File
 }
 
 export interface StrategyIngestionJobInput {

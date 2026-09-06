@@ -62,6 +62,7 @@ services:
       OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
       OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
       KNOWLEDGE_STORAGE_DIR: ${KNOWLEDGE_STORAGE_DIR:-/app/storage/company-knowledge}
+      STRATEGY_INGESTION_MAX_MB: ${STRATEGY_INGESTION_MAX_MB:-50}
     volumes:
       - yux_materials_data:/app/storage/materials
       - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
@@ -104,6 +105,7 @@ services:
       OMNICHANNEL_ATTACHMENTS_DIR: ${OMNICHANNEL_ATTACHMENTS_DIR:-/app/storage/omnichannel-attachments}
       OMNICHANNEL_ATTACHMENT_MAX_MB: ${OMNICHANNEL_ATTACHMENT_MAX_MB:-25}
       KNOWLEDGE_STORAGE_DIR: ${KNOWLEDGE_STORAGE_DIR:-/app/storage/company-knowledge}
+      STRATEGY_INGESTION_MAX_MB: ${STRATEGY_INGESTION_MAX_MB:-50}
       N8N_CRM_WEBHOOK_URL: ${N8N_CRM_WEBHOOK_URL:-}
       JINA_API_KEY: ${JINA_API_KEY:-}
       JINA_EMBEDDING_MODEL: ${JINA_EMBEDDING_MODEL:-jina-embeddings-v3}

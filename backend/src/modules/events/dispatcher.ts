@@ -8,14 +8,14 @@ import { createBullMqJobId } from '../../jobs/queue.js'
 import type { ClaimedDomainEvent } from './types.js'
 import { createLeaseOwner } from '../../jobs/leases.js'
 
-export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring', 'mission_observer', 'omnichannel', 'crm_dispatch'] as const
+export const DOMAIN_EVENT_CONSUMERS = ['automation', 'scoring', 'mission_observer', 'omnichannel', 'crm_dispatch', 'strategy_ingestion'] as const
 export type DomainEventConsumerKey = (typeof DOMAIN_EVENT_CONSUMERS)[number]
 
 const STANDARD_DOMAIN_EVENT_CONSUMERS: readonly DomainEventConsumerKey[] = ['automation', 'scoring', 'mission_observer']
 
 export type DomainEventQueue = {
   add(
-    name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver' | 'events.consume.omnichannel' | 'events.consume.crmDispatch',
+    name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver' | 'events.consume.omnichannel' | 'events.consume.crmDispatch' | 'events.consume.strategyIngestion',
     data: { eventId: string; deliveryId: string; consumerKey: DomainEventConsumerKey; organizationId: string },
     options?: { jobId?: string },
   ): Promise<unknown>
@@ -87,7 +87,8 @@ export async function fanOutDomainEvent(
         : consumerKey === 'scoring' ? 'events.consume.scoring'
           : consumerKey === 'mission_observer' ? 'events.consume.missionObserver'
             : consumerKey === 'omnichannel' ? 'events.consume.omnichannel'
-              : 'events.consume.crmDispatch',
+              : consumerKey === 'crm_dispatch' ? 'events.consume.crmDispatch'
+                : 'events.consume.strategyIngestion',
       { eventId: event.eventId, deliveryId: delivery.id, consumerKey, organizationId: event.organizationId },
       { jobId: createBullMqJobId(consumerKey, event.eventId) },
     )
@@ -113,6 +114,7 @@ export async function fanOutDomainEvent(
 }
 
 export function consumersForEvent(event: Pick<ClaimedDomainEvent, 'eventType'>): readonly DomainEventConsumerKey[] {
+  if (event.eventType === 'strategy.ingestion.queued') return ['strategy_ingestion']
   if (event.eventType === 'crm.sequence.delivery_requested') return ['crm_dispatch']
   return event.eventType === 'omnichannel.inbound.received'
     ? [...STANDARD_DOMAIN_EVENT_CONSUMERS, 'omnichannel']

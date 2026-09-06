@@ -33,6 +33,7 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
       || job.name === 'email.send'
       || job.name === 'omnichannel.dispatchOutbound'
       || job.name === 'omnichannel.retryOutbound'
+      || job.name === 'strategy.indexKnowledge'
       || jobRegistry[jobName].sandboxOnly
     return runWithDatabaseRequestContext({
       role: internalSystemJob || !organizationId ? 'yux_operator' : 'client_member',

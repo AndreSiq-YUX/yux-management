@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type {
   StrategyAgentProfile,
   StrategyIngestionJob,
-  StrategyIngestionJobInput,
+  StrategyIngestionUploadInput,
   StrategyOrganization,
   StrategyPack,
   StrategyPackBinding,
@@ -69,7 +69,7 @@ export function StrategyPacksPanel({
   onSavePack: (input: StrategyPackInput) => Promise<unknown>
   onSaveItem: (input: StrategyPackItemInput) => Promise<unknown>
   onUpdateItemStatus: (id: string, status: string) => Promise<unknown>
-  onCreateJob: (input: StrategyIngestionJobInput) => Promise<unknown>
+  onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>
   onSaveBinding: (input: StrategyPackBindingInput) => Promise<unknown>
 }) {
   const yuxWorkspace = organizations.find(organization => organization.isInternalGrowthWorkspace)
@@ -89,7 +89,9 @@ export function StrategyPacksPanel({
     targetProfileKeys: '',
     targetModules: '',
   })
-  const [jobForm, setJobForm] = useState({ sourceName: '', sourceKind: 'private_book', fileName: '' })
+  const [jobForm, setJobForm] = useState<{ sourceName: string; sourceKind: string; file: File | null }>({ sourceName: '', sourceKind: 'private_book', file: null })
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const [itemForm, setItemForm] = useState({
     itemType: 'concept_card',
     title: '',
@@ -124,17 +126,25 @@ export function StrategyPacksPanel({
 
   async function submitJob(event: FormEvent) {
     event.preventDefault()
-    if (!selectedPack) return
-    await onCreateJob({
-      packId: selectedPack.id,
-      sourceName: jobForm.sourceName,
-      sourceKind: jobForm.sourceKind,
-      fileName: jobForm.fileName,
-      status: 'uploaded',
-      currentStep: 'upload',
-      metadata: { intendedOutput: ['concept_cards', 'playbooks', 'chunks', 'rubrics'] },
-    })
-    setJobForm({ sourceName: '', sourceKind: 'private_book', fileName: '' })
+    if (!selectedPack || !jobForm.file || uploading) return
+    const form = event.currentTarget
+    setUploading(true)
+    setUploadError('')
+    try {
+      await onCreateJob({
+        packId: selectedPack.id,
+        sourceName: jobForm.sourceName,
+        sourceKind: jobForm.sourceKind,
+        file: jobForm.file,
+      })
+      setJobForm({ sourceName: '', sourceKind: 'private_book', file: null })
+      const input = form.querySelector<HTMLInputElement>('input[type="file"]')
+      if (input) input.value = ''
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Não foi possível enviar o arquivo.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   async function submitItem(event: FormEvent) {
@@ -292,8 +302,17 @@ export function StrategyPacksPanel({
                   <option value="client_material">Material de cliente</option>
                   <option value="meeting_notes">Notas de reuniao</option>
                 </select>
-                <Input type="file" onChange={event => setJobForm({ ...jobForm, fileName: event.target.files?.[0]?.name || '' })} />
-                <Button type="submit" className="w-full" disabled={!selectedPack}>Registrar ingestao</Button>
+                <Input
+                  type="file"
+                  accept=".pdf,.txt,.md,.docx,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={event => setJobForm({ ...jobForm, file: event.target.files?.[0] || null })}
+                  required
+                />
+                <p className="text-xs text-gray-500">PDF, TXT, Markdown ou DOCX, até 50 MB.</p>
+                {uploadError ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">{uploadError}</p> : null}
+                <Button type="submit" className="w-full" disabled={!selectedPack || !jobForm.file || uploading}>
+                  {uploading ? 'Enviando arquivo…' : 'Enviar e processar'}
+                </Button>
               </div>
             </form>
 
@@ -380,6 +399,12 @@ export function StrategyPacksPanel({
                     <Pill value={job.status} />
                   </div>
                   <p className="mt-2 text-xs text-gray-500">Etapa atual: {job.currentStep}</p>
+                  <p className="mt-1 text-xs text-gray-500">Tentativa: {job.attempt}</p>
+                  {job.recoverableError ? (
+                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                      {job.recoverableError.message}{job.recoverableError.recoverable ? ' — o processamento pode ser retomado.' : ''}
+                    </p>
+                  ) : null}
                 </article>
               )}
             />

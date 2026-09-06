@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import type { FastifyInstance } from 'fastify'
@@ -30,7 +32,7 @@ export type IntegrationRig = {
     documentA: string
     missionA: string
   }
-  request(role: TestRole, method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, body?: unknown): Promise<TestResponse>
+  request(role: TestRole, method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, body?: unknown, headers?: Record<string, string>): Promise<TestResponse>
   rawRequest(method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, body: string, headers?: Record<string, string>): Promise<TestResponse>
   sql(text: string, values?: unknown[]): Promise<{ rows: any[]; rowCount: number | null }>
   workerTick(): Promise<void>
@@ -40,6 +42,7 @@ export type IntegrationRig = {
   providerCalls(): Promise<ProviderCall[]>
   providerBaseUrl: string
   serviceDatabaseUrl(role: 'yux_api'|'yux_worker'|'yux_runtime'): string
+  storageRoot: string
   close(): Promise<void>
 }
 
@@ -68,6 +71,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
   await Promise.all(queue.queues().map(rawQueue => rawQueue.waitUntilReady()))
   await Promise.all(queue.queues().map(rawQueue => rawQueue.obliterate({ force: true })))
   const provider = await createTestProviderServer()
+  const storageRoot = await mkdtemp(path.join(tmpdir(), 'yux-integration-knowledge-'))
   const env = loadEnv({
     NODE_ENV: 'test',
     DATABASE_URL: databaseUrl,
@@ -79,6 +83,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     N8N_WEBHOOK_SECRET: 'integration-webhook-secret',
     JINA_API_KEY: 'integration-jina-api-key',
     KNOWLEDGE_CURATION_ENABLED: 'false',
+    KNOWLEDGE_STORAGE_DIR: storageRoot,
     ACTION_ENGINE_MUTATION_LEASE_SECRET: 'integration-mutation-lease-secret-32-chars',
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',
     META_APP_SECRET: 'integration-meta-app-secret',
@@ -92,7 +97,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
 
   return {
     ids: fixtureIds,
-    async request(role, method, url, body) {
+    async request(role, method, url, body, headers = {}) {
       let cookie = cookies.get(role)
       if (!cookie) {
         const user = fixtureUsers[role]
@@ -110,7 +115,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
       const response = await app.inject({
         method,
         url,
-        headers: { cookie },
+        headers: { ...headers, cookie },
         ...(body === undefined ? {} : { payload: body }),
       } as any)
       return { statusCode: response.statusCode, body: parseBody(response.body) }
@@ -145,6 +150,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     providerCalls: async () => provider.calls(),
     providerBaseUrl: provider.baseUrl,
     serviceDatabaseUrl: (role) => serviceDatabaseUrl(databaseUrl, role),
+    storageRoot,
     async close() {
       await app.close()
       await queue.close()
@@ -152,6 +158,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
       await workerPool.end()
       await migrationPool.end()
       await provider.close()
+      await rm(storageRoot, { recursive: true, force: true })
     },
   }
 }

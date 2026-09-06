@@ -1,4 +1,5 @@
 import { invokeBackendFunction } from '@/lib/backendFunctions'
+import { apiBinaryRequest, apiRequest } from '@/lib/apiClient'
 import { strategyEngineDataClient } from '@/lib/strategyEngineDataClient'
 import type {
   AgentAutonomyPolicy,
@@ -23,10 +24,10 @@ import type {
   StrategyLlmProvider,
   StrategyModelRoute,
   StrategyModelRouteInput,
-  StrategyOrganization,
   StrategyOutcomeInput,
   StrategyIngestionJob,
   StrategyIngestionJobInput,
+  StrategyIngestionUploadInput,
   StrategyPack,
   StrategyPackBinding,
   StrategyPackBindingInput,
@@ -343,6 +344,13 @@ export function mapStrategyIngestionJob(row: DbRow): StrategyIngestionJob {
     fileName: stringValue(row.file_name) || undefined,
     status: stringValue(row.status, 'uploaded'),
     currentStep: stringValue(row.current_step, 'upload'),
+    mimeType: stringValue(row.mime_type) || undefined,
+    byteSize: row.byte_size === undefined || row.byte_size === null ? undefined : numberOrDefault(row.byte_size, 0),
+    sha256: stringValue(row.sha256) || undefined,
+    attempt: numberOrDefault(row.attempt_count, 0),
+    recoverableError: stringValue(row.error_message)
+      ? { message: stringValue(row.error_message), recoverable: stringValue(row.failure_class) === 'recoverable' }
+      : undefined,
     proposedCounts: typeof row.proposed_counts === 'object' && row.proposed_counts !== null ? row.proposed_counts as Record<string, unknown> : {},
     errorMessage: stringValue(row.error_message) || undefined,
     metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata as Record<string, unknown> : {},
@@ -718,15 +726,19 @@ export const strategyEngineService = {
     return data.map(mapStrategyIngestionJob)
   },
 
-  async createStrategyIngestionJob(input: StrategyIngestionJobInput) {
-    const data = await requireData<DbRow>(
-      strategyEngineDataClient
-        .from('yux_strategy_ingestion_jobs')
-        .insert(buildStrategyIngestionJobPayload(input))
-        .select()
-        .single(),
-    )
-    return mapStrategyIngestionJob(data)
+  async createStrategyIngestionJob(input: StrategyIngestionUploadInput) {
+    const ingestion = await apiRequest<{ ingestionId: string }>(`/strategy-engine/packs/${input.packId}/ingestions`, {
+      method: 'POST',
+      body: {
+        fileName: input.file.name,
+        mimeType: strategyFileMimeType(input.file),
+        byteSize: input.file.size,
+        sourceName: input.sourceName,
+        sourceKind: input.sourceKind,
+      },
+    })
+    await apiBinaryRequest(`/strategy-engine/ingestions/${ingestion.ingestionId}/file`, input.file)
+    return apiRequest(`/strategy-engine/ingestions/${ingestion.ingestionId}`)
   },
 
   async getConversationAssistants(filters: { organizationId?: string } = {}) {
@@ -890,4 +902,14 @@ export const strategyEngineService = {
       route: row.route,
     }
   },
+}
+
+function strategyFileMimeType(file: File) {
+  if (file.type) return file.type
+  const extension = file.name.toLowerCase().split('.').pop()
+  if (extension === 'pdf') return 'application/pdf'
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  if (extension === 'md' || extension === 'markdown') return 'text/markdown'
+  if (extension === 'txt') return 'text/plain'
+  return 'application/octet-stream'
 }

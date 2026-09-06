@@ -87,3 +87,20 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   return responseBody as T
 }
+
+export async function apiBinaryRequest<T>(path: string, body: Blob, headers?: HeadersInit): Promise<T> {
+  const requestHeaders = new Headers(headers)
+  requestHeaders.set('Content-Type', 'application/octet-stream')
+  const response = await fetch(buildApiUrl(path), {
+    method: 'PUT',
+    headers: requestHeaders,
+    body,
+    credentials: 'include',
+  })
+  const responseBody = await readJson(response)
+  if (!response.ok) throw new ApiClientError(response, responseBody)
+  if (typeof responseBody === 'string') {
+    throw new ApiClientError(response, { error: 'invalid_json_response', message: 'API returned a non-JSON response' })
+  }
+  return responseBody as T
+}
