@@ -382,7 +382,8 @@ async function executeMetaAdapter(input: {
   }
 
   const campaignId = stringValue(input.requestPayload.campaignId || input.requestPayload.externalCampaignId || input.requestPayload.externalId, 'campaignId')
-  const url = new URL(`https://graph.facebook.com/${graphVersion}/${campaignId}/insights`)
+  const graphBaseUrl = optionalString(input.requestPayload.graphBaseUrl) || 'https://graph.facebook.com'
+  const url = new URL(`${graphBaseUrl.replace(/\/$/, '')}/${graphVersion}/${campaignId}/insights`)
   url.searchParams.set('fields', 'spend,impressions,clicks,actions')
   url.searchParams.set('access_token', accessToken)
   const payload = await sendProviderRequest({ step: 'sync_metrics', method: 'GET', url: url.toString() }, fetcher)

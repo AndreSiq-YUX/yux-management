@@ -9,7 +9,8 @@ import { createPgAuthStore, registerAuthRoutes, type AuthStore } from './auth/ro
 import { loadEnv, type AppEnv } from './config/env.js'
 import { createPool } from './db/client.js'
 import { contextPlugin } from './http/context-plugin.js'
-import { DEFAULT_QUEUE_NAME, createIdempotencyKey, createQueue, type JobName, type QueueJobData } from './jobs/queue.js'
+import { DEFAULT_QUEUE_NAME, createQueue, type JobName, type QueueJobData } from './jobs/queue.js'
+import { enqueueRegisteredJob, parseRegisteredJobData } from './jobs/registry.js'
 import { registerAiAssistantRoutes } from './modules/ai-assistant/routes.js'
 import { registerActionEngineRoutes } from './modules/action-engine/routes.js'
 import { registerAutomationRoutes } from './modules/automations/routes.js'
@@ -146,10 +147,7 @@ function createAppJobQueue(): AppJobQueue {
 
   return {
     async add(name, data, options) {
-      return queue.add(name, data, {
-        jobId: options?.jobId ?? createIdempotencyKey(name, data),
-        ...(options?.delay !== undefined ? { delay: options.delay } : {}),
-      })
+      return enqueueRegisteredJob(queue, name, data, options)
     },
     async close() {
       await queue.close()
@@ -159,7 +157,7 @@ function createAppJobQueue(): AppJobQueue {
 
 function createNoopJobQueue(): AppJobQueue {
   return {
-    async add() { return {} },
+    async add(name, data) { parseRegisteredJobData(name, data); return {} },
     async close() { return undefined },
   }
 }

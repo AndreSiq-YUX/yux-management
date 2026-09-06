@@ -242,7 +242,7 @@ export function PortalOmnichannelWorkspace({
           )}
 
           {/* Simulator for testing */}
-          {canConfigure && (
+          {canConfigure && onSimulateEvent && (
             <section className="border-t p-3 bg-slate-50/50">
               <div className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
                 <select className="h-9 rounded-md border px-2 bg-white text-xs" value="webchat" disabled>
@@ -250,7 +250,7 @@ export function PortalOmnichannelWorkspace({
                   <option value="whatsapp">WhatsApp</option>
                 </select>
                 <input className="h-9 rounded-md border px-2 text-xs" defaultValue="Evento simulado pelo portal" disabled />
-                <Button type="button" size="sm" title="Simular evento no portal" onClick={() => (onSimulateEvent || (event => invokeOrToast('Evento simulado', () => omnichannelService.simulateChannelEvent(event))))({ organizationId, channel: 'webchat', eventType: 'message.created' })}>
+                <Button type="button" size="sm" title="Simular evento no portal" onClick={() => onSimulateEvent({ organizationId, channel: 'webchat', eventType: 'message.created', payload: { source: 'portal_sandbox' } })}>
                   Simular Evento
                 </Button>
               </div>

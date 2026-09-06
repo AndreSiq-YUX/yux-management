@@ -9,7 +9,8 @@ import { createContextAwarePool } from '../../../src/db/client.js'
 import { buildServer, type AppJobQueue } from '../../../src/server.js'
 import { loadEnv } from '../../../src/config/env.js'
 import { createJobProcessor } from '../../../src/jobs/processor.js'
-import { DEFAULT_QUEUE_NAME, createIdempotencyKey, createQueue, createRedisConnection, createWorker, type JobName, type QueueJobData } from '../../../src/jobs/queue.js'
+import { DEFAULT_QUEUE_NAME, createQueue, createRedisConnection, createWorker, type JobName, type QueueJobData } from '../../../src/jobs/queue.js'
+import { enqueueRegisteredJob } from '../../../src/jobs/registry.js'
 import { applyMigrations } from '../../../scripts/apply-migrations.js'
 import { fixtureIds, fixturePassword, fixtureUsers, integrationRolePassword, provisionIntegrationServiceRoles, seedIntegrationFixtures } from './fixtures.js'
 import { createTestProviderServer, type ProviderCall } from './provider-server.js'
@@ -84,10 +85,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
   })
   const appQueue: AppJobQueue = {
     add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }) {
-      return queue.add(name, data, {
-        jobId: options?.jobId ?? createIdempotencyKey(name, data),
-        ...(options?.delay !== undefined ? { delay: options.delay } : {}),
-      })
+      return enqueueRegisteredJob(queue, name, data, options)
     },
     close: async () => { await queue.close() },
   }

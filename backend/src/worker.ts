@@ -1,4 +1,6 @@
 import { DEFAULT_QUEUE_NAME, createBullMqJobId, createQueue, createWorker } from './jobs/queue.js'
+import { enqueueRegisteredJob } from './jobs/registry.js'
+import type { AppJobQueue } from './server.js'
 import { createPool } from './db/client.js'
 import { runWithDatabaseRequestContext } from './db/request-context.js'
 import { loadEnv } from './config/env.js'
@@ -7,7 +9,11 @@ import { runCrmSequenceScheduler } from './modules/crm/scheduler.js'
 
 const env = loadEnv()
 const pool = createPool(env.DATABASE_URL)
-const maintenanceQueue = createQueue(DEFAULT_QUEUE_NAME)
+const rawMaintenanceQueue = createQueue(DEFAULT_QUEUE_NAME)
+const maintenanceQueue: AppJobQueue = {
+  add: (name, data, options) => enqueueRegisteredJob(rawMaintenanceQueue, name, data, options),
+  close: () => rawMaintenanceQueue.close(),
+}
 const processJob = createJobProcessor({ pool, env, maintenanceQueue })
 const worker = createWorker(DEFAULT_QUEUE_NAME, processJob)
 const schedulerIntervalMs = Number(process.env.CRM_SEQUENCE_SCHEDULER_INTERVAL_MS || 60_000)

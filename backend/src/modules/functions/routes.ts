@@ -110,11 +110,44 @@ export async function registerFunctionRoutes(app: FastifyInstance) {
     if (params.data.name === 'refresh-meta-channel-health') return refreshMetaChannelHealth(app.pg, organizationId!, String(body.connectionId || ''))
     if (params.data.name === 'send-meta-channel-test') return testMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
 
+    if (params.data.name === 'sync-ad-metrics') {
+      const readiness = await app.pg.query<{ ready: boolean; missing: string | null }>(
+        `SELECT (
+            campaign.external_id IS NOT NULL
+            AND connection.id IS NOT NULL
+            AND connection.status='connected'
+            AND connection.token_reference IS NOT NULL
+          ) AS ready,
+          CASE
+            WHEN connection.id IS NULL OR connection.status <> 'connected' OR connection.token_reference IS NULL
+              THEN 'ad_provider_connection'
+            WHEN campaign.external_id IS NULL THEN 'provider_campaign_reference'
+            ELSE NULL
+          END AS missing
+         FROM public.campaigns campaign
+         LEFT JOIN public.ad_provider_connections connection
+           ON connection.id=campaign.provider_connection_id
+          AND connection.organization_id=campaign.organization_id
+         WHERE campaign.id=$1 AND campaign.organization_id=$2
+         LIMIT 1`,
+        [body.campaignId, organizationId],
+      )
+      if (readiness.rows[0]?.ready !== true) {
+        return reply.code(409).send({
+          error: 'capability_unavailable',
+          requiredConfiguration: readiness.rows[0]?.missing ?? 'ad_provider_connection',
+        })
+      }
+    }
+
+    const jobBody = params.data.name === 'sync-ad-metrics'
+      ? { ...body, sourceTimestamp: new Date().toISOString() }
+      : body
     const job = await app.jobQueue.add(functionJobName(params.data.name), {
       requestedBy: ctx.userId,
       functionName: params.data.name,
       organizationId,
-      body,
+      body: jobBody,
     })
 
     return { success: true, pending: true, functionName: params.data.name, jobId: job.id }

@@ -451,9 +451,20 @@ export async function createSchedulingRequest(pool: pg.Pool, user: AuthUser, bod
      )
      VALUES ($1, $2, $3, $4, $5, 'pending', $6)
      RETURNING *`,
-    [conversation.organization_id, conversation.id, conversation.contact_id, conversation.lead_id, body.requestedSlot, { source: 'backend' }],
+    [conversation.organization_id, conversation.id, conversation.contact_id, conversation.lead_id, body.requestedSlot, {
+      source: 'backend',
+      capabilityStatus: 'capability_unavailable',
+      fulfillment: 'human_task',
+      automaticConfirmation: false,
+    }],
   )
-  return { success: true, schedulingRequest: result.rows[0] }
+  return {
+    success: true,
+    schedulingRequest: result.rows[0],
+    capabilityStatus: 'capability_unavailable' as const,
+    fulfillment: 'human_task' as const,
+    automaticConfirmation: false,
+  }
 }
 
 async function getRowById(pool: pg.Pool, table: string, id: string) {

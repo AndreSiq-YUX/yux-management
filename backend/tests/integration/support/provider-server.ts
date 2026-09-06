@@ -45,7 +45,9 @@ export async function createTestProviderServer(): Promise<TestProviderServer> {
 
     response.writeHead(202, { 'content-type': 'application/json' })
     response.end(JSON.stringify(
-      request.url?.endsWith('/messages')
+      request.url?.includes('/insights')
+        ? { data: [{ spend: '12.50', impressions: '120', clicks: '15', actions: [{ action_type: 'lead', value: '3' }] }] }
+        : request.url?.endsWith('/messages')
         ? { messaging_product: 'whatsapp', messages: [{ id: `provider-${intentId}` }] }
         : { accepted: true, intentId },
     ))

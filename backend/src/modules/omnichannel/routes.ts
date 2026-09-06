@@ -52,6 +52,13 @@ const organizationQuerySchema = z.object({
   organizationId: z.string().uuid(),
 })
 
+const simulationSchema = z.object({
+  organizationId: z.string().uuid(),
+  channel: z.enum(['webchat', 'whatsapp', 'instagram', 'messenger']),
+  eventType: z.string().min(1).max(120),
+  payload: z.record(z.string(), z.unknown()).optional(),
+})
+
 const channelConnectionsQuerySchema = z.object({
   organizationId: z.string().uuid(),
   channels: z.string().optional(),
@@ -569,7 +576,26 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     // Channel simulator is an internal admin tool; arbitrary payloads must not
     // be queueable by client tenants.
     requireInternalRole(request)
-    const job = await app.jobQueue.add('omnichannel.simulateChannelEvent', { body: request.body as Record<string, unknown>, requestedBy: user.id })
+    const parsed = simulationSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_simulation_request' })
+    const sandbox = await app.pg.query<{ allowed: boolean }>(
+      `SELECT organization.kind='yux' OR EXISTS (
+         SELECT 1 FROM public.contracts contract
+         JOIN public.contract_modules module ON module.contract_id=contract.id
+         WHERE contract.client_id=organization.client_id AND contract.status='active'
+           AND module.module_key='mission_sandbox' AND module.enabled=TRUE
+       ) AS allowed
+       FROM public.organizations organization WHERE organization.id=$1`,
+      [parsed.data.organizationId],
+    )
+    if (sandbox.rows[0]?.allowed !== true) {
+      return reply.code(409).send({ error: 'capability_unavailable', requiredCapability: 'mission_sandbox' })
+    }
+    const job = await app.jobQueue.add('omnichannel.simulateChannelEvent', {
+      organizationId: parsed.data.organizationId,
+      body: parsed.data,
+      requestedBy: user.id,
+    })
     return { success: true, event: { pending: true, jobId: job.id } }
   })
 
@@ -579,8 +605,7 @@ export async function registerOmnichannelRoutes(app: FastifyInstance) {
     const parsed = schedulingSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_scheduling_request' })
     const result = await createSchedulingRequest(app.pg, user, parsed.data)
-    const job = await app.jobQueue.add('omnichannel.requestScheduling', { ...parsed.data, requestedBy: user.id })
-    return { ...result, jobId: job.id }
+    return reply.code(202).send(result)
   })
 
   function orgList(table: string, orderBy = 'name') {

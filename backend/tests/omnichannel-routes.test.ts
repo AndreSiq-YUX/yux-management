@@ -400,7 +400,7 @@ describe('omnichannel routes', () => {
     expect(response.statusCode).toBe(400)
   })
 
-  it('creates scheduling requests and queues scheduling jobs', async () => {
+  it('creates an honest human scheduling request when automatic scheduling is unavailable', async () => {
     const { authStore, token } = buildAuthenticatedAuthStore()
     const jobQueue = new FakeJobQueue()
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
@@ -412,10 +412,14 @@ describe('omnichannel routes', () => {
       payload: { conversationId: ids.conversation, requestedSlot: { startAt: '2026-01-02T12:00:00.000Z' } },
     })
 
-    expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({ success: true, schedulingRequest: { id: ids.scheduling } })
-    expect(jobQueue.jobs).toEqual([
-      { name: 'omnichannel.requestScheduling', data: { conversationId: ids.conversation, requestedSlot: { startAt: '2026-01-02T12:00:00.000Z' }, requestedBy: ids.user } },
-    ])
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toMatchObject({
+      success: true,
+      schedulingRequest: { id: ids.scheduling },
+      capabilityStatus: 'capability_unavailable',
+      fulfillment: 'human_task',
+      automaticConfirmation: false,
+    })
+    expect(jobQueue.jobs).toEqual([])
   })
 })

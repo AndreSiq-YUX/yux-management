@@ -3,33 +3,7 @@ import type pg from 'pg'
 import type { AppEnv } from '../config/env.js'
 import { runWithDatabaseRequestContext } from '../db/request-context.js'
 import type { AppJobQueue } from '../server.js'
-import { processSequenceExecution, runCrmSequenceScheduler } from '../modules/crm/scheduler.js'
-import { handleAutomationDispatch, handleAutomationRun } from './handlers/automation.js'
-import {
-  handleActionEngineCollectMetrics,
-  handleActionEngineDecisionNotification,
-  handleActionEngineDecisionNotificationDispatch,
-  handleActionEngineEvaluation,
-  handleActionEngineExecute,
-  handleActionEngineExpireWaits,
-  handleActionEngineLearning,
-  handleActionEnginePlanMission,
-  handleActionEngineProcessMissionConversation,
-  handleActionEngineReconcileProviderEffect,
-  handleActionEngineRetention,
-  handleActionEngineSchedule,
-  handleCampaignOptimizationCheckpoints,
-} from './handlers/action-engine.js'
-import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './handlers/company-intelligence.js'
-import { handleDomainEventDelivery, handleDomainEventDispatch } from './handlers/domain-events.js'
-import { handleEmailSend } from './handlers/email.js'
-import { refreshExpiringGoogleTokens } from './handlers/google-token-refresh.js'
-import { purgeExpiredTraces } from './handlers/maintenance.js'
-import { handleInboundMessage, handleOutboundMessage } from './handlers/omnichannel.js'
-import { handleProposalConversion } from './handlers/proposals.js'
-import { handleProviderFunction } from './handlers/providers.js'
-import { handleRadarOpportunityAnalysis } from './handlers/radar.js'
-import { handleStrategyAdminChat } from './handlers/strategy.js'
+import { jobRegistry, parseRegisteredJobData } from './registry.js'
 import { isJobName, type QueueJobData } from './queue.js'
 
 export type WorkerResult = { ok: true }
@@ -50,77 +24,27 @@ export function createJobProcessor(dependencies: JobProcessorDependencies) {
 
   return async function processJob(job: Job<QueueJobData, WorkerResult, string>): Promise<WorkerResult> {
     if (!isJobName(job.name)) throw new Error(`Unknown job name: ${job.name}`)
-    const organizationId = organizationIdFromJob(job.data)
+    const jobName = job.name
+    const data = parseRegisteredJobData(jobName, job.data)
+    const organizationId = organizationIdFromJob(data)
     const internalSystemJob = job.name.startsWith('events.')
       || job.name.startsWith('crm.sequence.')
       || job.name === 'email.send'
       || job.name === 'omnichannel.dispatchOutbound'
       || job.name === 'omnichannel.retryOutbound'
+      || jobRegistry[jobName].sandboxOnly
     return runWithDatabaseRequestContext({
       role: internalSystemJob || !organizationId ? 'yux_operator' : 'client_member',
       organizationIds: organizationId ? [organizationId] : [],
       serviceRole: 'worker',
     }, async () => {
-
-      if (job.name === 'crm.sequence.dispatchDue') {
-        await runCrmSequenceScheduler(pool, {
-          crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL,
-          crmWebhookSecret: env.N8N_WEBHOOK_SECRET,
-        })
-        return { ok: true }
-      }
-
-      if (job.name === 'crm.sequence.processExecution') {
-        const executionId = job.data.executionId
-        if (typeof executionId !== 'string') throw new Error('executionId is required')
-        await processSequenceExecution(pool, executionId, {
-          crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL,
-          crmWebhookSecret: env.N8N_WEBHOOK_SECRET,
-          emailJobQueue: maintenanceQueue,
-          whatsappJobQueue: maintenanceQueue,
-        })
-        return { ok: true }
-      }
-
-      if (job.name === 'proposal.convert') { await handleProposalConversion(pool, job.data.proposalId); return { ok: true } }
-      if (job.name === 'automation.dispatch') { await handleAutomationDispatch(pool, env, job.data); return { ok: true } }
-      if (job.name === 'events.dispatchPending') { await handleDomainEventDispatch(pool, maintenanceQueue, job.data); return { ok: true } }
-      if (job.name === 'action-engine.planMission') { await handleActionEnginePlanMission(pool, env, job.data, maintenanceQueue); return { ok: true } }
-      if (job.name === 'action-engine.processMissionConversation') { await handleActionEngineProcessMissionConversation(pool, env, job.data); return { ok: true } }
-      if (job.name === 'action-engine.scheduleReadyActions') { await handleActionEngineSchedule(pool, maintenanceQueue, job.data); return { ok: true } }
-      if (job.name === 'action-engine.executeAction') { await handleActionEngineExecute(pool, maintenanceQueue, job.data, `worker:${job.id ?? 'unknown'}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET); return { ok: true } }
-      if (job.name === 'action-engine.reconcileProviderEffect') { await handleActionEngineReconcileProviderEffect(pool, maintenanceQueue, job.data); return { ok: true } }
-      if (job.name === 'action-engine.evaluateMission') { await handleActionEngineEvaluation(pool, job.data, maintenanceQueue); return { ok: true } }
-      if (job.name === 'action-engine.deliverDecisionNotification') { await handleActionEngineDecisionNotification(pool, maintenanceQueue, job.data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false); return { ok: true } }
-      if (job.name === 'action-engine.dispatchDecisionNotifications') { await handleActionEngineDecisionNotificationDispatch(pool, maintenanceQueue, job.data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false); return { ok: true } }
-      if (job.name === 'action-engine.expireWaits') { await handleActionEngineExpireWaits(pool, maintenanceQueue, job.data); return { ok: true } }
-      if (job.name === 'action-engine.collectMetrics') { await handleActionEngineCollectMetrics(pool, maintenanceQueue, job.data); return { ok: true } }
-      if (job.name === 'action-engine.campaignOptimizationCheckpoint') { await handleCampaignOptimizationCheckpoints(pool, job.data); return { ok: true } }
-      if (job.name === 'action-engine.generateLearning') { await handleActionEngineLearning(pool, job.data); return { ok: true } }
-      if (job.name === 'action-engine.enforceRetention') { await handleActionEngineRetention(pool); return { ok: true } }
-      if (job.name === 'events.consume.automation' || job.name === 'events.consume.scoring' || job.name === 'events.consume.missionObserver' || job.name === 'events.consume.omnichannel' || job.name === 'events.consume.crmDispatch') {
-        await handleDomainEventDelivery(pool, env, job.data, maintenanceQueue)
-        return { ok: true }
-      }
-      if (job.name === 'automation.executeRun') { await handleAutomationRun(pool, env, job.data); return { ok: true } }
-      if (job.name === 'email.send') { await handleEmailSend(pool, job.data); return { ok: true } }
-      if (job.name === 'provider.functionInvoke') { await handleProviderFunction(pool, job.data); return { ok: true } }
-      if (job.name === 'omnichannel.processMessage') { await handleInboundMessage(pool, env, job.data, maintenanceQueue); return { ok: true } }
-      if (job.name === 'omnichannel.dispatchOutbound' || job.name === 'omnichannel.retryOutbound') {
-        await handleOutboundMessage(pool, job.data, {
-          graphBaseUrl: env.META_GRAPH_BASE_URL,
-          providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64,
-        })
-        return { ok: true }
-      }
-      if (job.name === 'strategy.adminChat') { await handleStrategyAdminChat(pool, env, job.data); return { ok: true } }
-      if (job.name === 'radar.analyzeOpportunity') { await handleRadarOpportunityAnalysis(pool, env, job.data); return { ok: true } }
-      if (job.name === 'company-intelligence.indexKnowledge') { await handleKnowledgeIndexing(pool, env, job.data); return { ok: true } }
-      if (job.name === 'company-intelligence.discoverWebsite') { await handleWebsiteOnboarding(pool, env, job.data); return { ok: true } }
-      if (job.name === 'maintenance.purgeExpiredTraces') { await purgeExpiredTraces(pool); return { ok: true } }
-      if (job.name === 'maintenance.refreshGoogleTokens') { await refreshExpiringGoogleTokens(pool, env); return { ok: true } }
-
-      throw new Error(`No handler registered for ${job.name}`)
+      await jobRegistry[jobName].handler({
+        pool,
+        env,
+        queue: maintenanceQueue,
+        jobId: String(job.id ?? 'unknown'),
+      }, data)
+      return { ok: true }
     })
   }
 }

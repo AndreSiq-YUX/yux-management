@@ -26,10 +26,13 @@ class FakeAuthStore implements AuthStore {
 }
 
 class FakePool {
-  constructor(private readonly campaignOrganization = ids.orgA) {}
+  constructor(private readonly campaignOrganization = ids.orgA, private readonly campaignReady = true) {}
   async query(sql: string) {
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [{ organization_id: ids.orgA }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
+    if (sql.includes("connection.status='connected'")) return {
+      rows: [{ ready: this.campaignReady, missing: this.campaignReady ? null : 'ad_provider_connection' }],
+    }
     if (sql.includes('FROM public.campaigns')) return { rows: [{ organization_id: this.campaignOrganization }] }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
@@ -94,5 +97,34 @@ describe('function route authorization', () => {
     })
     expect(response.statusCode).toBe(200)
     expect(queue.jobs[0]?.data).toMatchObject({ requestedBy: 'user-client_admin', organizationId: ids.orgA })
+  })
+
+  it('returns required configuration instead of queuing an impossible metric sync', async () => {
+    const { authStore, token } = authentication('client_admin')
+    const queue = new FakeQueue()
+    app = await buildServer(testEnv, { authStore, pool: new FakePool(ids.orgA, false) as never, jobQueue: queue })
+    const response = await app.inject({
+      method: 'POST', url: '/api/functions/sync-ad-metrics', headers: headers(token),
+      payload: { body: { campaignId: ids.campaign } },
+    })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'capability_unavailable', requiredConfiguration: 'ad_provider_connection' })
+    expect(queue.jobs).toEqual([])
+  })
+
+  it('queues a ready metric sync with a source timestamp', async () => {
+    const { authStore, token } = authentication('client_admin')
+    const queue = new FakeQueue()
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue: queue })
+    const response = await app.inject({
+      method: 'POST', url: '/api/functions/sync-ad-metrics', headers: headers(token),
+      payload: { body: { campaignId: ids.campaign } },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(queue.jobs[0]).toMatchObject({
+      name: 'provider.syncMetrics',
+      data: { organizationId: ids.orgA, functionName: 'sync-ad-metrics', body: { campaignId: ids.campaign } },
+    })
+    expect(new Date(String((queue.jobs[0]?.data.body as Record<string, unknown>).sourceTimestamp)).toString()).not.toBe('Invalid Date')
   })
 })
