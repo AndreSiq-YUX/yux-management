@@ -52,3 +52,10 @@
 - Status: decidida.
 - Decisão: um job só pode ser produzido se existir no registro único com schema e handler. Capacidades ainda sem integração automática não usam um job que falhará depois: agendamento vira tarefa humana identificada e simulação fica restrita a um ledger de sandbox sem conexão com conversas reais.
 - Motivo: eliminar sucesso aparente seguido de falha inevitável no worker e impedir que dados sintéticos sejam apresentados como interação de cliente.
+
+## D-010 — Identidade de intenção para efeitos de provedores
+
+- Status: decidida.
+- Decisão: usar o UUID do run do Action Engine como `intentId` quando a origem for uma ação e exigir UUID explícito nas operações administrativas. Hash do payload, aprovação e hash do objeto aprovado ficam congelados com a intenção; alteração legítima posterior cria nova intenção.
+- Ambiguidade: depois que a chamada externa começou, erro de rede compatível com resposta perdida não autoriza repetição. O estado permanece `unknown` e segue para reconciliação ou revisão manual; exatamente uma chamada não é alegada quando o provedor não oferece deduplicação/reconciliação suficiente.
+- Motivo: distinguir retry da mesma decisão de uma nova decisão comercial, sem ocultar efeitos possivelmente aceitos pelo provedor.

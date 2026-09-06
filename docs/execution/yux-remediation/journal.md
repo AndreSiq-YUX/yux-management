@@ -185,3 +185,15 @@ frontend tests: PASS, 528 PASS
 - Simulação: requer papel interno e organização YUX ou contrato com `mission_sandbox`; o resultado vai para `omnichannel_simulation_events` marcado como simulação e não percorre o pipeline de conversas reais. O simulador incompatível foi removido do portal cliente.
 - Verificação local: type-checks backend/frontend aprovados; 154 arquivos e 628 testes backend aprovados; 13 testes frontend afetados aprovados.
 - Aceite persistente: execução GitHub Actions `34003524798`, commit `e75cd5c`, conclusão `success`. `job-registry.test.ts` verificou cobertura integral do registro, coleta pelo servidor de provedor controlado e isolamento da simulação sem alteração nas contagens de conversas/mensagens. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T13 — Identidade imutável e reconciliação de efeitos externos
+
+- Estado: aceita.
+- Commits: `e49deb8` e correção do validador de alvos `e689287`.
+- Achado: YUX-13 e recuperação do Action Engine.
+- Reprodução: a chave histórica `provider:action:campaign` suprimia uma segunda mudança legítima de orçamento; chamadas diretas não congelavam intenção, payload e aprovação em uma mesma identidade.
+- Decisão: `intentId` representa a intenção aprovada e é conservado em retries; cada novo orçamento aprovado recebe outro UUID. O ledger `action_external_effects` é a autoridade para efeitos do Action Engine, ligado ao run do provedor sem criar uma segunda intenção concorrente.
+- Segurança: organização, campanha, conexão conectada, token referenciado, status da aprovação, hash do payload e hash do objeto aprovado são revalidados antes da chamada externa. O cabeçalho `X-YUX-Intent-ID` acompanha Meta e Google; jobs nunca carregam o segredo.
+- Recuperação: resposta perdida grava `unknown`; repetição muda para `manual_review` e não chama o provedor novamente sem reconciliação. A missão expõe status, prazo e referência de reconciliação sem material sensível.
+- Verificação local: type-checks backend/frontend aprovados; 154 arquivos e 628 testes backend aprovados; teste frontend do serviço de campanha aprovado. Docker não está disponível neste computador.
+- Aceite persistente: execução GitHub Actions `34004433067`, commit `e689287`, conclusão `success`. `provider-intents.test.ts` comprovou duas intenções legítimas com retries e somente duas chamadas, bloqueio de payload alterado e aprovação revogada, e resposta perdida mantida em revisão manual sem sucesso fictício. Backend, frontend e Agent Runtime também permaneceram aprovados.
