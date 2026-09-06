@@ -1,7 +1,6 @@
 import { BookOpen, CalendarDays, Check, Clock, FileCheck, FileText, Radar, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Sparkles, X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrandReadinessPanel } from '@/components/growth-workspace/BrandReadinessPanel'
-import { MarketingAutomationStudio } from '@/components/marketing-studio/MarketingAutomationStudio'
 import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import { summarizeCampaignCreativePipeline, summarizeWritingPipeline } from '@/lib/marketing-studio/marketingStudioRules'
 import { usePlatformStore } from '@/stores/platformStore'
@@ -75,6 +74,7 @@ interface MarketingStudioWorkspaceProps {
 }
 
 const tabs = ['Visao geral', 'Conteudo', 'Calendario', 'Aprovacoes', 'Ideias', 'Base de conhecimento', 'Estudio de Automacoes', 'Creditos']
+const MarketingAutomationStudio = lazy(() => import('@/components/marketing-studio/MarketingAutomationStudio').then(module => ({ default: module.MarketingAutomationStudio })))
 
 export function MarketingStudioWorkspace({
   contents,
@@ -188,19 +188,21 @@ export function MarketingStudioWorkspace({
       </div>
 
       {workflows.length > 0 ? (
-        <MarketingAutomationStudio
-          contents={contents}
-          settings={settings}
-          reviews={reviews}
-          agents={agents}
-          workflows={workflows}
-          workflowRuns={workflowRuns}
-          agentRuns={agentRuns}
-          toolRuns={toolRuns}
-          generationRuns={generationRuns}
-          campaignCreativeSuggestions={campaignCreativeSuggestions}
-          campaignDraftRuns={campaignDraftRuns}
-        />
+        <Suspense fallback={<div role="status" aria-live="polite" className="grid min-h-72 place-items-center border border-slate-200 bg-slate-50 text-sm text-slate-500">Carregando estudio de automacoes...</div>}>
+          <MarketingAutomationStudio
+            contents={contents}
+            settings={settings}
+            reviews={reviews}
+            agents={agents}
+            workflows={workflows}
+            workflowRuns={workflowRuns}
+            agentRuns={agentRuns}
+            toolRuns={toolRuns}
+            generationRuns={generationRuns}
+            campaignCreativeSuggestions={campaignCreativeSuggestions}
+            campaignDraftRuns={campaignDraftRuns}
+          />
+        </Suspense>
       ) : (
         <section className="border border-dashed border-slate-300 bg-slate-50 p-6">
           <h2 className="text-base font-semibold text-slate-950">Planejar campanha</h2>

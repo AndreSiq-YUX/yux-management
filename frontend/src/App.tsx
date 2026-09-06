@@ -1,85 +1,80 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { lazy, useEffect, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 // Layout components
 import { AuthLayout } from '@/components/layouts/AuthLayout'
 import { DashboardLayout } from '@/components/layouts/DashboardLayout'
+import { RouteLoadBoundary } from '@/components/routing/RouteLoadBoundary'
 
-// Auth pages
-import { LoginPage } from '@/pages/auth/LoginPage'
-import { SetPasswordPage } from '@/pages/auth/SetPasswordPage'
-import { PublicProposalPage } from '@/pages/public/PublicProposalPage'
-import { WebchatWidgetPage } from '@/pages/webchat/WebchatWidgetPage'
-
-// Dashboard pages
-import { DashboardPage } from '@/pages/dashboard/DashboardPage'
-import { ClientsPage } from '@/pages/clients/ClientsPage'
-import { ProjectsPage } from '@/pages/projects/ProjectsPage'
-import { CampaignsPage } from '@/pages/campaigns/CampaignsPage'
-import { LeadsPage } from '@/pages/leads/LeadsPage'
-import { ProposalsPage } from '@/pages/proposals/ProposalsPage'
-import { OmnichannelPage } from '@/pages/omnichannel/OmnichannelPage'
-import { FinancePage } from '@/pages/finance/FinancePage'
-import { LandingPagesPage } from '@/pages/landing-pages/LandingPagesPage'
-import { SupportPage } from '@/pages/support/SupportPage'
-import { AutomationsPage } from '@/pages/automations/AutomationsPage'
-import { ReportsPage } from '@/pages/reports/ReportsPage'
-import { MarketingStudioPage } from '@/pages/marketing-studio/MarketingStudioPage'
-
-// Client workspace pages
 import { ClientWorkspaceLayout } from '@/pages/client-workspaces/ClientWorkspaceLayout'
-import { ClientWorkspaceSelectorPage } from '@/pages/client-workspaces/ClientWorkspaceSelectorPage'
 
-// Client portal pages
-import { PortalDashboardPage } from '@/pages/client-portal/PortalDashboardPage'
-import { PortalCampaignsPage } from '@/pages/client-portal/PortalCampaignsPage'
-import { PortalConnectedChannelsPage } from '@/pages/client-portal/PortalConnectedChannelsPage'
-import { PortalProjectsPage } from '@/pages/client-portal/PortalProjectsPage'
-import { PortalFinancePage } from '@/pages/client-portal/PortalFinancePage'
-import { PortalLandingPagesPage } from '@/pages/client-portal/PortalLandingPagesPage'
-import { PortalExternalLeadFormsPage } from '@/pages/client-portal/PortalExternalLeadFormsPage'
-import { PortalMarketingStudioPage } from '@/pages/client-portal/PortalMarketingStudioPage'
-import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
-import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
-import { PortalAccountSettingsPage } from '@/pages/client-portal/PortalAccountSettingsPage'
-import { PortalApprovalsPage } from '@/pages/client-portal/PortalApprovalsPage'
-import { PortalAutomationsPage } from '@/pages/client-portal/PortalAutomationsPage'
-import { PortalEmailTemplatesPage } from '@/pages/client-portal/PortalEmailTemplatesPage'
-import { PortalCommercialAccountsPage } from '@/pages/client-portal/commercial/PortalCommercialAccountsPage'
-import { PortalCommercialFunnelsPage } from '@/pages/client-portal/commercial/PortalCommercialFunnelsPage'
-import { PortalCommercialLeadsPage } from '@/pages/client-portal/commercial/PortalCommercialLeadsPage'
-import { PortalCommercialRadarPage } from '@/pages/client-portal/commercial/PortalCommercialRadarPage'
-import { PortalCommercialTasksPage } from '@/pages/client-portal/commercial/PortalCommercialTasksPage'
-import { PortalLeadScoringPage } from '@/pages/client-portal/commercial/PortalLeadScoringPage'
-import { PortalBrandVoicePage } from '@/pages/client-portal/company/PortalBrandVoicePage'
-import { PortalCompanyIntegrationsPage } from '@/pages/client-portal/company/PortalCompanyIntegrationsPage'
-import { PortalCompanyProfilePage } from '@/pages/client-portal/company/PortalCompanyProfilePage'
-import { PortalCompanyUsersPage } from '@/pages/client-portal/company/PortalCompanyUsersPage'
-import { PortalKnowledgeBasePage } from '@/pages/client-portal/company/PortalKnowledgeBasePage'
-import { PortalCreativeAssetsPage } from '@/pages/client-portal/marketing/PortalCreativeAssetsPage'
-import { PortalEditorialCalendarPage } from '@/pages/client-portal/marketing/PortalEditorialCalendarPage'
-import { PortalOrganicContentPage } from '@/pages/client-portal/marketing/PortalOrganicContentPage'
-import { PortalDocumentsPage } from '@/pages/client-portal/projects/PortalDocumentsPage'
-import { PortalAiAgentPage } from '@/pages/client-portal/service-ai/PortalAiAgentPage'
-import { PortalHandoffQueuesPage } from '@/pages/client-portal/service-ai/PortalHandoffQueuesPage'
-import { PortalServiceConversationsPage } from '@/pages/client-portal/service-ai/PortalServiceConversationsPage'
-import { BlueprintsPage } from '@/pages/platform/BlueprintsPage'
-import { AdminHubPage } from '@/pages/platform/AdminHubPage'
-import { AdminAiPage } from '@/pages/platform/AdminAiPage'
-import { AdminChannelsPage } from '@/pages/platform/AdminChannelsPage'
-import { AdminEmailPage } from '@/pages/platform/AdminEmailPage'
-import { AdminSystemEmailTemplatesPage } from '@/pages/platform/AdminSystemEmailTemplatesPage'
-import { AdminHealthPage } from '@/pages/platform/AdminHealthPage'
-import { AdminIntegrationsPage } from '@/pages/platform/AdminIntegrationsPage'
-import { AdminModuleGovernancePage } from '@/pages/platform/AdminModuleGovernancePage'
-import { AdminLimitsPage } from '@/pages/platform/AdminLimitsPage'
-import { StrategyEnginePage } from '@/pages/platform/StrategyEnginePage'
-import { ClientConversionsPage } from '@/pages/platform/ClientConversionsPage'
-import { ContractsPage } from '@/pages/platform/ContractsPage'
-import { CrmGovernancePage } from '@/pages/platform/CrmGovernancePage'
-import { ModulesPage } from '@/pages/platform/ModulesPage'
-import { PackagesPage } from '@/pages/platform/PackagesPage'
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(module => ({ default: module.LoginPage })))
+const SetPasswordPage = lazy(() => import('@/pages/auth/SetPasswordPage').then(module => ({ default: module.SetPasswordPage })))
+const PublicProposalPage = lazy(() => import('@/pages/public/PublicProposalPage').then(module => ({ default: module.PublicProposalPage })))
+const WebchatWidgetPage = lazy(() => import('@/pages/webchat/WebchatWidgetPage').then(module => ({ default: module.WebchatWidgetPage })))
+const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then(module => ({ default: module.DashboardPage })))
+const ClientsPage = lazy(() => import('@/pages/clients/ClientsPage').then(module => ({ default: module.ClientsPage })))
+const ProjectsPage = lazy(() => import('@/pages/projects/ProjectsPage').then(module => ({ default: module.ProjectsPage })))
+const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage').then(module => ({ default: module.CampaignsPage })))
+const LeadsPage = lazy(() => import('@/pages/leads/LeadsPage').then(module => ({ default: module.LeadsPage })))
+const ProposalsPage = lazy(() => import('@/pages/proposals/ProposalsPage').then(module => ({ default: module.ProposalsPage })))
+const OmnichannelPage = lazy(() => import('@/pages/omnichannel/OmnichannelPage').then(module => ({ default: module.OmnichannelPage })))
+const FinancePage = lazy(() => import('@/pages/finance/FinancePage').then(module => ({ default: module.FinancePage })))
+const LandingPagesPage = lazy(() => import('@/pages/landing-pages/LandingPagesPage').then(module => ({ default: module.LandingPagesPage })))
+const SupportPage = lazy(() => import('@/pages/support/SupportPage').then(module => ({ default: module.SupportPage })))
+const AutomationsPage = lazy(() => import('@/pages/automations/AutomationsPage').then(module => ({ default: module.AutomationsPage })))
+const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage').then(module => ({ default: module.ReportsPage })))
+const MarketingStudioPage = lazy(() => import('@/pages/marketing-studio/MarketingStudioPage').then(module => ({ default: module.MarketingStudioPage })))
+const ClientWorkspaceSelectorPage = lazy(() => import('@/pages/client-workspaces/ClientWorkspaceSelectorPage').then(module => ({ default: module.ClientWorkspaceSelectorPage })))
+const PortalDashboardPage = lazy(() => import('@/pages/client-portal/PortalDashboardPage').then(module => ({ default: module.PortalDashboardPage })))
+const PortalCampaignsPage = lazy(() => import('@/pages/client-portal/PortalCampaignsPage').then(module => ({ default: module.PortalCampaignsPage })))
+const PortalConnectedChannelsPage = lazy(() => import('@/pages/client-portal/PortalConnectedChannelsPage').then(module => ({ default: module.PortalConnectedChannelsPage })))
+const PortalProjectsPage = lazy(() => import('@/pages/client-portal/PortalProjectsPage').then(module => ({ default: module.PortalProjectsPage })))
+const PortalFinancePage = lazy(() => import('@/pages/client-portal/PortalFinancePage').then(module => ({ default: module.PortalFinancePage })))
+const PortalLandingPagesPage = lazy(() => import('@/pages/client-portal/PortalLandingPagesPage').then(module => ({ default: module.PortalLandingPagesPage })))
+const PortalExternalLeadFormsPage = lazy(() => import('@/pages/client-portal/PortalExternalLeadFormsPage').then(module => ({ default: module.PortalExternalLeadFormsPage })))
+const PortalMarketingStudioPage = lazy(() => import('@/pages/client-portal/PortalMarketingStudioPage').then(module => ({ default: module.PortalMarketingStudioPage })))
+const PortalReportsPage = lazy(() => import('@/pages/client-portal/PortalReportsPage').then(module => ({ default: module.PortalReportsPage })))
+const PortalSupportPage = lazy(() => import('@/pages/client-portal/PortalSupportPage').then(module => ({ default: module.PortalSupportPage })))
+const PortalAccountSettingsPage = lazy(() => import('@/pages/client-portal/PortalAccountSettingsPage').then(module => ({ default: module.PortalAccountSettingsPage })))
+const PortalApprovalsPage = lazy(() => import('@/pages/client-portal/PortalApprovalsPage').then(module => ({ default: module.PortalApprovalsPage })))
+const PortalAutomationsPage = lazy(() => import('@/pages/client-portal/PortalAutomationsPage').then(module => ({ default: module.PortalAutomationsPage })))
+const PortalEmailTemplatesPage = lazy(() => import('@/pages/client-portal/PortalEmailTemplatesPage').then(module => ({ default: module.PortalEmailTemplatesPage })))
+const PortalCommercialAccountsPage = lazy(() => import('@/pages/client-portal/commercial/PortalCommercialAccountsPage').then(module => ({ default: module.PortalCommercialAccountsPage })))
+const PortalCommercialFunnelsPage = lazy(() => import('@/pages/client-portal/commercial/PortalCommercialFunnelsPage').then(module => ({ default: module.PortalCommercialFunnelsPage })))
+const PortalCommercialLeadsPage = lazy(() => import('@/pages/client-portal/commercial/PortalCommercialLeadsPage').then(module => ({ default: module.PortalCommercialLeadsPage })))
+const PortalCommercialRadarPage = lazy(() => import('@/pages/client-portal/commercial/PortalCommercialRadarPage').then(module => ({ default: module.PortalCommercialRadarPage })))
+const PortalCommercialTasksPage = lazy(() => import('@/pages/client-portal/commercial/PortalCommercialTasksPage').then(module => ({ default: module.PortalCommercialTasksPage })))
+const PortalLeadScoringPage = lazy(() => import('@/pages/client-portal/commercial/PortalLeadScoringPage').then(module => ({ default: module.PortalLeadScoringPage })))
+const PortalBrandVoicePage = lazy(() => import('@/pages/client-portal/company/PortalBrandVoicePage').then(module => ({ default: module.PortalBrandVoicePage })))
+const PortalCompanyIntegrationsPage = lazy(() => import('@/pages/client-portal/company/PortalCompanyIntegrationsPage').then(module => ({ default: module.PortalCompanyIntegrationsPage })))
+const PortalCompanyProfilePage = lazy(() => import('@/pages/client-portal/company/PortalCompanyProfilePage').then(module => ({ default: module.PortalCompanyProfilePage })))
+const PortalCompanyUsersPage = lazy(() => import('@/pages/client-portal/company/PortalCompanyUsersPage').then(module => ({ default: module.PortalCompanyUsersPage })))
+const PortalKnowledgeBasePage = lazy(() => import('@/pages/client-portal/company/PortalKnowledgeBasePage').then(module => ({ default: module.PortalKnowledgeBasePage })))
+const PortalCreativeAssetsPage = lazy(() => import('@/pages/client-portal/marketing/PortalCreativeAssetsPage').then(module => ({ default: module.PortalCreativeAssetsPage })))
+const PortalEditorialCalendarPage = lazy(() => import('@/pages/client-portal/marketing/PortalEditorialCalendarPage').then(module => ({ default: module.PortalEditorialCalendarPage })))
+const PortalOrganicContentPage = lazy(() => import('@/pages/client-portal/marketing/PortalOrganicContentPage').then(module => ({ default: module.PortalOrganicContentPage })))
+const PortalDocumentsPage = lazy(() => import('@/pages/client-portal/projects/PortalDocumentsPage').then(module => ({ default: module.PortalDocumentsPage })))
+const PortalAiAgentPage = lazy(() => import('@/pages/client-portal/service-ai/PortalAiAgentPage').then(module => ({ default: module.PortalAiAgentPage })))
+const PortalHandoffQueuesPage = lazy(() => import('@/pages/client-portal/service-ai/PortalHandoffQueuesPage').then(module => ({ default: module.PortalHandoffQueuesPage })))
+const PortalServiceConversationsPage = lazy(() => import('@/pages/client-portal/service-ai/PortalServiceConversationsPage').then(module => ({ default: module.PortalServiceConversationsPage })))
+const BlueprintsPage = lazy(() => import('@/pages/platform/BlueprintsPage').then(module => ({ default: module.BlueprintsPage })))
+const AdminHubPage = lazy(() => import('@/pages/platform/AdminHubPage').then(module => ({ default: module.AdminHubPage })))
+const AdminAiPage = lazy(() => import('@/pages/platform/AdminAiPage').then(module => ({ default: module.AdminAiPage })))
+const AdminChannelsPage = lazy(() => import('@/pages/platform/AdminChannelsPage').then(module => ({ default: module.AdminChannelsPage })))
+const AdminEmailPage = lazy(() => import('@/pages/platform/AdminEmailPage').then(module => ({ default: module.AdminEmailPage })))
+const AdminSystemEmailTemplatesPage = lazy(() => import('@/pages/platform/AdminSystemEmailTemplatesPage').then(module => ({ default: module.AdminSystemEmailTemplatesPage })))
+const AdminHealthPage = lazy(() => import('@/pages/platform/AdminHealthPage').then(module => ({ default: module.AdminHealthPage })))
+const AdminIntegrationsPage = lazy(() => import('@/pages/platform/AdminIntegrationsPage').then(module => ({ default: module.AdminIntegrationsPage })))
+const AdminModuleGovernancePage = lazy(() => import('@/pages/platform/AdminModuleGovernancePage').then(module => ({ default: module.AdminModuleGovernancePage })))
+const AdminLimitsPage = lazy(() => import('@/pages/platform/AdminLimitsPage').then(module => ({ default: module.AdminLimitsPage })))
+const StrategyEnginePage = lazy(() => import('@/pages/platform/StrategyEnginePage').then(module => ({ default: module.StrategyEnginePage })))
+const ClientConversionsPage = lazy(() => import('@/pages/platform/ClientConversionsPage').then(module => ({ default: module.ClientConversionsPage })))
+const ContractsPage = lazy(() => import('@/pages/platform/ContractsPage').then(module => ({ default: module.ContractsPage })))
+const CrmGovernancePage = lazy(() => import('@/pages/platform/CrmGovernancePage').then(module => ({ default: module.CrmGovernancePage })))
+const ModulesPage = lazy(() => import('@/pages/platform/ModulesPage').then(module => ({ default: module.ModulesPage })))
+const PackagesPage = lazy(() => import('@/pages/platform/PackagesPage').then(module => ({ default: module.PackagesPage })))
 
 const MissionsPage = lazy(() => import('@/pages/action-engine/MissionsPage').then(module => ({ default: module.MissionsPage })))
 const MissionDetailPage = lazy(() => import('@/pages/action-engine/MissionDetailPage').then(module => ({ default: module.MissionDetailPage })))
@@ -89,10 +84,6 @@ const PortalMissionDetailPage = lazy(() => import('@/pages/client-portal/PortalM
 const PortalMissionConversationPage = lazy(() => import('@/pages/client-portal/PortalMissionConversationPage').then(module => ({ default: module.PortalMissionConversationPage })))
 const MissionSimulationReviewPage = lazy(() => import('@/pages/public/MissionSimulationReviewPage').then(module => ({ default: module.MissionSimulationReviewPage })))
 const MissionLearningPage = lazy(() => import('@/pages/platform/MissionLearningPage').then(module => ({ default: module.MissionLearningPage })))
-
-function LazyPage({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<main className="grid min-h-64 place-items-center text-sm text-slate-500">Carregando missões...</main>}>{children}</Suspense>
-}
 
 function RequireRole({ roles, children }: { roles: Array<'admin' | 'manager' | 'client'>; children: ReactNode }) {
   const { user } = useAuthStore()
@@ -118,7 +109,8 @@ function App() {
   }
 
   return (
-    <Routes>
+    <RouteLoadBoundary label="Abrindo aplicacao...">
+      <Routes>
       {/* Public routes */}
       <Route path="/auth" element={<AuthLayout />}>
         <Route path="login" element={<LoginPage />} />
@@ -126,7 +118,7 @@ function App() {
         <Route index element={<Navigate to="/auth/login" replace />} />
       </Route>
       <Route path="/proposal/review/:token" element={<PublicProposalPage />} />
-      <Route path="/mission-simulation/review/:token" element={<LazyPage><MissionSimulationReviewPage /></LazyPage>} />
+      <Route path="/mission-simulation/review/:token" element={<MissionSimulationReviewPage />} />
       <Route path="/webchat/session" element={<WebchatWidgetPage />} />
 
       {/* Protected routes */}
@@ -156,7 +148,7 @@ function App() {
             <Route path="admin/health" element={<RequireRole roles={['admin']}><AdminHealthPage /></RequireRole>} />
             <Route path="admin/modules-governance" element={<RequireRole roles={['admin']}><AdminModuleGovernancePage /></RequireRole>} />
             <Route path="admin/limits" element={<RequireRole roles={['admin']}><AdminLimitsPage /></RequireRole>} />
-            <Route path="admin/mission-learning" element={<RequireRole roles={['admin']}><LazyPage><MissionLearningPage /></LazyPage></RequireRole>} />
+            <Route path="admin/mission-learning" element={<RequireRole roles={['admin']}><MissionLearningPage /></RequireRole>} />
             <Route path="contracts" element={<RequireRole roles={['admin']}><ContractsPage /></RequireRole>} />
             <Route path="client-conversions" element={<RequireRole roles={['admin']}><ClientConversionsPage /></RequireRole>} />
             <Route path="packages" element={<RequireRole roles={['admin']}><PackagesPage /></RequireRole>} />
@@ -175,9 +167,9 @@ function App() {
             <Route path="automations" element={<AutomationsPage />} />
             <Route path="support" element={<SupportPage />} />
             <Route path="finance" element={<FinancePage />} />
-            <Route path="missions" element={<LazyPage><MissionsPage /></LazyPage>} />
-            <Route path="missions/conversations/:conversationId" element={<LazyPage><MissionConversationPage /></LazyPage>} />
-            <Route path="missions/:missionId" element={<LazyPage><MissionDetailPage /></LazyPage>} />
+            <Route path="missions" element={<MissionsPage />} />
+            <Route path="missions/conversations/:conversationId" element={<MissionConversationPage />} />
+            <Route path="missions/:missionId" element={<MissionDetailPage />} />
             <Route path="blueprints" element={<RequireRole roles={['admin']}><BlueprintsPage /></RequireRole>} />
 
             <Route path="client-workspaces" element={<ClientWorkspaceSelectorPage />} />
@@ -218,9 +210,9 @@ function App() {
               <Route path="projetos/projetos" element={<PortalProjectsPage />} />
               <Route path="projetos/aprovacoes" element={<PortalApprovalsPage />} />
               <Route path="projetos/documentos" element={<PortalDocumentsPage />} />
-              <Route path="missoes" element={<LazyPage><PortalMissionsPage /></LazyPage>} />
-              <Route path="missoes/conversas/:conversationId" element={<LazyPage><PortalMissionConversationPage /></LazyPage>} />
-              <Route path="missoes/:missionId" element={<LazyPage><PortalMissionDetailPage /></LazyPage>} />
+              <Route path="missoes" element={<PortalMissionsPage />} />
+              <Route path="missoes/conversas/:conversationId" element={<PortalMissionConversationPage />} />
+              <Route path="missoes/:missionId" element={<PortalMissionDetailPage />} />
 
               <Route path="relatorios" element={<PortalReportsPage />} />
               <Route path="suporte" element={<PortalSupportPage />} />
@@ -268,9 +260,9 @@ function App() {
             <Route path="portal/projetos/projetos" element={<PortalProjectsPage />} />
             <Route path="portal/projetos/aprovacoes" element={<PortalApprovalsPage />} />
             <Route path="portal/projetos/documentos" element={<PortalDocumentsPage />} />
-            <Route path="portal/missoes" element={<LazyPage><PortalMissionsPage /></LazyPage>} />
-            <Route path="portal/missoes/conversas/:conversationId" element={<LazyPage><PortalMissionConversationPage /></LazyPage>} />
-            <Route path="portal/missoes/:missionId" element={<LazyPage><PortalMissionDetailPage /></LazyPage>} />
+            <Route path="portal/missoes" element={<PortalMissionsPage />} />
+            <Route path="portal/missoes/conversas/:conversationId" element={<PortalMissionConversationPage />} />
+            <Route path="portal/missoes/:missionId" element={<PortalMissionDetailPage />} />
 
             <Route path="portal/relatorios" element={<PortalReportsPage />} />
             <Route path="portal/suporte" element={<PortalSupportPage />} />
@@ -297,7 +289,8 @@ function App() {
 
       {/* Fallback route */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </RouteLoadBoundary>
   )
 }
 

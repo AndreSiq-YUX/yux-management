@@ -9,7 +9,7 @@ export function PortalEditorialCalendarPage() {
     error,
     calendarItems,
     contents,
-  } = usePortalMarketingContext()
+  } = usePortalMarketingContext({ resources: ['calendarItems', 'contents'] })
 
   const now = Date.now()
   const upcomingItems = calendarItems.filter(item => new Date(item.startsAt).getTime() >= now)

@@ -21,7 +21,7 @@ export function PortalBrandVoicePage() {
     productsServices,
     settings,
     brandReadiness,
-  } = usePortalMarketingContext()
+  } = usePortalMarketingContext({ resources: ['brandProfile', 'knowledgeDocuments', 'productsServices', 'settings'] })
   const [editableProfile, setEditableProfile] = useState<CompanyBrandProfile | null>(null)
   const [brandLoading, setBrandLoading] = useState(false)
   const [saving, setSaving] = useState(false)

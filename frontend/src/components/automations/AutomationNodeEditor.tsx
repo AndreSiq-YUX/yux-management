@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { NodeConfigSidebar } from './NodeConfigSidebar'
 import { automationTriggerCatalog } from '@/lib/automations/automationCatalog'
+import { clearSessionDraft, readSessionDraft, writeSessionDraft } from '@/lib/sessionDraft'
 import type { AutomationFlow } from '@/types/automation'
 
 type AutomationGraphNodeData = Record<string, unknown>
@@ -193,23 +194,22 @@ function convertLinearFlowToGraph(flow: AutomationFlow) {
 }
 
 export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditorProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<AutomationGraphNode>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState<AutomationGraphEdge>([])
+  const draftScope = `automation-graph:${flow.organizationId}:${flow.id}`
+  const persistedGraph = readSessionDraft<{ nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[] }>(draftScope)
+  const initialGraph = persistedGraph?.nodes.length
+    ? persistedGraph
+    : flow.graph?.nodes?.length
+      ? { nodes: flow.graph.nodes as AutomationGraphNode[], edges: (flow.graph.edges || []) as AutomationGraphEdge[] }
+      : convertLinearFlowToGraph(flow)
+  const [nodes, setNodes, onNodesChange] = useNodesState<AutomationGraphNode>(initialGraph.nodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<AutomationGraphEdge>(initialGraph.edges)
   const [selectedNode, setSelectedNode] = useState<AutomationGraphNode | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Initialize nodes and edges
   useEffect(() => {
-    if (flow.graph && flow.graph.nodes && flow.graph.nodes.length > 0) {
-      setNodes(flow.graph.nodes as AutomationGraphNode[])
-      setEdges((flow.graph.edges || []) as AutomationGraphEdge[])
-    } else {
-      const graph = convertLinearFlowToGraph(flow)
-      setNodes(graph.nodes)
-      setEdges(graph.edges)
-    }
-  }, [flow.id])
+    writeSessionDraft(draftScope, { nodes, edges })
+  }, [draftScope, edges, nodes])
 
   const onConnect = useCallback(
     (connection: any) => setEdges(eds => addEdge({ ...connection, animated: true }, eds)),
@@ -263,6 +263,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
     setSaving(true)
     try {
       await onSaveGraph({ nodes, edges })
+      clearSessionDraft(draftScope)
       toast.success('Estrutura de nós salva com sucesso!')
     } catch (err) {
       console.error('Erro ao salvar grafo:', err)

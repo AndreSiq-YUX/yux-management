@@ -1,16 +1,14 @@
 import { AlertCircle, CheckSquare, Copy, GitBranch, Layers3, Play, Plus, Power, Search, Square, Trash2, Workflow } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AiActionPreview } from './AiActionPreview'
 import { AutomationAuditTrail } from './AutomationAuditTrail'
 import { AutomationCreateDialog } from './AutomationCreateDialog'
-import { AutomationDashboard } from './AutomationDashboard'
 import { AutomationDryRunToggle } from './AutomationDryRunToggle'
 import { AutomationExecutionsWorkspace } from './AutomationExecutionsWorkspace'
 import { AutomationGuidedBuilder } from './AutomationGuidedBuilder'
-import { AutomationNodeEditor } from './AutomationNodeEditor'
 import { AutomationOnboarding } from './AutomationOnboarding'
 import { AutomationRealtime } from './AutomationRealtime'
 import { AutomationSimulationPanel } from './AutomationSimulationPanel'
@@ -69,6 +67,13 @@ interface AutomationWorkspaceProps {
 
 const sections = ['Dashboard', 'Automacoes', 'Sequencias', 'Templates', 'Execucoes', 'Configuracoes'] as const
 type AutomationSection = typeof sections[number]
+
+const AutomationDashboard = lazy(() => import('./AutomationDashboard').then(module => ({ default: module.AutomationDashboard })))
+const AutomationNodeEditor = lazy(() => import('./AutomationNodeEditor').then(module => ({ default: module.AutomationNodeEditor })))
+
+function HeavyPanelFallback({ label }: { label: string }) {
+  return <div role="status" aria-live="polite" className="grid min-h-72 place-items-center rounded-md border bg-slate-50 text-sm text-slate-500">{label}</div>
+}
 
 export function AutomationWorkspace({
   flows,
@@ -362,7 +367,11 @@ export function AutomationWorkspace({
         </aside>
 
         <main className="min-w-0 overflow-y-auto p-4">
-          {activeSection === 'Dashboard' && <AutomationDashboard flows={flows} />}
+          {activeSection === 'Dashboard' && (
+            <Suspense fallback={<HeavyPanelFallback label="Carregando indicadores..." />}>
+              <AutomationDashboard flows={flows} />
+            </Suspense>
+          )}
           {activeSection === 'Automacoes' && (
             <div className="space-y-4">
               <AutomationObjectivePanel
@@ -402,14 +411,17 @@ export function AutomationWorkspace({
               )}
 
               {selected && selected.builderMode === 'node' ? (
-                <AutomationNodeEditor
-                  flow={selected}
-                  onSaveGraph={async (graph) => {
-                    if (onUpdateFlow) {
-                      await onUpdateFlow(selected.id, { graph })
-                    }
-                  }}
-                />
+                <Suspense fallback={<HeavyPanelFallback label="Carregando editor visual..." />}>
+                  <AutomationNodeEditor
+                    key={selected.id}
+                    flow={selected}
+                    onSaveGraph={async (graph) => {
+                      if (onUpdateFlow) {
+                        await onUpdateFlow(selected.id, { graph })
+                      }
+                    }}
+                  />
+                </Suspense>
               ) : (
                 <AutomationGuidedBuilder
                   flow={selected}

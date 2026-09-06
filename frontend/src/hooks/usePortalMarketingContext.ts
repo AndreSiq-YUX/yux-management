@@ -24,7 +24,10 @@ import type {
   PortalMarketingContentItem,
 } from '@/types/marketingStudio'
 
+export type PortalMarketingContextResource = keyof PortalMarketingContextState
+
 interface PortalMarketingContextOptions {
+  resources?: readonly PortalMarketingContextResource[]
   includeCampaigns?: boolean
   includeOperations?: boolean
 }
@@ -70,28 +73,48 @@ const fallback = async <T,>(promise: Promise<T>, value: T): Promise<T> => {
   }
 }
 
+const defaultResources: readonly PortalMarketingContextResource[] = [
+  'contents',
+  'calendarItems',
+  'reviews',
+  'brandProfile',
+  'productsServices',
+  'knowledgeDocuments',
+  'knowledgeMatches',
+  'settings',
+]
+
 export async function loadPortalMarketingContextData(
   contractId: string,
   options: PortalMarketingContextOptions = {},
 ): Promise<PortalMarketingContextState> {
+  const resources = new Set(options.resources ?? defaultResources)
+  if (options.includeCampaigns) resources.add('campaigns')
+  if (options.includeOperations) {
+    resources.add('creativeSuggestions')
+    resources.add('publishingConnections')
+    resources.add('agents')
+    resources.add('workflowRuns')
+  }
+  const includes = (resource: PortalMarketingContextResource) => resources.has(resource)
   const [
     contents, settings, calendarItems, reviews, brandProfile, productsServices,
     knowledgeDocuments, knowledgeMatches, campaigns, creativeSuggestions,
     publishingConnections, agents, workflowRuns,
   ] = await Promise.all([
-    marketingStudioService.getPortalContents(contractId),
-    marketingStudioService.getSettings(contractId),
-    marketingStudioService.getCalendarItems({ contractId }),
-    fallback(marketingStudioService.getReviews({ contractId }), []),
-    marketingStudioService.getBrandProfile(contractId),
-    marketingStudioService.getProductsServices({ contractId }),
-    marketingStudioService.getKnowledgeDocuments({ contractId }),
-    fallback(marketingStudioService.searchKnowledge(contractId, '', 3), []),
-    options.includeCampaigns ? fallback(campaignService.getPortalCampaigns(contractId), []) : Promise.resolve([]),
-    options.includeOperations ? fallback(marketingStudioService.getCampaignCreativeSuggestions({ contractId }), []) : Promise.resolve([]),
-    options.includeOperations ? fallback(marketingStudioService.getPublishingConnections({ contractId }), []) : Promise.resolve([]),
-    options.includeOperations ? fallback(marketingStudioService.getAgents({ contractId }), []) : Promise.resolve([]),
-    options.includeOperations ? fallback(marketingStudioService.getWorkflowRuns({ contractId }), []) : Promise.resolve([]),
+    includes('contents') ? marketingStudioService.getPortalContents(contractId) : Promise.resolve([]),
+    includes('settings') ? marketingStudioService.getSettings(contractId) : Promise.resolve(null),
+    includes('calendarItems') ? marketingStudioService.getCalendarItems({ contractId }) : Promise.resolve([]),
+    includes('reviews') ? fallback(marketingStudioService.getReviews({ contractId }), []) : Promise.resolve([]),
+    includes('brandProfile') ? marketingStudioService.getBrandProfile(contractId) : Promise.resolve(null),
+    includes('productsServices') ? marketingStudioService.getProductsServices({ contractId }) : Promise.resolve([]),
+    includes('knowledgeDocuments') ? marketingStudioService.getKnowledgeDocuments({ contractId }) : Promise.resolve([]),
+    includes('knowledgeMatches') ? fallback(marketingStudioService.searchKnowledge(contractId, '', 3), []) : Promise.resolve([]),
+    includes('campaigns') ? fallback(campaignService.getPortalCampaigns(contractId), []) : Promise.resolve([]),
+    includes('creativeSuggestions') ? fallback(marketingStudioService.getCampaignCreativeSuggestions({ contractId }), []) : Promise.resolve([]),
+    includes('publishingConnections') ? fallback(marketingStudioService.getPublishingConnections({ contractId }), []) : Promise.resolve([]),
+    includes('agents') ? fallback(marketingStudioService.getAgents({ contractId }), []) : Promise.resolve([]),
+    includes('workflowRuns') ? fallback(marketingStudioService.getWorkflowRuns({ contractId }), []) : Promise.resolve([]),
   ])
   return {
     contents, settings, calendarItems, reviews,
@@ -107,6 +130,7 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const includeCampaigns = Boolean(options.includeCampaigns)
   const includeOperations = Boolean(options.includeOperations)
+  const resourcesKey = [...new Set(options.resources ?? defaultResources)].sort().join(',')
   const [state, setState] = useState<PortalMarketingContextState>(emptyState)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -128,7 +152,11 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
     setError(null)
 
     try {
-      setState(await loadPortalMarketingContextData(activeContract.id, { includeCampaigns, includeOperations }))
+      setState(await loadPortalMarketingContextData(activeContract.id, {
+        includeCampaigns,
+        includeOperations,
+        resources: resourcesKey.split(',').filter(Boolean) as PortalMarketingContextResource[],
+      }))
     } catch (loadError) {
       console.error('Erro ao carregar contexto de marketing do portal:', loadError)
       setState(emptyState)
@@ -136,7 +164,7 @@ export function usePortalMarketingContext(options: PortalMarketingContextOptions
     } finally {
       setLoading(false)
     }
-  }, [activeContract, includeCampaigns, includeOperations, isPlatformLoading])
+  }, [activeContract, includeCampaigns, includeOperations, isPlatformLoading, resourcesKey])
 
   useEffect(() => {
     load()

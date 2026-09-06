@@ -15,5 +15,8 @@ export function PortalMarketingStudioPage() {
   if (!workspaceContext.moduleKeys.includes('marketing_studio')) {
     return <div><h1 className="text-2xl font-semibold text-slate-950">Marketing Studio</h1><p className="mt-2 text-slate-600">Módulo não disponível para este acesso.</p></div>
   }
-  return <StudioJourney workspaceContext={workspaceContext} />
+  return <StudioJourney
+    key={`${workspaceContext.organizationId}:${workspaceContext.contractId ?? 'no-contract'}`}
+    workspaceContext={workspaceContext}
+  />
 }

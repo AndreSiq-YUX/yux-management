@@ -287,7 +287,7 @@ export function PortalCreativeAssetsPage() {
     error,
     campaigns,
     creativeSuggestions,
-  } = usePortalMarketingContext({ includeCampaigns: true, includeOperations: true })
+  } = usePortalMarketingContext({ resources: ['campaigns', 'creativeSuggestions'] })
   const [view, setView] = useState<LibraryView>('gallery')
   const [activeFilter, setActiveFilter] = useState('Todos')
   const [query, setQuery] = useState('')

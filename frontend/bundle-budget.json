@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "auditLargestChunkBytes": 2333020,
+    "auditLargestChunkGzipBytes": 601080,
+    "preSplitLargestChunkBytes": 2358350,
+    "preSplitLargestChunkGzipBytes": 606666,
+    "preSplitInitialJsBytes": 3041824,
+    "preSplitInitialJsGzipBytes": 808036
+  },
+  "budget": {
+    "maximumInitialJsGzipBytes": 404018,
+    "minimumReductionPercent": 50
+  },
+  "journeys": {
+    "portalDashboard": "src/pages/client-portal/PortalDashboardPage.tsx",
+    "portalMarketingStudio": "src/pages/client-portal/PortalMarketingStudioPage.tsx",
+    "portalAutomations": "src/pages/client-portal/PortalAutomationsPage.tsx",
+    "portalMission": "src/pages/client-portal/PortalMissionDetailPage.tsx"
+  }
+}

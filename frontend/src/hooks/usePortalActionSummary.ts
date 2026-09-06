@@ -47,7 +47,7 @@ export function usePortalActionSummary() {
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const crm = usePortalCrmContext()
-  const marketing = usePortalMarketingContext({ includeCampaigns: true, includeOperations: true })
+  const marketing = usePortalMarketingContext({ resources: ['reviews', 'creativeSuggestions'] })
   const [projectState, setProjectState] = useState<ProjectActionState>(emptyProjectActionState)
   const [projectRefreshKey, setProjectRefreshKey] = useState(0)
 

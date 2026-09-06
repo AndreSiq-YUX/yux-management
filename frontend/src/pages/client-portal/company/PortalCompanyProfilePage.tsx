@@ -18,7 +18,7 @@ export function PortalCompanyProfilePage() {
     productsServices,
     knowledgeDocuments,
     settings,
-  } = usePortalMarketingContext()
+  } = usePortalMarketingContext({ resources: ['productsServices', 'knowledgeDocuments', 'settings'] })
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [saving, setSaving] = useState(false)

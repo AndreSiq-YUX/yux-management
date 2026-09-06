@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from '@/components/navigation/Sidebar'
 import { Header } from '@/components/navigation/Header'
+import { RouteLoadBoundary } from '@/components/routing/RouteLoadBoundary'
 import { useAuthStore } from '@/stores/authStore'
 import { usePlatformStore } from '@/stores/platformStore'
 import { resolvePlatformMode } from './platformMode'
@@ -48,7 +49,9 @@ export function DashboardLayout() {
         
         <main className="py-6">
           <div className="w-full px-4 sm:px-6 lg:px-8">
-            <Outlet />
+            <RouteLoadBoundary>
+              <Outlet />
+            </RouteLoadBoundary>
           </div>
         </main>
       </div>

@@ -216,7 +216,7 @@ export function PortalOrganicContentPage() {
     contents,
     campaigns,
     creativeSuggestions,
-  } = usePortalMarketingContext({ includeCampaigns: true, includeOperations: true })
+  } = usePortalMarketingContext({ resources: ['contents', 'campaigns', 'creativeSuggestions'] })
   const [view, setView] = useState<LibraryView>('gallery')
   const [activeType, setActiveType] = useState('Todos')
   const [query, setQuery] = useState('')

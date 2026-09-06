@@ -1,4 +1,4 @@
-import { act } from 'react-dom/test-utils'
+import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -503,7 +503,8 @@ const campaignDraftRuns: MarketingCampaignDraftRun[] = [{
 }]
 
 describe('MarketingStudioWorkspace', () => {
-  it('renders internal metrics, tabs, content, and internal operational details', () => {
+  it('renders internal metrics, tabs, content, and internal operational details', async () => {
+    await import('./MarketingAutomationStudio')
     const container = document.createElement('div')
     const root = createRoot(container)
     const onRefresh = vi.fn()
@@ -511,7 +512,7 @@ describe('MarketingStudioWorkspace', () => {
     const onApproveReview = vi.fn()
     const onSearchKnowledge = vi.fn()
 
-    act(() => {
+    await act(async () => {
       root.render(
         <MemoryRouter>
           <MarketingStudioWorkspace
@@ -549,6 +550,7 @@ describe('MarketingStudioWorkspace', () => {
           />
         </MemoryRouter>
       )
+      await Promise.resolve()
     })
 
     const html = container.innerHTML

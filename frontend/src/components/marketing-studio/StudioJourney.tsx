@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { AlertCircle, ArrowRight, CheckCircle2, Clock3, FileText, Megaphone, RefreshCw, Send, Workflow } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
+import { clearSessionDraft, readSessionDraft, writeSessionDraft } from '@/lib/sessionDraft'
 import { marketingStudioService } from '@/services/marketingStudioService'
 import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 import type { MarketingCampaignObjective, MarketingChannel, StudioJourneyContent, StudioJourneySummary } from '@/types/marketingStudio'
@@ -34,11 +35,26 @@ export function StudioJourney({ workspaceContext }: { workspaceContext: Workspac
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [showPlan, setShowPlan] = useState(false)
-  const [plan, setPlan] = useState<PlanForm>(emptyPlan)
+  const draftScope = `marketing-studio:${workspaceContext.organizationId}:${contractId ?? 'no-contract'}`
+  const initialDraft = useMemo(() => readSessionDraft<{
+    showPlan: boolean
+    plan: PlanForm
+    editing: { id: string; title: string; body: string } | null
+  }>(draftScope), [draftScope])
+  const [showPlan, setShowPlan] = useState(initialDraft?.showPlan ?? false)
+  const [plan, setPlan] = useState<PlanForm>(initialDraft?.plan ?? emptyPlan)
   const [reviewComment, setReviewComment] = useState<Record<string, string>>({})
   const [publishConnectionId, setPublishConnectionId] = useState<Record<string, string>>({})
-  const [editing, setEditing] = useState<{ id: string; title: string; body: string } | null>(null)
+  const [editing, setEditing] = useState<{ id: string; title: string; body: string } | null>(initialDraft?.editing ?? null)
+
+  useEffect(() => {
+    const hasPlanDraft = showPlan || Object.values(plan).some(value => String(value).trim() && value !== emptyPlan.objective && value !== emptyPlan.channel)
+    if (!hasPlanDraft && !editing) {
+      clearSessionDraft(draftScope)
+      return
+    }
+    writeSessionDraft(draftScope, { showPlan, plan, editing })
+  }, [draftScope, editing, plan, showPlan])
 
   const load = useCallback(async () => {
     if (!contractId) return

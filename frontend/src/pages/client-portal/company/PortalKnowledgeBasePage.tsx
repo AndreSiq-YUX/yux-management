@@ -26,7 +26,7 @@ export function PortalKnowledgeBasePage() {
     knowledgeMatches,
     productsServices,
     settings,
-  } = usePortalMarketingContext()
+  } = usePortalMarketingContext({ resources: ['brandProfile', 'knowledgeDocuments', 'knowledgeMatches', 'productsServices', 'settings'] })
   const [documents, setDocuments] = useState<CompanyKnowledgeDocument[]>([])
   const [libraryLoading, setLibraryLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)

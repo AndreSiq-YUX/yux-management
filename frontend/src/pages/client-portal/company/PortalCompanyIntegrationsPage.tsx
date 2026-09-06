@@ -11,7 +11,7 @@ export function PortalCompanyIntegrationsPage() {
     error,
     campaigns,
     publishingConnections,
-  } = usePortalMarketingContext({ includeCampaigns: true, includeOperations: true })
+  } = usePortalMarketingContext({ resources: ['campaigns', 'publishingConnections'] })
 
   const connectedPublishing = publishingConnections.filter(connection => connection.status === 'connected')
   const campaignProviders = new Set(campaigns.map(campaign => campaign.provider))

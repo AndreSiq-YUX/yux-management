@@ -12,7 +12,7 @@ export function PortalAiAgentPage() {
     knowledgeDocuments,
     knowledgeMatches,
     brandProfile,
-  } = usePortalMarketingContext({ includeOperations: true })
+  } = usePortalMarketingContext({ resources: ['agents', 'workflowRuns', 'knowledgeDocuments', 'knowledgeMatches', 'brandProfile'] })
 
   const publishedDocuments = knowledgeDocuments.filter(document => document.status === 'published')
   const activeAgents = agents.filter(agent => agent.status === 'active')
