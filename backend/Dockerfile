@@ -19,7 +19,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN apk add --no-cache --upgrade \
     libcrypto3=3.5.8-r0 \
-    libssl3=3.5.8-r0
+    libssl3=3.5.8-r0 \
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
 COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/db/migrations ./dist/src/db/migrations

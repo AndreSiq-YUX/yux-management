@@ -1,4 +1,4 @@
-FROM python:3.13.14-alpine3.24@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
+FROM python:3.13.15-alpine3.24@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -7,7 +7,8 @@ WORKDIR /app
 
 RUN apk add --no-cache --upgrade \
     libcrypto3=3.5.8-r0 \
-    libssl3=3.5.8-r0
+    libssl3=3.5.8-r0 \
+    libuuid=2.42.3-r1
 
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
