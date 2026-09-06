@@ -88,14 +88,25 @@ it('publica regras e itens aprovados atomicamente sem atalhos de conteúdo bruto
 })
 
 async function verifyCompanyPublication(rig: Awaited<ReturnType<typeof createIntegrationRig>>) {
-  const sourceId = '50000000-0000-4000-8000-000000000001'
+  const sourceId = randomUUID()
+  const documentId = randomUUID()
   const entryId = randomUUID()
   const rawId = randomUUID()
   const approvedId = randomUUID()
   const rejectedId = randomUUID()
   const raw = 'A empresa atende todo o Brasil com suporte consultivo.'
-  await rig.sql(`UPDATE public.knowledge_sources SET status='review',governance_version=1 WHERE id=$1`, [sourceId])
-  await rig.sql(`UPDATE public.marketing_knowledge_documents SET status='indexed' WHERE id=$1`, [rig.ids.documentA])
+  await rig.sql(
+    `INSERT INTO public.knowledge_sources (id,organization_id,source_type,name,status,visibility)
+     VALUES ($1,$2,'manual',$3,'review','both')`,
+    [sourceId, rig.ids.organizationA, `Publicação ${sourceId}`],
+  )
+  await rig.sql(
+    `INSERT INTO public.marketing_knowledge_documents
+       (id,organization_id,client_id,contract_id,source_id,title,document_type,status,summary)
+     SELECT $1,$2,contract.client_id,contract.id,$3,'Documento governado','other','indexed','Teste isolado'
+       FROM public.contracts contract WHERE contract.id=$4`,
+    [documentId, rig.ids.organizationA, sourceId, rig.ids.contractA],
+  )
   await rig.sql(
     `INSERT INTO public.knowledge_entries (id,organization_id,source_id,title,body,status) VALUES ($1,$2,$3,'Documento governado',$4,'draft')`,
     [entryId, rig.ids.organizationA, sourceId, raw],
@@ -103,21 +114,21 @@ async function verifyCompanyPublication(rig: Awaited<ReturnType<typeof createInt
   await rig.sql(
     `INSERT INTO public.marketing_knowledge_chunks (
        id,organization_id,client_id,contract_id,document_id,entry_id,chunk_index,body,token_count,chunk_kind,source_locator,evidence_excerpt,curation_status,content_hash
-     ) VALUES ($1,$4,'30000000-0000-4000-8000-000000000001',$5,$6,$7,0,$8,20,'raw','section:1',NULL,'not_required',$9),
-              ($2,$4,'30000000-0000-4000-8000-000000000001',$5,$6,$7,1,'Atendimento nacional.',10,'curated_fact','section:1','atende todo o Brasil','approved',$10),
-              ($3,$4,'30000000-0000-4000-8000-000000000001',$5,$6,$7,2,'Promessa rejeitada.',10,'curated_fact','section:1','promessa inexistente','rejected',$11)`,
-    [rawId, approvedId, rejectedId, rig.ids.organizationA, rig.ids.contractA, rig.ids.documentA, entryId, raw,
+     ) VALUES ($1,$4,(SELECT client_id FROM public.contracts WHERE id=$5),$5,$6,$7,0,$8,20,'raw','section:1',NULL,'not_required',$9),
+              ($2,$4,(SELECT client_id FROM public.contracts WHERE id=$5),$5,$6,$7,1,'Atendimento nacional.',10,'curated_fact','section:1','atende todo o Brasil','approved',$10),
+              ($3,$4,(SELECT client_id FROM public.contracts WHERE id=$5),$5,$6,$7,2,'Promessa rejeitada.',10,'curated_fact','section:1','promessa inexistente','rejected',$11)`,
+    [rawId, approvedId, rejectedId, rig.ids.organizationA, rig.ids.contractA, documentId, entryId, raw,
       createHash('sha256').update(raw).digest('hex'), createHash('sha256').update('Atendimento nacional.').digest('hex'), createHash('sha256').update('Promessa rejeitada.').digest('hex')],
   )
   const command = { expectedVersion: 1, visibility: 'internal', allowedAgentProfileKeys: ['growth_strategist'], blockedAgentProfileKeys: ['ai_sdr_comercial_1'], approvedItemIds: [approvedId] }
-  expect((await rig.request('client_member_A', 'POST', `/api/company-intelligence/knowledge/${rig.ids.documentA}/publish`, command)).statusCode).toBe(403)
-  expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${rig.ids.documentA}/publish`, { ...command, approvedItemIds: [rejectedId] })).statusCode).toBe(409)
-  expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${rig.ids.documentA}/publish`, { ...command, approvedItemIds: [] })).statusCode).toBe(400)
-  const published = await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${rig.ids.documentA}/publish`, command)
+  expect((await rig.request('client_member_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, command)).statusCode).toBe(403)
+  expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, { ...command, approvedItemIds: [rejectedId] })).statusCode).toBe(409)
+  expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, { ...command, approvedItemIds: [] })).statusCode).toBe(400)
+  const published = await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, command)
   expect(published.statusCode).toBe(200)
   expect(published.body).toMatchObject({ visibility: 'internal', allowedAgentProfileKeys: ['growth_strategist'], blockedAgentProfileKeys: ['ai_sdr_comercial_1'], governanceVersion: 2, version: 1 })
   expect(published.body.publicationId).toBeTruthy()
-  expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${rig.ids.documentA}/publish`, command)).statusCode).toBe(409)
+  expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, command)).statusCode).toBe(409)
   const stored = await rig.sql(`SELECT snapshot,approved_item_ids FROM public.knowledge_publications WHERE id=$1`, [published.body.publicationId])
   expect(stored.rows[0].snapshot.governance.visibility).toBe('internal')
   expect(stored.rows[0].approved_item_ids).toEqual([approvedId])
