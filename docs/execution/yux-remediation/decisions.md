@@ -88,3 +88,11 @@
 - Recuperação: banco/outbox são a autoridade, Redis é transporte. O job tem identidade estável, lease cercado por proprietário/tentativa e pode ser reconciliado por nova leitura do estado. Duplicidade por hash é limitada à organização proprietária.
 - Limite de extração: ausência de texto útil em PDF é uma necessidade explícita de OCR, não sucesso degradado nem conteúdo pronto para revisão.
 - Motivo: impedir arquivo órfão ativo, fila apontando para bytes inexistentes, duplicação após reinício e publicação acidental de documentos digitalizados sem extração verificável.
+
+## D-015 — Evidência verificável precede conhecimento estratégico
+
+- Status: decidida.
+- Decisão: somente proposta estruturada com documento, hash, localização e trecho literal conferido contra a extração pode chegar à revisão. Derivação é marcada separadamente; raw, saída degradada e instruções encontradas dentro da fonte não adquirem autoridade.
+- Identidade: o hash canônico do tipo, título, princípio e evidências é independente da ordem das chaves JSON. Duplicidade exata é impedida por pack; similaridade apenas cria conflito para decisão humana e nunca cruza escopos.
+- Recuperação e custo: hashes de entrada identificam checkpoints de extração, lote de curadoria e embedding. Resultado já concluído é reutilizado em retries; uso conhecido é registrado atomicamente com o checkpoint. Não se promete deduplicar cobrança externa quando a chamada cai antes de devolver um resultado persistível.
+- Publicação: o modelo só propõe. Aprovação, rejeição ou edição exige usuário autenticado, motivo e nova validação da evidência; somente T19 poderá materializar uma release publicada.

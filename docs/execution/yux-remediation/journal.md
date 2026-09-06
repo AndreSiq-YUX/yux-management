@@ -244,3 +244,14 @@ frontend tests: PASS, 528 PASS
 - OCR: marcadores técnicos do parser não contam como conteúdo. PDF sem texto útil termina em `extraction_requires_ocr` e não é apresentado como curado ou concluído.
 - Verificação local: type-check/build de backend e frontend aprovados; 155 arquivos/630 testes backend e 125 arquivos/532 testes frontend aprovados; lint direcionado dos arquivos alterados sem achados. O lint global permanece bloqueado por 565 erros preexistentes fora desta tarefa.
 - Aceite persistente: execução GitHub Actions `34033242938`, commit `6168a6c`, conclusão `success`. O cenário real comprovou autorização interna, TXT, upload interrompido e retomado, hash divergente, MIME inválido, deduplicação, reinício da API, processamento pelo outbox/worker e PDF vazio retido para OCR. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T18 — Curadoria estratégica com evidência e revisão humana
+
+- Estado: aceita.
+- Commit inicial: `b9d29ca`; correções de diretório configurado e identidade canônica: `230bb55` e `9673d38`.
+- Curadoria: o runtime usa prompt versionado, trata o documento como dado não confiável e exige princípio, problema, perguntas, aplicabilidade, contraindicações, regras, ações, critérios, confiança, conflitos e evidência literal localizável. Fatos específicos da empresa não são promovidos a princípio geral.
+- Evidência: o runtime e o backend validam documento, SHA-256, página/seção, locator e trecho após normalizar somente Unicode e espaços. Páginas PDF são as páginas reais do parser; TXT/DOCX conservam seção. Item sem evidência verificável é rejeitado.
+- Recuperação: extração, lotes de curadoria e embeddings possuem hash/checkpoint. Resultado concluído é reutilizado após reinício; custo/uso é persistido junto do checkpoint. A CI interrompeu curadoria e o processo logo após salvar embeddings, comprovando retomada sem segunda chamada de curadoria ou embedding para o mesmo resultado.
+- Governança: hash canônico e similaridade evitam duplicidade e sinalizam possível merge/conflito somente dentro do pack. Conteúdo bruto nunca vira autorizado em modo degradado. Propostas permanecem `proposed` até operador aprovar, rejeitar ou editar com motivo; a fonte fica visível na tela.
+- Verificação local: builds e type-checks aprovados; 631 testes backend antes do teste canônico adicional, 534 frontend e 171 Python aprovados; contratos e 15 cenários dourados aprovados; lint direcionado sem achados.
+- Aceite persistente: execução GitHub Actions `34034664537`, commit `9673d38`, conclusão `success`. Os quatro jobs passaram; a integração persistente aprovou 24 cenários, incluindo interrupção/retomada, ausência de duplicata, evidência, contraindicação e revisão humana.
