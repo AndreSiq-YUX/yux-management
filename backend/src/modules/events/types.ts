@@ -83,6 +83,11 @@ export type DomainEventRow = {
   available_at: string | Date
   dispatched_at: string | Date | null
   last_error: string | null
+  lease_owner: string | null
+  lease_until: string | Date | null
+  processing_stage: string
+  processor_version: string
+  failure_class: 'recoverable' | 'configuration' | 'terminal' | null
   created_at: string | Date
 }
 
@@ -96,8 +101,22 @@ export type DomainEventDeliveryRow = {
   completed_at: string | Date | null
   result: Record<string, unknown>
   last_error: string | null
+  lease_owner: string | null
+  lease_until: string | Date | null
+  processing_stage: string
+  processor_version: string
+  failure_class: 'recoverable' | 'configuration' | 'terminal' | null
   created_at: string | Date
   updated_at: string | Date
+}
+
+export type ClaimedDomainEvent = DomainEventEnvelope & {
+  claim: {
+    owner: string
+    leaseUntil: string
+    attempt: number
+    stage: string
+  }
 }
 
 export class DomainEventError extends Error {

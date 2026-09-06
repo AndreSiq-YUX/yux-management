@@ -33,6 +33,11 @@ const eventRow = {
   available_at: '2026-08-03T12:00:00.000Z',
   dispatched_at: null,
   last_error: null,
+  lease_owner: 'test-owner',
+  lease_until: '2026-08-03T12:02:00.000Z',
+  processing_stage: 'fan_out',
+  processor_version: 'domain-event-dispatch:v1',
+  failure_class: null,
   created_at: '2026-08-03T12:00:00.000Z',
 }
 
@@ -42,7 +47,7 @@ class FakeClient {
   async query<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
     this.calls.push({ sql, params })
     if (sql.includes('INSERT INTO public.domain_events')) return { rows: [eventRow] as T[] }
-    return { rows: [] as T[] }
+    return { rows: [] as T[], rowCount: 1 }
   }
 }
 
@@ -114,15 +119,16 @@ describe('domain event envelope and transactional outbox', () => {
     client.query = async function<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
       this.calls.push({ sql, params })
       if (sql.includes('WITH claimed AS')) return { rows: [eventRow] as T[] }
-      return { rows: [] as T[] }
+      return { rows: [] as T[], rowCount: 1 }
     }
     const pool = { async connect() { return { query: client.query.bind(client), release() {} } } }
 
     const events = await claimPendingEvents(pool, Number.POSITIVE_INFINITY)
 
     expect(events).toHaveLength(1)
-    expect(client.calls.find((call) => call.sql.includes('WITH claimed AS'))?.params).toEqual([100])
+    expect(client.calls.find((call) => call.sql.includes('WITH claimed AS'))?.params).toEqual([100, expect.any(String), 120_000])
     expect(client.calls.some((call) => call.sql.includes('FOR UPDATE SKIP LOCKED'))).toBe(true)
+    expect(client.calls.some((call) => call.sql.includes("dispatch_status = 'dispatching' AND lease_until < NOW()"))).toBe(true)
   })
 })
 
@@ -144,29 +150,42 @@ describe('domain event fan-out', () => {
             completed_at: null,
             result: {},
             last_error: null,
+            lease_owner: null,
+            lease_until: null,
+            processing_stage: 'consume',
+            processor_version: 'domain-event-consumer:v1',
+            failure_class: null,
             created_at: '2026-08-03T12:00:00.000Z',
             updated_at: '2026-08-03T12:00:00.000Z',
           }] as T[],
         }
       }
-      return { rows: [] as T[] }
+      return { rows: [] as T[], rowCount: 1 }
     }
     const jobs: Array<{ name: string; data: unknown; jobId?: string }> = []
     const queue = {
-      async add(name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver', data: { eventId: string; deliveryId: string; consumerKey: 'automation' | 'scoring' | 'mission_observer' }, options?: { jobId?: string }) {
+      async add(name: 'events.consume.automation' | 'events.consume.scoring' | 'events.consume.missionObserver', data: { eventId: string; deliveryId: string; consumerKey: 'automation' | 'scoring' | 'mission_observer'; organizationId: string }, options?: { jobId?: string }) {
         jobs.push({ name, data, jobId: options?.jobId })
       },
     }
     const pool = { async connect() { return { ...client, release() {} } } }
 
-    await fanOutDomainEvent(pool, queue, createDomainEventEnvelope({
-      eventId: ids.event,
-      eventType: 'form.submitted',
-      organizationId: ids.organization,
-      aggregateType: 'lead',
-      aggregateId: ids.lead,
-      actor: { type: 'system' },
-    }))
+    await fanOutDomainEvent(pool, queue, {
+      ...createDomainEventEnvelope({
+        eventId: ids.event,
+        eventType: 'form.submitted',
+        organizationId: ids.organization,
+        aggregateType: 'lead',
+        aggregateId: ids.lead,
+        actor: { type: 'system' },
+      }),
+      claim: {
+        owner: 'test-owner',
+        leaseUntil: '2026-08-03T12:02:00.000Z',
+        attempt: 1,
+        stage: 'fan_out',
+      },
+    })
 
     expect(jobs).toHaveLength(3)
     expect(jobs.map((job) => job.name)).toEqual([

@@ -80,6 +80,7 @@ export async function applyMigrations(pool: MigrationPool, migrationsDir: string
       await client.query('BEGIN')
       try {
         log.log(`applying ${version} from ${file} (${sql.length} chars)`)
+        await prepareMigrationReplayCompatibility(client, version)
         await client.query("SELECT set_config('app.service_role', 'migrator', true)")
         await client.query("SELECT set_config('app.current_role', 'yux_admin', true)")
         await client.query("SELECT set_config('app.current_orgs', '{}', true)")
@@ -102,6 +103,45 @@ export async function applyMigrations(pool: MigrationPool, migrationsDir: string
     }
     client.release()
   }
+}
+
+/**
+ * The consolidated 0100 baseline already contains the email-template foreign
+ * key later named by 0106. Fresh self-hosted installs still execute 0106, while
+ * existing installs have it recorded and skip this path. Replacing the same,
+ * structurally verified constraint inside 0106's transaction keeps historical
+ * SQL immutable and makes a clean replay deterministic.
+ */
+export async function prepareMigrationReplayCompatibility(client: MigrationClient, version: string) {
+  if (version !== '0106_email_template_management') return
+
+  const existing = await client.query(
+    `SELECT (
+       constraint.contype = 'f'
+       AND constraint.confrelid = 'public.email_template_versions'::regclass
+       AND constraint.confdeltype = 'n'
+       AND constraint.conkey = ARRAY[(
+         SELECT attribute.attnum::SMALLINT
+         FROM pg_attribute attribute
+         WHERE attribute.attrelid = 'public.email_templates'::regclass
+           AND attribute.attname = 'published_version_id'
+       )]::SMALLINT[]
+       AND constraint.confkey = ARRAY[(
+         SELECT attribute.attnum::SMALLINT
+         FROM pg_attribute attribute
+         WHERE attribute.attrelid = 'public.email_template_versions'::regclass
+           AND attribute.attname = 'id'
+       )]::SMALLINT[]
+     ) AS compatible
+     FROM pg_constraint constraint
+     WHERE constraint.conname = 'email_templates_published_version_fk'
+       AND constraint.conrelid = 'public.email_templates'::regclass`,
+  )
+  if (!existing.rowCount) return
+  if (existing.rows?.[0]?.compatible !== true) {
+    throw new Error('migration_replay_precondition_mismatch:0106_email_template_management')
+  }
+  await client.query('ALTER TABLE public.email_templates DROP CONSTRAINT email_templates_published_version_fk')
 }
 
 export function normalizeMigrationSql(sql: string) {

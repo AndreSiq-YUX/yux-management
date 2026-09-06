@@ -1,11 +1,13 @@
 import {
   createDomainEventEnvelope,
   DomainEventError,
+  type ClaimedDomainEvent,
   type DomainEventDeliveryRow,
   type DomainEventEnvelope,
   type DomainEventInput,
   type DomainEventRow,
 } from './types.js'
+import { JOB_LEASE_DURATION_MS, classifyLeaseFailure, createLeaseOwner } from '../../jobs/leases.js'
 
 type Queryable = {
   query: <T = any>(...args: any[]) => Promise<any>
@@ -18,7 +20,8 @@ const DOMAIN_EVENT_COLUMNS = `
   id, organization_id, crm_instance_id, event_type, schema_version,
   aggregate_type, aggregate_id, lead_id, correlation_id, causation_id,
   depth, actor, occurred_at, automation_trace, payload, dispatch_status,
-  attempt_count, available_at, dispatched_at, last_error, created_at
+  attempt_count, available_at, dispatched_at, last_error, lease_owner, lease_until,
+  processing_stage, processor_version, failure_class, created_at
 `
 
 const QUALIFIED_DOMAIN_EVENT_COLUMNS = DOMAIN_EVENT_COLUMNS
@@ -91,7 +94,11 @@ export async function getDomainEvent(client: Queryable, eventId: string): Promis
   return mapDomainEventRow(row)
 }
 
-export async function claimPendingEvents(pool: Connectable, limit = 100): Promise<DomainEventEnvelope[]> {
+export async function claimPendingEvents(
+  pool: Connectable,
+  limit = 100,
+  owner = createLeaseOwner('outbox'),
+): Promise<ClaimedDomainEvent[]> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -100,7 +107,11 @@ export async function claimPendingEvents(pool: Connectable, limit = 100): Promis
       `WITH claimed AS (
          SELECT id
          FROM public.domain_events
-         WHERE dispatch_status IN ('pending', 'failed')
+         WHERE (
+             dispatch_status = 'pending'
+             OR (dispatch_status = 'failed' AND COALESCE(failure_class, 'recoverable') = 'recoverable')
+             OR (dispatch_status = 'dispatching' AND lease_until < NOW())
+           )
            AND available_at <= NOW()
          ORDER BY created_at ASC
          FOR UPDATE SKIP LOCKED
@@ -108,14 +119,26 @@ export async function claimPendingEvents(pool: Connectable, limit = 100): Promis
        )
        UPDATE public.domain_events event
        SET dispatch_status = 'dispatching',
-           attempt_count = event.attempt_count + 1
+           attempt_count = event.attempt_count + 1,
+           lease_owner = $2,
+           lease_until = NOW() + ($3::INTEGER * INTERVAL '1 millisecond'),
+           processing_stage = 'fan_out',
+           failure_class = NULL
        FROM claimed
        WHERE event.id = claimed.id
        RETURNING ${QUALIFIED_DOMAIN_EVENT_COLUMNS}`,
-      [safeLimit],
+      [safeLimit, owner, JOB_LEASE_DURATION_MS],
     )
     await client.query('COMMIT')
-    return result.rows.map(mapDomainEventRow)
+    return result.rows.map((row: DomainEventRow) => ({
+      ...mapDomainEventRow(row),
+      claim: {
+        owner: row.lease_owner ?? owner,
+        leaseUntil: toIsoString(row.lease_until ?? new Date(Date.now() + JOB_LEASE_DURATION_MS)),
+        attempt: Number(row.attempt_count),
+        stage: row.processing_stage || 'fan_out',
+      },
+    }))
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined)
     throw error
@@ -124,25 +147,31 @@ export async function claimPendingEvents(pool: Connectable, limit = 100): Promis
   }
 }
 
-export async function completeEventDispatch(client: Queryable, eventId: string): Promise<void> {
-  await client.query(
+export async function completeEventDispatch(client: Queryable, eventId: string, owner: string, attempt: number): Promise<boolean> {
+  const result = await client.query(
     `UPDATE public.domain_events
-     SET dispatch_status = 'dispatched', dispatched_at = NOW(), last_error = NULL
-     WHERE id = $1 AND dispatch_status = 'dispatching'`,
-    [eventId],
+     SET dispatch_status = 'dispatched', dispatched_at = NOW(), last_error = NULL,
+         lease_owner = NULL, lease_until = NULL, processing_stage = 'completed', failure_class = NULL
+     WHERE id = $1 AND dispatch_status = 'dispatching'
+       AND lease_owner = $2 AND attempt_count = $3`,
+    [eventId, owner, attempt],
   )
+  return result.rowCount === 1
 }
 
-export async function failEventDispatch(client: Queryable, eventId: string, error: unknown): Promise<void> {
+export async function failEventDispatch(client: Queryable, eventId: string, owner: string, attempt: number, error: unknown): Promise<boolean> {
   const message = safeError(error)
-  await client.query(
+  const result = await client.query(
     `UPDATE public.domain_events
      SET dispatch_status = 'failed',
          available_at = NOW() + LEAST(900, POWER(2, GREATEST(attempt_count - 1, 0)) * 5) * INTERVAL '1 second',
-         last_error = $2
-     WHERE id = $1`,
-    [eventId, message],
+         last_error = $4, failure_class = $5,
+         lease_owner = NULL, lease_until = NULL, processing_stage = 'failed'
+     WHERE id = $1 AND dispatch_status = 'dispatching'
+       AND lease_owner = $2 AND attempt_count = $3`,
+    [eventId, owner, attempt, message, classifyLeaseFailure(error)],
   )
+  return result.rowCount === 1
 }
 
 export async function ensureEventDeliveries(
@@ -157,7 +186,8 @@ export async function ensureEventDeliveries(
        VALUES ($1, $2)
        ON CONFLICT (event_id, consumer_key) DO NOTHING
        RETURNING id, event_id, consumer_key, status, attempt_count, available_at,
-                 completed_at, result, last_error, created_at, updated_at`,
+                 completed_at, result, last_error, lease_owner, lease_until,
+                 processing_stage, processor_version, failure_class, created_at, updated_at`,
       [eventId, consumerKey],
     )
     if (inserted.rows[0]) {
@@ -167,7 +197,8 @@ export async function ensureEventDeliveries(
 
     const existing = await client.query<DomainEventDeliveryRow>(
       `SELECT id, event_id, consumer_key, status, attempt_count, available_at,
-              completed_at, result, last_error, created_at, updated_at
+              completed_at, result, last_error, lease_owner, lease_until,
+              processing_stage, processor_version, failure_class, created_at, updated_at
        FROM public.domain_event_deliveries
        WHERE event_id = $1 AND consumer_key = $2
        LIMIT 1`,
@@ -178,18 +209,31 @@ export async function ensureEventDeliveries(
   return deliveries
 }
 
-export async function claimDelivery(client: Queryable, deliveryId: string): Promise<DomainEventDeliveryRow | null> {
+export async function claimDelivery(
+  client: Queryable,
+  deliveryId: string,
+  owner = createLeaseOwner('domain-event-consumer'),
+): Promise<DomainEventDeliveryRow | null> {
   const result = await client.query<DomainEventDeliveryRow>(
     `UPDATE public.domain_event_deliveries
      SET status = 'processing',
          attempt_count = attempt_count + 1,
+         lease_owner = $2,
+         lease_until = NOW() + ($3::INTEGER * INTERVAL '1 millisecond'),
+         processing_stage = 'consume',
+         failure_class = NULL,
          updated_at = NOW()
      WHERE id = $1
-       AND status IN ('pending', 'failed')
+       AND (
+         status = 'pending'
+         OR (status = 'failed' AND COALESCE(failure_class, 'recoverable') = 'recoverable')
+         OR (status = 'processing' AND lease_until < NOW())
+       )
        AND available_at <= NOW()
      RETURNING id, event_id, consumer_key, status, attempt_count, available_at,
-               completed_at, result, last_error, created_at, updated_at`,
-    [deliveryId],
+               completed_at, result, last_error, lease_owner, lease_until,
+               processing_stage, processor_version, failure_class, created_at, updated_at`,
+    [deliveryId, owner, JOB_LEASE_DURATION_MS],
   )
   return result.rows[0] ?? null
 }
@@ -197,27 +241,66 @@ export async function claimDelivery(client: Queryable, deliveryId: string): Prom
 export async function completeDelivery(
   client: Queryable,
   deliveryId: string,
+  owner: string,
+  attempt: number,
   result: Record<string, unknown> = {},
-): Promise<void> {
-  await client.query(
+): Promise<boolean> {
+  const completed = await client.query(
     `UPDATE public.domain_event_deliveries
-     SET status = 'completed', completed_at = NOW(), result = $2,
-         last_error = NULL, updated_at = NOW()
-     WHERE id = $1`,
-    [deliveryId, result],
+     SET status = 'completed', completed_at = NOW(), result = $4,
+         last_error = NULL, lease_owner = NULL, lease_until = NULL,
+         processing_stage = 'completed', failure_class = NULL, updated_at = NOW()
+     WHERE id = $1 AND status = 'processing'
+       AND lease_owner = $2 AND attempt_count = $3`,
+    [deliveryId, owner, attempt, result],
   )
+  return completed.rowCount === 1
 }
 
-export async function failDelivery(client: Queryable, deliveryId: string, error: unknown): Promise<void> {
-  await client.query(
+export async function failDelivery(client: Queryable, deliveryId: string, owner: string, attempt: number, error: unknown): Promise<boolean> {
+  const failed = await client.query(
     `UPDATE public.domain_event_deliveries
      SET status = 'failed',
          available_at = NOW() + LEAST(900, POWER(2, GREATEST(attempt_count - 1, 0)) * 5) * INTERVAL '1 second',
-         last_error = $2,
+         last_error = $4, failure_class = $5,
+         lease_owner = NULL, lease_until = NULL, processing_stage = 'failed',
          updated_at = NOW()
-     WHERE id = $1`,
-    [deliveryId, safeError(error)],
+     WHERE id = $1 AND status = 'processing'
+       AND lease_owner = $2 AND attempt_count = $3`,
+    [deliveryId, owner, attempt, safeError(error), classifyLeaseFailure(error)],
   )
+  return failed.rowCount === 1
+}
+
+export async function renewDeliveryLease(client: Queryable, deliveryId: string, owner: string, attempt: number): Promise<boolean> {
+  const renewed = await client.query(
+    `UPDATE public.domain_event_deliveries
+     SET lease_until = NOW() + ($4::INTEGER * INTERVAL '1 millisecond'), updated_at = NOW()
+     WHERE id = $1 AND status = 'processing'
+       AND lease_owner = $2 AND attempt_count = $3 AND lease_until > NOW()`,
+    [deliveryId, owner, attempt, JOB_LEASE_DURATION_MS],
+  )
+  return renewed.rowCount === 1
+}
+
+export async function getOutboxOperationalSnapshot(client: Queryable) {
+  const result = await client.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE dispatch_status IN ('pending','failed'))::INT AS pending_count,
+       COUNT(*) FILTER (WHERE dispatch_status = 'dispatching' AND lease_until < NOW())::INT AS abandoned_leases,
+       COUNT(*) FILTER (WHERE failure_class = 'terminal')::INT AS terminal_failures,
+       COUNT(*) FILTER (WHERE failure_class = 'configuration')::INT AS configuration_failures,
+       EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE dispatch_status IN ('pending','failed'))))::INT AS oldest_pending_age_seconds
+     FROM public.domain_events`,
+  )
+  const row = result.rows[0] ?? {}
+  return {
+    pendingCount: Number(row.pending_count || 0),
+    abandonedLeases: Number(row.abandoned_leases || 0),
+    terminalFailures: Number(row.terminal_failures || 0),
+    configurationFailures: Number(row.configuration_failures || 0),
+    oldestPendingAgeSeconds: row.oldest_pending_age_seconds == null ? null : Number(row.oldest_pending_age_seconds),
+  }
 }
 
 export function mapDomainEventRow(row: DomainEventRow): DomainEventEnvelope {

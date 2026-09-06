@@ -30,14 +30,15 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | Tarefa | Estado | Observação |
 | --- | --- | --- |
 | T01 | aceita | Baseline reconciliado e registrado |
-| T02 | implementada aguardando aceite | Stack/CI criados; execução local real bloqueada por ausência de Docker e credencial descartável do PostgreSQL local |
-| T03 | implementada aguardando aceite | Unidade transacional/checksum validados em testes unitários; cenários PostgreSQL aguardam stack descartável |
+| T02 | aceita | Stack persistente executada no GitHub Actions com PostgreSQL 17, Redis 7, autenticação, fila, dispatcher e reinício reais |
+| T03 | aceita | Rollback físico, migradores concorrentes, checksum e legado foram aprovados no PostgreSQL 17 |
 | T04 | bloqueada por dependência | Contrato/runbooks implementados; faltam destino de backup, domínio e ensaio autorizado na infraestrutura |
-| T05 | implementada aguardando aceite | Alias corrigido; integração PostgreSQL preparada |
-| T06 | implementada aguardando aceite | Papéis, grants, RLS e contexto Node/Python implementados; troca de credenciais do piloto depende dos segredos operacionais |
-| T07 | implementada aguardando aceite | Mutações governadas bloqueadas no endpoint genérico; revisões têm projeção segura e fallback isolado |
-| T08 | implementada aguardando aceite | Schemas canônicos, tipos TS gerados, modelos Python e corpus comum adicionados |
-| T09–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T05 | aceita | Alias e consultas reais aprovados no PostgreSQL 17 |
+| T06 | aceita | Papéis, grants, RLS e contexto Node/Python aprovados; troca de credenciais do piloto depende dos segredos operacionais |
+| T07 | aceita | Política nominal, isolamento A/B e leitura segura aprovados na integração persistente |
+| T08 | aceita | Schemas, geradores, TS/Python e corpus aprovados na CI |
+| T09 | implementada aguardando aceite | Leases de outbox/consumidores, fencing por owner/attempt e retomada persistente adicionados |
+| T10–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -124,4 +125,23 @@ frontend tests: PASS, 528 PASS
 - Frontend: 124 arquivos e 529 testes aprovados; type-check aprovado.
 - Runtime Python: 167 testes aprovados e 1 teste live explicitamente ignorado; os novos testes de escopo e contrato estão incluídos.
 - Integração persistente: não executada localmente porque Docker não está instalado e não existe credencial para uma base PostgreSQL descartável. O job de CI está preparado para executar os cenários com PostgreSQL 17/Redis 7.
-- Gate: T09 não deve começar sobre contratos/RLS ainda não exercitados no banco real; é necessário executar o job `Backend integration` ou disponibilizar o stack descartável equivalente.
+- Gate registrado à época: foi cumprido pela execução persistente `34000257555` descrita abaixo.
+
+## Aceite persistente do lote T01–T08
+
+- Branch publicada: `codex/yux-remediation-integrated`.
+- GitHub Actions: execução `34000257555`, commit `2135cb2`, conclusão `success` em 2026-09-05.
+- Backend, frontend, Agent Runtime e Backend integration: todos aprovados.
+- A instalação limpa revelou e corrigiu, antes do aceite, a restrição já presente no baseline consolidado, os papéis de compatibilidade do PostgreSQL isolado, a composição permissiva/restritiva das policies RLS e o contrato incompleto do estado de processamento.
+- O SQL histórico `0106_email_template_management.sql` foi restaurado ao conteúdo original. A reprodução limpa é preparada dentro da própria transação pelo migrador somente quando a versão ainda não foi registrada e a restrição preexistente corresponde estruturalmente ao mesmo relacionamento.
+
+## T09 — Outbox, leases e retomada
+
+- Estado: implementada aguardando aceite persistente.
+- Commit inicial: `2135cb2`.
+- Achados: YUX-06, YUX-10 e YUX-15.
+- Reprodução: `dispatching` e `processing` não possuíam proprietário nem expiração; conclusão aceitava qualquer worker; a criação de deliveries e o enqueue ocorriam na mesma transação, permitindo job órfão se o Redis aceitasse antes de rollback do banco.
+- Decisão: leases de 120 segundos, heartbeat de 30 segundos, fencing por `owner + attempt`, reclaims somente após expiração e classes distintas de falha. Deliveries são confirmadas no banco antes do enqueue; repetição usa a mesma identidade BullMQ.
+- Entregas: migration `0154_outbox_processing_leases.sql`, utilitário `jobs/leases.ts`, recuperação de outbox abandonado, heartbeat de consumidores e snapshot operacional por classe/idade.
+- Verificação local: type-check aprovado; 18/18 testes de migrador, outbox e leases aprovados.
+- Gate: `outbox-recovery.test.ts` comprova no PostgreSQL real que o proprietário antigo não finaliza após reclaim; a suíte persistente será executada na CI deste commit.

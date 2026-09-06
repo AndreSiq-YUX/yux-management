@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { applyMigrations, listMigrationFiles } from '../scripts/apply-migrations.js'
+import { applyMigrations, listMigrationFiles, prepareMigrationReplayCompatibility } from '../scripts/apply-migrations.js'
 
 type QueryCall = {
   sql: string
@@ -96,14 +96,26 @@ describe('migration runner', () => {
     expect(migrationSql).toContain('AS RESTRICTIVE FOR ALL')
   })
 
-  it('keeps the email template foreign key idempotent after the consolidated baseline', async () => {
+  it('keeps historical email migration SQL immutable and safely prepares its consolidated replay', async () => {
     const migrationSql = await readFile(
       new URL('../src/db/migrations/0106_email_template_management.sql', import.meta.url),
       'utf8',
     )
+    const calls: string[] = []
+    const client = {
+      async query(sql: string) {
+        calls.push(sql)
+        return sql.includes('FROM pg_constraint')
+          ? { rowCount: 1, rows: [{ compatible: true }] }
+          : { rowCount: 1, rows: [] }
+      },
+      release() {},
+    }
 
-    expect(migrationSql).toContain("conname = 'email_templates_published_version_fk'")
-    expect(migrationSql).toContain("conrelid = 'public.email_templates'::regclass")
+    expect(migrationSql).toContain('ADD CONSTRAINT email_templates_published_version_fk')
+    expect(migrationSql).not.toContain('pg_constraint')
+    await prepareMigrationReplayCompatibility(client, '0106_email_template_management')
+    expect(calls.at(-1)).toContain('DROP CONSTRAINT email_templates_published_version_fk')
   })
 
   it('references the canonical private organization access helper in mission migrations', async () => {

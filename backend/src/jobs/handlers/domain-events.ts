@@ -4,7 +4,9 @@ import {
   completeDelivery,
   getDomainEvent,
   failDelivery,
+  renewDeliveryLease,
 } from '../../modules/events/repository.js'
+import { createLeaseOwner, startLeaseHeartbeat } from '../leases.js'
 import type { DomainEventQueue } from '../../modules/events/dispatcher.js'
 import type { AutomationJobQueue } from '../../modules/automation/types.js'
 import { handleCrmScoringEvent } from './crm-scoring.js'
@@ -42,11 +44,12 @@ export async function handleDomainEventDelivery(
   }
 
   const claimClient = await pool.connect()
+  const leaseOwner = createLeaseOwner(`domain-event:${consumerKey}`)
   let claimed: Awaited<ReturnType<typeof claimDelivery>>
   let event
   try {
     await claimClient.query('BEGIN')
-    claimed = await claimDelivery(claimClient, deliveryId)
+    claimed = await claimDelivery(claimClient, deliveryId, leaseOwner)
     if (!claimed) {
       await claimClient.query('ROLLBACK')
       return { ok: true, duplicate: true }
@@ -60,6 +63,10 @@ export async function handleDomainEventDelivery(
     claimClient.release()
   }
 
+  const attempt = Number(claimed.attempt_count)
+  const stopHeartbeat = startLeaseHeartbeat(
+    () => renewDeliveryLease(pool, deliveryId, leaseOwner, attempt),
+  )
   try {
     const result = consumerKey === 'scoring'
       ? await handleCrmScoringEvent(event, pool)
@@ -72,11 +79,14 @@ export async function handleDomainEventDelivery(
           eventId: event.eventId,
         },
         }, queue)
-    await completeDelivery(pool, deliveryId, result)
+    const completed = await completeDelivery(pool, deliveryId, leaseOwner, attempt, result)
+    if (!completed) throw new Error('domain_event_delivery_claim_lost')
     return { ok: true, result }
   } catch (error) {
-    await failDelivery(pool, deliveryId, error)
+    await failDelivery(pool, deliveryId, leaseOwner, attempt, error)
     throw error
+  } finally {
+    await stopHeartbeat()
   }
 }
 
