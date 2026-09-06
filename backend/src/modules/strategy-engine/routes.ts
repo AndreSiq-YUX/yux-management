@@ -299,7 +299,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
   });
 
   app.post("/query", async (request, reply) => {
-    requireInternalRole(request);
+    const context = requireInternalRole(request);
     const user = await getAuthenticatedUser(request, reply);
     if (!user) return reply;
 
@@ -308,6 +308,13 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "invalid_strategy_engine_query" });
     }
 
-    return executeDataQuery(app, parsed.data);
+    return runWithDatabaseRequestContext(
+      {
+        role: context.role,
+        organizationIds: context.organizationIds,
+        serviceRole: "api",
+      },
+      () => executeDataQuery(app, parsed.data),
+    );
   });
 }

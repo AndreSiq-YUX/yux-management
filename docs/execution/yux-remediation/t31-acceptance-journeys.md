@@ -13,9 +13,9 @@ A CI agora possui o job `Acceptance journeys`. O relatório HTML/JSON, traces, s
 - J1: perfil e fonte persistidos, worker executado, documento indexado e refresh recuperado.
 - J2: runtime Python saudável; item curado ligado a um documento PDF controlado, revisão, publicação imutável com hash e binding ativo.
 - J3: tarefa canônica ligada ao lead, conclusão única com evidência/minutos e remoção da fila após refresh.
-- J4: campanha Radar persistida na organização correta.
+- J4: campanha Radar persistida no workspace interno YUX correto.
 - J5: campanha, conteúdo e versão ligados; revisão e aprovação; intenção processada pelo worker; exatamente uma chamada ao provedor controlado e ID remoto persistido.
-- J6: mensagem persistida, handoff, resolução e recuperação após refresh.
+- J6: webhook Meta assinado, mensagem persistida, handoff, resolução e recuperação após refresh.
 - J7: troca administrativa A/B sem contexto obsoleto e leitura/escrita cruzada negada ao membro de A.
 
 ## Estado honesto do aceite

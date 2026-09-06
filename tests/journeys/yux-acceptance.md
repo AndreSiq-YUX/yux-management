@@ -46,9 +46,9 @@ Cada teste anexa JSON no formato:
 | J1 | Altera perfil, cria fonte, drena worker, confirma indexação e refresh | `stack`, `knowledge-publications`, `knowledge-retrieval-policy` | Parcial: falta publicar e consultar o agente no mesmo traço |
 | J2 | Revisa item ligado a evidência PDF, publica hash e ativa binding; confirma runtime Python | `strategy-upload`, `publish-governance`, `harness-grounding` | Parcial: falta upload inédito no mesmo traço, revogação e comparação T22 |
 | J3 | Exibe tarefa ligada ao lead, exige evidência/minutos, conclui uma vez e confirma refresh | `work-items`, testes de missão composta e aprovação | Parcial: falta iniciar na conversa e manter a mesma missão até o resultado |
-| J4 | Cria campanha Radar na organização A e confirma persistência | `crm-dispatch`, `provider-intents` e testes de consentimento/opt-out | Parcial: falta um único traço Radar → conversão/opt-out |
+| J4 | Cria campanha Radar no workspace interno YUX e confirma organização/persistência | `crm-dispatch`, `provider-intents` e testes de consentimento/opt-out | Parcial: falta um único traço Radar → conversão/opt-out |
 | J5 | Planeja, cria conteúdo/versão, revisa, aprova, publica pelo worker, confirma ID remoto e uma chamada ao provedor controlado | `marketing-journey` | Parcial: falta sandbox oficial e captação/atribuição/métrica no mesmo traço |
-| J6 | Abre mensagem persistida, registra handoff, resolve e recupera após refresh | `whatsapp-webhook-recovery`, `knowledge-retrieval-policy` | Parcial: falta webhook/retry, resposta autorizada e acompanhamento no mesmo traço |
+| J6 | Entrega webhook Meta assinado, persiste mensagem, registra handoff, resolve e recupera após refresh | `whatsapp-webhook-recovery`, `knowledge-retrieval-policy` | Parcial: falta falha/retry, resposta autorizada e acompanhamento no mesmo traço |
 | J7 | Alterna A/B como admin, atualiza a tela após refresh e nega leitura/escrita cruzada a membro de A | `tenant-isolation`, `workspace-context` | Automatizada completa |
 
 As provas complementares são regressões obrigatórias, mas não transformam etapas separadas em uma jornada ponta a ponta. Por isso J1–J6 permanecem explicitamente parciais.

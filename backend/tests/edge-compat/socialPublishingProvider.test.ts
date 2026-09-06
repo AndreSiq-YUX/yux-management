@@ -73,8 +73,10 @@ it('builds Google Business Profile local post request', () => {
 
 it('executes Instagram publishing with container then publish call', async () => {
   const calls: string[] = []
-  const fetcher = async (url: string | URL | Request) => {
+  const intentHeaders: string[] = []
+  const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
     calls.push(String(url))
+    intentHeaders.push(new Headers(init?.headers).get('X-YUX-Intent-ID') || '')
     return new Response(JSON.stringify(calls.length === 1 ? { id: 'creation-1' } : { id: 'media-1', permalink: 'https://instagram.com/p/media-1' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -87,10 +89,12 @@ it('executes Instagram publishing with container then publish call', async () =>
     run: { action: 'publish', request_payload: {} },
     accessToken: 'secret-token',
     graphVersion: 'v20.0',
+    intentId: 'publishing-run-1',
     fetcher,
   })
 
   assertEquals(calls.map(url => url.split('/').pop()), ['media', 'media_publish'])
+  assertEquals(intentHeaders, ['publishing-run-1', 'publishing-run-1'])
   assertEquals(result.providerPostId, 'media-1')
   assert(!JSON.stringify(result.responsePayload).includes('secret-token'), 'response leaked access token')
 })

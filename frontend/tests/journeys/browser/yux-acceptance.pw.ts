@@ -1,9 +1,11 @@
+import { createHmac } from 'node:crypto'
 import { expect, test, type APIResponse, type Page, type TestInfo } from '@playwright/test'
 
 const apiBase = 'http://127.0.0.1:4000/api'
 const ids = {
   organizationA: '10000000-0000-4000-8000-000000000001',
   organizationB: '10000000-0000-4000-8000-000000000002',
+  internalOrg: '10000000-0000-4000-8000-000000000003',
   contractA: '30000000-0000-4000-8000-000000000001',
   task: 'a1000000-0000-4000-8000-000000000002',
   conversation: 'a1000000-0000-4000-8000-000000000005',
@@ -67,8 +69,13 @@ test('J1 — perfil e fonte de conhecimento persistem após refresh', async ({ p
   await page.goto('/portal/empresa/perfil')
   await expect(page.getByRole('heading', { name: 'Perfil da Empresa' })).toBeVisible()
   await page.getByLabel('Nome da marca').fill(tradeName)
+  const profileResponse = page.waitForResponse(response => (
+    response.url() === `${apiBase}/company-intelligence/organizations/${ids.organizationA}/profile`
+    && response.request().method() === 'PUT'
+  ))
   await page.getByRole('button', { name: 'Salvar alterações' }).click()
-  await expect(page.getByText('Informações da empresa salvas.')).toBeVisible()
+  const savedProfile = await profileResponse
+  expect(savedProfile.ok(), await savedProfile.text()).toBeTruthy()
   await page.reload()
   await expect(page.getByLabel('Nome da marca')).toHaveValue(tradeName)
 
@@ -176,7 +183,7 @@ test('J3 — tarefa ligada ao lead é concluída uma vez com evidência', async 
 
 test('J4 — campanha do Radar é criada no workspace correto e persiste', async ({ page }, testInfo) => {
   await login(page, 'admin')
-  await page.goto(`/client-workspaces/${ids.organizationA}/comercial/radar`)
+  await page.goto(`/client-workspaces/${ids.internalOrg}/comercial/radar`)
   await expect(page.getByRole('heading', { name: 'Nova campanha de captacao' })).toBeVisible()
   const name = `Radar aceitação ${Date.now()}`
   const form = page.getByRole('heading', { name: 'Nova campanha de captacao' }).locator('..')
@@ -191,7 +198,7 @@ test('J4 — campanha do Radar é criada no workspace correto e persiste', async
   await expect(page.getByText(name, { exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByText(name, { exact: true })).toBeVisible()
-  expect(campaign.organizationId).toBe(ids.organizationA)
+  expect(campaign.organizationId).toBe(ids.internalOrg)
 
   await attachEvidence(testInfo, {
     journey: 'J4', complete: false,
@@ -249,10 +256,46 @@ test('J5 — planejamento, conteúdo, revisão e aprovação usam a mesma versã
 })
 
 test('J6 — conversa persistida aceita handoff, resolução e refresh', async ({ page }, testInfo) => {
-  await login(page, 'admin')
-  await page.goto(`/client-workspaces/${ids.organizationA}/atendimento/conversas`)
-  await expect(page.getByText('Contato aceitação')).toBeVisible()
-  await expect(page.getByText('Preciso de atendimento')).toBeVisible()
+  const suffix = `${Date.now()}`
+  const contactName = `Contato aceitação ${suffix}`
+  const messageBody = `Preciso de atendimento ${suffix}`
+  const externalMessageId = `wamid.acceptance-${suffix}`
+  const rawWebhook = JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{
+      id: 'waba-acceptance',
+      changes: [{ value: {
+        messaging_product: 'whatsapp',
+        metadata: { phone_number_id: 'acceptance-phone', display_phone_number: '5511000000000' },
+        contacts: [{ wa_id: `5511${suffix.slice(-9)}`, profile: { name: contactName } }],
+        messages: [{
+          id: externalMessageId,
+          from: `5511${suffix.slice(-9)}`,
+          timestamp: String(Math.floor(Date.now() / 1_000)),
+          type: 'text',
+          text: { body: messageBody },
+        }],
+      } }],
+    }],
+  })
+  const signature = createHmac('sha256', 'integration-meta-app-secret').update(rawWebhook).digest('hex')
+  const webhook = await page.request.post(`${apiBase}/webhooks/meta/channel-event`, {
+    data: rawWebhook,
+    headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': `sha256=${signature}` },
+  })
+  expect(webhook.ok(), await webhook.text()).toBeTruthy()
+  await drainWorker(page)
+
+  await login(page, 'clientAdminA')
+  const conversations = await json<Array<{ id: string; contact?: { displayName?: string } }>>(
+    await page.request.get(`${apiBase}/omnichannel/portal/conversations?organizationId=${ids.organizationA}`),
+  )
+  const received = conversations.find(conversation => conversation.contact?.displayName === contactName)
+  expect(received?.id).toBeTruthy()
+  const conversationId = received!.id
+  await page.goto('/portal/atendimento/conversas')
+  await expect(page.getByText(contactName, { exact: true }).first()).toBeVisible()
+  await expect(page.getByText(messageBody, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Handoff Humano' }).click()
   await expect(page.getByText('Handoff solicitado')).toBeVisible()
   await page.getByRole('button', { name: 'Resolver' }).click()
@@ -260,15 +303,15 @@ test('J6 — conversa persistida aceita handoff, resolução e refresh', async (
   await page.reload()
   await expect(page.getByRole('button', { name: 'Reabrir' })).toBeVisible()
   const conversation = await json<{ id: string; status: string }>(
-    await page.request.get(`${apiBase}/omnichannel/conversations/${ids.conversation}?portal=true`),
+    await page.request.get(`${apiBase}/omnichannel/conversations/${conversationId}?portal=true`),
   )
-  expect(conversation).toMatchObject({ id: ids.conversation, status: 'resolved' })
+  expect(conversation).toMatchObject({ id: conversationId, status: 'resolved' })
 
   await attachEvidence(testInfo, {
     journey: 'J6', complete: false,
-    checks: { inboundMessagePersisted: true, handoffRecorded: true, conversationResolved: true, refreshRecovered: true },
-    ids: { organizationId: ids.organizationA, conversationId: ids.conversation },
-    remainingGates: ['webhook com retry e mensagem única no mesmo cenário browser', 'resposta do agente citando somente fonte autorizada', 'acompanhamento atribuído'],
+    checks: { signedWebhookAccepted: true, inboundMessagePersisted: true, handoffRecorded: true, conversationResolved: true, refreshRecovered: true },
+    ids: { organizationId: ids.organizationA, conversationId, externalMessageId },
+    remainingGates: ['webhook com falha/retry e mensagem única no mesmo cenário', 'resposta do agente citando somente fonte autorizada', 'acompanhamento atribuído'],
   })
 })
 

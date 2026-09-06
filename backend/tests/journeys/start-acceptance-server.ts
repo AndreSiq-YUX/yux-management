@@ -7,6 +7,7 @@ import { fixtureIds, fixtureUsers } from '../integration/support/fixtures.js'
 import { createIntegrationRig, getIntegrationDatabaseUrl } from '../integration/support/rig.js'
 
 const acceptanceIds = {
+  crmInstance: 'a1000000-0000-4000-8000-000000000000',
   lead: 'a1000000-0000-4000-8000-000000000001',
   task: 'a1000000-0000-4000-8000-000000000002',
   connection: 'a1000000-0000-4000-8000-000000000003',
@@ -54,10 +55,28 @@ process.stdout.write('acceptance-backend-ready\n')
 
 async function seedAcceptanceRecords() {
   await rig.sql(
+    `INSERT INTO public.crm_instances (id,organization_id,contract_id,status,created_by,updated_by)
+     VALUES ($1,$2,$3,'active',$4,$4)
+     ON CONFLICT (contract_id) DO UPDATE SET status='active',updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
+    [acceptanceIds.crmInstance, fixtureIds.organizationA, fixtureIds.contractA, fixtureUsers.client_admin_A.id],
+  )
+  await rig.sql(
+    `INSERT INTO public.crm_instance_members (crm_instance_id,user_id,role,status,display_name,email)
+     SELECT id,$2,'admin','active','Admin A','admin-a@integration.test'
+       FROM public.crm_instances WHERE contract_id=$1
+     ON CONFLICT (crm_instance_id,user_id) DO UPDATE SET role='admin',status='active',updated_at=NOW()`,
+    [fixtureIds.contractA, fixtureUsers.client_admin_A.id],
+  )
+  await rig.sql(
     `INSERT INTO public.leads (id,organization_id,client_id,name,email,source,stage,status)
      VALUES ($1,$2,$3,'Lead aceitação browser','journey-browser@integration.test','integration','NEW','open')
      ON CONFLICT (id) DO UPDATE SET status='open', updated_at=NOW()`,
     [acceptanceIds.lead, fixtureIds.organizationA, fixtureIds.clientA],
+  )
+  await rig.sql(
+    `UPDATE public.leads SET crm_instance_id=(SELECT id FROM public.crm_instances WHERE contract_id=$2)
+      WHERE id=$1`,
+    [acceptanceIds.lead, fixtureIds.contractA],
   )
   await rig.sql(
     `INSERT INTO public.lead_tasks (id,organization_id,lead_id,title,due_at,assigned_to,completed_at,metadata)
@@ -137,6 +156,12 @@ async function seedAcceptanceRecords() {
      ON CONFLICT (id) DO UPDATE SET status='proposed',payload=EXCLUDED.payload,content_hash=EXCLUDED.content_hash,source_document_id=EXCLUDED.source_document_id`,
     [acceptanceIds.strategyItem, acceptanceIds.strategyPack, strategyPayload.title, strategyPayload.problem, strategyPayload.principle,
       JSON.stringify(strategyPayload), acceptanceIds.strategyDocument, strategyItemHash(strategyCurationItemSchema.parse(strategyPayload))],
+  )
+  await rig.sql(
+    `UPDATE public.organizations
+        SET is_internal_growth_workspace=TRUE,workspace_purpose='yux_growth',strategy_pack_scope='internal'
+      WHERE id=$1`,
+    [fixtureIds.internalOrg],
   )
   await rig.sql(
     `INSERT INTO public.publishing_connections (

@@ -40,6 +40,14 @@ it('publica regras e itens aprovados atomicamente sem atalhos de conteúdo bruto
         strategyItemHash(strategyCurationItemSchema.parse(payload)), rejectedItemId],
     )
 
+    const listedPacks = await rig.request('yux_admin', 'POST', '/api/strategy-engine/query', {
+      table: 'yux_strategy_packs',
+      operation: 'select',
+      filters: [{ op: 'eq', column: 'id', value: packId }],
+    })
+    expect(listedPacks.statusCode).toBe(200)
+    expect(listedPacks.body.data).toEqual([expect.objectContaining({ id: packId, name: 'Pack governado' })])
+
     const command = strategyCommand(1, itemId)
     expect((await rig.request('client_admin_A', 'POST', `/api/strategy-engine/packs/${packId}/publications`, command)).statusCode).toBe(403)
     expect((await rig.request('yux_admin', 'POST', `/api/strategy-engine/packs/${packId}/publications`, { ...command, approvedItemIds: [rejectedItemId] })).statusCode).toBe(409)

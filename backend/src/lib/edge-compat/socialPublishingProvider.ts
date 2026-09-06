@@ -183,6 +183,7 @@ export async function executeSocialPublishingAction(input: {
   accessToken: string
   graphVersion?: string
   graphBaseUrl?: string
+  intentId?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const provider = requireString(input.connection.provider, 'provider') as SocialPublishingProvider
@@ -200,6 +201,7 @@ async function executeFacebookPage(input: {
   accessToken: string
   graphVersion?: string
   graphBaseUrl?: string
+  intentId?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const pageId = requireString(input.connection.provider_asset_id || input.connection.provider_account_id, 'provider_asset_id')
@@ -210,7 +212,7 @@ async function executeFacebookPage(input: {
     accessToken: input.accessToken,
     message: contentMessage(input.content),
     link: contentLink(input.content, input.run),
-  }), input.fetcher)
+  }), input.fetcher, input.intentId)
 
   return {
     providerPostId: requireString(payload.id, 'provider post id'),
@@ -228,6 +230,7 @@ async function executeInstagram(input: {
   accessToken: string
   graphVersion?: string
   graphBaseUrl?: string
+  intentId?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const instagramAccountId = requireString(input.connection.provider_asset_id || input.connection.provider_account_id, 'provider_asset_id')
@@ -238,7 +241,7 @@ async function executeInstagram(input: {
     accessToken: input.accessToken,
     caption: contentMessage(input.content),
     imageUrl: contentImageUrl(input.content, input.run),
-  }), input.fetcher)
+  }), input.fetcher, input.intentId)
   const creationId = requireString(containerPayload.id, 'instagram creation id')
   const publishPayload = await sendProviderRequest(buildInstagramPublishRequest({
     instagramAccountId,
@@ -246,7 +249,7 @@ async function executeInstagram(input: {
     graphBaseUrl: input.graphBaseUrl,
     accessToken: input.accessToken,
     creationId,
-  }), input.fetcher)
+  }), input.fetcher, input.intentId)
 
   return {
     providerPostId: requireString(publishPayload.id || creationId, 'instagram media id'),
@@ -262,6 +265,7 @@ async function executeGoogleBusinessProfile(input: {
   content: Record<string, unknown>
   run: Record<string, unknown>
   accessToken: string
+  intentId?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const locationName = requireString(input.connection.provider_asset_id || input.connection.provider_account_id, 'provider_asset_id')
@@ -270,7 +274,7 @@ async function executeGoogleBusinessProfile(input: {
     accessToken: input.accessToken,
     summary: contentMessage(input.content),
     ctaUrl: contentLink(input.content, input.run),
-  }), input.fetcher)
+  }), input.fetcher, input.intentId)
 
   return {
     providerPostId: requireString(payload.name, 'google local post name'),
@@ -286,6 +290,7 @@ async function executeWordPress(input: {
   content: Record<string, unknown>
   run: Record<string, unknown>
   accessToken: string
+  intentId?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const action = requireString(input.run.action, 'action') as SocialPublishingAction
@@ -302,7 +307,7 @@ async function executeWordPress(input: {
     status: action === 'publish' ? 'publish' : 'draft',
     providerPostId: action === 'create_draft' ? undefined : providerPostId,
   })
-  const payload = await sendProviderRequest(request, input.fetcher)
+  const payload = await sendProviderRequest(request, input.fetcher, input.intentId)
 
   return {
     providerPostId: String(payload.id || providerPostId || ''),
@@ -313,8 +318,11 @@ async function executeWordPress(input: {
   }
 }
 
-async function sendProviderRequest(request: ProviderPublishingRequest, fetcher = fetch) {
-  const headers = { ...(request.headers || {}) }
+async function sendProviderRequest(request: ProviderPublishingRequest, fetcher = fetch, intentId?: string) {
+  const headers = {
+    ...(request.headers || {}),
+    ...(intentId ? { 'X-YUX-Intent-ID': intentId } : {}),
+  }
   const body = compactBody(request.body)
   const response = await fetcher(request.url, {
     method: request.method,

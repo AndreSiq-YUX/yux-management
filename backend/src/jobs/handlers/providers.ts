@@ -193,6 +193,7 @@ export async function handleProviderFunction(
         run: publishing.run,
         accessToken: secret.value,
         graphBaseUrl: options.graphBaseUrl,
+        intentId: publishing.id,
         ...(options.fetcher ? { fetcher: options.fetcher } : {}),
       })
       await pool.query(
