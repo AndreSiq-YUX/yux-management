@@ -149,14 +149,40 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build pinned image
         run: docker build --file "${{ matrix.dockerfile }}" --tag "yux-${{ matrix.name }}:ci" "${{ matrix.context }}"
-      - name: Reject reachable high-severity image vulnerabilities
+      - name: Scan runtime image vulnerabilities
+        id: image-scan
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: yux-${{ matrix.name }}:ci
-          fail-build: true
+          fail-build: false
           severity-cutoff: high
-          output-format: table
+          output-format: json
+          output-file: .grype-${{ matrix.name }}.json
+      - name: Reject high-severity runtime image vulnerabilities
+        shell: bash
+        run: |
+          report=".grype-${{ matrix.name }}.json"
+          jq -r '
+            .matches[]
+            | select(.vulnerability.severity == "High" or .vulnerability.severity == "Critical")
+            | [
+                .vulnerability.severity,
+                .vulnerability.id,
+                .artifact.name,
+                .artifact.version,
+                (.vulnerability.fix.versions | join(",") | if length == 0 then "no-fix" else . end)
+              ]
+            | @tsv
+          ' "$report" > "$RUNNER_TEMP/high-vulnerabilities.tsv"
+
+          if [[ -s "$RUNNER_TEMP/high-vulnerabilities.tsv" ]]; then
+            while IFS=$'\t' read -r severity vulnerability package installed fixed; do
+              echo "::error title=${severity} image vulnerability::${vulnerability} package=${package} installed=${installed} fixed=${fixed}"
+            done < "$RUNNER_TEMP/high-vulnerabilities.tsv"
+            exit 1
+          fi
       - name: Generate image SBOM
+        if: always() && steps.image-scan.outcome == 'success'
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: yux-${{ matrix.name }}:ci
