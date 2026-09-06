@@ -235,7 +235,17 @@ jobs:
             exit 1
           fi
       - name: Generate image SBOM
+        id: sbom_primary
         if: always() && steps.image-scan.outcome == 'success'
+        continue-on-error: true
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: yux-${{ matrix.name }}:ci
+          format: cyclonedx-json
+          artifact-name: yux-${{ matrix.name }}.cdx.json
+          upload-release-assets: false
+      - name: Retry image SBOM generation after transient installer failure
+        if: always() && steps.image-scan.outcome == 'success' && steps.sbom_primary.outcome == 'failure'
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: yux-${{ matrix.name }}:ci
