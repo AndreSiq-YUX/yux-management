@@ -18,13 +18,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.2'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint:baseline
       - run: npm test
       - run: npm run type-check
       - run: npm run build
+      - name: Verify reproducible dependency tree and build
+        shell: bash
+        run: |
+          npm ls --all --json > "$RUNNER_TEMP/frontend-dependencies-1.json"
+          find dist -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/frontend-build-1.sha256"
+          npm ci
+          npm ls --all --json > "$RUNNER_TEMP/frontend-dependencies-2.json"
+          npm run build
+          find dist -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/frontend-build-2.sha256"
+          diff -u "$RUNNER_TEMP/frontend-dependencies-1.json" "$RUNNER_TEMP/frontend-dependencies-2.json"
+          diff -u "$RUNNER_TEMP/frontend-build-1.sha256" "$RUNNER_TEMP/frontend-build-2.sha256"
 
   backend:
     name: Backend
@@ -36,15 +49,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.2'
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run generate:mission-contracts
       - run: npm run generate:platform-contracts
       - run: git diff --exit-code -- ../contracts/mission-supervisor ../contracts/knowledge ../contracts/workspace src/modules/action-engine/generated src/contracts/generated ../frontend/src/types/generated
       - run: npm run type-check
       - run: npm test
+      - run: npm run build
+      - name: Verify reproducible dependency tree and build
+        shell: bash
+        run: |
+          npm ls --all --json > "$RUNNER_TEMP/backend-dependencies-1.json"
+          find dist -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/backend-build-1.sha256"
+          npm ci
+          npm ls --all --json > "$RUNNER_TEMP/backend-dependencies-2.json"
+          npm run build
+          find dist -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/backend-build-2.sha256"
+          diff -u "$RUNNER_TEMP/backend-dependencies-1.json" "$RUNNER_TEMP/backend-dependencies-2.json"
+          diff -u "$RUNNER_TEMP/backend-build-1.sha256" "$RUNNER_TEMP/backend-build-2.sha256"
 
   backend-integration:
     name: Backend integration
@@ -53,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.2'
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
@@ -89,12 +115,51 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.12.14'
           cache: pip
           cache-dependency-path: |
-            workers/marketing-studio-agent-runtime/requirements.txt
-            workers/marketing-studio-agent-runtime/requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
+            workers/marketing-studio-agent-runtime/requirements.lock
+            workers/marketing-studio-agent-runtime/requirements-dev.lock
+            workers/marketing-studio-agent-runtime/requirements-tooling.lock
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - run: python -m pip install --require-hashes -r requirements-tooling.lock
+      - run: python -m pip check
+      - run: python -m pip_audit -r requirements.lock --progress-spinner off
       - run: python scripts/export_mission_contracts.py --check
       - run: python -m pytest tests
       - run: python scripts/run_golden_missions.py --output golden-missions/report.json
+
+  image-sbom:
+    name: Image SBOM (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: backend
+            dockerfile: backend/Dockerfile
+          - name: frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
+          - name: agent-runtime
+            context: workers/marketing-studio-agent-runtime
+            dockerfile: workers/marketing-studio-agent-runtime/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned image
+        run: docker build --file "${{ matrix.dockerfile }}" --tag "yux-${{ matrix.name }}:ci" "${{ matrix.context }}"
+      - name: Reject reachable high-severity image vulnerabilities
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: yux-${{ matrix.name }}:ci
+          fail-build: true
+          severity-cutoff: high
+          output-format: table
+      - name: Generate image SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: yux-${{ matrix.name }}:ci
+          format: cyclonedx-json
+          artifact-name: yux-${{ matrix.name }}.cdx.json
+          upload-release-assets: false
