@@ -115,6 +115,8 @@ describe('migration runner', () => {
     expect(migrationSql).toContain('ADD CONSTRAINT email_templates_published_version_fk')
     expect(migrationSql).not.toContain('pg_constraint')
     await prepareMigrationReplayCompatibility(client, '0106_email_template_management')
+    expect(calls[0]).toContain('FROM pg_constraint migration_constraint')
+    expect(calls[0]).not.toContain('FROM pg_constraint constraint')
     expect(calls.at(-1)).toContain('DROP CONSTRAINT email_templates_published_version_fk')
   })
 

@@ -117,25 +117,25 @@ export async function prepareMigrationReplayCompatibility(client: MigrationClien
 
   const existing = await client.query(
     `SELECT (
-       constraint.contype = 'f'
-       AND constraint.confrelid = 'public.email_template_versions'::regclass
-       AND constraint.confdeltype = 'n'
-       AND constraint.conkey = ARRAY[(
+       migration_constraint.contype = 'f'
+       AND migration_constraint.confrelid = 'public.email_template_versions'::regclass
+       AND migration_constraint.confdeltype = 'n'
+       AND migration_constraint.conkey = ARRAY[(
          SELECT attribute.attnum::SMALLINT
          FROM pg_attribute attribute
          WHERE attribute.attrelid = 'public.email_templates'::regclass
            AND attribute.attname = 'published_version_id'
        )]::SMALLINT[]
-       AND constraint.confkey = ARRAY[(
+       AND migration_constraint.confkey = ARRAY[(
          SELECT attribute.attnum::SMALLINT
          FROM pg_attribute attribute
          WHERE attribute.attrelid = 'public.email_template_versions'::regclass
            AND attribute.attname = 'id'
        )]::SMALLINT[]
      ) AS compatible
-     FROM pg_constraint constraint
-     WHERE constraint.conname = 'email_templates_published_version_fk'
-       AND constraint.conrelid = 'public.email_templates'::regclass`,
+     FROM pg_constraint migration_constraint
+     WHERE migration_constraint.conname = 'email_templates_published_version_fk'
+       AND migration_constraint.conrelid = 'public.email_templates'::regclass`,
   )
   if (!existing.rowCount) return
   if (existing.rows?.[0]?.compatible !== true) {
