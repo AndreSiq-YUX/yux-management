@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { expect, it } from 'vitest'
 import { storePlatformProviderSecret } from '../../src/modules/platform/adminRepository.js'
+import { resolveEffectiveProviderCredential } from '../../src/modules/platform/provider-credentials.js'
+import type { AppEnv } from '../../src/config/env.js'
 import { createIntegrationRig, getIntegrationDatabaseUrl } from './support/rig.js'
 
 it('separa readiness de saúde operacional e não transforma custo desconhecido em zero', async () => {
@@ -47,6 +49,11 @@ it('separa readiness de saúde operacional e não transforma custo desconhecido 
       secretKind:'api_key',
       value:'database-smtp-secret',
     },'integration-session-secret-32-characters-minimum')
+    const effectiveDatabaseCredential=await resolveEffectiveProviderCredential(pool,{
+      SESSION_SECRET:'integration-session-secret-32-characters-minimum',
+      PROVIDER_SECRET_ENCRYPTION_KEY_B64:'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
+    } as AppEnv,'smtp2go')
+    expect(effectiveDatabaseCredential).toMatchObject({configured:true,source:'database',value:'database-smtp-secret'})
 
     const readiness = await rig.rawRequest('GET','/api/ready','')
     expect(readiness).toMatchObject({statusCode:200,body:{status:'ready'}})
@@ -63,7 +70,6 @@ it('separa readiness de saúde operacional e não transforma custo desconhecido 
     expect(snapshot.body.workers).toEqual(expect.arrayContaining([expect.objectContaining({status:'stale'})]))
     expect(snapshot.body.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({provider:'jina_ai',configured:true,source:'environment',verifiedAt:null}),
-      expect.objectContaining({provider:'smtp2go',configured:true,source:'database',verifiedAt:null}),
     ]))
     expect(snapshot.body.usage).toEqual(expect.arrayContaining([
       expect.objectContaining({provider:'jina_ai',costBrl:null,measurementStatus:'unavailable'}),
