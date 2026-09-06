@@ -178,6 +178,9 @@ async function createApp(pool: pg.Pool, jobQueue: AppJobQueue, env: ReturnType<t
     closeQueueOnClose: false,
     redisPing: async () => 'PONG',
   })
+  app.addHook('onError', async (_request, _reply, error) => {
+    console.error('[integration-api-error]', error)
+  })
   await app.ready()
   return app
 }

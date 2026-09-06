@@ -927,8 +927,7 @@ export async function publishKnowledgeDocument(pool: pg.Pool, input: {
         input.visibility, allowed, blocked, approvedItemIds],
     )).rows[0]!
     await client.query(
-      `INSERT INTO public.knowledge_publication_items(publication_id,item_id)
-       SELECT $1,item_id FROM unnest($2::uuid[]) item_id`,
+      `SELECT private.record_knowledge_publication_items($1,$2::uuid[])`,
       [inserted.id, approvedItemIds],
     )
     const sourceUpdate = await client.query(

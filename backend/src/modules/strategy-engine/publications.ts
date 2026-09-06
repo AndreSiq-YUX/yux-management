@@ -91,8 +91,7 @@ export async function publishStrategyPack(pool: pg.Pool, input: StrategyPublicat
         input.visibility, allowed, blocked, approvedItemIds],
     )).rows[0]!
     await client.query(
-      `INSERT INTO public.yux_strategy_release_items(release_id,item_id)
-       SELECT $1,item_id FROM unnest($2::uuid[]) item_id`,
+      `SELECT private.record_strategy_release_items($1,$2::uuid[])`,
       [publication.id, approvedItemIds],
     )
     await projectStrategyRelease(client, {

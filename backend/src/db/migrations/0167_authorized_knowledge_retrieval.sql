@@ -70,6 +70,76 @@ CREATE POLICY knowledge_publication_items_write ON public.knowledge_publication_
 GRANT SELECT,INSERT ON public.yux_strategy_release_items,public.knowledge_publication_items TO yux_api,yux_worker;
 GRANT SELECT ON public.yux_strategy_release_items,public.knowledge_publication_items TO yux_runtime;
 
+CREATE OR REPLACE FUNCTION private.record_strategy_release_items(target_release_id UUID,target_item_ids UUID[])
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+DECLARE
+  release_pack_id UUID;
+  release_owner_id UUID;
+  approved_ids UUID[];
+BEGIN
+  SELECT release.pack_id,pack.owner_organization_id,release.approved_item_ids
+    INTO release_pack_id,release_owner_id,approved_ids
+  FROM public.yux_strategy_pack_releases release
+  JOIN public.yux_strategy_packs pack ON pack.id=release.pack_id
+  WHERE release.id=target_release_id;
+  IF release_pack_id IS NULL
+     OR (release_owner_id IS NOT NULL AND NOT private.rls_can_access_organization(release_owner_id))
+     OR NOT (approved_ids @> target_item_ids AND target_item_ids @> approved_ids)
+     OR EXISTS (
+       SELECT 1 FROM unnest(target_item_ids) requested(id)
+       LEFT JOIN public.yux_strategy_pack_items item
+         ON item.id=requested.id AND item.pack_id=release_pack_id AND item.status='approved'
+       WHERE item.id IS NULL
+     ) THEN
+    RAISE EXCEPTION 'invalid_strategy_release_items' USING ERRCODE='22023';
+  END IF;
+  INSERT INTO public.yux_strategy_release_items(release_id,item_id)
+  SELECT target_release_id,requested.id FROM unnest(target_item_ids) requested(id)
+  ON CONFLICT DO NOTHING;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION private.record_knowledge_publication_items(target_publication_id UUID,target_item_ids UUID[])
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+DECLARE
+  publication_org_id UUID;
+  publication_entry_id UUID;
+  approved_ids UUID[];
+BEGIN
+  SELECT publication.organization_id,publication.entry_id,publication.approved_item_ids
+    INTO publication_org_id,publication_entry_id,approved_ids
+  FROM public.knowledge_publications publication WHERE publication.id=target_publication_id;
+  IF publication_org_id IS NULL
+     OR NOT private.rls_can_access_organization(publication_org_id)
+     OR NOT (approved_ids @> target_item_ids AND target_item_ids @> approved_ids)
+     OR EXISTS (
+       SELECT 1 FROM unnest(target_item_ids) requested(id)
+       LEFT JOIN public.marketing_knowledge_chunks chunk ON chunk.id=requested.id
+         AND chunk.organization_id=publication_org_id AND chunk.entry_id=publication_entry_id
+         AND chunk.chunk_kind IN ('curated_fact','curated_summary') AND chunk.curation_status='approved'
+       WHERE chunk.id IS NULL
+     ) THEN
+    RAISE EXCEPTION 'invalid_knowledge_publication_items' USING ERRCODE='22023';
+  END IF;
+  INSERT INTO public.knowledge_publication_items(publication_id,item_id)
+  SELECT target_publication_id,requested.id FROM unnest(target_item_ids) requested(id)
+  ON CONFLICT DO NOTHING;
+END
+$$;
+
+REVOKE ALL ON FUNCTION private.record_strategy_release_items(UUID,UUID[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.record_knowledge_publication_items(UUID,UUID[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION private.record_strategy_release_items(UUID,UUID[]),private.record_knowledge_publication_items(UUID,UUID[])
+  TO yux_api,yux_worker;
+
 CREATE OR REPLACE FUNCTION private.strategy_card_search_text(
   concept TEXT,
   category TEXT,
