@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { hashSessionToken } from "../../auth/session.js";
+import { runWithDatabaseRequestContext } from "../../db/request-context.js";
 import { requireInternalRole } from "../../http/guards.js";
 import { dataQuerySchema, executeDataQuery } from "../data/routes.js";
 import { getStrategyRelease, publishStrategyPack } from "./publications.js";
@@ -77,11 +78,20 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     const body = publicationBody.safeParse(request.body);
     if (!params.success || !body.success)
       return reply.code(400).send({ error: "invalid_strategy_publication" });
-    const publication = await publishStrategyPack(app.pg, {
-      packId: params.data.packId,
-      policyVersion: body.data.policyVersion,
-      publishedBy: user.id,
-    });
+    const context = requireInternalRole(request);
+    const publication = await runWithDatabaseRequestContext(
+      {
+        role: context.role,
+        organizationIds: context.organizationIds,
+        serviceRole: "api",
+      },
+      () =>
+        publishStrategyPack(app.pg, {
+          packId: params.data.packId,
+          policyVersion: body.data.policyVersion,
+          publishedBy: user.id,
+        }),
+    );
     return reply.code(publication.duplicate ? 200 : 201).send(publication);
   });
 
@@ -92,7 +102,15 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     const params = releaseParams.safeParse(request.params);
     if (!params.success)
       return reply.code(400).send({ error: "invalid_strategy_release" });
-    const release = await getStrategyRelease(app.pg, params.data.releaseId);
+    const context = requireInternalRole(request);
+    const release = await runWithDatabaseRequestContext(
+      {
+        role: context.role,
+        organizationIds: context.organizationIds,
+        serviceRole: "api",
+      },
+      () => getStrategyRelease(app.pg, params.data.releaseId),
+    );
     return (
       release ?? reply.code(404).send({ error: "strategy_release_not_found" })
     );
