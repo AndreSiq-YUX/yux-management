@@ -124,7 +124,9 @@ export async function dispatchAutomationEvent(
          status, event_payload, correlation_id, automation_trace, started_at
        )
        VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7::jsonb, $8, $9::uuid[], NOW())
-       ON CONFLICT (flow_id, event_id) DO NOTHING
+       ON CONFLICT (flow_id, event_id)
+       WHERE flow_id IS NOT NULL AND event_id IS NOT NULL
+       DO NOTHING
        RETURNING id`,
       [
         flow.organizationId,
