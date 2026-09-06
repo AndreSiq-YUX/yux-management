@@ -73,3 +73,10 @@
 - Decisão: liveness responde apenas pelo processo; readiness básica cobre banco e Redis; saúde operacional autenticada cobre workers, filas, outbox, Harness e provedores. Falha terminal histórica continua visível como contagem, mas não mantém incidente atual aberto sozinha.
 - Credenciais: banco ativo com segredo decifrável prevalece sobre ambiente permitido. Ausência ou segredo inválido cai para ambiente sem expor valor. `verifiedAt` só será preenchido por teste operacional explícito do provedor.
 - Custos: ausência de preço ou usage é `NULL` e `unavailable` com motivo; zero fica reservado a medição verdadeira de custo zero.
+
+## D-013 — Release é a identidade do conhecimento publicado
+
+- Status: decidida.
+- Decisão: uma publicação estratégica cria snapshot e hash imutáveis; edição posterior cria outra release e outros cards projetados. O ponteiro corrente é mutável, o conteúdo publicado não.
+- Isolamento: documentos privados deduplicam apenas dentro da organização proprietária. Hashes globais usam índice separado; conflito jamais serve como canal para descobrir arquivo de outro cliente.
+- Sementes: conteúdo histórico sem evidência localizável é `seed_example`, não doutrina atribuída a uma fonte privada.

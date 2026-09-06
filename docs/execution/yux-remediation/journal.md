@@ -220,3 +220,14 @@ frontend tests: PASS, 528 PASS
 - Medição: heartbeat a cada 30 segundos e stale após 90; custo desconhecido persiste `NULL` com motivo. Leituras e embeddings Jina registram modelo, correlação e uso disponível; health do Harness exige token e não faz inferência paga.
 - Verificação local: 154 arquivos/628 testes backend, type-check e 168 testes Python aprovados, com 1 teste live ignorado.
 - Aceite persistente: execução GitHub Actions `34006289729`, commit `3af0f74`, conclusão `success`. O cenário persistente comprovou API pronta junto de worker atrasado, lease abandonado, falha terminal histórica separada, Harness indisponível, origem ambiente/banco, medição incompleta com custo nulo e ausência de segredos. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T16 — Publicação versionada e proveniência
+
+- Estado: aceita.
+- Commit inicial: `183a570`; correção de contexto transacional: `4baef3d`.
+- Achados: YUX-01, YUX-02, YUX-04 e YUX-18.
+- Decisão: packs publicam releases imutáveis com versão, SHA-256, política, snapshot e autor. O pack aponta apenas para a release corrente; cards projetados carregam identidade unívoca de release e item, mantendo as versões anteriores consultáveis.
+- Escopo: packs e documentos privados possuem organização proprietária. Hash igual é permitido entre organizações sem revelar a existência do outro arquivo; material global mantém índice próprio. A unicidade legada de conceito/categoria vale apenas para cards sem release.
+- Proveniência: itens distinguem `document_extracted`, `manual_authored` e `seed_example`. As cinco sementes históricas foram marcadas como exemplos sem evidência atribuída, sem associação fictícia ao Black Book.
+- Compatibilidade: publicações de conhecimento existentes receberam versão, hash e snapshot; triggers completam a identidade de novos inserts legados. Fonte e documento podem apontar para a publicação corrente sem destruir histórico.
+- Aceite persistente: execução GitHub Actions `34006447763`, commit `a74aaea`, conclusão `success`. O teste persistente publicou duas versões com o mesmo título, confirmou dois cards distintos, imutabilidade da release, remoção de binding/arquivamento sem perda do snapshot anterior e duas cópias privadas do mesmo hash em organizações diferentes. Todos os quatro jobs da CI passaram.
