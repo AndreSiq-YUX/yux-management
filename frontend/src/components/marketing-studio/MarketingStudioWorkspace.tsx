@@ -187,19 +187,27 @@ export function MarketingStudioWorkspace({
         ))}
       </div>
 
-      <MarketingAutomationStudio
-        contents={contents}
-        settings={settings}
-        reviews={reviews}
-        agents={agents}
-        workflows={workflows}
-        workflowRuns={workflowRuns}
-        agentRuns={agentRuns}
-        toolRuns={toolRuns}
-        generationRuns={generationRuns}
-        campaignCreativeSuggestions={campaignCreativeSuggestions}
-        campaignDraftRuns={campaignDraftRuns}
-      />
+      {workflows.length > 0 ? (
+        <MarketingAutomationStudio
+          contents={contents}
+          settings={settings}
+          reviews={reviews}
+          agents={agents}
+          workflows={workflows}
+          workflowRuns={workflowRuns}
+          agentRuns={agentRuns}
+          toolRuns={toolRuns}
+          generationRuns={generationRuns}
+          campaignCreativeSuggestions={campaignCreativeSuggestions}
+          campaignDraftRuns={campaignDraftRuns}
+        />
+      ) : (
+        <section className="border border-dashed border-slate-300 bg-slate-50 p-6">
+          <h2 className="text-base font-semibold text-slate-950">Planejar campanha</h2>
+          <p className="mt-1 text-sm text-slate-600">Defina objetivo, público, oferta, canal e restrições antes de abrir o builder avançado.</p>
+          <button type="button" onClick={onCreateContent} className="mt-4 inline-flex items-center gap-2 rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white hover:bg-yux-700"><Sparkles className="h-4 w-4" />Iniciar planejamento</button>
+        </section>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
         <section>

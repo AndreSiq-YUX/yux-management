@@ -112,7 +112,7 @@ const automationNodes: FlowNode[] = [
     y: 132,
     accent: 'bg-blue-600',
     icon: BookOpen,
-    status: 'Sincronizado',
+    status: 'Não verificado',
     details: {
       objetivo: 'Reunir marca, produtos, histórico comercial e limites do contrato antes dos agentes criarem qualquer ativo.',
       entradas: ['Perfil de marca', 'Base de conhecimento', 'Contrato ativo', 'Campanhas anteriores'],
@@ -345,9 +345,8 @@ export function MarketingAutomationStudio({
   const latestRun = workflowRuns[0]
   const pendingApprovals = reviews.filter(review => review.status === 'pending').length
   const generatedAssets = contents.length + generationRuns.length + campaignCreativeSuggestions.length
-  const activeAgents = agents.filter(agent => agent.status === 'active').length || 3
-  const activeWorkflows = workflows.filter(workflow => workflow.status === 'active').length || 8
-  const runningAgents = agentRuns.filter(run => run.status === 'running' || run.status === 'queued').length || Math.min(activeAgents, 3)
+  const activeWorkflows = workflows.filter(workflow => workflow.status === 'active').length
+  const runningAgents = agentRuns.filter(run => run.status === 'running' || run.status === 'queued').length
 
   const inspectorAgent = useMemo(() => {
     if (selectedNode.id === 'estrategista') return agents.find(agent => agent.agentType === 'campaign_strategist')
@@ -366,10 +365,10 @@ export function MarketingAutomationStudio({
             Crie, monitore e ajuste fluxos inteligentes que alimentam campanhas, criativos, conteúdos e relatórios.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <HeaderChip label="Workspace" value="Empresa ABC" />
+            <HeaderChip label="Workspace" value={settings ? 'Contrato ativo' : 'Sem contrato'} />
             <HeaderChip label="Modo" value={operationModeLabel(settings?.operationMode)} />
             <HeaderChip label="Créditos" value={String(settings?.currentCreditBalance ?? 0)} />
-            <HeaderChip label="Última execução" value={latestRun?.createdAt ? formatRelative(latestRun.createdAt) : 'há 12 min'} />
+            <HeaderChip label="Última execução" value={latestRun?.createdAt ? formatRelative(latestRun.createdAt) : 'Sem execuções'} />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -394,10 +393,10 @@ export function MarketingAutomationStudio({
         </div>
         <div className="grid divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
           <PulseMetric icon={Workflow} label="Workflows ativos" value={activeWorkflows} detail="Fluxos prontos para execução" />
-          <PulseMetric icon={Bot} label="Agentes em execução" value={runningAgents} detail={`${agentRuns.length || runningAgents} runs monitorados`} />
-          <PulseMetric icon={ClipboardCheck} label="Aprovações pendentes" value={pendingApprovals || 5} detail="Itens aguardando decisão" tone="warning" />
-          <PulseMetric icon={Layers3} label="Ativos gerados" value={generatedAssets || 42} detail="Conteúdo, copy e criativos" tone="brand" />
-          <PulseMetric icon={CircleDollarSign} label="Economia estimada" value="18h" detail="Trabalho manual evitado" tone="success" />
+          <PulseMetric icon={Bot} label="Agentes em execução" value={runningAgents} detail={`${agentRuns.length} runs monitorados`} />
+          <PulseMetric icon={ClipboardCheck} label="Aprovações pendentes" value={pendingApprovals} detail="Itens aguardando decisão" tone="warning" />
+          <PulseMetric icon={Layers3} label="Ativos gerados" value={generatedAssets} detail="Conteúdo, copy e criativos" tone="brand" />
+          <PulseMetric icon={CircleDollarSign} label="Economia estimada" value="—" detail="Ainda não calculada" tone="success" />
         </div>
       </div>
 
@@ -542,7 +541,7 @@ export function MarketingAutomationStudio({
           icon={Layers3}
           title="Central de Conteúdo"
           description="Todos os ativos gerados por agentes, criação manual, radar ou campanhas ficam em um único acervo com origem e status."
-          detail={`${generatedAssets || 42} ativos rastreáveis`}
+          detail={`${generatedAssets} ativos rastreáveis`}
         />
         <OutputCard
           icon={Sparkles}

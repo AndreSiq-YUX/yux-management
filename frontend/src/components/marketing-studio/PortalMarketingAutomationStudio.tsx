@@ -106,7 +106,7 @@ const initialNodes: StudioFlowNode[] = [
       label: 'Preparar contexto',
       description: 'Marca, oferta e historico',
       eyebrow: 'Contexto',
-      status: 'Sincronizado',
+      status: 'Sandbox',
       accent: '#2563eb',
       tone: 'blue',
       icon: BookOpen,
@@ -425,8 +425,8 @@ function PortalMarketingAutomationStudioContent({
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-600">Pulso do Marketing</p>
         </div>
         <div className="grid divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
-          <PulseMetric icon={Workflow} label="Fluxos ativos" value={4} detail="Rotinas acompanhadas pela YUX" />
-          <PulseMetric icon={Image} label="Ativos gerados" value={contents.length || 12} detail="Posts, copies e criativos" tone="brand" />
+          <PulseMetric icon={Workflow} label="Fluxos ativos" value={0} detail="Nenhum fluxo persistido nesta visualização" />
+          <PulseMetric icon={Image} label="Ativos gerados" value={contents.length} detail="Posts, copies e criativos" tone="brand" />
           <PulseMetric icon={ClipboardCheck} label="Aprovacoes" value={pendingReviews} detail="Aguardando decisao" tone="warning" />
           <PulseMetric icon={CheckCircle2} label="Aprovados" value={approvedContents} detail="Prontos para uso" tone="success" />
           <PulseMetric icon={Send} label="Agendados" value={scheduledItems} detail="Publicacoes e entregas futuras" />

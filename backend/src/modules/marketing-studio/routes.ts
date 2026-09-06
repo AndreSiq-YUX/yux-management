@@ -7,6 +7,15 @@ import { requirePlatformOperation } from '../../http/operation-policy.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
 import { parseLegacyKnowledgeArgs } from '../company-intelligence/retrieval-policy.js'
+import { requireAccess } from '../../policies/authorization.js'
+import {
+  createStudioCampaignPlan,
+  createStudioContentVersion,
+  createStudioPublishingIntent,
+  decideStudioContentReview,
+  getStudioJourneySummary,
+  submitStudioContentForReview,
+} from './journey.js'
 
 const allowedTables = new Set([
   'marketing_studio_settings',
@@ -85,6 +94,38 @@ const marketingStudioTableRules = createScopedTableRules(
 )
 
 const portalContractQuerySchema = z.object({ contractId: z.string().uuid() })
+const journeyContextSchema = z.object({
+  organizationId: z.string().uuid(),
+  contractId: z.string().uuid(),
+})
+const studioPlanSchema = journeyContextSchema.extend({
+  idempotencyKey: z.string().trim().min(8).max(200),
+  name: z.string().trim().min(2).max(160),
+  objective: z.enum(['lead_generation', 'traffic', 'conversions', 'awareness']),
+  audience: z.string().trim().min(2).max(2_000),
+  offer: z.string().trim().min(2).max(2_000),
+  channel: z.string().trim().min(2).max(80),
+  constraints: z.string().trim().max(4_000).default(''),
+  sourceIds: z.array(z.string().uuid()).max(100).default([]),
+  provider: z.enum(['meta', 'google']).default('meta'),
+})
+const contentParamsSchema = z.object({ contentId: z.string().uuid() })
+const contentVersionSchema = journeyContextSchema.extend({
+  title: z.string().trim().min(1).max(240),
+  body: z.string().max(200_000),
+  changeSummary: z.string().trim().min(1).max(2_000),
+})
+const versionReferenceSchema = journeyContextSchema.extend({ contentVersionId: z.string().uuid() })
+const reviewDecisionSchema = versionReferenceSchema.extend({
+  status: z.enum(['approved', 'changes_requested', 'rejected']),
+  comments: z.string().trim().max(4_000).optional(),
+})
+const publishingIntentSchema = journeyContextSchema.extend({
+  approvedContentVersionId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  action: z.enum(['create_draft', 'update_draft', 'publish']),
+  idempotencyKey: z.string().trim().min(8).max(200),
+})
 
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
@@ -103,6 +144,73 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function registerMarketingStudioRoutes(app: FastifyInstance) {
+  app.get('/journey/summary', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const parsed = journeyContextSchema.extend({ since: z.string().datetime().optional() }).safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_studio_journey_query' })
+    requireAccess(ctx, 'marketing_studio.read', { organizationId: parsed.data.organizationId })
+    return getStudioJourneySummary(app.pg, parsed.data)
+  })
+
+  app.post('/journey/plans', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const parsed = studioPlanSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_studio_plan' })
+    requireAccess(ctx, 'marketing_studio.write', { organizationId: parsed.data.organizationId })
+    return reply.code(201).send(await createStudioCampaignPlan(app.pg, ctx.userId, parsed.data))
+  })
+
+  app.post('/journey/contents/:contentId/versions', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = contentParamsSchema.safeParse(request.params)
+    const body = contentVersionSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_studio_content_version' })
+    requireAccess(ctx, 'marketing_studio.write', { organizationId: body.data.organizationId })
+    return reply.code(201).send(await createStudioContentVersion(app.pg, ctx.userId, {
+      ...body.data, contentId: params.data.contentId,
+    }))
+  })
+
+  app.post('/journey/contents/:contentId/submit-review', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = contentParamsSchema.safeParse(request.params)
+    const body = versionReferenceSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_studio_review_submission' })
+    requireAccess(ctx, 'marketing_studio.write', { organizationId: body.data.organizationId })
+    return reply.code(201).send(await submitStudioContentForReview(app.pg, ctx.userId, {
+      ...body.data, contentId: params.data.contentId,
+    }))
+  })
+
+  app.post('/journey/contents/:contentId/review', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = contentParamsSchema.safeParse(request.params)
+    const body = reviewDecisionSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_studio_review_decision' })
+    requireAccess(ctx, 'marketing_studio.write', { organizationId: body.data.organizationId })
+    return decideStudioContentReview(app.pg, ctx.userId, { ...body.data, contentId: params.data.contentId })
+  })
+
+  app.post('/journey/contents/:contentId/publish', async (request, reply) => {
+    const ctx = requireAuth(request)
+    const params = contentParamsSchema.safeParse(request.params)
+    const body = publishingIntentSchema.safeParse(request.body)
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_studio_publishing_intent' })
+    requireAccess(ctx, 'marketing_studio.write', { organizationId: body.data.organizationId })
+    const run = await createStudioPublishingIntent(app.pg, ctx.userId, {
+      ...body.data, contentId: params.data.contentId,
+    })
+    if ((!run.duplicate || run.retry) && run.status === 'queued') {
+      await app.jobQueue.add('provider.functionInvoke', {
+        requestedBy: ctx.userId,
+        functionName: 'execute-marketing-publishing',
+        organizationId: body.data.organizationId,
+        body: { publishingRunId: run.id },
+      })
+    }
+    return reply.code(run.duplicate ? 200 : 202).send(run)
+  })
+
   app.get('/portal/contents', async (request, reply) => {
     const parsed = portalContractQuerySchema.safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_portal_content_query' })
@@ -132,7 +240,7 @@ export async function registerMarketingStudioRoutes(app: FastifyInstance) {
     const ctx = requireAuth(request)
     requirePlatformOperation(ctx, 'knowledge.read', 'marketing_studio')
     const { rows } = await app.pg.query(
-      `SELECT review.id, review.content_item_id, review.reviewer_id, review.status,
+      `SELECT review.id, review.content_item_id, review.content_version_id, review.reviewer_id, review.status,
               review.quality_score, review.comments, review.checklist, review.decided_at,
               review.created_at, review.updated_at
        FROM public.content_reviews review

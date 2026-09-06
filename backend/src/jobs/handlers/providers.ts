@@ -144,32 +144,88 @@ export async function handleProviderFunction(
   if (functionName === 'execute-wordpress-publishing' || functionName === 'execute-marketing-publishing') {
     const publishingRunId = stringValue(body.publishingRunId, 'publishingRunId')
     const result = await pool.query<{
-      id: string; organization_id: string; status: string; token_reference: string | null; provider: string
+      id: string; organization_id: string; status: string; action: string; content_item_id: string
+      approved_content_version_id: string | null; approved_version_valid: boolean
+      token_reference: string | null; provider: string; connection_status: string
       connection: JsonRecord; content: JsonRecord; run: JsonRecord
     }>(
-      `SELECT r.id, r.organization_id, r.status, pc.token_reference, pc.provider,
-              to_jsonb(pc) AS connection, to_jsonb(ci) AS content, to_jsonb(r) AS run
+      `SELECT r.id, r.organization_id, r.status, r.action, r.content_item_id,
+              r.approved_content_version_id,
+              EXISTS (
+                SELECT 1 FROM public.content_reviews review
+                WHERE review.content_item_id=r.content_item_id
+                  AND review.content_version_id=r.approved_content_version_id
+                  AND review.status='approved'
+              ) AS approved_version_valid,
+              pc.token_reference, pc.provider,pc.status AS connection_status,
+              to_jsonb(pc) AS connection,
+              to_jsonb(ci) || jsonb_build_object(
+                'title',COALESCE(cv.title,ci.title),'body',COALESCE(cv.body,ci.body),
+                'approved_content_version_id',cv.id,'approved_version_number',cv.version_number
+              ) AS content,
+              to_jsonb(r) AS run
        FROM public.publishing_runs r
        JOIN public.publishing_connections pc ON pc.id = r.connection_id
        JOIN public.content_items ci ON ci.id = r.content_item_id
+       LEFT JOIN public.content_versions cv ON cv.id=r.approved_content_version_id AND cv.content_item_id=ci.id
        WHERE r.id = $1 LIMIT 1`,
       [publishingRunId],
     )
     const publishing = result.rows[0]
     if (!publishing || publishing.organization_id !== organizationId) throw new Error('publishing_run_not_found')
     if (publishing.status === 'succeeded') return { duplicate: true, runId: publishing.id }
-    if (!publishing.token_reference) throw new Error('publishing_access_token_not_configured')
     await pool.query(`UPDATE public.publishing_runs SET status = 'running', started_at = NOW(), updated_at = NOW() WHERE id = $1`, [publishing.id])
-    const secret = await loadProviderSecretFromPool(pool, publishing.token_reference)
-    const response = await executeSocialPublishingAction({ connection: publishing.connection, content: publishing.content, run: publishing.run, accessToken: secret.value })
-    await pool.query(
-      `UPDATE public.publishing_runs
-       SET status = 'succeeded', provider_post_id = $2, published_url = $3, response_payload = $4::jsonb,
-           completed_at = NOW(), updated_at = NOW()
-       WHERE id = $1`,
-      [publishing.id, response.providerPostId, response.publishedUrl, JSON.stringify(response.responsePayload)],
-    )
-    return { runId: publishing.id, response }
+    try {
+      if (publishing.connection_status !== 'connected') throw new Error('publishing_connection_not_ready')
+      if (publishing.action === 'publish' && (!publishing.approved_content_version_id || !publishing.approved_version_valid)) {
+        throw new Error('publishing_approved_content_version_required')
+      }
+      if (!publishing.token_reference) throw new Error('publishing_access_token_not_configured')
+      const secret = await loadProviderSecretFromPool(
+        pool,
+        publishing.token_reference,
+        options.encryptionKey ? decodeProviderSecretEncryptionKey(options.encryptionKey) : undefined,
+      )
+      if (secret.expired) throw new Error('publishing_access_token_expired')
+      const response = await executeSocialPublishingAction({
+        connection: publishing.connection,
+        content: publishing.content,
+        run: publishing.run,
+        accessToken: secret.value,
+        graphBaseUrl: options.graphBaseUrl,
+        ...(options.fetcher ? { fetcher: options.fetcher } : {}),
+      })
+      await pool.query(
+        `UPDATE public.publishing_runs
+         SET status = 'succeeded', provider_post_id = $2, published_url = $3, response_payload = $4::jsonb,
+             protected_error=NULL,completed_at = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [publishing.id, response.providerPostId, response.publishedUrl, JSON.stringify(response.responsePayload)],
+      )
+      if (publishing.action === 'publish') {
+        await pool.query(
+          `UPDATE public.content_items
+           SET status='published',published_at=NOW(),published_url=$2,updated_at=NOW()
+           WHERE id=$1 AND organization_id=$3`,
+          [publishing.content_item_id, response.publishedUrl, organizationId],
+        )
+        await pool.query(
+          `UPDATE public.editorial_calendar_items
+           SET status='published',updated_at=NOW()
+           WHERE content_item_id=$1 AND organization_id=$2 AND status IN ('ready','scheduled')`,
+          [publishing.content_item_id, organizationId],
+        )
+      }
+      return { runId: publishing.id, response }
+    } catch (error) {
+      await pool.query(
+        `UPDATE public.publishing_runs
+         SET status='failed',protected_error=$2,completed_at=NOW(),updated_at=NOW()
+         WHERE id=$1`,
+        [publishing.id, safeProviderError(error)],
+      ).catch(() => undefined)
+      throw error
+    }
   }
 
   throw new Error(`unhandled_provider_function:${functionName}`)

@@ -10,6 +10,8 @@ export type Operation =
   | 'automations.write'
   | 'omnichannel.read'
   | 'omnichannel.write'
+  | 'marketing_studio.read'
+  | 'marketing_studio.write'
   | 'strategy.manage'
   | 'action_engine.read'
   | 'action_engine.write'
@@ -28,6 +30,8 @@ const moduleOperationKeys: Partial<Record<Operation, string>> = {
   'automations.write': 'automations',
   'omnichannel.read': 'omnichannel',
   'omnichannel.write': 'omnichannel',
+  'marketing_studio.read': 'marketing_studio',
+  'marketing_studio.write': 'marketing_studio',
   'action_engine.read': 'action_engine',
   'action_engine.write': 'action_engine',
   'action_engine.economics.read': 'action_engine',

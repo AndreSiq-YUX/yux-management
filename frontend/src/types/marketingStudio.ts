@@ -551,6 +551,7 @@ export interface MarketingPublishingRun {
   contractId: string
   connectionId: string
   contentItemId: string
+  approvedContentVersionId?: string
   calendarItemId?: string
   workflowRunId?: string
   action: MarketingPublishingAction
@@ -799,6 +800,7 @@ export type MarketingReviewStatus = 'pending' | 'approved' | 'changes_requested'
 export interface MarketingContentReview {
   id: string
   contentItemId: string
+  contentVersionId?: string
   reviewerId?: string
   status: MarketingReviewStatus
   qualityScore?: number
@@ -832,6 +834,82 @@ export interface PortalMarketingReviewDecision {
   contentItemId: string
   status: Extract<MarketingReviewStatus, 'approved' | 'changes_requested' | 'rejected'>
   comments?: string
+}
+
+export interface StudioJourneyContent {
+  id: string
+  title: string
+  contentType: MarketingContentType
+  channel: string
+  status: MarketingContentStatus
+  brief?: string
+  body?: string
+  cta?: string
+  campaignId?: string
+  latestVersionId?: string
+  latestVersionNumber?: number
+  reviewId?: string
+  reviewStatus?: MarketingReviewStatus
+  reviewComments?: string
+  reviewVersionId?: string
+  scheduledAt?: string
+  publishedAt?: string
+  publishedUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StudioJourneySummary {
+  organizationId: string
+  contractId: string
+  clientId: string
+  window: { since: string; until: string }
+  counts: {
+    activeFlows: number
+    generatedAssets: number
+    pendingReviews: number
+    scheduledAssets: number
+    failedPublications: number
+  }
+  links: Record<keyof StudioJourneySummary['counts'], string>
+  campaigns: Array<{
+    id: string; name: string; objective: string; status: string; provider: string; missionId?: string
+    createdAt: string; updatedAt: string
+  }>
+  contents: StudioJourneyContent[]
+  workflows: Array<{
+    id: string; workflowKey: string; name: string; status: MarketingWorkflowStatus
+    triggerType: MarketingWorkflowTriggerType; config: Record<string, unknown>; createdAt: string; updatedAt: string
+  }>
+  publishingRuns: Array<{
+    id: string; contentItemId: string; approvedContentVersionId?: string
+    action: MarketingPublishingAction; status: MarketingPublishingRunStatus
+    providerPostId?: string; publishedUrl?: string; idempotencyKey: string
+    provider: MarketingPublishingProvider; connectionName: string; protectedError?: string
+    createdAt: string; updatedAt: string
+  }>
+  calendarItems: Array<{
+    id: string; contentItemId?: string; title: string; channel: string; status: MarketingCalendarStatus
+    startsAt: string; endsAt?: string
+  }>
+  connections: Array<{
+    id: string; provider: MarketingPublishingProvider; name: string
+    status: MarketingPublishingConnectionStatus; siteUrl: string; lastVerifiedAt?: string
+  }>
+}
+
+export interface StudioCampaignPlanInput {
+  organizationId: string
+  contractId: string
+  idempotencyKey: string
+  name: string
+  objective: MarketingCampaignObjective
+  audience: string
+  offer: string
+  channel: MarketingChannel
+  constraints: string
+  sourceIds: string[]
+  provider: MarketingCampaignProvider
 }
 
 export interface MarketingUsageLedgerEntry {

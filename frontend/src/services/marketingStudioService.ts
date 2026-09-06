@@ -19,6 +19,7 @@ import type {
   MarketingContentItem,
   MarketingContentQualityCheck,
   MarketingContentReview,
+  MarketingContentStatus,
   MarketingContentVersion,
   MarketingIdea,
   MarketingKnowledgeChunk,
@@ -26,6 +27,7 @@ import type {
   MarketingKnowledgeMatch,
   MarketingProductService,
   MarketingPublishingConnection,
+  MarketingPublishingAction,
   MarketingPublishingRun,
   MarketingRadarRun,
   MarketingResearchCacheEntry,
@@ -33,6 +35,8 @@ import type {
   MarketingSource,
   MarketingSourceItem,
   MarketingStudioSettings,
+  StudioCampaignPlanInput,
+  StudioJourneySummary,
   MarketingToolRun,
   MarketingUsageLedgerEntry,
   MarketingWorkflow,
@@ -117,6 +121,7 @@ export function mapMarketingContentReview(row: any): MarketingContentReview {
   return {
     id: row.id,
     contentItemId: row.content_item_id,
+    contentVersionId: row.content_version_id || undefined,
     reviewerId: row.reviewer_id || undefined,
     status: row.status,
     qualityScore: row.quality_score == null ? undefined : Number(row.quality_score),
@@ -368,6 +373,7 @@ export function mapMarketingPublishingRun(row: any): MarketingPublishingRun {
     contractId: row.contract_id,
     connectionId: row.connection_id,
     contentItemId: row.content_item_id,
+    approvedContentVersionId: row.approved_content_version_id || undefined,
     calendarItemId: row.calendar_item_id || undefined,
     workflowRunId: row.workflow_run_id || undefined,
     action: row.action,
@@ -1561,6 +1567,53 @@ const MODEL_ROUTING_SELECT = '*'
 const TOOL_POLICY_SELECT = '*'
 
 export const marketingStudioService = {
+  getJourneySummary(organizationId: string, contractId: string, since?: string) {
+    const query = new URLSearchParams({ organizationId, contractId })
+    if (since) query.set('since', since)
+    return apiRequest<StudioJourneySummary>(`/marketing-studio/journey/summary?${query.toString()}`)
+  },
+
+  createJourneyPlan(input: StudioCampaignPlanInput) {
+    return apiRequest<{
+      campaignId: string; contentId: string; contentVersionId: string
+      workflowId: string; workflowRunId: string; status: 'draft'; duplicate: boolean
+    }>('/marketing-studio/journey/plans', { method: 'POST', body: input })
+  },
+
+  createJourneyContentVersion(contentId: string, input: {
+    organizationId: string; contractId: string; title: string; body: string; changeSummary: string
+  }) {
+    return apiRequest<MarketingContentVersion>(`/marketing-studio/journey/contents/${contentId}/versions`, {
+      method: 'POST', body: input,
+    })
+  },
+
+  submitJourneyContentForReview(contentId: string, input: {
+    organizationId: string; contractId: string; contentVersionId: string
+  }) {
+    return apiRequest<MarketingContentReview>(`/marketing-studio/journey/contents/${contentId}/submit-review`, {
+      method: 'POST', body: input,
+    })
+  },
+
+  decideJourneyContentReview(contentId: string, input: {
+    organizationId: string; contractId: string; contentVersionId: string
+    status: 'approved' | 'changes_requested' | 'rejected'; comments?: string
+  }) {
+    return apiRequest<{ contentId: string; contentVersionId: string; status: MarketingContentStatus }>(
+      `/marketing-studio/journey/contents/${contentId}/review`, { method: 'POST', body: input },
+    )
+  },
+
+  createJourneyPublishingIntent(contentId: string, input: {
+    organizationId: string; contractId: string; approvedContentVersionId: string; connectionId: string
+    action: MarketingPublishingAction; idempotencyKey: string
+  }) {
+    return apiRequest<MarketingPublishingRun>(`/marketing-studio/journey/contents/${contentId}/publish`, {
+      method: 'POST', body: input,
+    })
+  },
+
   async getSettings(contractId: string) {
     const { data, error } = await marketingStudioDataClient
       .from('marketing_studio_settings')

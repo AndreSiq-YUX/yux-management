@@ -73,13 +73,14 @@ export function sanitizePublishingPayload(value: unknown): unknown {
 export function buildFacebookPagePostRequest(input: {
   pageId: string
   graphVersion: string
+  graphBaseUrl?: string
   accessToken: string
   message: string
   link?: string
 }): ProviderPublishingRequest {
   return {
     method: 'POST',
-    url: `https://graph.facebook.com/${requireString(input.graphVersion, 'graphVersion')}/${requireString(input.pageId, 'pageId')}/feed`,
+    url: `${(input.graphBaseUrl || 'https://graph.facebook.com').replace(/\/$/, '')}/${requireString(input.graphVersion, 'graphVersion')}/${requireString(input.pageId, 'pageId')}/feed`,
     bodyMode: 'form',
     body: compactBody({
       message: requireString(input.message, 'message'),
@@ -92,13 +93,14 @@ export function buildFacebookPagePostRequest(input: {
 export function buildInstagramMediaContainerRequest(input: {
   instagramAccountId: string
   graphVersion: string
+  graphBaseUrl?: string
   accessToken: string
   caption: string
   imageUrl: string
 }): ProviderPublishingRequest {
   return {
     method: 'POST',
-    url: `https://graph.facebook.com/${requireString(input.graphVersion, 'graphVersion')}/${requireString(input.instagramAccountId, 'instagramAccountId')}/media`,
+    url: `${(input.graphBaseUrl || 'https://graph.facebook.com').replace(/\/$/, '')}/${requireString(input.graphVersion, 'graphVersion')}/${requireString(input.instagramAccountId, 'instagramAccountId')}/media`,
     bodyMode: 'form',
     body: {
       image_url: requireString(input.imageUrl, 'imageUrl'),
@@ -111,12 +113,13 @@ export function buildInstagramMediaContainerRequest(input: {
 export function buildInstagramPublishRequest(input: {
   instagramAccountId: string
   graphVersion: string
+  graphBaseUrl?: string
   accessToken: string
   creationId: string
 }): ProviderPublishingRequest {
   return {
     method: 'POST',
-    url: `https://graph.facebook.com/${requireString(input.graphVersion, 'graphVersion')}/${requireString(input.instagramAccountId, 'instagramAccountId')}/media_publish`,
+    url: `${(input.graphBaseUrl || 'https://graph.facebook.com').replace(/\/$/, '')}/${requireString(input.graphVersion, 'graphVersion')}/${requireString(input.instagramAccountId, 'instagramAccountId')}/media_publish`,
     bodyMode: 'form',
     body: {
       creation_id: requireString(input.creationId, 'creationId'),
@@ -179,6 +182,7 @@ export async function executeSocialPublishingAction(input: {
   run: Record<string, unknown>
   accessToken: string
   graphVersion?: string
+  graphBaseUrl?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const provider = requireString(input.connection.provider, 'provider') as SocialPublishingProvider
@@ -195,12 +199,14 @@ async function executeFacebookPage(input: {
   run: Record<string, unknown>
   accessToken: string
   graphVersion?: string
+  graphBaseUrl?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const pageId = requireString(input.connection.provider_asset_id || input.connection.provider_account_id, 'provider_asset_id')
   const payload = await sendProviderRequest(buildFacebookPagePostRequest({
     pageId,
     graphVersion: input.graphVersion || 'v20.0',
+    graphBaseUrl: input.graphBaseUrl,
     accessToken: input.accessToken,
     message: contentMessage(input.content),
     link: contentLink(input.content, input.run),
@@ -221,12 +227,14 @@ async function executeInstagram(input: {
   run: Record<string, unknown>
   accessToken: string
   graphVersion?: string
+  graphBaseUrl?: string
   fetcher?: typeof fetch
 }): Promise<SocialPublishingResult> {
   const instagramAccountId = requireString(input.connection.provider_asset_id || input.connection.provider_account_id, 'provider_asset_id')
   const containerPayload = await sendProviderRequest(buildInstagramMediaContainerRequest({
     instagramAccountId,
     graphVersion: input.graphVersion || 'v20.0',
+    graphBaseUrl: input.graphBaseUrl,
     accessToken: input.accessToken,
     caption: contentMessage(input.content),
     imageUrl: contentImageUrl(input.content, input.run),
@@ -235,6 +243,7 @@ async function executeInstagram(input: {
   const publishPayload = await sendProviderRequest(buildInstagramPublishRequest({
     instagramAccountId,
     graphVersion: input.graphVersion || 'v20.0',
+    graphBaseUrl: input.graphBaseUrl,
     accessToken: input.accessToken,
     creationId,
   }), input.fetcher)
