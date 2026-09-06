@@ -73,7 +73,17 @@ class FakeAuthStore implements AuthStore {
 }
 
 class FakePool {
-  async query(sql: string) {
+  async query(sql: string, params: unknown[] = []) {
+    if (sql.includes('INSERT INTO public.domain_events')) {
+      return { rows: [{
+        id: params[0], organization_id: params[1], crm_instance_id: params[2], event_type: params[3],
+        schema_version: params[4], aggregate_type: params[5], aggregate_id: params[6], lead_id: params[7],
+        correlation_id: params[8], causation_id: params[9], depth: params[10], actor: params[11],
+        occurred_at: params[12], automation_trace: params[13], payload: params[14], dispatch_status: 'pending',
+        attempt_count: 0, available_at: params[12], dispatched_at: null, last_error: null, lease_owner: null,
+        lease_until: null, processing_stage: 'pending', processor_version: 'v1', failure_class: null, created_at: params[12],
+      }] }
+    }
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
     if (sql.includes('FROM public.organization_materials')) {
@@ -290,7 +300,9 @@ describe('automation routes', () => {
         name: 'automation.dispatch',
         data: {
           requestedBy: ids.user,
-          event: { type: 'lead.created', organizationId: ids.org },
+          event: expect.objectContaining({
+            eventType: 'lead.created', organizationId: ids.org, aggregateType: 'lead', schemaVersion: 1,
+          }),
         },
       },
     ])

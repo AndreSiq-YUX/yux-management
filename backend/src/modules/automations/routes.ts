@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
+import { normalizeEvent } from '../automation/runtime.js'
+import { recordDomainEvent } from '../events/repository.js'
 import {
   createAutomationAction,
   createAutomationCondition,
@@ -394,10 +397,15 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
     const parsed = dispatchSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_automation_dispatch_payload' })
     await requireAutomationOrganizationWriteAccess(app.pg, user, parsed.data.event.organizationId)
+    const eventId = typeof parsed.data.event.eventId === 'string' ? parsed.data.event.eventId : randomUUID()
+    const aggregateId = typeof parsed.data.event.aggregateId === 'string'
+      ? parsed.data.event.aggregateId : parsed.data.event.leadId ?? eventId
+    const event = normalizeEvent({ ...parsed.data.event, eventId, aggregateId })
+    await recordDomainEvent(app.pg, event)
 
     const job = await app.jobQueue.add('automation.dispatch', {
       requestedBy: user.id,
-      event: parsed.data.event,
+      event,
     })
     return reply.code(202).send({ ok: true, jobId: job.id })
   })
