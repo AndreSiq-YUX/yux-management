@@ -160,6 +160,8 @@ AS $$
          array_to_string(COALESCE(retrieval_tags,'{}'),' ')
 $$;
 REVOKE ALL ON FUNCTION private.strategy_card_search_text(TEXT,TEXT,TEXT,TEXT[],TEXT[],TEXT[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION private.strategy_card_search_text(TEXT,TEXT,TEXT,TEXT[],TEXT[],TEXT[])
+  TO yux_api,yux_worker,yux_runtime;
 
 CREATE INDEX IF NOT EXISTS yux_strategy_cards_published_fts_idx
   ON public.yux_strategy_concept_cards USING GIN (
@@ -303,7 +305,7 @@ BEGIN
     JOIN public.yux_strategy_pack_items item ON item.id=card.pack_item_id AND item.pack_id=pack.id AND item.status='approved'
     CROSS JOIN search
     JOIN LATERAL (
-      SELECT encode(digest(string_agg(
+      SELECT encode(public.digest(string_agg(
         binding.id::TEXT || ':' || EXTRACT(EPOCH FROM binding.updated_at)::TEXT,
         ',' ORDER BY binding.priority,binding.id
       ),'sha256'),'hex') AS fingerprint
@@ -344,7 +346,7 @@ BEGIN
       ts_rank_cd(to_tsvector('portuguese',COALESCE(chunk.title,'') || ' ' || chunk.body),search.terms)::DOUBLE PRECISION AS lexical_score,
       private.jsonb_cosine_similarity(chunk.embedding,target_query_embedding) AS vector_score,
       chunk.embedding_model,
-      encode(digest(publication.id::TEXT || ':' || publication.content_hash,'sha256'),'hex') AS binding_fingerprint
+      encode(public.digest(publication.id::TEXT || ':' || publication.content_hash,'sha256'),'hex') AS binding_fingerprint
     FROM public.marketing_knowledge_chunks chunk
     JOIN public.marketing_knowledge_documents document ON document.id=chunk.document_id
       AND document.status='published' AND document.current_publication_id IS NOT NULL
