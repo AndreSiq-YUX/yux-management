@@ -309,7 +309,7 @@ test('J6 — conversa persistida aceita handoff, resolução e refresh', async (
   expect((await handoffResponse).ok()).toBeTruthy()
   await expect(page.getByText('Handoff solicitado')).toBeVisible()
   const resolveResponse = page.waitForResponse(response => (
-    response.url() === `${apiBase}/omnichannel/conversations/${conversationId}`
+    response.url() === `${apiBase}/omnichannel/conversations/${conversationId}/resolve`
     && response.request().method() === 'PATCH'
   ))
   await page.getByRole('button', { name: 'Resolver' }).click()
