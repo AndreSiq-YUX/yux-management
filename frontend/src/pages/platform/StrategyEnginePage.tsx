@@ -116,8 +116,8 @@ export function StrategyEnginePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
+  async function load(showLoading = true) {
+    if (showLoading) setLoading(true)
     setError(null)
     try {
       const [
@@ -205,7 +205,7 @@ export function StrategyEnginePage() {
       console.error('Error loading Strategy Engine:', error)
       setError('Nao foi possivel carregar o Strategy Engine.')
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }
 
@@ -220,12 +220,12 @@ export function StrategyEnginePage() {
 
   async function reloadAfter(action: () => Promise<unknown>) {
     await action()
-    await load()
+    await load(false)
   }
 
   async function reloadAfterResult<T>(action: () => Promise<T>) {
     const result = await action()
-    await load()
+    await load(false)
     return result
   }
 

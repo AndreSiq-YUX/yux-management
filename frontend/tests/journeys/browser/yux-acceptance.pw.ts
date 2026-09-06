@@ -135,7 +135,9 @@ test('J2 — pack passa por autoria, revisão, publicação e binding governados
   await page.getByLabel('Perfis permitidos').fill('growth_strategist')
   const publicationResponse = page.waitForResponse(response => response.url().includes('/publications') && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Publicar versão confirmada' }).click()
-  const publication = await (await publicationResponse).json() as { publicationId: string; contentHash: string }
+  const publishedResponse = await publicationResponse
+  expect(publishedResponse.ok(), await publishedResponse.text()).toBeTruthy()
+  const publication = await publishedResponse.json() as { publicationId: string; contentHash: string }
   await expect(page.getByRole('status')).toContainText('Publicação v')
   await page.getByRole('button', { name: 'Fechar' }).click()
 

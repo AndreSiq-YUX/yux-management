@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { ApiError } from '../../http/errors.js'
 import { requireOrganizationScope } from '../../http/guards.js'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { readKnowledgeFile, writeKnowledgeFile } from './file-storage.js'
 import {
   archiveKnowledgeDocument,
@@ -189,7 +190,10 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_company_profile_payload' })
     const ctx = requireOrganizationScope(request, params.data.organizationId)
     assertCanConfigure(ctx.role)
-    return upsertCompanyProfile(app.pg, params.data.organizationId, normalizeProfile(body.data))
+    return runWithDatabaseRequestContext(
+      { role: ctx.role, organizationIds: ctx.organizationIds, serviceRole: 'api' },
+      () => upsertCompanyProfile(app.pg, params.data.organizationId, normalizeProfile(body.data)),
+    )
   })
 
   app.get('/organizations/:organizationId/brand', async (request, reply) => {
@@ -205,7 +209,10 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_brand_profile_payload' })
     const ctx = requireOrganizationScope(request, params.data.organizationId)
     assertCanConfigure(ctx.role)
-    return upsertBrandProfile(app.pg, params.data.organizationId, normalizeBrand(body.data))
+    return runWithDatabaseRequestContext(
+      { role: ctx.role, organizationIds: ctx.organizationIds, serviceRole: 'api' },
+      () => upsertBrandProfile(app.pg, params.data.organizationId, normalizeBrand(body.data)),
+    )
   })
 
   app.get('/organizations/:organizationId/context-preview', async (request, reply) => {
@@ -293,30 +300,35 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_manual_knowledge_payload' })
     const ctx = requireOrganizationScope(request, params.data.organizationId)
     assertCanConfigure(ctx.role)
-    const shell = await createKnowledgeShell(app.pg, {
-      organizationId: params.data.organizationId,
-      ...body.data,
-      sourceType: 'manual',
-      checksumSha256: createHash('sha256').update(body.data.body).digest('hex'),
-    })
-    try {
-      await completeKnowledgeIngestion(app.pg, {
-        sourceId: shell.sourceId,
-        documentId: shell.documentId,
-        extracted: extractManualKnowledge(body.data.title, body.data.body),
-      })
-      const job = await app.jobQueue.add('company-intelligence.indexKnowledge', {
-        sourceId: shell.sourceId,
-        documentId: shell.documentId,
-        sourceType: 'manual',
-        organizationId: params.data.organizationId,
-      })
-      await markKnowledgeProcessingState(app.pg, shell.documentId, 'indexing')
-      return reply.code(202).send({ ...(await getKnowledgeDocument(app.pg, shell.documentId)), jobId: job.id })
-    } catch (error) {
-      await markKnowledgeIngestionFailed(app.pg, shell.sourceId, shell.documentId, error)
-      throw error
-    }
+    return runWithDatabaseRequestContext(
+      { role: ctx.role, organizationIds: ctx.organizationIds, serviceRole: 'api' },
+      async () => {
+        const shell = await createKnowledgeShell(app.pg, {
+          organizationId: params.data.organizationId,
+          ...body.data,
+          sourceType: 'manual',
+          checksumSha256: createHash('sha256').update(body.data.body).digest('hex'),
+        })
+        try {
+          await completeKnowledgeIngestion(app.pg, {
+            sourceId: shell.sourceId,
+            documentId: shell.documentId,
+            extracted: extractManualKnowledge(body.data.title, body.data.body),
+          })
+          const job = await app.jobQueue.add('company-intelligence.indexKnowledge', {
+            sourceId: shell.sourceId,
+            documentId: shell.documentId,
+            sourceType: 'manual',
+            organizationId: params.data.organizationId,
+          })
+          await markKnowledgeProcessingState(app.pg, shell.documentId, 'indexing')
+          return reply.code(202).send({ ...(await getKnowledgeDocument(app.pg, shell.documentId)), jobId: job.id })
+        } catch (error) {
+          await markKnowledgeIngestionFailed(app.pg, shell.sourceId, shell.documentId, error)
+          throw error
+        }
+      },
+    )
   })
 
   app.post('/organizations/:organizationId/knowledge/url', async (request, reply) => {

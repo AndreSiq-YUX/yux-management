@@ -36,6 +36,7 @@ const envSchema = z.object({
   SESSION_COOKIE_NAME: z.string().default('yux_session'),
   SESSION_SECRET: z.string().min(32),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  GLOBAL_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).optional(),
   PUBLIC_APP_URL: optionalUrl,
   SMTP2GO_API_KEY: optionalString,
   SMTP2GO_SENDER_EMAIL: optionalEmail,

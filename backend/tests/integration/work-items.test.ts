@@ -23,12 +23,6 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
         ids.otherTask, fixtureUsers.client_member_A.id],
     )
     await rig.sql(
-      `UPDATE public.lead_tasks
-       SET updated_at = '2026-09-06T22:44:46.123456Z'::timestamptz
-       WHERE id = $1`,
-      [ids.crmTask],
-    )
-    await rig.sql(
       `INSERT INTO public.projects (id,name,client_id,status,priority,type,start_date,expected_end_date)
        VALUES ($1,'Projeto fila diária',$2,'ACTIVE','MEDIUM','OTHER',CURRENT_DATE,CURRENT_DATE + 30)`,
       [ids.project, '20000000-0000-4000-8000-000000000001'],
@@ -73,6 +67,12 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
         { title: 'Conferir resultado', description: 'Conferir antes de avançar', dueAt: new Date().toISOString(), assignedTo: fixtureUsers.yux_operator.id, status: 'open' }],
     )
 
+    await rig.sql(
+      `UPDATE public.lead_tasks
+       SET updated_at = '2026-09-06T22:44:46.123456Z'::timestamptz
+       WHERE id = $1`,
+      [ids.crmTask],
+    )
     const listed = await rig.request('yux_operator', 'GET', `/api/workspace/work-items?organizationId=${rig.ids.organizationA}&due=all`)
     expect(listed.statusCode).toBe(200)
     expect(listed.body.items).toEqual(expect.arrayContaining([

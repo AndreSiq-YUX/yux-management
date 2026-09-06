@@ -80,6 +80,7 @@ export async function createIntegrationRig(options: { corsOrigin?: string } = {}
     SESSION_COOKIE_NAME: 'yux_integration_session',
     SESSION_SECRET: 'integration-session-secret-32-characters-minimum',
     CORS_ORIGIN: options.corsOrigin ?? 'http://integration.test',
+    GLOBAL_RATE_LIMIT_MAX: '5000',
     N8N_CRM_WEBHOOK_URL: provider.baseUrl,
     N8N_WEBHOOK_SECRET: 'integration-webhook-secret',
     JINA_API_KEY: 'integration-jina-api-key',

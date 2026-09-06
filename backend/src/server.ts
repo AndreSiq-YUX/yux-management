@@ -87,7 +87,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   })
   await app.register(rateLimit, {
     global: true,
-    max: 300,
+    max: env.GLOBAL_RATE_LIMIT_MAX ?? 300,
     timeWindow: '1 minute',
   })
   await app.register(contextPlugin)
