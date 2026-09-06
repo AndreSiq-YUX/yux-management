@@ -64,6 +64,11 @@ export type AutomationFlowSnapshot = {
   triggers: AutomationTrigger[]
   conditions: AutomationCondition[]
   actions: AutomationAction[]
+  dailyRunLimit?: number
+  allowReentry?: boolean
+  reentryCooldownMinutes?: number
+  requiresHumanApproval?: boolean
+  riskLevel?: string
 }
 
 export type MatchedFlow = {

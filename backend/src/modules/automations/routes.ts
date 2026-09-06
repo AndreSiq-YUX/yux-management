@@ -23,6 +23,7 @@ import {
   listFlowVersions,
   listMaterials,
   listSequences,
+  requireAutomationOrganizationWriteAccess,
   saveAutomationSimulation,
   updateAutomationAction,
   updateAutomationCondition,
@@ -31,10 +32,18 @@ import {
   updateSequence,
   updateSequenceStep,
 } from './repository.js'
+import {
+  activateAutomationFlow,
+  activateAutomationVersion,
+  duplicateAutomationFlow,
+  pauseAutomationFlow,
+  simulateAutomationJourney,
+} from './journey.js'
 
 const optionalUuid = z.string().uuid().optional()
 const paramsWithId = z.object({ id: z.string().uuid() })
 const flowParams = z.object({ flowId: z.string().uuid() })
+const flowVersionParams = z.object({ flowId: z.string().uuid(), versionId: z.string().uuid() })
 
 const flowInputSchema = z.object({
   organizationId: z.string().uuid(),
@@ -91,7 +100,7 @@ const simulationSchema = z.object({
 const dispatchSchema = z.object({
   event: z.object({
     type: z.string().min(1),
-    organizationId: z.string().uuid().optional(),
+    organizationId: z.string().uuid(),
     leadId: z.string().uuid().optional(),
     conversationId: z.string().uuid().optional(),
     ticketId: z.string().uuid().optional(),
@@ -102,7 +111,7 @@ const dispatchSchema = z.object({
 const flowVersionSchema = z.object({
   versionNumber: z.number().int().positive(),
   snapshot: z.record(z.string(), z.unknown()),
-  status: z.enum(['draft', 'published', 'archived']).optional(),
+  status: z.literal('draft').optional(),
 })
 
 const sequenceInputSchema = z.object({
@@ -143,6 +152,11 @@ const materialUploadSchema = z.object({
 const organizationQuerySchema = z.object({
   organizationId: z.string().uuid(),
 })
+const journeyBodySchema = z.object({ organizationId: z.string().uuid() })
+const journeySimulationSchema = journeyBodySchema.extend({
+  eventType: z.string().min(1),
+  samplePayload: z.record(z.string(), z.unknown()),
+})
 
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
@@ -177,6 +191,9 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
 
     const parsed = flowInputSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_automation_flow_payload' })
+    if ((parsed.data.status && parsed.data.status !== 'draft') || parsed.data.isEnabled === true) {
+      return reply.code(409).send({ error: 'automation_activation_endpoint_required' })
+    }
 
     return reply.code(201).send(await createAutomationFlow(app.pg, user, parsed.data))
   })
@@ -188,6 +205,9 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
     const params = paramsWithId.safeParse(request.params)
     const parsed = flowPatchSchema.safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_automation_flow_patch' })
+    if (parsed.data.status === 'published' || parsed.data.isEnabled === true) {
+      return reply.code(409).send({ error: 'automation_activation_endpoint_required' })
+    }
 
     return updateAutomationFlow(app.pg, user, params.data.id, parsed.data)
   })
@@ -211,6 +231,51 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: 'invalid_automation_flow_id' })
 
     return listAutomationExecutionRuns(app.pg, user, params.data.flowId)
+  })
+
+  app.post('/flows/:flowId/simulate', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = flowParams.safeParse(request.params)
+    const parsed = journeySimulationSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_automation_simulation_payload' })
+    return reply.code(201).send(await simulateAutomationJourney(app.pg, user, { flowId: params.data.flowId, ...parsed.data }))
+  })
+
+  app.post('/flows/:flowId/activate', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = flowParams.safeParse(request.params)
+    const parsed = journeyBodySchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_automation_activation_payload' })
+    return activateAutomationFlow(app.pg, user, params.data.flowId, parsed.data.organizationId)
+  })
+
+  app.post('/flows/:flowId/versions/:versionId/activate', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = flowVersionParams.safeParse(request.params)
+    const parsed = journeyBodySchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_automation_version_activation_payload' })
+    return activateAutomationVersion(app.pg, user, params.data.flowId, params.data.versionId, parsed.data.organizationId)
+  })
+
+  app.post('/flows/:flowId/duplicate', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = flowParams.safeParse(request.params)
+    const parsed = journeyBodySchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_automation_duplicate_payload' })
+    return reply.code(201).send(await duplicateAutomationFlow(app.pg, user, params.data.flowId, parsed.data.organizationId))
+  })
+
+  app.post('/flows/:flowId/pause', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = flowParams.safeParse(request.params)
+    const parsed = journeyBodySchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_automation_pause_payload' })
+    return pauseAutomationFlow(app.pg, user, params.data.flowId, parsed.data.organizationId)
   })
 
   app.post('/flows/:flowId/triggers', async (request, reply) => {
@@ -328,6 +393,7 @@ export async function registerAutomationRoutes(app: FastifyInstance) {
 
     const parsed = dispatchSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_automation_dispatch_payload' })
+    await requireAutomationOrganizationWriteAccess(app.pg, user, parsed.data.event.organizationId)
 
     const job = await app.jobQueue.add('automation.dispatch', {
       requestedBy: user.id,

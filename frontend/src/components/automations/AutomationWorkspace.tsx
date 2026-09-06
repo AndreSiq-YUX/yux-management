@@ -1,5 +1,5 @@
 import { AlertCircle, CheckSquare, Copy, GitBranch, Layers3, Play, Plus, Power, Search, Square, Trash2, Workflow } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,11 +24,14 @@ import { GrowthTemplateLibrary } from '@/components/growth-workspace/GrowthTempl
 import { automationObjectiveTemplates, getSectorTemplate } from '@/lib/automations/sectorTemplateCatalog'
 import type { AutomationAction, AutomationFlow, AutomationFlowInput } from '@/types/automation'
 import type { AutomationSequence, AutomationSequenceChannel, AutomationSequenceStatus, AutomationSequenceStepKind } from '@/types/automationSequence'
+import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 
 import type { ReactNode } from 'react'
 
 interface AutomationWorkspaceProps {
   flows: AutomationFlow[]
+  workspaceContext?: WorkspaceContextV1
+  initialSection?: AutomationSection
   sequences?: AutomationSequence[]
   sequencesLoading?: boolean
   onCreateFlow?: (input: Omit<AutomationFlowInput, 'organizationId'>) => void
@@ -49,7 +52,7 @@ interface AutomationWorkspaceProps {
   onUpdateAction?: (flowId: string, actionId: string, actionType: string, payload: Record<string, unknown>) => void
   onDeleteAction?: (flowId: string, actionId: string) => void
   onReorderActions?: (flowId: string, actions: AutomationAction[]) => void
-  onSaveSimulation?: (result: { matched: boolean; conditionResults: unknown[]; plannedActions: unknown[]; blockedReasons: string[] }) => void
+  onSaveSimulation?: (result: { flowId: string; eventType: string; samplePayload: Record<string, unknown>; matched: boolean; conditionResults: unknown[]; plannedActions: unknown[]; blockedReasons: string[] }) => void
   onRollbackVersion?: (flowId: string, versionId: string, versionNumber: number) => void
   onRetryExecution?: (runId: string) => void
   onCreateFromTemplate?: (templateKey: string) => void
@@ -69,6 +72,8 @@ type AutomationSection = typeof sections[number]
 
 export function AutomationWorkspace({
   flows,
+  workspaceContext,
+  initialSection = 'Automacoes',
   sequences,
   sequencesLoading,
   onCreateFlow,
@@ -103,7 +108,7 @@ export function AutomationWorkspace({
   backendUnavailable,
   onRetry,
 }: AutomationWorkspaceProps) {
-  const [activeSection, setActiveSection] = useState<AutomationSection>('Automacoes')
+  const [activeSection, setActiveSection] = useState<AutomationSection>(initialSection)
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(flows[0]?.id ?? null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
@@ -115,7 +120,12 @@ export function AutomationWorkspace({
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false)
   const [publishConfirmFlowId, setPublishConfirmFlowId] = useState<string | null>(null)
   const [selectedObjectiveKey, setSelectedObjectiveKey] = useState<string | undefined>(automationObjectiveTemplates[0]?.key)
-  const actionsDisabled = Boolean(loadError || backendUnavailable)
+  const actionsDisabled = Boolean(loadError || backendUnavailable
+    || (workspaceContext && (!workspaceContext.canConfigure || !workspaceContext.moduleKeys.includes('automations'))))
+
+  useEffect(() => {
+    setActiveSection(initialSection)
+  }, [initialSection])
 
   const filteredFlows = useMemo(() => {
     return flows.filter(flow => {
@@ -189,6 +199,12 @@ export function AutomationWorkspace({
           description={loadError}
           onRetry={onRetry}
         />
+      )}
+
+      {workspaceContext && !workspaceContext.canConfigure && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Este workspace permite consultar automações, mas somente um administrador pode alterá-las.
+        </div>
       )}
 
       <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-white lg:grid-cols-[340px_1fr]">
@@ -365,6 +381,7 @@ export function AutomationWorkspace({
                         size="sm"
                         variant={selected.builderMode !== 'node' ? 'secondary' : 'ghost'}
                         className="h-7 px-3 text-xs"
+                        disabled={actionsDisabled}
                         onClick={() => onUpdateFlow?.(selected.id, { builderMode: 'guided' })}
                       >
                         Formulário Guiado
@@ -374,6 +391,7 @@ export function AutomationWorkspace({
                         size="sm"
                         variant={selected.builderMode === 'node' ? 'secondary' : 'ghost'}
                         className="h-7 px-3 text-xs"
+                        disabled={actionsDisabled}
                         onClick={() => onUpdateFlow?.(selected.id, { builderMode: 'node' })}
                       >
                         Editor de Nós Visual
@@ -413,7 +431,7 @@ export function AutomationWorkspace({
               <AutomationTechnicalBuilder flow={selected} />
               <AutomationSimulationPanel
                 flow={selected}
-                onSimulate={result => selected && onSaveSimulation?.(result)}
+                onSimulate={result => selected && onSaveSimulation?.({ ...result, flowId: selected.id })}
               />
               <AutomationDryRunToggle
                 flow={selected}

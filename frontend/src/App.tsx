@@ -44,8 +44,8 @@ import { PortalReportsPage } from '@/pages/client-portal/PortalReportsPage'
 import { PortalSupportPage } from '@/pages/client-portal/PortalSupportPage'
 import { PortalAccountSettingsPage } from '@/pages/client-portal/PortalAccountSettingsPage'
 import { PortalApprovalsPage } from '@/pages/client-portal/PortalApprovalsPage'
+import { PortalAutomationsPage } from '@/pages/client-portal/PortalAutomationsPage'
 import { PortalEmailTemplatesPage } from '@/pages/client-portal/PortalEmailTemplatesPage'
-import { PortalSafeStatePage } from '@/pages/client-portal/PortalSafeStatePage'
 import { PortalCommercialAccountsPage } from '@/pages/client-portal/commercial/PortalCommercialAccountsPage'
 import { PortalCommercialFunnelsPage } from '@/pages/client-portal/commercial/PortalCommercialFunnelsPage'
 import { PortalCommercialLeadsPage } from '@/pages/client-portal/commercial/PortalCommercialLeadsPage'
@@ -116,10 +116,6 @@ function App() {
       </main>
     )
   }
-
-  const safePortalPage = (title: string, description: string, capabilities: string[]) => (
-    <PortalSafeStatePage title={title} description={description} capabilities={capabilities} />
-  )
 
   return (
     <Routes>
@@ -214,10 +210,10 @@ function App() {
               <Route path="marketing/calendario" element={<PortalEditorialCalendarPage />} />
               <Route path="marketing/criativos" element={<PortalCreativeAssetsPage />} />
 
-              <Route path="automacoes/fluxos" element={safePortalPage('Fluxos de Automacao', 'Fluxos ativos, editor visual, gatilhos, condicoes e acoes.', ['Fluxos ativos', 'Editor visual', 'Pausar', 'Duplicar'])} />
-              <Route path="automacoes/templates" element={safePortalPage('Templates de Automacao', 'Modelos prontos para ativar automacoes por jornada.', ['Templates por setor', 'Criar a partir de modelo', 'Preview de fluxo'])} />
-              <Route path="automacoes/execucoes" element={safePortalPage('Execucoes de Automacao', 'Historico de execucoes, erros e consumo.', ['Execucoes', 'Erros', 'Creditos consumidos', 'Historico'])} />
-              <Route path="automacoes/logs" element={safePortalPage('Logs de Automacao', 'Rastreamento operacional das automacoes contratadas.', ['Logs', 'Falhas', 'Tentativas', 'Diagnostico'])} />
+              <Route path="automacoes/fluxos" element={<PortalAutomationsPage section="Automacoes" />} />
+              <Route path="automacoes/templates" element={<PortalAutomationsPage section="Templates" />} />
+              <Route path="automacoes/execucoes" element={<PortalAutomationsPage section="Execucoes" />} />
+              <Route path="automacoes/logs" element={<PortalAutomationsPage section="Execucoes" />} />
 
               <Route path="projetos/projetos" element={<PortalProjectsPage />} />
               <Route path="projetos/aprovacoes" element={<PortalApprovalsPage />} />
@@ -264,10 +260,10 @@ function App() {
             <Route path="portal/marketing/calendario" element={<PortalEditorialCalendarPage />} />
             <Route path="portal/marketing/criativos" element={<PortalCreativeAssetsPage />} />
 
-            <Route path="portal/automacoes/fluxos" element={safePortalPage('Fluxos de Automacao', 'Fluxos ativos, editor visual, gatilhos, condicoes e acoes.', ['Fluxos ativos', 'Editor visual', 'Pausar', 'Duplicar'])} />
-            <Route path="portal/automacoes/templates" element={safePortalPage('Templates de Automacao', 'Modelos prontos para ativar automacoes por jornada.', ['Templates por setor', 'Criar a partir de modelo', 'Preview de fluxo'])} />
-            <Route path="portal/automacoes/execucoes" element={safePortalPage('Execucoes de Automacao', 'Historico de execucoes, erros e consumo.', ['Execucoes', 'Erros', 'Creditos consumidos', 'Historico'])} />
-            <Route path="portal/automacoes/logs" element={safePortalPage('Logs de Automacao', 'Rastreamento operacional das automacoes contratadas.', ['Logs', 'Falhas', 'Tentativas', 'Diagnostico'])} />
+            <Route path="portal/automacoes/fluxos" element={<PortalAutomationsPage section="Automacoes" />} />
+            <Route path="portal/automacoes/templates" element={<PortalAutomationsPage section="Templates" />} />
+            <Route path="portal/automacoes/execucoes" element={<PortalAutomationsPage section="Execucoes" />} />
+            <Route path="portal/automacoes/logs" element={<PortalAutomationsPage section="Execucoes" />} />
 
             <Route path="portal/projetos/projetos" element={<PortalProjectsPage />} />
             <Route path="portal/projetos/aprovacoes" element={<PortalApprovalsPage />} />

@@ -49,6 +49,8 @@ export interface AutomationAction {
 
 export interface AutomationExecutionRun {
   id: string
+  organizationId?: string
+  flowVersionId?: string
   status: AutomationRunStatus
   eventType?: string
   leadId?: string
@@ -69,6 +71,8 @@ export interface AutomationFlow {
   publishedVersion?: number
   activeVersionId?: string
   dailyRunLimit?: number
+  allowReentry?: boolean
+  reentryCooldownMinutes?: number
   requiresHumanApproval?: boolean
   riskLevel?: AutomationRiskLevel
   sectorTemplateKey?: string

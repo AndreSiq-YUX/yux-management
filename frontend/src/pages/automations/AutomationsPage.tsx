@@ -7,12 +7,19 @@ import { automationService, isAutomationBackendUnavailableError } from '@/servic
 import { automationSequenceService } from '@/services/automationSequenceService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { AutomationFlow } from '@/types/automation'
-import type { AutomationSequence, AutomationSequenceChannel, AutomationSequenceStatus, AutomationSequenceStepKind } from '@/types/automationSequence'
+import type { AutomationSequence } from '@/types/automationSequence'
+import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 
-export function AutomationsPage() {
-  const organization = usePlatformStore(state => state.organization)
+type AutomationSection = 'Dashboard' | 'Automacoes' | 'Sequencias' | 'Templates' | 'Execucoes' | 'Configuracoes'
+
+export function AutomationsPage({ workspaceContext: suppliedContext, initialSection = 'Automacoes' }: {
+  workspaceContext?: WorkspaceContextV1 | null
+  initialSection?: AutomationSection
+} = {}) {
+  const storedContext = usePlatformStore(state => state.workspaceContext)
   const platformError = usePlatformStore(state => state.error)
-  const organizationId = organization?.id || 'local-yux'
+  const workspaceContext = suppliedContext ?? storedContext
+  const organizationId = workspaceContext?.organizationId ?? ''
   const [flows, setFlows] = useState<AutomationFlow[]>([])
   const [sequences, setSequences] = useState<AutomationSequence[]>([])
   const [loading, setLoading] = useState(true)
@@ -21,7 +28,7 @@ export function AutomationsPage() {
   const [backendUnavailable, setBackendUnavailable] = useState(false)
 
   const load = useCallback(async () => {
-    if (!isPersistedOrganizationId(organizationId)) {
+    if (!organizationId || !isPersistedOrganizationId(organizationId)) {
       setFlows([])
       setSequences([])
       setLoadError(platformError || 'Nao foi possivel carregar uma organizacao real para automacoes. Verifique a sessao do usuario e o acesso a organizations.')
@@ -50,7 +57,7 @@ export function AutomationsPage() {
   }, [organizationId, platformError])
 
   const loadSequences = useCallback(async () => {
-    if (!isPersistedOrganizationId(organizationId) || backendUnavailable) return
+    if (!organizationId || !isPersistedOrganizationId(organizationId) || backendUnavailable) return
 
     setSequencesLoading(true)
     try {
@@ -68,7 +75,7 @@ export function AutomationsPage() {
   }, [load, loadSequences])
 
   const withToast = async (action: () => Promise<unknown>, success: string) => {
-    if (!isPersistedOrganizationId(organizationId) || backendUnavailable) {
+    if (!organizationId || !isPersistedOrganizationId(organizationId) || backendUnavailable || !workspaceContext?.canConfigure) {
       toast.error('Automacoes ainda nao estao prontas para gravacao neste ambiente')
       return
     }
@@ -88,6 +95,8 @@ export function AutomationsPage() {
   return (
     <AutomationWorkspace
       flows={flows}
+      workspaceContext={workspaceContext ?? undefined}
+      initialSection={initialSection}
       sequences={sequences}
       sequencesLoading={sequencesLoading}
       loadError={loadError}
@@ -114,49 +123,22 @@ export function AutomationsPage() {
       onUpdateFlow={(flowId, input) => withToast(() => automationService.updateFlow(flowId, input), 'Fluxo atualizado')}
       onDeleteFlow={flowId => withToast(() => automationService.deleteFlow(flowId), 'Fluxo excluido')}
       onDuplicateFlow={flowId => withToast(async () => {
-        const source = flows.find(f => f.id === flowId)
-        if (!source) return
-        const copy = await automationService.createFlow({
-          organizationId,
-          name: `${source.name} (copia)`,
-          description: source.description,
-          sectorTemplateKey: source.sectorTemplateKey,
-        })
-        for (const trigger of source.triggers) {
-          await automationService.addTrigger(copy.id, { triggerType: trigger.triggerType, config: trigger.config })
-        }
-        for (const condition of source.conditions) {
-          await automationService.addCondition(copy.id, { field: condition.field, operator: condition.operator, value: condition.value })
-        }
-        for (const action of source.actions) {
-          await automationService.addAction(copy.id, { actionType: action.actionType, orderIndex: action.orderIndex, payload: action.payload })
-        }
+        await automationService.duplicateFlow(flowId, organizationId)
       }, 'Fluxo duplicado')}
-      onToggleFlow={(flowId, isEnabled) => withToast(() => automationService.setFlowEnabled(flowId, isEnabled), 'Fluxo atualizado')}
-      onPublishFlow={flowId => withToast(async () => {
-        const flow = flows.find(f => f.id === flowId)
-        if (!flow) return
-
-        const snapshot = {
-          triggers: flow.triggers,
-          conditions: flow.conditions,
-          actions: flow.actions,
+      onToggleFlow={(flowId, isEnabled) => withToast(async () => {
+        if (isEnabled) await automationService.activateFlow(flowId, organizationId)
+        else {
+          const paused = await automationService.pauseFlow(flowId, organizationId)
+          if (paused.activeRuns > 0) toast(`Pausa aplicada; ${paused.activeRuns} execução(ões) já iniciada(s) continuarão.`)
         }
-
-        const nextVersion = (flow.publishedVersion || 0) + 1
-        const version = await automationService.createFlowVersion({
-          flowId,
-          versionNumber: nextVersion,
-          snapshot,
-          status: 'published',
-        })
-
-        await automationService.setActiveVersion(flowId, version.id, nextVersion)
-        await automationService.publishFlow(flowId)
+      }, isEnabled ? 'Fluxo ativado' : 'Fluxo pausado')}
+      onPublishFlow={flowId => withToast(async () => {
+        await automationService.activateFlow(flowId, organizationId)
       }, 'Fluxo publicado')}
       onBulkToggle={(flowIds, isEnabled) => withToast(async () => {
         for (const flowId of flowIds) {
-          await automationService.setFlowEnabled(flowId, isEnabled)
+          if (isEnabled) await automationService.activateFlow(flowId, organizationId)
+          else await automationService.pauseFlow(flowId, organizationId)
         }
       }, `${flowIds.length} fluxo(s) atualizado(s)`)}
       onBulkDelete={flowIds => withToast(async () => {
@@ -179,20 +161,11 @@ export function AutomationsPage() {
         }
       }, 'Acoes reordenadas')}
       onSaveSimulation={result => withToast(async () => {
-        const flow = flows[0]
-        if (!flow) return
-        await automationService.saveSimulationRun({
-          organizationId,
-          flowId: flow.id,
-          eventType: 'simulation',
-          samplePayload: {},
-          matched: result.matched,
-          conditionResults: result.conditionResults,
-          plannedActions: result.plannedActions,
-          blockedReasons: result.blockedReasons,
+        await automationService.simulateFlow(result.flowId, {
+          organizationId, eventType: result.eventType, samplePayload: result.samplePayload,
         })
       }, 'Simulacao salva')}
-      onRollbackVersion={(flowId, versionId, versionNumber) => withToast(() => automationService.setActiveVersion(flowId, versionId, versionNumber), 'Versao restaurada')}
+      onRollbackVersion={(flowId, versionId) => withToast(() => automationService.activateVersion(flowId, versionId, organizationId), 'Versao restaurada')}
       onRetryExecution={runId => withToast(async () => {
         console.log('Retry execution:', runId)
       }, 'Execucao reprocessada')}

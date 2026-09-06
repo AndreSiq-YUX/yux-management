@@ -180,12 +180,13 @@ export async function executeAutomationRun(
         throw new Error(ownershipConflict)
       }
       const effectKey = `${context.runId}:${action.id ?? index}`
+      const persistedActionId = context.flow.flowVersionId ? null : action.id ?? null
       const effect = await db.query<{ id: string; status: string; result: Record<string, unknown> }>(
         `INSERT INTO public.automation_action_effects (run_id, action_id, idempotency_key, status)
          VALUES ($1, $2, $3, 'processing')
          ON CONFLICT (idempotency_key) DO NOTHING
          RETURNING id, status, result`,
-        [context.runId, action.id ?? null, effectKey],
+        [context.runId, persistedActionId, effectKey],
       )
       if (!effect.rows[0]) {
         const previous = await db.query<{ status: string; result: Record<string, unknown> }>(
@@ -201,7 +202,7 @@ export async function executeAutomationRun(
       const step = await db.query<{ id: string }>(
         `INSERT INTO public.automation_execution_steps (run_id, action_id, action_type, status, sanitized_payload, started_at)
          VALUES ($1, $2, $3, 'processing', $4::jsonb, NOW()) RETURNING id`,
-        [context.runId, action.id ?? null, action.actionType, JSON.stringify(sanitize(action.payload))],
+        [context.runId, persistedActionId, action.actionType, JSON.stringify(sanitize(action.payload))],
       )
       const commandContext = buildCommandContext(context)
       const result = await executeAutomationAction({
@@ -359,15 +360,16 @@ async function loadFlows(db: RuntimeDb, organizationId: string): Promise<Runtime
 }
 
 function toRuntimeFlow(row: any): RuntimeFlow {
+  const snapshot = parseSnapshot(row.snapshot) ?? { triggers: [], conditions: [], actions: [] }
   return {
     id: row.id,
     organizationId: row.organization_id,
     crmInstanceId: row.crm_instance_id ?? undefined,
     flowVersionId: row.flow_version_id ?? undefined,
-    dailyRunLimit: Number(row.daily_run_limit ?? 500),
-    allowReentry: row.allow_reentry === true,
-    reentryCooldownMinutes: Number(row.reentry_cooldown_minutes ?? 0),
-    snapshot: parseSnapshot(row.snapshot) ?? { triggers: [], conditions: [], actions: [] },
+    dailyRunLimit: Number(snapshot.dailyRunLimit ?? row.daily_run_limit ?? 500),
+    allowReentry: snapshot.allowReentry ?? row.allow_reentry === true,
+    reentryCooldownMinutes: Number(snapshot.reentryCooldownMinutes ?? row.reentry_cooldown_minutes ?? 0),
+    snapshot,
   }
 }
 
@@ -380,7 +382,17 @@ function parseSnapshot(value: unknown): AutomationFlowSnapshot | null {
     triggers: triggers.map((item) => ({ id: stringValue((item as any).id), triggerType: stringValue((item as any).triggerType ?? (item as any).trigger_type ?? (item as any).type), config: isRecord((item as any).config) ? (item as any).config : {} })).filter((item) => item.triggerType) as any,
     conditions: conditions.map((item) => ({ id: stringValue((item as any).id), field: stringValue((item as any).field), operator: stringValue((item as any).operator), value: (item as any).value, orderIndex: Number((item as any).orderIndex ?? (item as any).order_index ?? 0) })).filter((item) => item.field && item.operator) as any,
     actions: actions.map((item) => ({ id: stringValue((item as any).id), actionType: stringValue((item as any).actionType ?? (item as any).action_type ?? (item as any).type), orderIndex: Number((item as any).orderIndex ?? (item as any).order_index ?? 0), payload: isRecord((item as any).payload) ? (item as any).payload : {} })).filter((item) => item.actionType).sort((left, right) => left.orderIndex - right.orderIndex) as any,
+    dailyRunLimit: finiteNumber(value.dailyRunLimit),
+    allowReentry: typeof value.allowReentry === 'boolean' ? value.allowReentry : undefined,
+    reentryCooldownMinutes: finiteNumber(value.reentryCooldownMinutes),
+    requiresHumanApproval: typeof value.requiresHumanApproval === 'boolean' ? value.requiresHumanApproval : undefined,
+    riskLevel: stringValue(value.riskLevel) || undefined,
   }
+}
+
+function finiteNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 function matchesTrigger(trigger: AutomationTrigger, event: DomainEventEnvelope) {

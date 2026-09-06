@@ -87,7 +87,8 @@ export async function resolveWorkspaceContext(
     moduleKeys,
     canConfigure: permissionKeys.has('platform.manage')
       || permissionKeys.has('marketing_studio.configure')
-      || permissionKeys.has('omnichannel.configure'),
+      || permissionKeys.has('omnichannel.configure')
+      || permissionKeys.has('automations.write'),
     missionCreation,
   }
 }

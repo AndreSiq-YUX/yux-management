@@ -55,6 +55,8 @@ export function mapAutomationFlow(row: any): AutomationFlow {
     publishedVersion: Number(row.published_version || 0),
     activeVersionId: row.active_version_id || undefined,
     dailyRunLimit: Number(row.daily_run_limit ?? 500),
+    allowReentry: Boolean(row.allow_reentry),
+    reentryCooldownMinutes: Number(row.reentry_cooldown_minutes ?? 0),
     requiresHumanApproval: Boolean(row.requires_human_approval),
     riskLevel: row.risk_level || 'low',
     sectorTemplateKey: row.sector_template_key || undefined,
@@ -78,6 +80,8 @@ export function mapAutomationFlow(row: any): AutomationFlow {
     })),
     executionRuns: (row.automation_execution_runs || []).map((run: any) => ({
       id: run.id,
+      organizationId: run.organization_id,
+      flowVersionId: run.flow_version_id || undefined,
       status: run.status,
       eventType: run.event_type || undefined,
       leadId: run.lead_id || undefined,
@@ -186,6 +190,33 @@ export const automationService = {
 
   async getFlowExecutionRuns(flowId: string) {
     return apiRequest<any[]>(`/automations/flows/${flowId}/executions`)
+  },
+
+  async simulateFlow(flowId: string, input: { organizationId: string; eventType: string; samplePayload: Record<string, unknown> }) {
+    return apiRequest<any>(`/automations/flows/${flowId}/simulate`, { method: 'POST', body: input })
+  },
+
+  async activateFlow(flowId: string, organizationId: string) {
+    return apiRequest<{ flow: AutomationFlow; publishedVersion: { id: string; versionNumber: number } }>(`/automations/flows/${flowId}/activate`, {
+      method: 'POST', body: { organizationId },
+    })
+  },
+
+  async duplicateFlow(flowId: string, organizationId: string) {
+    return apiRequest<AutomationFlow>(`/automations/flows/${flowId}/duplicate`, { method: 'POST', body: { organizationId } })
+  },
+
+  async pauseFlow(flowId: string, organizationId: string) {
+    return apiRequest<{ flow: AutomationFlow; activeRuns: number }>(`/automations/flows/${flowId}/pause`, {
+      method: 'POST', body: { organizationId },
+    })
+  },
+
+  async activateVersion(flowId: string, versionId: string, organizationId: string) {
+    return apiRequest<{ flow: AutomationFlow; publishedVersion: { id: string; versionNumber: number } }>(
+      `/automations/flows/${flowId}/versions/${versionId}/activate`,
+      { method: 'POST', body: { organizationId } },
+    )
   },
 
   async updateTrigger(triggerId: string, input: Pick<AutomationTrigger, 'triggerType' | 'config'>) {

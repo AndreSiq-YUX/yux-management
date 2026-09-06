@@ -88,11 +88,12 @@ export function AutomationVersionPanel({ flow, onRollback }: AutomationVersionPa
                   </div>
                   <p className="text-xs text-slate-600">{formatDate(version.published_at || version.created_at)}</p>
                 </div>
-                {!isActive && version.status === 'published' && (
+                {!isActive && ['published', 'archived'].includes(version.status) && (
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
+                    disabled={!onRollback}
                     onClick={() => onRollback?.(version.id, version.version_number)}
                   >
                     <RotateCcw className="mr-1 h-3 w-3" />

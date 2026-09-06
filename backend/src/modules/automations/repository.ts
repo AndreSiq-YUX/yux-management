@@ -82,6 +82,8 @@ type FlowRow = {
   published_version: number | null
   active_version_id: string | null
   daily_run_limit: number | null
+  allow_reentry: boolean | null
+  reentry_cooldown_minutes: number | null
   requires_human_approval: boolean | null
   risk_level: string | null
   sector_template_key: string | null
@@ -97,6 +99,8 @@ type ActionRow = { id: string; flow_id: string; action_type: string; order_index
 type RunRow = {
   id: string
   flow_id: string | null
+  organization_id: string
+  flow_version_id: string | null
   status: string
   event_type: string | null
   lead_id: string | null
@@ -187,7 +191,7 @@ export async function getAutomationFlow(pool: pg.Pool, user: AuthUser, flowId: s
 export async function listAutomationExecutionRuns(pool: pg.Pool, user: AuthUser, flowId: string) {
   await getAutomationFlow(pool, user, flowId)
   const result = await pool.query<RunRow>(
-    `SELECT id, flow_id, status, event_type, lead_id, last_error, started_at, completed_at
+    `SELECT id, flow_id, organization_id, flow_version_id, status, event_type, lead_id, last_error, started_at, completed_at
      FROM public.automation_execution_runs
      WHERE flow_id = $1
      ORDER BY created_at DESC
@@ -197,6 +201,8 @@ export async function listAutomationExecutionRuns(pool: pg.Pool, user: AuthUser,
 
   return result.rows.map(run => ({
     id: run.id,
+    organizationId: run.organization_id,
+    flowVersionId: run.flow_version_id ?? undefined,
     status: run.status,
     eventType: run.event_type ?? undefined,
     leadId: run.lead_id ?? undefined,
@@ -207,7 +213,7 @@ export async function listAutomationExecutionRuns(pool: pg.Pool, user: AuthUser,
 }
 
 export async function createAutomationFlow(pool: pg.Pool, user: AuthUser, input: AutomationFlowInput) {
-  await requireOrganizationAccess(pool, user, input.organizationId)
+  await requireOrganizationWriteAccess(pool, user, input.organizationId)
   const result = await pool.query<FlowRow>(
     `INSERT INTO public.automation_flows (
        organization_id, name, description, sector_template_key, status, is_enabled,
@@ -221,8 +227,8 @@ export async function createAutomationFlow(pool: pg.Pool, user: AuthUser, input:
       input.name.trim(),
       input.description || null,
       input.sectorTemplateKey || null,
-      input.status ?? 'draft',
-      input.isEnabled ?? true,
+      'draft',
+      false,
       input.automationKind ?? 'flow',
       input.builderMode ?? 'guided',
       input.dailyRunLimit ?? 500,
@@ -241,8 +247,26 @@ export async function updateAutomationFlow(
   flowId: string,
   input: Partial<AutomationFlowInput> & { activeVersionId?: string; publishedVersion?: number },
 ) {
-  await getAutomationFlow(pool, user, flowId)
-  const update = buildFlowUpdate(input)
+  await requireFlowWriteAccess(pool, user, flowId)
+  if (input.status === 'published' || input.isEnabled === true) {
+    throw Object.assign(new Error('automation_activation_endpoint_required'), { statusCode: 409 })
+  }
+  if (input.publishedVersion !== undefined && input.activeVersionId === undefined) {
+    throw Object.assign(new Error('automation_approved_version_required'), { statusCode: 422 })
+  }
+  const normalizedInput = { ...input }
+  if (input.activeVersionId !== undefined) {
+    const approved = await pool.query<{ version_number: number }>(
+      `SELECT version_number FROM public.automation_flow_versions
+       WHERE id = $1 AND flow_id = $2 AND status IN ('published','archived') LIMIT 1`,
+      [input.activeVersionId, flowId],
+    )
+    if (!approved.rows[0]) {
+      throw Object.assign(new Error('automation_approved_version_required'), { statusCode: 422 })
+    }
+    normalizedInput.publishedVersion = Number(approved.rows[0].version_number)
+  }
+  const update = buildFlowUpdate(normalizedInput)
   if (update.values.length === 0) return getAutomationFlow(pool, user, flowId)
 
   const assignments = update.columns.map((column, index) => `${column} = $${index + 2}`)
@@ -257,7 +281,7 @@ export async function updateAutomationFlow(
 }
 
 export async function deleteAutomationFlow(pool: pg.Pool, user: AuthUser, flowId: string) {
-  await getAutomationFlow(pool, user, flowId)
+  await requireFlowWriteAccess(pool, user, flowId)
   await pool.query('DELETE FROM public.automation_flows WHERE id = $1', [flowId])
 }
 
@@ -267,7 +291,7 @@ export async function createAutomationTrigger(
   flowId: string,
   input: { triggerType: string; config?: Record<string, unknown> },
 ) {
-  await getAutomationFlow(pool, user, flowId)
+  await requireFlowWriteAccess(pool, user, flowId)
   const result = await pool.query<TriggerRow>(
     `INSERT INTO public.automation_triggers (flow_id, trigger_type, config)
      VALUES ($1, $2, $3)
@@ -305,7 +329,7 @@ export async function createAutomationCondition(
   flowId: string,
   input: { field: string; operator: string; value?: unknown },
 ) {
-  await getAutomationFlow(pool, user, flowId)
+  await requireFlowWriteAccess(pool, user, flowId)
   const result = await pool.query<ConditionRow>(
     `INSERT INTO public.automation_conditions (flow_id, field, operator, value)
      VALUES ($1, $2, $3, $4)
@@ -338,7 +362,7 @@ export async function createAutomationAction(
   flowId: string,
   input: { actionType: string; orderIndex?: number; payload?: Record<string, unknown> },
 ) {
-  await getAutomationFlow(pool, user, flowId)
+  await requireFlowWriteAccess(pool, user, flowId)
   const result = await pool.query<ActionRow>(
     `INSERT INTO public.automation_actions (flow_id, action_type, order_index, payload)
      VALUES ($1, $2, $3, $4)
@@ -389,7 +413,11 @@ export async function updateAutomationAction(
 }
 
 export async function saveAutomationSimulation(pool: pg.Pool, user: AuthUser, input: SimulationInput) {
-  await requireOrganizationAccess(pool, user, input.organizationId)
+  const flow = await getAutomationFlow(pool, user, input.flowId)
+  if (flow.organizationId !== input.organizationId) {
+    throw Object.assign(new Error('automation_flow_not_found'), { statusCode: 404 })
+  }
+  await requireOrganizationWriteAccess(pool, user, input.organizationId)
   const result = await pool.query(
     `INSERT INTO public.automation_simulation_runs (
        organization_id, flow_id, event_type, sample_payload, matched,
@@ -429,7 +457,7 @@ export async function createFlowVersion(
   user: AuthUser,
   input: { flowId: string; versionNumber: number; snapshot: Record<string, unknown>; status?: string },
 ) {
-  await getAutomationFlow(pool, user, input.flowId)
+  await requireFlowWriteAccess(pool, user, input.flowId)
   const publishedAt = input.status === 'published' ? new Date().toISOString() : null
   const client = await pool.connect()
   try {
@@ -509,7 +537,7 @@ export async function getSequence(pool: pg.Pool, user: AuthUser, sequenceId: str
 }
 
 export async function createSequence(pool: pg.Pool, user: AuthUser, input: SequenceInput) {
-  await requireOrganizationAccess(pool, user, input.organizationId)
+  await requireOrganizationWriteAccess(pool, user, input.organizationId)
   const result = await pool.query<SequenceRow>(
     `INSERT INTO public.crm_sequences (
        organization_id, name, description, channel, sector_template_key, conversion_goal, is_active, status
@@ -532,7 +560,8 @@ export async function createSequence(pool: pg.Pool, user: AuthUser, input: Seque
 }
 
 export async function updateSequence(pool: pg.Pool, user: AuthUser, sequenceId: string, input: Partial<SequenceInput> & { status?: string }) {
-  await getSequence(pool, user, sequenceId)
+  const sequence = await getSequence(pool, user, sequenceId)
+  await requireOrganizationWriteAccess(pool, user, sequence.organizationId)
   const fields: Array<[string, unknown]> = [
     ['name', input.name?.trim()],
     ['description', input.description ?? undefined],
@@ -563,12 +592,14 @@ export async function updateSequence(pool: pg.Pool, user: AuthUser, sequenceId: 
 }
 
 export async function deleteSequence(pool: pg.Pool, user: AuthUser, sequenceId: string) {
-  await getSequence(pool, user, sequenceId)
+  const sequence = await getSequence(pool, user, sequenceId)
+  await requireOrganizationWriteAccess(pool, user, sequence.organizationId)
   await pool.query('DELETE FROM public.crm_sequences WHERE id = $1', [sequenceId])
 }
 
 export async function createSequenceStep(pool: pg.Pool, user: AuthUser, sequenceId: string, input: SequenceStepInput) {
-  await getSequence(pool, user, sequenceId)
+  const sequence = await getSequence(pool, user, sequenceId)
+  await requireOrganizationWriteAccess(pool, user, sequence.organizationId)
   const nextOrder = await pool.query<{ next_order: number }>(
     'SELECT COALESCE(MAX(order_index), -1) + 1 AS next_order FROM public.crm_sequence_steps WHERE sequence_id = $1',
     [sequenceId],
@@ -749,7 +780,7 @@ async function hydrateFlows(pool: pg.Pool, rows: FlowRow[]) {
       [flowIds],
     ),
     pool.query<RunRow>(
-      'SELECT id, flow_id, status, event_type, lead_id, last_error, started_at, completed_at FROM public.automation_execution_runs WHERE flow_id = ANY($1::uuid[]) ORDER BY created_at DESC',
+      'SELECT id, flow_id, organization_id, flow_version_id, status, event_type, lead_id, last_error, started_at, completed_at FROM public.automation_execution_runs WHERE flow_id = ANY($1::uuid[]) ORDER BY created_at DESC',
       [flowIds],
     ),
   ])
@@ -771,6 +802,8 @@ async function hydrateFlows(pool: pg.Pool, rows: FlowRow[]) {
     publishedVersion: Number(row.published_version ?? 0),
     activeVersionId: row.active_version_id ?? undefined,
     dailyRunLimit: Number(row.daily_run_limit ?? 500),
+    allowReentry: Boolean(row.allow_reentry),
+    reentryCooldownMinutes: Number(row.reentry_cooldown_minutes ?? 0),
     requiresHumanApproval: Boolean(row.requires_human_approval),
     riskLevel: row.risk_level ?? 'low',
     sectorTemplateKey: row.sector_template_key ?? undefined,
@@ -780,6 +813,8 @@ async function hydrateFlows(pool: pg.Pool, rows: FlowRow[]) {
     actions: (actionsByFlow.get(row.id) ?? []).map(mapAction),
     executionRuns: (runsByFlow.get(row.id) ?? []).map((run) => ({
       id: run.id,
+      organizationId: run.organization_id,
+      flowVersionId: run.flow_version_id ?? undefined,
       status: run.status,
       eventType: run.event_type ?? undefined,
       leadId: run.lead_id ?? undefined,
@@ -831,7 +866,7 @@ async function requireChildAccess(pool: pg.Pool, user: AuthUser, table: ChildTab
   )
   const child = result.rows[0]
   if (!child) throw Object.assign(new Error('automation_child_not_found'), { statusCode: 404 })
-  await getAutomationFlow(pool, user, child.flow_id)
+  await requireFlowWriteAccess(pool, user, child.flow_id)
 }
 
 async function requireSequenceStepAccess(pool: pg.Pool, user: AuthUser, stepId: string) {
@@ -841,7 +876,14 @@ async function requireSequenceStepAccess(pool: pg.Pool, user: AuthUser, stepId: 
   )
   const step = result.rows[0]
   if (!step) throw Object.assign(new Error('sequence_step_not_found'), { statusCode: 404 })
-  await getSequence(pool, user, step.sequence_id)
+  const sequence = await getSequence(pool, user, step.sequence_id)
+  await requireOrganizationWriteAccess(pool, user, sequence.organizationId)
+}
+
+async function requireFlowWriteAccess(pool: pg.Pool, user: AuthUser, flowId: string) {
+  const flow = await getAutomationFlow(pool, user, flowId)
+  await requireOrganizationWriteAccess(pool, user, flow.organizationId)
+  return flow
 }
 
 async function requireOrganizationAccess(pool: pg.Pool, user: AuthUser, organizationId: string) {
@@ -974,6 +1016,23 @@ async function findMaterialFile(material: MaterialRow) {
   })
   const file = files.find((candidate) => candidate.startsWith(filePrefix))
   return file ? resolveMaterialStoragePath(directory, file) : null
+}
+
+async function requireOrganizationWriteAccess(pool: pg.Pool, user: AuthUser, organizationId: string) {
+  await requireOrganizationAccess(pool, user, organizationId)
+  if (isInternal(user)) return
+  const result = await pool.query<{ ok: number }>(
+    `SELECT 1 AS ok FROM public.memberships membership
+     JOIN public.role_permissions permission
+       ON permission.role_key = membership.role_key AND permission.permission_key = 'automations.write'
+     WHERE membership.user_id = $1 AND membership.organization_id = $2 LIMIT 1`,
+    [user.id, organizationId],
+  )
+  if (!result.rows[0]) throw Object.assign(new Error('automation_write_forbidden'), { statusCode: 403 })
+}
+
+export async function requireAutomationOrganizationWriteAccess(pool: pg.Pool, user: AuthUser, organizationId: string) {
+  return requireOrganizationWriteAccess(pool, user, organizationId)
 }
 
 function materialPath(...parts: string[]) {

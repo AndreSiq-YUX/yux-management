@@ -107,6 +107,7 @@ export async function executeAutomationAction(input: ExecuteActionInput): Promis
       return services.sendWhatsapp(context, payload, lead, event)
     case 'webhook':
     case 'call_api':
+    case 'create_ticket':
     case 'convert_proposal':
     case 'create_project':
     case 'create_invoice':

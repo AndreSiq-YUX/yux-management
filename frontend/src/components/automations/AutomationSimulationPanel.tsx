@@ -11,6 +11,8 @@ import type { AutomationEvent, AutomationFlow } from '@/types/automation'
 interface AutomationSimulationPanelProps {
   flow?: AutomationFlow
   onSimulate?: (result: {
+    eventType: string
+    samplePayload: Record<string, unknown>
     matched: boolean
     conditionResults: unknown[]
     plannedActions: unknown[]
@@ -41,6 +43,8 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
       setError(null)
 
       onSimulate?.({
+        eventType,
+        samplePayload: payload,
         matched: simResult.matched,
         conditionResults: simResult.conditionResults,
         plannedActions: simResult.plannedActions,
