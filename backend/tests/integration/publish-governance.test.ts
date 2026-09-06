@@ -125,7 +125,7 @@ async function verifyCompanyPublication(rig: Awaited<ReturnType<typeof createInt
   expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, { ...command, approvedItemIds: [rejectedId] })).statusCode).toBe(409)
   expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, { ...command, approvedItemIds: [] })).statusCode).toBe(400)
   const published = await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, command)
-  expect(published.statusCode).toBe(200)
+  expect(published.statusCode, JSON.stringify(published.body)).toBe(200)
   expect(published.body).toMatchObject({ visibility: 'internal', allowedAgentProfileKeys: ['growth_strategist'], blockedAgentProfileKeys: ['ai_sdr_comercial_1'], governanceVersion: 2, version: 1 })
   expect(published.body.publicationId).toBeTruthy()
   expect((await rig.request('client_admin_A', 'POST', `/api/company-intelligence/knowledge/${documentId}/publish`, command)).statusCode).toBe(409)
