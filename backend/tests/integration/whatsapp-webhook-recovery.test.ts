@@ -8,10 +8,11 @@ it('persiste webhook assinado com Redis indisponível e entrega uma única mensa
   const rig = await createIntegrationRig()
   const phoneNumberId = `phone-${randomUUID()}`
   const externalMessageId = `wamid.${randomUUID()}`
+  const contactExternalId = randomUUID()
   let redisStopped = false
   try {
     const connectionId = await insertWhatsAppConnection(rig, phoneNumberId)
-    const rawBody = whatsappPayload(phoneNumberId, externalMessageId)
+    const rawBody = whatsappPayload(phoneNumberId, externalMessageId, contactExternalId)
 
     const invalid = await rig.rawRequest('POST', '/api/webhooks/meta/channel-event', rawBody, {
       'content-type': 'application/json',
@@ -70,9 +71,10 @@ it('retoma o consumidor após timeout posterior à mensagem sem duplicar convers
   const rig = await createIntegrationRig()
   const phoneNumberId = `phone-${randomUUID()}`
   const externalMessageId = `wamid.${randomUUID()}`
+  const contactExternalId = randomUUID()
   try {
     const connectionId = await insertWhatsAppConnection(rig, phoneNumberId)
-    const rawBody = whatsappPayload(phoneNumberId, externalMessageId)
+    const rawBody = whatsappPayload(phoneNumberId, externalMessageId, contactExternalId)
     const response = await rig.rawRequest('POST', '/api/webhooks/meta/channel-event', rawBody, signedHeaders(rawBody))
     expect(response.statusCode).toBe(200)
 
@@ -84,8 +86,8 @@ it('retoma o consumidor após timeout posterior à mensagem sem duplicar convers
     const conversationId = randomUUID()
     await rig.sql(
       `INSERT INTO public.omnichannel_contacts (id, organization_id, display_name, phone, external_identities)
-       VALUES ($1,$2,'Contato timeout','+5511999999999',$3::jsonb)`,
-      [contactId, rig.ids.organizationA, JSON.stringify({ providerExternalId: '5511999999999' })],
+       VALUES ($1,$2,'Contato timeout',$3,$4::jsonb)`,
+      [contactId, rig.ids.organizationA, `+${contactExternalId}`, JSON.stringify({ providerExternalId: contactExternalId })],
     )
     await rig.sql(
       `INSERT INTO public.conversations (
@@ -147,7 +149,7 @@ async function insertWhatsAppConnection(
   return connectionId
 }
 
-function whatsappPayload(phoneNumberId: string, externalMessageId: string) {
+function whatsappPayload(phoneNumberId: string, externalMessageId: string, contactExternalId: string) {
   return JSON.stringify({
     object: 'whatsapp_business_account',
     entry: [{
@@ -156,10 +158,10 @@ function whatsappPayload(phoneNumberId: string, externalMessageId: string) {
         value: {
           messaging_product: 'whatsapp',
           metadata: { phone_number_id: phoneNumberId, display_phone_number: '5511000000000' },
-          contacts: [{ wa_id: '5511999999999', profile: { name: 'Contato teste' } }],
+          contacts: [{ wa_id: contactExternalId, profile: { name: 'Contato teste' } }],
           messages: [{
             id: externalMessageId,
-            from: '5511999999999',
+            from: contactExternalId,
             timestamp: String(Math.floor(Date.now() / 1_000)),
             type: 'text',
             text: { body: 'Olá' },
