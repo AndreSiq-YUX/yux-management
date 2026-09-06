@@ -12,39 +12,58 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
   try {
     await rig.sql(
       `INSERT INTO public.leads (id,organization_id,client_id,name,email,source,stage,status)
-       VALUES ($1,$2,$3,'Lead fila diária','fila-diaria@integration.test','integration','NEW','open');
-       INSERT INTO public.lead_tasks (id,organization_id,lead_id,title,due_at,assigned_to,metadata)
-       VALUES ($4,$2,$1,'Retornar contato',NOW(),$5,'{}'::jsonb),
-              ($6,$2,$1,'Tarefa de outra pessoa',NOW(),$7,'{}'::jsonb);
-       INSERT INTO public.projects (id,name,client_id,status,priority,type,start_date,expected_end_date)
-       VALUES ($8,'Projeto fila diária',$3,'ACTIVE','MEDIUM','OTHER',CURRENT_DATE,CURRENT_DATE + 30);
-       INSERT INTO public.project_tasks (id,project_id,title,status,assigned_to,due_date,is_client_visible)
-       VALUES ($9,$8,'Revisar entrega','in_progress',$5,CURRENT_DATE,TRUE)`,
-      [ids.lead, rig.ids.organizationA, '20000000-0000-4000-8000-000000000001', ids.crmTask,
-        fixtureUsers.yux_operator.id, ids.otherTask, fixtureUsers.client_member_A.id, ids.project, ids.projectTask],
+       VALUES ($1,$2,$3,'Lead fila diária','fila-diaria@integration.test','integration','NEW','open')`,
+      [ids.lead, rig.ids.organizationA, '20000000-0000-4000-8000-000000000001'],
+    )
+    await rig.sql(
+      `INSERT INTO public.lead_tasks (id,organization_id,lead_id,title,due_at,assigned_to,metadata)
+       VALUES ($1,$2,$3,'Retornar contato',NOW(),$4,'{}'::jsonb),
+              ($5,$2,$3,'Tarefa de outra pessoa',NOW(),$6,'{}'::jsonb)`,
+      [ids.crmTask, rig.ids.organizationA, ids.lead, fixtureUsers.yux_operator.id,
+        ids.otherTask, fixtureUsers.client_member_A.id],
+    )
+    await rig.sql(
+      `INSERT INTO public.projects (id,name,client_id,status,priority,type,start_date,expected_end_date)
+       VALUES ($1,'Projeto fila diária',$2,'ACTIVE','MEDIUM','OTHER',CURRENT_DATE,CURRENT_DATE + 30)`,
+      [ids.project, '20000000-0000-4000-8000-000000000001'],
+    )
+    await rig.sql(
+      `INSERT INTO public.project_tasks (id,project_id,title,status,assigned_to,due_date,is_client_visible)
+       VALUES ($1,$2,'Revisar entrega','in_progress',$3,CURRENT_DATE,TRUE)`,
+      [ids.projectTask, ids.project, fixtureUsers.yux_operator.id],
     )
     await rig.sql(
       `INSERT INTO public.action_missions
          (id,organization_id,contract_id,pack_version_id,title,objective,status,mode,create_idempotency_key,budget,created_by)
-       VALUES ($1,$2,$3,'71000000-0000-4000-8000-000000000001','Missão fila diária','Validar fila','active','assisted',$4,$5,$6);
-       INSERT INTO public.action_plans
-         (id,organization_id,mission_id,revision,status,pack_version_id,pack_content_hash,plan_hash,created_by)
-       VALUES ($7,$2,$1,1,'active','71000000-0000-4000-8000-000000000001',repeat('a',64),repeat('b',64),$6);
-       INSERT INTO public.action_plan_steps
-         (id,organization_id,plan_id,step_key,position,capability_key,capability_version)
-       VALUES ($8,$2,$7,'human-review',0,'human.task.create',1);
-       INSERT INTO public.action_runs
-         (id,organization_id,mission_id,plan_id,plan_step_id,status,idempotency_key,input,output,claimed_by)
-       VALUES ($9,$2,$1,$7,$8,'running',$10,$11,$12,'human_task');
-       INSERT INTO public.action_observations
-         (id,organization_id,mission_id,observation_type,idempotency_key,source_type,source_record_id,payload)
-       VALUES ($13,$2,$1,'human_task_created',$14,'mission',$1,$15)`,
+       VALUES ($1,$2,$3,'71000000-0000-4000-8000-000000000001','Missão fila diária','Validar fila','active','assisted',$4,$5,$6)`,
       [ids.mission, rig.ids.organizationA, rig.ids.contractA, `work-items-mission-${ids.mission}`,
-        { humanHourlyRateBrl: '120', maxHumanHours: '8' }, fixtureUsers.yux_admin.id,
-        ids.plan, ids.step, ids.run, `work-items-run-${ids.run}`,
+        { humanHourlyRateBrl: '120', maxHumanHours: '8' }, fixtureUsers.yux_admin.id],
+    )
+    await rig.sql(
+      `INSERT INTO public.action_plans
+         (id,organization_id,mission_id,revision,status,pack_version_id,pack_content_hash,plan_hash,created_by)
+       VALUES ($1,$2,$3,1,'active','71000000-0000-4000-8000-000000000001',repeat('a',64),repeat('b',64),$4)`,
+      [ids.plan, rig.ids.organizationA, ids.mission, fixtureUsers.yux_admin.id],
+    )
+    await rig.sql(
+      `INSERT INTO public.action_plan_steps
+         (id,organization_id,plan_id,step_key,position,capability_key,capability_version)
+       VALUES ($1,$2,$3,'human-review',0,'human.task.create',1)`,
+      [ids.step, rig.ids.organizationA, ids.plan],
+    )
+    await rig.sql(
+      `INSERT INTO public.action_runs
+         (id,organization_id,mission_id,plan_id,plan_step_id,status,idempotency_key,input,output,claimed_by)
+       VALUES ($1,$2,$3,$4,$5,'running',$6,$7,$8,'human_task')`,
+      [ids.run, rig.ids.organizationA, ids.mission, ids.plan, ids.step, `work-items-run-${ids.run}`,
         { title: 'Conferir resultado', description: 'Conferir antes de avançar', dueAt: new Date().toISOString(), assignedTo: fixtureUsers.yux_operator.id },
-        { output: { preview: false, taskId: ids.observation }, effectProduced: true }, ids.observation,
-        `work-items-observation-${ids.observation}`,
+        { output: { preview: false, taskId: ids.observation }, effectProduced: true }],
+    )
+    await rig.sql(
+      `INSERT INTO public.action_observations
+         (id,organization_id,mission_id,observation_type,idempotency_key,source_type,source_record_id,payload)
+       VALUES ($1,$2,$3,'human_task_created',$4,'mission',$3,$5)`,
+      [ids.observation, rig.ids.organizationA, ids.mission, `work-items-observation-${ids.observation}`,
         { title: 'Conferir resultado', description: 'Conferir antes de avançar', dueAt: new Date().toISOString(), assignedTo: fixtureUsers.yux_operator.id, status: 'open' }],
     )
 
