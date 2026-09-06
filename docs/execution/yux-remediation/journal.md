@@ -39,7 +39,8 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T08 | aceita | Schemas, geradores, TS/Python e corpus aprovados na CI |
 | T09 | aceita | Leases de outbox/consumidores, fencing por owner/attempt e retomada persistente aprovados na CI |
 | T10 | aceita | Webhook e outbox atômicos, Redis indisponível e replay pós-timeout aprovados na CI |
-| T11–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T11 | aceita | Scheduler persiste intenção, adaptadores nativos revalidam consentimento/conexão e recibos atualizam a execução |
+| T12–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -158,3 +159,15 @@ frontend tests: PASS, 528 PASS
 - Recuperação: a mensagem externa conserva a restrição única por conexão; replay recupera mensagem existente, não duplica conversa e retoma evento `processing` somente após uma nova tentativa cercada pelo lease da delivery.
 - Verificação local: type-check aprovado; 153 arquivos e 623 testes unitários aprovados. Docker não está instalado neste computador, portanto o teste persistente foi executado no runner isolado.
 - Aceite persistente: execução GitHub Actions `34001822740`, commit `8245f31`, conclusão `success`. O teste `whatsapp-webhook-recovery.test.ts` comprovou assinatura inválida sem insert, duas entregas idênticas com Redis parado, um único evento, retomada após o Redis voltar, uma única conversa/mensagem e replay pós-timeout com `attempt_count = 2`. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T11 — Despacho CRM pelos adaptadores nativos
+
+- Estado: aceita.
+- Commit inicial: `b0e2684`; correções descobertas pela instalação limpa: `f8e7120`, `b9e0112` e `802cc8b`.
+- Achados: YUX-09 e a lacuna de entrega/recibo do scheduler CRM.
+- Reprodução: o scheduler concluía a execução e chamava transporte diretamente, sem uma intenção durável comum aos canais; concorrência, Redis indisponível e resposta perdida não tinham uma identidade de despacho estável.
+- Decisão: `sequence:<enrollment>:step:<step>` identifica a execução; a mesma transação conclui a execução, cria o pedido/mensagem e grava `crm.sequence.delivery_requested`. O consumidor revalida supressão, opt-in/opt-out, conexão, token e janela/template antes de publicar um job nativo com ID estável.
+- Segurança: o job nunca contém token. O login `yux_worker` ganhou somente `SELECT` nos segredos criptografados, condicionado ao papel de serviço worker e ao escopo da organização; mutação continua administrativa.
+- Recuperação: provider acceptance, falha e recibos `sent/delivered/read/failed` atualizam a mensagem e o payload da execução. O handler de recibo não cria conversa de entrada fictícia.
+- Verificação local: type-check aprovado; 154 arquivos e 626 testes unitários aprovados.
+- Aceite persistente: execução GitHub Actions `34002909940`, commit `802cc8b`, conclusão `success`. `crm-dispatch.test.ts` comprovou dois schedulers concorrentes com Redis interrompido, uma única intenção/evento, retomada com uma chamada ao provedor, ausência de duplicata no segundo tick, recibo Meta assinado e bloqueios sem chamada externa para canal desconectado e opt-out posterior ao agendamento. Backend, frontend e Agent Runtime também permaneceram aprovados.

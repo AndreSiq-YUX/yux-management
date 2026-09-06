@@ -40,3 +40,9 @@
 - Status: decidida.
 - Decisão: o reconhecimento de webhook Meta depende do commit conjunto de `channel_webhook_events` e do evento de domínio, nunca do enqueue no Redis. A delivery referencia o UUID persistido e resolve organização/conexão novamente no servidor.
 - Motivo: eliminar perda entre banco e fila, preservar deduplicação por evento externo e impedir que dados de tenant fornecidos pelo job substituam a autoridade da conexão persistida.
+
+## D-008 — Identidade e fronteira do despacho de sequências CRM
+
+- Status: decidida.
+- Decisão: cada passo usa `sequence:<enrollmentId>:step:<stepId>` como identidade imutável de execução; email e WhatsApp são materializados como intenções locais na mesma transação do evento de domínio. Somente os handlers nativos fazem a chamada externa, depois de revalidar consentimento, conexão e restrições do canal.
+- Motivo: concorrência e indisponibilidade do Redis não podem duplicar nem perder o efeito, e um aceite do provedor não deve ser confundido com entrega final sem o recibo correspondente.
