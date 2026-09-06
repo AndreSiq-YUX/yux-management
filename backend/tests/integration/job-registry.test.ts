@@ -21,7 +21,7 @@ it('mantém schema, handler, classe, timeout e sandbox explícitos para todo Job
   expect(jobRegistry['action-engine.processMissionConversation'].queueClass).toBe('interactive')
   expect(jobRegistry['maintenance.purgeExpiredTraces'].queueClass).toBe('maintenance')
   expect(jobRegistry['omnichannel.simulateChannelEvent'].sandboxOnly).toBe(true)
-  expect(jobRegistry['omnichannel.requestScheduling'].queueClass).toBe('internal')
+  expect(jobRegistry['omnichannel.requestScheduling'].queueClass).toBe('interactive')
 })
 
 it('coleta métricas pelo adaptador real e persiste o timestamp de origem', async () => {
