@@ -202,9 +202,10 @@ export async function insertMissionContextSnapshot(client: Queryable, input: {
        strategy_items, approved_learning_memory, live_state, capability_manifest, capability_catalog_hash, source_ids
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (mission_id, context_hash) DO NOTHING RETURNING *`,
-    [input.organizationId, input.missionId, contextHash, canonical.query, canonical.companyContext,
-      canonical.knowledgeItems, canonical.strategyItems, canonical.approvedLearningMemory, canonical.liveState, canonical.capabilityManifest,
-      canonical.capabilityCatalogHash, canonical.sourceIds],
+    [input.organizationId, input.missionId, contextHash, canonical.query, JSON.stringify(canonical.companyContext),
+      JSON.stringify(canonical.knowledgeItems), JSON.stringify(canonical.strategyItems), JSON.stringify(canonical.approvedLearningMemory),
+      JSON.stringify(canonical.liveState), JSON.stringify(canonical.capabilityManifest), canonical.capabilityCatalogHash,
+      JSON.stringify(canonical.sourceIds)],
   )
   let row = inserted.rows[0]
   if (!row) {
