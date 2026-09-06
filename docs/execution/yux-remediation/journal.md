@@ -316,3 +316,16 @@ frontend tests: PASS, 528 PASS
 - Verificação local: backend com 158 arquivos/649 testes aprovados; frontend com 128 arquivos/546 testes aprovados; type-checks e builds aprovados. O browser percorreu criação conversacional, correção inline de “Público-alvo”, retorno à mesma conversa e refresh, em 1440×1000 e 390×844, sem erro relevante de console ou overlay. A revisão visual encontrou e corrigiu o contraste das mensagens; as capturas ficaram temporárias fora do repositório.
 - Aceite persistente: execução GitHub Actions `34043197976`, commit `8835a01`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration. O teste PostgreSQL real comprovou workspace interno, cliente A, membro somente leitura, operador e negação ao cliente B.
 - Risco remanescente: OAuth Meta e provedores externos não fizeram parte desta tarefa; seus testes permanecem nos fluxos próprios. Destinos antigos sem equivalente seguro em `CorrectionTargetV1` ficam sem link acionável, em vez de transportar URL arbitrária.
+
+## T24 — Fila diária unificada de trabalho humano
+
+- Estado: aceita.
+- Commit principal: `fea35f7`; correções persistentes concluídas em `ede5f51`.
+- Achado: YUX-19.
+- Projeção: `GET /api/workspace/work-items` reúne tarefas CRM, tarefas de projeto e execuções de intervenção humana por organização, responsável e prazo. A resposta conserva a identidade e versão da origem; não há cópia de tarefa nem estado paralelo.
+- Conclusão: `POST /api/workspace/work-items/:sourceType/:sourceId/complete` exige versão, evidência não vazia e minutos positivos. CRM e projetos atualizam suas próprias tarefas e registram evento/auditoria; missões usam o resolvedor transacional do Action Engine, persistem evidência na observação, custo humano real e uma única transição `action.succeeded`.
+- Segurança e concorrência: o escopo organizacional é fixado explicitamente no contexto do banco. Cliente de outra organização é negado, operador não conclui tarefa atribuída a outra pessoa e duas conclusões simultâneas produzem exatamente um sucesso e um conflito. O bloqueio CRM foi limitado à linha canônica da tarefa para preservar os relacionamentos opcionais da leitura.
+- Interface: a fila aparece na área de tarefas com grupos Hoje, Atrasadas, Bloqueadas, Aguardando aprovação e Próximas; cada item abre a missão ou o registro de origem. O formulário de conclusão coleta evidência e minutos, e a timeline da missão oferece retorno à fila diária.
+- Verificação local: backend com 159 arquivos/651 testes aprovados; frontend com 129 arquivos/547 testes aprovados; type-checks e builds aprovados. A revisão no navegador percorreu a fila e o formulário em desktop e mobile sem erro de console; as capturas permaneceram temporárias fora do repositório.
+- Aceite persistente: execução GitHub Actions `34046216968`, commit `ede5f51`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration. O PostgreSQL real comprovou as três origens, isolamento entre organizações, responsável incorreto, evidência obrigatória, conclusão concorrente, persistência de 17 minutos e uma única transição da ação.
+- Retorno seguro: a projeção e sua rota visual podem ser retiradas sem apagar ou migrar as tarefas canônicas dos três domínios.

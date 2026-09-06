@@ -140,3 +140,12 @@
 - Contrato interno: organização de crescimento não exige contrato comercial. Quando possuir cliente técnico legado e contrato ativo correspondente, o ID é reutilizado; ausência retorna `null` e nunca dispara criação automática.
 - Correção: respostas de API emitem `CorrectionTargetV1`, e o frontend produz caminho apenas a partir de chaves e campos enumerados. URLs antigas, campos desconhecidos e destinos sem equivalente seguro não viram navegação. Respostas coletadas durante a missão são persistidas no briefing da própria conversa, salvo escolha explícita futura por uma alteração mais ampla do perfil da empresa.
 - Motivo: evitar divergência entre interface e autorização, acesso cruzado por IDs relacionados e perda de contexto causada por encaminhamento do usuário a telas técnicas ou destinos controlados por texto externo.
+
+## D-021 — A fila diária é uma projeção; cada domínio continua dono da tarefa
+
+- Status: decidida.
+- Projeção: a fila reúne tarefas pendentes do CRM, de projetos e de intervenções humanas sem criar uma quarta entidade mutável. `sourceType` e `sourceId` identificam a autoridade; responsável, prazo, estado, missão, organização e versão são derivados do registro canônico.
+- Conclusão: o endpoint unificado apenas valida o contrato comum e delega ao comando do domínio. CRM conserva `lead_tasks`, projetos conservam `project_tasks` e a missão conserva sua execução humana e observação. Evidência e minutos reais ficam registrados na entidade de origem e no evento/custo correspondente.
+- Concorrência: a versão esperada e o bloqueio da linha impedem duas conclusões. A intervenção humana muda a ação para sucesso, registra custo e evento uma única vez e só então agenda a continuação da missão.
+- Isolamento: toda leitura e escrita da fila fixa explicitamente a organização já autorizada no contexto do banco. Operadores só concluem tarefa de outro responsável quando são administradores; papéis de cliente permanecem limitados ao workspace e à visibilidade de cada origem.
+- Motivo: oferecer um único lugar de trabalho sem sincronização frágil de estados, preservar auditoria e permitir retirar a projeção sem perder tarefas ou histórico.
