@@ -98,7 +98,7 @@ export async function listWorkItems(pool: Queryable, context: RequestContext, in
        JOIN public.action_runs run
          ON run.organization_id = observation.organization_id
         AND run.mission_id = observation.mission_id
-        AND run.output->'output'->>'taskId' = observation.id::text
+        AND run.idempotency_key = observation.idempotency_key
        JOIN public.action_plan_steps step ON step.id = run.plan_step_id
        WHERE observation.organization_id = $1
          AND observation.observation_type = 'human_task_created'
@@ -246,7 +246,7 @@ async function completeMissionHumanTask(
      JOIN public.action_runs run
        ON run.organization_id = observation.organization_id
       AND run.mission_id = observation.mission_id
-      AND run.output->'output'->>'taskId' = observation.id::text
+      AND run.idempotency_key = observation.idempotency_key
      JOIN public.action_plan_steps step ON step.id = run.plan_step_id AND step.capability_key = 'human.task.create'
      WHERE observation.id = $1 AND observation.organization_id = $2
        AND observation.observation_type = 'human_task_created'

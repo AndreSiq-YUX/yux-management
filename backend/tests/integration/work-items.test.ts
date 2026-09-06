@@ -63,7 +63,7 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
       `INSERT INTO public.action_observations
          (id,organization_id,mission_id,observation_type,idempotency_key,source_type,source_record_id,payload)
        VALUES ($1,$2,$3,'human_task_created',$4,'mission',$3,$5)`,
-      [ids.observation, rig.ids.organizationA, ids.mission, `work-items-observation-${ids.observation}`,
+      [ids.observation, rig.ids.organizationA, ids.mission, `work-items-run-${ids.run}`,
         { title: 'Conferir resultado', description: 'Conferir antes de avançar', dueAt: new Date().toISOString(), assignedTo: fixtureUsers.yux_operator.id, status: 'open' }],
     )
 
