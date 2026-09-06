@@ -26,7 +26,7 @@ type Evidence = {
 async function login(page: Page, user: keyof typeof credentials) {
   await page.goto('/auth/login')
   await page.getByLabel('Email').fill(credentials[user].email)
-  await page.getByLabel('Senha').fill(credentials[user].password)
+  await page.getByLabel('Senha', { exact: true }).fill(credentials[user].password)
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
   await expect(page).not.toHaveURL(/\/auth\/login/)
 }
