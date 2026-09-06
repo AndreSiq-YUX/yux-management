@@ -5,6 +5,8 @@ import { storePlatformProviderSecret } from '../../src/modules/platform/adminRep
 import { createIntegrationRig, getIntegrationDatabaseUrl } from './support/rig.js'
 
 it('separa readiness de saúde operacional e não transforma custo desconhecido em zero', async () => {
+  const previousProviderKey = process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+  process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 = 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc='
   const rig = await createIntegrationRig()
   const pool = new pg.Pool({connectionString:getIntegrationDatabaseUrl(),max:2})
   try {
@@ -71,5 +73,7 @@ it('separa readiness de saúde operacional e não transforma custo desconhecido 
   } finally {
     await pool.end()
     await rig.close()
+    if (previousProviderKey === undefined) delete process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+    else process.env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 = previousProviderKey
   }
 })
