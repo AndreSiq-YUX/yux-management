@@ -279,6 +279,9 @@ export async function handleStrategyIndexKnowledge(pool: pg.Pool, data: Record<s
     const absolutePath = resolveStrategyStoragePath(strategyStorageRoot(options.storageRoot), claimed.storage_path)
     if (!(await fileMatches(absolutePath, claimed.sha256, Number(claimed.byte_size)))) throw new Error('strategy_ingestion_file_not_intact')
     const extracted = await extractKnowledgeText({ content: await readFile(absolutePath), mimeType: claimed.mime_type, title: claimed.source_name })
+    if (claimed.mime_type === 'application/pdf' && !hasMeaningfulPdfText(extracted.body)) {
+      throw Object.assign(new Error('knowledge_text_extraction_empty'), { statusCode: 422 })
+    }
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -330,6 +333,10 @@ export async function handleStrategyIndexKnowledge(pool: pg.Pool, data: Record<s
   } finally {
     await stopHeartbeat()
   }
+}
+
+export function hasMeaningfulPdfText(value: string) {
+  return value.replace(/--\s*\d+\s+of\s+\d+\s*--/gi, '').replace(/\s+/g, '').length >= 10
 }
 
 function ingestionView(row: IngestionRow) {

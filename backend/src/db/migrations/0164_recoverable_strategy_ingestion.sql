@@ -39,4 +39,3 @@ CREATE POLICY strategy_ingestion_internal ON public.yux_strategy_ingestion_jobs 
 GRANT SELECT,INSERT,UPDATE ON public.yux_strategy_ingestion_jobs TO yux_api,yux_worker;
 GRANT SELECT,INSERT,UPDATE ON public.yux_strategy_source_documents TO yux_api,yux_worker;
 GRANT SELECT,INSERT,UPDATE,DELETE ON public.yux_strategy_source_chunks TO yux_worker;
-
