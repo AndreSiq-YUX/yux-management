@@ -266,3 +266,15 @@ frontend tests: PASS, 528 PASS
 - Interface: os diálogos exibem público e perfis efetivos, permitem confirmar exatamente os itens aprovados e mostram versão e hash salvos. O atalho de publicação raw degradada foi removido.
 - Verificação local: type-checks, builds, 632 testes backend e 536 testes frontend aprovados; contratos regenerados sem diferença e lint direcionado sem achados.
 - Aceite persistente: execução GitHub Actions `34036365107`, commit `50f0b85`, conclusão `success`. Backend, frontend, Agent Runtime e 25 testes de integração passaram, incluindo concorrência, permissão negada, item rejeitado, rollback da projeção, publicação empresarial e histórico imutável.
+
+## T20 — Elegibilidade, busca e ranking unificados
+
+- Estado: aceita.
+- Commits de implementação e estabilização: `66d0ebe`, `dbfd3cf`, `27ecefc`, `a46fcc1` e `fcc0800`.
+- Política autoritativa: uma função PostgreSQL filtra organização/contrato, ponteiros de publicação, conjunto aprovado, perfil, audiência, release corrente e binding ativo antes do ranking. Relações normalizadas imutáveis substituem varreduras de arrays; limite é aplicado somente ao resultado final e o desempate usa ID estável.
+- Busca: índices GIN parciais atendem o caminho lexical. Embeddings JSONB são comparados somente após autorização; indisponibilidade produz `degraded`, modo `lexical` e motivo explícito. Como o alvo foi atingido sem índice vetorial, pgvector não foi introduzido.
+- Segurança e compatibilidade: rascunho, rejeitado, arquivado, raw, perfil bloqueado, outra organização e conteúdo interno para contato externo ficam fora do resultado. Auditoria de rascunho é separada, exclusiva de curadores e incompatível com o contrato de contexto. A RPC antiga aceita apenas nomes conhecidos; o portal passou a enviar os nomes canônicos.
+- Runtime: estratégia e contexto empresarial do Harness chamam a mesma política de banco com organização, contrato, perfil, audiência, módulo, workflow e canal. Os limites legados de 200/500 candidatos anteriores à elegibilidade foram removidos, inclusive o caso de 500 raw antes do trecho relevante.
+- Cache: chave unificada inclui todos os escopos, política, publicação, binding, modelo e consulta. Publicação ou revogação altera a identidade; nenhuma resposta antiga é reutilizada no caminho autoritativo.
+- Verificação local: 636 testes backend, 536 frontend e 175 Python aprovados; type-checks, builds, contratos e 15 cenários dourados também aprovados.
+- Aceite persistente: execução GitHub Actions `34038497416`, commit `fcc0800`. A integração persistente aprovou 26 cenários; o corpus embaralhado de 10 mil trechos alcançou Recall@5 ≥ 0,90, zero violação de escopo e p95 ≤ 1 segundo, mantendo o limite de aceite original.

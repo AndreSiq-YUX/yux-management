@@ -105,3 +105,13 @@
 - Conteúdo: publicação degradada de texto bruto não é uma opção operacional. Conhecimento manual segue permitido somente depois de virar proposta revisada com evidência verificável. Até a validação explícita de T20, a projeção estratégica não declara fallback lexical quando o embedding estiver indisponível.
 - Outbox: administradores de cliente podem emitir o evento da publicação exclusivamente pelo contexto `api` com organização cercada pela RLS. Papéis internos conservam o fluxo existente; membro, worker e runtime permanecem sem esse direito.
 - Retorno: retirar o ponteiro corrente desativa a versão sem modificar o snapshot histórico e sem reativar regra mais ampla.
+
+## D-017 — Elegibilidade antecede ranking e limite
+
+- Status: decidida.
+- Decisão: estratégia e conhecimento empresarial usam uma única função versionada no PostgreSQL. Organização, contrato, publicação corrente, aprovação, perfil, audiência e binding ativo são condições de elegibilidade; somente depois delas ocorrem score, desempate estável e limite.
+- Índices: os IDs aprovados de releases e publicações são normalizados em relações imutáveis, e o caminho lexical usa índices GIN parciais sobre conteúdo curado/aprovado. O benchmark de 10 mil trechos atingiu Recall@5 e p95 exigidos sem pgvector; portanto, a extensão não é adicionada sem necessidade medida.
+- Embeddings: similaridade JSONB é calculada somente sobre candidatos autorizados. Na ausência do embedding de consulta ou de candidato compatível, o resultado declara modo lexical degradado e motivo estruturado, sem abrir acesso a raw, rejeitado, rascunho ou arquivado.
+- Cache: a identidade inclui organização, contrato, perfil, audiência, módulo/workflow/canal, versão da política, publicações, fingerprint dos bindings, modelo e hash da consulta. Nova publicação ou alteração/revogação de binding produz identidade diferente; o caminho atual consulta a fonte autoritativa a cada execução e não reaproveita resposta antiga.
+- Auditoria: rascunhos possuem endpoint exclusivo de curador, rotulado `UNPUBLISHED_DRAFT_AUDIT`; a resposta não implementa `RetrievalResultV1` e não pode ser usada como contexto de agente.
+- Compatibilidade: a interface canônica rejeita campos desconhecidos. A RPC antiga traduz apenas os dois nomes historicamente usados e preserva consulta vazia; divergência entre nomes novos e antigos é recusada.
