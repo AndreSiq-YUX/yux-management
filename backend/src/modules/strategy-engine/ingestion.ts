@@ -299,7 +299,7 @@ export async function handleStrategyIndexKnowledge(
   try {
     if (options.signal?.aborted) throw options.signal.reason
     if (!claimed.storage_path || !claimed.sha256) throw new Error('strategy_ingestion_file_context_required')
-    const absolutePath = resolveStrategyStoragePath(strategyStorageRoot(options.storageRoot), claimed.storage_path)
+    const absolutePath = resolveStrategyStoragePath(strategyStorageRoot(options.storageRoot ?? env.KNOWLEDGE_STORAGE_DIR), claimed.storage_path)
     if (!(await fileMatches(absolutePath, claimed.sha256, Number(claimed.byte_size)))) throw new Error('strategy_ingestion_file_not_intact')
     if (claimed.current_step === 'extraction') await extractAndCheckpoint(pool, claimed, absolutePath, owner, attempt)
     failureStep = 'curation'
