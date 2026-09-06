@@ -37,7 +37,7 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T06 | aceita | Papéis, grants, RLS e contexto Node/Python aprovados; troca de credenciais do piloto depende dos segredos operacionais |
 | T07 | aceita | Política nominal, isolamento A/B e leitura segura aprovados na integração persistente |
 | T08 | aceita | Schemas, geradores, TS/Python e corpus aprovados na CI |
-| T09 | implementada aguardando aceite | Leases de outbox/consumidores, fencing por owner/attempt e retomada persistente adicionados |
+| T09 | aceita | Leases de outbox/consumidores, fencing por owner/attempt e retomada persistente aprovados na CI |
 | T10–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
@@ -137,11 +137,11 @@ frontend tests: PASS, 528 PASS
 
 ## T09 — Outbox, leases e retomada
 
-- Estado: implementada aguardando aceite persistente.
+- Estado: aceita.
 - Commit inicial: `2135cb2`.
 - Achados: YUX-06, YUX-10 e YUX-15.
 - Reprodução: `dispatching` e `processing` não possuíam proprietário nem expiração; conclusão aceitava qualquer worker; a criação de deliveries e o enqueue ocorriam na mesma transação, permitindo job órfão se o Redis aceitasse antes de rollback do banco.
 - Decisão: leases de 120 segundos, heartbeat de 30 segundos, fencing por `owner + attempt`, reclaims somente após expiração e classes distintas de falha. Deliveries são confirmadas no banco antes do enqueue; repetição usa a mesma identidade BullMQ.
 - Entregas: migration `0154_outbox_processing_leases.sql`, utilitário `jobs/leases.ts`, recuperação de outbox abandonado, heartbeat de consumidores e snapshot operacional por classe/idade.
 - Verificação local: type-check aprovado; 18/18 testes de migrador, outbox e leases aprovados.
-- Gate: `outbox-recovery.test.ts` comprova no PostgreSQL real que o proprietário antigo não finaliza após reclaim; a suíte persistente será executada na CI deste commit.
+- Aceite persistente: execução GitHub Actions `34000850669`, commit `756ce8a`, conclusão `success`; `outbox-recovery.test.ts` comprovou no PostgreSQL 17 que o proprietário antigo não finaliza após reclaim. Backend, frontend e Agent Runtime também permaneceram aprovados.
