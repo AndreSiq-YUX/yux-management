@@ -82,25 +82,25 @@ export async function listWorkItems(pool: Queryable, context: RequestContext, in
       [input.organizationId, assigneeId, internal],
     ),
     pool.query<ProjectionRow>(
-      `SELECT observation.id AS source_id,
-              COALESCE(NULLIF(observation.payload->>'title',''), 'Intervenção humana') AS title,
-              CASE COALESCE(observation.payload->>'status','open')
+      `SELECT COALESCE(run.output #>> '{output,taskId}', run.output->>'taskId') AS source_id,
+              COALESCE(NULLIF(run.input->>'title',''), step.step_key) AS title,
+              CASE run.status
                 WHEN 'waiting_approval' THEN 'awaiting_approval'
-                WHEN 'awaiting_approval' THEN 'awaiting_approval'
                 WHEN 'failed' THEN 'blocked'
                 WHEN 'blocked' THEN 'blocked'
                 ELSE 'pending'
               END AS status,
-              NULLIF(observation.payload->>'dueAt','') AS due_at,
-              CASE WHEN observation.payload->>'assignedTo' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-                THEN (observation.payload->>'assignedTo')::uuid ELSE NULL END AS assignee_id,
-              observation.mission_id, observation.organization_id, observation.created_at AS version
-       FROM public.action_observations observation
-       WHERE observation.organization_id = $1
-         AND observation.observation_type = 'human_task_created'
-         AND COALESCE(observation.payload->>'status','open') NOT IN ('completed','cancelled')
-         AND ($2::uuid IS NULL OR CASE WHEN observation.payload->>'assignedTo' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-              THEN (observation.payload->>'assignedTo')::uuid ELSE NULL END = $2)`,
+              NULLIF(run.input->>'dueAt','') AS due_at,
+              CASE WHEN run.input->>'assignedTo' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+                THEN (run.input->>'assignedTo')::uuid ELSE NULL END AS assignee_id,
+              run.mission_id, run.organization_id, run.updated_at AS version
+       FROM public.action_runs run
+       JOIN public.action_plan_steps step ON step.id = run.plan_step_id AND step.capability_key = 'human.task.create'
+       WHERE run.organization_id = $1
+         AND run.status IN ('running','waiting_approval','failed','blocked')
+         AND COALESCE(run.output #>> '{output,taskId}', run.output->>'taskId') IS NOT NULL
+         AND ($2::uuid IS NULL OR CASE WHEN run.input->>'assignedTo' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+              THEN (run.input->>'assignedTo')::uuid ELSE NULL END = $2)`,
       [input.organizationId, assigneeId],
     ),
   ])
@@ -232,43 +232,32 @@ async function completeMissionHumanTask(
     throw domainError(403, 'work_item_completion_forbidden')
   }
   const selected = await client.query<{
-    mission_id: string; idempotency_key: string; assigned_to: string | null; version: string | Date; status: string
+    action_id: string; mission_id: string; assigned_to: string | null; updated_at: string | Date; status: string
   }>(
-    `SELECT observation.mission_id, observation.idempotency_key, observation.created_at AS version,
-            COALESCE(observation.payload->>'status','open') AS status,
-            CASE WHEN observation.payload->>'assignedTo' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-              THEN (observation.payload->>'assignedTo')::uuid ELSE NULL END AS assigned_to
-     FROM public.action_observations observation
-     WHERE observation.id = $1 AND observation.organization_id = $2
-       AND observation.observation_type = 'human_task_created'
-     FOR UPDATE OF observation`,
+    `SELECT run.id AS action_id, run.mission_id, run.status, run.updated_at,
+            CASE WHEN run.input->>'assignedTo' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+              THEN (run.input->>'assignedTo')::uuid ELSE NULL END AS assigned_to
+     FROM public.action_runs run
+     JOIN public.action_plan_steps step ON step.id = run.plan_step_id AND step.capability_key = 'human.task.create'
+     WHERE run.organization_id = $2
+       AND COALESCE(run.output #>> '{output,taskId}', run.output->>'taskId') = $1
+     FOR UPDATE OF run`,
     [sourceId, input.organizationId],
   )
   const task = selected.rows[0]
   if (!task) throw domainError(404, 'work_item_not_found')
   assertAssignment(context, task.assigned_to)
-  if (['completed', 'cancelled'].includes(task.status)) throw domainError(409, 'work_item_already_resolved')
-  assertVersion(task.version, input.expectedVersion)
-  const selectedAction = await client.query<{ action_id: string; status: string; updated_at: string | Date }>(
-    `SELECT run.id AS action_id, run.status, run.updated_at
-     FROM public.action_runs run
-     JOIN public.action_plan_steps step ON step.id = run.plan_step_id AND step.capability_key = 'human.task.create'
-     WHERE run.organization_id = $1 AND run.mission_id = $2 AND run.idempotency_key = $3
-     FOR UPDATE OF run`,
-    [input.organizationId, task.mission_id, task.idempotency_key],
-  )
-  const action = selectedAction.rows[0]
-  if (!action) throw domainError(409, 'work_item_action_not_found')
-  if (action.status !== 'running') throw domainError(409, 'work_item_already_resolved')
+  if (task.status !== 'running') throw domainError(409, 'work_item_already_resolved')
+  assertVersion(task.updated_at, input.expectedVersion)
   const result = await resolveHumanTaskInTransaction(client, {
-    actionId: action.action_id,
+    actionId: task.action_id,
     organizationId: input.organizationId,
     actualMinutes: input.minutesSpent,
     actorId: context.userId,
     result: input.evidence,
-    expectedVersion: toIso(action.updated_at),
+    expectedVersion: input.expectedVersion,
   })
-  const version = await client.query<{ updated_at: string | Date }>('SELECT updated_at FROM public.action_runs WHERE id = $1', [action.action_id])
+  const version = await client.query<{ updated_at: string | Date }>('SELECT updated_at FROM public.action_runs WHERE id = $1', [task.action_id])
   return {
     item: { sourceType: 'mission_human_task' as const, sourceId, status: 'completed', organizationId: input.organizationId, version: toIso(version.rows[0]!.updated_at) },
     missionId: result.missionId,
