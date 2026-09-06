@@ -24,7 +24,11 @@ it('executa consultas de grants e checkpoints sem usar alias reservado', async (
   const actor = (await pool.query<{ id: string }>(
     `SELECT id FROM public.app_users WHERE email='admin-a@integration.test'`,
   )).rows[0].id
-  const now = new Date('2026-09-05T18:00:00.000Z')
+  const now = new Date()
+  const activeStart = new Date(now.getTime() - 60 * 60 * 1_000).toISOString()
+  const activeEnd = new Date(now.getTime() + 24 * 60 * 60 * 1_000).toISOString()
+  const expiredStart = new Date(now.getTime() - 48 * 60 * 60 * 1_000).toISOString()
+  const expiredEnd = new Date(now.getTime() - 24 * 60 * 60 * 1_000).toISOString()
 
   expect(await getAutonomyGrant(pool, '90000000-0000-4000-8000-000000000099', rig.ids.organizationA)).toBeNull()
 
@@ -38,17 +42,18 @@ it('executa consultas de grants e checkpoints sem usar alias reservado', async (
     maxTotalCostBrl: '100',
     maxHumanHours: '1',
     maxExternalContacts: 0,
-    expiresAt: '2026-09-06T18:00:00.000Z',
+    expiresAt: activeEnd,
     alwaysRequireApprovalFor: [],
   }
   await pool.query(
     `INSERT INTO public.action_autonomy_grants
        (id,organization_id,mission_id,grant_version,mission_version,envelope,envelope_hash,starts_at,expires_at,requested_by)
      VALUES
-       ($1,$4,$5,1,1,$6,repeat('a',64),'2026-09-05T17:00:00Z','2026-09-06T18:00:00Z',$7),
-       ($2,$4,$5,2,1,$6,repeat('b',64),'2026-09-01T00:00:00Z','2026-09-02T00:00:00Z',$7),
-       ($3,$4,$5,3,1,$6,repeat('c',64),'2026-09-05T17:00:00Z','2026-09-06T18:00:00Z',$7)`,
-    [activeId, expiredId, revokedId, rig.ids.organizationA, rig.ids.missionA, envelope, actor],
+       ($1,$4,$5,1,1,$6,repeat('a',64),$8,$9,$7),
+       ($2,$4,$5,2,1,$6,repeat('b',64),$10,$11,$7),
+       ($3,$4,$5,3,1,$6,repeat('c',64),$8,$9,$7)`,
+    [activeId, expiredId, revokedId, rig.ids.organizationA, rig.ids.missionA, envelope, actor,
+      activeStart, activeEnd, expiredStart, expiredEnd],
   )
   await pool.query(
     `INSERT INTO public.action_autonomy_grant_events

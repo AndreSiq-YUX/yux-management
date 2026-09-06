@@ -211,6 +211,7 @@ it('percorre planejamento, refresh, revisão, nova versão e publicação contro
     }
     if (created) {
       await rig.sql(`DELETE FROM public.marketing_content_generation_runs WHERE content_item_id=$1`, [created.contentId])
+      await rig.sql(`DELETE FROM public.content_reviews WHERE content_item_id=$1`, [created.contentId])
       await rig.sql(`DELETE FROM public.content_items WHERE id=$1`, [created.contentId])
       await rig.sql(`DELETE FROM public.campaigns WHERE id=$1`, [created.campaignId])
       await rig.sql(`DELETE FROM public.marketing_workflow_runs WHERE id=$1`, [created.workflowRunId])
