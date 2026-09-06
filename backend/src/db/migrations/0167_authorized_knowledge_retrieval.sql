@@ -70,12 +70,31 @@ CREATE POLICY knowledge_publication_items_write ON public.knowledge_publication_
 GRANT SELECT,INSERT ON public.yux_strategy_release_items,public.knowledge_publication_items TO yux_api,yux_worker;
 GRANT SELECT ON public.yux_strategy_release_items,public.knowledge_publication_items TO yux_runtime;
 
+CREATE OR REPLACE FUNCTION private.strategy_card_search_text(
+  concept TEXT,
+  category TEXT,
+  problem_solved TEXT,
+  decision_rules TEXT[],
+  recommended_actions TEXT[],
+  retrieval_tags TEXT[]
+)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path=''
+AS $$
+  SELECT COALESCE(concept,'') || ' ' || COALESCE(category,'') || ' ' || COALESCE(problem_solved,'') || ' ' ||
+         array_to_string(COALESCE(decision_rules,'{}'),' ') || ' ' ||
+         array_to_string(COALESCE(recommended_actions,'{}'),' ') || ' ' ||
+         array_to_string(COALESCE(retrieval_tags,'{}'),' ')
+$$;
+REVOKE ALL ON FUNCTION private.strategy_card_search_text(TEXT,TEXT,TEXT,TEXT[],TEXT[],TEXT[]) FROM PUBLIC;
+
 CREATE INDEX IF NOT EXISTS yux_strategy_cards_published_fts_idx
   ON public.yux_strategy_concept_cards USING GIN (
-    to_tsvector('portuguese',
-      COALESCE(concept,'') || ' ' || COALESCE(category,'') || ' ' || COALESCE(problem_solved,'') || ' ' ||
-      array_to_string(decision_rules,' ') || ' ' || array_to_string(recommended_actions,' ') || ' ' ||
-      array_to_string(retrieval_tags,' '))
+    to_tsvector('portuguese',private.strategy_card_search_text(
+      concept,category,problem_solved,decision_rules,recommended_actions,retrieval_tags))
   )
   WHERE pack_release_id IS NOT NULL AND human_review_status='approved';
 
@@ -200,9 +219,8 @@ BEGIN
       embedding.content_hash AS source_content_hash,
       CASE WHEN release.visibility='client_safe' THEN 'quotable' ELSE 'internal_reasoning' END::TEXT AS use_mode,
       ts_rank_cd(
-        to_tsvector('portuguese',COALESCE(card.concept,'') || ' ' || COALESCE(card.category,'') || ' ' ||
-          COALESCE(card.problem_solved,'') || ' ' || array_to_string(card.decision_rules,' ') || ' ' ||
-          array_to_string(card.recommended_actions,' ') || ' ' || array_to_string(card.retrieval_tags,' ')),
+        to_tsvector('portuguese',private.strategy_card_search_text(
+          card.concept,card.category,card.problem_solved,card.decision_rules,card.recommended_actions,card.retrieval_tags)),
         search.terms
       )::DOUBLE PRECISION AS lexical_score,
       private.jsonb_cosine_similarity(embedding.embedding_values,target_query_embedding) AS vector_score,
