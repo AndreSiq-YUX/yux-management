@@ -202,7 +202,7 @@ async function blockWhatsAppIntent(
   await pool.query(
     `UPDATE public.messages
         SET delivery_status = 'failed',
-            metadata = metadata || jsonb_build_object('dispatchBlockedReason', $2),
+            metadata = metadata || jsonb_build_object('dispatchBlockedReason', $2::text),
             updated_at = NOW()
       WHERE id = $1`,
     [messageId, reason],
@@ -215,7 +215,7 @@ async function recordBlockedExecution(pool: Pick<pg.Pool, 'query'>, executionId:
   await pool.query(
     `UPDATE public.automation_executions
         SET last_error = $2,
-            payload = payload || jsonb_build_object('deliveryStatus', 'blocked', 'deliveryBlockedReason', $3)
+            payload = payload || jsonb_build_object('deliveryStatus', 'blocked', 'deliveryBlockedReason', $3::text)
       WHERE id = $1`,
     [executionId, `delivery_blocked:${reason}`, reason],
   )
