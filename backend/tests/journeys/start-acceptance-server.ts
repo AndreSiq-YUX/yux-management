@@ -62,9 +62,9 @@ async function seedAcceptanceRecords() {
   )
   await rig.sql(
     `INSERT INTO public.crm_instance_members (crm_instance_id,user_id,role,status,display_name,email)
-     SELECT id,$2,'admin','active','Admin A','admin-a@integration.test'
+     SELECT id,$2,'client_admin','active','Admin A','admin-a@integration.test'
        FROM public.crm_instances WHERE contract_id=$1
-     ON CONFLICT (crm_instance_id,user_id) DO UPDATE SET role='admin',status='active',updated_at=NOW()`,
+     ON CONFLICT (crm_instance_id,user_id) DO UPDATE SET role='client_admin',status='active',updated_at=NOW()`,
     [fixtureIds.contractA, fixtureUsers.client_admin_A.id],
   )
   await rig.sql(
