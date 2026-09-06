@@ -718,7 +718,8 @@ export async function attachCuratedKnowledgeEmbeddings(pool: pg.Pool, input: {
 }
 
 export async function getKnowledgeProcessing(pool: pg.Pool, documentId: string) {
-  const [run, chunks] = await Promise.all([
+  const [document, run, chunks] = await Promise.all([
+    getKnowledgeDocument(pool, documentId),
     pool.query<Row>('SELECT * FROM public.knowledge_intelligence_runs WHERE document_id = $1 ORDER BY created_at DESC LIMIT 1', [documentId]),
     pool.query<Row>(
       `SELECT id, chunk_kind, title, body, source_locator, evidence_excerpt,
@@ -730,6 +731,7 @@ export async function getKnowledgeProcessing(pool: pg.Pool, documentId: string) 
     ),
   ])
   return {
+    document,
     run: run.rows[0] ? mapIntelligenceRun(run.rows[0]) : null,
     chunks: chunks.rows.map(row => ({
       id: row.id, chunkKind: row.chunk_kind, title: row.title || undefined, body: row.body,

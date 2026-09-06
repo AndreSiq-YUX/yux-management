@@ -152,6 +152,7 @@ export interface CuratedKnowledgeChunk {
 }
 
 export interface KnowledgeProcessingResult {
+  document: CompanyKnowledgeDocument
   run: KnowledgeIntelligenceRun | null
   chunks: CuratedKnowledgeChunk[]
 }
