@@ -41,9 +41,9 @@ it('classifica, aplica em lote pequeno e repete o mesmo manifesto sem duplicar e
 
     await pool.query(`UPDATE public.yux_strategy_ingestion_jobs SET status='awaiting_upload' WHERE id=$1`, [ids.racedIngestionId])
     const first = await applyReconciliationManifest(pool, manifest, {
-      approvedHash: manifest.manifestHash, limit: 20, queue, appliedBy: 'integration-operator',
+      approvedHash: manifest.manifestHash, limit: 5, queue, appliedBy: 'integration-operator',
     })
-    expect(first.status).toBe('applied')
+    expect(first).toMatchObject({ status: 'partially_applied', handled: 5 })
     expect(first.results.find(item => item.id === `strategy_ingestion:${ids.racedIngestionId}`)).toMatchObject({
       status: 'skipped', result: { reason: 'state_or_version_changed' },
     })
@@ -62,6 +62,12 @@ it('classifica, aplica em lote pequeno e repete o mesmo manifesto sem duplicar e
     expect((await pool.query(`SELECT status FROM public.agent_execution_runs WHERE id=$1`, [ids.agentRunId])).rows[0]?.status).toBe('failed')
     expect((await pool.query(`SELECT status FROM public.action_mission_conversations WHERE id=$1`, [ids.conversationId])).rows[0]?.status).toBe('awaiting_user')
     expect((await pool.query(`SELECT status FROM public.action_missions WHERE id=$1`, [ids.missionId])).rows[0]?.status).toBe('cancelled')
+    expect(queue.enqueued.map(job => job.name)).toEqual(['company-intelligence.indexKnowledge'])
+
+    const continued = await applyReconciliationManifest(pool, manifest, {
+      approvedHash: manifest.manifestHash, limit: 20, queue, appliedBy: 'integration-operator',
+    })
+    expect(continued).toMatchObject({ status: 'applied', handled: manifest.items.length - 5 })
     expect(queue.enqueued.map(job => job.name)).toEqual(['company-intelligence.indexKnowledge','action-engine.generateLearning'])
 
     const audit = await pool.query(
