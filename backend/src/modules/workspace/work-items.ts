@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { runWithDatabaseRequestContext } from '../../db/request-context.js'
 import { requireMembership } from '../../http/guards.js'
 import type { RequestContext } from '../../http/request-context.js'
 import { resolveHumanTaskInTransaction } from '../action-engine/executor.js'
@@ -120,7 +121,12 @@ export async function registerWorkspaceWorkItemRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_work_item_query' })
     const context = requireMembership(request, parsed.data.organizationId)
     try {
-      return { items: await listWorkItems(app.pg, context, parsed.data) }
+      return {
+        items: await runWithDatabaseRequestContext(
+          { role: context.role, organizationIds: [parsed.data.organizationId], serviceRole: 'api' },
+          () => listWorkItems(app.pg, context, parsed.data),
+        ),
+      }
     } catch (error) {
       return sendError(reply, error)
     }
@@ -131,19 +137,24 @@ export async function registerWorkspaceWorkItemRoutes(app: FastifyInstance) {
     const body = completionSchema.safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_work_item_completion' })
     const context = requireMembership(request, body.data.organizationId)
-    const client = await app.pg.connect()
-    try {
-      await client.query('BEGIN')
-      const result = await completeWorkItem(client, context, params.data.sourceType, params.data.sourceId, body.data)
-      await client.query('COMMIT')
-      if (result.missionId) await app.jobQueue.add('action-engine.scheduleReadyActions', { missionId: result.missionId })
-      return result.item
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined)
-      return sendError(reply, error)
-    } finally {
-      client.release()
-    }
+    return runWithDatabaseRequestContext(
+      { role: context.role, organizationIds: [body.data.organizationId], serviceRole: 'api' },
+      async () => {
+        const client = await app.pg.connect()
+        try {
+          await client.query('BEGIN')
+          const result = await completeWorkItem(client, context, params.data.sourceType, params.data.sourceId, body.data)
+          await client.query('COMMIT')
+          if (result.missionId) await app.jobQueue.add('action-engine.scheduleReadyActions', { missionId: result.missionId })
+          return result.item
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => undefined)
+          return sendError(reply, error)
+        } finally {
+          client.release()
+        }
+      },
+    )
   })
 }
 
