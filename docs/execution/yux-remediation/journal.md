@@ -341,3 +341,24 @@ frontend tests: PASS, 528 PASS
 - Verificação local: 654 testes backend e 549 frontend aprovados; type-checks e builds também aprovados. O ambiente local não possui Docker, por isso a jornada PostgreSQL/Redis foi fechada no runner isolado.
 - Aceite persistente: execução GitHub Actions `34048715613`, commit `55cd982`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration. O cenário comprovou refresh, simulação sem efeito, versão imutável, execução, pausa, duplicação, grafo inválido recuperável e isolamento entre duas organizações.
 - Retorno seguro: desativar os comandos de criação/ativação mantém consulta, versões e execuções históricas intactas; nenhuma reversão exige reativar um fluxo anterior.
+
+## T26 — Marketing Studio operacional de ponta a ponta
+
+- Estado: aceita.
+- Commit principal: `6bdf3d2`; isolamento e estabilização dos testes persistentes: `c766c02` e `c9b277c`.
+- Jornada: resumo, campanhas, conteúdos, aprovações, calendário, conexões e execuções exibem registros reais. Planejamento usa entradas persistidas; conteúdo conserva versões e revisão; publicação usa exatamente a versão imutável aprovada.
+- Efeito externo: a intenção idempotente é registrada antes do provedor. Sucesso conserva URL e identidade remotas; falha fica em estado seguro e auditável, sem declarar publicação. Organização, contrato, papel e conexão ativa são validados pelo backend.
+- Interface: foram removidos números e estados fictícios. O portal apresenta progresso real, próxima ação, falhas recuperáveis e seleção da conexão efetivamente disponível.
+- Verificação local: 654 testes backend e 553 frontend aprovados, além de type-checks, builds e lint direcionado. Datas de concessão do teste de autonomia passaram a ser relativas ao relógio da execução e a limpeza do cenário respeita a imutabilidade das versões aprovadas.
+- Aceite persistente: execução GitHub Actions `34050855278`, commit `c9b277c`, conclusão `success` em Backend, Frontend, Agent Runtime e Backend integration.
+
+## T27 — Biblioteca e onboarding orientados ao próximo passo
+
+- Estado: aceita.
+- Commit: `c7b9a04`.
+- Jornada: acervo empresarial e metodologia estratégica aparecem como áreas distintas e conectadas. O percurso Enviar → Processar → Revisar → Publicar → Ver uso diferencia processamento, revisão, publicação, elegibilidade e uso confirmado, com uma ação primária no próximo passo.
+- Rastreabilidade: cada consulta autorizada recebe registro persistente. A fonte só mostra “Usado por agente” quando existe `queryId` acessível ao papel atual; o diálogo apresenta consulta, perfil, módulo, quantidade de fontes e identidade do rastreio.
+- Governança: publicação continua exigindo curadoria com evidência. Duplicados e conflitos podem ser filtrados, o público é resumido antes da publicação e o progresso pode ser salvo sem preencher título vazio. Sugestões do site nunca sobrescrevem automaticamente valor já confirmado e a aplicação recusa alteração concorrente.
+- Acessibilidade e continuidade: erros relevantes usam anúncio semântico, o painel de contexto recebe foco, fecha por Escape e devolve o foco. O layout foi testado em 390 px e o destino fechado de `CorrectionTargetV1` conserva o retorno à missão ou conversa.
+- Verificação local: 655 testes backend e 559 frontend aprovados, além de type-checks, builds, lint direcionado e checagem de patch.
+- Aceite persistente: execução GitHub Actions `34051548840`, commit `c7b9a04`, conclusão `success` nos quatro jobs, incluindo a prova PostgreSQL/Redis de rastreio e escopo.

@@ -158,3 +158,18 @@
 - Execução: cada evento possui registro canônico antes de entrar na fila. `flow_id + event_id` e a identidade de cada efeito impedem repetição; o runtime carrega a versão ativa fixada e mantém os IDs dos blocos históricos apenas como dados do snapshot, sem depender de linhas mutáveis.
 - Acesso: toda escrita exige `automations.write` na organização explícita do workspace. Membro somente leitura, organização alheia e IDs relacionados a outro tenant não atravessam a fronteira. A rota do portal não inventa organização local nem amplia o papel recebido do servidor.
 - Motivo: tornar o editor utilizável sem transformar posição visual, estado React ou payload do navegador em permissão para executar efeitos externos.
+
+## D-023 — Marketing só publica a versão explicitamente aprovada
+
+- Status: decidida.
+- Estado: plano, conteúdo, versão, revisão, conexão, intenção e execução do provedor são registros persistidos. A interface apenas apresenta e comanda essas entidades; contadores e estados locais não constituem progresso operacional.
+- Publicação: a aprovação fixa versão e hash. A intenção idempotente referencia essa identidade exata e precede a chamada externa; retry não troca o conteúdo nem repete um efeito concluído. O retorno do provedor conserva ID e URL remotos.
+- Falha: erro do provedor termina em estado auditável e recuperável, sem converter a intenção em sucesso. Ausência de conexão ativa bloqueia antes do efeito.
+
+## D-024 — Uso de conhecimento exige rastreio consultável
+
+- Status: decidida.
+- Estado: indexado, pronto para revisão, publicado, elegível e usado são conceitos distintos. “Usado por agente” exige uma consulta persistida cujo conjunto de resultados contém um trecho do documento; publicação isolada não prova consumo.
+- Acesso: o rastreio é cercado pela organização e, para papéis de cliente, exige `portal_safe=true`. Consulta interna não fica acessível por inferência através da listagem da biblioteca.
+- Onboarding: valor já confirmado nunca é selecionado automaticamente. A aplicação compara o valor capturado na sugestão com o valor corrente e recusa concorrência, preservando a alteração mais recente para nova revisão humana.
+- Continuidade: destinos de retorno continuam derivados do mapa fechado de `CorrectionTargetV1` e aceitam apenas identificadores UUID válidos.
