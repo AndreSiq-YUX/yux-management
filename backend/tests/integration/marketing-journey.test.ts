@@ -11,6 +11,8 @@ const encryptionKey = new Uint8Array(32).fill(7)
 it('percorre planejamento, refresh, revisão, nova versão e publicação controlada no Studio', async () => {
   const rig = await createIntegrationRig()
   const pool = new pg.Pool({ connectionString: getIntegrationDatabaseUrl(), max: 4 })
+  let created: { campaignId: string; contentId: string; workflowId: string; workflowRunId: string } | undefined
+  let connectionId: string | undefined
   try {
     const summaryUrl = `/api/marketing-studio/journey/summary?organizationId=${rig.ids.organizationA}&contractId=${rig.ids.contractA}`
     const empty = await rig.request('client_admin_A', 'GET', summaryUrl)
@@ -33,6 +35,7 @@ it('percorre planejamento, refresh, revisão, nova versão e publicação contro
     })
     expect(plan.statusCode).toBe(201)
     expect(plan.body).toMatchObject({ status: 'draft', duplicate: false })
+    created = plan.body
 
     const duplicate = await rig.request('client_admin_A', 'POST', '/api/marketing-studio/journey/plans', {
       organizationId: rig.ids.organizationA,
@@ -111,7 +114,7 @@ it('percorre planejamento, refresh, revisão, nova versão e publicação contro
     await expect(rig.sql(`UPDATE public.content_versions SET body='alterado' WHERE id=$1`, [nextVersion.body.id]))
       .rejects.toThrow('approved_content_version_immutable')
 
-    const connectionId = randomUUID()
+    connectionId = randomUUID()
     await rig.sql(
       `INSERT INTO public.publishing_connections (
          id,organization_id,client_id,contract_id,provider,name,status,site_url,auth_type,provider_asset_id
@@ -202,6 +205,17 @@ it('percorre planejamento, refresh, revisão, nova versão e publicação contro
     )
     expect(crossOrganization.statusCode).toBe(404)
   } finally {
+    if (connectionId) {
+      await rig.sql(`DELETE FROM public.provider_integration_secrets WHERE connection_id=$1`, [connectionId])
+      await rig.sql(`DELETE FROM public.publishing_connections WHERE id=$1`, [connectionId])
+    }
+    if (created) {
+      await rig.sql(`DELETE FROM public.marketing_content_generation_runs WHERE content_item_id=$1`, [created.contentId])
+      await rig.sql(`DELETE FROM public.content_items WHERE id=$1`, [created.contentId])
+      await rig.sql(`DELETE FROM public.campaigns WHERE id=$1`, [created.campaignId])
+      await rig.sql(`DELETE FROM public.marketing_workflow_runs WHERE id=$1`, [created.workflowRunId])
+      await rig.sql(`DELETE FROM public.marketing_workflows WHERE id=$1`, [created.workflowId])
+    }
     await pool.end()
     await rig.close()
   }
