@@ -2,7 +2,9 @@ import { FormEvent, ReactNode, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, CheckCircle2, Database, FileUp, GitBranch, PackageCheck, Plus, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type {
   StrategyAgentProfile,
@@ -16,6 +18,8 @@ import type {
   StrategyPackItem,
   StrategyPackItemInput,
   StrategyPackItemReviewChanges,
+  StrategyPackPublicationInput,
+  StrategyPackPublicationResult,
 } from '@/types/strategyEngine'
 
 const moduleOptions = [
@@ -58,6 +62,7 @@ export function StrategyPacksPanel({
   onSavePack,
   onSaveItem,
   onReviewItem,
+  onPublishPack,
   onCreateJob,
   onSaveBinding,
 }: {
@@ -70,6 +75,7 @@ export function StrategyPacksPanel({
   onSavePack: (input: StrategyPackInput) => Promise<unknown>
   onSaveItem: (input: StrategyPackItemInput) => Promise<unknown>
   onReviewItem: (id: string, status: 'approved' | 'rejected' | 'proposed', reason: string, changes?: StrategyPackItemReviewChanges) => Promise<unknown>
+  onPublishPack: (packId: string, input: StrategyPackPublicationInput) => Promise<StrategyPackPublicationResult>
   onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>
   onSaveBinding: (input: StrategyPackBindingInput) => Promise<unknown>
 }) {
@@ -95,6 +101,7 @@ export function StrategyPacksPanel({
   const [uploadError, setUploadError] = useState('')
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({})
   const [reviewEdits, setReviewEdits] = useState<Record<string, { title: string; principle: string }>>({})
+  const [publicationOpen, setPublicationOpen] = useState(false)
   const [itemForm, setItemForm] = useState({
     itemType: 'concept_card',
     title: '',
@@ -279,7 +286,7 @@ export function StrategyPacksPanel({
                     <span className="rounded-full bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-200">{selectedPack.visibility}</span>
                   </div>
                 </div>
-                <Button variant="outline" onClick={() => onSavePack({ ...selectedPack, packKey: selectedPack.packKey, status: 'published', version: selectedPack.version })}>
+                <Button variant="outline" onClick={() => setPublicationOpen(true)} disabled={!approvedItems.length}>
                   Publicar pack
                 </Button>
               </div>
@@ -460,7 +467,93 @@ export function StrategyPacksPanel({
           </div>
         </section>
       </div>
+      {selectedPack && publicationOpen ? (
+        <StrategyPublicationDialog
+          pack={selectedPack}
+          approvedItems={approvedItems}
+          onClose={() => setPublicationOpen(false)}
+          onPublish={input => onPublishPack(selectedPack.id, input)}
+        />
+      ) : null}
     </div>
+  )
+}
+
+function StrategyPublicationDialog({
+  pack,
+  approvedItems,
+  onClose,
+  onPublish,
+}: {
+  pack: StrategyPack
+  approvedItems: StrategyPackItem[]
+  onClose: () => void
+  onPublish: (input: StrategyPackPublicationInput) => Promise<StrategyPackPublicationResult>
+}) {
+  const [visibility, setVisibility] = useState<'internal_only' | 'client_safe'>(pack.visibility === 'client_safe' ? 'client_safe' : 'internal_only')
+  const [allowed, setAllowed] = useState(pack.allowedAgentProfileKeys.join(', '))
+  const [blocked, setBlocked] = useState(pack.blockedAgentProfileKeys.join(', '))
+  const [selectedIds, setSelectedIds] = useState(() => approvedItems.map(item => item.id))
+  const [publishing, setPublishing] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<StrategyPackPublicationResult | null>(null)
+
+  async function publish() {
+    setPublishing(true)
+    setError('')
+    try {
+      setResult(await onPublish({
+        expectedVersion: pack.governanceVersion,
+        visibility,
+        allowedAgentProfileKeys: splitCsv(allowed),
+        blockedAgentProfileKeys: splitCsv(blocked),
+        approvedItemIds: selectedIds,
+      }))
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : 'Não foi possível publicar o pack.')
+    } finally { setPublishing(false) }
+  }
+
+  return (
+    <Dialog open onOpenChange={open => !open && onClose()}>
+      <DialogContent aria-describedby={undefined} className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader><DialogTitle>Confirmar publicação estratégica</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="strategy-publication-visibility">Público efetivo</Label>
+            <select id="strategy-publication-visibility" className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={visibility} onChange={event => setVisibility(event.target.value as 'internal_only' | 'client_safe')}>
+              <option value="internal_only">Somente equipe interna</option>
+              <option value="client_safe">Permitido no contexto do cliente</option>
+            </select>
+          </div>
+          <div className="space-y-2"><Label htmlFor="strategy-publication-allowed">Perfis permitidos</Label><Input id="strategy-publication-allowed" value={allowed} onChange={event => setAllowed(event.target.value)} /></div>
+          <div className="space-y-2"><Label htmlFor="strategy-publication-blocked">Perfis bloqueados</Label><Input id="strategy-publication-blocked" value={blocked} onChange={event => setBlocked(event.target.value)} /></div>
+          <fieldset className="space-y-2 rounded-md border p-3">
+            <legend className="px-1 text-sm font-semibold">Itens aprovados incluídos</legend>
+            {approvedItems.map(item => (
+              <label key={item.id} className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={selectedIds.includes(item.id)}
+                  onChange={event => setSelectedIds(current => event.target.checked ? [...current, item.id] : current.filter(id => id !== item.id))}
+                />
+                <span><span className="font-medium">{item.title}</span><span className="block text-xs text-gray-500">{item.sourceReference || 'Fonte estruturada anexada à proposta'}</span></span>
+              </label>
+            ))}
+          </fieldset>
+          <p className="rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+            Será publicada a versão confirmada para {visibility === 'internal_only' ? 'a equipe interna' : 'o contexto seguro do cliente'}, com {splitCsv(allowed).length || 'todos os'} perfil(is) permitido(s) e {splitCsv(blocked).length} bloqueado(s).
+          </p>
+          {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+          {result ? <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Publicação v{result.version} salva. Identidade: {result.contentHash.slice(0, 12)}…</p> : null}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>Fechar</Button>
+          <Button type="button" onClick={() => void publish()} disabled={publishing || !selectedIds.length || Boolean(result)}>{publishing ? 'Publicando…' : 'Publicar versão confirmada'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -15,7 +15,7 @@ export type DomainEventEnvelope<TPayload extends Record<string, unknown> = Recor
   schemaVersion: 1
   organizationId: string
   crmInstanceId?: string
-  aggregateType: 'lead' | 'form_submission' | 'task' | 'sequence_enrollment' | 'sequence_execution' | 'email' | 'campaign' | 'mission' | 'mission_action' | 'action_run' | 'approval' | 'channel_webhook_event' | 'unknown'
+  aggregateType: 'lead' | 'form_submission' | 'task' | 'sequence_enrollment' | 'sequence_execution' | 'email' | 'campaign' | 'mission' | 'mission_action' | 'action_run' | 'approval' | 'channel_webhook_event' | 'strategy_pack' | 'knowledge_document' | 'unknown'
   aggregateId: string
   leadId?: string
   correlationId: string

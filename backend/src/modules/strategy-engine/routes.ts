@@ -18,7 +18,12 @@ import { reviewStrategyProposal } from "./curation.js";
 const packParams = z.object({ packId: z.string().uuid() });
 const releaseParams = z.object({ releaseId: z.string().uuid() });
 const publicationBody = z.object({
-  policyVersion: z.string().trim().min(1).max(120),
+  expectedVersion: z.number().int().positive(),
+  visibility: z.enum(['internal_only', 'client_safe']),
+  allowedAgentProfileKeys: z.array(z.string().trim().min(1).max(120)).max(100),
+  blockedAgentProfileKeys: z.array(z.string().trim().min(1).max(120)).max(100),
+  approvedItemIds: z.array(z.string().uuid()).min(1).max(500),
+  policyVersion: z.string().trim().min(1).max(120).default('strategy:v1'),
 });
 const ingestionParams = z.object({ ingestionId: z.string().uuid() });
 const ingestionBody = z.object({
@@ -233,7 +238,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     );
   });
 
-  app.post("/packs/:packId/releases", async (request, reply) => {
+  app.post("/packs/:packId/publications", async (request, reply) => {
     requireInternalRole(request);
     const user = await getAuthenticatedUser(request, reply);
     if (!user) return reply;
@@ -251,11 +256,11 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
       () =>
         publishStrategyPack(app.pg, {
           packId: params.data.packId,
-          policyVersion: body.data.policyVersion,
           publishedBy: user.id,
+          ...body.data,
         }),
     );
-    return reply.code(publication.duplicate ? 200 : 201).send(publication);
+    return reply.code(200).send(publication);
   });
 
   app.get("/releases/:releaseId", async (request, reply) => {
@@ -277,6 +282,20 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     return (
       release ?? reply.code(404).send({ error: "strategy_release_not_found" })
     );
+  });
+
+  app.get("/publications/:releaseId", async (request, reply) => {
+    requireInternalRole(request);
+    const user = await getAuthenticatedUser(request, reply);
+    if (!user) return reply;
+    const params = releaseParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid_strategy_publication" });
+    const context = requireInternalRole(request);
+    const publication = await runWithDatabaseRequestContext(
+      { role: context.role, organizationIds: context.organizationIds, serviceRole: "api" },
+      () => getStrategyRelease(app.pg, params.data.releaseId),
+    );
+    return publication ?? reply.code(404).send({ error: "strategy_publication_not_found" });
   });
 
   app.post("/query", async (request, reply) => {

@@ -34,6 +34,8 @@ import type {
   StrategyPackInput,
   StrategyPackItem,
   StrategyPackItemInput,
+  StrategyPackPublicationInput,
+  StrategyPackPublicationResult,
   StrategyRecommendationInput,
   StrategyRetrievalQuery,
   StrategyWorkflowSpec,
@@ -291,6 +293,9 @@ export function mapStrategyPack(row: DbRow): StrategyPack {
     version: numberOrDefault(row.version, 1),
     targetProfileKeys: stringArray(row.target_profile_keys),
     targetModules: stringArray(row.target_modules),
+    governanceVersion: numberOrDefault(row.governance_version, 1),
+    allowedAgentProfileKeys: stringArray(row.allowed_agent_profile_keys).length ? stringArray(row.allowed_agent_profile_keys) : stringArray(row.target_profile_keys),
+    blockedAgentProfileKeys: stringArray(row.blocked_agent_profile_keys),
     metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata as Record<string, unknown> : {},
     createdAt: stringValue(row.created_at),
     updatedAt: stringValue(row.updated_at),
@@ -754,6 +759,12 @@ export const strategyEngineService = {
       body: { status, reason, changes },
     })
     return mapStrategyPackItem(row)
+  },
+
+  publishStrategyPack(packId: string, input: StrategyPackPublicationInput) {
+    return apiRequest<StrategyPackPublicationResult>(`/strategy-engine/packs/${packId}/publications`, {
+      method: 'POST', body: input,
+    })
   },
 
   async getConversationAssistants(filters: { organizationId?: string } = {}) {

@@ -339,6 +339,9 @@ export interface StrategyPack {
   version: number
   targetProfileKeys: string[]
   targetModules: string[]
+  governanceVersion: number
+  allowedAgentProfileKeys: string[]
+  blockedAgentProfileKeys: string[]
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
@@ -378,6 +381,20 @@ export interface StrategyPackItem {
   payload: Record<string, unknown>
   createdAt: string
   updatedAt: string
+}
+
+export interface StrategyPackPublicationInput {
+  expectedVersion: number
+  visibility: 'internal_only' | 'client_safe'
+  allowedAgentProfileKeys: string[]
+  blockedAgentProfileKeys: string[]
+  approvedItemIds: string[]
+}
+
+export interface StrategyPackPublicationResult {
+  publicationId: string
+  version: number
+  contentHash: string
 }
 
 export interface StrategyPackItemReviewChanges {

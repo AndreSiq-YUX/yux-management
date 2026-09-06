@@ -2,6 +2,8 @@ import type pg from 'pg'
 import { createHash } from 'node:crypto'
 import type { BrandProfileInput, CompanyContextPreview, CompanyProfileInput } from './types.js'
 import type { ExtractedKnowledge } from './text-extraction.js'
+import { recordDomainEvent } from '../events/repository.js'
+import { hashCanonical } from '../action-engine/repository.js'
 
 type Row = Record<string, any>
 type QueryExecutor = Pick<pg.Pool, 'query'>
@@ -770,7 +772,7 @@ export async function markKnowledgeProcessingState(pool: pg.Pool, documentId: st
 export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: string) {
   const result = await pool.query<Row>(
     `SELECT document.*, source.source_type, source.name AS source_name,
-            source.status AS source_status, source.visibility,
+            source.status AS source_status, source.visibility, source.governance_version,
             source.allowed_agent_profile_keys, source.blocked_agent_profile_keys,
             source.mime_type, source.byte_size, source.checksum_sha256,
             source.processing_error, source.metadata AS source_metadata,
@@ -792,7 +794,7 @@ export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: stri
 export async function getKnowledgeDocument(pool: pg.Pool, documentId: string) {
   const result = await pool.query<Row>(
     `SELECT document.*, source.source_type, source.name AS source_name,
-            source.status AS source_status, source.visibility,
+            source.status AS source_status, source.visibility, source.governance_version,
             source.allowed_agent_profile_keys, source.blocked_agent_profile_keys,
             source.mime_type, source.byte_size, source.checksum_sha256,
             source.processing_error, source.metadata AS source_metadata,
@@ -812,84 +814,162 @@ export async function getKnowledgeDocument(pool: pg.Pool, documentId: string) {
 }
 
 export async function updateKnowledgeGovernance(pool: pg.Pool, documentId: string, input: {
+  expectedVersion: number
   title?: string
   documentType?: string
   visibility?: 'internal' | 'external' | 'both'
   allowedAgentProfileKeys?: string[]
   blockedAgentProfileKeys?: string[]
 }) {
-  const current = await getKnowledgeDocument(pool, documentId)
-  await Promise.all([
-    pool.query(
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const current = (await client.query<{ source_id: string; governance_version: number }>(
+      `SELECT document.source_id,source.governance_version
+       FROM public.marketing_knowledge_documents document JOIN public.knowledge_sources source ON source.id=document.source_id
+       WHERE document.id=$1 FOR UPDATE OF document,source`, [documentId],
+    )).rows[0]
+    if (!current) throw domainError(404, 'knowledge_document_not_found')
+    if (Number(current.governance_version) !== input.expectedVersion) throw domainError(409, 'knowledge_governance_version_conflict')
+    await client.query(
       `UPDATE public.knowledge_sources SET
          name = COALESCE($2, name), visibility = COALESCE($3, visibility),
          allowed_agent_profile_keys = COALESCE($4, allowed_agent_profile_keys),
-         blocked_agent_profile_keys = COALESCE($5, blocked_agent_profile_keys), updated_at = NOW()
+         blocked_agent_profile_keys = COALESCE($5, blocked_agent_profile_keys),
+         governance_version=governance_version+1,updated_at = NOW()
        WHERE id = $1`,
-      [current.sourceId, input.title || null, input.visibility || null, input.allowedAgentProfileKeys || null, input.blockedAgentProfileKeys || null],
-    ),
-    pool.query(
+      [current.source_id, input.title || null, input.visibility || null, input.allowedAgentProfileKeys || null, input.blockedAgentProfileKeys || null],
+    )
+    await client.query(
       `UPDATE public.marketing_knowledge_documents SET
          title = COALESCE($2, title), document_type = COALESCE($3, document_type), updated_at = NOW()
        WHERE id = $1`,
       [documentId, input.title || null, input.documentType || null],
-    ),
-  ])
-  return getKnowledgeDocument(pool, documentId)
-}
-
-export async function publishKnowledgeDocument(pool: pg.Pool, documentId: string, reviewerUserId: string, allowDegradedRaw = false) {
-  const current = await getKnowledgeDocument(pool, documentId)
-  if (!current.entryId || current.status !== 'indexed') throw domainError(409, 'knowledge_document_not_ready')
-  const review = await pool.query<{ pending: number; approved: number; curated: number }>(
-    `SELECT
-       COUNT(*) FILTER (WHERE curation_status = 'pending')::int AS pending,
-       COUNT(*) FILTER (WHERE curation_status = 'approved')::int AS approved,
-       COUNT(*)::int AS curated
-     FROM public.marketing_knowledge_chunks
-     WHERE document_id = $1 AND chunk_kind <> 'raw'`,
-    [documentId],
-  )
-  const counts = review.rows[0]
-  if (Number(counts.pending) > 0) throw domainError(409, 'knowledge_review_pending')
-  if (Number(counts.approved) === 0 && !allowDegradedRaw) throw domainError(409, 'knowledge_degraded_confirmation_required')
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
-    if (Number(counts.approved) > 0) {
-      await client.query(
-        `UPDATE public.knowledge_entries entry SET
-           body = curated.body, updated_at = NOW()
-         FROM (
-           SELECT entry_id, STRING_AGG(body, E'\n\n' ORDER BY chunk_index) AS body
-             FROM public.marketing_knowledge_chunks
-            WHERE document_id = $1 AND chunk_kind <> 'raw' AND curation_status = 'approved'
-            GROUP BY entry_id
-         ) curated
-         WHERE entry.id = curated.entry_id AND entry.id = $2`,
-        [documentId, current.entryId],
-      )
-    }
-    await client.query("UPDATE public.knowledge_sources SET status = 'published', updated_at = NOW() WHERE id = $1", [current.sourceId])
-    await client.query(
-      `UPDATE public.knowledge_entries SET status = 'published', reviewer_user_id = $2,
-         reviewed_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [current.entryId, reviewerUserId],
-    )
-    await client.query("UPDATE public.marketing_knowledge_documents SET status = 'published', updated_at = NOW() WHERE id = $1", [documentId])
-    await client.query(
-      `INSERT INTO public.knowledge_publications (organization_id, entry_id, body_snapshot, publisher_user_id)
-       SELECT organization_id, id, body, $2 FROM public.knowledge_entries WHERE id = $1`,
-      [current.entryId, reviewerUserId],
     )
     await client.query('COMMIT')
   } catch (error) {
-    await client.query('ROLLBACK')
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally { client.release() }
+  return getKnowledgeDocument(pool, documentId)
+}
+
+export async function publishKnowledgeDocument(pool: pg.Pool, input: {
+  documentId: string
+  reviewerUserId: string
+  expectedVersion: number
+  visibility: 'internal' | 'external' | 'both'
+  allowedAgentProfileKeys: string[]
+  blockedAgentProfileKeys: string[]
+  approvedItemIds: string[]
+}) {
+  const allowed = uniqueSorted(input.allowedAgentProfileKeys)
+  const blocked = uniqueSorted(input.blockedAgentProfileKeys)
+  const approvedItemIds = uniqueSorted(input.approvedItemIds)
+  if (!approvedItemIds.length) throw domainError(409, 'knowledge_approved_items_required')
+  if (allowed.some(profile => blocked.includes(profile))) throw domainError(409, 'knowledge_profile_rule_conflict')
+  const client = await pool.connect()
+  let publication: { id: string; version: number; contentHash: string }
+  try {
+    await client.query('BEGIN')
+    const current = (await client.query<{
+      id: string; organization_id: string; source_id: string; status: string; governance_version: number
+    }>(
+      `SELECT document.id,document.organization_id,document.source_id,document.status,source.governance_version
+       FROM public.marketing_knowledge_documents document
+       JOIN public.knowledge_sources source ON source.id=document.source_id
+       WHERE document.id=$1 FOR UPDATE OF document,source`,
+      [input.documentId],
+    )).rows[0]
+    if (!current) throw domainError(404, 'knowledge_document_not_found')
+    if (!['indexed', 'published'].includes(current.status)) throw domainError(409, 'knowledge_document_not_ready')
+    if (Number(current.governance_version) !== input.expectedVersion) throw domainError(409, 'knowledge_publication_version_conflict')
+    const entry = (await client.query<{ id: string; title: string; body: string }>(
+      `SELECT id,title,body FROM public.knowledge_entries WHERE source_id=$1 ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`,
+      [current.source_id],
+    )).rows[0]
+    if (!entry) throw domainError(409, 'knowledge_document_not_ready')
+    const chunks = (await client.query<{
+      id: string; body: string; chunk_index: number; source_locator: string | null; evidence_excerpt: string | null; curation_status: string
+    }>(
+      `SELECT id,body,chunk_index,source_locator,evidence_excerpt,curation_status
+       FROM public.marketing_knowledge_chunks WHERE document_id=$1 AND chunk_kind<>'raw' ORDER BY chunk_index,id FOR SHARE`,
+      [input.documentId],
+    )).rows
+    if (chunks.some(chunk => chunk.curation_status === 'pending')) throw domainError(409, 'knowledge_review_pending')
+    const approved = chunks.filter(chunk => approvedItemIds.includes(chunk.id))
+    if (approved.length !== approvedItemIds.length || approved.some(chunk => chunk.curation_status !== 'approved')) {
+      throw domainError(409, 'knowledge_publication_items_not_approved')
+    }
+    const rawText = (await client.query<{ body: string }>(
+      `SELECT body FROM public.marketing_knowledge_chunks WHERE document_id=$1 AND chunk_kind='raw' ORDER BY chunk_index,id`,
+      [input.documentId],
+    )).rows.map(row => row.body).join('\n\n') || entry.body
+    if (approved.some(chunk => !chunk.source_locator || !chunk.evidence_excerpt || !literalEvidenceExists(rawText, chunk.evidence_excerpt))) {
+      throw domainError(409, 'knowledge_publication_evidence_invalid')
+    }
+    const body = approved.map(chunk => chunk.body).join('\n\n')
+    const snapshot = {
+      schemaVersion: 1, body,
+      governance: { visibility: input.visibility, allowedAgentProfileKeys: allowed, blockedAgentProfileKeys: blocked },
+      approvedItems: approved.map(chunk => ({ id: chunk.id, body: chunk.body, sourceLocator: chunk.source_locator, evidenceExcerpt: chunk.evidence_excerpt })),
+    }
+    const contentHash = hashCanonical(snapshot)
+    const version = Number((await client.query<{ version: number }>(
+      `SELECT COALESCE(MAX(version),0)+1 AS version FROM public.knowledge_publications WHERE entry_id=$1`, [entry.id],
+    )).rows[0]?.version || 1)
+    const inserted = (await client.query<{ id: string }>(
+      `INSERT INTO public.knowledge_publications (
+         organization_id,entry_id,body_snapshot,publisher_user_id,version,content_hash,snapshot,
+         visibility,allowed_agent_profile_keys,blocked_agent_profile_keys,approved_item_ids
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11) RETURNING id`,
+      [current.organization_id, entry.id, body, input.reviewerUserId, version, contentHash, JSON.stringify(snapshot),
+        input.visibility, allowed, blocked, approvedItemIds],
+    )).rows[0]!
+    const sourceUpdate = await client.query(
+      `UPDATE public.knowledge_sources SET status='published',visibility=$2,allowed_agent_profile_keys=$3,
+         blocked_agent_profile_keys=$4,current_publication_id=$5,governance_version=governance_version+1,updated_at=NOW()
+       WHERE id=$1 AND governance_version=$6`,
+      [current.source_id, input.visibility, allowed, blocked, inserted.id, input.expectedVersion],
+    )
+    if (sourceUpdate.rowCount !== 1) throw domainError(409, 'knowledge_publication_version_conflict')
+    await client.query(
+      `UPDATE public.knowledge_entries SET body=$2,status='published',reviewer_user_id=$3,
+         reviewed_at=NOW(),updated_at=NOW() WHERE id=$1`,
+      [entry.id, body, input.reviewerUserId],
+    )
+    await client.query(
+      `UPDATE public.marketing_knowledge_documents SET status='published',current_publication_id=$2,updated_at=NOW() WHERE id=$1`,
+      [input.documentId, inserted.id],
+    )
+    await recordDomainEvent(client, {
+      eventType: 'company.knowledge_published', organizationId: current.organization_id,
+      aggregateType: 'knowledge_document', aggregateId: input.documentId,
+      actor: { type: 'user', id: input.reviewerUserId }, correlationId: inserted.id,
+      payload: { publicationId: inserted.id, version, contentHash, visibility: input.visibility,
+        allowedAgentProfileKeys: allowed, blockedAgentProfileKeys: blocked, approvedItemIds },
+    })
+    publication = { id: inserted.id, version, contentHash }
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
     throw error
   } finally {
     client.release()
   }
-  return getKnowledgeDocument(pool, documentId)
+  return { ...(await getKnowledgeDocument(pool, input.documentId)), publicationId: publication!.id, version: publication!.version, contentHash: publication!.contentHash }
+}
+
+function literalEvidenceExists(source: string, excerpt: string) {
+  return normalizeLiteral(source).includes(normalizeLiteral(excerpt))
+}
+
+function normalizeLiteral(value: string) {
+  return value.normalize('NFKC').replace(/\s+/g, ' ').trim()
+}
+
+function uniqueSorted(values: string[]) {
+  return [...new Set(values.map(value => value.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
 }
 
 export async function archiveKnowledgeDocument(pool: pg.Pool, documentId: string) {
@@ -944,6 +1024,8 @@ function mapKnowledgeDocument(row: Row) {
     visibility: row.visibility || 'both',
     allowedAgentProfileKeys: row.allowed_agent_profile_keys || [],
     blockedAgentProfileKeys: row.blocked_agent_profile_keys || [],
+    governanceVersion: Number(row.governance_version || 1),
+    currentPublicationId: row.current_publication_id || undefined,
     storagePath: row.storage_path || undefined,
     sourceUrl: row.source_url || undefined,
     mimeType: row.mime_type || undefined,

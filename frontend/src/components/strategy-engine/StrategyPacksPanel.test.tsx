@@ -18,6 +18,9 @@ const pack = {
   version: 1,
   targetProfileKeys: [],
   targetModules: [],
+  governanceVersion: 3,
+  allowedAgentProfileKeys: ['growth_strategist'],
+  blockedAgentProfileKeys: [],
   metadata: {},
   createdAt: '2026-09-06T00:00:00.000Z',
   updatedAt: '2026-09-06T00:00:00.000Z',
@@ -127,10 +130,35 @@ describe('StrategyPacksPanel upload', () => {
     })
   })
 
+  it('publica exatamente o público, os perfis e os itens confirmados no diálogo', async () => {
+    const item: StrategyPackItem = {
+      id: '10000000-0000-4000-8000-000000000015', packId: pack.id, itemType: 'concept_card', title: 'Princípio aprovado',
+      summary: 'Problema', body: 'Regra', profileKeys: [], stageTags: [], retrievalTags: [], status: 'approved', priority: 100,
+      payload: {}, createdAt: '2026-09-06T00:00:00.000Z', updatedAt: '2026-09-06T00:00:00.000Z',
+    }
+    const onPublishPack = vi.fn(async () => ({ publicationId: '20000000-0000-4000-8000-000000000001', version: 4, contentHash: 'a'.repeat(64) }))
+    await renderPanel(vi.fn(), [item], vi.fn(), onPublishPack)
+    const open = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Publicar pack'))!
+    await act(async () => open.click())
+    const blocked = document.querySelector<HTMLInputElement>('#strategy-publication-blocked')!
+    await act(async () => setInputValue(blocked, 'ai_sdr_comercial_1'))
+    const publish = Array.from(document.querySelectorAll('button')).find(button => button.textContent?.includes('Publicar versão confirmada'))!
+    await act(async () => publish.click())
+    expect(onPublishPack).toHaveBeenCalledWith(pack.id, {
+      expectedVersion: 3,
+      visibility: 'internal_only',
+      allowedAgentProfileKeys: ['growth_strategist'],
+      blockedAgentProfileKeys: ['ai_sdr_comercial_1'],
+      approvedItemIds: [item.id],
+    })
+    expect(document.querySelector('[role="status"]')?.textContent).toContain('Publicação v4 salva')
+  })
+
   async function renderPanel(
     onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>,
     items: StrategyPackItem[] = [],
     onReviewItem = vi.fn(async () => undefined),
+    onPublishPack = vi.fn(async () => ({ publicationId: '', version: 1, contentHash: 'a'.repeat(64) })),
   ) {
     await act(async () => {
       root.render(
@@ -145,6 +173,7 @@ describe('StrategyPacksPanel upload', () => {
             onSavePack={vi.fn()}
             onSaveItem={vi.fn()}
             onReviewItem={onReviewItem}
+            onPublishPack={onPublishPack}
             onCreateJob={onCreateJob}
             onSaveBinding={vi.fn()}
           />

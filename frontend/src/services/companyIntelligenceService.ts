@@ -74,12 +74,20 @@ export const companyIntelligenceService = {
     })
   },
 
-  updateKnowledge(documentId: string, input: Partial<Pick<CompanyKnowledgeDocument, 'title' | 'documentType' | 'visibility' | 'allowedAgentProfileKeys' | 'blockedAgentProfileKeys'>>) {
+  updateKnowledge(documentId: string, input: Partial<Pick<CompanyKnowledgeDocument, 'title' | 'documentType' | 'visibility' | 'allowedAgentProfileKeys' | 'blockedAgentProfileKeys'>> & { expectedVersion: number }) {
     return apiRequest<CompanyKnowledgeDocument>(`/company-intelligence/knowledge/${documentId}`, { method: 'PATCH', body: input })
   },
 
-  publishKnowledge(documentId: string) {
-    return apiRequest<CompanyKnowledgeDocument>(`/company-intelligence/knowledge/${documentId}/publish`, { method: 'POST' })
+  publishKnowledge(documentId: string, input: {
+    expectedVersion: number
+    visibility: CompanyKnowledgeDocument['visibility']
+    allowedAgentProfileKeys: string[]
+    blockedAgentProfileKeys: string[]
+    approvedItemIds: string[]
+  }) {
+    return apiRequest<CompanyKnowledgeDocument & { publicationId: string; version: number; contentHash: string }>(
+      `/company-intelligence/knowledge/${documentId}/publish`, { method: 'POST', body: input },
+    )
   },
 
   archiveKnowledge(documentId: string) {
@@ -92,10 +100,6 @@ export const companyIntelligenceService = {
 
   reviewKnowledgeChunk(documentId: string, chunkId: string, status: 'approved' | 'rejected') {
     return apiRequest(`/company-intelligence/knowledge/${documentId}/chunks/${chunkId}/review`, { method: 'PATCH', body: { status } })
-  },
-
-  publishDegradedKnowledge(documentId: string) {
-    return apiRequest<CompanyKnowledgeDocument>(`/company-intelligence/knowledge/${documentId}/publish`, { method: 'POST', body: { allowDegradedRaw: true } })
   },
 
   startWebsiteOnboarding(organizationId: string, websiteUrl: string, contractId?: string, maxPages = 30) {

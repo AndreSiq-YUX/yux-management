@@ -106,8 +106,15 @@ const fileKnowledgeSchema = knowledgeBase.extend({
 const documentParams = z.object({ documentId: z.string().uuid() })
 const chunkParams = z.object({ documentId: z.string().uuid(), chunkId: z.string().uuid() })
 const reviewChunkSchema = z.object({ status: z.enum(['approved', 'rejected']) })
-const publishKnowledgeSchema = z.object({ allowDegradedRaw: z.boolean().default(false) }).default({ allowDegradedRaw: false })
+const publishKnowledgeSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  visibility,
+  allowedAgentProfileKeys: stringList,
+  blockedAgentProfileKeys: stringList,
+  approvedItemIds: z.array(z.string().uuid()).min(1).max(500),
+})
 const knowledgePatchSchema = z.object({
+  expectedVersion: z.number().int().positive(),
   title: z.string().trim().min(1).max(300).optional(),
   documentType: documentType.optional(),
   visibility: visibility.optional(),
@@ -363,7 +370,11 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     const current = await getKnowledgeDocument(app.pg, params.data.documentId)
     const ctx = requireOrganizationScope(request, current.organizationId)
     assertCanConfigure(ctx.role)
-    return publishKnowledgeDocument(app.pg, params.data.documentId, ctx.userId, body.data.allowDegradedRaw)
+    return publishKnowledgeDocument(app.pg, {
+      documentId: params.data.documentId,
+      reviewerUserId: ctx.userId,
+      ...body.data,
+    })
   })
 
   app.post('/knowledge/:documentId/archive', async (request, reply) => {

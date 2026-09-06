@@ -82,6 +82,8 @@ export interface CompanyKnowledgeDocument {
   visibility: CompanyKnowledgeVisibility
   allowedAgentProfileKeys: string[]
   blockedAgentProfileKeys: string[]
+  governanceVersion: number
+  currentPublicationId?: string
   storagePath?: string
   sourceUrl?: string
   mimeType?: string

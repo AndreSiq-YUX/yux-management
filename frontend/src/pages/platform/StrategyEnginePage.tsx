@@ -223,6 +223,12 @@ export function StrategyEnginePage() {
     await load()
   }
 
+  async function reloadAfterResult<T>(action: () => Promise<T>) {
+    const result = await action()
+    await load()
+    return result
+  }
+
   async function refreshChatSessions() {
     const chatSessions = await strategyEngineService.getStrategyChatSessions()
     setData(current => ({ ...current, chatSessions }))
@@ -327,6 +333,7 @@ export function StrategyEnginePage() {
           onSavePack={input => reloadAfter(() => strategyEngineService.upsertStrategyPack(input))}
           onSaveItem={input => reloadAfter(() => strategyEngineService.upsertStrategyPackItem(input))}
           onReviewItem={(id, status, reason, changes) => reloadAfter(() => strategyEngineService.reviewStrategyPackItem(id, status, reason, changes))}
+          onPublishPack={(packId, input) => reloadAfterResult(() => strategyEngineService.publishStrategyPack(packId, input))}
           onCreateJob={input => reloadAfter(() => strategyEngineService.createStrategyIngestionJob(input))}
           onSaveBinding={input => reloadAfter(() => strategyEngineService.upsertStrategyPackBinding(input))}
         />
