@@ -40,7 +40,8 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T09 | aceita | Leases de outbox/consumidores, fencing por owner/attempt e retomada persistente aprovados na CI |
 | T10 | aceita | Webhook e outbox atômicos, Redis indisponível e replay pós-timeout aprovados na CI |
 | T11 | aceita | Scheduler persiste intenção, adaptadores nativos revalidam consentimento/conexão e recibos atualizam a execução |
-| T12–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T12 | aceita | Registro único cobre todos os JobNames; métricas, agendamento humano e simulação sandbox têm resultados honestos |
+| T13–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -171,3 +172,16 @@ frontend tests: PASS, 528 PASS
 - Recuperação: provider acceptance, falha e recibos `sent/delivered/read/failed` atualizam a mensagem e o payload da execução. O handler de recibo não cria conversa de entrada fictícia.
 - Verificação local: type-check aprovado; 154 arquivos e 626 testes unitários aprovados.
 - Aceite persistente: execução GitHub Actions `34002909940`, commit `802cc8b`, conclusão `success`. `crm-dispatch.test.ts` comprovou dois schedulers concorrentes com Redis interrompido, uma única intenção/evento, retomada com uma chamada ao provedor, ausência de duplicata no segundo tick, recibo Meta assinado e bloqueios sem chamada externa para canal desconectado e opt-out posterior ao agendamento. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T12 — Registro único e lacunas de jobs
+
+- Estado: aceita.
+- Commit: `e75cd5c`.
+- Achado: YUX-11.
+- Reprodução: `provider.syncMetrics`, `omnichannel.requestScheduling` e `omnichannel.simulateChannelEvent` eram aceitos por produtores, mas não tinham handler no worker; o dispatcher era uma cadeia paralela à lista de nomes.
+- Decisão: `jobs/registry.ts` é a fonte executável de schema, handler, classe de fila, timeout e `sandboxOnly` para cada `JobName`. API, worker e rig validam no mesmo registro antes do enqueue; o processor resolve o handler diretamente pelo registro.
+- Métricas: o handler reutiliza o adaptador de anúncios, exige campanha/conexão/referência reais, mantém identidade por coleta, grava run, snapshot, métricas correntes e timestamp de origem. Ausência de configuração retorna `capability_unavailable` antes da fila.
+- Agendamento: sem adaptador de calendário configurado, a solicitação persiste como trabalho humano pendente, com `automaticConfirmation=false`; nenhum job inevitavelmente órfão é aceito e nenhuma reunião é prometida.
+- Simulação: requer papel interno e organização YUX ou contrato com `mission_sandbox`; o resultado vai para `omnichannel_simulation_events` marcado como simulação e não percorre o pipeline de conversas reais. O simulador incompatível foi removido do portal cliente.
+- Verificação local: type-checks backend/frontend aprovados; 154 arquivos e 628 testes backend aprovados; 13 testes frontend afetados aprovados.
+- Aceite persistente: execução GitHub Actions `34003524798`, commit `e75cd5c`, conclusão `success`. `job-registry.test.ts` verificou cobertura integral do registro, coleta pelo servidor de provedor controlado e isolamento da simulação sem alteração nas contagens de conversas/mensagens. Backend, frontend e Agent Runtime também permaneceram aprovados.

@@ -46,3 +46,9 @@
 - Status: decidida.
 - Decisão: cada passo usa `sequence:<enrollmentId>:step:<stepId>` como identidade imutável de execução; email e WhatsApp são materializados como intenções locais na mesma transação do evento de domínio. Somente os handlers nativos fazem a chamada externa, depois de revalidar consentimento, conexão e restrições do canal.
 - Motivo: concorrência e indisponibilidade do Redis não podem duplicar nem perder o efeito, e um aceite do provedor não deve ser confundido com entrega final sem o recibo correspondente.
+
+## D-009 — Registro executável e indisponibilidade honesta de jobs
+
+- Status: decidida.
+- Decisão: um job só pode ser produzido se existir no registro único com schema e handler. Capacidades ainda sem integração automática não usam um job que falhará depois: agendamento vira tarefa humana identificada e simulação fica restrita a um ledger de sandbox sem conexão com conversas reais.
+- Motivo: eliminar sucesso aparente seguido de falha inevitável no worker e impedir que dados sintéticos sejam apresentados como interação de cliente.
