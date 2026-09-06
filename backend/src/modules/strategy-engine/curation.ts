@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type pg from 'pg'
 import type { AppEnv } from '../../config/env.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
+import { hashCanonical } from '../action-engine/repository.js'
 
 const evidenceSchema = z.object({
   documentId: z.string().uuid(),
@@ -83,12 +83,12 @@ export function validateStrategyEvidence(item: StrategyCurationItem, sections: S
 }
 
 export function strategyItemHash(item: StrategyCurationItem) {
-  return createHash('sha256').update(JSON.stringify({
+  return hashCanonical({
     kind: item.kind,
     title: item.title,
     principle: item.principle,
     evidence: item.evidence,
-  })).digest('hex')
+  })
 }
 
 function normalize(value: string) {
