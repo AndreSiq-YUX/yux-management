@@ -69,7 +69,7 @@ def _latest_by(records: list[dict[str, Any]], key: str) -> dict[str, dict[str, A
 @dataclass
 class RuntimeStrategyKnowledgeStore:
     store: AgentRuntimeStore
-    candidate_limit: int = 200
+    candidate_limit: int | None = None
 
     @staticmethod
     def _normalize_profile_access(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -87,7 +87,7 @@ class RuntimeStrategyKnowledgeStore:
             self._normalize_profile_access(
                 self.store.list("yux_strategy_concept_cards", limit=self.candidate_limit)
             ),
-            self.store.list("yux_strategy_card_embeddings", limit=self.candidate_limit * 3),
+            self.store.list("yux_strategy_card_embeddings", limit=None if self.candidate_limit is None else self.candidate_limit * 3),
             "card_id",
         )
 
@@ -96,7 +96,7 @@ class RuntimeStrategyKnowledgeStore:
             self._normalize_profile_access(
                 self.store.list("yux_strategy_source_chunks", limit=self.candidate_limit)
             ),
-            self.store.list("yux_strategy_chunk_embeddings", limit=self.candidate_limit * 3),
+            self.store.list("yux_strategy_chunk_embeddings", limit=None if self.candidate_limit is None else self.candidate_limit * 3),
             "chunk_id",
         )
 
@@ -138,6 +138,12 @@ class RuntimeStrategyKnowledgeStore:
 
     def log_retrieval_query(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.store.insert("yux_strategy_retrieval_queries", payload)
+
+    def search_authorized(self, **kwargs: Any) -> list[dict[str, Any]] | None:
+        searcher = getattr(self.store, "retrieve_authorized_knowledge", None)
+        if not callable(searcher):
+            return None
+        return searcher(namespace="strategy", **kwargs)
 
 
 def _build_agents(profiles: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

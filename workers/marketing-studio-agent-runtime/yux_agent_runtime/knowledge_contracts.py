@@ -37,6 +37,17 @@ class KnowledgeSourceRefV1(StrictContract):
     useMode: Literal["internal_reasoning", "quotable"]
 
 
+class RetrievalResultV1(StrictContract):
+    schemaVersion: Literal[1]
+    status: Literal["ok", "empty", "degraded", "unavailable"]
+    reasonCode: str | None
+    retrievalMode: Literal["hybrid", "lexical", "none"]
+    queryId: UUID
+    sources: list[KnowledgeSourceRefV1]
+    contextHash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    elapsedMs: int = Field(ge=0)
+
+
 def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 

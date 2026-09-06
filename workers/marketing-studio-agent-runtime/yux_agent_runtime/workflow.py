@@ -271,6 +271,12 @@ class StrategyWorkflowEngine:
                 classification = classify_intent_and_stage(message, source)
                 step.succeed(classification, classification)
 
+            supplied_channel = str((retrieval_context or {}).get("delivery_channel") or "").lower() or None
+            requested_audience = (retrieval_context or {}).get("audience")
+            retrieval_audience = requested_audience if requested_audience in ("internal_operator", "client_user", "external_contact") else (
+                "internal_operator" if source == "strategy_admin" else
+                "external_contact" if source in ("whatsapp", "webchat", "instagram", "messenger") else "client_user"
+            )
             retrieved: dict[str, Any] = {}
             if self.retrieval_service is not None:
                 agent = self.agent_profiles.get(profile_key) or {}
@@ -286,21 +292,21 @@ class StrategyWorkflowEngine:
                     include_images=False,
                     portal_safe=False,
                     approved_only=workflow_key == "mission_intake_conversation",
+                    contract_id=contract_id,
+                    audience=retrieval_audience,
+                    module_key="marketing_studio",
+                    workflow_key=workflow_key,
+                    channel=supplied_channel or (source if source in ("whatsapp", "webchat", "instagram", "messenger", "email") else None),
                 )
             company_context: dict[str, Any] = {}
             if self.customer_context_service is not None:
-                supplied_channel = str((retrieval_context or {}).get("delivery_channel") or "").lower()
                 company_context = self.customer_context_service.retrieve(
                     organization_id=organization_id,
                     contract_id=contract_id,
                     profile_key=profile_key,
                     query=message,
                     assistant_id=assistant_id,
-                    external=(
-                        source in ("whatsapp", "webchat", "instagram", "messenger")
-                        or supplied_channel in ("whatsapp", "email", "instagram", "messenger", "webchat")
-                        or (retrieval_context or {}).get("audience") == "client_user"
-                    ),
+                    external=retrieval_audience == "external_contact",
                 )
             supplied = retrieval_context or {}
             if retrieved or company_context or supplied:

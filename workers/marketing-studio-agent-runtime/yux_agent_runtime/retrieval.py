@@ -90,9 +90,7 @@ def _is_visible(record: dict[str, Any], portal_safe: bool) -> bool:
 
 def _is_review_usable(record: dict[str, Any], portal_safe: bool) -> bool:
     status = record.get("human_review_status") or "approved"
-    if portal_safe:
-        return status == "approved"
-    return status in ("approved", "pending", "needs_revision", "")
+    return status == "approved"
 
 
 def _is_profile_allowed(record: dict[str, Any], profile_key: str) -> bool:
@@ -246,18 +244,24 @@ class SupabaseStrategyKnowledgeStore:
     client: Any
     organization_id: str | None = None
     client_id: str | None = None
-    candidate_limit: int = 200
+    candidate_limit: int | None = None
 
     def list_cards(self) -> list[dict[str, Any]]:
-        query = self.client.table("yux_strategy_concept_cards").select("*").limit(self.candidate_limit)
+        query = self.client.table("yux_strategy_concept_cards").select("*")
+        if self.candidate_limit is not None:
+            query = query.limit(self.candidate_limit)
         return (query.execute().data or [])
 
     def list_chunks(self) -> list[dict[str, Any]]:
-        query = self.client.table("yux_strategy_source_chunks").select("*").limit(self.candidate_limit)
+        query = self.client.table("yux_strategy_source_chunks").select("*")
+        if self.candidate_limit is not None:
+            query = query.limit(self.candidate_limit)
         return (query.execute().data or [])
 
     def list_assets(self) -> list[dict[str, Any]]:
-        query = self.client.table("yux_strategy_source_assets").select("*").limit(self.candidate_limit)
+        query = self.client.table("yux_strategy_source_assets").select("*")
+        if self.candidate_limit is not None:
+            query = query.limit(self.candidate_limit)
         return (query.execute().data or [])
 
     def log_retrieval_query(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -287,6 +291,11 @@ class StrategyRetrievalService:
         portal_safe: bool = False,
         query_embedding: list[float] | None = None,
         approved_only: bool = False,
+        contract_id: str | None = None,
+        audience: str = "internal_operator",
+        module_key: str = "marketing_studio",
+        workflow_key: str | None = None,
+        channel: str | None = None,
     ) -> dict[str, Any]:
         clean_query = " ".join(query.split())
         embedding_status = "provided" if query_embedding is not None else "unavailable"
@@ -302,6 +311,63 @@ class StrategyRetrievalService:
             "include_images": include_images,
             "embedding_status": embedding_status,
         }
+
+        authorized_search = getattr(self.store, "search_authorized", None)
+        if callable(authorized_search) and organization_id:
+            authorized = authorized_search(
+                organization_id=organization_id,
+                contract_id=contract_id,
+                profile_key=profile_key,
+                audience=audience,
+                module_key=module_key,
+                workflow_key=workflow_key,
+                channel=channel,
+                query_text=clean_query,
+                match_limit=max(1, min(20, max_cards + max_chunks)),
+                query_embedding=query_embedding,
+                embedding_model=getattr(self.embedding_service, "model", None),
+            )
+            if authorized is not None:
+                cards = [self._authorized_record(item, "card") for item in authorized if item.get("namespace") == "strategy"][:max(0, max_cards)]
+                cards, chunks, assets, context_text = self._apply_context_budget(cards, [], [])
+                result_ids = [str(item["id"]) for item in cards if item.get("id")]
+                status = "succeeded" if result_ids else "empty"
+                log_payload = {
+                    "organization_id": organization_id,
+                    "client_id": client_id,
+                    "profile_key": profile_key,
+                    "query": clean_query,
+                    "intent": intent,
+                    "stage": stage,
+                    "include_images": False,
+                    "portal_safe": audience != "internal_operator",
+                    "embedding_status": embedding_status,
+                    "filters": {**filters, "contract_id": contract_id, "audience": audience, "module_key": module_key, "workflow_key": workflow_key, "channel": channel, "policy": "knowledge:v1"},
+                    "result_card_ids": result_ids,
+                    "result_chunk_ids": [],
+                    "result_asset_ids": [],
+                    "score_metadata": {"card_scores": {str(item["id"]): item["score"] for item in cards if item.get("id")}},
+                    "context_chars": len(context_text),
+                    "status": status,
+                }
+                self.store.log_retrieval_query(log_payload)
+                return {
+                    "profile_key": profile_key,
+                    "query": clean_query,
+                    "intent": intent,
+                    "commercial_stage": stage,
+                    "cards": cards,
+                    "chunks": chunks,
+                    "assets": assets,
+                    "context_text": context_text,
+                    "retrieval_log": {
+                        **log_payload,
+                        "result_ids": result_ids,
+                        "max_context_chars": self.max_context_chars,
+                        "context_hash": sha256(context_text.encode("utf-8")).hexdigest(),
+                        "retrieval_mode": "hybrid" if query_embedding is not None and any(item.get("vector_score") is not None for item in authorized) else "lexical",
+                    },
+                }
 
         tenant_visible = lambda records: self._filter_tenant_records(
             records,
@@ -472,8 +538,39 @@ class StrategyRetrievalService:
             compact["_context"] = _context_for(record_type, record)
             scored.append((sort_key, compact))
 
+        scored.sort(key=lambda item: str(item[1].get("id") or ""))
         scored.sort(key=lambda item: item[0], reverse=True)
         return [record for _, record in scored]
+
+    @staticmethod
+    def _authorized_record(record: dict[str, Any], record_type: str) -> dict[str, Any]:
+        content = _text(record.get("content"))
+        title = content.splitlines()[0][:180] if content else record_type
+        return {
+            "id": record.get("id"),
+            "type": record_type,
+            "title": title,
+            "concept": title,
+            "visibility": "client_safe" if record.get("use_mode") == "quotable" else "internal_only",
+            "source_scope": "organization" if record.get("namespace") == "company" else "strategy",
+            "stage_tags": [],
+            "retrieval_tags": [],
+            "allowed_agent_profile_keys": [],
+            "publication_id": record.get("publication_id"),
+            "item_id": record.get("item_id"),
+            "document_id": record.get("document_id"),
+            "source_locator": record.get("source_locator"),
+            "source_content_hash": record.get("source_content_hash"),
+            "use_mode": record.get("use_mode"),
+            "lexical_score": record.get("lexical_score"),
+            "vector_score": record.get("vector_score"),
+            "score": {
+                "keyword": float(record.get("lexical_score") or 0),
+                "vector": float(record.get("vector_score") or 0),
+                "combined": float(record.get("combined_score") or 0),
+            },
+            "_context": content,
+        }
 
     def _apply_context_budget(
         self,

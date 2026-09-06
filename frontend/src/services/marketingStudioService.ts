@@ -1661,8 +1661,8 @@ export const marketingStudioService = {
   async searchKnowledge(contractId: string, query: string, matchCount = 5) {
     const { data, error } = await marketingStudioDataClient.rpc('match_marketing_knowledge', {
       target_contract_id: contractId,
-      search_query: query,
-      match_count: matchCount,
+      query_text: query,
+      match_limit: matchCount,
     })
     if (error) throw error
     return (data || []).map(mapMarketingKnowledgeMatch)

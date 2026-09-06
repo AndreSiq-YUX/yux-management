@@ -56,22 +56,72 @@ class CustomerContextService:
             item for item in self.store.list("marketing_products_services", {"organization_id": organization_id}, limit=40)
             if item.get("status") == "active"
         ]
+        authorized_search = getattr(self.store, "retrieve_authorized_knowledge", None)
+        if callable(authorized_search):
+            query_embedding = self.embedding_service.embed_query(query) if self.embedding_service is not None else None
+            records = authorized_search(
+                organization_id=organization_id,
+                contract_id=contract_id,
+                profile_key=profile_key,
+                audience="external_contact" if external else "client_user",
+                module_key="marketing_studio",
+                workflow_key=None,
+                channel=None,
+                query_text=query,
+                match_limit=max(1, min(20, self.max_snippets)),
+                query_embedding=query_embedding,
+                embedding_model=getattr(self.embedding_service, "model", None),
+                namespace="company",
+            )
+            context_items = [
+                {
+                    "id": f"company:{item.get('id')}",
+                    "item_id": item.get("item_id"),
+                    "publication_id": item.get("publication_id"),
+                    "document_id": item.get("document_id"),
+                    "section_key": item.get("source_locator") or "knowledge",
+                    "chunk_text": str(item.get("content") or "")[:1600],
+                    "source_scope": "organization",
+                    "source_locator": item.get("source_locator"),
+                    "retrieval_score": item.get("combined_score"),
+                    "source_content_hash": item.get("source_content_hash"),
+                    "use_mode": item.get("use_mode"),
+                }
+                for item in records
+            ]
+            snippets = [item["chunk_text"] for item in context_items if item["chunk_text"]]
+            source_ids = [str(item["document_id"]) for item in context_items if item.get("document_id")]
+            safety_rules = self._assistant_safety_rules(assistant_id)
+            return {
+                "company_profile": self._safe_company(company),
+                "customer_context": self._company_summary(company),
+                "brand_summary": self._brand_summary(brand),
+                "brand_rules": self._brand_rules(brand, safety_rules),
+                "visual_identity": (brand or {}).get("visual_identity") or {},
+                "products": [self._product_summary(item) for item in products[:10]],
+                "product_profiles": [self._safe_product(item) for item in products[:10]],
+                "knowledge_snippets": snippets,
+                "company_chunks": context_items,
+                "company_context_source_ids": source_ids,
+                "brand_profile_id": brand.get("id") if brand else None,
+                "context_coverage": {"company": bool(company), "brand": bool(brand), "products": len(products), "customerKnowledge": len(context_items)},
+            }
         sources = [
-            item for item in self.store.list("knowledge_sources", {"organization_id": organization_id}, limit=300)
+            item for item in self.store.list("knowledge_sources", {"organization_id": organization_id})
             if item.get("status") == "published" and self._source_allowed(item, profile_key, external)
         ]
         source_by_id = {str(item.get("id")): item for item in sources if item.get("id")}
         entries = [
-            item for item in self.store.list("knowledge_entries", {"organization_id": organization_id}, limit=500)
+            item for item in self.store.list("knowledge_entries", {"organization_id": organization_id})
             if item.get("status") in ("approved", "published") and str(item.get("source_id")) in source_by_id
         ]
         documents = [
-            item for item in self.store.list("marketing_knowledge_documents", {"organization_id": organization_id}, limit=300)
+            item for item in self.store.list("marketing_knowledge_documents", {"organization_id": organization_id})
             if item.get("status") == "published" and str(item.get("source_id")) in source_by_id
         ]
         documents_by_id = {str(item.get("id")): item for item in documents if item.get("id")}
         curated_chunks = [
-            item for item in self.store.list("marketing_knowledge_chunks", {"organization_id": organization_id}, limit=500)
+            item for item in self.store.list("marketing_knowledge_chunks", {"organization_id": organization_id})
             if str(item.get("document_id")) in documents_by_id
             and item.get("chunk_kind") in ("curated_fact", "curated_summary")
             and item.get("curation_status") == "approved"

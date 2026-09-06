@@ -90,6 +90,11 @@ export async function publishStrategyPack(pool: pg.Pool, input: StrategyPublicat
       [pack.id, version, contentHash, input.policyVersion, JSON.stringify(snapshot), input.publishedBy,
         input.visibility, allowed, blocked, approvedItemIds],
     )).rows[0]!
+    await client.query(
+      `INSERT INTO public.yux_strategy_release_items(release_id,item_id)
+       SELECT $1,item_id FROM unnest($2::uuid[]) item_id`,
+      [publication.id, approvedItemIds],
+    )
     await projectStrategyRelease(client, {
       releaseId: publication.id, ownerOrganizationId: pack.owner_organization_id, items,
       visibility: input.visibility, allowedAgentProfileKeys: allowed, blockedAgentProfileKeys: blocked,

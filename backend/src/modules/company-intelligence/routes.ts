@@ -28,6 +28,14 @@ import {
   upsertCompanyProfile,
 } from './repository.js'
 import { extractManualKnowledge } from './text-extraction.js'
+import { embedJinaTexts } from './jina-embeddings.js'
+import {
+  auditDraftKnowledge,
+  draftKnowledgeAuditQuerySchema,
+  knowledgeQueryV1Schema,
+  retrieveAuthorizedKnowledge,
+} from './retrieval-policy.js'
+import { loadEnv } from '../../config/env.js'
 
 const organizationParams = z.object({ organizationId: z.string().uuid() })
 const text = z.string().trim().max(20_000).default('')
@@ -133,6 +141,37 @@ const applyWebsiteSuggestionsSchema = z.object({
 })
 
 export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
+  app.post('/knowledge/query', async (request, reply) => {
+    const parsed = knowledgeQueryV1Schema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_knowledge_query_v1' })
+    const ctx = requireOrganizationScope(request, parsed.data.organizationId)
+    if (!['yux_admin', 'yux_operator'].includes(ctx.role) && parsed.data.audience === 'internal_operator') {
+      return reply.code(403).send({ error: 'knowledge_audience_forbidden' })
+    }
+    let queryEmbedding: number[] | undefined
+    let embeddingModel: string | undefined
+    try {
+      const env = loadEnv()
+      if (env.JINA_API_KEY) {
+        const embedded = await embedJinaTexts(env, [parsed.data.queryText], 'retrieval.query')
+        queryEmbedding = embedded.vectors[0]
+        embeddingModel = embedded.model
+      }
+    } catch (error) {
+      request.log.warn({ event: 'knowledge_query_embedding_unavailable', reason: error instanceof Error ? error.message : 'unknown' })
+    }
+    const retrieval = await retrieveAuthorizedKnowledge(app.pg, parsed.data, { queryEmbedding, embeddingModel })
+    return retrieval.result
+  })
+
+  app.post('/knowledge/audit-query', async (request, reply) => {
+    const parsed = draftKnowledgeAuditQuerySchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_draft_knowledge_audit_query' })
+    const ctx = requireOrganizationScope(request, parsed.data.organizationId)
+    assertCanConfigure(ctx.role)
+    return auditDraftKnowledge(app.pg, parsed.data)
+  })
+
   app.get('/organizations/:organizationId/profile', async (request, reply) => {
     const params = organizationParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_organization_id' })

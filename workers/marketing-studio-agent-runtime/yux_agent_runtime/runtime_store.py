@@ -251,6 +251,37 @@ class PostgresAgentRuntimeStore:
             cursor.execute(f"SELECT * FROM public.{table} WHERE {where}{suffix}", values)
             return [self._row(dict(row)) for row in cursor.fetchall()]
 
+    def retrieve_authorized_knowledge(
+        self,
+        *,
+        organization_id: str,
+        contract_id: str | None,
+        profile_key: str,
+        audience: str,
+        module_key: str,
+        workflow_key: str | None,
+        channel: str | None,
+        query_text: str,
+        match_limit: int,
+        query_embedding: list[float] | None = None,
+        embedding_model: str | None = None,
+        namespace: str = "all",
+    ) -> list[dict[str, Any]]:
+        """Run the database policy before ranking; no raw table candidate limit is used."""
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute(
+                """SELECT * FROM private.retrieve_authorized_knowledge_v1(
+                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s
+                   )""",
+                [
+                    organization_id, contract_id, profile_key, audience, module_key,
+                    workflow_key, channel, query_text, match_limit,
+                    json.dumps(query_embedding) if query_embedding is not None else None,
+                    embedding_model, namespace,
+                ],
+            )
+            return [self._row(dict(row)) for row in cursor.fetchall()]
+
     def claim_next_job(self, worker_id: str, queue_name: str) -> dict[str, Any] | None:
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(

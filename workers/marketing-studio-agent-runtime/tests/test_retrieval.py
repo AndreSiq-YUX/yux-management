@@ -309,6 +309,40 @@ class RetrievalTest(unittest.TestCase):
         self.assertEqual(result["cards"][0]["id"], "card-sdr-spin")
         self.assertEqual(result["retrieval_log"]["embedding_status"], "unavailable")
 
+    def test_authorized_database_search_receives_canonical_scope_without_candidate_prefix_limit(self):
+        class AuthorizedStore:
+            def __init__(self):
+                self.calls = []
+                self.logs = []
+
+            def search_authorized(self, **kwargs):
+                self.calls.append(kwargs)
+                return [{
+                    "namespace": "strategy", "id": "card-authorized", "publication_id": "publication-1",
+                    "item_id": "item-1", "document_id": None, "source_locator": "section:9",
+                    "content": "Diagnóstico estratégico publicado", "source_content_hash": "a" * 64,
+                    "use_mode": "internal_reasoning", "lexical_score": 0.9, "vector_score": None,
+                    "combined_score": 0.9,
+                }]
+
+            def log_retrieval_query(self, payload):
+                self.logs.append(payload)
+                return payload
+
+        store = AuthorizedStore()
+        result = StrategyRetrievalService(store).retrieve_strategy_context(
+            profile_key="growth_strategist", organization_id="org-a", client_id="client-a",
+            contract_id="contract-a", audience="client_user", module_key="marketing_studio",
+            workflow_key="campaign", channel="email", intent="diagnosis", stage=None,
+            query="diagnóstico", max_cards=5, max_chunks=2,
+        )
+        self.assertEqual(result["cards"][0]["id"], "card-authorized")
+        self.assertEqual(store.calls[0]["contract_id"], "contract-a")
+        self.assertEqual(store.calls[0]["profile_key"], "growth_strategist")
+        self.assertEqual(store.calls[0]["audience"], "client_user")
+        self.assertEqual(store.calls[0]["match_limit"], 7)
+        self.assertEqual(result["retrieval_log"]["retrieval_mode"], "lexical")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ import { requireAuth, requireMembership } from '../../http/guards.js'
 import { requirePlatformOperation } from '../../http/operation-policy.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
+import { parseLegacyKnowledgeArgs } from '../company-intelligence/retrieval-policy.js'
 
 const allowedTables = new Set([
   'marketing_studio_settings',
@@ -166,18 +167,15 @@ export async function registerMarketingStudioRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_marketing_studio_rpc' })
 
     if (parsed.data.name === 'match_marketing_knowledge') {
-      const args = z.object({
-        target_contract_id: z.string().uuid(),
-        query_text: z.string().max(10_000).default(''),
-        match_limit: z.coerce.number().int().min(1).max(20).default(8),
-      }).safeParse(parsed.data.args)
+      const args = parseLegacyKnowledgeArgs(parsed.data.args)
       if (!args.success) return reply.code(400).send({ error: 'invalid_marketing_knowledge_query' })
-      const organizationId = await getContractOrganizationId(app.pg, args.data.target_contract_id)
+      const organizationId = await getContractOrganizationId(app.pg, args.data.targetContractId)
       if (!organizationId) return reply.code(404).send({ error: 'contract_not_found' })
       requireMembership(request, organizationId)
+      if (args.data.usedLegacyNames) request.log.info({ event: 'legacy_marketing_knowledge_query_names', contractId: args.data.targetContractId })
       const result = await app.pg.query(
         'SELECT * FROM public.match_marketing_knowledge($1, $2, $3)',
-        [args.data.target_contract_id, args.data.query_text, args.data.match_limit],
+        [args.data.targetContractId, args.data.queryText, args.data.matchLimit],
       )
       return { data: result.rows, error: null, count: result.rows.length }
     }

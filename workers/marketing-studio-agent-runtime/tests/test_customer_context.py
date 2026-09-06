@@ -78,6 +78,19 @@ class CustomerContextTest(unittest.TestCase):
         self.assertEqual(result["company_chunks"][0]["id"], "company:chunk-semantic")
         self.assertEqual(result["company_chunks"][0]["source_locator"], "page:4")
 
+    def test_relevant_curated_fact_after_five_hundred_raw_rows_is_not_truncated(self):
+        raw = [
+            {"id": f"raw-{index}", "organization_id": "org-a", "document_id": "doc-a", "chunk_kind": "raw", "curation_status": "not_required", "body": "texto bruto"}
+            for index in range(500)
+        ]
+        relevant = {"id": "relevant-after-raw", "organization_id": "org-a", "document_id": "doc-a", "entry_id": "entry-a", "chunk_kind": "curated_fact", "curation_status": "approved", "body": "Regra única de qualificação consultiva."}
+        self.store.tables["marketing_knowledge_chunks"] = [*raw, relevant]
+        result = CustomerContextService(self.store).retrieve(
+            organization_id="org-a", contract_id="contract-a", profile_key="ai_sdr_comercial_1",
+            query="qualificação consultiva", external=True,
+        )
+        self.assertIn("company:relevant-after-raw", {item["id"] for item in result["company_chunks"]})
+
 
 if __name__ == "__main__":
     unittest.main()
