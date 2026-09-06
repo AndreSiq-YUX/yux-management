@@ -36,14 +36,14 @@ CREATE POLICY worker_heartbeats_worker_write ON public.worker_process_heartbeats
   WITH CHECK (COALESCE(current_setting('app.service_role',TRUE),'')='worker');
 DROP POLICY IF EXISTS worker_heartbeats_internal_read ON public.worker_process_heartbeats;
 CREATE POLICY worker_heartbeats_internal_read ON public.worker_process_heartbeats
-  FOR SELECT USING (private.is_internal_actor());
+  FOR SELECT USING (private.rls_is_internal());
 
 DROP POLICY IF EXISTS provider_usage_service_write ON public.provider_usage_events;
 CREATE POLICY provider_usage_service_write ON public.provider_usage_events
   FOR INSERT WITH CHECK (COALESCE(current_setting('app.service_role',TRUE),'') IN ('worker','runtime'));
 DROP POLICY IF EXISTS provider_usage_internal_read ON public.provider_usage_events;
 CREATE POLICY provider_usage_internal_read ON public.provider_usage_events
-  FOR SELECT USING (private.is_internal_actor());
+  FOR SELECT USING (private.rls_is_internal());
 
 GRANT SELECT ON public.worker_process_heartbeats, public.provider_usage_events TO yux_api;
 GRANT SELECT,INSERT,UPDATE ON public.worker_process_heartbeats TO yux_worker;
