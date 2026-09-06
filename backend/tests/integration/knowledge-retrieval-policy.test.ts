@@ -70,6 +70,16 @@ it('filtra antes de ranquear dez mil trechos e preserva recall, escopo e latênc
     })
     expect(exactThree.body.sources).toHaveLength(3)
     expect(exactThree.body.sources.map((source: any) => source.itemId).sort()).toEqual([...corpus.themeIds[0]].sort())
+    const library = await rig.request('client_member_A', 'GET', `/api/company-intelligence/organizations/${rig.ids.organizationA}/knowledge`)
+    const usedDocument = library.body.find((document: { id: string }) => document.id === corpus.documentId)
+    expect(usedDocument).toMatchObject({ lastUsedQueryId: exactThree.body.queryId })
+    const usageTrace = await rig.request(
+      'client_member_A', 'GET',
+      `/api/company-intelligence/organizations/${rig.ids.organizationA}/knowledge/queries/${exactThree.body.queryId}`,
+    )
+    expect(usageTrace.statusCode).toBe(200)
+    expect(usageTrace.body).toMatchObject({ id: exactThree.body.queryId, profileKey: 'growth_strategist', portalSafe: true })
+    expect(usageTrace.body.resultChunkIds).toEqual(expect.arrayContaining(corpus.themeIds[0]))
 
     const external = await rig.request('client_member_A', 'POST', '/api/company-intelligence/knowledge/query', {
       ...base, audience: 'external_contact', queryText: 'temaazul diagnóstico consultivo',
@@ -180,6 +190,7 @@ async function createLargePublishedCorpus(rig: IntegrationRig) {
     [documentId],
   )
   return {
+    documentId,
     publicationId,
     themeIds: themes.map((_, index) => labeled.rows.slice(index * 3, index * 3 + 3).map(row => row.id as string)),
   }

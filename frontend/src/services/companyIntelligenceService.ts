@@ -6,6 +6,7 @@ import type {
   CompanyKnowledgeBaseInput,
   CompanyKnowledgeDocument,
   KnowledgeProcessingResult,
+  KnowledgeRetrievalTrace,
   CompanyProfile,
   CompanyProfileInput,
   WebsiteOnboardingResult,
@@ -42,6 +43,10 @@ export const companyIntelligenceService = {
 
   listKnowledge(organizationId: string) {
     return apiRequest<CompanyKnowledgeDocument[]>(`/company-intelligence/organizations/${organizationId}/knowledge`)
+  },
+
+  getKnowledgeUsage(organizationId: string, queryId: string) {
+    return apiRequest<KnowledgeRetrievalTrace>(`/company-intelligence/organizations/${organizationId}/knowledge/queries/${queryId}`)
   },
 
   async getKnowledgeUploadLimit(organizationId: string) {

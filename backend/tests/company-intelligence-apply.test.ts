@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { selectSuggestionsForApplication } from '../src/modules/company-intelligence/repository.js'
+import { sameSuggestionValue, selectSuggestionsForApplication } from '../src/modules/company-intelligence/repository.js'
 
 describe('company intelligence suggestion application', () => {
   it('recovers selected suggestions left in a non-suggested status by a partial attempt', () => {
@@ -17,5 +17,11 @@ describe('company intelligence suggestion application', () => {
       { id: 'a', status: 'applied', suggestedValue: 'valor revisado' },
       { id: 'b', status: 'rejected', suggestedValue: 'descartada anteriormente' },
     ])
+  })
+
+  it('detecta alteração posterior sem tratar representações vazias como conflito', () => {
+    expect(sameSuggestionValue('Valor confirmado', 'Valor anterior')).toBe(false)
+    expect(sameSuggestionValue({ colors: ['#000'], logo: '' }, { logo: '', colors: ['#000'] })).toBe(true)
+    expect(sameSuggestionValue('', null)).toBe(true)
   })
 })

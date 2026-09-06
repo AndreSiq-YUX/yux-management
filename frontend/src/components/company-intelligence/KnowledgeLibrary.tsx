@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, CheckCircle2, ExternalLink, FileText, Loader2, Settings2, XCircle } from 'lucide-react'
+import { Activity, Archive, CheckCircle2, ExternalLink, FileText, Loader2, Settings2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { companyIntelligenceService } from '@/services/companyIntelligenceService'
-import type { CompanyKnowledgeDocument, CompanyKnowledgeVisibility, KnowledgeProcessingResult } from '@/types/companyIntelligence'
+import { knowledgeProcessingErrorMessage, labelForKnowledgeState } from '@/lib/company-intelligence/knowledgeState'
+import type { CompanyKnowledgeDocument, CompanyKnowledgeVisibility, KnowledgeProcessingResult, KnowledgeRetrievalTrace } from '@/types/companyIntelligence'
 
 interface KnowledgeLibraryProps {
   documents: CompanyKnowledgeDocument[]
@@ -18,6 +19,7 @@ interface KnowledgeLibraryProps {
 export function KnowledgeLibrary({ documents, loading = false, onChanged }: KnowledgeLibraryProps) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<CompanyKnowledgeDocument | null>(null)
+  const [usageDocument, setUsageDocument] = useState<CompanyKnowledgeDocument | null>(null)
   const filtered = useMemo(() => documents.filter(document => `${document.title} ${document.summary || ''}`.toLowerCase().includes(search.toLowerCase())), [documents, search])
 
   if (loading) return <div className="flex items-center gap-2 rounded-lg border bg-white p-5 text-sm text-gray-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando biblioteca...</div>
@@ -30,12 +32,13 @@ export function KnowledgeLibrary({ documents, loading = false, onChanged }: Know
           <article key={document.id} className="rounded-lg border bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 gap-3"><FileText className="mt-0.5 h-5 w-5 shrink-0 text-yux-700" /><div className="min-w-0"><h3 className="truncate font-semibold text-gray-950">{document.title}</h3><p className="mt-1 text-xs text-gray-500">{label(document.documentType)} · {label(document.sourceType)}</p></div></div>
-              <Status value={document.status} />
+              <Status document={document} />
             </div>
-            {document.processingError ? <p className="mt-3 rounded-md bg-rose-50 p-2 text-xs text-rose-800">Falha na indexação: {document.processingError}</p> : document.summary ? <p className="mt-3 line-clamp-3 text-sm text-gray-600">{document.summary}</p> : null}
+            {document.processingError ? <p role="alert" className="mt-3 rounded-md bg-rose-50 p-2 text-xs text-rose-800">{knowledgeProcessingErrorMessage(document.processingError)}</p> : document.summary ? <p className="mt-3 line-clamp-3 text-sm text-gray-600">{document.summary}</p> : null}
             <div className="mt-3 flex flex-wrap gap-1.5">{downstreamLabels(document).map(item => <span key={item} className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800">{item}</span>)}</div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => setSelected(document)}><Settings2 className="mr-2 h-4 w-4" />Revisar</Button>
+              {document.lastUsedQueryId && <Button size="sm" variant="ghost" onClick={() => setUsageDocument(document)}><Activity className="mr-2 h-4 w-4" />Ver último uso</Button>}
               {document.storagePath && <Button size="sm" variant="ghost" asChild><a href={`/api/company-intelligence/knowledge/${document.id}/file`} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Arquivo</a></Button>}
               {document.status !== 'archived' && <Action label="Arquivar" icon={Archive} variant="ghost" onClick={async () => { if (confirm('Arquivar este conhecimento?')) onChanged(await companyIntelligenceService.archiveKnowledge(document.id)) }} />}
             </div>
@@ -44,6 +47,7 @@ export function KnowledgeLibrary({ documents, loading = false, onChanged }: Know
       </div>
       {!filtered.length && <p className="rounded-lg border bg-white p-6 text-center text-sm text-gray-600">Nenhum conhecimento encontrado.</p>}
       {selected && <KnowledgeSettingsDialog document={selected} onClose={() => setSelected(null)} onChanged={document => { onChanged(document); setSelected(document) }} />}
+      {usageDocument?.lastUsedQueryId && <KnowledgeUsageDialog document={usageDocument} onClose={() => setUsageDocument(null)} />}
     </section>
   )
 }
@@ -58,6 +62,7 @@ function KnowledgeSettingsDialog({ document, onClose, onChanged }: { document: C
   const [processingLoading, setProcessingLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
   const [publicationResult, setPublicationResult] = useState<{ publicationId: string; version: number; contentHash: string } | null>(null)
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'pending' | 'duplicates' | 'conflicts'>('all')
   useEffect(() => {
     companyIntelligenceService.getKnowledgeProcessing(document.id)
       .then(setProcessing)
@@ -67,8 +72,12 @@ function KnowledgeSettingsDialog({ document, onClose, onChanged }: { document: C
   const save = async () => {
     setSaving(true)
     try {
-      onChanged(await companyIntelligenceService.updateKnowledge(document.id, { expectedVersion: document.governanceVersion, title, visibility, allowedAgentProfileKeys: list(allowed), blockedAgentProfileKeys: list(blocked) }))
-      toast.success('Regras de uso atualizadas.')
+      onChanged(await companyIntelligenceService.updateKnowledge(document.id, {
+        expectedVersion: document.governanceVersion,
+        ...(title.trim() ? { title: title.trim() } : {}),
+        visibility, allowedAgentProfileKeys: list(allowed), blockedAgentProfileKeys: list(blocked),
+      }))
+      toast.success('Progresso e regras de uso atualizados.')
     } catch (error) { console.error(error); toast.error('Não foi possível atualizar as regras.') } finally { setSaving(false) }
   }
   const review = async (chunkId: string, status: 'approved' | 'rejected') => {
@@ -100,7 +109,9 @@ function KnowledgeSettingsDialog({ document, onClose, onChanged }: { document: C
   }
   const pending = processing?.chunks.filter(chunk => chunk.curationStatus === 'pending').length || 0
   const approved = processing?.chunks.filter(chunk => chunk.curationStatus === 'approved').length || 0
-  return <Dialog open onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Revisar conhecimento</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="knowledge-review-title">Título</Label><Input id="knowledge-review-title" value={title} onChange={event => setTitle(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="knowledge-review-visibility">Uso permitido</Label><select id="knowledge-review-visibility" className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={visibility} onChange={event => setVisibility(event.target.value as CompanyKnowledgeVisibility)}><option value="both">Interno e externo</option><option value="internal">Somente interno</option><option value="external">Agentes externos</option></select></div><div className="space-y-2"><Label htmlFor="allowed-profiles">Perfis de agente permitidos (opcional)</Label><Input id="allowed-profiles" value={allowed} onChange={event => setAllowed(event.target.value)} placeholder="marketing_strategist, ai_sdr_comercial_1" /></div><div className="space-y-2"><Label htmlFor="blocked-profiles">Perfis bloqueados</Label><Input id="blocked-profiles" value={blocked} onChange={event => setBlocked(event.target.value)} /></div><section className="space-y-3 border-t pt-4"><div><h3 className="font-semibold text-gray-950">Informações preparadas pela IA</h3><p className="text-xs text-gray-600">O texto original é preservado. Aprove apenas as informações precisas que poderão ser usadas pelos agentes.</p></div>{processingLoading && <p className="flex items-center gap-2 text-sm text-gray-600"><Loader2 className="h-4 w-4 animate-spin" />Preparando revisão...</p>}{processing?.run?.status === 'degraded' && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">A preparação ficou parcial: {processing.run.errorMessage || 'a IA ou os embeddings não estavam disponíveis'}. Texto bruto não será publicado; conclua a curadoria com evidência verificável.</p>}{processing?.chunks.map(chunk => <article key={chunk.id} className={`rounded-lg border p-3 ${chunk.curationStatus === 'approved' ? 'border-emerald-200 bg-emerald-50' : chunk.curationStatus === 'rejected' ? 'border-rose-200 bg-rose-50' : 'bg-white'}`}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-gray-950">{chunk.body}</p>{chunk.evidenceExcerpt && <p className="mt-2 rounded bg-gray-50 p-2 text-xs text-gray-600">Evidência: “{chunk.evidenceExcerpt}” {chunk.sourceLocator && `— ${chunk.sourceLocator}`}</p>}</div><div className="flex shrink-0 gap-1"><Button size="sm" variant="outline" aria-label="Aprovar informação" onClick={() => void review(chunk.id, 'approved')}><CheckCircle2 className="h-4 w-4 text-emerald-700" /></Button><Button size="sm" variant="outline" aria-label="Rejeitar informação" onClick={() => void review(chunk.id, 'rejected')}><XCircle className="h-4 w-4 text-rose-700" /></Button></div></div></article>)}{!processingLoading && !processing?.chunks.length && document.bodyPreview && <div className="space-y-2"><Label>Texto original extraído</Label><Textarea readOnly rows={10} value={document.bodyPreview} /></div>}</section>{publicationResult && <div role="status" className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Publicação v{publicationResult.version} salva. Identidade: {publicationResult.contentHash.slice(0, 12)}…</div>}</div><DialogFooter className="gap-2"><Button variant="outline" onClick={onClose}>Fechar</Button><Button variant="outline" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar regras'}</Button>{['indexed', 'published'].includes(document.status) && <Button onClick={publish} disabled={publishing || pending > 0 || approved === 0}>{publishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}{pending > 0 ? `Revisar ${pending} item(ns)` : approved > 0 ? 'Publicar conhecimento aprovado' : 'Aprovação com evidência obrigatória'}</Button>}</DialogFooter></DialogContent></Dialog>
+  const visibleChunks = processing?.chunks.filter(chunk => matchesReviewFilter(chunk, reviewFilter)) ?? []
+  const audienceSummary = visibility === 'internal' ? 'Equipe interna' : visibility === 'external' ? 'Agentes externos' : 'Equipe interna e agentes externos'
+  return <Dialog open onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Revisar conhecimento</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="knowledge-review-title">Título</Label><Input id="knowledge-review-title" value={title} onChange={event => setTitle(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="knowledge-review-visibility">Uso permitido</Label><select id="knowledge-review-visibility" className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={visibility} onChange={event => setVisibility(event.target.value as CompanyKnowledgeVisibility)}><option value="both">Interno e externo</option><option value="internal">Somente interno</option><option value="external">Agentes externos</option></select></div><div className="space-y-2"><Label htmlFor="allowed-profiles">Perfis de agente permitidos (opcional)</Label><Input id="allowed-profiles" value={allowed} onChange={event => setAllowed(event.target.value)} placeholder="marketing_strategist, ai_sdr_comercial_1" /></div><div className="space-y-2"><Label htmlFor="blocked-profiles">Perfis bloqueados</Label><Input id="blocked-profiles" value={blocked} onChange={event => setBlocked(event.target.value)} /></div><section className="space-y-3 border-t pt-4"><div><h3 className="font-semibold text-gray-950">Informações preparadas pela IA</h3><p className="text-xs text-gray-600">O texto original é preservado. Aprove apenas as informações precisas que poderão ser usadas pelos agentes.</p></div><label className="grid gap-1 text-xs font-medium text-gray-700" htmlFor="knowledge-review-filter">Filtrar revisão<select id="knowledge-review-filter" className="h-9 rounded-md border bg-white px-3 text-sm" value={reviewFilter} onChange={event => setReviewFilter(event.target.value as typeof reviewFilter)}><option value="all">Todos os grupos</option><option value="pending">Pendentes</option><option value="duplicates">Possíveis duplicados</option><option value="conflicts">Possíveis conflitos</option></select></label>{processingLoading && <p className="flex items-center gap-2 text-sm text-gray-600"><Loader2 className="h-4 w-4 animate-spin" />Preparando revisão...</p>}{processing?.run?.status === 'degraded' && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">A preparação ficou parcial: {processing.run.errorMessage || 'a IA ou os embeddings não estavam disponíveis'}. Texto bruto não será publicado; conclua a curadoria com evidência verificável.</p>}{visibleChunks.map(chunk => <article key={chunk.id} className={`rounded-lg border p-3 ${chunk.curationStatus === 'approved' ? 'border-emerald-200 bg-emerald-50' : chunk.curationStatus === 'rejected' ? 'border-rose-200 bg-rose-50' : 'bg-white'}`}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-gray-950">{chunk.body}</p>{chunk.evidenceExcerpt && <p className="mt-2 rounded bg-gray-50 p-2 text-xs text-gray-600">Evidência: “{chunk.evidenceExcerpt}” {chunk.sourceLocator && `— ${chunk.sourceLocator}`}</p>}</div><div className="flex shrink-0 gap-1"><Button size="sm" variant="outline" aria-label="Aprovar informação" onClick={() => void review(chunk.id, 'approved')}><CheckCircle2 className="h-4 w-4 text-emerald-700" /></Button><Button size="sm" variant="outline" aria-label="Rejeitar informação" onClick={() => void review(chunk.id, 'rejected')}><XCircle className="h-4 w-4 text-rose-700" /></Button></div></div></article>)}{!processingLoading && !visibleChunks.length && document.bodyPreview && <div className="space-y-2"><Label>Texto original extraído</Label><Textarea readOnly rows={10} value={document.bodyPreview} /></div>}</section><div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-700"><strong>Público desta publicação:</strong> {audienceSummary}. {list(allowed).length ? `Perfis permitidos: ${list(allowed).join(', ')}.` : 'Sem restrição adicional de perfil.'}</div>{publicationResult && <div role="status" className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Publicação v{publicationResult.version} salva. Identidade: {publicationResult.contentHash.slice(0, 12)}…</div>}</div><DialogFooter className="gap-2"><Button variant="outline" onClick={onClose}>Fechar</Button><Button variant="outline" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar progresso'}</Button>{['indexed', 'published'].includes(document.status) && <Button onClick={publish} disabled={publishing || pending > 0 || approved === 0}>{publishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}{pending > 0 ? `Revisar ${pending} item(ns)` : approved > 0 ? 'Publicar conhecimento aprovado' : 'Aprovação com evidência obrigatória'}</Button>}</DialogFooter></DialogContent></Dialog>
 }
 
 function Action({ label: text, icon: Icon, onClick, variant = 'default' }: { label: string; icon: typeof CheckCircle2; onClick: () => Promise<void>; variant?: 'default' | 'ghost' }) {
@@ -108,18 +119,38 @@ function Action({ label: text, icon: Icon, onClick, variant = 'default' }: { lab
   return <Button size="sm" variant={variant} disabled={loading} onClick={async () => { setLoading(true); try { await onClick(); toast.success(text === 'Publicar' ? 'Conhecimento publicado para os agentes.' : 'Conhecimento arquivado.') } catch (error) { console.error(error); toast.error('A ação não pôde ser concluída.') } finally { setLoading(false) } }}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Icon className="mr-2 h-4 w-4" />}{text}</Button>
 }
 
-function Status({ value }: { value: CompanyKnowledgeDocument['status'] }) {
+function Status({ document }: { document: CompanyKnowledgeDocument }) {
   const colors = { draft: 'bg-gray-100 text-gray-700', indexing: 'bg-blue-100 text-blue-800', indexed: 'bg-amber-100 text-amber-800', published: 'bg-emerald-100 text-emerald-800', archived: 'bg-slate-100 text-slate-600' }
-  return <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${colors[value]}`}>{label(value)}</span>
+  return <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${colors[document.status]}`}>{labelForKnowledgeState({ documentStatus: document.status, publicationId: document.currentPublicationId, eligibleProfiles: document.allowedAgentProfileKeys, lastUsedQueryId: document.lastUsedQueryId, processingError: document.processingError })}</span>
 }
 
 function downstreamLabels(document: CompanyKnowledgeDocument) {
-  if (document.status !== 'published') return ['Aguardando publicação']
-  const labels = ['Marketing', 'Automação']
-  if (document.visibility !== 'internal') labels.push('WhatsApp/Atendimento')
-  labels.push('Estratégia')
+  if (document.status !== 'published' || !document.currentPublicationId) return ['Ainda não elegível para agentes']
+  const labels = document.allowedAgentProfileKeys.length
+    ? document.allowedAgentProfileKeys.map(profile => `Elegível: ${profile}`)
+    : ['Elegível: perfis autorizados pela publicação']
+  if (document.lastUsedQueryId) labels.push(`Uso confirmado: ${document.lastUsedQueryId.slice(0, 8)}`)
   return labels
 }
 
+function matchesReviewFilter(chunk: KnowledgeProcessingResult['chunks'][number], filter: 'all' | 'pending' | 'duplicates' | 'conflicts') {
+  if (filter === 'all') return true
+  if (filter === 'pending') return chunk.curationStatus === 'pending'
+  const flags = Array.isArray(chunk.metadata.flags) ? chunk.metadata.flags.map(String) : []
+  if (filter === 'duplicates') return Boolean(chunk.metadata.duplicateOf) || flags.includes('duplicate')
+  return Boolean(chunk.metadata.conflictsWith) || flags.includes('conflict')
+}
+
+function KnowledgeUsageDialog({ document, onClose }: { document: CompanyKnowledgeDocument; onClose: () => void }) {
+  const [trace, setTrace] = useState<KnowledgeRetrievalTrace | null>(null)
+  const [error, setError] = useState(false)
+  useEffect(() => {
+    if (!document.lastUsedQueryId) return
+    companyIntelligenceService.getKnowledgeUsage(document.organizationId, document.lastUsedQueryId)
+      .then(setTrace).catch(() => setError(true))
+  }, [document.lastUsedQueryId, document.organizationId])
+  return <Dialog open onOpenChange={open => !open && onClose()}><DialogContent aria-describedby={undefined}><DialogHeader><DialogTitle>Último uso confirmado</DialogTitle></DialogHeader>{error ? <p role="alert" className="rounded-md bg-rose-50 p-3 text-sm text-rose-800">Este rastreio não está disponível para o seu acesso.</p> : trace ? <div className="space-y-3 text-sm"><p><strong>Consulta:</strong> {trace.query}</p><p><strong>Perfil:</strong> {trace.profileKey}</p><p><strong>Módulo:</strong> {trace.filters.moduleKey || 'não informado'}</p><p><strong>Fontes retornadas:</strong> {trace.scoreMetadata.sourceCount ?? trace.resultChunkIds.length + trace.resultCardIds.length}</p><p className="text-xs text-gray-500">Rastreio {trace.id} · {new Date(trace.createdAt).toLocaleString('pt-BR')}</p></div> : <p className="flex items-center gap-2 text-sm text-gray-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando rastreio...</p>}<DialogFooter><Button variant="outline" onClick={onClose}>Fechar</Button></DialogFooter></DialogContent></Dialog>
+}
+
 function list(value: string) { return value.split(/[,;\n]/).map(item => item.trim()).filter(Boolean) }
-function label(value: string) { return ({ manual: 'Texto', url: 'URL', file: 'Arquivo', brand: 'Marca', product: 'Produto', service: 'Serviço', faq: 'FAQ', case: 'Caso', campaign: 'Campanha', policy: 'Política', other: 'Outro', draft: 'Rascunho', indexing: 'Indexando', indexed: 'Pronto para publicar', published: 'Publicado', archived: 'Arquivado' } as Record<string, string>)[value] || value }
+function label(value: string) { return ({ manual: 'Texto', url: 'URL', file: 'Arquivo', brand: 'Marca', product: 'Produto', service: 'Serviço', faq: 'FAQ', case: 'Caso', campaign: 'Campanha', policy: 'Política', other: 'Outro' } as Record<string, string>)[value] || value }

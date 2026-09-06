@@ -536,6 +536,16 @@ export async function applyCompanyIntelligenceSuggestions(pool: pg.Pool, input: 
     vocabularyDo: [], vocabularyDont: [], forbiddenTopics: [], priorityTopics: [],
     visualIdentity: {}, visualGuidelines: null, complianceNotes: null, status: 'draft',
   }
+  const changedAfterSuggestion = selected.find(suggestion => {
+    if (suggestion.suggestionKind === 'profile' && suggestion.fieldPath in nextProfile) {
+      return !sameSuggestionValue((nextProfile as unknown as Record<string, unknown>)[suggestion.fieldPath], suggestion.currentValue)
+    }
+    if (suggestion.suggestionKind === 'brand' && suggestion.fieldPath in nextBrand) {
+      return !sameSuggestionValue((nextBrand as unknown as Record<string, unknown>)[suggestion.fieldPath], suggestion.currentValue)
+    }
+    return false
+  })
+  if (changedAfterSuggestion) throw domainError(409, 'website_onboarding_confirmed_value_changed')
   let profileChanged = false
   let brandChanged = false
   const products: Array<Record<string, unknown>> = []
@@ -769,7 +779,7 @@ export async function markKnowledgeProcessingState(pool: pg.Pool, documentId: st
   await pool.query('UPDATE public.marketing_knowledge_documents SET status = $2, updated_at = NOW() WHERE id = $1', [documentId, status])
 }
 
-export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: string) {
+export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: string, portalSafeUsageOnly = false) {
   const result = await pool.query<Row>(
     `SELECT document.*, source.source_type, source.name AS source_name,
             source.status AS source_status, source.visibility, source.governance_version,
@@ -777,16 +787,28 @@ export async function listKnowledgeDocuments(pool: pg.Pool, organizationId: stri
             source.mime_type, source.byte_size, source.checksum_sha256,
             source.processing_error, source.metadata AS source_metadata,
             entry.id AS entry_id, entry.status AS entry_status,
-            LEFT(entry.body, 2000) AS body_preview
+            LEFT(entry.body, 2000) AS body_preview,
+            usage.id AS last_used_query_id,usage.created_at AS last_used_at
        FROM public.marketing_knowledge_documents document
        JOIN public.knowledge_sources source ON source.id = document.source_id
        LEFT JOIN LATERAL (
          SELECT id, status, body FROM public.knowledge_entries
           WHERE source_id = source.id ORDER BY updated_at DESC LIMIT 1
        ) entry ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT retrieval.id,retrieval.created_at
+           FROM public.yux_strategy_retrieval_queries retrieval
+          WHERE retrieval.organization_id=document.organization_id
+            AND (NOT $2::boolean OR retrieval.portal_safe=TRUE)
+            AND EXISTS (
+              SELECT 1 FROM public.marketing_knowledge_chunks chunk
+               WHERE chunk.document_id=document.id AND chunk.id=ANY(retrieval.result_chunk_ids)
+            )
+          ORDER BY retrieval.created_at DESC LIMIT 1
+       ) usage ON TRUE
       WHERE document.organization_id = $1
       ORDER BY document.updated_at DESC`,
-    [organizationId],
+    [organizationId, portalSafeUsageOnly],
   )
   return result.rows.map(mapKnowledgeDocument)
 }
@@ -1038,6 +1060,8 @@ function mapKnowledgeDocument(row: Row) {
     summary: row.summary || undefined,
     bodyPreview: row.body_preview || undefined,
     processingError: row.processing_error || undefined,
+    lastUsedQueryId: row.last_used_query_id || undefined,
+    lastUsedAt: row.last_used_at || undefined,
     metadata: row.source_metadata || row.metadata || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1097,6 +1121,23 @@ function normalizeSuggestedValue(kind: string, field: string, value: unknown): u
   if (recordFields.has(field)) return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined
   if (kind === 'product' && field === 'products') return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)).slice(0, 50) : undefined
   return undefined
+}
+
+export function sameSuggestionValue(current: unknown, captured: unknown) {
+  return JSON.stringify(comparableSuggestionValue(current)) === JSON.stringify(comparableSuggestionValue(captured))
+}
+
+function comparableSuggestionValue(value: unknown): unknown {
+  if (value === null || value === undefined || value === '') return null
+  if (Array.isArray(value)) return value.length ? value.map(comparableSuggestionValue) : null
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, comparableSuggestionValue(entry)])
+    return entries.length ? Object.fromEntries(entries) : null
+  }
+  return value
 }
 
 function normalizeVisualIdentity(value: unknown) {

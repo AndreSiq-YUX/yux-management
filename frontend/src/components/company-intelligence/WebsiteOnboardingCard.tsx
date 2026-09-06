@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import { companyIntelligenceService } from '@/services/companyIntelligenceService'
+import { hasValue, shouldSelectByDefault } from '@/lib/company-intelligence/websiteOnboardingRules'
 import type { CompanyIntelligenceSuggestion, WebsiteOnboardingResult } from '@/types/companyIntelligence'
 
 const REVIEWABLE_STATUSES = new Set(['ready_for_review', 'degraded', 'failed'])
@@ -107,7 +108,9 @@ export function WebsiteOnboardingCard({ organizationId, contractId, initialUrl, 
       toast.success('Informações selecionadas aplicadas à empresa.')
     } catch (error) {
       console.error(error)
-      toast.error('Não foi possível aplicar as sugestões.')
+      toast.error(error instanceof Error && error.message.includes('confirmed_value_changed')
+        ? 'Um valor foi alterado depois da análise. Ele foi preservado; revise as sugestões novamente.'
+        : 'Não foi possível aplicar as sugestões.')
     } finally {
       setApplying(false)
     }
@@ -274,8 +277,6 @@ function friendlyRunError(error?: string) {
   if (error?.startsWith('agent_runtime_')) return 'O serviço de IA não conseguiu concluir a extração. Tente novamente; se persistir, verifique a conexão do Agent Harness com o OpenRouter.'
   return error || 'Verifique o endereço e as integrações de IA.'
 }
-export function hasValue(value: unknown) { return value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0) && (typeof value !== 'object' || Array.isArray(value) || Object.keys(value as Record<string, unknown>).length > 0) }
-export function shouldSelectByDefault(item: WebsiteOnboardingResult['suggestions'][number]) { return item.confidence >= (hasValue(item.currentValue) ? 0.9 : 0.75) }
 function groupLabel(kind: 'profile' | 'brand' | 'product') { return ({ profile: 'Perfil da empresa', brand: 'Marca, público e identidade visual', product: 'Produtos e serviços' })[kind] }
 function stageLabel(stage: string) { return ({ queued: 'Aguardando processamento', discovering: 'Encontrando páginas importantes', extracting: 'Lendo informações', curating: 'Organizando conhecimento', embedding: 'Preparando busca inteligente' } as Record<string, string>)[stage] || 'Processando informações' }
 function fieldLabel(field: string) { return ({ legalName: 'Razão social', tradeName: 'Nome da empresa', description: 'Descrição', websiteUrl: 'Site', industry: 'Segmento', positioning: 'Posicionamento', differentiators: 'Diferenciais', emails: 'E-mails', phones: 'Telefones', address: 'Endereço', businessHours: 'Horários', serviceRegions: 'Regiões atendidas', socialLinks: 'Redes sociais', toneOfVoice: 'Tom de voz', persona: 'Público/persona', brandVoiceSummary: 'Resumo da voz', vocabularyDo: 'Vocabulário recomendado', vocabularyDont: 'Vocabulário a evitar', priorityTopics: 'Temas prioritários', visualIdentity: 'Logo, cores e identidade visual', visualGuidelines: 'Orientações visuais', products: 'Ofertas encontradas' } as Record<string, string>)[field] || field }

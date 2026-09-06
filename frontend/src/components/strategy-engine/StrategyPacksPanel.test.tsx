@@ -130,6 +130,24 @@ describe('StrategyPacksPanel upload', () => {
     })
   })
 
+  it('filtra possíveis duplicados e conflitos sem esconder a evidência do grupo', async () => {
+    const baseItem = {
+      packId: pack.id, itemType: 'concept_card', summary: 'Resumo', body: 'Regra', profileKeys: [], stageTags: [],
+      retrievalTags: [], status: 'proposed', priority: 100, createdAt: pack.createdAt, updatedAt: pack.updatedAt,
+    }
+    const duplicate = { ...baseItem, id: '10000000-0000-4000-8000-000000000021', title: 'Item duplicado', payload: { duplicateOf: 'item-anterior', evidence: [{ locator: 'p:1', excerpt: 'evidência duplicada' }] } } satisfies StrategyPackItem
+    const conflict = { ...baseItem, id: '10000000-0000-4000-8000-000000000022', title: 'Item conflitante', payload: { flags: ['conflict'], evidence: [{ locator: 'p:2', excerpt: 'evidência conflitante' }] } } satisfies StrategyPackItem
+    await renderPanel(vi.fn(), [duplicate, conflict])
+    const filter = container.querySelector<HTMLSelectElement>('#strategy-review-group')!
+    await act(async () => setSelectValue(filter, 'duplicates'))
+    expect(container.textContent).toContain('Item duplicado')
+    expect(container.textContent).not.toContain('Item conflitante')
+    expect(container.textContent).toContain('evidência duplicada')
+    await act(async () => setSelectValue(filter, 'conflicts'))
+    expect(container.textContent).toContain('Item conflitante')
+    expect(container.textContent).not.toContain('Item duplicado')
+  })
+
   it('publica exatamente o público, os perfis e os itens confirmados no diálogo', async () => {
     const item: StrategyPackItem = {
       id: '10000000-0000-4000-8000-000000000015', packId: pack.id, itemType: 'concept_card', title: 'Princípio aprovado',
@@ -194,5 +212,11 @@ function setTextareaValue(input: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function setSelectValue(input: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  setter?.call(input, value)
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }

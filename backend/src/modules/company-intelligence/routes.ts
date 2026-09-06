@@ -32,12 +32,15 @@ import { embedJinaTexts } from './jina-embeddings.js'
 import {
   auditDraftKnowledge,
   draftKnowledgeAuditQuerySchema,
+  getAuthorizedKnowledgeRetrievalTrace,
   knowledgeQueryV1Schema,
+  recordAuthorizedKnowledgeRetrieval,
   retrieveAuthorizedKnowledge,
 } from './retrieval-policy.js'
 import { loadEnv } from '../../config/env.js'
 
 const organizationParams = z.object({ organizationId: z.string().uuid() })
+const knowledgeTraceParams = organizationParams.extend({ queryId: z.string().uuid() })
 const text = z.string().trim().max(20_000).default('')
 const optionalText = z.string().trim().max(20_000).nullable().optional()
 const stringList = z.array(z.string().trim().min(1).max(300)).max(100).default([])
@@ -161,6 +164,7 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
       request.log.warn({ event: 'knowledge_query_embedding_unavailable', reason: error instanceof Error ? error.message : 'unknown' })
     }
     const retrieval = await retrieveAuthorizedKnowledge(app.pg, parsed.data, { queryEmbedding, embeddingModel })
+    await recordAuthorizedKnowledgeRetrieval(app.pg, parsed.data, retrieval)
     return retrieval.result
   })
 
@@ -216,8 +220,18 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
   app.get('/organizations/:organizationId/knowledge', async (request, reply) => {
     const params = organizationParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_organization_id' })
-    requireOrganizationScope(request, params.data.organizationId)
-    return listKnowledgeDocuments(app.pg, params.data.organizationId)
+    const ctx = requireOrganizationScope(request, params.data.organizationId)
+    return listKnowledgeDocuments(app.pg, params.data.organizationId, !['yux_admin', 'yux_operator'].includes(ctx.role))
+  })
+
+  app.get('/organizations/:organizationId/knowledge/queries/:queryId', async (request, reply) => {
+    const params = knowledgeTraceParams.safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_knowledge_query_trace' })
+    const ctx = requireOrganizationScope(request, params.data.organizationId)
+    return getAuthorizedKnowledgeRetrievalTrace(app.pg, {
+      ...params.data,
+      portalSafeOnly: !['yux_admin', 'yux_operator'].includes(ctx.role),
+    })
   })
 
   app.get('/organizations/:organizationId/knowledge/upload-limit', async (request, reply) => {

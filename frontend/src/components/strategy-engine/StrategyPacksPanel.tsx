@@ -101,6 +101,7 @@ export function StrategyPacksPanel({
   const [uploadError, setUploadError] = useState('')
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({})
   const [reviewEdits, setReviewEdits] = useState<Record<string, { title: string; principle: string }>>({})
+  const [reviewGroup, setReviewGroup] = useState<'all' | 'duplicates' | 'conflicts'>('all')
   const [publicationOpen, setPublicationOpen] = useState(false)
   const [itemForm, setItemForm] = useState({
     itemType: 'concept_card',
@@ -118,6 +119,7 @@ export function StrategyPacksPanel({
     channel: '',
     workflowKey: '',
   })
+  const visiblePendingItems = pendingItems.filter(item => strategyItemMatchesFilter(item, reviewGroup))
 
   async function submitPack(event: FormEvent) {
     event.preventDefault()
@@ -370,11 +372,16 @@ export function StrategyPacksPanel({
             <Button type="submit" className="mt-3" disabled={!selectedPack}>Enviar para revisao</Button>
           </form>
 
+          <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-white p-4">
+            <div><h2 className="font-semibold text-gray-950">Revisão por grupos</h2><p className="text-sm text-gray-600">Priorize duplicados e conflitos sem perder a evidência original.</p></div>
+            <label className="grid gap-1 text-xs font-medium text-gray-700" htmlFor="strategy-review-group">Grupo<select id="strategy-review-group" className="h-9 rounded-md border bg-white px-3 text-sm" value={reviewGroup} onChange={event => setReviewGroup(event.target.value as typeof reviewGroup)}><option value="all">Todos os pendentes</option><option value="duplicates">Possíveis duplicados</option><option value="conflicts">Possíveis conflitos</option></select></label>
+          </div>
+
           <div className="grid gap-4 xl:grid-cols-2">
             <ListSection
               title="Itens em revisao"
-              empty="Nenhum item pendente."
-              items={pendingItems}
+              empty={reviewGroup === 'all' ? 'Nenhum item pendente.' : 'Nenhum item neste grupo.'}
+              items={visiblePendingItems}
               render={item => (
                 <article key={item.id} className="rounded-md border p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -555,6 +562,13 @@ function StrategyPublicationDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function strategyItemMatchesFilter(item: StrategyPackItem, filter: 'all' | 'duplicates' | 'conflicts') {
+  if (filter === 'all') return true
+  const flags = Array.isArray(item.payload.flags) ? item.payload.flags.map(String) : []
+  if (filter === 'duplicates') return Boolean(item.payload.duplicateOf) || flags.includes('duplicate')
+  return Boolean(item.payload.conflictsWith) || flags.includes('conflict')
 }
 
 function Metric({ label, value, detail }: { label: string; value: number; detail: string }) {

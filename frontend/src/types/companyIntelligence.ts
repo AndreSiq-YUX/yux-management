@@ -92,6 +92,8 @@ export interface CompanyKnowledgeDocument {
   summary?: string
   bodyPreview?: string
   processingError?: string
+  lastUsedQueryId?: string
+  lastUsedAt?: string
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
@@ -157,4 +159,20 @@ export interface KnowledgeProcessingResult {
   document: CompanyKnowledgeDocument
   run: KnowledgeIntelligenceRun | null
   chunks: CuratedKnowledgeChunk[]
+}
+
+export interface KnowledgeRetrievalTrace {
+  id: string
+  organizationId: string
+  contractId?: string
+  profileKey: string
+  query: string
+  intent: string
+  portalSafe: boolean
+  filters: { audience?: string; moduleKey?: string; workflowKey?: string; channel?: string; retrievalMode?: string }
+  resultCardIds: string[]
+  resultChunkIds: string[]
+  scoreMetadata: { sourceCount?: number; elapsedMs?: number; reasonCode?: string }
+  status: 'succeeded' | 'empty' | 'failed'
+  createdAt: string
 }

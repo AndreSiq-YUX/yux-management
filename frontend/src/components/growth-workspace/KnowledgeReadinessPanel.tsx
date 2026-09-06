@@ -3,9 +3,15 @@ import type { ReactNode } from 'react'
 import { summarizeBrandReadiness } from '@/lib/marketing-studio/marketingStudioRules'
 import type { MarketingKnowledgeDocument, MarketingKnowledgeMatch, MarketingProductService } from '@/types/marketingStudio'
 
+type KnowledgeReadinessDocument = MarketingKnowledgeDocument & {
+  currentPublicationId?: string
+  allowedAgentProfileKeys?: string[]
+  lastUsedQueryId?: string
+}
+
 interface KnowledgeReadinessPanelProps {
   profile: Parameters<typeof summarizeBrandReadiness>[0]
-  knowledgeDocuments: MarketingKnowledgeDocument[]
+  knowledgeDocuments: KnowledgeReadinessDocument[]
   productsServices?: MarketingProductService[]
   knowledgeMatches?: MarketingKnowledgeMatch[]
 }
@@ -27,7 +33,10 @@ export function KnowledgeReadinessPanel({
   knowledgeMatches = [],
 }: KnowledgeReadinessPanelProps) {
   const summary = summarizeBrandReadiness(profile, knowledgeDocuments, productsServices)
-  const activeDocuments = knowledgeDocuments.filter(document => ['indexed', 'published'].includes(document.status))
+  const indexedDocuments = knowledgeDocuments.filter(document => document.status === 'indexed')
+  const publishedDocuments = knowledgeDocuments.filter(document => document.status === 'published' && document.currentPublicationId)
+  const eligibleDocuments = publishedDocuments.filter(document => document.allowedAgentProfileKeys?.length)
+  const usedDocuments = publishedDocuments.filter(document => document.lastUsedQueryId)
   const siteReady = summary.checks.find(check => check.key === 'site')?.ready ?? false
   const socialReady = summary.checks.find(check => check.key === 'social')?.ready ?? false
   const activeProducts = productsServices.filter(product => product.status === 'active')
@@ -45,19 +54,25 @@ export function KnowledgeReadinessPanel({
           </p>
         </div>
         <div className="rounded-md bg-yux-50 px-3 py-2 text-sm font-semibold text-yux-800">
-          {activeDocuments.length} fontes ativas
+          {publishedDocuments.length} fontes publicadas
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-4">
-        <ReadinessMetric label="Documentos ativos" value={activeDocuments.length} ready={activeDocuments.length > 0} />
+        <ReadinessMetric label="Prontas para revisão" value={indexedDocuments.length} ready={indexedDocuments.length > 0} />
+        <ReadinessMetric label="Publicadas" value={publishedDocuments.length} ready={publishedDocuments.length > 0} />
+        <ReadinessMetric label="Elegíveis a perfis" value={eligibleDocuments.length} ready={eligibleDocuments.length > 0} />
+        <ReadinessMetric label="Uso confirmado" value={usedDocuments.length} ready={usedDocuments.length > 0} />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
         <ReadinessMetric label="Ofertas estruturadas" value={activeProducts.length} ready={activeProducts.length > 0} />
         <ReadinessMetric label="Site indexado" value={siteReady ? 'Sim' : 'Nao'} ready={siteReady} icon={<Globe2 className="h-4 w-4" />} />
         <ReadinessMetric label="Social" value={socialReady ? 'OK' : 'Pendente'} ready={socialReady} icon={<Share2 className="h-4 w-4" />} />
       </div>
 
       <div className="mt-4">
-        <h3 className="text-sm font-semibold text-slate-950">Alimenta</h3>
+        <h3 className="text-sm font-semibold text-slate-950">Pode alimentar após publicação</h3>
         <div className="mt-2 flex flex-wrap gap-2">
           {consumedBy.map(area => (
             <span key={area} className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{area}</span>

@@ -150,6 +150,50 @@ export async function retrieveAuthorizedKnowledge(
   return { result, candidates, cacheKey: knowledgeRetrievalCacheKey(input, candidates, options.embeddingModel) }
 }
 
+export async function recordAuthorizedKnowledgeRetrieval(
+  pool: Pick<pg.Pool, 'query'>,
+  input: KnowledgeQueryV1,
+  retrieval: AuthorizedKnowledgeRetrieval,
+) {
+  const strategyIds = retrieval.result.sources.filter(source => source.namespace === 'strategy').map(source => source.id)
+  const companyChunkIds = retrieval.result.sources.filter(source => source.namespace === 'company').map(source => source.itemId)
+  await pool.query(
+    `INSERT INTO public.yux_strategy_retrieval_queries (
+       id,organization_id,client_id,contract_id,profile_key,query,intent,stage,portal_safe,filters,
+       result_card_ids,result_chunk_ids,score_metadata,context_chars,status,embedding_status
+     ) SELECT $1,$2,organization.client_id,$3,$4,$5,'authorized_knowledge_v1','retrieval',$6,$7::jsonb,
+              $8::uuid[],$9::uuid[],$10::jsonb,$11,$12,$13
+       FROM public.organizations organization WHERE organization.id=$2`,
+    [retrieval.result.queryId, input.organizationId, input.contractId, input.profileKey, input.queryText,
+      input.audience !== 'internal_operator', JSON.stringify({
+        audience: input.audience, moduleKey: input.moduleKey, workflowKey: input.workflowKey,
+        channel: input.channel, retrievalMode: retrieval.result.retrievalMode, contextHash: retrieval.result.contextHash,
+      }), strategyIds, companyChunkIds, JSON.stringify({
+        sourceCount: retrieval.result.sources.length, elapsedMs: retrieval.result.elapsedMs,
+        reasonCode: retrieval.result.reasonCode,
+      }), retrieval.candidates.reduce((total, candidate) => total + candidate.content.length, 0),
+      retrieval.result.sources.length ? 'succeeded' : 'empty',
+      retrieval.result.retrievalMode === 'hybrid' ? 'available' : 'unavailable'],
+  )
+}
+
+export async function getAuthorizedKnowledgeRetrievalTrace(
+  pool: Pick<pg.Pool, 'query'>,
+  input: { organizationId: string; queryId: string; portalSafeOnly: boolean },
+) {
+  const result = await pool.query(
+    `SELECT id,organization_id AS "organizationId",contract_id AS "contractId",profile_key AS "profileKey",
+            query,intent,portal_safe AS "portalSafe",filters,result_card_ids AS "resultCardIds",
+            result_chunk_ids AS "resultChunkIds",score_metadata AS "scoreMetadata",status,created_at AS "createdAt"
+       FROM public.yux_strategy_retrieval_queries
+      WHERE id=$1 AND organization_id=$2 AND (NOT $3::boolean OR portal_safe=TRUE)
+      LIMIT 1`,
+    [input.queryId, input.organizationId, input.portalSafeOnly],
+  )
+  if (!result.rows[0]) throw Object.assign(new Error('knowledge_retrieval_trace_not_found'), { statusCode: 404 })
+  return result.rows[0]
+}
+
 /** Curator-only inspection. These rows intentionally cannot be converted to RetrievalResultV1. */
 export async function auditDraftKnowledge(
   pool: Pick<pg.Pool, 'query'>,

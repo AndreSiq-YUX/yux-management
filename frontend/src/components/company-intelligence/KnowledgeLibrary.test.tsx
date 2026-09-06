@@ -9,6 +9,7 @@ const service = vi.hoisted(() => ({
   updateKnowledge: vi.fn(),
   reviewKnowledgeChunk: vi.fn(),
   archiveKnowledge: vi.fn(),
+  getKnowledgeUsage: vi.fn(),
 }))
 
 vi.mock('@/services/companyIntelligenceService', () => ({ companyIntelligenceService: service }))
@@ -35,6 +36,7 @@ describe('KnowledgeLibrary publication dialog', () => {
     root = createRoot(container)
     service.getKnowledgeProcessing.mockReset()
     service.publishKnowledge.mockReset()
+    service.getKnowledgeUsage.mockReset()
   })
 
   afterEach(async () => {
@@ -72,6 +74,22 @@ describe('KnowledgeLibrary publication dialog', () => {
     })
     expect(document.querySelector('[role="status"]')?.textContent).toContain('Publicação v2 salva')
     expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('só apresenta uso confirmado quando o rastreio acessível pode ser aberto', async () => {
+    const used = { ...documentFixture, status: 'published' as const, currentPublicationId: 'publication-1', lastUsedQueryId: 'query-1' }
+    service.getKnowledgeUsage.mockResolvedValue({
+      id: 'query-1', organizationId: used.organizationId, profileKey: 'growth_strategist', query: 'política de atendimento',
+      intent: 'authorized_knowledge_v1', portalSafe: true, filters: { moduleKey: 'omnichannel' },
+      resultCardIds: [], resultChunkIds: ['chunk-1'], scoreMetadata: { sourceCount: 1 }, status: 'succeeded', createdAt: used.updatedAt,
+    })
+    await act(async () => root.render(<KnowledgeLibrary documents={[used]} onChanged={vi.fn()} />))
+    expect(container.textContent).toContain('Uso confirmado: query-1')
+    const usage = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Ver último uso'))!
+    await act(async () => { usage.click(); await Promise.resolve() })
+    expect(service.getKnowledgeUsage).toHaveBeenCalledWith(used.organizationId, 'query-1')
+    expect(document.body.textContent).toContain('política de atendimento')
+    expect(document.body.textContent).toContain('omnichannel')
   })
 })
 
