@@ -332,6 +332,12 @@ BEGIN
       AND NOT target_profile_key=ANY(release.blocked_agent_profile_keys)
       AND (cardinality(card.allowed_agent_profile_keys)=0 OR target_profile_key=ANY(card.allowed_agent_profile_keys))
       AND (target_audience='internal_operator' OR release.visibility='client_safe')
+      AND (
+        target_query_embedding IS NOT NULL
+        OR search.terms=''::tsquery
+        OR to_tsvector('portuguese',private.strategy_card_search_text(
+          card.concept,card.category,card.problem_solved,card.decision_rules,card.recommended_actions,card.retrieval_tags)) @@ search.terms
+      )
   ), company_eligible AS (
     SELECT
       'company'::TEXT AS namespace,
@@ -370,6 +376,11 @@ BEGIN
         OR publication.visibility IN ('external','both')
       )
       AND (target_embedding_model IS NULL OR chunk.embedding_model IS NULL OR chunk.embedding_model=target_embedding_model)
+      AND (
+        target_query_embedding IS NOT NULL
+        OR search.terms=''::tsquery
+        OR to_tsvector('portuguese',COALESCE(chunk.title,'') || ' ' || chunk.body) @@ search.terms
+      )
   ), eligible AS (
     SELECT * FROM strategy_eligible WHERE target_namespace IN ('all','strategy')
     UNION ALL
@@ -379,9 +390,7 @@ BEGIN
       CASE WHEN target_query_embedding IS NULL THEN eligible.lexical_score
            ELSE (0.35*eligible.lexical_score)+(0.65*COALESCE(eligible.vector_score,0)) END AS combined_score
     FROM eligible
-    WHERE target_query_embedding IS NOT NULL
-       OR eligible.lexical_score>0
-       OR LOWER(eligible.content) LIKE '%' || LOWER(target_query_text) || '%'
+    WHERE target_query_embedding IS NOT NULL OR eligible.lexical_score>0 OR BTRIM(target_query_text)=''
   )
   SELECT scored.namespace,scored.id,scored.publication_id,scored.item_id,scored.document_id,
          scored.source_locator,scored.content,scored.source_content_hash,scored.use_mode,

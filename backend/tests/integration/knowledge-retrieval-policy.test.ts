@@ -173,6 +173,8 @@ async function createLargePublishedCorpus(rig: IntegrationRig) {
   )
   await rig.sql(`UPDATE public.knowledge_sources SET current_publication_id=$2 WHERE id=$1`, [sourceId, publicationId])
   await rig.sql(`UPDATE public.marketing_knowledge_documents SET current_publication_id=$2 WHERE id=$1`, [documentId, publicationId])
+  await rig.sql(`ANALYZE public.marketing_knowledge_chunks`)
+  await rig.sql(`ANALYZE public.knowledge_publication_items`)
   const labeled = await rig.sql(
     `SELECT id,chunk_index FROM public.marketing_knowledge_chunks WHERE document_id=$1 AND chunk_index<=30 ORDER BY chunk_index`,
     [documentId],
