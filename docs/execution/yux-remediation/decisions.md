@@ -199,3 +199,12 @@
 - Preservação: cancelamento, espera do usuário, falha sem identidade segura e efeito externo desconhecido são decisões de negócio ou do reconciliador do provedor. O comando genérico não reabre missão, não reenvia contato e não repete efeito ambíguo.
 - Auditoria e retorno: identidade e resultado concluído são imutáveis e não podem ser apagados. Recuperação é por entidade e pelo mesmo manifesto; limpar a fila ou sobrepor o banco atual com uma restauração não é estratégia de retorno.
 - Liberação: o ensaio isolado comprova a mecânica, mas produção exige uma restauração recente, recoleta em leitura, relatório de deltas e aprovação do hash efetivamente gerado contra o ambiente real.
+
+## D-028 — Aceitação registra efeitos demonstrados sem somar provas desconectadas
+
+- Status: decidida.
+- Jornada: uma tela aberta, uma resposta HTTP ou vários testes isolados não equivalem a um percurso concluído. `complete: true` exige os efeitos obrigatórios ligados no mesmo traço por suas identidades persistidas; regressões de componente e integração permanecem provas complementares.
+- Evidência: cada cenário de navegador anexa checks, IDs sanitizados, horário, tipo da evidência e gates restantes. PostgreSQL, Redis, API, worker e runtime Python são processos reais; o provedor controlado registra intenção e payload, mas não substitui a repetição em sandbox oficial.
+- Repetição: a suíte é serial e não repete automaticamente um cenário parcialmente mutável. Falha preserva trace, screenshot, vídeo, relatório e logs; a nova execução começa com volumes isolados, evitando que um retry sobre estado já alterado esconda o defeito original.
+- Experiência: taxa de conclusão, saída involuntária do workspace e recuperação após refresh exigem três participantes representativos. Automação protege regressão técnica, mas não inventa resultado de teste moderado.
+- Liberação: jornadas parciais e dependências pagas/externas continuam visíveis como `remainingGates`. Preparar T32 não autoriza promover piloto nem declarar a T31 aceita enquanto esses gates estiverem abertos.

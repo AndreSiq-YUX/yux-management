@@ -2,6 +2,8 @@
 
 Data da implementação inicial: 2026-09-06.
 
+Execução técnica persistente concluída: 2026-09-06, commit `8d759a2`, GitHub Actions `34065960262`.
+
 ## Resultado implementado
 
 Foi criada uma suíte Playwright com sete cenários nomeados J1–J7. Ela sobe a aplicação sobre PostgreSQL e Redis isolados, usa a API real, processa filas com o worker real, confirma a saúde do runtime Python e publica conteúdo contra o provedor controlado usado nas integrações. Cada cenário anexa um registro JSON com checks, IDs sanitizados, horário e gates ainda ausentes.
@@ -33,7 +35,15 @@ O protocolo, a matriz, os comandos e a planilha sanitizada dos participantes est
 
 ## Verificação local
 
-- Type-check e build do backend aprovados.
-- Type-check e baseline de lint do frontend aprovados.
+- Type-check, build e 657 testes do backend aprovados.
+- Type-check, build, orçamento de bundle e 562 testes do frontend aprovados.
 - Playwright descobriu exatamente sete cenários no projeto Chromium.
-- O host local não possui Docker nem as dependências completas do runtime Python; por isso a execução persistente integral foi encaminhada ao runner isolado do GitHub Actions.
+- O host local não possui Docker; por isso a execução persistente integral foi encaminhada ao runner isolado do GitHub Actions.
+
+## Verificação persistente
+
+A execução GitHub Actions `34065960262` terminou em `success` no commit `8d759a2`. Passaram os oito jobs: Backend, Backend integration, Frontend, Agent Runtime, três análises/SBOM de imagens e `Acceptance journeys`. O job de aceitação executou J1–J7 em série e encerrou com sete cenários aprovados.
+
+As execuções anteriores foram preservadas e usadas como diagnóstico, sem retry sobre estado parcialmente alterado. Elas revelaram e levaram à correção de CORS para `PUT/PATCH/DELETE`, propagação do contexto RLS durante todo o ciclo assíncrono da requisição, comparação otimista de timestamps na precisão exposta pela API, atualização de publicação sem desmontar o diálogo e separação entre a prova de webhook/handoff manual e a resposta autônoma ainda não aceita.
+
+Este sucesso fecha o gate técnico automatizado de T31, mas não muda o estado honesto das jornadas: J1–J6 ainda carregam os `remainingGates` descritos acima. Sandbox oficial, T22 paga/cega e os três testes moderados continuam obrigatórios antes do aceite integral e de qualquer liberação total.

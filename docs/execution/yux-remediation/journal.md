@@ -397,3 +397,13 @@ frontend tests: PASS, 528 PASS
 - Verificação local: type-check, build e 655 testes backend aprovados. A integração local não iniciou por ausência dos serviços isolados.
 - Aceite persistente: execução GitHub Actions `34057271273`, conclusão `success` nos sete jobs; o cenário PostgreSQL/Redis novo passou em Backend integration.
 - Próximo passo operacional: recoletar produção em `--dry-run` somente na janela aprovada, após repetir o ensaio em uma restauração recente. Nenhum `--apply` de produção foi feito nesta tarefa.
+
+## T31 — Jornadas técnicas integradas e experiência de uso
+
+- Estado: gate técnico automatizado aprovado; aceite integral permanece aberto pelos gates externos e humanos.
+- Commits da suíte e estabilizações: `a030a20`, `5a968e6`, `dcbce9`, `b0c8336`, `4cd8b57`, `22c3bc8`, `226aa11`, `9bf74db`, `ab35bf1` e `8d759a2`.
+- Prova: a suíte Playwright executa J1–J7 serialmente sobre PostgreSQL, Redis, API, worker e runtime Python reais, com provedor controlado. Cada jornada produz evidência JSON sanitizada; falhas conservam relatório, trace, screenshot, vídeo e logs.
+- Correções descobertas pela jornada: CORS passou a autorizar todos os métodos de mutação já usados pelo frontend; o contexto de tenant agora atravessa corretamente o hook assíncrono até consultas e transações RLS; a conclusão CRM compara a versão na precisão em milissegundos exposta pela API; a publicação estratégica atualiza dados sem desmontar o diálogo e perder a confirmação; o provedor controlado correlaciona a intenção; o webhook de atendimento é provado em modo manual sem contabilizar uma resposta autônoma ainda não validada.
+- Verificação local: 160 arquivos/657 testes backend, 137 arquivos/562 testes frontend, type-checks e build/orçamento aprovados. O host local não possui os serviços Docker isolados.
+- Aceite persistente: execução GitHub Actions `34065960262`, commit `8d759a2`, conclusão `success` em todos os oito jobs. `Acceptance journeys` passou J1–J7 e `Backend integration` passou 23 arquivos/33 testes com PostgreSQL e Redis reais.
+- Limites preservados: J7 está completa no escopo automatizado. J1–J6 continuam com gates explícitos de ligação integral de IDs/efeitos. Sandbox oficial dos provedores, T22/OpenRouter com teto autorizado e avaliação cega, três testes moderados e execução operacional de T30 em restauração/produção não foram simulados nem marcados como aceitos.
