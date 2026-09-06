@@ -55,6 +55,13 @@ class ApiCreditsTest(unittest.TestCase):
     def _client(self, store: BillingStore, conversation_workflow=None) -> TestClient:
         return TestClient(create_app(store, mission_conversation_workflow=conversation_workflow))
 
+    def test_health_requires_runtime_auth_without_calling_a_paid_provider(self):
+        client = self._client(BillingStore())
+        self.assertEqual(client.get("/health").status_code, 401)
+        self.assertEqual(client.get("/health", headers=AUTH).json(), {
+            "status": "ok", "service": "yux-agent-harness-runtime",
+        })
+
     @staticmethod
     def _mission_turn_request():
         return {

@@ -1,6 +1,8 @@
 import { DEFAULT_QUEUE_NAME, QUEUE_NAMES, createBullMqJobId, createWorker, type JobQueueClass } from './jobs/queue.js'
 import { createRoutedJobQueue } from './jobs/router.js'
 import { acquireSchedulerLeadership, type SchedulerLeadership } from './jobs/scheduler-leadership.js'
+import { randomUUID } from 'node:crypto'
+import { recordWorkerHeartbeat } from './jobs/heartbeat.js'
 import type { AppJobQueue } from './server.js'
 import { createPool } from './db/client.js'
 import { runWithDatabaseRequestContext } from './db/request-context.js'
@@ -14,6 +16,8 @@ const routedQueue = createRoutedJobQueue()
 const maintenanceQueue: AppJobQueue = routedQueue
 const processJob = createJobProcessor({ pool, env, maintenanceQueue })
 const selectedQueueClasses = workerQueueClasses(env.YUX_WORKER_QUEUE_CLASS)
+const workerInstanceId = randomUUID()
+const workerStartedAt = new Date().toISOString()
 const queueConcurrency: Record<JobQueueClass, number> = {
   interactive: env.YUX_INTERACTIVE_CONCURRENCY ?? 2,
   ingestion: env.YUX_INGESTION_CONCURRENCY ?? 1,
@@ -37,6 +41,17 @@ if (env.YUX_SCHEDULER_ENABLED !== false) {
     console.log('[worker] scheduler lock held by another process; timers disabled here')
   }
 }
+const heartbeat = () => runWithDatabaseRequestContext(
+  { role: 'yux_operator', organizationIds: [], serviceRole: 'worker' },
+  () => recordWorkerHeartbeat(pool, {
+    instanceId: workerInstanceId,
+    queueClasses: selectedQueueClasses,
+    startedAt: workerStartedAt,
+    metadata: { schedulerActive, drainsLegacy: env.YUX_DRAIN_LEGACY_QUEUE === true },
+  }),
+)
+await heartbeat()
+const heartbeatTimer = setInterval(() => void heartbeat().catch(error => console.error('[worker] heartbeat failed', error)), 30_000)
 const schedulerIntervalMs = Number(process.env.CRM_SEQUENCE_SCHEDULER_INTERVAL_MS || 60_000)
 const maintenanceIntervalMs = Number(process.env.TRACE_RETENTION_PURGE_INTERVAL_MS || 24 * 60 * 60 * 1_000)
 const domainEventDispatchIntervalMs = Number(process.env.DOMAIN_EVENT_DISPATCH_INTERVAL_MS || 5_000)
@@ -114,6 +129,7 @@ for (const worker of workers) {
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`[worker] received ${signal}, shutting down`)
   if (scheduler) clearInterval(scheduler)
+  clearInterval(heartbeatTimer)
   if (maintenanceScheduler) clearInterval(maintenanceScheduler)
   if (googleTokenRefreshScheduler) clearInterval(googleTokenRefreshScheduler)
   if (domainEventDispatchScheduler) clearInterval(domainEventDispatchScheduler)

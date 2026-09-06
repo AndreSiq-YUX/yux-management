@@ -77,6 +77,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     CORS_ORIGIN: 'http://integration.test',
     N8N_CRM_WEBHOOK_URL: provider.baseUrl,
     N8N_WEBHOOK_SECRET: 'integration-webhook-secret',
+    JINA_API_KEY: 'integration-jina-api-key',
     KNOWLEDGE_CURATION_ENABLED: 'false',
     ACTION_ENGINE_MUTATION_LEASE_SECRET: 'integration-mutation-lease-secret-32-chars',
     ACTION_ENGINE_TELEMETRY_REDACTION_KEY: 'integration-redaction-key-secret-32-chars',

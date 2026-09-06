@@ -24,6 +24,8 @@ import { extractCompanyProfileInBatches } from '../../modules/company-intelligen
 import { discoverCompanyWebsite } from '../../modules/company-intelligence/website-discovery.js'
 import { inspectWebsiteVisualIdentity } from '../../modules/company-intelligence/website-visual-identity.js'
 import { extractKnowledgeText, extractManualKnowledge, type ExtractedKnowledge, type LocatedSection } from '../../modules/company-intelligence/text-extraction.js'
+import { resolveEffectiveProviderCredential } from '../../modules/platform/provider-credentials.js'
+import { recordProviderUsage } from '../../modules/health/provider-usage.js'
 
 type PipelineDependencies = {
   curate?: typeof curateKnowledgeWithRuntime
@@ -42,9 +44,17 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
   if (previous.run?.runKind === 'document_curation' && ['running', 'ready_for_review'].includes(previous.run.status)) return { duplicate: true, documentId }
 
   const run = await createKnowledgeIntelligenceRun(pool, documentId)
+  const jina = await resolveEffectiveProviderCredential(pool,env,'jina_ai')
+  const effectiveEnv = jina.value ? {...env,JINA_API_KEY:jina.value} : env
 
   try {
-    const extracted = await extractDocument(document, dependencies.signal, env.JINA_REQUEST_TIMEOUT_MS)
+    const extracted = await extractDocument(document, dependencies.signal, effectiveEnv.JINA_REQUEST_TIMEOUT_MS, effectiveEnv.JINA_API_KEY)
+    if (document.sourceType === 'url' && jina.configured) {
+      await recordProviderUsage(pool,{
+        organizationId:document.organizationId,providerKey:'jina_ai',model:'reader',correlationId:run.id,
+        reportedUsage:{operation:'url_read',items:1},measurementStatus:'unavailable',measurementReason:'provider_usage_not_reported',
+      })
+    }
     await completeKnowledgeIngestion(pool, { sourceId, documentId, extracted })
     await markKnowledgeProcessingState(pool, documentId, 'indexing')
     await updateKnowledgeIntelligenceRun(pool, run.id, { stage: 'cleaning', progress: 30 })
@@ -86,7 +96,12 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
 
       try {
         const embed = dependencies.embed || embedPassages
-        const embedded = await embed(env, chunks.map(chunk => chunk.body), undefined, dependencies.signal)
+        const embedded = await embed(effectiveEnv, chunks.map(chunk => chunk.body), undefined, dependencies.signal)
+        await recordProviderUsage(pool,{
+          organizationId:document.organizationId,providerKey:'jina_ai',model:embedded.model,correlationId:run.id,
+          reportedUsage:{tokens:embedded.tokens,items:chunks.length,dimensions:embedded.dimensions},
+          measurementStatus:'unavailable',measurementReason:'provider_price_not_reported',
+        })
         await attachCuratedKnowledgeEmbeddings(pool, {
           chunks: chunks.map((chunk, index) => ({ id: chunk.id, vector: embedded.vectors[index] })),
           model: embedded.model,
@@ -125,15 +140,15 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
   }
 }
 
-async function extractDocument(document: Awaited<ReturnType<typeof getKnowledgeDocument>>, signal?: AbortSignal, timeoutMs?: number): Promise<ExtractedKnowledge> {
-  if (document.sourceType === 'url') return extractUrl(document.sourceUrl, document.title, signal, timeoutMs)
+async function extractDocument(document: Awaited<ReturnType<typeof getKnowledgeDocument>>, signal?: AbortSignal, timeoutMs?: number, apiKey?:string): Promise<ExtractedKnowledge> {
+  if (document.sourceType === 'url') return extractUrl(document.sourceUrl, document.title, signal, timeoutMs,apiKey)
   if (document.sourceType === 'manual') return extractManualKnowledge(document.title, document.bodyPreview || '')
   return extractFile(document.storagePath, document.mimeType, document.title)
 }
 
-async function extractUrl(sourceUrl: string | undefined, title: string, signal?: AbortSignal, timeoutMs?: number) {
+async function extractUrl(sourceUrl: string | undefined, title: string, signal?: AbortSignal, timeoutMs?: number,apiKey?:string) {
   if (!sourceUrl) throw new Error('knowledge_source_url_required')
-  const result = await readJinaUrl(sourceUrl, { signal, timeoutMs })
+  const result = await readJinaUrl(sourceUrl, { signal, timeoutMs,apiKey })
   return extractManualKnowledge(result.title || title, result.content)
 }
 
@@ -179,11 +194,19 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
   const websiteUrl = typeof data.websiteUrl === 'string' ? data.websiteUrl : ''
   const maxPages = Math.max(1, Math.min(50, Number(data.maxPages || 30)))
   if (!runId || !organizationId || !websiteUrl) throw new Error('website_onboarding_context_required')
+  const jina = await resolveEffectiveProviderCredential(pool,env,'jina_ai')
   try {
     await updateKnowledgeIntelligenceRun(pool, runId, { status: 'running', stage: 'discovering', progress: 10 })
     const discovery = await discoverCompanyWebsite(websiteUrl, {
       maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 30),
-      readPage: url => readJinaUrl(url, { signal: dependencies.signal, timeoutMs: env.JINA_REQUEST_TIMEOUT_MS }),
+      readPage: async url => {
+        const result = await readJinaUrl(url, { signal: dependencies.signal, timeoutMs: env.JINA_REQUEST_TIMEOUT_MS,apiKey:jina.value })
+        await recordProviderUsage(pool,{
+          organizationId,providerKey:'jina_ai',model:'reader',correlationId:runId,
+          reportedUsage:{operation:'url_read',items:1},measurementStatus:'unavailable',measurementReason:'provider_usage_not_reported',
+        })
+        return result
+      },
     })
     await updateKnowledgeIntelligenceRun(pool, runId, {
       stage: 'extracting', progress: 45,

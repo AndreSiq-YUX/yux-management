@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify'
+import { requireAuth, requireInternalRole } from '../../http/guards.js'
+import { buildOperationalSnapshot } from './operational-snapshot.js'
 
 const service = 'yux-backend-api'
 
@@ -25,4 +27,10 @@ export async function registerHealthRoutes(app: FastifyInstance) {
 
   app.get('/ready', ready)
   app.get('/health/ready', ready)
+
+  app.get('/health/operational', async (request) => {
+    requireAuth(request)
+    requireInternalRole(request)
+    return buildOperationalSnapshot(app.pg, app.config)
+  })
 }

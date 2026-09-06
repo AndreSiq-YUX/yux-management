@@ -170,7 +170,7 @@ def create_app(
             action=action,
         )
 
-    @app.get("/health")
+    @app.get("/health", dependencies=[Depends(require_runtime_token)])
     def health() -> dict[str, Any]:
         return {"status": "ok", "service": "yux-agent-harness-runtime"}
 
