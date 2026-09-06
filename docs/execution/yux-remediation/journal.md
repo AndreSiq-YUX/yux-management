@@ -38,7 +38,8 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T07 | aceita | Política nominal, isolamento A/B e leitura segura aprovados na integração persistente |
 | T08 | aceita | Schemas, geradores, TS/Python e corpus aprovados na CI |
 | T09 | aceita | Leases de outbox/consumidores, fencing por owner/attempt e retomada persistente aprovados na CI |
-| T10–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T10 | aceita | Webhook e outbox atômicos, Redis indisponível e replay pós-timeout aprovados na CI |
+| T11–T32 | não iniciada | Dependências preservadas conforme o plano |
 
 ## Evidência de comandos T01
 
@@ -145,3 +146,15 @@ frontend tests: PASS, 528 PASS
 - Entregas: migration `0154_outbox_processing_leases.sql`, utilitário `jobs/leases.ts`, recuperação de outbox abandonado, heartbeat de consumidores e snapshot operacional por classe/idade.
 - Verificação local: type-check aprovado; 18/18 testes de migrador, outbox e leases aprovados.
 - Aceite persistente: execução GitHub Actions `34000850669`, commit `756ce8a`, conclusão `success`; `outbox-recovery.test.ts` comprovou no PostgreSQL 17 que o proprietário antigo não finaliza após reclaim. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T10 — Webhooks persistidos e entrega recuperável
+
+- Estado: aceita.
+- Commit inicial: `7b475f6`; correções exclusivas das fixtures: `f003c02` e `8245f31`.
+- Achado: YUX-10.
+- Reprodução: o endpoint gravava `channel_webhook_events` e tentava publicar diretamente no Redis; uma indisponibilidade da fila podia ocorrer entre os dois passos, enquanto o `catch` amplo devolvia 200 como se fosse payload não suportado. Duplicatas retornavam sem assegurar uma intenção pendente.
+- Decisão: depois de validar o HMAC do corpo bruto e resolver a conexão ativa no servidor, gravar o evento do canal e `omnichannel.inbound.received` na mesma transação. O webhook não depende do Redis para responder; o outbox cria uma delivery `omnichannel` e o consumidor reidrata o payload sanitizado persistido.
+- Compatibilidade: o job legado `omnichannel.processMessage` continua aceito para drenar trabalhos existentes; novos webhooks não transportam organização nem conteúdo como autoridade no payload da fila.
+- Recuperação: a mensagem externa conserva a restrição única por conexão; replay recupera mensagem existente, não duplica conversa e retoma evento `processing` somente após uma nova tentativa cercada pelo lease da delivery.
+- Verificação local: type-check aprovado; 153 arquivos e 623 testes unitários aprovados. Docker não está instalado neste computador, portanto o teste persistente foi executado no runner isolado.
+- Aceite persistente: execução GitHub Actions `34001822740`, commit `8245f31`, conclusão `success`. O teste `whatsapp-webhook-recovery.test.ts` comprovou assinatura inválida sem insert, duas entregas idênticas com Redis parado, um único evento, retomada após o Redis voltar, uma única conversa/mensagem e replay pós-timeout com `attempt_count = 2`. Backend, frontend e Agent Runtime também permaneceram aprovados.

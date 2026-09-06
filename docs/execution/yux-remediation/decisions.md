@@ -34,3 +34,9 @@
 - Status: registrada.
 - Compose atual: criação conversacional desativada por padrão no backend, formulário de compatibilidade ativado por padrão no frontend, curadoria de conhecimento ativada e limite de site configurado em 30 páginas.
 - Regra: presença/configuração não será apresentada como validação operacional; nenhum segredo será copiado para manifestos ou logs.
+
+## D-007 — Fronteira durável dos webhooks omnichannel
+
+- Status: decidida.
+- Decisão: o reconhecimento de webhook Meta depende do commit conjunto de `channel_webhook_events` e do evento de domínio, nunca do enqueue no Redis. A delivery referencia o UUID persistido e resolve organização/conexão novamente no servidor.
+- Motivo: eliminar perda entre banco e fila, preservar deduplicação por evento externo e impedir que dados de tenant fornecidos pelo job substituam a autoridade da conexão persistida.
