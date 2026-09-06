@@ -60,7 +60,7 @@ export default defineConfig({
       name: 'frontend',
       command: 'npm run dev -- --host 127.0.0.1 --port 4173',
       cwd: frontendDirectory,
-      env: { ...process.env, VITE_API_URL: 'http://127.0.0.1:4000' },
+      env: { ...process.env, VITE_API_BASE_URL: 'http://127.0.0.1:4000/api' },
       url: 'http://127.0.0.1:4173/auth/login',
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,

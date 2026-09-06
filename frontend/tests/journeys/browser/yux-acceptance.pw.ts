@@ -27,7 +27,13 @@ async function login(page: Page, user: keyof typeof credentials) {
   await page.goto('/auth/login')
   await page.getByLabel('Email').fill(credentials[user].email)
   await page.getByLabel('Senha', { exact: true }).fill(credentials[user].password)
+  const loginResponse = page.waitForResponse(response => (
+    response.url() === `${apiBase}/auth/login`
+    && response.request().method() === 'POST'
+  ))
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
+  const response = await loginResponse
+  expect(response.ok(), await response.text()).toBeTruthy()
   await expect(page).not.toHaveURL(/\/auth\/login/)
 }
 
