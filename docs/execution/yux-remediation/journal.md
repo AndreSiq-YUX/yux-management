@@ -231,3 +231,16 @@ frontend tests: PASS, 528 PASS
 - Proveniência: itens distinguem `document_extracted`, `manual_authored` e `seed_example`. As cinco sementes históricas foram marcadas como exemplos sem evidência atribuída, sem associação fictícia ao Black Book.
 - Compatibilidade: publicações de conhecimento existentes receberam versão, hash e snapshot; triggers completam a identidade de novos inserts legados. Fonte e documento podem apontar para a publicação corrente sem destruir histórico.
 - Aceite persistente: execução GitHub Actions `34006447763`, commit `a74aaea`, conclusão `success`. O teste persistente publicou duas versões com o mesmo título, confirmou dois cards distintos, imutabilidade da release, remoção de binding/arquivamento sem perda do snapshot anterior e duas cópias privadas do mesmo hash em organizações diferentes. Todos os quatro jobs da CI passaram.
+
+## T17 — Upload real e processamento recuperável
+
+- Estado: aceita.
+- Commit inicial: `3893054`; correção da detecção de PDF sem texto: `6168a6c`.
+- Achados: YUX-01 e YUX-06.
+- Decisão: o upload usa corpo binário em streaming, teto efetivo configurável de até 50 MiB, validação de tamanho, MIME, UTF-8 e SHA-256 no servidor. O nome definitivo contém IDs internos e hash; nome original fica apenas como metadado.
+- Atomicidade: o arquivo passa por quarentena, é finalizado no volume compartilhado e tem integridade conferida antes da transação que cria documento, atualiza ingestão e grava `strategy.ingestion.queued`. Falha de commit devolve o arquivo à quarentena; documento sem arquivo íntegro nunca entra em `queued`.
+- Recuperação: `strategy.indexKnowledge` está no registro único, roda na fila de ingestão com lease, heartbeat, fencing e tentativas. O outbox agenda o job com identidade estável; consulta de ingestão também reconcilia um estado `queued` após reinício. Hash repetido na mesma organização reutiliza o documento sem duplicar armazenamento.
+- Interface: a tela envia o objeto `File` real, mantém o arquivo selecionado quando o envio falha, mostra tentativa/erro recuperável e aceita PDF, TXT, Markdown e DOCX. Arquivos sem MIME informado pelo navegador são classificados pela extensão permitida.
+- OCR: marcadores técnicos do parser não contam como conteúdo. PDF sem texto útil termina em `extraction_requires_ocr` e não é apresentado como curado ou concluído.
+- Verificação local: type-check/build de backend e frontend aprovados; 155 arquivos/630 testes backend e 125 arquivos/532 testes frontend aprovados; lint direcionado dos arquivos alterados sem achados. O lint global permanece bloqueado por 565 erros preexistentes fora desta tarefa.
+- Aceite persistente: execução GitHub Actions `34033242938`, commit `6168a6c`, conclusão `success`. O cenário real comprovou autorização interna, TXT, upload interrompido e retomado, hash divergente, MIME inválido, deduplicação, reinício da API, processamento pelo outbox/worker e PDF vazio retido para OCR. Backend, frontend e Agent Runtime também permaneceram aprovados.

@@ -80,3 +80,11 @@
 - Decisão: uma publicação estratégica cria snapshot e hash imutáveis; edição posterior cria outra release e outros cards projetados. O ponteiro corrente é mutável, o conteúdo publicado não.
 - Isolamento: documentos privados deduplicam apenas dentro da organização proprietária. Hashes globais usam índice separado; conflito jamais serve como canal para descobrir arquivo de outro cliente.
 - Sementes: conteúdo histórico sem evidência localizável é `seed_example`, não doutrina atribuída a uma fonte privada.
+
+## D-014 — Arquivo íntegro precede o estado enfileirado
+
+- Status: decidida.
+- Decisão: a ingestão estratégica só muda para `queued` depois que os bytes foram recebidos em streaming, validados, movidos para o nome interno definitivo e relidos para confirmar tamanho e SHA-256. Documento, ingestão e evento de outbox são confirmados em uma única transação; falha posterior à movimentação conserva o arquivo em quarentena.
+- Recuperação: banco/outbox são a autoridade, Redis é transporte. O job tem identidade estável, lease cercado por proprietário/tentativa e pode ser reconciliado por nova leitura do estado. Duplicidade por hash é limitada à organização proprietária.
+- Limite de extração: ausência de texto útil em PDF é uma necessidade explícita de OCR, não sucesso degradado nem conteúdo pronto para revisão.
+- Motivo: impedir arquivo órfão ativo, fila apontando para bytes inexistentes, duplicação após reinício e publicação acidental de documentos digitalizados sem extração verificável.
