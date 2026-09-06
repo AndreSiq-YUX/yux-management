@@ -9,15 +9,18 @@ export type JinaEmbeddingBatch = {
   tokens: number
 }
 
-export async function embedJinaTexts(env: AppEnv, texts: string[], task: 'retrieval.passage' | 'retrieval.query', fetchImpl: FetchLike = fetch): Promise<JinaEmbeddingBatch> {
+export async function embedJinaTexts(env: AppEnv, texts: string[], task: 'retrieval.passage' | 'retrieval.query', fetchImpl: FetchLike = fetch, signal?: AbortSignal): Promise<JinaEmbeddingBatch> {
   if (!env.JINA_API_KEY) throw new Error('jina_api_key_required')
   if (!texts.length) return { model: env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v3', dimensions: env.JINA_EMBEDDING_DIMENSIONS || 1024, vectors: [], tokens: 0 }
   const model = env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v3'
   const dimensions = env.JINA_EMBEDDING_DIMENSIONS || 1024
+  const timeoutSignal = AbortSignal.timeout(env.JINA_REQUEST_TIMEOUT_MS || 15_000)
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
   const response = await fetchImpl('https://api.jina.ai/v1/embeddings', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.JINA_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, task, normalized: true, embedding_type: 'float', dimensions, input: texts }),
+    signal: requestSignal,
   })
   if (!response.ok) throw new Error(`jina_embeddings_http_${response.status}`)
   const payload = await response.json() as { data?: Array<{ index?: number; embedding?: unknown }>; model?: string; usage?: { total_tokens?: number } }
@@ -30,6 +33,6 @@ export async function embedJinaTexts(env: AppEnv, texts: string[], task: 'retrie
   return { model: payload.model || model, dimensions, vectors, tokens: Number(payload.usage?.total_tokens || 0) }
 }
 
-export function embedPassages(env: AppEnv, texts: string[], fetchImpl?: FetchLike) {
-  return embedJinaTexts(env, texts, 'retrieval.passage', fetchImpl)
+export function embedPassages(env: AppEnv, texts: string[], fetchImpl?: FetchLike, signal?: AbortSignal) {
+  return embedJinaTexts(env, texts, 'retrieval.passage', fetchImpl, signal)
 }

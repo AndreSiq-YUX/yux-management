@@ -28,6 +28,7 @@ import { extractKnowledgeText, extractManualKnowledge, type ExtractedKnowledge, 
 type PipelineDependencies = {
   curate?: typeof curateKnowledgeWithRuntime
   embed?: typeof embedPassages
+  signal?: AbortSignal
 }
 
 export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>, dependencies: PipelineDependencies = {}) {
@@ -43,7 +44,7 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
   const run = await createKnowledgeIntelligenceRun(pool, documentId)
 
   try {
-    const extracted = await extractDocument(document)
+    const extracted = await extractDocument(document, dependencies.signal, env.JINA_REQUEST_TIMEOUT_MS)
     await completeKnowledgeIngestion(pool, { sourceId, documentId, extracted })
     await markKnowledgeProcessingState(pool, documentId, 'indexing')
     await updateKnowledgeIntelligenceRun(pool, run.id, { stage: 'cleaning', progress: 30 })
@@ -85,7 +86,7 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
 
       try {
         const embed = dependencies.embed || embedPassages
-        const embedded = await embed(env, chunks.map(chunk => chunk.body))
+        const embedded = await embed(env, chunks.map(chunk => chunk.body), undefined, dependencies.signal)
         await attachCuratedKnowledgeEmbeddings(pool, {
           chunks: chunks.map((chunk, index) => ({ id: chunk.id, vector: embedded.vectors[index] })),
           model: embedded.model,
@@ -124,15 +125,15 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
   }
 }
 
-async function extractDocument(document: Awaited<ReturnType<typeof getKnowledgeDocument>>): Promise<ExtractedKnowledge> {
-  if (document.sourceType === 'url') return extractUrl(document.sourceUrl, document.title)
+async function extractDocument(document: Awaited<ReturnType<typeof getKnowledgeDocument>>, signal?: AbortSignal, timeoutMs?: number): Promise<ExtractedKnowledge> {
+  if (document.sourceType === 'url') return extractUrl(document.sourceUrl, document.title, signal, timeoutMs)
   if (document.sourceType === 'manual') return extractManualKnowledge(document.title, document.bodyPreview || '')
   return extractFile(document.storagePath, document.mimeType, document.title)
 }
 
-async function extractUrl(sourceUrl: string | undefined, title: string) {
+async function extractUrl(sourceUrl: string | undefined, title: string, signal?: AbortSignal, timeoutMs?: number) {
   if (!sourceUrl) throw new Error('knowledge_source_url_required')
-  const result = await readJinaUrl(sourceUrl)
+  const result = await readJinaUrl(sourceUrl, { signal, timeoutMs })
   return extractManualKnowledge(result.title || title, result.content)
 }
 
@@ -172,7 +173,7 @@ function messageOf(error: unknown) {
   return (error instanceof Error ? error.message : String(error)).slice(0, 1_000)
 }
 
-export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>) {
+export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: Record<string, unknown>, dependencies: { signal?: AbortSignal } = {}) {
   const runId = typeof data.runId === 'string' ? data.runId : ''
   const organizationId = typeof data.organizationId === 'string' ? data.organizationId : ''
   const websiteUrl = typeof data.websiteUrl === 'string' ? data.websiteUrl : ''
@@ -180,7 +181,10 @@ export async function handleWebsiteOnboarding(pool: pg.Pool, env: AppEnv, data: 
   if (!runId || !organizationId || !websiteUrl) throw new Error('website_onboarding_context_required')
   try {
     await updateKnowledgeIntelligenceRun(pool, runId, { status: 'running', stage: 'discovering', progress: 10 })
-    const discovery = await discoverCompanyWebsite(websiteUrl, { maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 30) })
+    const discovery = await discoverCompanyWebsite(websiteUrl, {
+      maxPages: Math.min(maxPages, env.KNOWLEDGE_WEBSITE_MAX_PAGES || 30),
+      readPage: url => readJinaUrl(url, { signal: dependencies.signal, timeoutMs: env.JINA_REQUEST_TIMEOUT_MS }),
+    })
     await updateKnowledgeIntelligenceRun(pool, runId, {
       stage: 'extracting', progress: 45,
       metrics: { discoveredPages: discovery.pages.length, failedPages: discovery.failedPages },

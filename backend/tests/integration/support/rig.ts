@@ -9,8 +9,8 @@ import { createContextAwarePool } from '../../../src/db/client.js'
 import { buildServer, type AppJobQueue } from '../../../src/server.js'
 import { loadEnv } from '../../../src/config/env.js'
 import { createJobProcessor } from '../../../src/jobs/processor.js'
-import { DEFAULT_QUEUE_NAME, createQueue, createRedisConnection, createWorker, type JobName, type QueueJobData } from '../../../src/jobs/queue.js'
-import { enqueueRegisteredJob } from '../../../src/jobs/registry.js'
+import { QUEUE_NAMES, createQueue, createRedisConnection, createWorker, type JobQueueClass } from '../../../src/jobs/queue.js'
+import { createRoutedJobQueue } from '../../../src/jobs/router.js'
 import { applyMigrations } from '../../../scripts/apply-migrations.js'
 import { fixtureIds, fixturePassword, fixtureUsers, integrationRolePassword, provisionIntegrationServiceRoles, seedIntegrationFixtures } from './fixtures.js'
 import { createTestProviderServer, type ProviderCall } from './provider-server.js'
@@ -63,9 +63,10 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
   const apiPool = createContextAwarePool(new pg.Pool({ connectionString: serviceDatabaseUrl(databaseUrl, 'yux_api'), max: 8 }), 'api')
   const workerPool = createContextAwarePool(new pg.Pool({ connectionString: serviceDatabaseUrl(databaseUrl, 'yux_worker'), max: 4 }), 'worker')
 
-  const queue = createQueue(DEFAULT_QUEUE_NAME, createRedisConnection(redisUrl), { prefix: 'yux-integration' })
-  await queue.waitUntilReady()
-  await queue.obliterate({ force: true })
+  const redisConnection = createRedisConnection(redisUrl)
+  const queue = createRoutedJobQueue({ connection: redisConnection, prefix: 'yux-integration' })
+  await Promise.all(queue.queues().map(rawQueue => rawQueue.waitUntilReady()))
+  await Promise.all(queue.queues().map(rawQueue => rawQueue.obliterate({ force: true })))
   const provider = await createTestProviderServer()
   const env = loadEnv({
     NODE_ENV: 'test',
@@ -84,12 +85,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     META_GRAPH_BASE_URL: provider.baseUrl,
     PROVIDER_SECRET_ENCRYPTION_KEY_B64: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
   })
-  const appQueue: AppJobQueue = {
-    add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }) {
-      return enqueueRegisteredJob(queue, name, data, options)
-    },
-    close: async () => { await queue.close() },
-  }
+  const appQueue: AppJobQueue = queue
   let app = await createApp(apiPool, appQueue, env)
   const cookies = new Map<TestRole, string>()
 
@@ -126,14 +122,16 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     async workerTick() {
       await appQueue.add('events.dispatchPending', { limit: 100, integrationTick: randomUUID() })
       const processor = createJobProcessor({ pool: workerPool, env, maintenanceQueue: appQueue })
-      const worker = createWorker(DEFAULT_QUEUE_NAME, processor, createRedisConnection(redisUrl), {
-        prefix: 'yux-integration',
-        concurrency: 1,
-      })
+      const workers = (Object.keys(QUEUE_NAMES) as JobQueueClass[]).map(queueClass => createWorker(
+        QUEUE_NAMES[queueClass], processor, createRedisConnection(redisUrl), {
+          prefix: 'yux-integration',
+          concurrency: queueClass === 'interactive' || queueClass === 'external' ? 2 : 1,
+        },
+      ))
       try {
-        await waitForQueueToDrain(queue, 45_000)
+        await waitForQueuesToDrain(queue.queues(), 45_000)
       } finally {
-        await worker.close()
+        await Promise.all(workers.map(worker => worker.close()))
       }
     },
     async restartApi() {
@@ -190,15 +188,16 @@ function assertSafeIntegrationDatabase(databaseUrl: string) {
   if (!['127.0.0.1', 'localhost', 'postgres'].includes(parsed.hostname)) throw new Error('unsafe_integration_database_host')
 }
 
-async function waitForQueueToDrain(queue: ReturnType<typeof createQueue>, timeoutMs: number) {
+async function waitForQueuesToDrain(queues: Array<ReturnType<typeof createQueue>>, timeoutMs: number) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
-    const counts = await queue.getJobCounts('waiting', 'active', 'delayed', 'prioritized', 'failed')
-    if (counts.failed > 0) {
-      const [failed] = await queue.getFailed(0, 0)
+    const counts = await Promise.all(queues.map(queue => queue.getJobCounts('waiting', 'active', 'delayed', 'prioritized', 'failed')))
+    const failedQueueIndex = counts.findIndex(count => count.failed > 0)
+    if (failedQueueIndex >= 0) {
+      const [failed] = await queues[failedQueueIndex]!.getFailed(0, 0)
       throw new Error(`integration_job_failed:${failed?.name}:${failed?.failedReason}`)
     }
-    if (counts.waiting + counts.active + counts.delayed + counts.prioritized === 0) return
+    if (counts.every(count => count.waiting + count.active + count.delayed + count.prioritized === 0)) return
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   throw new Error('integration_worker_tick_timeout')

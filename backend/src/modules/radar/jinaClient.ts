@@ -17,10 +17,12 @@ type FetchLike = typeof fetch
 
 type JinaRequestOptions = {
   fetchImpl?: FetchLike
+  signal?: AbortSignal
   apiKey?: string
   limit?: number
   maxAttempts?: number
   retryDelayMs?: number
+  timeoutMs?: number
 }
 
 type JinaJsonResponse = {
@@ -87,7 +89,9 @@ async function requestJina(url: string, options: JinaRequestOptions) {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const headers = { ...baseHeaders }
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-    const response = await fetchImpl(url, { headers })
+    const timeoutSignal = AbortSignal.timeout(Math.max(1_000, Math.min(120_000, options.timeoutMs ?? 15_000)))
+    const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
+    const response = await fetchImpl(url, { headers, signal })
     if (response.ok) return await response.json() as JinaJsonResponse
 
     lastStatus = response.status
@@ -98,7 +102,7 @@ async function requestJina(url: string, options: JinaRequestOptions) {
       continue
     }
     if (!isTransientJinaStatus(response.status) || attempt === maxAttempts) break
-    if (retryDelayMs) await wait(retryDelayMs * attempt)
+    if (retryDelayMs) await wait(retryDelayMs * attempt, options.signal)
   }
 
   throw Object.assign(new Error('jina_request_failed'), { statusCode: lastStatus })
@@ -108,8 +112,15 @@ function isTransientJinaStatus(status: number) {
   return status === 408 || status === 425 || status === 429 || status >= 500
 }
 
-function wait(milliseconds: number) {
-  return new Promise(resolve => setTimeout(resolve, milliseconds))
+function wait(milliseconds: number, signal?: AbortSignal) {
+  if (signal?.aborted) return Promise.reject(signal.reason)
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, milliseconds)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }, { once: true })
+  })
 }
 
 function normalizeJinaEvidence(value: unknown, fallbackUrl?: string, fallbackTitle = 'Resultado') {

@@ -33,9 +33,7 @@ import {
 } from './handlers/providers.js'
 import { handleRadarOpportunityAnalysis } from './handlers/radar.js'
 import { handleStrategyAdminChat } from './handlers/strategy.js'
-import { createIdempotencyKey, type JobName, type QueueJobData } from './queue.js'
-
-export type JobQueueClass = 'internal' | 'external' | 'maintenance'
+import { createIdempotencyKey, type JobName, type JobQueueClass, type QueueJobData } from './queue.js'
 
 export type RegisteredJobQueue = {
   add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }): Promise<{ id?: string | number | undefined }>
@@ -47,6 +45,7 @@ export type JobHandlerContext = {
   env: AppEnv
   queue: RegisteredJobQueue
   jobId: string
+  signal: AbortSignal
 }
 
 export type JobRegistration = {
@@ -121,17 +120,17 @@ const crmOptions = (env: AppEnv) => ({
 })
 
 export const jobRegistry = {
-  'automation.dispatch': registered('internal', 60_000, ({ pool, env }, data) => handleAutomationDispatch(pool, env, data)),
-  'automation.executeRun': registered('internal', 120_000, ({ pool, env }, data) => handleAutomationRun(pool, env, data)),
-  'events.dispatchPending': registered('internal', 30_000, ({ pool, queue }, data) => handleDomainEventDispatch(pool, queue, data)),
-  'events.consume.automation': registered('internal', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
-  'events.consume.scoring': registered('internal', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
-  'events.consume.missionObserver': registered('internal', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
-  'events.consume.omnichannel': registered('internal', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
-  'events.consume.crmDispatch': registered('internal', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
-  'action-engine.planMission': registered('internal', 180_000, ({ pool, env, queue }, data) => handleActionEnginePlanMission(pool, env, data, queue)),
-  'action-engine.processMissionConversation': registered('internal', 180_000, ({ pool, env }, data) => handleActionEngineProcessMissionConversation(pool, env, data)),
-  'action-engine.scheduleReadyActions': registered('internal', 60_000, ({ pool, queue }, data) => handleActionEngineSchedule(pool, queue, data)),
+  'automation.dispatch': registered('interactive', 60_000, ({ pool, env }, data) => handleAutomationDispatch(pool, env, data)),
+  'automation.executeRun': registered('external', 120_000, ({ pool, env }, data) => handleAutomationRun(pool, env, data)),
+  'events.dispatchPending': registered('interactive', 30_000, ({ pool, queue }, data) => handleDomainEventDispatch(pool, queue, data)),
+  'events.consume.automation': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
+  'events.consume.scoring': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
+  'events.consume.missionObserver': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
+  'events.consume.omnichannel': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
+  'events.consume.crmDispatch': registered('interactive', 120_000, ({ pool, env, queue }, data) => handleDomainEventDelivery(pool, env, data, queue)),
+  'action-engine.planMission': registered('interactive', 180_000, ({ pool, env, queue }, data) => handleActionEnginePlanMission(pool, env, data, queue)),
+  'action-engine.processMissionConversation': registered('interactive', 180_000, ({ pool, env }, data) => handleActionEngineProcessMissionConversation(pool, env, data)),
+  'action-engine.scheduleReadyActions': registered('interactive', 60_000, ({ pool, queue }, data) => handleActionEngineSchedule(pool, queue, data)),
   'action-engine.executeAction': registered('external', 180_000, ({ pool, env, queue, jobId }, data) => handleActionEngineExecute(pool, queue, data, `worker:${jobId}`, env.ACTION_ENGINE_MUTATION_LEASE_SECRET)),
   'action-engine.reconcileProviderEffect': registered('external', 120_000, ({ pool, queue }, data) => handleActionEngineReconcileProviderEffect(pool, queue, data)),
   'action-engine.expireWaits': registered('maintenance', 60_000, ({ pool, queue }, data) => handleActionEngineExpireWaits(pool, queue, data)),
@@ -139,34 +138,36 @@ export const jobRegistry = {
   'action-engine.campaignOptimizationCheckpoint': registered('maintenance', 180_000, ({ pool }, data) => handleCampaignOptimizationCheckpoints(pool, data)),
   'action-engine.generateLearning': registered('maintenance', 180_000, ({ pool }, data) => handleActionEngineLearning(pool, data)),
   'action-engine.enforceRetention': registered('maintenance', 180_000, ({ pool }) => handleActionEngineRetention(pool)),
-  'action-engine.evaluateMission': registered('internal', 120_000, ({ pool, queue }, data) => handleActionEngineEvaluation(pool, data, queue)),
+  'action-engine.evaluateMission': registered('interactive', 120_000, ({ pool, queue }, data) => handleActionEngineEvaluation(pool, data, queue)),
   'action-engine.deliverDecisionNotification': registered('external', 120_000, ({ pool, env, queue }, data) => handleActionEngineDecisionNotification(pool, queue, data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false)),
   'action-engine.dispatchDecisionNotifications': registered('maintenance', 120_000, ({ pool, env, queue }, data) => handleActionEngineDecisionNotificationDispatch(pool, queue, data, env.MISSION_DECISION_NOTIFICATIONS_ENABLED !== false)),
   'crm.sequence.dispatchDue': registered('maintenance', 120_000, ({ pool, env }) => runCrmSequenceScheduler(pool, crmOptions(env))),
-  'crm.sequence.processExecution': registered('internal', 120_000, ({ pool, env, queue }, data) => {
+  'crm.sequence.processExecution': registered('interactive', 120_000, ({ pool, env, queue }, data) => {
     const executionId = data.executionId
     if (typeof executionId !== 'string') throw new Error('executionId is required')
     return processSequenceExecution(pool, executionId, { ...crmOptions(env), emailJobQueue: queue, whatsappJobQueue: queue })
   }),
-  'omnichannel.processMessage': registered('internal', 180_000, ({ pool, env, queue }, data) => handleInboundMessage(pool, env, data, queue)),
+  'omnichannel.processMessage': registered('interactive', 180_000, ({ pool, env, queue }, data) => handleInboundMessage(pool, env, data, queue)),
   'omnichannel.dispatchOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
   'omnichannel.retryOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
-  'omnichannel.requestScheduling': registered('internal', 30_000, ({ pool }, data) => handleOmnichannelSchedulingFallback(pool, data), schedulingPayload),
-  'omnichannel.simulateChannelEvent': registered('internal', 30_000, ({ pool }, data) => handleSandboxChannelSimulation(pool, data), simulationPayload, true),
-  'provider.functionInvoke': registered('external', 180_000, ({ pool, env }, data) => handleProviderFunction(pool, data, {
+  'omnichannel.requestScheduling': registered('interactive', 30_000, ({ pool }, data) => handleOmnichannelSchedulingFallback(pool, data), schedulingPayload),
+  'omnichannel.simulateChannelEvent': registered('interactive', 30_000, ({ pool }, data) => handleSandboxChannelSimulation(pool, data), simulationPayload, true),
+  'provider.functionInvoke': registered('external', 180_000, ({ pool, env, signal }, data) => handleProviderFunction(pool, data, {
     encryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64,
     graphBaseUrl: env.META_GRAPH_BASE_URL,
+    fetcher: fetchWithSignal(signal),
   }), providerFunctionPayload),
-  'provider.syncMetrics': registered('external', 180_000, ({ pool, env }, data) => handleProviderMetricsSync(pool, data, {
+  'provider.syncMetrics': registered('external', 180_000, ({ pool, env, signal }, data) => handleProviderMetricsSync(pool, data, {
     encryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64,
     graphBaseUrl: env.META_GRAPH_BASE_URL,
+    fetcher: fetchWithSignal(signal),
   }), providerSyncPayload),
   'email.send': registered('external', 120_000, ({ pool }, data) => handleEmailSend(pool, data)),
-  'strategy.adminChat': registered('external', 180_000, ({ pool, env }, data) => handleStrategyAdminChat(pool, env, data)),
-  'radar.analyzeOpportunity': registered('external', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
-  'company-intelligence.indexKnowledge': registered('external', 300_000, ({ pool, env }, data) => handleKnowledgeIndexing(pool, env, data)),
-  'company-intelligence.discoverWebsite': registered('external', 300_000, ({ pool, env }, data) => handleWebsiteOnboarding(pool, env, data)),
-  'proposal.convert': registered('internal', 120_000, ({ pool }, data) => handleProposalConversion(pool, data.proposalId)),
+  'strategy.adminChat': registered('interactive', 180_000, ({ pool, env }, data) => handleStrategyAdminChat(pool, env, data)),
+  'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
+  'company-intelligence.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleKnowledgeIndexing(pool, env, data, { signal })),
+  'company-intelligence.discoverWebsite': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleWebsiteOnboarding(pool, env, data, { signal })),
+  'proposal.convert': registered('interactive', 120_000, ({ pool }, data) => handleProposalConversion(pool, data.proposalId)),
   'maintenance.purgeExpiredTraces': registered('maintenance', 180_000, ({ pool }) => purgeExpiredTraces(pool)),
   'maintenance.refreshGoogleTokens': registered('maintenance', 180_000, ({ pool, env }) => refreshExpiringGoogleTokens(pool, env)),
 } satisfies Record<JobName, JobRegistration>
@@ -188,4 +189,8 @@ export function enqueueRegisteredJob(
     jobId: options?.jobId ?? createIdempotencyKey(name, parsed),
     ...(options?.delay !== undefined ? { delay: options.delay } : {}),
   })
+}
+
+function fetchWithSignal(signal: AbortSignal): typeof fetch {
+  return (resource, init = {}) => fetch(resource, { ...init, signal })
 }

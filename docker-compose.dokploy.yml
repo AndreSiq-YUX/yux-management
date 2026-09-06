@@ -72,13 +72,17 @@ services:
       - yux-agent-harness-runtime
     restart: unless-stopped
 
-  yux-backend-worker:
+  yux-backend-worker: &yux-worker-service
     build:
       context: .
       dockerfile: backend/Dockerfile.dokploy
     command: ["node", "dist/src/worker.js"]
-    environment:
+    environment: &yux-worker-environment
       NODE_ENV: production
+      YUX_WORKER_QUEUE_CLASS: interactive
+      YUX_INTERACTIVE_CONCURRENCY: ${YUX_INTERACTIVE_CONCURRENCY:-2}
+      YUX_DRAIN_LEGACY_QUEUE: ${YUX_DRAIN_LEGACY_QUEUE:-true}
+      YUX_SCHEDULER_ENABLED: "false"
       DATABASE_URL: ${YUX_WORKER_DATABASE_URL:-${DATABASE_URL}}
       YUX_DATABASE_SERVICE_ROLE: worker
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
@@ -107,6 +111,7 @@ services:
       KNOWLEDGE_CURATION_ENABLED: ${KNOWLEDGE_CURATION_ENABLED:-true}
       KNOWLEDGE_CURATION_MAX_BATCH_CHARS: ${KNOWLEDGE_CURATION_MAX_BATCH_CHARS:-12000}
       KNOWLEDGE_WEBSITE_MAX_PAGES: ${KNOWLEDGE_WEBSITE_MAX_PAGES:-30}
+      JINA_REQUEST_TIMEOUT_MS: ${JINA_REQUEST_TIMEOUT_MS:-15000}
     volumes:
       - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
       - yux_company_knowledge_data:/app/storage/company-knowledge
@@ -115,6 +120,33 @@ services:
       - yux-redis
       - yux-agent-harness-runtime
     restart: unless-stopped
+
+  yux-backend-worker-ingestion:
+    <<: *yux-worker-service
+    environment:
+      <<: *yux-worker-environment
+      YUX_WORKER_QUEUE_CLASS: ingestion
+      YUX_INGESTION_CONCURRENCY: ${YUX_INGESTION_CONCURRENCY:-1}
+      YUX_DRAIN_LEGACY_QUEUE: "false"
+      YUX_SCHEDULER_ENABLED: "false"
+
+  yux-backend-worker-external:
+    <<: *yux-worker-service
+    environment:
+      <<: *yux-worker-environment
+      YUX_WORKER_QUEUE_CLASS: external
+      YUX_EXTERNAL_CONCURRENCY: ${YUX_EXTERNAL_CONCURRENCY:-2}
+      YUX_DRAIN_LEGACY_QUEUE: "false"
+      YUX_SCHEDULER_ENABLED: "false"
+
+  yux-backend-worker-maintenance:
+    <<: *yux-worker-service
+    environment:
+      <<: *yux-worker-environment
+      YUX_WORKER_QUEUE_CLASS: maintenance
+      YUX_MAINTENANCE_CONCURRENCY: ${YUX_MAINTENANCE_CONCURRENCY:-1}
+      YUX_DRAIN_LEGACY_QUEUE: "false"
+      YUX_SCHEDULER_ENABLED: "true"
 
   yux-postgres:
     image: postgres:17-alpine

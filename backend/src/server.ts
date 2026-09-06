@@ -9,8 +9,9 @@ import { createPgAuthStore, registerAuthRoutes, type AuthStore } from './auth/ro
 import { loadEnv, type AppEnv } from './config/env.js'
 import { createPool } from './db/client.js'
 import { contextPlugin } from './http/context-plugin.js'
-import { DEFAULT_QUEUE_NAME, createQueue, type JobName, type QueueJobData } from './jobs/queue.js'
-import { enqueueRegisteredJob, parseRegisteredJobData } from './jobs/registry.js'
+import type { JobName, QueueJobData } from './jobs/queue.js'
+import { parseRegisteredJobData } from './jobs/registry.js'
+import { createRoutedJobQueue } from './jobs/router.js'
 import { registerAiAssistantRoutes } from './modules/ai-assistant/routes.js'
 import { registerActionEngineRoutes } from './modules/action-engine/routes.js'
 import { registerAutomationRoutes } from './modules/automations/routes.js'
@@ -143,16 +144,7 @@ function getErrorStatusCode(error: unknown) {
 }
 
 function createAppJobQueue(): AppJobQueue {
-  const queue = createQueue()
-
-  return {
-    async add(name, data, options) {
-      return enqueueRegisteredJob(queue, name, data, options)
-    },
-    async close() {
-      await queue.close()
-    },
-  }
+  return createRoutedJobQueue()
 }
 
 function createNoopJobQueue(): AppJobQueue {

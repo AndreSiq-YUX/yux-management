@@ -3,6 +3,14 @@ import type { RedisOptions } from 'ioredis'
 import { createHash } from 'node:crypto'
 
 export const DEFAULT_QUEUE_NAME = 'yux-jobs'
+export const QUEUE_NAMES = {
+  interactive: 'yux-interactive',
+  ingestion: 'yux-ingestion',
+  external: 'yux-external',
+  maintenance: 'yux-maintenance',
+} as const
+
+export type JobQueueClass = keyof typeof QUEUE_NAMES
 
 export const JOB_NAMES = [
   'automation.dispatch',

@@ -1,5 +1,6 @@
-import { DEFAULT_QUEUE_NAME, createBullMqJobId, createQueue, createWorker } from './jobs/queue.js'
-import { enqueueRegisteredJob } from './jobs/registry.js'
+import { DEFAULT_QUEUE_NAME, QUEUE_NAMES, createBullMqJobId, createWorker, type JobQueueClass } from './jobs/queue.js'
+import { createRoutedJobQueue } from './jobs/router.js'
+import { acquireSchedulerLeadership, type SchedulerLeadership } from './jobs/scheduler-leadership.js'
 import type { AppJobQueue } from './server.js'
 import { createPool } from './db/client.js'
 import { runWithDatabaseRequestContext } from './db/request-context.js'
@@ -9,13 +10,33 @@ import { runCrmSequenceScheduler } from './modules/crm/scheduler.js'
 
 const env = loadEnv()
 const pool = createPool(env.DATABASE_URL)
-const rawMaintenanceQueue = createQueue(DEFAULT_QUEUE_NAME)
-const maintenanceQueue: AppJobQueue = {
-  add: (name, data, options) => enqueueRegisteredJob(rawMaintenanceQueue, name, data, options),
-  close: () => rawMaintenanceQueue.close(),
-}
+const routedQueue = createRoutedJobQueue()
+const maintenanceQueue: AppJobQueue = routedQueue
 const processJob = createJobProcessor({ pool, env, maintenanceQueue })
-const worker = createWorker(DEFAULT_QUEUE_NAME, processJob)
+const selectedQueueClasses = workerQueueClasses(env.YUX_WORKER_QUEUE_CLASS)
+const queueConcurrency: Record<JobQueueClass, number> = {
+  interactive: env.YUX_INTERACTIVE_CONCURRENCY ?? 2,
+  ingestion: env.YUX_INGESTION_CONCURRENCY ?? 1,
+  external: env.YUX_EXTERNAL_CONCURRENCY ?? 2,
+  maintenance: env.YUX_MAINTENANCE_CONCURRENCY ?? 1,
+}
+const workers = selectedQueueClasses.map(queueClass => createWorker(QUEUE_NAMES[queueClass], processJob, undefined, {
+  concurrency: queueConcurrency[queueClass],
+  lockDuration: 120_000,
+  stalledInterval: 30_000,
+}))
+if (env.YUX_DRAIN_LEGACY_QUEUE === true) {
+  workers.push(createWorker(DEFAULT_QUEUE_NAME, processJob, undefined, { concurrency: 1, lockDuration: 120_000, stalledInterval: 30_000 }))
+}
+let schedulerLeadership: SchedulerLeadership | null = null
+let schedulerActive = false
+if (env.YUX_SCHEDULER_ENABLED !== false) {
+  schedulerLeadership = await acquireSchedulerLeadership(pool)
+  schedulerActive = Boolean(schedulerLeadership)
+  if (!schedulerActive) {
+    console.log('[worker] scheduler lock held by another process; timers disabled here')
+  }
+}
 const schedulerIntervalMs = Number(process.env.CRM_SEQUENCE_SCHEDULER_INTERVAL_MS || 60_000)
 const maintenanceIntervalMs = Number(process.env.TRACE_RETENTION_PURGE_INTERVAL_MS || 24 * 60 * 60 * 1_000)
 const domainEventDispatchIntervalMs = Number(process.env.DOMAIN_EVENT_DISPATCH_INTERVAL_MS || 5_000)
@@ -24,11 +45,11 @@ const actionMetricsIntervalMs = Number(process.env.ACTION_ENGINE_METRICS_INTERVA
 const campaignOptimizationIntervalMs = Number(process.env.CAMPAIGN_OPTIMIZATION_INTERVAL_MS || 60 * 60_000)
 const missionLearningIntervalMs = Number(process.env.MISSION_LEARNING_INTERVAL_MS || 60 * 60_000)
 
-const scheduler = setInterval(() => {
+const scheduler = schedulerActive ? setInterval(() => {
   void runWithDatabaseRequestContext({ role: 'yux_operator', organizationIds: [], serviceRole: 'worker' }, () => runCrmSequenceScheduler(pool, { crmWebhookUrl: env.N8N_CRM_WEBHOOK_URL, crmWebhookSecret: env.N8N_WEBHOOK_SECRET })).catch((error) => {
     console.error('[worker] crm sequence scheduler failed', error)
   })
-}, schedulerIntervalMs)
+}, schedulerIntervalMs) : undefined
 
 function scheduleTraceRetentionPurge() {
   const day = new Date().toISOString().slice(0, 10)
@@ -38,10 +59,10 @@ function scheduleTraceRetentionPurge() {
   ])
 }
 
-void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))
-const maintenanceScheduler = setInterval(() => {
+if (schedulerActive) void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))
+const maintenanceScheduler = schedulerActive ? setInterval(() => {
   void scheduleTraceRetentionPurge().catch((error) => console.error('[worker] trace retention scheduling failed', error))
-}, maintenanceIntervalMs)
+}, maintenanceIntervalMs) : undefined
 
 const googleTokenRefreshIntervalMs = Number(process.env.GOOGLE_TOKEN_REFRESH_INTERVAL_MS || 30 * 60 * 1_000)
 
@@ -51,20 +72,20 @@ function scheduleGoogleTokenRefresh() {
   return maintenanceQueue.add('maintenance.refreshGoogleTokens', { window }, { jobId: createBullMqJobId('maintenance-google-token-refresh', window) })
 }
 
-void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
-const googleTokenRefreshScheduler = setInterval(() => {
+if (schedulerActive) void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
+const googleTokenRefreshScheduler = schedulerActive ? setInterval(() => {
   void scheduleGoogleTokenRefresh().catch((error) => console.error('[worker] google token refresh scheduling failed', error))
-}, googleTokenRefreshIntervalMs)
+}, googleTokenRefreshIntervalMs) : undefined
 
 function scheduleDomainEventDispatch() {
   const window = Math.floor(Date.now() / domainEventDispatchIntervalMs)
   return maintenanceQueue.add('events.dispatchPending', { window, limit: 100 }, { jobId: createBullMqJobId('events-dispatch', window) })
 }
 
-void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
-const domainEventDispatchScheduler = setInterval(() => {
+if (schedulerActive) void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
+const domainEventDispatchScheduler = schedulerActive ? setInterval(() => {
   void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
-}, domainEventDispatchIntervalMs)
+}, domainEventDispatchIntervalMs) : undefined
 
 function scheduleActionEngineMaintenance() {
   const waitWindow = Math.floor(Date.now() / actionWaitIntervalMs)
@@ -80,27 +101,25 @@ function scheduleActionEngineMaintenance() {
   ])
 }
 
-void scheduleActionEngineMaintenance().catch((error) => console.error('[worker] action engine scheduling failed', error))
-const actionEngineScheduler = setInterval(() => {
+if (schedulerActive) void scheduleActionEngineMaintenance().catch((error) => console.error('[worker] action engine scheduling failed', error))
+const actionEngineScheduler = schedulerActive ? setInterval(() => {
   void scheduleActionEngineMaintenance().catch((error) => console.error('[worker] action engine scheduling failed', error))
-}, Math.min(actionWaitIntervalMs, actionMetricsIntervalMs))
+}, Math.min(actionWaitIntervalMs, actionMetricsIntervalMs)) : undefined
 
-worker.on('completed', (job) => {
-  console.log(`[worker] completed ${job.name}#${job.id ?? 'unknown'}`)
-})
-
-worker.on('failed', (job, error) => {
-  console.error(`[worker] failed ${job?.name ?? 'unknown'}#${job?.id ?? 'unknown'}`, error)
-})
+for (const worker of workers) {
+  worker.on('completed', (job) => console.log(`[worker] completed ${job.name}#${job.id ?? 'unknown'}`))
+  worker.on('failed', (job, error) => console.error(`[worker] failed ${job?.name ?? 'unknown'}#${job?.id ?? 'unknown'}`, error))
+}
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`[worker] received ${signal}, shutting down`)
-  clearInterval(scheduler)
-  clearInterval(maintenanceScheduler)
-  clearInterval(googleTokenRefreshScheduler)
-  clearInterval(domainEventDispatchScheduler)
-  clearInterval(actionEngineScheduler)
-  await worker.close()
+  if (scheduler) clearInterval(scheduler)
+  if (maintenanceScheduler) clearInterval(maintenanceScheduler)
+  if (googleTokenRefreshScheduler) clearInterval(googleTokenRefreshScheduler)
+  if (domainEventDispatchScheduler) clearInterval(domainEventDispatchScheduler)
+  if (actionEngineScheduler) clearInterval(actionEngineScheduler)
+  await Promise.all(workers.map(worker => worker.close()))
+  await schedulerLeadership?.release()
   await maintenanceQueue.close()
   await pool.end()
   process.exit(0)
@@ -113,3 +132,11 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   void shutdown('SIGINT')
 })
+
+function workerQueueClasses(value: string | undefined): JobQueueClass[] {
+  const requested = (value || 'all').split(',').map(item => item.trim()).filter(Boolean)
+  if (requested.includes('all')) return Object.keys(QUEUE_NAMES) as JobQueueClass[]
+  const valid = requested.filter((item): item is JobQueueClass => Object.prototype.hasOwnProperty.call(QUEUE_NAMES, item))
+  if (!valid.length || valid.length !== requested.length) throw new Error('YUX_WORKER_QUEUE_CLASS contains an unsupported queue class')
+  return [...new Set(valid)]
+}
