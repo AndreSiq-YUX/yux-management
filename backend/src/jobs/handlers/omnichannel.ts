@@ -104,7 +104,7 @@ export async function handleInboundMessage(
       if (typeof executionId === 'string') {
         await pool.query(
           `UPDATE public.automation_executions
-              SET payload = payload || jsonb_build_object('deliveryStatus', $2)
+              SET payload = payload || jsonb_build_object('deliveryStatus', $2::text)
             WHERE id = $1`,
           [executionId, deliveryStatus],
         )
@@ -334,7 +334,7 @@ export async function handleOutboundMessage(
   if (policyBlock) {
     await pool.query(
       `UPDATE public.messages
-          SET delivery_status = 'failed', metadata = metadata || jsonb_build_object('dispatchBlockedReason', $2), updated_at = NOW()
+          SET delivery_status = 'failed', metadata = metadata || jsonb_build_object('dispatchBlockedReason', $2::text), updated_at = NOW()
         WHERE id = $1`,
       [messageId, policyBlock],
     )
