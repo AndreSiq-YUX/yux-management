@@ -37,6 +37,7 @@ def test_fifteen_case_corpus_passes_every_promotion_gate() -> None:
     manifest = json.loads((ROOT / "golden-missions" / "manifest.json").read_text(encoding="utf-8"))
     corpus = json.loads((ROOT / "golden-missions" / "fixtures" / "corpus.json").read_text(encoding="utf-8"))
     report = evaluate_golden_manifest(manifest, corpus)
+    assert manifest["artifactKind"] == corpus["artifactKind"] == "contract_fixture"
     assert len(report["cases"]) == 15
     assert report["passed"] is True
     assert report["minimumDomainScore"] >= 90
@@ -52,3 +53,10 @@ def test_cost_or_latency_regression_above_twenty_percent_fails_promotion() -> No
     report = evaluate_golden_manifest(manifest, regressed)
     assert report["passed"] is False
     assert {failure["gate"] for failure in report["failures"]} >= {"cost_regression", "latency_regression"}
+
+
+def test_golden_data_cannot_be_misrepresented_as_live_measurement() -> None:
+    manifest = json.loads((ROOT / "golden-missions" / "manifest.json").read_text(encoding="utf-8"))
+    corpus = json.loads((ROOT / "golden-missions" / "fixtures" / "corpus.json").read_text(encoding="utf-8"))
+    manifest.pop("artifactKind")
+    assert {item["gate"] for item in evaluate_golden_manifest(manifest, corpus)["failures"]} >= {"artifact_identity"}

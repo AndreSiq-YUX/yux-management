@@ -104,6 +104,7 @@ class OpenRouterClient:
             "input_tokens": int(usage.get("prompt_tokens") or 0),
             "output_tokens": int(usage.get("completion_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
+            "cost_usd": float(usage["cost"]) if isinstance(usage.get("cost"), (int, float)) else None,
             "raw_response_id": response.get("id"),
             "request_parameters": {"temperature": temperature, "max_tokens": max_tokens},
             "prompt_hash": sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),

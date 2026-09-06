@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "artifactKind": "contract_fixture",
   "profile": { "key": "mission_supervisor", "version": 1 },
   "baseline": { "medianCostBrl": 2.0, "p95LatencyMs": 1000 },
   "benchmarkExceptions": [],

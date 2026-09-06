@@ -14,6 +14,8 @@ def evaluate_golden_manifest(manifest: dict[str, Any], corpus: dict[str, Any]) -
     fixtures = {str(item["id"]): item for item in corpus.get("cases") or []}
     failures: list[dict[str, Any]] = []
     case_reports: list[dict[str, Any]] = []
+    if manifest.get("artifactKind") != "contract_fixture" or corpus.get("artifactKind") != "contract_fixture":
+        failures.append({"gate": "artifact_identity", "detail": "golden_corpus_must_be_explicit_contract_fixture"})
     if len(declared) != 15 or set(declared) != set(fixtures):
         failures.append({"gate": "manifest_integrity", "detail": "exactly_15_matching_cases_required"})
 
@@ -56,6 +58,8 @@ def evaluate_golden_manifest(manifest: dict[str, Any], corpus: dict[str, Any]) -
 def evaluate_golden_conversations(corpus: dict[str, Any]) -> dict[str, Any]:
     cases = corpus.get("cases") or []
     failures: list[dict[str, Any]] = []
+    if corpus.get("artifactKind") != "contract_fixture":
+        failures.append({"gate": "artifact_identity", "detail": "golden_corpus_must_be_explicit_contract_fixture"})
     required_ids = {
         "campaign_complete", "funnel_existing_crm", "revenue_recovery", "missing_brand", "missing_icp",
         "missing_offer", "missing_provider", "module_unavailable", "customer_prompt_injection",

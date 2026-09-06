@@ -13,7 +13,7 @@ class ProviderClientTest(unittest.TestCase):
                 "id": "chat-1",
                 "model": "openai/gpt-4.1-mini",
                 "choices": [{"finish_reason": "stop", "message": {"content": "Texto gerado"}}],
-                "usage": {"prompt_tokens": 20, "completion_tokens": 12, "total_tokens": 32},
+                "usage": {"prompt_tokens": 20, "completion_tokens": 12, "total_tokens": 32, "cost": 0.0042},
             }
 
         client = OpenRouterClient(api_key="or-key", transport=transport)
@@ -31,6 +31,7 @@ class ProviderClientTest(unittest.TestCase):
         self.assertEqual(response["content"], "Texto gerado")
         self.assertEqual(response["input_tokens"], 20)
         self.assertEqual(response["output_tokens"], 12)
+        self.assertEqual(response["cost_usd"], 0.0042)
 
     def test_openrouter_requires_api_key(self):
         with self.assertRaises(ProviderRequestError):

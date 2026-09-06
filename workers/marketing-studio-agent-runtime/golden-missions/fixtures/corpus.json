@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "artifactKind": "contract_fixture",
   "cases": [
     { "id": "revenue_recovery", "outcome": "proposal", "checks": { "schemaValid": true, "protectedNodesValid": true, "citationsValid": true, "policyValid": true, "tenantBoundaryValid": true }, "domainScore": 96, "metrics": { "costBrl": 2.0, "latencyMs": 900 } },
     { "id": "missing_context", "outcome": "clarification", "checks": { "schemaValid": true, "protectedNodesValid": true, "citationsValid": true, "policyValid": true, "tenantBoundaryValid": true }, "domainScore": 94, "metrics": { "costBrl": 1.7, "latencyMs": 700 } },

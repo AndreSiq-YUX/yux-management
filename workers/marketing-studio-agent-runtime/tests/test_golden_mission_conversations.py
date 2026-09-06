@@ -15,7 +15,9 @@ def corpus() -> dict:
 
 
 def test_frozen_conversations_pass_every_release_gate() -> None:
-    report = evaluate_golden_conversations(corpus())
+    fixture = corpus()
+    assert fixture["artifactKind"] == "contract_fixture"
+    report = evaluate_golden_conversations(fixture)
     assert report["passed"] is True
     assert report["caseCount"] == 15
     assert report["contractValidRate"] == 1
@@ -39,3 +41,9 @@ def test_conversation_gates_reject_leaks_unsafe_actions_question_loops_and_regre
     report = evaluate_golden_conversations(unsafe)
     gates = {failure["gate"] for failure in report["failures"]}
     assert {"cross_tenant_leakage", "unauthorized_capability_suggestion", "question_cap", "duplicate_question", "conversation_cost_regression", "conversation_latency_regression"}.issubset(gates)
+
+
+def test_conversation_fixture_identity_is_required() -> None:
+    fixture = corpus()
+    fixture.pop("artifactKind")
+    assert {item["gate"] for item in evaluate_golden_conversations(fixture)["failures"]} >= {"artifact_identity"}

@@ -39,4 +39,6 @@ def test_live_supervisor_returns_a_catalog_and_source_bound_proposal() -> None:
     assert result["kind"] in ("clarification", "plan")
     assert set(result["sourceIds"]).issubset({"source-live-1"})
     assert result["trace"]["profileKey"] == "mission_supervisor"
-
+    assert result["trace"]["resolvedModelId"]
+    assert len(result["trace"]["promptHash"]) == 64
+    assert result["usage"]["totalTokens"] > 0
