@@ -94,6 +94,41 @@ export type VerifiedMissionKnowledgeContext = {
   contextHash: string
 }
 
+export async function revalidateMissionGrounding(client: Queryable, input: {
+  organizationId: string
+  contextSnapshotId: string
+  audience: 'internal_operator' | 'client_user'
+  agentProfileKey: string
+  contractId?: string | null
+  moduleKey: string
+  workflowKey?: string | null
+  channel?: string | null
+}): Promise<VerifiedMissionKnowledgeContext> {
+  const snapshot = await client.query<{
+    knowledge_items: MissionSourceRefWire[]
+    strategy_items: MissionSourceRefWire[]
+  }>(
+    `SELECT knowledge_items,strategy_items
+     FROM public.action_mission_context_snapshots
+     WHERE id=$1 AND organization_id=$2 LIMIT 1`,
+    [input.contextSnapshotId, input.organizationId],
+  )
+  const row = snapshot.rows[0]
+  if (!row) throw new Error('mission_grounding_snapshot_not_found')
+  const sourceRefs = [...(row.strategy_items ?? []), ...(row.knowledge_items ?? [])]
+    .map(toMissionSourceRef)
+  return verifyMissionKnowledgeContext(client, {
+    organizationId: input.organizationId,
+    audience: input.audience,
+    sourceRefs,
+    agentProfileKey: input.agentProfileKey,
+    contractId: input.contractId,
+    moduleKey: input.moduleKey,
+    workflowKey: input.workflowKey,
+    channel: input.channel,
+  })
+}
+
 export async function verifyMissionKnowledgeContext(client: Queryable, input: {
   organizationId: string
   audience: 'internal_operator' | 'client_user'
@@ -409,6 +444,27 @@ function assertRefIdentity(source: MissionSourceRefWire): void {
 
 function isGovernedSource(source: MissionSourceRefWire) {
   return source.publicationId != null
+}
+
+function toMissionSourceRef(source: MissionSourceRefWire): MissionSourceRefWire {
+  if (!source || typeof source !== 'object') throw new Error('mission_grounding_snapshot_source_invalid')
+  return {
+    ref: source.ref,
+    kind: source.kind,
+    id: source.id,
+    version: source.version,
+    contentHash: source.contentHash,
+    visibility: source.visibility,
+    title: source.title,
+    displayMode: source.displayMode,
+    ...(source.publicationId != null ? {
+      publicationId: source.publicationId,
+      itemId: source.itemId,
+      knowledgePolicyVersion: source.knowledgePolicyVersion,
+      useMode: source.useMode,
+      bindingFingerprint: source.bindingFingerprint,
+    } : {}),
+  }
 }
 
 function profileAllowed(allowed: string[] | null | undefined, profileKey: string): boolean {

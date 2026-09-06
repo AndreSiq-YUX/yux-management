@@ -115,3 +115,11 @@
 - Cache: a identidade inclui organização, contrato, perfil, audiência, módulo/workflow/canal, versão da política, publicações, fingerprint dos bindings, modelo e hash da consulta. Nova publicação ou alteração/revogação de binding produz identidade diferente; o caminho atual consulta a fonte autoritativa a cada execução e não reaproveita resposta antiga.
 - Auditoria: rascunhos possuem endpoint exclusivo de curador, rotulado `UNPUBLISHED_DRAFT_AUDIT`; a resposta não implementa `RetrievalResultV1` e não pode ser usada como contexto de agente.
 - Compatibilidade: a interface canônica rejeita campos desconhecidos. A RPC antiga traduz apenas os dois nomes historicamente usados e preserva consulta vazia; divergência entre nomes novos e antigos é recusada.
+
+## D-018 — A referência publicada acompanha a decisão até o efeito
+
+- Status: decidida.
+- Identidade: a ponte do Harness para missões conserva `publicationId`, `itemId`, versão da política, modo de uso, fingerprint do binding e o hash canônico do conteúdo. Esses campos são indivisíveis; memória de missão não os recebe e referências históricas continuam no verificador legado.
+- Consumidores: Marketing, Radar, automação IA, atendimento omnichannel, chat estratégico e supervisor resolvem audiência pelo mesmo construtor de escopo e consultam a política autoritativa de T20. Somente o supervisor pode conservar a audiência explícita e validada da conversa; os demais não podem ampliar o próprio público por payload.
+- Execução: o snapshot imutável e sua audiência são ligados ao plano compilado. Antes de reservar uma intenção externa ou destrutiva, o executor consulta novamente a projeção publicada e o binding efetivo. Revogação bloqueia o novo efeito e exige revisão/replanejamento, sem apagar o texto e a evidência históricos.
+- Modelo e capacidades: o modelo escolhe apenas referências recuperadas; referência inventada, identidade incompleta ou hash divergente produz erro estruturado sem loop. O compilador e o manifest fixado continuam sendo a autoridade sobre capacidades; uma sugestão não registrada não vira ferramenta executável.

@@ -4,6 +4,7 @@ import type { BuiltMissionOperationalContext } from '../src/modules/action-engin
 import {
   composeVerifiedMissionContext,
   mapMissionCorrectionAction,
+  revalidateMissionGrounding,
   verifyMissionKnowledgeContext,
 } from '../src/modules/action-engine/mission-source-verifier.js'
 import { hashCanonical } from '../src/modules/action-engine/repository.js'
@@ -201,6 +202,33 @@ describe('Harness-selected Mission source verification', () => {
       workflowKey: 'mission_intake_conversation',
       sourceRefs: [{ ...strategy!, contentHash: 'f'.repeat(64) }],
     })).rejects.toThrow(`mission_source_verification_failed:yux:${governedIds.strategyCard}`)
+  })
+
+  it('revalidates the immutable snapshot before an external effect and blocks a revoked binding', async () => {
+    const refs = governedSourceRefs()
+    const database = (bindingRemoved = false) => ({
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('action_mission_context_snapshots')) return {
+          rows: [{ strategy_items: [refs[0]], knowledge_items: [refs[1]] }],
+        }
+        return governedDatabase({ bindingRemoved }).query(sql)
+      }),
+    })
+    const input = {
+      organizationId: '99999999-9999-4999-8999-999999999999',
+      contextSnapshotId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      audience: 'client_user' as const,
+      agentProfileKey: 'growth_strategist',
+      contractId: '77777777-7777-4777-8777-777777777777',
+      moduleKey: 'marketing_studio',
+      workflowKey: 'mission_intake_conversation',
+    }
+
+    await expect(revalidateMissionGrounding(database() as never, input)).resolves.toMatchObject({
+      sources: expect.arrayContaining([expect.objectContaining({ publicationId: governedIds.strategyPublication })]),
+    })
+    await expect(revalidateMissionGrounding(database(true) as never, input))
+      .rejects.toThrow(`mission_source_verification_failed:yux:${governedIds.strategyCard}`)
   })
 
   it('maps correction links from a server allowlist and ignores arbitrary model URLs', () => {

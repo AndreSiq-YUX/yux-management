@@ -568,6 +568,7 @@ export async function handleActionEnginePlanMission(
     packKeys: packs.map(item=>item.key),
   })
   const linkedConversation = await getMissionConversationForMission(pool, missionId, organizationId)
+  let groundingMetadata: Record<string, unknown> | null = null
   let planningContext = {
     query: operationalContext.query,
     companyContext: operationalContext.companyContext as Record<string, unknown>,
@@ -587,6 +588,14 @@ export async function handleActionEnginePlanMission(
     const sourceRefs = (latestGroundedMessage?.sourceRefs ?? []) as unknown as MissionSourceRefWire[]
     const audience = sourceRefs.some(source => source.kind.startsWith('knowledge_') && source.visibility === 'internal')
       ? 'internal_operator' as const : 'client_user' as const
+    groundingMetadata = {
+      audience,
+      agentProfileKey: 'growth_strategist',
+      contractId: mission.contractId,
+      moduleKey: 'marketing_studio',
+      workflowKey: 'mission_intake_conversation',
+      channel: null,
+    }
     const verified = await verifyMissionKnowledgeContext(pool, {
       organizationId, audience, sourceRefs, agentProfileKey: 'growth_strategist',
       contractId: mission.contractId, moduleKey: 'marketing_studio', workflowKey: 'mission_intake_conversation',
@@ -813,7 +822,11 @@ export async function handleActionEnginePlanMission(
         capabilityManifest: compiled.capabilityManifest,
         capabilityManifestHash: compiled.capabilityManifestHash,
         steps: compiled.steps, proposedPayload: rawPlan as Record<string, unknown>,
-        compiledPayload: compiled as unknown as Record<string, unknown>, planHash: compiled.planHash,
+        compiledPayload: {
+          ...(compiled as unknown as Record<string, unknown>),
+          ...(groundingMetadata ? { grounding: { ...groundingMetadata, contextSnapshotId: contextSnapshot.id } } : {}),
+        },
+        planHash: compiled.planHash,
       })
       await client.query(`UPDATE public.action_plans SET status = 'pending_approval', updated_at = NOW() WHERE id = $1`, [plan.id])
       const effectsByCapability = new Map(compiled.capabilityManifest.map(item => [`${item.key}@${item.version}`, item.effect]))

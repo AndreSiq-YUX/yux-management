@@ -25,6 +25,7 @@ import { resolvePlanInputBindings } from './plan-input-bindings.js'
 import { resolveCompositeActionInput } from './composite-execution.js'
 import { getActiveAutonomyGrant } from './autonomy-grants.js'
 import { estimateAutonomousEffectUsage, evaluateAutonomousPreflight, type AutonomyUsageSnapshot } from './autonomous-preflight.js'
+import { revalidateMissionGrounding } from './mission-source-verifier.js'
 
 type ActionRow = {
   id: string; organization_id: string; mission_id: string; plan_id: string; plan_step_id: string;
@@ -231,6 +232,19 @@ export async function executeActionRun(
       )
       const currentMission = await getMission(client, claimed.action.mission_id, input.organizationId)
       if (!currentMission) throw new Error('mission_not_found')
+      const grounding = readGroundingMetadata(claimed.action.compiled_payload)
+      if ((capability.effect === 'external' || capability.effect === 'destructive') && grounding) {
+        await revalidateMissionGrounding(client, {
+          organizationId: input.organizationId,
+          contextSnapshotId: grounding.contextSnapshotId,
+          audience: grounding.audience,
+          agentProfileKey: grounding.agentProfileKey,
+          contractId: grounding.contractId,
+          moduleKey: grounding.moduleKey,
+          workflowKey: grounding.workflowKey,
+          channel: grounding.channel,
+        })
+      }
       const consentChannel = capability.key === 'email.message.queue' ? 'email'
         : capability.key === 'whatsapp.template.queue' ? 'whatsapp' : null
       const consentEvidenceId = typeof claimed.action.input.consentEvidenceId === 'string' ? claimed.action.input.consentEvidenceId : null
@@ -571,6 +585,35 @@ export async function executeActionRun(
       )
     })
     return { status: retryable ? 'retry_scheduled' : 'failed' }
+  }
+}
+
+function readGroundingMetadata(value: Record<string, unknown>) {
+  const raw = value?.grounding
+  if (!raw || typeof raw !== 'object') return null
+  const contextSnapshotId = Reflect.get(raw, 'contextSnapshotId')
+  const audience = Reflect.get(raw, 'audience')
+  const agentProfileKey = Reflect.get(raw, 'agentProfileKey')
+  const moduleKey = Reflect.get(raw, 'moduleKey')
+  if (typeof contextSnapshotId !== 'string'
+    || (audience !== 'internal_operator' && audience !== 'client_user')
+    || typeof agentProfileKey !== 'string' || typeof moduleKey !== 'string') {
+    throw new Error('mission_grounding_metadata_invalid')
+  }
+  const optionalString = (key: string) => {
+    const item = Reflect.get(raw, key)
+    if (item == null) return null
+    if (typeof item !== 'string') throw new Error('mission_grounding_metadata_invalid')
+    return item
+  }
+  return {
+    contextSnapshotId,
+    audience,
+    agentProfileKey,
+    moduleKey,
+    contractId: optionalString('contractId'),
+    workflowKey: optionalString('workflowKey'),
+    channel: optionalString('channel'),
   }
 }
 

@@ -4,8 +4,8 @@ import pg from 'pg'
 import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import type { MissionSourceRefWire } from '../../src/modules/action-engine/generated/mission-wire.js'
-import { hashCanonical } from '../../src/modules/action-engine/repository.js'
-import { verifyMissionKnowledgeContext } from '../../src/modules/action-engine/mission-source-verifier.js'
+import { hashCanonical, insertMissionContextSnapshot } from '../../src/modules/action-engine/repository.js'
+import { revalidateMissionGrounding } from '../../src/modules/action-engine/mission-source-verifier.js'
 import { retrieveAuthorizedKnowledge } from '../../src/modules/company-intelligence/retrieval-policy.js'
 import { createIntegrationRig, type IntegrationRig } from './support/rig.js'
 
@@ -69,15 +69,34 @@ it('mantém a mesma regra publicada nos consumidores e invalida novas decisões 
       bindingFingerprint: supervisorSource.bindingFingerprint,
     }
     expect(sourceRef.contentHash).toBe(supervisorSource.contentHash)
+    const contextSnapshot = await runWithDatabaseRequestContext(
+      { role: 'yux_operator', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' },
+      () => insertMissionContextSnapshot(workerPool, {
+        organizationId: rig.ids.organizationA,
+        missionId: rig.ids.missionA,
+        query: 'grounding exclusiva aprovada',
+        companyContext: {},
+        knowledgeItems: [],
+        strategyItems: [sourceRef as unknown as Record<string, unknown>],
+        approvedLearningMemory: [],
+        liveState: {},
+        capabilityManifest: [],
+        capabilityCatalogHash: 'c'.repeat(64),
+        sourceIds: [publicRule.cardId],
+      }),
+    )
+    const groundingInput = {
+      organizationId: rig.ids.organizationA,
+      contextSnapshotId: contextSnapshot.id,
+      audience: 'client_user' as const,
+      agentProfileKey: 'growth_strategist',
+      contractId: rig.ids.contractA,
+      moduleKey: 'marketing_studio',
+      workflowKey: 'mission_intake_conversation',
+    }
     const verified = await runWithDatabaseRequestContext(
       { role: 'yux_operator', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' },
-      () => verifyMissionKnowledgeContext(workerPool, {
-        organizationId: rig.ids.organizationA,
-        contractId: rig.ids.contractA,
-        audience: 'client_user',
-        workflowKey: 'mission_intake_conversation',
-        sourceRefs: [sourceRef],
-      }),
+      () => revalidateMissionGrounding(workerPool, groundingInput),
     )
     expect(verified.sources[0]).toMatchObject({
       publicationId: publicRule.releaseId,
@@ -90,13 +109,7 @@ it('mantém a mesma regra publicada nos consumidores e invalida novas decisões 
     expect(afterRevocation.result.sources.map(source => source.id)).not.toContain(publicRule.cardId)
     await expect(runWithDatabaseRequestContext(
       { role: 'yux_operator', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' },
-      () => verifyMissionKnowledgeContext(workerPool, {
-        organizationId: rig.ids.organizationA,
-        contractId: rig.ids.contractA,
-        audience: 'client_user',
-        workflowKey: 'mission_intake_conversation',
-        sourceRefs: [sourceRef],
-      }),
+      () => revalidateMissionGrounding(workerPool, groundingInput),
     )).rejects.toThrow(`mission_source_verification_failed:yux:${publicRule.cardId}`)
     expect(verified.sources[0]?.content).toBe(publicRule.content)
   } finally {
