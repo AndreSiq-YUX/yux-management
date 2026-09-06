@@ -373,3 +373,15 @@ frontend tests: PASS, 528 PASS
 - Reprodutibilidade: duas instalações e duas compilações Node produziram árvores e hashes idênticos. A instalação Python limpa com hashes passou em `pip check`, 189 testes e 15 cenários dourados.
 - Riscos residuais: React Router 6 e Vite 5 conservam advisories documentados e delimitados no relatório de T28, com migração incompatível prevista até 2026-09-30. Nenhum high/critical alcança as dependências ou imagens de produção.
 - Aceite persistente: execução GitHub Actions `34054082691`, commit `9c73afe`, conclusão `success` nos sete jobs, incluindo três builds de imagem, três scans sem high/critical e três SBOMs.
+
+## T29 — Carregamento inicial e jornada medida
+
+- Estado: aceita.
+- Commit: `c7fa8ce`.
+- Divisão: páginas são entradas tardias por rota; autenticação, papel, contexto e shell continuam carregados antes delas. Gráficos, canvas e editores pesados de automações e Marketing Studio só são importados quando a seção correspondente é usada.
+- Dados: o hook compartilhado de Marketing recebe uma lista explícita de recursos por tela, evitando a cascata anterior de consultas não consumidas sem remover compatibilidade dos chamadores antigos.
+- Orçamento: o JavaScript inicial caiu de 808.036 para 127.579 bytes gzip, redução de 84,21%. O build calcula a clausura estática real no manifest, grava relatório por jornada e falha acima de 404.018 bytes gzip ou abaixo de 50% de redução.
+- Continuidade: falha de chunk apresenta recuperação dentro do shell e não tela branca. Rascunhos do planejamento de marketing e do grafo de automação permanecem na aba durante refresh e são removidos depois de salvar; a identidade do workspace/fluxo impede vazamento entre contextos.
+- Piloto sintético: em Chromium 390×844 e preview de produção local, LCP da visão geral foi 80 ms, CLS 0,03 e a primeira ação da missão levou 24 ms. Uma missão abriu com comandos utilizáveis e o planejamento parcialmente preenchido sobreviveu ao refresh.
+- Verificação local: 137 arquivos/562 testes frontend, type-check, build e orçamento aprovados. O lint permaneceu em 560 erros históricos e reduziu de 27 para 26 avisos sem nova assinatura.
+- Aceite persistente: execução GitHub Actions `34056093562`, commit `c7fa8ce`, conclusão `success` nos sete jobs.

@@ -181,3 +181,11 @@
 - Imagens: a base é fixada por versão e digest, mas uma ferramenta presente somente para construir ou instalar não permanece no estágio final. Por isso o frontend usa Nginx slim, o agente usa Python Alpine sem root e o backend remove npm/npx depois de materializar `node_modules` de produção.
 - Segurança: toda imagem final é examinada por advisory e pacote. High/critical falha a CI com evidência explícita; o SBOM CycloneDX é produzido por imagem. Exceção futura exige alcance analisado, responsável, justificativa e prazo, em vez de desativar o gate.
 - Lint: a baseline representa dívida mensurável, não aprovação. Uma alteração pode manter ou reduzir as assinaturas existentes, nunca criar outra ou elevar a contagem sem uma decisão registrada.
+
+## D-026 — O orçamento mede a entrada real e a continuidade faz parte da carga tardia
+
+- Status: decidida.
+- Medição: o limite do frontend usa a entrada principal e sua clausura de imports estáticos no manifest do build, não apenas o maior arquivo. Cada jornada soma a base e sua própria clausura sem contar arquivo repetido; o relatório fica no artefato de build.
+- Fronteira: autenticação, papel, contexto do workspace e shell permanecem anteriores à importação da página. Página, gráfico, canvas e editor são tardios quando não participam da primeira ação; dividir código não desloca autorização para o componente carregado.
+- Recuperação: falha de versão de chunk mantém o shell e oferece refresh explícito. Estado ainda não salvo que seja compatível fica em armazenamento da mesma aba, cercado por organização, contrato ou fluxo; sucesso da gravação limpa o rascunho.
+- Motivo: reduzir transferência inicial sem produzir tela branca, consulta desnecessária, perda de trabalho ou mistura de contexto entre clientes.
