@@ -59,3 +59,10 @@
 - Decisão: usar o UUID do run do Action Engine como `intentId` quando a origem for uma ação e exigir UUID explícito nas operações administrativas. Hash do payload, aprovação e hash do objeto aprovado ficam congelados com a intenção; alteração legítima posterior cria nova intenção.
 - Ambiguidade: depois que a chamada externa começou, erro de rede compatível com resposta perdida não autoriza repetição. O estado permanece `unknown` e segue para reconciliação ou revisão manual; exatamente uma chamada não é alegada quando o provedor não oferece deduplicação/reconciliação suficiente.
 - Motivo: distinguir retry da mesma decisão de uma nova decisão comercial, sem ocultar efeitos possivelmente aceitos pelo provedor.
+
+## D-011 — Topologia e transição das filas
+
+- Status: decidida.
+- Decisão: separar cargas em quatro filas por classe, conservando nome e identidade do job. `yux-jobs` é somente compatibilidade de drenagem; a API nova não publica em dois destinos. A liderança dos schedulers depende de advisory lock PostgreSQL, não da quantidade de containers.
+- Limite inicial: 2 workers lógicos interativos, 1 de ingestão, 2 externos e 1 de manutenção por processo. A serialização local por organização/provedor é suficiente apenas para a topologia inicial de uma réplica por classe; escala horizontal exige limitador distribuído e nova evidência.
+- Motivo: evitar que curadoria longa bloqueie atendimento e impedir que escala operacional multiplique timers ou efeitos externos.

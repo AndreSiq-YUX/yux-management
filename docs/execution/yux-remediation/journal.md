@@ -197,3 +197,15 @@ frontend tests: PASS, 528 PASS
 - Recuperação: resposta perdida grava `unknown`; repetição muda para `manual_review` e não chama o provedor novamente sem reconciliação. A missão expõe status, prazo e referência de reconciliação sem material sensível.
 - Verificação local: type-checks backend/frontend aprovados; 154 arquivos e 628 testes backend aprovados; teste frontend do serviço de campanha aprovado. Docker não está disponível neste computador.
 - Aceite persistente: execução GitHub Actions `34004433067`, commit `e689287`, conclusão `success`. `provider-intents.test.ts` comprovou duas intenções legítimas com retries e somente duas chamadas, bloqueio de payload alterado e aprovação revogada, e resposta perdida mantida em revisão manual sem sucesso fictício. Backend, frontend e Agent Runtime também permaneceram aprovados.
+
+## T14 — Isolamento de filas e liderança dos schedulers
+
+- Estado: aceita.
+- Commit inicial: `e1e0c9a`; ajuste exclusivo de expectativa do teste: `d0f056c`.
+- Achado: YUX-15.
+- Decisão: novos jobs são roteados pelo registro único para `yux-interactive`, `yux-ingestion`, `yux-external` ou `yux-maintenance`. A fila `yux-jobs` permanece somente como consumidor de dreno durante a transição; nenhum produtor escreve simultaneamente nos dois caminhos.
+- Capacidade inicial: concorrências 2/1/2/1. Trabalhos externos e de ingestão da mesma organização/provedor são serializados dentro do processo; o runbook proíbe aumentar réplica/concorrência antes de um limitador distribuído e da medição de CPU/memória da VPS.
+- Resiliência: leases BullMQ usam 120 segundos e verificação de stalled a cada 30 segundos; o registro impõe deadline total e Jina usa AbortSignal com 15 segundos por chamada. Um advisory lock PostgreSQL de sessão elege um único processo para timers comerciais.
+- Rollout: o Compose cria workers separados por classe, mantém o dreno legado no interativo e habilita scheduler apenas no worker de manutenção. O roteiro de observação e retorno está em `docs/runbooks/yux-queue-rollout.md`.
+- Verificação local: build, type-check e 154 arquivos/628 testes backend aprovados. Docker não está disponível neste computador.
+- Aceite persistente: execução GitHub Actions `34005013449`, commit `d0f056c`, conclusão `success`. `queue-isolation.test.ts` comprovou atendimento interativo durante ingestão ocupada, uma única execução para identidade externa duplicada após reinício e eleição/transferência de um único scheduler. Os testes de integração anteriores e os gates de backend, frontend e Agent Runtime permaneceram aprovados.
