@@ -14,6 +14,7 @@ describe('ConnectedChannelsWorkspace', () => {
         <ConnectedChannelsWorkspace
           organizationId="org-1"
           channels={[]}
+          canConfigure
           onConnect={vi.fn()}
           onDisconnect={vi.fn()}
           onRefreshHealth={vi.fn()}
@@ -54,6 +55,7 @@ describe('ConnectedChannelsWorkspace', () => {
             tokenReferenceConfigured: true,
             publicMetadata: {},
           }]}
+          canConfigure
           onConnect={vi.fn()}
           onDisconnect={vi.fn()}
           onRefreshHealth={vi.fn()}
@@ -69,6 +71,32 @@ describe('ConnectedChannelsWorkspace', () => {
     expect(html).toContain('Comercial YUX')
     expect(html).toContain('Conectar Instagram Direct')
     expect(html).toContain('Conectar pagina do Facebook')
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('keeps channel status readable but disables changes for a read-only workspace', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <ConnectedChannelsWorkspace
+          organizationId="org-1"
+          channels={[]}
+          canConfigure={false}
+          onConnect={vi.fn()}
+          onDisconnect={vi.fn()}
+          onRefreshHealth={vi.fn()}
+          onSendTest={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('somente um administrador do workspace')
+    expect([...container.querySelectorAll('button')].every(button => button.disabled)).toBe(true)
 
     act(() => root.unmount())
     container.remove()

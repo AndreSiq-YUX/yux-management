@@ -501,6 +501,7 @@ export interface MissionReadinessCheck {
   status: 'pass' | 'warn' | 'block'
   message: string
   fixHref?: string
+  correctionTarget?: import('@/types/generated/workspace').CorrectionTargetV1
   capabilityKey?: string
 }
 

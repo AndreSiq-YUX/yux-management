@@ -9,20 +9,20 @@ import type { MetaChannel } from '@/types/omnichannel'
 
 export function PortalConnectedChannelsPage() {
   const {
-    activeContract,
     enabledModuleKeys,
     isLoading,
     organization,
     role,
+    workspaceContext,
   } = usePlatformStore(state => ({
-    activeContract: state.activeContract,
     enabledModuleKeys: state.enabledModuleKeys,
     isLoading: state.isLoading,
     organization: state.organization,
     role: state.role,
+    workspaceContext: state.workspaceContext,
   }))
   const module = getPlatformModule('whatsapp_ai')
-  const organizationId = activeContract && organization?.kind === 'client'
+  const organizationId = organization && workspaceContext?.moduleKeys.includes('whatsapp_ai')
     ? organization.id
     : undefined
   const [channels, setChannels] = useState<ConnectedChannelView[]>([])
@@ -47,16 +47,16 @@ export function PortalConnectedChannelsPage() {
     return <p className="text-sm text-gray-600">Carregando canais...</p>
   }
 
-  if (!activeContract || !organizationId) {
+  if (!organization || !workspaceContext) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold text-gray-900">Canais conectados</h1>
-        <p className="text-gray-600">Nenhum contrato ativo encontrado para este usuario.</p>
+        <p className="text-gray-600">O contexto deste workspace não está disponível.</p>
       </div>
     )
   }
 
-  if (!module || !canAccessModule(module, role, enabledModuleKeys)) {
+  if (!organizationId || !module || !canAccessModule(module, role, enabledModuleKeys)) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold text-gray-900">Canais conectados</h1>
@@ -89,6 +89,7 @@ export function PortalConnectedChannelsPage() {
       <ConnectedChannelsWorkspace
         organizationId={resolvedOrganizationId}
         channels={channels}
+        canConfigure={workspaceContext.canConfigure}
         onConnect={handleConnect}
         onDisconnect={async connectionId => {
           await metaChannelService.disconnect(connectionId)

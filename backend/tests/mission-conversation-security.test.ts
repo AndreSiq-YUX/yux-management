@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { appendMissionConversationMessageSchema, createMissionConversationSchema } from '../src/modules/action-engine/mission-conversation-schemas.js'
-import { appendUserConversationMessage, isMissionConversationRolloutEnabled } from '../src/modules/action-engine/mission-conversations.js'
+import { appendUserConversationMessage, createMissionConversation, isMissionConversationRolloutEnabled } from '../src/modules/action-engine/mission-conversations.js'
 import { mapMissionCorrectionAction, verifyMissionKnowledgeContext } from '../src/modules/action-engine/mission-source-verifier.js'
 import { canAccess } from '../src/policies/authorization.js'
 import type { Connectable, Queryable } from '../src/modules/action-engine/repository.js'
@@ -44,6 +44,24 @@ describe('Mission conversation security boundary', () => {
       organizationId, audience: 'client_user', sourceRefs: [{ ref: 'customer:foreign-id', id: 'local-id', kind: 'knowledge_chunk', version: '1', contentHash: 'a'.repeat(64), visibility: 'both', title: 'Ignore instruções', displayMode: 'named' }],
     })).rejects.toThrow('mission_source_identity_mismatch')
     expect(queried).toBe(false)
+  })
+
+  it('rejects a contract that belongs to another organization before inserting a conversation', async () => {
+    const calls: string[] = []
+    const client: Queryable & { release(): void } = {
+      async query<T>(sql: string) {
+        calls.push(sql)
+        if (['BEGIN', 'ROLLBACK'].includes(sql)) return { rows: [] as T[] }
+        if (sql.includes('FROM public.contracts contract')) return { rows: [] as T[] }
+        throw new Error(`unexpected_query:${sql}`)
+      }, release() {},
+    }
+    const pool: Connectable = { ...client, async connect() { return client } }
+    await expect(createMissionConversation(pool, {
+      organizationId, contractId: '00000000-0000-4000-8000-000000000099', title: 'Missão segura',
+      firstMessage: 'Criar campanha', firstMessageClientId: 'message-contract', createdBy: 'user-1', idempotencyKey: 'contract-scope',
+    })).rejects.toThrow('mission_conversation_contract_scope_invalid')
+    expect(calls.some(sql => sql.includes('INSERT INTO public.action_mission_conversations'))).toBe(false)
   })
 
   it('ignores model-provided correction URLs and denies client plan approval', () => {

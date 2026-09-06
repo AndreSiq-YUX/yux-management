@@ -23,6 +23,7 @@ import type {
   PlatformRole,
   RoleScope,
 } from '@/types/platform'
+import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 
 function mapOrganization(row: any): Organization {
   return {
@@ -252,6 +253,10 @@ function mapBlueprintApplicationRun(row: any): BlueprintApplicationRun {
 }
 
 export class PlatformService {
+  async getWorkspaceContext(organizationId: string) {
+    return apiRequest<WorkspaceContextV1>(`/workspace/organizations/${organizationId}/context`)
+  }
+
   async getOrganizations() {
     return apiRequest<Organization[]>('/platform/organizations')
   }

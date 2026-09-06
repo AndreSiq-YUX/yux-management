@@ -9,6 +9,7 @@ import type {
   PlatformRole,
   PortalContractContext,
 } from '@/types/platform'
+import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 
 const fallbackOrganization: Organization = {
   id: 'local-yux',
@@ -22,25 +23,6 @@ const fallbackOrganization: Organization = {
   updatedAt: new Date(0).toISOString(),
 }
 
-const internalModuleKeys = [
-  'action_engine',
-  'clients',
-  'crm',
-  'projects',
-  'proposals',
-  'whatsapp_ai',
-  'landing_pages',
-  'campaigns',
-  'bi_reports',
-  'automations',
-  'support',
-  'finance',
-  'blueprints',
-  'marketing_studio',
-] as const
-
-const getInternalModuleKeys = () => [...internalModuleKeys]
-
 const createEmptyPortalContractContext = (): PortalContractContext => ({
   contract: null,
   enabledModuleKeys: [],
@@ -53,7 +35,12 @@ const createSafePortalState = () => ({
   activeContract: null,
   portalContractContext: createEmptyPortalContractContext(),
   enabledModuleKeys: [],
+  workspaceContext: null,
 })
+
+const workspacePlatformRoleKey = (role: WorkspaceContextV1['role']) => (
+  role === 'yux_operator' ? 'yux_manager' : role
+)
 
 interface PlatformState extends PlatformContext {
   isLoading: boolean
@@ -62,6 +49,7 @@ interface PlatformState extends PlatformContext {
   packages: PackageDefinition[]
   activeContract: ContractDetails | null
   portalContractContext: PortalContractContext
+  workspaceContext: WorkspaceContextV1 | null
   setMode: (mode: PlatformMode) => void
   initializeForUser: (userId: string, authenticatedRole?: 'admin' | 'manager' | 'client') => Promise<void>
   initializeClientWorkspace: (organizationId: string) => Promise<void>
@@ -80,6 +68,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
   packages: [],
   activeContract: null,
   portalContractContext: createEmptyPortalContractContext(),
+  workspaceContext: null,
 
   setMode: (mode) => set((state) => {
     if (mode === 'internal') {
@@ -102,6 +91,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         activeContract: null,
         portalContractContext: createEmptyPortalContractContext(),
         enabledModuleKeys: [],
+        workspaceContext: null,
         isLoading: true,
         error: null,
       }
@@ -126,41 +116,28 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
     })
 
     try {
-      const [organizations, roles] = await Promise.all([
+      const [organizations, roles, workspaceContext] = await Promise.all([
         platformService.getOrganizations(),
         platformService.getRoles(),
+        platformService.getWorkspaceContext(organizationId),
       ])
       const organization = organizations.find(item => (
         item.id === organizationId
         && (item.kind === 'client' || item.isInternalGrowthWorkspace)
       )) || null
 
-      if (organization?.isInternalGrowthWorkspace) {
-        const role = roles.find(item => item.key === 'yux_admin') || null
-        if (!role) throw new Error('workspace_role_unavailable')
-        const portalContractContext = organization.clientId
-          ? await platformService.getPortalContractContextForClient(organization.clientId)
-          : createEmptyPortalContractContext()
-        const portalContractContextState = {
-          ...portalContractContext,
-          enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
-        }
-        set({
-          mode: 'client_workspace',
-          organization,
-          membership: null,
-          role,
-          roles,
-          activeContract: portalContractContextState.contract,
-          portalContractContext: portalContractContextState,
-          enabledModuleKeys: getInternalModuleKeys(),
-          error: null,
-          isLoading: false,
-        })
-        return
-      }
-
       if (!organization?.clientId) {
+        if (organization?.isInternalGrowthWorkspace) {
+          const role = roles.find(item => item.key === workspacePlatformRoleKey(workspaceContext.role)) || null
+          if (!role) throw new Error('workspace_role_unavailable')
+          set({
+            mode: 'client_workspace', organization, membership: null, role, roles,
+            activeContract: null, portalContractContext: createEmptyPortalContractContext(),
+            enabledModuleKeys: [...workspaceContext.moduleKeys], workspaceContext,
+            error: null, isLoading: false,
+          })
+          return
+        }
         set({
           mode: 'client_workspace',
           organization: null,
@@ -169,6 +146,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
           activeContract: null,
           portalContractContext: createEmptyPortalContractContext(),
           enabledModuleKeys: [],
+          workspaceContext: null,
           error: 'Workspace operacional nao encontrado para operacao assistida.',
           isLoading: false,
         })
@@ -180,7 +158,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         ...portalContractContext,
         enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
       }
-      const role = roles.find(item => item.key === 'client_admin') || null
+      const role = roles.find(item => item.key === workspacePlatformRoleKey(workspaceContext.role)) || null
       if (!role) throw new Error('workspace_role_unavailable')
 
       set({
@@ -189,9 +167,12 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         membership: null,
         role,
         roles,
-        activeContract: portalContractContextState.contract,
+        activeContract: portalContractContextState.contract?.id === workspaceContext.contractId
+          ? portalContractContextState.contract
+          : null,
         portalContractContext: portalContractContextState,
-        enabledModuleKeys: portalContractContextState.enabledModuleKeys,
+        enabledModuleKeys: [...workspaceContext.moduleKeys],
+        workspaceContext,
         error: null,
         isLoading: false,
       })
@@ -205,6 +186,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         activeContract: null,
         portalContractContext: createEmptyPortalContractContext(),
         enabledModuleKeys: [],
+        workspaceContext: null,
         error: 'Erro ao carregar workspace do cliente.',
         isLoading: false,
       })
@@ -242,30 +224,32 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
         : authenticatedRole === 'admin' || authenticatedRole === 'manager'
           ? organizations.find(item => item.kind === 'yux') || null
           : null
-      const internalRoleKey = authenticatedRole === 'admin' ? 'yux_admin' : 'yux_operator'
+      const internalRoleKey = authenticatedRole === 'admin' ? 'yux_admin' : 'yux_manager'
       const role = membership
         ? roles.find(item => item.key === membership.roleKey) || null
         : authenticatedRole === 'admin' || authenticatedRole === 'manager'
           ? roles.find(item => item.key === internalRoleKey) || null
           : null
       if (!organization || !role) throw new Error('platform_context_unavailable')
+      const workspaceContext = await platformService.getWorkspaceContext(organization.id)
+      const resolvedRole = roles.find(item => item.key === workspacePlatformRoleKey(workspaceContext.role)) || null
+      if (!resolvedRole) throw new Error('workspace_role_unavailable')
       const portalContractContextState = {
         ...portalContractContext,
         enabledModuleKeys: [...portalContractContext.enabledModuleKeys],
       }
-      const enabledModuleKeys = role?.scope === 'client'
-        ? [...portalContractContextState.enabledModuleKeys]
-        : getInternalModuleKeys()
+      const enabledModuleKeys = [...workspaceContext.moduleKeys]
 
       set({
         organization,
         membership,
-        role,
+        role: resolvedRole,
         roles,
         packages,
         activeContract: portalContractContextState.contract,
         portalContractContext: portalContractContextState,
         enabledModuleKeys,
+        workspaceContext,
         isLoading: false,
       })
     } catch (error) {

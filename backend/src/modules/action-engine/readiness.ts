@@ -4,12 +4,14 @@ import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
 import type { CapabilityRegistry } from './capability-registry.js'
 import type { Queryable } from './repository.js'
 import type { MissionMode } from './types.js'
+import type { CorrectionTargetV1 } from '../../contracts/generated/workspace.js'
 
 export type ReadinessCheck = {
   status: 'pass' | 'warn' | 'block'
   code: string
   message: string
   fixHref?: string
+  correctionTarget?: CorrectionTargetV1
   capabilityKey?: string
 }
 
@@ -290,6 +292,37 @@ export function filterReadinessCorrectionLinks(checks: ReadinessCheck[], allowed
     if (!area || !allowed.has(area)) { const { fixHref: _hidden, ...safe } = item; return safe }
     return item
   })
+}
+
+export function resolveReadinessCorrectionTargets(
+  checks: ReadinessCheck[],
+  allowedAreas: readonly string[],
+  input: { organizationId: string; missionId: string },
+): ReadinessCheck[] {
+  const filtered = filterReadinessCorrectionLinks(checks, allowedAreas)
+  return filtered.map(item => {
+    const { fixHref, ...safe } = item
+    if (!fixHref) return safe
+    const key = correctionKey(item.code, fixHref)
+    if (!key) return safe
+    return {
+      ...safe,
+      correctionTarget: {
+        key,
+        organizationId: input.organizationId,
+        entityId: key === 'mission_brief' ? input.missionId : null,
+        fieldKeys: key === 'channel_connection' || key === 'provider_connection' ? ['desiredChannels'] : [],
+        returnTo: { kind: 'mission', id: input.missionId },
+      },
+    }
+  })
+}
+
+function correctionKey(code: string, fixHref: string): CorrectionTargetV1['key'] | null {
+  if (fixHref.startsWith('/platform/')) return 'contract_modules'
+  if (fixHref.startsWith('/integrations') && code.includes('provider')) return 'provider_connection'
+  if (fixHref.startsWith('/integrations') || fixHref.startsWith('/omnichannel/')) return 'channel_connection'
+  return null
 }
 
 function positiveDecimal(value: string): boolean {

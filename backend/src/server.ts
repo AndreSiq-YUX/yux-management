@@ -36,6 +36,7 @@ import { registerStrategyEngineRoutes } from './modules/strategy-engine/routes.j
 import { registerSupportRoutes } from './modules/support/routes.js'
 import { registerPublicWebchatRoutes } from './modules/webchat/routes.js'
 import { registerWorkspaceRoutes } from './modules/workspace/routes.js'
+import { registerWorkspaceContextRoutes } from './modules/workspace/context.js'
 import { registerWebhookRoutes } from './modules/webhooks/routes.js'
 
 declare module 'fastify' {
@@ -112,6 +113,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerPublicLeadFormRoutes, { prefix: '/api/public/lead-forms' })
   await app.register(registerWebhookRoutes, { prefix: '/api/webhooks' })
   await app.register(registerOmnichannelRoutes, { prefix: '/api/omnichannel' })
+  await app.register(registerWorkspaceContextRoutes, { prefix: '/api/workspace' })
   await app.register(registerWorkspaceRoutes, { prefix: '/api/workspace' })
   await app.register(registerSupportRoutes, { prefix: '/api/support' })
   await app.register(registerFinanceRoutes, { prefix: '/api/finance' })

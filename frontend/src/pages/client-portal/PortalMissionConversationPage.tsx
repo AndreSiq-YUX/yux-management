@@ -5,6 +5,7 @@ import { canManageMissionsInWorkspace } from '@/lib/platform/accessControl'
 import { useAuthStore } from '@/stores/authStore'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { MissionConversationMissingContext } from '@/types/actionEngine'
+import { missionMissingCorrectionTarget, resolveCorrectionTarget } from '@/lib/workspace/correctionTargets'
 
 export function PortalMissionConversationPage() {
   const { conversationId } = useParams()
@@ -13,13 +14,9 @@ export function PortalMissionConversationPage() {
   const authenticatedRole = useAuthStore(state => state.user?.role)
   const portalPath = usePortalWorkspacePath()
   if (!organization || !conversationId) return <p className="text-sm text-slate-500">Conversa indisponível.</p>
-  const correctionHref = (missing: MissionConversationMissingContext) => portalPath(correctionPath(missing))
-  return <MissionConversationWorkspace conversationId={conversationId} organizationId={organization.id} canWrite={canManageMissionsInWorkspace(authenticatedRole, role)} backHref={portalPath('/portal/missoes')} missionHref={id => portalPath(`/portal/missoes/${id}`)} correctionHref={correctionHref} />
-}
-
-function correctionPath(missing: MissionConversationMissingContext) {
-  if (missing.category === 'brand') return '/portal/empresa/marca'
-  if (['integration', 'permission', 'consent'].includes(missing.category)) return '/portal/empresa/integracoes'
-  if (['offer', 'audience'].includes(missing.category)) return '/portal/empresa/conhecimento'
-  return '/portal/empresa/perfil'
+  const correctionTarget = (missing: MissionConversationMissingContext) => {
+    const resolved = resolveCorrectionTarget(missionMissingCorrectionTarget({ missing, organizationId: organization.id, conversationId }))
+    return resolved.path ? { ...resolved, path: portalPath(resolved.path) } : resolved
+  }
+  return <MissionConversationWorkspace conversationId={conversationId} organizationId={organization.id} canWrite={canManageMissionsInWorkspace(authenticatedRole, role)} backHref={portalPath('/portal/missoes')} missionHref={id => portalPath(`/portal/missoes/${id}`)} correctionTarget={correctionTarget} />
 }

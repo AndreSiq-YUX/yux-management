@@ -4,6 +4,7 @@ import { Message, MessageContent, MessageResponse } from '@/components/ai-elemen
 import { MissionBriefCard } from './MissionBriefCard'
 import { MissionConversationPlanCard } from './MissionConversationPlanCard'
 import type { DecisionReasonKey, MissionConversation, MissionConversationMissingContext, MissionConversationPlanReference } from '@/types/actionEngine'
+import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 
 type Props = {
   conversation: MissionConversation
@@ -15,10 +16,11 @@ type Props = {
   onRetry?: () => void
   onApprovePlan?: (reference: MissionConversationPlanReference) => void
   onRequestPlanChanges?: (reference: MissionConversationPlanReference, reasonKey: DecisionReasonKey, comment?: string) => void
-  correctionHref?: (missing: MissionConversationMissingContext) => string | undefined
+  correctionTarget?: (missing: MissionConversationMissingContext) => ResolvedCorrectionTarget | null
+  onInlineCorrection?: (missing: MissionConversationMissingContext, target: ResolvedCorrectionTarget) => void
 }
 
-export function MissionConversationThread({ conversation, processing, processingError, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionHref }: Props) {
+export function MissionConversationThread({ conversation, processing, processingError, canWrite, onQuickReply, onConfirmBrief, onRetry, onApprovePlan, onRequestPlanChanges, correctionTarget, onInlineCorrection }: Props) {
   return (
     <Conversation className="min-h-0 bg-slate-50/70">
       <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-7 sm:px-6">
@@ -35,10 +37,10 @@ export function MissionConversationThread({ conversation, processing, processing
             <Message from={isUser ? 'user' : 'assistant'} key={message.id} className="max-w-full">
               <div className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
                 <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${isUser ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white'}`}>{isUser ? <UserRound className="h-4 w-4" /> : <Bot className="h-4 w-4" />}</span>
-                <MessageContent className={isUser ? 'max-w-[82%] bg-slate-900 text-white' : 'max-w-[88%] rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm'}>
-                  <MessageResponse className={isUser ? 'text-white' : 'text-slate-700'}>{message.content}</MessageResponse>
+                <MessageContent className={isUser ? 'max-w-[82%] !bg-slate-900 !text-white' : 'max-w-[88%] rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm'}>
+                  <MessageResponse className={isUser ? '!text-white [&_*]:!text-white' : 'text-slate-700'}>{message.content}</MessageResponse>
                   {!isUser && payload.questions?.length ? <div className="mt-4 space-y-3">{payload.questions.map(question => <div className="rounded-lg bg-slate-50 p-3" key={question.key}><p className="text-sm font-semibold text-slate-800">{question.label}</p><p className="mt-1 text-xs leading-5 text-slate-500">{question.whyNeeded}</p>{canWrite && question.choices?.length ? <div className="mt-3 flex flex-wrap gap-2">{question.choices.map(choice => <button className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50" key={choice} onClick={() => onQuickReply(choice)} type="button">{choice}</button>)}</div> : null}</div>)}</div> : null}
-                  {!isUser && missing.length ? <div className="mt-4 space-y-2">{missing.map(item => <MissingContextCard correctionHref={correctionHref?.(item)} item={item} key={item.key} />)}</div> : null}
+                  {!isUser && missing.length ? <div className="mt-4 space-y-2">{missing.map(item => <MissingContextCard target={correctionTarget?.(item) ?? null} onInline={() => { const target = correctionTarget?.(item); if (target?.mode === 'inline') onInlineCorrection?.(item, target) }} item={item} key={item.key} />)}</div> : null}
                   {!isUser && actions.length ? <div className="mt-4 flex flex-wrap gap-2">{actions.map(action => action.kind === 'quick_reply' ? <button className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100" key={action.key} onClick={() => onQuickReply(action.label)} type="button">{action.label}</button> : null)}</div> : null}
                   {!isUser && message.messageKind === 'brief' && payload.brief ? <MissionBriefCard brief={payload.brief} disabled={!canWrite || processing} onConfirm={canWrite && onConfirmBrief ? onConfirmBrief : undefined} /> : null}
                   {!isUser && message.messageKind === 'plan' && onApprovePlan && onRequestPlanChanges ? <MissionConversationPlanCard payload={payload} canApprove={canWrite} busy={processing} onApprove={onApprovePlan} onRequestChanges={onRequestPlanChanges} /> : null}
@@ -62,6 +64,6 @@ function processingErrorMessage(code: string) {
   return 'Não consegui concluir esta análise agora. Sua mensagem foi salva.'
 }
 
-function MissingContextCard({ item, correctionHref }: { item: MissionConversationMissingContext; correctionHref?: string }) {
-  return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-sm font-medium text-amber-950">{item.reason}</p>{correctionHref ? <a className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:underline" href={correctionHref}>Preencher esta informação <ExternalLink className="h-3 w-3" /></a> : null}</div>
+function MissingContextCard({ item, target, onInline }: { item: MissionConversationMissingContext; target: ResolvedCorrectionTarget | null; onInline: () => void }) {
+  return <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-sm font-medium text-amber-950">{item.reason}</p>{target?.mode === 'inline' ? <button className="mt-2 text-xs font-semibold text-amber-800 hover:underline" onClick={onInline} type="button">Preencher nesta conversa</button> : target?.path ? <a className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:underline" href={target.path}>Preencher esta informação <ExternalLink className="h-3 w-3" /></a> : null}</div>
 }

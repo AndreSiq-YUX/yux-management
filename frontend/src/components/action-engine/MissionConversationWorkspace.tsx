@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom'
 import { MissionConversationComposer } from './MissionConversationComposer'
 import { MissionConversationThread } from './MissionConversationThread'
 import { MissionContextDrawer } from './MissionContextDrawer'
+import { MissionInlineCorrectionPanel } from './MissionInlineCorrectionPanel'
 import { actionEngineService } from '@/services/actionEngineService'
+import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 import type { DecisionReasonKey, MissionConversation, MissionConversationMessage, MissionConversationMissingContext, MissionConversationPlanReference } from '@/types/actionEngine'
 
 type Props = {
@@ -13,19 +15,20 @@ type Props = {
   canWrite: boolean
   backHref: string
   missionHref: (missionId: string) => string
-  correctionHref?: (missing: MissionConversationMissingContext) => string | undefined
+  correctionTarget?: (missing: MissionConversationMissingContext) => ResolvedCorrectionTarget | null
   pollMaxSeconds?: number
 }
 
 const POLLING_STATUSES = new Set(['collecting_context', 'planning'])
 
-export function MissionConversationWorkspace({ conversationId, organizationId, canWrite, backHref, missionHref, correctionHref, pollMaxSeconds = 5 }: Props) {
+export function MissionConversationWorkspace({ conversationId, organizationId, canWrite, backHref, missionHref, correctionTarget, pollMaxSeconds = 5 }: Props) {
   const [conversation, setConversation] = useState<MissionConversation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [contextOpen, setContextOpen] = useState(false)
   const [acceptedTurn, setAcceptedTurn] = useState<number | null>(null)
   const [pendingRetry, setPendingRetry] = useState<{ message: string; clientMessageId: string; expectedVersion: number } | null>(null)
+  const [inlineCorrection, setInlineCorrection] = useState<{ missing: MissionConversationMissingContext; target: ResolvedCorrectionTarget } | null>(null)
   const pollingAttempt = useRef(0)
   const mounted = useRef(true)
   const conversationStatus = conversation?.status
@@ -194,11 +197,11 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <MissionConversationThread conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionHref={correctionHref} />
-        <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-red-600"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-slate-50 p-3 text-center text-sm text-slate-500">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-slate-400">Nada é executado externamente sem passar pelas regras e aprovações do Action Engine.</p></div></div>
+        <MissionConversationThread conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => setInlineCorrection({ missing, target })} />
+        <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-red-600"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{inlineCorrection ? <MissionInlineCorrectionPanel missing={inlineCorrection.missing} target={inlineCorrection.target} busy={processing} onCancel={() => setInlineCorrection(null)} onSave={async message => { await send(message); setInlineCorrection(null) }} /> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-slate-50 p-3 text-center text-sm text-slate-500">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-slate-400">Nada é executado externamente sem passar pelas regras e aprovações do Action Engine.</p></div></div>
       </div>
       <p aria-live="polite" className="sr-only">{liveStatus}</p>
-      <MissionContextDrawer conversation={conversation} open={contextOpen} onClose={() => setContextOpen(false)} correctionHref={correctionHref} />
+      <MissionContextDrawer conversation={conversation} open={contextOpen} onClose={() => setContextOpen(false)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => { setContextOpen(false); setInlineCorrection({ missing, target }) }} />
     </main>
   )
 }

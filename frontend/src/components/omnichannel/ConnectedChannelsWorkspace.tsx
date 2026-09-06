@@ -26,6 +26,7 @@ const desiredChannels: Array<{ channel: MetaChannel; label: string; connectLabel
 interface ConnectedChannelsWorkspaceProps {
   organizationId: string
   channels: ConnectedChannelView[]
+  canConfigure: boolean
   onConnect: (channel: MetaChannel) => void
   onDisconnect: (connectionId: string) => void
   onRefreshHealth: (connectionId: string) => void
@@ -35,6 +36,7 @@ interface ConnectedChannelsWorkspaceProps {
 export function ConnectedChannelsWorkspace({
   organizationId,
   channels,
+  canConfigure,
   onConnect,
   onDisconnect,
   onRefreshHealth,
@@ -46,6 +48,8 @@ export function ConnectedChannelsWorkspace({
         <h1 className="text-2xl font-bold text-gray-900">Canais conectados</h1>
         <p className="text-sm text-gray-600">Conecte e monitore os canais Meta autorizados para esta organizacao.</p>
       </div>
+
+      {!canConfigure ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Você pode acompanhar os canais, mas somente um administrador do workspace pode alterar as conexões.</p> : null}
 
       {channels.length === 0 && (
         <section className="rounded-lg border border-yux-100 bg-yux-50 p-4">
@@ -75,6 +79,7 @@ export function ConnectedChannelsWorkspace({
             <ConnectedChannelCard
               key={item.channel}
               channel={channel}
+              canConfigure={canConfigure}
               connectLabel={item.connectLabel}
               description={item.description}
               onConnect={() => onConnect(item.channel)}

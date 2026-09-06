@@ -14,7 +14,7 @@ describe('Mission operational controls', () => {
     expect(document.body.textContent).toContain('R$ 4,00')
     expect(document.body.textContent).toContain('50%, 80%, 95%')
     expect(document.body.textContent).toContain('Conectar e-mail')
-    expect(document.body.querySelector('a')?.getAttribute('href')).toBe('/omnichannel/settings')
+    expect(document.body.querySelector('a')?.getAttribute('href')).toBe('/portal/empresa/integracoes?fields=desiredChannels&returnToKind=mission&returnToId=00000000-0000-4000-8000-000000000002')
     expect([...document.body.querySelectorAll('a')].some(link => link.getAttribute('href') === '/platform/contracts')).toBe(false)
     act(() => root.unmount())
   })
@@ -49,7 +49,7 @@ describe('Mission operational controls', () => {
 const controls: Controls = {
   budget: { currency: 'BRL', envelopeVersion: 2, actualCostBrl: '70', reservedCostBrl: '26', consumedCostBrl: '96', remainingCostBrl: '4', maximumCostBrl: '100', consumedPercent: '96', alertThresholds: [50, 80, 95], exhausted: false },
   readiness: { ready: false, availableChannels: ['human_task'], checks: [
-    { status: 'block', code: 'email', message: 'Conectar e-mail', fixHref: '/omnichannel/settings' },
+    { status: 'block', code: 'email', message: 'Conectar e-mail', correctionTarget: { key: 'channel_connection', organizationId: '00000000-0000-4000-8000-000000000001', entityId: null, fieldKeys: ['desiredChannels'], returnTo: { kind: 'mission', id: '00000000-0000-4000-8000-000000000002' } } },
     { status: 'block', code: 'contract', message: 'Contrato sem acesso' },
   ] },
   capabilities: [{ capabilityKey: 'email.send', capabilityVersion: 1, disabled: false }, { capabilityKey: 'crm.pipeline.draft', capabilityVersion: 1, disabled: false }],

@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MissionConversationWorkspace } from './MissionConversationWorkspace'
 import { actionEngineService } from '@/services/actionEngineService'
-import type { MissionConversation } from '@/types/actionEngine'
+import type { MissionConversation, MissionConversationMissingContext } from '@/types/actionEngine'
+import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
@@ -74,6 +75,22 @@ describe('MissionConversationWorkspace', () => {
     act(() => root.unmount())
   })
 
+  it('saves a missing audience in the mission brief and revalidates in the same conversation', async () => {
+    const data = conversation({ status: 'awaiting_user', withAgent: true })
+    vi.spyOn(actionEngineService, 'getMissionConversation').mockResolvedValue(data)
+    const append = vi.spyOn(actionEngineService, 'appendMissionConversationMessage').mockResolvedValue({ conversation: { ...data, status: 'collecting_context', version: 3 }, jobId: 'job-correction' })
+    const { root } = await renderWorkspace(() => ({ mode: 'inline', path: null, fields: [{ key: 'targetAudience', label: 'Público-alvo' }] }))
+    await click('Preencher nesta conversa')
+    expect(document.body.textContent).toContain('A resposta será salva somente nesta missão')
+    const input = document.body.querySelector('input') as HTMLInputElement
+    await changeInput(input, 'Donos de pequenas indústrias')
+    await click('Salvar e revalidar')
+    expect(append).toHaveBeenCalledWith(data.id, expect.objectContaining({
+      message: expect.stringContaining('Público-alvo: Donos de pequenas indústrias'),
+    }))
+    act(() => root.unmount())
+  })
+
   it('renders hostile message markup as inert content', async () => {
     const data = conversation({ status: 'awaiting_user' })
     data.messages[0]!.content = '<script>window.__missionInjected=true</script><img src=x onerror="window.__missionInjected=true">'
@@ -101,11 +118,11 @@ describe('MissionConversationWorkspace', () => {
   })
 })
 
-async function renderWorkspace() {
+async function renderWorkspace(correctionTarget: (missing: MissionConversationMissingContext) => ResolvedCorrectionTarget = () => ({ mode: 'navigate', path: '/portal/empresa/perfil', fields: [] })) {
   const container = document.createElement('div'); document.body.appendChild(container)
   const root = createRoot(container)
   await act(async () => {
-    root.render(<MemoryRouter><MissionConversationWorkspace conversationId="00000000-0000-4000-8000-000000000010" organizationId="00000000-0000-4000-8000-000000000001" canWrite backHref="/missions" missionHref={id => `/missions/${id}`} correctionHref={() => '/portal/empresa/perfil'} /></MemoryRouter>)
+    root.render(<MemoryRouter><MissionConversationWorkspace conversationId="00000000-0000-4000-8000-000000000010" organizationId="00000000-0000-4000-8000-000000000001" canWrite backHref="/missions" missionHref={id => `/missions/${id}`} correctionTarget={correctionTarget} /></MemoryRouter>)
     await flush()
   })
   return { root }
@@ -132,3 +149,4 @@ function conversation({ status, withAgent = false }: { status: MissionConversati
 async function click(text: string) { const button = [...document.body.querySelectorAll('button')].find(item => item.textContent?.includes(text)); expect(button).toBeDefined(); await act(async () => { button?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await flush() }) }
 async function clickByLabel(label: string) { const button = document.body.querySelector(`button[aria-label="${label}"]`); expect(button).not.toBeNull(); await act(async () => { button?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await flush() }) }
 async function change(element: HTMLTextAreaElement, value: string) { await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true })); await flush() }) }
+async function changeInput(element: HTMLInputElement, value: string) { await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true })); await flush() }) }

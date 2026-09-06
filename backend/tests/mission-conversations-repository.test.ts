@@ -46,6 +46,7 @@ function scriptedPool(steps: Step[]) {
 describe('Mission conversation repository', () => {
   it('creates the conversation and first user message in one transaction', async () => {
     const fake = scriptedPool([
+      { match: 'FROM public.contracts contract', rows: [{ id: 'contract-1' }] },
       { match: 'INSERT INTO public.action_mission_conversations', rows: [conversationRow()] },
       { match: 'INSERT INTO public.action_mission_conversation_messages', rows: [messageRow()] },
     ])

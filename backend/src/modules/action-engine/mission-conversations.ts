@@ -72,6 +72,15 @@ export async function createMissionConversation(pool: Connectable, input: {
   idempotencyKey: string
 }): Promise<MissionConversation> {
   return inTransaction(pool, async (client) => {
+    if (input.contractId) {
+      const contract = await client.query<{ id: string }>(
+        `SELECT contract.id FROM public.contracts contract
+         JOIN public.organizations organization ON organization.client_id = contract.client_id
+         WHERE contract.id = $1 AND organization.id = $2 AND contract.status = 'active' LIMIT 1`,
+        [input.contractId, input.organizationId],
+      )
+      if (!contract.rows[0]) throw new Error('mission_conversation_contract_scope_invalid')
+    }
     const inserted = await client.query<ConversationRow>(
       `INSERT INTO public.action_mission_conversations
          (organization_id, contract_id, title, created_by, create_idempotency_key)

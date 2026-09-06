@@ -8,7 +8,7 @@ import { createActionEngineCapabilityRegistry } from './capabilities/index.js'
 import { REVENUE_RECOVERY_PACK_V0 } from './packs/revenue-recovery-v0.js'
 import { FUNNEL_NURTURE_PACK_V1 } from './packs/funnel-nurture-v1.js'
 import { CAMPAIGN_LAUNCH_PACK_V1 } from './packs/campaign-launch-v1.js'
-import { evaluateMissionReadiness, filterReadinessCorrectionLinks, summarizeAutonomyHealth } from './readiness.js'
+import { evaluateMissionReadiness, resolveReadinessCorrectionTargets, summarizeAutonomyHealth } from './readiness.js'
 import {
   answerMissionClarification, approvePlanRevision, createMission, decideActionApproval, getMission, getPlan, listMissionApprovals, listMissionPlans, listMissions,
   getPublishedActionPackVersion, publishActionPackVersion, transitionMission, updateMissionDraft,
@@ -1029,7 +1029,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     const health = summarizeAutonomyHealth(readiness.checks, usage.unresolvedExternalEffects)
     return {
       budget,
-      readiness: { ...readiness, checks: filterReadinessCorrectionLinks(readiness.checks, allowedAreas) },
+      readiness: { ...readiness, checks: resolveReadinessCorrectionTargets(readiness.checks, allowedAreas, { organizationId: query.data.organizationId, missionId: mission.id }) },
       capabilities,
       canManagePolicy: canAccess(ctx, 'action_engine.policy.manage', { organizationId: query.data.organizationId }),
       autonomy: {
@@ -1422,6 +1422,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_recipe_pack_selection_invalid: 409, mission_recipe_non_editable_default_changed: 409, mission_sandbox_not_entitled: 403,
     sandbox_manifest_not_found: 404, sandbox_seed_persistence_failed: 500,
     mission_conversation_not_found: 404,
+    mission_conversation_contract_scope_invalid: 403,
     mission_conversation_version_conflict: 409,
     mission_conversation_idempotency_conflict: 409,
     mission_conversation_not_writable: 409,

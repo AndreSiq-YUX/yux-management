@@ -28,7 +28,11 @@ class FakeAuthStore implements AuthStore {
 }
 
 class FakePool {
-  constructor(private readonly campaignOrganization = ids.orgA, private readonly campaignReady = true) {}
+  constructor(
+    private readonly campaignOrganization = ids.orgA,
+    private readonly campaignReady = true,
+    private readonly channelOrganization = ids.orgA,
+  ) {}
   async query(sql: string) {
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [{ organization_id: ids.orgA }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
@@ -36,6 +40,7 @@ class FakePool {
       rows: [{ ready: this.campaignReady, missing: this.campaignReady ? null : 'ad_provider_connection' }],
     }
     if (sql.includes('FROM public.campaigns')) return { rows: [{ organization_id: this.campaignOrganization }] }
+    if (sql.includes('FROM public.channel_connections')) return { rows: [{ organization_id: this.channelOrganization }] }
     throw new Error(`Unexpected SQL: ${sql}`)
   }
   async end() { return undefined }
@@ -84,6 +89,21 @@ describe('function route authorization', () => {
     const response = await app.inject({
       method: 'POST', url: '/api/functions/sync-ad-metrics', headers: headers(token),
       payload: { body: { campaignId: ids.campaign } },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'forbidden' })
+  })
+
+  it('rejects a channel operation when the resolved connection belongs to another organization', async () => {
+    const { authStore, token } = authentication('client_admin')
+    app = await buildServer(testEnv, {
+      authStore,
+      pool: new FakePool(ids.orgA, true, ids.orgB) as never,
+      jobQueue: new FakeQueue(),
+    })
+    const response = await app.inject({
+      method: 'POST', url: '/api/functions/disconnect-meta-channel', headers: headers(token),
+      payload: { body: { connectionId: ids.connection } },
     })
     expect(response.statusCode).toBe(403)
     expect(response.json()).toEqual({ error: 'forbidden' })

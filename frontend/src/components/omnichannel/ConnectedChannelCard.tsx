@@ -3,6 +3,7 @@ import type { ConnectedChannelView } from '@/services/metaChannelService'
 
 interface ConnectedChannelCardProps {
   channel: ConnectedChannelView
+  canConfigure: boolean
   connectLabel: string
   description: string
   onConnect: () => void
@@ -28,6 +29,7 @@ const fallbackModeLabels: Record<string, string> = {
 
 export function ConnectedChannelCard({
   channel,
+  canConfigure,
   connectLabel,
   description,
   onConnect,
@@ -72,7 +74,8 @@ export function ConnectedChannelCard({
         <button
           type="button"
           onClick={onConnect}
-          className="inline-flex h-9 items-center gap-2 rounded-md bg-yux-600 px-3 text-sm font-medium text-white hover:bg-yux-700"
+          disabled={!canConfigure}
+          className="inline-flex h-9 items-center gap-2 rounded-md bg-yux-600 px-3 text-sm font-medium text-white hover:bg-yux-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Cable className="h-4 w-4" aria-hidden="true" />
           {connected ? `Reconectar ${channel.label}` : connectLabel}
@@ -80,7 +83,7 @@ export function ConnectedChannelCard({
         <button
           type="button"
           onClick={onRefreshHealth}
-          disabled={!connected}
+          disabled={!canConfigure || !connected}
           className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -89,7 +92,7 @@ export function ConnectedChannelCard({
         <button
           type="button"
           onClick={onSendTest}
-          disabled={!connected}
+          disabled={!canConfigure || !connected}
           className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Send className="h-4 w-4" aria-hidden="true" />
@@ -98,7 +101,7 @@ export function ConnectedChannelCard({
         <button
           type="button"
           onClick={onDisconnect}
-          disabled={!connected}
+          disabled={!canConfigure || !connected}
           className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 text-sm text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Unplug className="h-4 w-4" aria-hidden="true" />

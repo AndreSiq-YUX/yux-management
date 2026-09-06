@@ -21,6 +21,7 @@ describe('platformStore internal growth workspace', () => {
       error: null,
       roles: [],
       packages: [],
+      workspaceContext: null,
     })
   })
 
@@ -43,6 +44,16 @@ describe('platformStore internal growth workspace', () => {
       scope: 'internal',
       permissions: ['platform.manage'],
     }])
+    vi.spyOn(platformService, 'getWorkspaceContext').mockResolvedValue({
+      schemaVersion: 1,
+      organizationId,
+      kind: 'internal_growth',
+      contractId,
+      role: 'yux_admin',
+      moduleKeys: ['action_engine', 'marketing_studio', 'whatsapp_ai'],
+      canConfigure: true,
+      missionCreation: { mode: 'conversation', reasonCode: null },
+    })
     vi.spyOn(platformService, 'getPortalContractContextForClient').mockResolvedValue({
       contract: {
         id: contractId,
@@ -68,5 +79,71 @@ describe('platformStore internal growth workspace', () => {
       activeContract: { id: contractId, clientId },
     })
     expect(usePlatformStore.getState().enabledModuleKeys).toContain('marketing_studio')
+    expect(usePlatformStore.getState().workspaceContext?.missionCreation.mode).toBe('conversation')
+  })
+
+  it('resolves the authenticated operator through the platform manager role', async () => {
+    vi.spyOn(platformService, 'getOrganizations').mockResolvedValue([{
+      id: organizationId,
+      name: 'YUX Solucoes em IA',
+      slug: 'yux',
+      kind: 'yux',
+      isInternalGrowthWorkspace: true,
+      createdAt: '',
+      updatedAt: '',
+    }])
+    vi.spyOn(platformService, 'getRoles').mockResolvedValue([{
+      key: 'yux_manager',
+      name: 'YUX Manager',
+      scope: 'internal',
+      permissions: ['action_engine.write', 'omnichannel.configure'],
+    }])
+    vi.spyOn(platformService, 'getWorkspaceContext').mockResolvedValue({
+      schemaVersion: 1,
+      organizationId,
+      kind: 'internal_growth',
+      contractId: null,
+      role: 'yux_operator',
+      moduleKeys: ['action_engine', 'whatsapp_ai'],
+      canConfigure: true,
+      missionCreation: { mode: 'conversation', reasonCode: null },
+    })
+
+    await usePlatformStore.getState().initializeClientWorkspace(organizationId)
+
+    expect(usePlatformStore.getState()).toMatchObject({
+      role: { key: 'yux_manager' },
+      workspaceContext: { role: 'yux_operator' },
+      enabledModuleKeys: ['action_engine', 'whatsapp_ai'],
+    })
+  })
+
+  it('initializes the internal operator session without requiring a nonexistent yux_operator platform role', async () => {
+    const organization = {
+      id: organizationId, name: 'YUX Solucoes em IA', slug: 'yux', kind: 'yux' as const,
+      isInternalGrowthWorkspace: true, createdAt: '', updatedAt: '',
+    }
+    const managerRole = {
+      key: 'yux_manager', name: 'YUX Manager', scope: 'internal' as const,
+      permissions: ['action_engine.write' as const, 'omnichannel.configure' as const],
+    }
+    vi.spyOn(platformService, 'getOrganizations').mockResolvedValue([organization])
+    vi.spyOn(platformService, 'getRoles').mockResolvedValue([managerRole])
+    vi.spyOn(platformService, 'getMembershipsForUser').mockResolvedValue([])
+    vi.spyOn(platformService, 'getPackages').mockResolvedValue([])
+    vi.spyOn(platformService, 'getPortalContractContextForUser').mockResolvedValue({ contract: null, enabledModuleKeys: [] })
+    vi.spyOn(platformService, 'getWorkspaceContext').mockResolvedValue({
+      schemaVersion: 1, organizationId, kind: 'internal_growth', contractId: null,
+      role: 'yux_operator', moduleKeys: ['action_engine', 'whatsapp_ai'], canConfigure: true,
+      missionCreation: { mode: 'conversation', reasonCode: null },
+    })
+
+    await usePlatformStore.getState().initializeForUser('operator-user', 'manager')
+
+    expect(usePlatformStore.getState()).toMatchObject({
+      organization: { id: organizationId },
+      role: { key: 'yux_manager' },
+      workspaceContext: { role: 'yux_operator' },
+    })
   })
 })

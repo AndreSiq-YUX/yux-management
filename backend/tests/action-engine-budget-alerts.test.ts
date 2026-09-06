@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { calculateMissionBudgetBurnDown } from '../src/modules/action-engine/budget-alerts.js'
-import { filterReadinessCorrectionLinks } from '../src/modules/action-engine/readiness.js'
+import { resolveReadinessCorrectionTargets } from '../src/modules/action-engine/readiness.js'
 
 describe('Action Engine operational budget controls', () => {
   it.each([['50.00', [50]], ['80.00', [50, 80]], ['95.00', [50, 80, 95]]])('crossing %s%% emits the exact thresholds', (amount, thresholds) => {
@@ -30,14 +30,25 @@ describe('Action Engine operational budget controls', () => {
   })
 
   it('keeps only allowlisted correction routes the actor can access', () => {
-    const checks = filterReadinessCorrectionLinks([
+    const checks = resolveReadinessCorrectionTargets([
       { status: 'block', code: 'contract', message: 'Contrato', fixHref: '/platform/contracts' },
       { status: 'block', code: 'crm', message: 'CRM', fixHref: '/crm/settings' },
       { status: 'block', code: 'unsafe', message: 'Inválido', fixHref: 'https://evil.example' },
-    ], ['crm'])
+    ], ['crm'], { organizationId: '00000000-0000-4000-8000-000000000001', missionId: '00000000-0000-4000-8000-000000000002' })
     expect(checks[0]?.fixHref).toBeUndefined()
-    expect(checks[1]?.fixHref).toBe('/crm/settings')
+    expect(checks[1]?.fixHref).toBeUndefined()
     expect(checks[2]?.fixHref).toBeUndefined()
+  })
+
+  it('emits a typed correction target instead of an arbitrary backend URL', () => {
+    const [check] = resolveReadinessCorrectionTargets([
+      { status: 'block', code: 'action_engine_disabled', message: 'Contrato', fixHref: '/platform/contracts' },
+    ], ['platform'], { organizationId: '00000000-0000-4000-8000-000000000001', missionId: '00000000-0000-4000-8000-000000000002' })
+    expect(check.fixHref).toBeUndefined()
+    expect(check.correctionTarget).toEqual({
+      key: 'contract_modules', organizationId: '00000000-0000-4000-8000-000000000001', entityId: null,
+      fieldKeys: [], returnTo: { kind: 'mission', id: '00000000-0000-4000-8000-000000000002' },
+    })
   })
 })
 

@@ -1,14 +1,16 @@
 import { BookOpen, Building2, CheckCircle2, ExternalLink, X } from 'lucide-react'
 import type { MissionConversation, MissionConversationMissingContext, MissionConversationSource } from '@/types/actionEngine'
+import type { ResolvedCorrectionTarget } from '@/lib/workspace/correctionTargets'
 
 type Props = {
   conversation: MissionConversation
   open: boolean
   onClose: () => void
-  correctionHref?: (missing: MissionConversationMissingContext) => string | undefined
+  correctionTarget?: (missing: MissionConversationMissingContext) => ResolvedCorrectionTarget | null
+  onInlineCorrection?: (missing: MissionConversationMissingContext, target: ResolvedCorrectionTarget) => void
 }
 
-export function MissionContextDrawer({ conversation, open, onClose, correctionHref }: Props) {
+export function MissionContextDrawer({ conversation, open, onClose, correctionTarget, onInlineCorrection }: Props) {
   if (!open) return null
   const sources = uniqueSources(conversation.messages.flatMap(message => message.sourceRefs).filter(source => source.displayMode !== 'hidden'))
   const yuxSources = sources.filter(source => source.ref.startsWith('yux:'))
@@ -31,8 +33,8 @@ export function MissionContextDrawer({ conversation, open, onClose, correctionHr
               <h3 className="font-semibold text-slate-900">O que ainda falta</h3>
               <div className="mt-3 space-y-2">
                 {missing.map(item => {
-                  const href = correctionHref?.(item)
-                  return <article className="rounded-lg border border-amber-200 bg-amber-50 p-3" key={item.key}><p className="text-sm font-medium text-amber-950">{item.reason}</p>{href ? <a className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:underline" href={href}>Corrigir informação <ExternalLink className="h-3 w-3" /></a> : null}</article>
+                  const target = correctionTarget?.(item)
+                  return <article className="rounded-lg border border-amber-200 bg-amber-50 p-3" key={item.key}><p className="text-sm font-medium text-amber-950">{item.reason}</p>{target?.mode === 'inline' ? <button type="button" className="mt-2 text-xs font-semibold text-amber-800 hover:underline" onClick={() => onInlineCorrection?.(item, target)}>Corrigir nesta conversa</button> : target?.path ? <a className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:underline" href={target.path}>Corrigir informação <ExternalLink className="h-3 w-3" /></a> : null}</article>
                 })}
               </div>
             </section>
