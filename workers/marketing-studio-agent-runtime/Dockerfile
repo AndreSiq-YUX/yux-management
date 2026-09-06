@@ -1,16 +1,20 @@
-FROM python:3.12.14-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+FROM python:3.13.14-alpine3.24@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+RUN apk add --no-cache --upgrade \
+    libcrypto3=3.5.8-r0 \
+    libssl3=3.5.8-r0
+
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY yux_agent_runtime ./yux_agent_runtime
 
-RUN useradd --create-home --uid 10001 yux-runtime
+RUN adduser -D -u 10001 yux-runtime
 USER yux-runtime
 
 EXPOSE 8080
