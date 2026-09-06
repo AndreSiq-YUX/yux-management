@@ -11,6 +11,7 @@ export type ExternalEffectStatus =
 
 export type ExternalEffect = {
   id: string
+  intentId: string
   organizationId: string
   missionId: string
   planId?: string
@@ -21,6 +22,8 @@ export type ExternalEffect = {
   providerKey: string
   providerIdempotencyKey: string
   requestHash: string
+  approvalId?: string
+  approvalSubjectHash?: string
   requestMetadata: Record<string, unknown>
   status: ExternalEffectStatus
   providerReference?: string
@@ -36,6 +39,7 @@ export type ExternalEffect = {
 
 type ExternalEffectRow = {
   id: string
+  intent_id: string
   organization_id: string
   mission_id: string
   plan_id: string | null
@@ -46,6 +50,8 @@ type ExternalEffectRow = {
   provider_key: string
   provider_idempotency_key: string
   request_hash: string
+  approval_id: string | null
+  approval_subject_hash: string | null
   request_metadata: Record<string, unknown>
   status: ExternalEffectStatus
   provider_reference: string | null
@@ -61,6 +67,7 @@ type ExternalEffectRow = {
 }
 
 export type ReserveExternalEffectInput = {
+  intentId: string
   organizationId: string
   missionId: string
   planId?: string
@@ -71,6 +78,8 @@ export type ReserveExternalEffectInput = {
   providerKey: string
   providerIdempotencyKey: string
   requestHash: string
+  approvalId?: string
+  approvalSubjectHash?: string
   requestMetadata?: Record<string, unknown>
   reconciliationDeadlineAt: string
 }
@@ -89,26 +98,29 @@ export async function reserveExternalEffectInTransaction(
   const result = await client.query<ExternalEffectRow>(
       `WITH inserted AS (
          INSERT INTO public.action_external_effects (
-           organization_id, mission_id, plan_id, run_id, attempt_id, capability_key, capability_version,
-           provider_key, provider_idempotency_key, request_hash, request_metadata, reconciliation_deadline_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         ON CONFLICT (organization_id, capability_key, capability_version, provider_idempotency_key) DO NOTHING
+           intent_id, organization_id, mission_id, plan_id, run_id, attempt_id, capability_key, capability_version,
+           provider_key, provider_idempotency_key, request_hash, approval_id, approval_subject_hash,
+           request_metadata, reconciliation_deadline_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ON CONFLICT (organization_id, intent_id) DO NOTHING
          RETURNING *, TRUE AS created
        )
        SELECT * FROM inserted
        UNION ALL
        SELECT effect.*, FALSE AS created FROM public.action_external_effects effect
-       WHERE effect.organization_id = $1 AND effect.capability_key = $6
-         AND effect.capability_version = $7 AND effect.provider_idempotency_key = $9
+       WHERE effect.organization_id = $2 AND effect.intent_id = $1
          AND NOT EXISTS (SELECT 1 FROM inserted)
        LIMIT 1`,
-      [input.organizationId, input.missionId, input.planId ?? null, input.runId, input.attemptId ?? null,
+      [input.intentId, input.organizationId, input.missionId, input.planId ?? null, input.runId, input.attemptId ?? null,
         input.capabilityKey, input.capabilityVersion, input.providerKey, input.providerIdempotencyKey,
-        input.requestHash, input.requestMetadata ?? {}, input.reconciliationDeadlineAt],
+        input.requestHash, input.approvalId ?? null, input.approvalSubjectHash ?? null,
+        input.requestMetadata ?? {}, input.reconciliationDeadlineAt],
     )
   const row = result.rows[0]
   if (!row) throw new Error('external_effect_reservation_failed')
-  if (row.request_hash !== input.requestHash || row.provider_key !== input.providerKey || row.mission_id !== input.missionId) {
+  if (row.request_hash !== input.requestHash || row.provider_key !== input.providerKey || row.mission_id !== input.missionId
+    || row.run_id !== input.runId || row.approval_id !== (input.approvalId ?? null)
+    || row.approval_subject_hash !== (input.approvalSubjectHash ?? null)) {
     throw new Error('external_effect_idempotency_conflict')
   }
   if (row.created) {
@@ -309,6 +321,7 @@ async function appendEffectEvent(
 function mapEffect(row: ExternalEffectRow): ExternalEffect {
   return {
     id: row.id,
+    intentId: row.intent_id,
     organizationId: row.organization_id,
     missionId: row.mission_id,
     ...(row.plan_id ? { planId: row.plan_id } : {}),
@@ -319,6 +332,8 @@ function mapEffect(row: ExternalEffectRow): ExternalEffect {
     providerKey: row.provider_key,
     providerIdempotencyKey: row.provider_idempotency_key,
     requestHash: row.request_hash,
+    ...(row.approval_id ? { approvalId: row.approval_id } : {}),
+    ...(row.approval_subject_hash ? { approvalSubjectHash: row.approval_subject_hash } : {}),
     requestMetadata: row.request_metadata ?? {},
     status: row.status,
     ...(row.provider_reference ? { providerReference: row.provider_reference } : {}),

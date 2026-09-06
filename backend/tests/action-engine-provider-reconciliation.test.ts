@@ -7,7 +7,7 @@ import {
 import type { ExternalEffect } from '../src/modules/action-engine/external-effects.js'
 
 const effect: ExternalEffect = {
-  id: 'effect-1', organizationId: 'org-1', missionId: 'mission-1', runId: 'run-1',
+  id: 'effect-1', intentId: 'run-1', organizationId: 'org-1', missionId: 'mission-1', runId: 'run-1',
   capabilityKey: 'campaign.create_paused', capabilityVersion: 1, providerKey: 'meta',
   providerIdempotencyKey: 'provider-key', requestHash: 'a'.repeat(64), requestMetadata: { account: 'masked' },
   status: 'reconciling', outcomeEvidence: {}, reconciliationDeadlineAt: '2026-08-22T12:15:00.000Z',

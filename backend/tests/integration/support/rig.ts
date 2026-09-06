@@ -38,6 +38,7 @@ export type IntegrationRig = {
   stopRedis(): Promise<void>
   startRedis(): Promise<void>
   providerCalls(): Promise<ProviderCall[]>
+  providerBaseUrl: string
   serviceDatabaseUrl(role: 'yux_api'|'yux_worker'|'yux_runtime'): string
   close(): Promise<void>
 }
@@ -143,6 +144,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     stopRedis: () => controlRedis('stop'),
     startRedis: () => controlRedis('start'),
     providerCalls: async () => provider.calls(),
+    providerBaseUrl: provider.baseUrl,
     serviceDatabaseUrl: (role) => serviceDatabaseUrl(databaseUrl, role),
     async close() {
       await app.close()

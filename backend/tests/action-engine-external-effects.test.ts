@@ -11,9 +11,10 @@ const now = '2026-08-22T12:00:00.000Z'
 
 function row(overrides: Record<string, unknown> = {}) {
   return {
-    id: effectId, organization_id: organizationId, mission_id: missionId, plan_id: null, run_id: runId,
+    id: effectId, intent_id: runId, organization_id: organizationId, mission_id: missionId, plan_id: null, run_id: runId,
     attempt_id: null, capability_key: 'email.message.queue', capability_version: 1, provider_key: 'email',
-    provider_idempotency_key: 'effect-key', request_hash: 'a'.repeat(64), request_metadata: {}, status: 'reserved',
+    provider_idempotency_key: 'effect-key', request_hash: 'a'.repeat(64), approval_id: null,
+    approval_subject_hash: null, request_metadata: {}, status: 'reserved',
     provider_reference: null, outcome_evidence: {}, last_error_code: null, next_reconcile_at: null,
     reconciliation_deadline_at: '2026-08-22T12:15:00.000Z', dispatched_at: null, resolved_at: null,
     created_at: now, updated_at: now, ...overrides,
@@ -44,7 +45,7 @@ describe('Action Engine external effect intent', () => {
   it('persists a reservation and its event before provider dispatch', async () => {
     const pool = poolWithResponses({ rows: [row({ created: true })] }, { rows: [] })
     const result = await reserveExternalEffect(pool as never, {
-      organizationId, missionId, runId, capabilityKey: 'email.message.queue', capabilityVersion: 1,
+      intentId: runId, organizationId, missionId, runId, capabilityKey: 'email.message.queue', capabilityVersion: 1,
       providerKey: 'email', providerIdempotencyKey: 'effect-key', requestHash: 'a'.repeat(64),
       reconciliationDeadlineAt: '2026-08-22T12:15:00.000Z',
     })
@@ -59,7 +60,7 @@ describe('Action Engine external effect intent', () => {
   it('returns the same reservation for a duplicate key and rejects changed intent', async () => {
     const duplicatePool = poolWithResponses({ rows: [row({ created: false })] })
     const duplicate = await reserveExternalEffect(duplicatePool as never, {
-      organizationId, missionId, runId, capabilityKey: 'email.message.queue', capabilityVersion: 1,
+      intentId: runId, organizationId, missionId, runId, capabilityKey: 'email.message.queue', capabilityVersion: 1,
       providerKey: 'email', providerIdempotencyKey: 'effect-key', requestHash: 'a'.repeat(64),
       reconciliationDeadlineAt: '2026-08-22T12:15:00.000Z',
     })
@@ -67,7 +68,7 @@ describe('Action Engine external effect intent', () => {
 
     const conflictPool = poolWithResponses({ rows: [row({ created: false, request_hash: 'b'.repeat(64) })] })
     await expect(reserveExternalEffect(conflictPool as never, {
-      organizationId, missionId, runId, capabilityKey: 'email.message.queue', capabilityVersion: 1,
+      intentId: runId, organizationId, missionId, runId, capabilityKey: 'email.message.queue', capabilityVersion: 1,
       providerKey: 'email', providerIdempotencyKey: 'effect-key', requestHash: 'a'.repeat(64),
       reconciliationDeadlineAt: '2026-08-22T12:15:00.000Z',
     })).rejects.toThrowError('external_effect_idempotency_conflict')
@@ -81,4 +82,3 @@ describe('Action Engine external effect intent', () => {
     expect(pool.query.mock.calls.some(([sql]) => String(sql).includes('FOR UPDATE'))).toBe(true)
   })
 })
-

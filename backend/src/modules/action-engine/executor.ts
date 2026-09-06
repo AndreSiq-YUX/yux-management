@@ -241,15 +241,21 @@ export async function executeActionRun(
           organizationId: input.organizationId, packKey: claimed.action.pack_key,
           packVersion: claimed.action.pack_version, capabilityKey: capability.key, capabilityVersion: capability.version,
         }),
-        client.query<{ approved: boolean; approved_scope_grant_ids: string[]; decided_by: string | null }>(
+        client.query<{ approved: boolean; approved_scope_grant_ids: string[]; decided_by: string | null; approval_id: string | null; subject_hash: string | null }>(
           `SELECT EXISTS (SELECT 1 FROM public.action_approvals
              WHERE run_id = $1 AND organization_id = $2 AND status = 'approved') AS approved,
              COALESCE((SELECT ARRAY_AGG(requested_payload->>'grantId')
                FROM public.action_approvals WHERE run_id = $1 AND organization_id = $2
                  AND status = 'approved' AND approval_type = 'scope_change'),ARRAY[]::TEXT[]) AS approved_scope_grant_ids,
-             (SELECT decided_by FROM public.action_approvals
-               WHERE run_id = $1 AND organization_id = $2 AND status = 'approved'
-               ORDER BY decided_at DESC LIMIT 1) AS decided_by`,
+              (SELECT decided_by FROM public.action_approvals
+                WHERE run_id = $1 AND organization_id = $2 AND status = 'approved'
+                ORDER BY decided_at DESC LIMIT 1) AS decided_by,
+              (SELECT id FROM public.action_approvals
+                WHERE run_id = $1 AND organization_id = $2 AND status = 'approved'
+                ORDER BY decided_at DESC LIMIT 1) AS approval_id,
+              (SELECT subject_hash FROM public.action_approvals
+                WHERE run_id = $1 AND organization_id = $2 AND status = 'approved'
+                ORDER BY decided_at DESC LIMIT 1) AS subject_hash`,
           [input.actionRunId, input.organizationId],
         ),
         client.query<{ total: string }>(
@@ -396,6 +402,7 @@ export async function executeActionRun(
       const reservedEffect = capability.effect === 'external' || capability.effect === 'destructive'
         ? await reserveExternalEffectInTransaction(client, {
           organizationId: input.organizationId,
+          intentId: input.actionRunId,
           missionId: claimed.action.mission_id,
           planId: claimed.action.plan_id,
           runId: input.actionRunId,
@@ -405,6 +412,8 @@ export async function executeActionRun(
           providerKey: capability.requiredConnections[0] ?? capability.key.split('.')[0]!,
           providerIdempotencyKey: claimed.action.idempotency_key,
           requestHash: hashSubject(stableSerialize(claimed.action.input)),
+          approvalId: approval.rows[0]?.approval_id ?? undefined,
+          approvalSubjectHash: approval.rows[0]?.subject_hash ?? undefined,
           requestMetadata: { actionRunId: input.actionRunId, attemptNumber: claimed.attemptNumber },
           reconciliationDeadlineAt: new Date(Date.now() + 15 * 60_000).toISOString(),
         })

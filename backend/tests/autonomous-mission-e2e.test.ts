@@ -71,4 +71,4 @@ describe('bounded autonomous mission full safety boundary', () => {
   })
 })
 
-function unknownEffect():ExternalEffect{return{id:'effect-1',organizationId:'org-a',missionId:'mission-1',runId:'run-1',capabilityKey:'campaign.provider.activate',capabilityVersion:1,providerKey:'meta',providerIdempotencyKey:'mission-1:activate',requestHash:'c'.repeat(64),requestMetadata:{},status:'unknown',outcomeEvidence:{},reconciliationDeadlineAt:'2026-08-31T13:00:00.000Z',createdAt:'2026-08-31T11:59:00.000Z',updatedAt:'2026-08-31T11:59:00.000Z'}}
+function unknownEffect():ExternalEffect{return{id:'effect-1',intentId:'run-1',organizationId:'org-a',missionId:'mission-1',runId:'run-1',capabilityKey:'campaign.provider.activate',capabilityVersion:1,providerKey:'meta',providerIdempotencyKey:'mission-1:activate',requestHash:'c'.repeat(64),requestMetadata:{},status:'unknown',outcomeEvidence:{},reconciliationDeadlineAt:'2026-08-31T13:00:00.000Z',createdAt:'2026-08-31T11:59:00.000Z',updatedAt:'2026-08-31T11:59:00.000Z'}}

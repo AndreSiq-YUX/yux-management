@@ -140,6 +140,8 @@ export function rejectNeedsReauthConnection(connection: { status?: string }) {
 
 export function buildMetaCampaignRequests(input: {
   graphVersion: string
+  graphBaseUrl?: string
+  intentId?: string
   accessToken: string
   adAccountId: string
   campaign: {
@@ -152,7 +154,9 @@ export function buildMetaCampaignRequests(input: {
     pageId?: string
   }
 }): ProviderHttpRequest[] {
-  const baseUrl = `https://graph.facebook.com/${stringValue(input.graphVersion, 'graphVersion')}/${stringValue(input.adAccountId, 'adAccountId')}`
+  const graphBaseUrl = optionalString(input.graphBaseUrl) || 'https://graph.facebook.com'
+  const baseUrl = `${graphBaseUrl.replace(/\/$/, '')}/${stringValue(input.graphVersion, 'graphVersion')}/${stringValue(input.adAccountId, 'adAccountId')}`
+  const headers = providerIntentHeaders(input.intentId)
   const objectiveMap = {
     lead_generation: 'OUTCOME_LEADS',
     traffic: 'OUTCOME_TRAFFIC',
@@ -166,6 +170,7 @@ export function buildMetaCampaignRequests(input: {
       step: 'campaign',
       method: 'POST',
       url: `${baseUrl}/campaigns`,
+      headers,
       bodyMode: 'form',
       body: {
         name: stringValue(input.campaign.name, 'campaign.name'),
@@ -179,6 +184,7 @@ export function buildMetaCampaignRequests(input: {
       step: 'adset',
       method: 'POST',
       url: `${baseUrl}/adsets`,
+      headers,
       bodyMode: 'form',
       body: compactBody({
         name: `${stringValue(input.campaign.name, 'campaign.name')} - Ad Set`,
@@ -193,6 +199,7 @@ export function buildMetaCampaignRequests(input: {
       step: 'creative',
       method: 'POST',
       url: `${baseUrl}/adcreatives`,
+      headers,
       bodyMode: 'form',
       body: {
         name: `${stringValue(input.campaign.name, 'campaign.name')} - Creative`,
@@ -211,6 +218,7 @@ export function buildMetaCampaignRequests(input: {
       step: 'ad',
       method: 'POST',
       url: `${baseUrl}/ads`,
+      headers,
       bodyMode: 'form',
       body: {
         name: `${stringValue(input.campaign.name, 'campaign.name')} - Ad`,
@@ -324,12 +332,21 @@ async function executeMetaAdapter(input: {
 }) {
   const accessToken = stringValue(input.requestPayload.accessToken, 'accessToken')
   const graphVersion = optionalString(input.requestPayload.graphVersion) || envValue('META_GRAPH_VERSION') || 'v20.0'
+  const graphBaseUrl = optionalString(input.requestPayload.graphBaseUrl) || 'https://graph.facebook.com'
+  const intentHeaders = providerIntentHeaders(input.requestPayload.intentId || input.localMutationId)
   const adAccountId = normalizeMetaAdAccountId(stringValue(input.requestPayload.adAccountId || input.requestPayload.providerAccountId || input.requestPayload.externalAccountId, 'adAccountId'))
   const fetcher = input.fetcher || fetch
 
   if (input.action === 'create_campaign') {
     const campaign = normalizeCampaignPayload(input.requestPayload.campaign || input.requestPayload)
-    const requests = buildMetaCampaignRequests({ graphVersion, accessToken, adAccountId, campaign })
+    const requests = buildMetaCampaignRequests({
+      graphVersion,
+      graphBaseUrl,
+      intentId: optionalString(input.requestPayload.intentId || input.localMutationId),
+      accessToken,
+      adAccountId,
+      campaign,
+    })
     const campaignPayload = await sendProviderRequest(requests[0], fetcher)
     const campaignId = stringValue(campaignPayload.id, 'meta campaign id')
     const adsetPayload = await sendProviderRequest({
@@ -362,7 +379,8 @@ async function executeMetaAdapter(input: {
     const payload = await sendProviderRequest({
       step: 'update_budget',
       method: 'POST',
-      url: `https://graph.facebook.com/${graphVersion}/${adSetId}`,
+      url: `${graphBaseUrl.replace(/\/$/, '')}/${graphVersion}/${adSetId}`,
+      headers: intentHeaders,
       bodyMode: 'form',
       body: { daily_budget: Math.round(dailyBudget * 100), access_token: accessToken },
     }, fetcher)
@@ -374,7 +392,8 @@ async function executeMetaAdapter(input: {
     const payload = await sendProviderRequest({
       step: input.action,
       method: 'POST',
-      url: `https://graph.facebook.com/${graphVersion}/${campaignId}`,
+      url: `${graphBaseUrl.replace(/\/$/, '')}/${graphVersion}/${campaignId}`,
+      headers: intentHeaders,
       bodyMode: 'form',
       body: { status: input.action === 'activate_campaign' ? 'ACTIVE' : 'PAUSED', access_token: accessToken },
     }, fetcher)
@@ -382,11 +401,10 @@ async function executeMetaAdapter(input: {
   }
 
   const campaignId = stringValue(input.requestPayload.campaignId || input.requestPayload.externalCampaignId || input.requestPayload.externalId, 'campaignId')
-  const graphBaseUrl = optionalString(input.requestPayload.graphBaseUrl) || 'https://graph.facebook.com'
   const url = new URL(`${graphBaseUrl.replace(/\/$/, '')}/${graphVersion}/${campaignId}/insights`)
   url.searchParams.set('fields', 'spend,impressions,clicks,actions')
   url.searchParams.set('access_token', accessToken)
-  const payload = await sendProviderRequest({ step: 'sync_metrics', method: 'GET', url: url.toString() }, fetcher)
+  const payload = await sendProviderRequest({ step: 'sync_metrics', method: 'GET', url: url.toString(), headers: intentHeaders }, fetcher)
   return buildProviderMutationResponse({ provider: 'meta', action: input.action, localMutationId: input.localMutationId, ok: true, externalCampaignId: campaignId, raw: normalizeMetaMetrics(payload) })
 }
 
@@ -402,6 +420,7 @@ async function executeGoogleAdapter(input: {
   const developerToken = stringValue(input.requestPayload.developerToken || envValue('GOOGLE_ADS_DEVELOPER_TOKEN'), 'GOOGLE_ADS_DEVELOPER_TOKEN')
   const apiVersion = optionalString(input.requestPayload.apiVersion) || envValue('GOOGLE_ADS_API_VERSION') || 'v22'
   const fetcher = input.fetcher || fetch
+  const intentHeaders = providerIntentHeaders(input.requestPayload.intentId || input.localMutationId)
 
   if (input.action === 'create_campaign') {
     const campaign = normalizeCampaignPayload(input.requestPayload.campaign || input.requestPayload)
@@ -409,7 +428,7 @@ async function executeGoogleAdapter(input: {
       step: 'create_campaign',
       method: 'POST',
       url: `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:mutate`,
-      headers: googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)),
+      headers: { ...googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)), ...intentHeaders },
       bodyMode: 'json',
       body: {
         mutateOperations: buildGoogleAdsCampaignMutateOperations({
@@ -441,7 +460,7 @@ async function executeGoogleAdapter(input: {
       step: 'update_budget',
       method: 'POST',
       url: `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:mutate`,
-      headers: googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)),
+      headers: { ...googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)), ...intentHeaders },
       bodyMode: 'json',
       body: {
         mutateOperations: [{
@@ -461,7 +480,7 @@ async function executeGoogleAdapter(input: {
       step: input.action,
       method: 'POST',
       url: `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:mutate`,
-      headers: googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)),
+      headers: { ...googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)), ...intentHeaders },
       bodyMode: 'json',
       body: {
         mutateOperations: [{
@@ -480,7 +499,7 @@ async function executeGoogleAdapter(input: {
     step: 'sync_metrics',
     method: 'POST',
     url: `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:searchStream`,
-    headers: googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)),
+    headers: { ...googleAdsHeaders(accessToken, developerToken, optionalString(input.requestPayload.loginCustomerId)), ...intentHeaders },
     bodyMode: 'json',
     body: {
       query: `SELECT campaign.id, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM campaign WHERE campaign.resource_name = '${campaignResourceName}'`,
@@ -544,6 +563,11 @@ function googleAdsHeaders(accessToken: string, developerToken: string, loginCust
     'developer-token': developerToken,
     ...(loginCustomerId ? { 'login-customer-id': loginCustomerId } : {}),
   }
+}
+
+function providerIntentHeaders(value: unknown): Record<string, string> {
+  const intentId = optionalString(value)
+  return intentId ? { 'X-YUX-Intent-ID': intentId } : {}
 }
 
 function extractGoogleResourceId(payload: Record<string, unknown>, resourceKind: string) {

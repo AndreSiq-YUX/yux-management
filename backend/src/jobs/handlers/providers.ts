@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import { createHash, randomUUID } from 'node:crypto'
 import { decodeProviderSecretEncryptionKey, loadProviderSecretFromPool } from '../../lib/edge-compat/providerSecrets.js'
 import { executeProviderAdapter, type AdsProviderMutationAction, type AdsProviderKey } from '../../lib/edge-compat/adsProvider.js'
 import { executeSocialPublishingAction } from '../../lib/edge-compat/socialPublishingProvider.js'
@@ -14,77 +15,129 @@ function stringValue(value: unknown, label: string) {
   return value.trim()
 }
 
-async function requireApprovedRequest(pool: Pick<pg.Pool, 'query'>, approvalId: unknown) {
-  const id = stringValue(approvalId, 'approvalId')
-  const result = await pool.query('SELECT id FROM public.approval_requests WHERE id = $1 AND status = $2 LIMIT 1', [id, 'approved'])
+async function requireApprovedRequest(pool: Pick<pg.Pool, 'query'>, input: {
+  approvalId: unknown
+  organizationId: string
+  intentId: string
+  payloadHash: string
+  campaignId: string
+}) {
+  const id = stringValue(input.approvalId, 'approvalId')
+  const result = await pool.query(
+    `SELECT approval.id FROM public.approval_requests approval
+     JOIN public.projects project ON project.id=approval.project_id
+     JOIN public.organizations organization ON organization.client_id=project.client_id
+     WHERE approval.id=$1 AND approval.status='approved'
+       AND approval.target_type='campaign_provider_mutation' AND approval.target_id=$2
+       AND approval.provider_intent_id=$3 AND approval.provider_payload_hash=$4
+       AND organization.id=$5
+     LIMIT 1`,
+    [id, input.campaignId, input.intentId, input.payloadHash, input.organizationId],
+  )
   if (!result.rows[0]) throw new Error('approved_approval_required')
   return id
 }
 
-export async function handleProviderFunction(pool: Pick<pg.Pool, 'query'>, data: JsonRecord) {
+export async function handleProviderFunction(
+  pool: Pick<pg.Pool, 'query'>,
+  data: JsonRecord,
+  options: { encryptionKey?: string; graphBaseUrl?: string; fetcher?: typeof fetch } = {},
+) {
   const functionName = stringValue(data.functionName, 'functionName')
   const body = record(data.body)
   const organizationId = stringValue(data.organizationId, 'organizationId')
 
   if (functionName === 'execute-ad-provider-mutation') {
     const action = stringValue(body.action, 'action') as AdsProviderMutationAction
-    if (action === 'create_campaign' || action === 'activate_campaign' || action === 'update_budget') await requireApprovedRequest(pool, body.approvalId)
-
     const connectionId = stringValue(body.providerConnectionId, 'providerConnectionId')
     const campaignId = stringValue(body.campaignId, 'campaignId')
+    const intentId = uuidValue(body.intentId, 'intentId')
+    const payloadHash = providerIntentPayloadHash({ action, campaignId, connectionId, requestPayload: record(body.requestPayload) })
+    if (typeof body.payloadHash === 'string' && body.payloadHash !== payloadHash) throw new Error('provider_intent_payload_hash_mismatch')
+    const approvalRequired = action === 'create_campaign' || action === 'activate_campaign' || action === 'update_budget'
+    const approvalId = approvalRequired
+      ? await requireApprovedRequest(pool, { approvalId: body.approvalId, organizationId, intentId, payloadHash, campaignId })
+      : null
     const connectionResult = await pool.query<{
-      id: string; organization_id: string; provider: AdsProviderKey; provider_account_id: string | null; token_reference: string | null
+      id: string; organization_id: string; provider: AdsProviderKey; provider_account_id: string | null; token_reference: string | null; status: string
     }>(
-      `SELECT id, organization_id, provider, provider_account_id, token_reference
-       FROM public.ad_provider_connections WHERE id = $1 LIMIT 1`,
-      [connectionId],
+      `SELECT connection.id, connection.organization_id, connection.provider,
+              connection.provider_account_id, connection.token_reference, connection.status
+       FROM public.ad_provider_connections connection
+       JOIN public.campaigns campaign
+         ON campaign.id=$2 AND campaign.organization_id=connection.organization_id
+        AND campaign.provider_connection_id=connection.id
+       WHERE connection.id=$1 AND connection.organization_id=$3
+       LIMIT 1`,
+      [connectionId, campaignId, organizationId],
     )
     const connection = connectionResult.rows[0]
-    if (!connection || connection.organization_id !== organizationId) throw new Error('provider_connection_not_found')
+    if (!connection) throw new Error('provider_connection_not_found')
+    if (connection.status !== 'connected') throw new Error('provider_connection_not_ready')
     if (!connection.token_reference) throw new Error('provider_access_token_not_configured')
 
-    const existing = await pool.query<{ id: string; status: string }>(
-      `SELECT id, status FROM public.ad_provider_mutation_runs
-       WHERE idempotency_key = $1 LIMIT 1`,
-      [`${connection.provider}:${action}:${campaignId}`],
+    const existing = await pool.query<{ id: string; status: string; payload_hash: string; approval_id: string | null }>(
+      `SELECT id, status, payload_hash, approval_id FROM public.ad_provider_mutation_runs
+       WHERE organization_id=$1 AND intent_id=$2 AND action=$3 LIMIT 1`,
+      [organizationId, intentId, action],
     )
+    if (existing.rows[0] && (existing.rows[0].payload_hash !== payloadHash || existing.rows[0].approval_id !== approvalId)) {
+      throw new Error('provider_intent_identity_conflict')
+    }
     if (existing.rows[0]?.status === 'succeeded') return { duplicate: true, runId: existing.rows[0].id }
+    if (existing.rows[0]?.status === 'unknown' || existing.rows[0]?.status === 'manual_review') {
+      if (existing.rows[0].status === 'unknown') {
+        await pool.query(`UPDATE public.ad_provider_mutation_runs SET status='manual_review',updated_at=NOW() WHERE id=$1 AND status='unknown'`, [existing.rows[0].id])
+      }
+      return { duplicate: true, runId: existing.rows[0].id, status: 'manual_review', reconciliationRequired: true }
+    }
 
     const run = await pool.query<{ id: string }>(
       `INSERT INTO public.ad_provider_mutation_runs (
          organization_id, provider_connection_id, campaign_id, provider, action, status,
-         idempotency_key, request_payload, requested_by, approved_by
-       ) VALUES ($1,$2,$3,$4,$5,'running',$6,$7::jsonb,$8,$9)
-       ON CONFLICT (idempotency_key) DO UPDATE SET status = 'running', updated_at = NOW()
+         idempotency_key, request_payload, request_hash, payload_hash, requested_by, approved_by,
+         intent_id, approval_id, approval_source
+       ) VALUES ($1,$2,$3,$4,$5,'running',$6,$7::jsonb,$8,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (organization_id,intent_id,action) DO UPDATE SET status = 'running', updated_at = NOW()
        RETURNING id`,
       [
         organizationId, connection.id, campaignId, connection.provider, action,
-        `${connection.provider}:${action}:${campaignId}`, JSON.stringify(body.requestPayload || {}),
+        `${connection.provider}:${action}:${intentId}`, JSON.stringify(body.requestPayload || {}), payloadHash,
         typeof data.requestedBy === 'string' ? data.requestedBy : null,
-        typeof body.approvalId === 'string' ? body.approvalId : null,
+        typeof data.requestedBy === 'string' ? data.requestedBy : null,
+        intentId, approvalId, approvalId ? 'workspace' : 'operator_confirmation',
       ],
     )
-    const secret = await loadProviderSecretFromPool(pool, connection.token_reference)
+    if (approvalId) await requireApprovedRequest(pool, { approvalId, organizationId, intentId, payloadHash, campaignId })
+    const secret = await loadProviderSecretFromPool(
+      pool,
+      connection.token_reference,
+      options.encryptionKey ? decodeProviderSecretEncryptionKey(options.encryptionKey) : undefined,
+    )
     if (secret.expired) throw new Error('provider_access_token_expired')
     const requestPayload = {
       ...record(body.requestPayload),
       accessToken: secret.value,
       providerAccountId: connection.provider_account_id || undefined,
       campaignId,
+      intentId,
+      graphBaseUrl: options.graphBaseUrl,
     }
     const response = await executeProviderAdapter({
       provider: connection.provider,
       action,
-      localMutationId: run.rows[0]?.id || campaignId,
+      localMutationId: intentId,
       requestPayload,
+      ...(options.fetcher ? { fetcher: options.fetcher } : {}),
     })
+    const unknown = /timeout|timed out|abort|network|fetch failed|socket|response lost/i.test(response.protectedError ?? '')
     await pool.query(
       `UPDATE public.ad_provider_mutation_runs
        SET status = $2, response_payload = $3::jsonb, protected_error = $4, completed_at = NOW(), updated_at = NOW()
        WHERE id = $1`,
-      [run.rows[0]?.id, response.status, JSON.stringify(response.payload), response.protectedError || null],
+      [run.rows[0]?.id, response.status === 'succeeded' ? 'succeeded' : unknown ? 'unknown' : 'failed', JSON.stringify(response.payload), response.protectedError || null],
     )
-    if (response.status !== 'succeeded') throw new Error(response.protectedError || 'provider_mutation_failed')
+    if (response.status !== 'succeeded') throw new Error(unknown ? 'provider_outcome_unknown' : response.protectedError || 'provider_mutation_failed')
     return { runId: run.rows[0]?.id, response }
   }
 
@@ -162,22 +215,32 @@ export async function handleProviderMetricsSync(
   if (!campaign.external_id) throw new Error('capability_unavailable:provider_campaign_reference_required')
 
   const idempotencyKey = `${campaign.provider}:sync_metrics:${campaignId}:${sourceTimestamp}`
+  const intentId = randomUUID()
+  const payloadHash = providerIntentPayloadHash({
+    action: 'sync_metrics',
+    campaignId,
+    connectionId: campaign.provider_connection_id,
+    requestPayload: { sourceTimestamp },
+  })
   const existing = await pool.query<{ id: string; status: string }>(
     `SELECT id, status FROM public.ad_provider_mutation_runs WHERE idempotency_key = $1 LIMIT 1`,
     [idempotencyKey],
   )
   if (existing.rows[0]?.status === 'succeeded') return { duplicate: true, runId: existing.rows[0].id }
-  const run = await pool.query<{ id: string }>(
+  const run = await pool.query<{ id: string; intent_id: string }>(
     `INSERT INTO public.ad_provider_mutation_runs (
        organization_id, provider_connection_id, campaign_id, provider, action, status,
-       idempotency_key, request_payload, requested_by
-     ) VALUES ($1,$2,$3,$4,'sync_metrics','running',$5,$6::jsonb,$7)
+       idempotency_key, request_payload, request_hash, payload_hash, requested_by,
+       intent_id, approval_source
+     ) VALUES ($1,$2,$3,$4,'sync_metrics','running',$5,$6::jsonb,$7,$7,$8,$9,'operator_confirmation')
      ON CONFLICT (idempotency_key) DO UPDATE SET status='running', protected_error=NULL, updated_at=NOW()
-     RETURNING id`,
+     RETURNING id, intent_id`,
     [organizationId, campaign.provider_connection_id, campaignId, campaign.provider, idempotencyKey,
-      JSON.stringify({ campaignId, sourceTimestamp }), typeof data.requestedBy === 'string' ? data.requestedBy : null],
+      JSON.stringify({ campaignId, sourceTimestamp }), payloadHash,
+      typeof data.requestedBy === 'string' ? data.requestedBy : null, intentId],
   )
   const runId = stringValue(run.rows[0]?.id, 'provider metrics run')
+  const persistedIntentId = stringValue(run.rows[0]?.intent_id, 'provider metrics intent')
   try {
     const rawKey = options.encryptionKey ? decodeProviderSecretEncryptionKey(options.encryptionKey) : undefined
     const secret = await loadProviderSecretFromPool(pool, campaign.token_reference, rawKey)
@@ -185,7 +248,7 @@ export async function handleProviderMetricsSync(
     const response = await executeProviderAdapter({
       provider: campaign.provider,
       action: 'sync_metrics',
-      localMutationId: runId,
+      localMutationId: persistedIntentId,
       requestPayload: {
         accessToken: secret.value,
         providerAccountId: campaign.provider_account_id ?? undefined,
@@ -193,6 +256,7 @@ export async function handleProviderMetricsSync(
         externalCampaignId: campaign.external_id,
         campaignResourceName: campaign.external_id,
         graphBaseUrl: options.graphBaseUrl,
+        intentId: persistedIntentId,
       },
       ...(options.fetcher ? { fetcher: options.fetcher } : {}),
     })
@@ -306,4 +370,27 @@ function integer(value: unknown) {
 function safeProviderError(error: unknown) {
   return (error instanceof Error ? error.message : String(error)).slice(0, 1_000)
     .replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]')
+}
+
+function uuidValue(value: unknown, label: string) {
+  const text = stringValue(value, label)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) throw new Error(`${label} must be a UUID`)
+  return text.toLowerCase()
+}
+
+export function providerIntentPayloadHash(input: {
+  action: string
+  campaignId: string
+  connectionId: string
+  requestPayload: Record<string, unknown>
+}) {
+  return createHash('sha256').update(stableSerialize(input)).digest('hex')
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
 }

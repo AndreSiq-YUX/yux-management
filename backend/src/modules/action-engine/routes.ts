@@ -762,14 +762,40 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
     requireAccess(ctx, 'action_engine.read', { organizationId: query.data.organizationId })
     const mission = await getMission(app.pg, params.data.missionId, query.data.organizationId)
     if (!mission) return reply.code(404).send({ error: 'mission_not_found' })
-    const pack = await app.pg.query<{ metric_spec: Record<string, unknown>; content_hash: string }>(
-      `SELECT definition->'metricSpec' AS metric_spec,content_hash
-       FROM public.action_pack_versions WHERE id=$1 LIMIT 1`, [mission.packVersionId],
-    )
+    const [pack, providerEffects] = await Promise.all([
+      app.pg.query<{ metric_spec: Record<string, unknown>; content_hash: string }>(
+        `SELECT definition->'metricSpec' AS metric_spec,content_hash
+         FROM public.action_pack_versions WHERE id=$1 LIMIT 1`, [mission.packVersionId],
+      ),
+      app.pg.query<{
+        intent_id: string; capability_key: string; provider_key: string; status: string;
+        provider_reference: string | null; last_error_code: string | null;
+        next_reconcile_at: Date | string | null; reconciliation_deadline_at: Date | string;
+        updated_at: Date | string;
+      }>(
+        `SELECT intent_id, capability_key, provider_key, status, provider_reference,
+                last_error_code, next_reconcile_at, reconciliation_deadline_at, updated_at
+           FROM public.action_external_effects
+          WHERE mission_id=$1 AND organization_id=$2
+          ORDER BY created_at DESC`,
+        [mission.id, query.data.organizationId],
+      ),
+    ])
     return {
       ...sanitizeMission(mission, ctx.role === 'yux_admin' || ctx.role === 'yux_operator'),
       metricSpec: pack.rows[0]?.metric_spec ?? {},
       packContentHash: pack.rows[0]?.content_hash ?? null,
+      providerEffects: providerEffects.rows.map(effect => ({
+        intentId: effect.intent_id,
+        capabilityKey: effect.capability_key,
+        provider: effect.provider_key,
+        status: effect.status,
+        providerReference: effect.provider_reference,
+        errorCode: effect.last_error_code,
+        nextReconcileAt: effect.next_reconcile_at ? new Date(effect.next_reconcile_at).toISOString() : null,
+        reconciliationDeadlineAt: new Date(effect.reconciliation_deadline_at).toISOString(),
+        updatedAt: new Date(effect.updated_at).toISOString(),
+      })),
     }
   })
 

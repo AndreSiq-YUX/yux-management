@@ -264,6 +264,8 @@ export const campaignService = {
     providerStatus: AdProviderConnection['status']
     explicitApproval?: boolean
     activateProvider?: boolean
+    intentId?: string
+    approvalId?: string
     requestPayload?: Record<string, unknown>
   }) {
     const guard = canExecuteProviderMutation({
@@ -281,6 +283,8 @@ export const campaignService = {
         providerConnectionId: input.providerConnectionId,
         explicitApproval: Boolean(input.explicitApproval),
         activateProvider: Boolean(input.activateProvider),
+        intentId: input.intentId || crypto.randomUUID(),
+        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
         requestPayload: input.requestPayload || {},
       })
   },

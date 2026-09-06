@@ -67,6 +67,7 @@ class Pool {
       created_by: '00000000-0000-4000-8000-000000000010', created_at: new Date(),
     }] as T[] }
     if (sql.includes("definition->'metricSpec'")) return { rows: [{ metric_spec: {}, content_hash: 'a'.repeat(64) }] as T[] }
+    if (sql.includes('FROM public.action_external_effects')) return { rows: [] as T[] }
     if (sql.includes('FROM public.action_missions') && sql.includes('FOR UPDATE')) {
       return { rows: [{
         id: missionId, organization_id: orgA, contract_id: null,

@@ -87,6 +87,23 @@ const simulationPayload = z.object({
     payload: z.record(z.string(), z.unknown()).optional(),
   }).passthrough(),
 }).passthrough()
+const providerFunctionPayload = z.object({
+  organizationId: uuid,
+  requestedBy: z.string().min(1),
+  functionName: z.enum(['execute-ad-provider-mutation', 'execute-wordpress-publishing', 'execute-marketing-publishing']),
+  body: payload,
+}).passthrough().superRefine((value, context) => {
+  if (value.functionName !== 'execute-ad-provider-mutation') return
+  const action = z.enum(['create_campaign', 'activate_campaign', 'update_budget', 'pause_campaign']).safeParse(value.body.action)
+  if (!action.success) context.addIssue({ code: 'custom', message: 'valid provider mutation action is required', path: ['body', 'action'] })
+  for (const field of ['campaignId', 'providerConnectionId', 'intentId'] as const) {
+    if (!uuid.safeParse(value.body[field]).success) context.addIssue({ code: 'custom', message: `${field} must be a UUID`, path: ['body', field] })
+  }
+  if (action.success && ['create_campaign', 'activate_campaign', 'update_budget'].includes(action.data)
+    && !uuid.safeParse(value.body.approvalId).success) {
+    context.addIssue({ code: 'custom', message: 'approvalId must be a UUID for this provider mutation', path: ['body', 'approvalId'] })
+  }
+})
 
 function registered(
   queueClass: JobQueueClass,
@@ -136,7 +153,10 @@ export const jobRegistry = {
   'omnichannel.retryOutbound': registered('external', 120_000, ({ pool, env }, data) => handleOutboundMessage(pool, data, { graphBaseUrl: env.META_GRAPH_BASE_URL, providerSecretEncryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 })),
   'omnichannel.requestScheduling': registered('internal', 30_000, ({ pool }, data) => handleOmnichannelSchedulingFallback(pool, data), schedulingPayload),
   'omnichannel.simulateChannelEvent': registered('internal', 30_000, ({ pool }, data) => handleSandboxChannelSimulation(pool, data), simulationPayload, true),
-  'provider.functionInvoke': registered('external', 180_000, ({ pool }, data) => handleProviderFunction(pool, data)),
+  'provider.functionInvoke': registered('external', 180_000, ({ pool, env }, data) => handleProviderFunction(pool, data, {
+    encryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64,
+    graphBaseUrl: env.META_GRAPH_BASE_URL,
+  }), providerFunctionPayload),
   'provider.syncMetrics': registered('external', 180_000, ({ pool, env }, data) => handleProviderMetricsSync(pool, data, {
     encryptionKey: env.PROVIDER_SECRET_ENCRYPTION_KEY_B64,
     graphBaseUrl: env.META_GRAPH_BASE_URL,

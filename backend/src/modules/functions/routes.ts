@@ -140,6 +140,23 @@ export async function registerFunctionRoutes(app: FastifyInstance) {
       }
     }
 
+    if (params.data.name === 'execute-ad-provider-mutation') {
+      const action = z.enum(['create_campaign', 'activate_campaign', 'update_budget', 'pause_campaign']).safeParse(body.action)
+      const intent = uuid.safeParse(body.intentId)
+      const campaign = uuid.safeParse(body.campaignId)
+      const connection = uuid.safeParse(body.providerConnectionId)
+      if (!action.success || !intent.success || !campaign.success || !connection.success) {
+        return reply.code(400).send({ error: 'invalid_provider_mutation_intent' })
+      }
+      if (['create_campaign', 'activate_campaign', 'update_budget'].includes(action.data)
+        && !uuid.safeParse(body.approvalId).success) {
+        return reply.code(409).send({
+          error: 'approval_required',
+          requiredConfiguration: 'approved_provider_intent',
+        })
+      }
+    }
+
     const jobBody = params.data.name === 'sync-ad-metrics'
       ? { ...body, sourceTimestamp: new Date().toISOString() }
       : body

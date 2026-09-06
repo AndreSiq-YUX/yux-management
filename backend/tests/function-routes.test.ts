@@ -14,6 +14,8 @@ const ids = {
   orgA: '00000000-0000-4000-8000-000000000001',
   orgB: '00000000-0000-4000-8000-000000000002',
   campaign: '00000000-0000-4000-8000-000000000003',
+  connection: '00000000-0000-4000-8000-000000000004',
+  intent: '00000000-0000-4000-8000-000000000005',
 }
 
 class FakeAuthStore implements AuthStore {
@@ -93,7 +95,14 @@ describe('function route authorization', () => {
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue: queue })
     const response = await app.inject({
       method: 'POST', url: '/api/functions/execute-ad-provider-mutation', headers: headers(token),
-      payload: { body: { organizationId: ids.orgA, campaignId: ids.campaign } },
+      payload: { body: {
+        organizationId: ids.orgA,
+        campaignId: ids.campaign,
+        providerConnectionId: ids.connection,
+        intentId: ids.intent,
+        action: 'pause_campaign',
+        requestPayload: {},
+      } },
     })
     expect(response.statusCode).toBe(200)
     expect(queue.jobs[0]?.data).toMatchObject({ requestedBy: 'user-client_admin', organizationId: ids.orgA })
