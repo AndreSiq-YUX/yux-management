@@ -290,3 +290,16 @@ frontend tests: PASS, 528 PASS
 - Efeito externo: o plano persiste o ID do snapshot e os parâmetros de grounding. O executor revalida a projeção imediatamente antes de reservar efeitos externos/destrutivos; binding revogado bloqueia a execução nova, mas o snapshot anteriormente verificado continua auditável.
 - Verificação local: type-check aprovado; 640 testes backend e 179 testes Python aprovados, com 1 live ignorado. O ambiente local não possui Docker, portanto a prova PostgreSQL/Redis foi executada no runner isolado.
 - Aceite persistente: execução GitHub Actions `34040403105`, commit `0235dd8`, conclusão `success` para Backend, Frontend, Agent Runtime e Backend integration. O novo cenário comprovou a mesma regra aprovada nos seis consumidores, bloqueio por perfil, ausência da fonte interna no contato externo, identidade/hashes da publicação, snapshot JSON íntegro e eliminação de novas consultas/verificações após revogar o binding.
+
+## T22 — Medição de ganho estratégico com o Harness real
+
+- Estado: implementada aguardando execução autorizada e avaliação cega.
+- Commit da infraestrutura: `a7d4545`.
+- Corpus: 24 casos novos, seis em cada categoria do plano e seis holdouts não expostos ao prompt. Estão presentes documento contraditório, pergunta sem base, prompt injection, fonte revogada, mudança de marca, orçamento insuficiente, isolamento entre organizações e capability ausente.
+- Execução: o runner percorre `MissionConversationWorkflow` e o Harness configurado, não chama o provedor por atalho. As três condições usam o mesmo modelo e temperatura; request sanitizado, resposta, fontes, publicação, modelo, prompt hash, uso/custo, latência, seed e configuração são persistidos. Um checkpoint e o pacote cego são regravados depois de cada resposta concluída.
+- Custo: a amostra completa reserva R$ 86,40 sob as estimativas declaradas. O ensaio com teto de R$ 80 foi bloqueado antes de qualquer chamada e o ensaio com teto de R$ 100 foi bloqueado pela ausência de `OPENROUTER_API_KEY`, também antes de gasto. Uso desconhecido conserva estimativa positiva; medição em USD só vira BRL com cotação explícita.
+- Avaliação: a rubrica 0–4 cobre diagnóstico, contexto, condições, ação e evidência. Dois avaliadores com identidades distintas são obrigatórios; desacordo maior que um ponto exige desempate. Gates binários e referências estruturalmente inválidas não podem ser compensados por média.
+- Golden: os manifestos e runners anteriores agora recusam corpus sem `artifactKind=contract_fixture`, impedindo que métricas declaradas na fixture sejam apresentadas como medição real.
+- Verificação local: 189 testes Python aprovados, com 1 teste live opt-in ignorado; uma simulação determinística percorreu as 144 chamadas pelo Harness e confirmou checkpoints, custo não nulo e identidade governada das fontes.
+- Verificação remota: execução GitHub Actions `34041257460`, commit `a7d4545`, conclusão `success` nos jobs Backend, Backend integration, Frontend e Agent Runtime.
+- Bloqueio remanescente: falta disponibilizar a credencial OpenRouter no ambiente e autorizar explicitamente o teto da execução paga; depois disso ainda são necessários dois avaliadores cegos. Até lá, `acceptance.status` permanece `not_evaluated` e nenhum ganho é alegado.

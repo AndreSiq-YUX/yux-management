@@ -123,3 +123,11 @@
 - Consumidores: Marketing, Radar, automação IA, atendimento omnichannel, chat estratégico e supervisor resolvem audiência pelo mesmo construtor de escopo e consultam a política autoritativa de T20. Somente o supervisor pode conservar a audiência explícita e validada da conversa; os demais não podem ampliar o próprio público por payload.
 - Execução: o snapshot imutável e sua audiência são ligados ao plano compilado. Antes de reservar uma intenção externa ou destrutiva, o executor consulta novamente a projeção publicada e o binding efetivo. Revogação bloqueia o novo efeito e exige revisão/replanejamento, sem apagar o texto e a evidência históricos.
 - Modelo e capacidades: o modelo escolhe apenas referências recuperadas; referência inventada, identidade incompleta ou hash divergente produz erro estruturado sem loop. O compilador e o manifest fixado continuam sendo a autoridade sobre capacidades; uma sugestão não registrada não vira ferramenta executável.
+
+## D-019 — Avaliação estratégica é medição paga, cega e limitada
+
+- Status: decidida para execução autorizada.
+- Decisão: o corpus golden permanece identificado e validado apenas como `contract_fixture`. Ganho estratégico só pode ser calculado sobre 144 respostas novas do Harness real, com três condições, duas repetições e o mesmo modelo/configuração.
+- Custo: cada caso possui estimativa positiva; o runner exige teto em reais, recusa o lote antes da primeira chamada quando a reserva excede o teto e conserva checkpoints durante a execução. Custo ausente no provedor usa a estimativa declarada, nunca zero; custo em dólar usa conversão explícita quando fornecida.
+- Avaliação: dois arquivos JSONL devem pertencer a avaliadores distintos e cegos ao tratamento. Divergência superior a um ponto exige desempate justificado; gates críticos e a validade estrutural das referências usam a decisão mais conservadora.
+- Limite: a infraestrutura pode ser aceita sem alegar ganho. A T22 permanece aguardando execução enquanto não houver credencial OpenRouter disponível e autorização explícita para o teto inicial de R$ 100.
