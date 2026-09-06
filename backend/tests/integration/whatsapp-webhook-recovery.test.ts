@@ -141,7 +141,7 @@ async function insertWhatsAppConnection(
     `INSERT INTO public.channel_connections (
        id, organization_id, channel, name, is_active, adapter_key,
        inbound_token_hash, phone_number_id, provider_verify_state, token_state
-     ) VALUES ($1,$2,'whatsapp',$3,TRUE,'meta_whatsapp',$4,$5,'verified','active')`,
+     ) VALUES ($1,$2,'whatsapp',$3,TRUE,'meta_whatsapp',$4,$5,'verified','connected')`,
     [connectionId, rig.ids.organizationA, `WhatsApp ${connectionId}`, `hash-${connectionId}`, phoneNumberId],
   )
   return connectionId
