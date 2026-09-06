@@ -1,12 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
+import pg from 'pg'
+import { createContextAwarePool } from '../../src/db/client.js'
+import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import type { MissionSourceRefWire } from '../../src/modules/action-engine/generated/mission-wire.js'
 import { hashCanonical } from '../../src/modules/action-engine/repository.js'
 import { verifyMissionKnowledgeContext } from '../../src/modules/action-engine/mission-source-verifier.js'
+import { retrieveAuthorizedKnowledge } from '../../src/modules/company-intelligence/retrieval-policy.js'
 import { createIntegrationRig, type IntegrationRig } from './support/rig.js'
 
 it('mantém a mesma regra publicada nos consumidores e invalida novas decisões após revogação', async () => {
   const rig = await createIntegrationRig()
+  const apiPool = createContextAwarePool(new pg.Pool({ connectionString: rig.serviceDatabaseUrl('yux_api') }), 'api')
+  const workerPool = createContextAwarePool(new pg.Pool({ connectionString: rig.serviceDatabaseUrl('yux_worker') }), 'worker')
   try {
     const publicRule = await createPublishedRule(rig, 'client_safe', 'grounding exclusiva aprovada')
     const internalRule = await createPublishedRule(rig, 'internal_only', 'grounding segredo interno')
@@ -15,39 +21,37 @@ it('mantém a mesma regra publicada nos consumidores e invalida novas decisões 
       { name: 'radar', audience: 'client_user', workflowKey: 'commercial_radar_local_niche', channel: null },
       { name: 'automation_ai', audience: 'client_user', workflowKey: 'ai_generate_message', channel: 'email' },
       { name: 'omnichannel', audience: 'external_contact', workflowKey: 'whatsapp_conversation_turn', channel: 'whatsapp' },
+      { name: 'strategy_chat', audience: 'internal_operator', workflowKey: 'diagnostic_48h', channel: null },
       { name: 'supervisor', audience: 'client_user', workflowKey: 'mission_intake_conversation', channel: null },
     ] as const
 
     let supervisorSource: any
     for (const scope of consumerScopes) {
-      const response = await queryKnowledge(rig, {
+      const retrieval = await queryKnowledge(apiPool, rig, {
         audience: scope.audience,
         workflowKey: scope.workflowKey,
         channel: scope.channel,
         queryText: 'grounding exclusiva aprovada',
       })
-      expect(response.statusCode, `${scope.name}:${JSON.stringify(response.body)}`).toBe(200)
-      expect(response.body.sources).toEqual(expect.arrayContaining([
+      expect(retrieval.result.sources, scope.name).toEqual(expect.arrayContaining([
         expect.objectContaining({
           namespace: 'strategy', id: publicRule.cardId,
           publicationId: publicRule.releaseId, itemId: publicRule.itemId,
           knowledgePolicyVersion: 1,
         }),
       ]))
-      if (scope.name === 'supervisor') supervisorSource = response.body.sources.find((source: any) => source.id === publicRule.cardId)
+      if (scope.name === 'supervisor') supervisorSource = retrieval.candidates.find(source => source.id === publicRule.cardId)
     }
 
-    const blocked = await queryKnowledge(rig, {
+    const blocked = await queryKnowledge(apiPool, rig, {
       profileKey: 'blocked_profile', queryText: 'grounding exclusiva aprovada',
     })
-    expect(blocked.statusCode, JSON.stringify(blocked.body)).toBe(200)
-    expect(blocked.body.sources.map((source: any) => source.id)).not.toContain(publicRule.cardId)
+    expect(blocked.result.sources.map(source => source.id)).not.toContain(publicRule.cardId)
 
-    const external = await queryKnowledge(rig, {
+    const external = await queryKnowledge(apiPool, rig, {
       audience: 'external_contact', channel: 'whatsapp', queryText: 'grounding segredo interno',
     })
-    expect(external.statusCode, JSON.stringify(external.body)).toBe(200)
-    expect(external.body.sources.map((source: any) => source.id)).not.toContain(internalRule.cardId)
+    expect(external.result.sources.map(source => source.id)).not.toContain(internalRule.cardId)
 
     const sourceRef: MissionSourceRefWire = {
       ref: `yux:${publicRule.cardId}`,
@@ -62,52 +66,68 @@ it('mantém a mesma regra publicada nos consumidores e invalida novas decisões 
       itemId: publicRule.itemId,
       knowledgePolicyVersion: 1,
       useMode: supervisorSource.useMode,
-      bindingFingerprint: publicRule.bindingFingerprint,
+      bindingFingerprint: supervisorSource.bindingFingerprint,
     }
     expect(sourceRef.contentHash).toBe(supervisorSource.contentHash)
-    const database = { query: rig.sql }
-    const verified = await verifyMissionKnowledgeContext(database as never, {
-      organizationId: rig.ids.organizationA,
-      contractId: rig.ids.contractA,
-      audience: 'client_user',
-      workflowKey: 'mission_intake_conversation',
-      sourceRefs: [sourceRef],
-    })
+    const verified = await runWithDatabaseRequestContext(
+      { role: 'yux_operator', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' },
+      () => verifyMissionKnowledgeContext(workerPool, {
+        organizationId: rig.ids.organizationA,
+        contractId: rig.ids.contractA,
+        audience: 'client_user',
+        workflowKey: 'mission_intake_conversation',
+        sourceRefs: [sourceRef],
+      }),
+    )
     expect(verified.sources[0]).toMatchObject({
       publicationId: publicRule.releaseId,
       itemId: publicRule.itemId,
-      bindingFingerprint: publicRule.bindingFingerprint,
+      bindingFingerprint: supervisorSource.bindingFingerprint,
     })
 
     await rig.sql(`UPDATE public.yux_strategy_pack_bindings SET status='archived' WHERE id=$1`, [publicRule.bindingId])
-    const afterRevocation = await queryKnowledge(rig, { queryText: 'grounding exclusiva aprovada' })
-    expect(afterRevocation.body.sources.map((source: any) => source.id)).not.toContain(publicRule.cardId)
-    await expect(verifyMissionKnowledgeContext(database as never, {
-      organizationId: rig.ids.organizationA,
-      contractId: rig.ids.contractA,
-      audience: 'client_user',
-      workflowKey: 'mission_intake_conversation',
-      sourceRefs: [sourceRef],
-    })).rejects.toThrow(`mission_source_verification_failed:yux:${publicRule.cardId}`)
+    const afterRevocation = await queryKnowledge(apiPool, rig, { queryText: 'grounding exclusiva aprovada' })
+    expect(afterRevocation.result.sources.map(source => source.id)).not.toContain(publicRule.cardId)
+    await expect(runWithDatabaseRequestContext(
+      { role: 'yux_operator', organizationIds: [rig.ids.organizationA], serviceRole: 'worker' },
+      () => verifyMissionKnowledgeContext(workerPool, {
+        organizationId: rig.ids.organizationA,
+        contractId: rig.ids.contractA,
+        audience: 'client_user',
+        workflowKey: 'mission_intake_conversation',
+        sourceRefs: [sourceRef],
+      }),
+    )).rejects.toThrow(`mission_source_verification_failed:yux:${publicRule.cardId}`)
     expect(verified.sources[0]?.content).toBe(publicRule.content)
   } finally {
+    await apiPool.end()
+    await workerPool.end()
     await rig.close()
   }
 })
 
-async function queryKnowledge(rig: IntegrationRig, override: Record<string, unknown>) {
-  return rig.request('client_member_A', 'POST', '/api/company-intelligence/knowledge/query', {
-    schemaVersion: 1,
+async function queryKnowledge(pool: pg.Pool, rig: IntegrationRig, override: Record<string, unknown>) {
+  const input = {
+    schemaVersion: 1 as const,
     organizationId: rig.ids.organizationA,
     contractId: rig.ids.contractA,
     profileKey: 'growth_strategist',
-    audience: 'client_user',
+    audience: 'client_user' as 'internal_operator' | 'client_user' | 'external_contact',
     moduleKey: 'marketing_studio',
-    workflowKey: null,
-    channel: null,
+    workflowKey: null as string | null,
+    channel: null as string | null,
+    queryText: '',
     matchLimit: 5,
     ...override,
-  })
+  }
+  return runWithDatabaseRequestContext(
+    {
+      role: input.audience === 'internal_operator' ? 'yux_operator' : 'client_member',
+      organizationIds: [rig.ids.organizationA],
+      serviceRole: 'api',
+    },
+    () => retrieveAuthorizedKnowledge(pool, input),
+  )
 }
 
 async function createPublishedRule(rig: IntegrationRig, visibility: 'internal_only' | 'client_safe', concept: string) {
