@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "releaseStatus": "blocked",
+  "releaseMode": "pilot",
+  "enabledScope": "explicit_allowlist",
+  "release": {
+    "commit": null,
+    "branch": "codex/yux-remediation-integrated",
+    "technicalAcceptanceCommit": "8d759a2cd1bb8ff92e1291865709ec4ecb4f6a29",
+    "technicalAcceptanceRun": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34065960262"
+  },
+  "scope": {
+    "stage": "preparation_only",
+    "organizationIds": [],
+    "selectionRule": "internal_workspace_then_one_controlled_pilot_organization"
+  },
+  "images": {
+    "backend": {
+      "dockerfile": "backend/Dockerfile.dokploy",
+      "baseImage": "node:22.23.2-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
+      "releaseDigest": null,
+      "artifactStatus": "pending_registry_publish"
+    },
+    "frontend": {
+      "dockerfile": "frontend/Dockerfile",
+      "baseImage": "nginx:1.30.4-alpine-slim@sha256:77da26c31397bf6694b4bf93275f5b40b0b120ba1b8f114264b603e592c561d6",
+      "releaseDigest": null,
+      "artifactStatus": "pending_registry_publish"
+    },
+    "agentRuntime": {
+      "dockerfile": "workers/marketing-studio-agent-runtime/Dockerfile",
+      "baseImage": "python:3.13.15-alpine3.24@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a",
+      "releaseDigest": null,
+      "artifactStatus": "pending_registry_publish"
+    }
+  },
+  "migrations": {
+    "checksumAlgorithm": "sha256:utf8:lf:bom-and-nul-removed:trim-start:v1",
+    "aggregateAlgorithm": "sha256:filename-checksum-lines:v1",
+    "count": 70,
+    "first": "0001_auth_core.sql",
+    "last": "0169_state_reconciliation_audit.sql",
+    "aggregateSha256": "92d1b773121f23cbfa1e8c789db79d3ee218db67db25cc8407e10e918731e8de",
+    "targetVerification": "not_run"
+  },
+  "contracts": {
+    "missionSupervisor": "v1",
+    "knowledge": "v1",
+    "workspace": "v1",
+    "releaseManifest": 1
+  },
+  "policies": {
+    "rollout": "yux-remediation-rollout:v1",
+    "migrationChecksum": "sha256:utf8:lf:bom-and-nul-removed:trim-start:v1",
+    "rollback": "disable_new_effects_then_reconcile_then_compatible_images"
+  },
+  "flags": {
+    "MISSION_SUPERVISOR_ENABLED": false,
+    "MISSION_DECISIONS_ENABLED": false,
+    "MISSION_DECISION_NOTIFICATIONS_ENABLED": false,
+    "MISSION_SIMULATION_REPORTS_ENABLED": false,
+    "MISSION_DECISION_FEEDBACK_ENABLED": false,
+    "MISSION_CONVERSATIONS_ENABLED": false,
+    "VITE_MISSION_FORM_COMPATIBILITY": true,
+    "KNOWLEDGE_CURATION_ENABLED": true
+  },
+  "legacyQueueConsumers": [
+    {
+      "service": "yux-backend-worker",
+      "queueClass": "interactive",
+      "drainsLegacyQueue": true,
+      "status": "active_compatibility",
+      "retirementGate": "legacy_queue_empty_verified"
+    },
+    {
+      "service": "yux-backend-worker-ingestion",
+      "queueClass": "ingestion",
+      "drainsLegacyQueue": false,
+      "status": "active"
+    },
+    {
+      "service": "yux-backend-worker-external",
+      "queueClass": "external",
+      "drainsLegacyQueue": false,
+      "status": "active"
+    },
+    {
+      "service": "yux-backend-worker-maintenance",
+      "queueClass": "maintenance",
+      "drainsLegacyQueue": false,
+      "status": "active"
+    }
+  ],
+  "suites": {
+    "technicalAcceptance": {
+      "status": "passed",
+      "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34065960262",
+      "jobsPassed": 8,
+      "journeysPassed": 7,
+      "journeysTotal": 7
+    },
+    "strategicQuality": {
+      "status": "not_evaluated",
+      "reason": "openrouter_budget_and_two_blind_evaluators_required"
+    },
+    "moderatedUsability": {
+      "status": "not_run",
+      "participantsCompleted": 0,
+      "participantsRequired": 3
+    },
+    "providerSandboxes": {
+      "status": "not_run",
+      "selectedIntegrations": []
+    }
+  },
+  "backup": {
+    "status": "not_run",
+    "backupId": null,
+    "restoreEvidence": null,
+    "requiredAssets": [
+      "postgres",
+      "redis-aof",
+      "materials",
+      "omnichannel-attachments",
+      "company-knowledge"
+    ]
+  },
+  "requiredGates": [
+    "backup_restored",
+    "migrations_verified",
+    "tenant_matrix_passed",
+    "contracts_passed",
+    "journeys_passed",
+    "strategic_quality_passed"
+  ],
+  "gates": {
+    "backup_restored": {
+      "status": "not_run",
+      "scope": "recent_target_backup",
+      "evidence": []
+    },
+    "migrations_verified": {
+      "status": "not_run",
+      "scope": "target_database",
+      "evidence": [
+        "repository_inventory_verified_in_ci"
+      ]
+    },
+    "tenant_matrix_passed": {
+      "status": "not_run",
+      "scope": "pilot_target",
+      "evidence": [
+        "technical_ci_run_34065960262"
+      ]
+    },
+    "contracts_passed": {
+      "status": "not_run",
+      "scope": "deployed_service_images",
+      "evidence": [
+        "technical_ci_run_34065960262"
+      ]
+    },
+    "journeys_passed": {
+      "status": "not_run",
+      "scope": "pilot_target_with_external_and_human_gates",
+      "evidence": [
+        "technical_ci_run_34065960262"
+      ]
+    },
+    "strategic_quality_passed": {
+      "status": "blocked",
+      "scope": "paid_blind_evaluation",
+      "evidence": [
+        "t22_infrastructure_only"
+      ]
+    }
+  },
+  "pilotObservation": {
+    "status": "not_run",
+    "minimumHours": 24,
+    "startedAt": null,
+    "completedAt": null,
+    "routineSamples": {
+      "sequence_scheduler": 0,
+      "maintenance_scheduler": 0,
+      "learning_checkpoint": 0,
+      "outbox": 0,
+      "queue_classes": 0,
+      "unknown_effect_reconciliation": 0
+    },
+    "evidence": []
+  },
+  "rollbackPolicy": "disable_new_effects_then_reconcile_then_compatible_images"
+}

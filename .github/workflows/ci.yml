@@ -56,6 +56,7 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run generate:mission-contracts
       - run: npm run generate:platform-contracts
+      - run: npm run verify:remediation-release
       - run: git diff --exit-code -- ../contracts/mission-supervisor ../contracts/knowledge ../contracts/workspace src/modules/action-engine/generated src/contracts/generated ../frontend/src/types/generated
       - run: npm run type-check
       - run: npm test

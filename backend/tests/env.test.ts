@@ -21,4 +21,15 @@ describe('environment validation', () => {
     })
     expect(env.N8N_CRM_WEBHOOK_URL).toBe('https://n8n.example.com/webhook/crm')
   })
+
+  it('accepts only immutable release identities or the explicit unrecorded fallback', () => {
+    const env = loadEnv({
+      ...baseEnv,
+      YUX_RELEASE_COMMIT: 'a'.repeat(40),
+      YUX_RELEASE_MANIFEST_SHA256: 'b'.repeat(64),
+    })
+    expect(env.YUX_RELEASE_COMMIT).toBe('a'.repeat(40))
+    expect(env.YUX_RELEASE_MANIFEST_SHA256).toBe('b'.repeat(64))
+    expect(() => loadEnv({ ...baseEnv, YUX_RELEASE_COMMIT: 'main' })).toThrowError(/YUX_RELEASE_COMMIT/)
+  })
 })

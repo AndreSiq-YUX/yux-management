@@ -190,7 +190,14 @@ def create_app(
 
     @app.get("/health", dependencies=[Depends(require_runtime_token)])
     def health() -> dict[str, Any]:
-        return {"status": "ok", "service": "yux-agent-harness-runtime"}
+        return {
+            "status": "ok",
+            "service": "yux-agent-harness-runtime",
+            "deployment": {
+                "commit": os.getenv("YUX_RELEASE_COMMIT", "unrecorded"),
+                "manifestSha256": os.getenv("YUX_RELEASE_MANIFEST_SHA256", "unrecorded"),
+            },
+        }
 
     @app.post("/events/ingest", dependencies=[Depends(require_runtime_token)])
     def ingest_event(request: IngestEventRequest) -> dict[str, Any]:

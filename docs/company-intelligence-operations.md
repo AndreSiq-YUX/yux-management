@@ -12,6 +12,13 @@ No WhatsApp existe uma proteção adicional após a geração. Respostas que con
 
 ## Configuração da VPS
 
+Quando Company Intelligence fizer parte do lote integrado, siga também
+`docs/runbooks/yux-remediation-rollout.md`. A capacidade entra no lote de
+conhecimento depois de acesso/SQL, e sua ativação exige o mesmo commit/hash do
+manifesto observado na API e no Harness. Falha de provedor mantém o fallback
+textual/degradado já documentado; não habilite publicação automática para
+compensar indisponibilidade.
+
 Defina `KNOWLEDGE_STORAGE_DIR=/app/storage/company-knowledge`. Os serviços `yux-backend-api` e `yux-backend-worker` precisam montar o mesmo volume persistente nesse caminho. O arquivo `docker-compose.dokploy.yml` já declara o volume `yux_company_knowledge_data` para ambos.
 
 Depois do deploy da imagem nova, aplique as migrations:

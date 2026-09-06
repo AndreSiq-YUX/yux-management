@@ -208,3 +208,12 @@
 - Repetição: a suíte é serial e não repete automaticamente um cenário parcialmente mutável. Falha preserva trace, screenshot, vídeo, relatório e logs; a nova execução começa com volumes isolados, evitando que um retry sobre estado já alterado esconda o defeito original.
 - Experiência: taxa de conclusão, saída involuntária do workspace e recuperação após refresh exigem três participantes representativos. Automação protege regressão técnica, mas não inventa resultado de teste moderado.
 - Liberação: jornadas parciais e dependências pagas/externas continuam visíveis como `remainingGates`. Preparar T32 não autoriza promover piloto nem declarar a T31 aceita enquanto esses gates estiverem abertos.
+
+## D-029 — O manifesto bloqueado é a autoridade de promoção, não uma promessa de deploy
+
+- Status: decidida.
+- Identidade: a release registra commit completo, digests imutáveis das três imagens, hash final do manifesto, inventário agregado das migrations, versões de contrato/política, flags, consumidores legados, backup e evidências. API e Harness publicam commit/hash em saúde sem expor segredos.
+- Gate: `releaseStatus=blocked` aceita campos operacionais ainda vazios para preparar o lote. Qualquer outro estado exige commit, todos os gates obrigatórios em `passed`, organização explícita, digests e restauração identificada; a CI rejeita promoção antecipada.
+- Compatibilidade: leitores/API/runtime/workers entram primeiro com novos efeitos desligados. O worker interativo é o único que drena a fila legada até provar esvaziamento. Escritores e frontend novo entram depois, uma capacidade e uma organização por vez.
+- Retorno: desligar criação/efeitos, preservar dados e ledgers, reconciliar estados ambíguos e voltar às imagens compatíveis. Migration aditiva aplicada não é revertida destrutivamente como procedimento normal.
+- Limite: nenhum campo preparado concede acesso à produção, autoriza OpenRouter, escolhe usuários/organizações ou substitui sandbox, restauração e aceite humano.

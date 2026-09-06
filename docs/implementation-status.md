@@ -1,7 +1,7 @@
 # YUX Hub Implementation Status
 
-Updated: 2026-08-31 (repository audit plus locally validated Mission Supervisor
-Releases 0–4 and Release 5 execution-safety foundation on the feature branch)
+Updated: 2026-09-06 (integrated remediation through T32 preparation; production
+pilot remains blocked by the release manifest gates)
 
 This document tracks what is implemented in this repository. It separates code
 that exists in the repo from operational work that still needs to be applied in
@@ -14,6 +14,16 @@ the target VPS/Dokploy environment.
   local VPS file storage and Python Agent Harness runtime. This document reports
   repository validation only; production requires a Dokploy deploy, migration
   execution and operational smoke test.
+
+- The integrated remediation technical gate passed all eight CI jobs and seven
+  browser journeys at commit `8d759a2`. The release manifest, compatibility
+  rollout and non-destructive rollback procedure are now versioned under
+  `docs/releases/yux-remediation-manifest.json` and
+  `docs/runbooks/yux-remediation-rollout.md`.
+- This is not production acceptance. The manifest remains `blocked`: published
+  image digests, a restored recent backup, target migration/login verification,
+  official provider sandboxes, the paid/blind strategic evaluation, complete
+  J1–J6 effect linkage and three moderated users remain required.
 
 > Historical sections below may mention Supabase migrations or Edge Functions.
 > They are archival evidence from before the VPS migration, not a production

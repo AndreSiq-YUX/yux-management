@@ -41,7 +41,12 @@ Os arquivos não versionados que já existiam no checkout antes da execução fo
 | T10 | aceita | Webhook e outbox atômicos, Redis indisponível e replay pós-timeout aprovados na CI |
 | T11 | aceita | Scheduler persiste intenção, adaptadores nativos revalidam consentimento/conexão e recibos atualizam a execução |
 | T12 | aceita | Registro único cobre todos os JobNames; métricas, agendamento humano e simulação sandbox têm resultados honestos |
-| T13–T32 | não iniciada | Dependências preservadas conforme o plano |
+| T13–T21 | aceita | Identidade de efeitos, filas, saúde, conhecimento versionado, curadoria, publicação, retrieval e grounding aprovados com evidência persistente |
+| T22 | implementada aguardando aceite | Falta execução paga autorizada no OpenRouter e avaliação por dois revisores cegos |
+| T23–T29 | aceita | Contexto, fila humana, automações, Studio, onboarding, supply chain e desempenho aprovados |
+| T30 | implementada aguardando aceite | Mecanismo e ensaio isolado aprovados; restauração recente e execução operacional continuam pendentes |
+| T31 | implementada aguardando aceite | Gate técnico J1–J7 aprovado; sandbox oficial, ligação integral J1–J6 e três testes moderados continuam pendentes |
+| T32 | implementada aguardando aceite | Manifesto, gate de CI, identificação da release e runbook preparados; implantação permanece bloqueada pelos gates externos |
 
 ## Evidência de comandos T01
 
@@ -407,3 +412,11 @@ frontend tests: PASS, 528 PASS
 - Verificação local: 160 arquivos/657 testes backend, 137 arquivos/562 testes frontend, type-checks e build/orçamento aprovados. O host local não possui os serviços Docker isolados.
 - Aceite persistente: execução GitHub Actions `34065960262`, commit `8d759a2`, conclusão `success` em todos os oito jobs. `Acceptance journeys` passou J1–J7 e `Backend integration` passou 23 arquivos/33 testes com PostgreSQL e Redis reais.
 - Limites preservados: J7 está completa no escopo automatizado. J1–J6 continuam com gates explícitos de ligação integral de IDs/efeitos. Sandbox oficial dos provedores, T22/OpenRouter com teto autorizado e avaliação cega, três testes moderados e execução operacional de T30 em restauração/produção não foram simulados nem marcados como aceitos.
+
+## T32 — Manifesto, rollout compatível e fechamento por evidência
+
+- Estado: implementada aguardando aceite; implantação não executada.
+- Interface: `docs/releases/yux-remediation-manifest.json` registra commit/evidência técnica, digests pendentes, inventário agregado das 70 migrations, contratos/políticas, flags seguras, consumidores da fila antiga, suítes, backup e gates. O validador de CI recusa drift de migration, material com aparência de segredo, defaults de efeito habilitados ou promoção sem todas as provas.
+- Compatibilidade: o Compose agora encaminha identidade de commit/manifesto e todas as flags de Mission/efeitos. Os defaults legados foram preservados para não desligar uma instalação existente durante simples atualização; o lote T32 registra e configura explicitamente as seis flags em `false` antes da implantação compatível. API e Harness expõem somente commit e hash do manifesto nos health checks; `unrecorded` mantém instalação antiga funcional, mas não permite considerar o piloto pronto.
+- Rollout: o runbook central separa acesso/SQL, conhecimento e UX/efeitos; exige backup restaurado, readers antes de writers, workspace interno antes de uma organização piloto, 24 horas com amostras das rotinas e retorno sem downgrade destrutivo.
+- Bloqueios preservados: release commit/digests, restauração recente, alvo/matriz de tenants, imagens implantadas, sandbox oficial, T22 e três testes moderados continuam ausentes. O manifesto permanece `blocked`, com allowlist vazia e sem autoridade para produção, gasto ou contato externo.

@@ -6,6 +6,11 @@
 
 ## Princípios
 
+Este procedimento é subordinado ao gate integrado de
+`docs/runbooks/yux-remediation-rollout.md`. Uma conversa não entra em canário
+enquanto o manifesto central estiver `blocked`, mesmo que os checks específicos
+deste arquivo passem.
+
 - O Harness interpreta e seleciona conhecimento; o Action Engine valida, aprova e executa.
 - Desabilitar a conversa impede novos pedidos, turnos e confirmações, mas mantém histórico e não cancela Missions já aprovadas.
 - Nenhum rollback apaga conversas, mensagens, snapshots, aprovações ou ledgers.

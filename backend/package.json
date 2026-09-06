@@ -12,6 +12,7 @@
     "type-check": "tsc --noEmit",
     "generate:mission-contracts": "tsx scripts/generate-mission-wire-types.ts",
     "generate:platform-contracts": "tsx scripts/generate-platform-contracts.ts",
+    "verify:remediation-release": "tsx scripts/verify-remediation-release-manifest.ts",
     "migrate": "tsx scripts/apply-migrations.ts",
     "migrate:prod": "node dist/scripts/apply-migrations.js",
     "create-admin:prod": "node dist/scripts/create-admin-user.js",

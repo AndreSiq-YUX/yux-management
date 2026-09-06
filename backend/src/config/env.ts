@@ -20,6 +20,16 @@ const optionalBoolean = z.preprocess((value) => {
   return value
 }, z.enum(['true', 'false']).transform(value => value === 'true').optional())
 
+const optionalReleaseIdentity = z.preprocess((value) => {
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}, z.union([z.literal('unrecorded'), z.string().regex(/^[a-f0-9]{64}$/)]).optional())
+
+const optionalCommitIdentity = z.preprocess((value) => {
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}, z.union([z.literal('unrecorded'), z.string().regex(/^[a-f0-9]{40}$/)]).optional())
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -36,6 +46,8 @@ const envSchema = z.object({
   SESSION_COOKIE_NAME: z.string().default('yux_session'),
   SESSION_SECRET: z.string().min(32),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  YUX_RELEASE_COMMIT: optionalCommitIdentity,
+  YUX_RELEASE_MANIFEST_SHA256: optionalReleaseIdentity,
   GLOBAL_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).optional(),
   PUBLIC_APP_URL: optionalUrl,
   SMTP2GO_API_KEY: optionalString,

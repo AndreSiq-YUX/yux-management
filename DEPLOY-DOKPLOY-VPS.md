@@ -118,14 +118,24 @@ REDIS_PASSWORD=<senha-forte-para-redis>
 SESSION_COOKIE_NAME=yux_session
 SESSION_SECRET=<64-ou-mais-caracteres-aleatorios>
 CORS_ORIGIN=https://hub.yux.com.br
+YUX_RELEASE_COMMIT=<commit-completo-aprovado>
+YUX_RELEASE_MANIFEST_SHA256=<sha256-do-manifesto-aprovado>
 
 VITE_API_BASE_URL=/api
+VITE_MISSION_FORM_COMPATIBILITY=true
 MATERIALS_STORAGE_DIR=/app/storage/materials
 OMNICHANNEL_ATTACHMENTS_DIR=/app/storage/omnichannel-attachments
 OMNICHANNEL_ATTACHMENT_MAX_MB=25
 
 YUX_AGENT_RUNTIME_URL=http://yux-agent-harness-runtime:8080
 YUX_AGENT_RUNTIME_TOKEN=<token-longo-aleatorio>
+MISSION_SUPERVISOR_ENABLED=false
+MISSION_DECISIONS_ENABLED=false
+MISSION_DECISION_NOTIFICATIONS_ENABLED=false
+MISSION_SIMULATION_REPORTS_ENABLED=false
+MISSION_DECISION_FEEDBACK_ENABLED=false
+MISSION_CONVERSATIONS_ENABLED=false
+MISSION_CONVERSATIONS_TENANT_ALLOWLIST=
 PROVIDER_SECRET_ENCRYPTION_KEY_B64=<resultado-de-openssl-rand-base64-32>
 OPENROUTER_API_KEY=<valor-se-usar>
 JINA_API_KEY=<valor-se-usar>
@@ -209,6 +219,13 @@ novo deploy. O Dokploy aplica dominios de Compose via labels do Traefik, entao
 o roteamento novo so fica ativo depois do redeploy.
 
 ## 8. Primeiro Deploy
+
+Para o lote de correção integrada, não inicie esta seção diretamente. Execute
+primeiro `docs/runbooks/yux-remediation-rollout.md` e mantenha
+`docs/releases/yux-remediation-manifest.json` em `blocked` até todos os gates
+estarem comprovados. Configure `YUX_RELEASE_COMMIT` e
+`YUX_RELEASE_MANIFEST_SHA256` com as identidades imutáveis aprovadas; o valor
+compatível `unrecorded` não é suficiente para um piloto.
 
 1. Na aplicacao `yux-portal-stack`, clique na aba `Deployments`.
 2. Clique em `Deploy`, `Redeploy` ou `Deploy Latest Commit`.
@@ -321,6 +338,9 @@ Resultado esperado:
 - `/health`: HTTP `204` ou resposta sem erro.
 - `/api/health`: JSON de health do backend.
 - `/api/ready`: JSON indicando que dependencias basicas estao prontas.
+- `/api/health` e `/api/ready`: `deployment.commit` e
+  `deployment.manifestSha256` correspondem ao manifesto aprovado e nao exibem
+  `unrecorded` durante o piloto.
 
 Se o runtime de agentes estiver exposto:
 
@@ -421,6 +441,11 @@ npm run migrate:prod
 - [ ] Backup dos volumes de uploads configurado.
 
 ## 16. Rollback
+
+Para a correção integrada, a sequência normativa está em
+`docs/runbooks/yux-remediation-rollout.md`: primeiro desabilitar novos efeitos,
+depois reconciliar intenções em andamento e somente então retornar às imagens
+compatíveis. Não fazer downgrade destrutivo das migrations aditivas.
 
 Antes de cada release importante:
 

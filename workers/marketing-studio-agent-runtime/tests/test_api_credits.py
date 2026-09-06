@@ -60,6 +60,7 @@ class ApiCreditsTest(unittest.TestCase):
         self.assertEqual(client.get("/health").status_code, 401)
         self.assertEqual(client.get("/health", headers=AUTH).json(), {
             "status": "ok", "service": "yux-agent-harness-runtime",
+            "deployment": {"commit": "unrecorded", "manifestSha256": "unrecorded"},
         })
 
     @staticmethod

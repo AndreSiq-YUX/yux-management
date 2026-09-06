@@ -108,6 +108,12 @@ O contrato de conversa é gerado de uma fonte única e validado nos dois runtime
 
 ## Deploy Dokploy
 
+No rollout integrado, configure `YUX_RELEASE_COMMIT` e
+`YUX_RELEASE_MANIFEST_SHA256` com os valores aprovados em
+`docs/releases/yux-remediation-manifest.json`. O `/health` autenticado devolve
+essas duas identidades; elas devem coincidir com a API antes de habilitar
+writers. Use `docs/runbooks/yux-remediation-rollout.md` para a ordem completa.
+
 Use `workers/marketing-studio-agent-runtime/docker-compose.yml` como base do servico.
 
 ```bash

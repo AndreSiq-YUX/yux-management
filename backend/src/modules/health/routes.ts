@@ -5,15 +5,24 @@ import { buildOperationalSnapshot } from "./operational-snapshot.js";
 
 const service = "yux-backend-api";
 
+function deploymentIdentity(app: FastifyInstance) {
+  return {
+    commit: app.config.YUX_RELEASE_COMMIT ?? "unrecorded",
+    manifestSha256: app.config.YUX_RELEASE_MANIFEST_SHA256 ?? "unrecorded",
+  };
+}
+
 export async function registerHealthRoutes(app: FastifyInstance) {
   app.get("/health/live", async () => ({
     status: "ok",
     service,
+    deployment: deploymentIdentity(app),
   }));
 
   app.get("/health", async () => ({
     status: "ok",
     service,
+    deployment: deploymentIdentity(app),
   }));
 
   const ready = async (
@@ -22,10 +31,10 @@ export async function registerHealthRoutes(app: FastifyInstance) {
   ) => {
     try {
       await Promise.all([app.pg.query("SELECT 1"), app.redisPing()]);
-      return { status: "ready", service };
+      return { status: "ready", service, deployment: deploymentIdentity(app) };
     } catch (error) {
       app.log.warn(error, "readiness dependency check failed");
-      return reply.code(503).send({ status: "unavailable", service });
+      return reply.code(503).send({ status: "unavailable", service, deployment: deploymentIdentity(app) });
     }
   };
 

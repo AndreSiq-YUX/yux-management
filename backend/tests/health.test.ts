@@ -11,6 +11,8 @@ const testEnv = {
   SESSION_COOKIE_NAME: 'yux_session',
   SESSION_SECRET: 'test-secret-value-with-at-least-32-chars',
   CORS_ORIGIN: 'http://localhost:3000',
+  YUX_RELEASE_COMMIT: 'a'.repeat(40),
+  YUX_RELEASE_MANIFEST_SHA256: 'b'.repeat(64),
 }
 
 let app: FastifyInstance | undefined
@@ -29,7 +31,10 @@ describe('health routes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/health' })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ status: 'ok', service: 'yux-backend-api' })
+    expect(response.json()).toEqual({
+      status: 'ok', service: 'yux-backend-api',
+      deployment: { commit: 'a'.repeat(40), manifestSha256: 'b'.repeat(64) },
+    })
   })
 
   it('returns readiness status', async () => {
@@ -38,7 +43,10 @@ describe('health routes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/ready' })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ status: 'ready', service: 'yux-backend-api' })
+    expect(response.json()).toEqual({
+      status: 'ready', service: 'yux-backend-api',
+      deployment: { commit: 'a'.repeat(40), manifestSha256: 'b'.repeat(64) },
+    })
   })
 
   it('allows every HTTP mutation method used by the browser client', async () => {
