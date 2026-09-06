@@ -85,7 +85,7 @@ async function seedAcceptanceRecords() {
        id,organization_id,contact_id,connection_id,channel,status,response_mode,last_message_at
      ) VALUES ($1,$2,$3,$4,'whatsapp','open','automatic',NOW())
      ON CONFLICT (id) DO UPDATE SET status='open', response_mode='automatic', assigned_user_id=NULL,
-       assigned_team_id=NULL, last_message_at=NOW(), resolved_at=NULL`,
+       team_id=NULL, last_message_at=NOW(), resolved_at=NULL`,
     [acceptanceIds.conversation, fixtureIds.organizationA, acceptanceIds.contact, acceptanceIds.connection],
   )
   await rig.sql(
