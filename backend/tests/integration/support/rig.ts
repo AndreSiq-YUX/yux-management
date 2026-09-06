@@ -43,6 +43,7 @@ export type IntegrationRig = {
   providerBaseUrl: string
   serviceDatabaseUrl(role: 'yux_api'|'yux_worker'|'yux_runtime'): string
   storageRoot: string
+  listen(port?: number): Promise<string>
   close(): Promise<void>
 }
 
@@ -53,7 +54,7 @@ export function getIntegrationDatabaseUrl() {
   return databaseUrl
 }
 
-export async function createIntegrationRig(): Promise<IntegrationRig> {
+export async function createIntegrationRig(options: { corsOrigin?: string } = {}): Promise<IntegrationRig> {
   const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
@@ -78,7 +79,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     REDIS_URL: redisUrl,
     SESSION_COOKIE_NAME: 'yux_integration_session',
     SESSION_SECRET: 'integration-session-secret-32-characters-minimum',
-    CORS_ORIGIN: 'http://integration.test',
+    CORS_ORIGIN: options.corsOrigin ?? 'http://integration.test',
     N8N_CRM_WEBHOOK_URL: provider.baseUrl,
     N8N_WEBHOOK_SECRET: 'integration-webhook-secret',
     JINA_API_KEY: 'integration-jina-api-key',
@@ -90,6 +91,8 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     META_WEBHOOK_VERIFY_TOKEN: 'integration-meta-verify-token',
     META_GRAPH_BASE_URL: provider.baseUrl,
     PROVIDER_SECRET_ENCRYPTION_KEY_B64: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
+    YUX_AGENT_RUNTIME_URL: process.env.YUX_AGENT_RUNTIME_URL,
+    YUX_AGENT_RUNTIME_TOKEN: process.env.YUX_AGENT_RUNTIME_TOKEN,
   })
   const appQueue: AppJobQueue = queue
   let app = await createApp(apiPool, appQueue, env)
@@ -151,6 +154,7 @@ export async function createIntegrationRig(): Promise<IntegrationRig> {
     providerBaseUrl: provider.baseUrl,
     serviceDatabaseUrl: (role) => serviceDatabaseUrl(databaseUrl, role),
     storageRoot,
+    listen: (port = 4000) => app.listen({ host: '127.0.0.1', port }),
     async close() {
       await app.close()
       await queue.close()

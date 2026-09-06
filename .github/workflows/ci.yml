@@ -129,6 +129,58 @@ jobs:
       - run: python -m pytest tests
       - run: python scripts/run_golden_missions.py --output golden-missions/report.json
 
+  acceptance-journeys:
+    name: Acceptance journeys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.15'
+          cache: pip
+          cache-dependency-path: workers/marketing-studio-agent-runtime/requirements.lock
+      - run: npm ci
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: python -m pip install --require-hashes -r requirements.lock
+        working-directory: workers/marketing-studio-agent-runtime
+      - name: Install Chromium for acceptance journeys
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Start isolated PostgreSQL and Redis
+        run: docker compose --project-name yux-acceptance -f docker-compose.integration.yml up -d --wait
+      - name: Run browser acceptance journeys
+        run: npm run test:journeys
+        working-directory: frontend
+        env:
+          CI: 'true'
+          YUX_INTEGRATION_DATABASE_URL: postgresql://yux_test:yux_test_password@127.0.0.1:55432/yux_test_integration
+          YUX_INTEGRATION_REDIS_URL: redis://:yux_test_redis_password@127.0.0.1:56379/0
+          YUX_INTEGRATION_COMPOSE_PROJECT: yux-acceptance
+      - name: Capture acceptance service logs
+        if: failure()
+        run: docker compose --project-name yux-acceptance -f docker-compose.integration.yml logs --no-color > acceptance-services.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: yux-acceptance-evidence
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            acceptance-services.log
+          if-no-files-found: warn
+      - name: Stop isolated services
+        if: always()
+        run: docker compose --project-name yux-acceptance -f docker-compose.integration.yml down --volumes --remove-orphans
+
   image-sbom:
     name: Image SBOM (${{ matrix.name }})
     runs-on: ubuntu-latest
