@@ -16,9 +16,9 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
       [ids.lead, rig.ids.organizationA, '20000000-0000-4000-8000-000000000001'],
     )
     await rig.sql(
-      `INSERT INTO public.lead_tasks (id,organization_id,lead_id,title,due_at,assigned_to,metadata)
-       VALUES ($1,$2,$3,'Retornar contato',NOW(),$4,'{}'::jsonb),
-              ($5,$2,$3,'Tarefa de outra pessoa',NOW(),$6,'{}'::jsonb)`,
+      `INSERT INTO public.lead_tasks (id,organization_id,lead_id,title,due_at,assigned_to,metadata,updated_at)
+       VALUES ($1,$2,$3,'Retornar contato',NOW(),$4,'{}'::jsonb,'2026-09-06T22:44:46.123456Z'::timestamptz),
+              ($5,$2,$3,'Tarefa de outra pessoa',NOW(),$6,'{}'::jsonb,NOW())`,
       [ids.crmTask, rig.ids.organizationA, ids.lead, fixtureUsers.yux_operator.id,
         ids.otherTask, fixtureUsers.client_member_A.id],
     )
@@ -67,12 +67,6 @@ it('projeta trabalho das fontes e conclui intervenção humana uma única vez co
         { title: 'Conferir resultado', description: 'Conferir antes de avançar', dueAt: new Date().toISOString(), assignedTo: fixtureUsers.yux_operator.id, status: 'open' }],
     )
 
-    await rig.sql(
-      `UPDATE public.lead_tasks
-       SET updated_at = '2026-09-06T22:44:46.123456Z'::timestamptz
-       WHERE id = $1`,
-      [ids.crmTask],
-    )
     const listed = await rig.request('yux_operator', 'GET', `/api/workspace/work-items?organizationId=${rig.ids.organizationA}&due=all`)
     expect(listed.statusCode).toBe(200)
     expect(listed.body.items).toEqual(expect.arrayContaining([

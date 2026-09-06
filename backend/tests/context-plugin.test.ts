@@ -4,6 +4,7 @@ import type { AuthStore, AuthUser } from '../src/auth/routes.js'
 import { hashSessionToken } from '../src/auth/session.js'
 import type { AppJobQueue } from '../src/server.js'
 import { buildServer } from '../src/server.js'
+import { getDatabaseRequestContext } from '../src/db/request-context.js'
 
 const testEnv = {
   NODE_ENV: 'test' as const,
@@ -107,6 +108,35 @@ describe('request context plugin', () => {
         organizationIds: ['org-1'],
         enabledModuleKeys: ['crm'],
       },
+    })
+  })
+
+  it('propagates database scope from the async auth hook into the route handler', async () => {
+    const authStore = new FakeAuthStore()
+    const token = 'database-context-session-token'
+    authStore.sessionHash = hashSessionToken(token)
+    authStore.user = {
+      id: 'user-1',
+      email: 'client@example.com',
+      name: 'Client Admin',
+      role: 'client_admin',
+    }
+
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue: noopQueue })
+    app.get('/test/database-context', async () => {
+      await Promise.resolve()
+      return { context: getDatabaseRequestContext() }
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test/database-context',
+      headers: { cookie: `${testEnv.SESSION_COOKIE_NAME}=${token}` },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      context: { role: 'client_admin', organizationIds: ['org-1'], serviceRole: 'api' },
     })
   })
 

@@ -228,7 +228,10 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     const params = organizationParams.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_organization_id' })
     const ctx = requireOrganizationScope(request, params.data.organizationId)
-    return listKnowledgeDocuments(app.pg, params.data.organizationId, !['yux_admin', 'yux_operator'].includes(ctx.role))
+    return runWithDatabaseRequestContext(
+      { role: ctx.role, organizationIds: ctx.organizationIds, serviceRole: 'api' },
+      () => listKnowledgeDocuments(app.pg, params.data.organizationId, !['yux_admin', 'yux_operator'].includes(ctx.role)),
+    )
   })
 
   app.get('/organizations/:organizationId/knowledge/queries/:queryId', async (request, reply) => {
