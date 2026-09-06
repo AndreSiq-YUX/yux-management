@@ -97,6 +97,6 @@ export interface CrmActivityCalendarEntry {
   kind: 'task' | 'meeting' | 'follow_up' | 'sla'
 }
 
-export interface StageAgeInput extends Pick<CrmCockpitLead, 'currentStageEnteredAt' | 'updatedAt' | 'createdAt'> {}
+export type StageAgeInput = Pick<CrmCockpitLead, 'currentStageEnteredAt' | 'updatedAt' | 'createdAt'>
 
 export type LossReasonStage = Pick<CrmPipelineStage, 'id' | 'isLost'>

@@ -66,7 +66,7 @@ export function ProjectsPage() {
       if (response.projects) {
         setProjects(response.projects || [])
       }
-    } catch (error) {
+    } catch {
       toast({
         title: 'Erro',
         description: 'Erro ao carregar projetos',
@@ -122,7 +122,7 @@ export function ProjectsPage() {
       })
       fetchProjects()
       handleCloseDetailsModal()
-    } catch (error) {
+    } catch {
       toast({
         title: 'Erro',
         description: 'Erro ao excluir projeto',
@@ -140,7 +140,7 @@ export function ProjectsPage() {
       })
       fetchProjects()
       handleCloseDetailsModal()
-    } catch (error) {
+    } catch {
       toast({
         title: 'Erro',
         description: 'Erro ao arquivar projeto',
@@ -158,7 +158,7 @@ export function ProjectsPage() {
       })
       fetchProjects()
       handleCloseDetailsModal()
-    } catch (error) {
+    } catch {
       toast({
         title: 'Erro',
         description: 'Erro ao duplicar projeto',

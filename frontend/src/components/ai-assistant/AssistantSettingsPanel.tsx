@@ -120,7 +120,7 @@ export function AssistantSettingsPanel({
           const profile = JSON.parse(profileRule.instructions)
           setCompanyName(profile.companyName || '')
           setWebsiteUrl(profile.websiteUrl || '')
-        } catch(e) {
+        } catch {
           // Fallback if raw text
           setCompanyName(profileRule.instructions)
         }
@@ -135,7 +135,9 @@ export function AssistantSettingsPanel({
           setUnderstandImages(caps.understandImages ?? true)
           setUnderstandFiles(caps.understandFiles ?? true)
           setUnderstandVideos(caps.understandVideos ?? false)
-        } catch(e) {}
+        } catch {
+          // Keep the safe capability defaults when legacy metadata is not valid JSON.
+        }
       }
 
       // Load handoff rules

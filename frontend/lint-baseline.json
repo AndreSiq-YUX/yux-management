@@ -1,0 +1,1470 @@
+{
+  "version": 1,
+  "maxErrors": 560,
+  "maxWarnings": 27,
+  "findings": [
+    {
+      "file": "src/components/action-engine/CompositeMissionPlan.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/action-engine/MissionDecisionSummary.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/action-engine/MissionMetricsPanel.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'AiAssistantHandoffRule' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'AiAssistantKnowledgeLink' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'AiAssistantSafetyRule' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Check' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Link' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'products' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'ShieldCheck' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Tag' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-assistant/AssistantSettingsPanel.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Trash2' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ai-elements/conversation.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/AutomationNodeEditor.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 4
+    },
+    {
+      "file": "src/components/automations/AutomationNodeEditor.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'AlertCircle' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/AutomationNodeEditor.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'idx' is defined but never used. Allowed unused args must match /^_/u.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/AutomationNodeEditor.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Plus' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/AutomationNodeEditor.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Settings' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/AutomationNodeEditor.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has missing dependencies: 'flow', 'setEdges', and 'setNodes'. Either include them or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/MaterialLibraryDialog.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'loadMaterials'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/NodeConfigSidebar.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 10
+    },
+    {
+      "file": "src/components/automations/NodeConfigSidebar.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Badge' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/automations/NodeConfigSidebar.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Trash2' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/clients/ClientDetailsModal.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 5
+    },
+    {
+      "file": "src/components/clients/ClientDetailsModal.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'fetchClientData'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/clients/ClientFilters.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/components/clients/ClientFormModal.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 23
+    },
+    {
+      "file": "src/components/crm/funnels/PipelineSummaryBoard.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 2
+    },
+    {
+      "file": "src/components/crm/scoring/ScoringRuleEditor.tsx",
+      "ruleId": "no-extra-semi",
+      "message": "Unnecessary semicolon.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationDetails.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/components/omnichannel/ConversationDetails.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Calendar' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationDetails.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Clock' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationDetails.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'onAssign' is defined but never used. Allowed unused args must match /^_/u.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationDetails.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Sparkles' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationDetails.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'suggestionMessage' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationList.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/components/omnichannel/ConversationList.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Clock' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationList.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'HelpCircle' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationList.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'ShieldAlert' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationList.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Sparkles' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/ConversationList.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'User' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/OmnichannelWorkspace.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'setLoadedAiRuns' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/PortalOmnichannelWorkspace.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'loading' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/omnichannel/PortalOmnichannelWorkspace.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'messageId' is defined but never used. Allowed unused args must match /^_/u.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDeliveryManager.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDetailsModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'AlertCircle' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDetailsModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Plus' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDetailsModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Separator' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDetailsModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Target' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDetailsModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'X' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectDetailsModal.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'fetchProjectDetails'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'ArrowUpDown' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Clock' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'endDateToOpen' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'projects' is defined but never used. Allowed unused args must match /^_/u.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'setEndDateToOpen' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'setStartDateToOpen' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'startDateToOpen' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Users' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'X' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "prefer-const",
+      "message": "'filteredProjects' is never reassigned. Use 'const' instead.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFilters.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFormModal.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/components/projects/ProjectFormModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'getValues' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectFormModal.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'z' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'BellOff' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Calendar' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'loading' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Mail' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'MessageSquare' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'TrendingDown' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Users' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'generateNotifications'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectNotifications.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has missing dependencies: 'generateNotifications' and 'loadProjectData'. Either include them or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectProgressCalculator.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Circle' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectProgressCalculator.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'phasesProgress' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectProgressCalculator.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'PROJECT_STATUS_LABELS' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectProgressCalculator.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Users' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectProgressCalculator.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'calculateProgress'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectProgressCalculator.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'fetchProjectData'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectStatusManager.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Badge' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectStatusManager.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'PROJECT_PRIORITY_LABELS' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectStatusManager.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'ProjectPriority' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectTaskManager.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/components/projects/ProjectTaskManager.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'DialogTrigger' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectTaskManager.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Separator' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/projects/ProjectTaskManager.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'loadTasksAndPhases'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/proposals/LeadCommercialPanel.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'refresh'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/strategy-engine/AgentHandoffPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/strategy-engine/AgentRecommendationPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/components/ui/badge.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/ui/button-group.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/ui/button.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/components/ui/form.tsx",
+      "ruleId": "react-refresh/only-export-components",
+      "message": "Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/hooks/usePortalMarketingContext.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/lib/aiAssistantDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/lib/campaignDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 6
+    },
+    {
+      "file": "src/lib/campaigns/campaignRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_executionLogs' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/campaigns/campaignRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_protectedError' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_conversionRate' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_cpl' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_mroi' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.test.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_opportunityRate' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_conversionRate' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_cpl' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_mediaCost' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_mroi' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_operationalCost' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_opportunityRate' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crm/attributionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'LeadSourceKind' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/crmClosingDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/lib/crmConversationDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/lib/crmOpsDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/lib/email/emailDeliveryRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_protectedError' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/email/emailDeliveryRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_providerMessageId' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/email/emailDeliveryRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_providerPayload' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/email/emailDeliveryRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_tokenReference' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/finance/financeRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_internalNotes' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/growthWorkspaceDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 6
+    },
+    {
+      "file": "src/lib/landing-pages/landingPageRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_internalNotes' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/landingPageDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 6
+    },
+    {
+      "file": "src/lib/marketing-studio/marketingStudioRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_complianceNotes' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/marketing-studio/marketingStudioRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_internalNotes' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/marketingStudioDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 8
+    },
+    {
+      "file": "src/lib/omnichannelDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 5
+    },
+    {
+      "file": "src/lib/proposals/proposalRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_contractId' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/proposals/proposalRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_convertedClientId' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/proposals/proposalRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_currentVersionId' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/proposals/proposalRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_projectId' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/reports/reportRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_ownerActivity' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/strategy-engine/objectionRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_sourceDetails' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/strategyEngineDataClient.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/lib/support/supportRules.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_internalNotes' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/lib/utils.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/pages/auth/LoginPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/pages/auth/SetPasswordPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/client-portal/commercial/PortalCommercialFunnelsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'CrmPipelineStage' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/client-portal/commercial/PortalLeadScoringPage.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/pages/client-portal/PortalLandingPagesPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/clients/ClientsPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/pages/clients/ClientsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'getStatusColor' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/clients/ClientsPage.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'fetchClients'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/pages/finance/FinancePage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/pages/platform/AdminAiPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'active' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/platform/AdminEmailPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'active' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/platform/AdminIntegrationsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'active' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/platform/AdminLimitsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'ShieldCheck' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/platform/BlueprintsPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/pages/platform/ContractsPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/pages/platform/ModulesPage.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/pages/platform/PackagesPage.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'CardHeader' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'CardTitle' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Filter' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Input' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'ProjectFilters' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Search' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'Select' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'SelectContent' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'SelectItem' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'SelectTrigger' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'SelectValue' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/pages/projects/ProjectsPage.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "message": "React Hook useEffect has a missing dependency: 'fetchProjects'. Either include it or remove the dependency array.",
+      "severity": 1,
+      "count": 1
+    },
+    {
+      "file": "src/pages/support/SupportPage.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/services/adminPlatformService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/services/aiAssistantService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 24
+    },
+    {
+      "file": "src/services/api.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 10
+    },
+    {
+      "file": "src/services/automationSequenceService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/services/automationService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 10
+    },
+    {
+      "file": "src/services/automationService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'AutomationBuilderMode' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/automationService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'flowSelect' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/automationService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'requireData' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/backendDataService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 36
+    },
+    {
+      "file": "src/services/campaignService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 11
+    },
+    {
+      "file": "src/services/crmAttributionService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/services/crmClosingService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 23
+    },
+    {
+      "file": "src/services/crmCockpitService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmConversationService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 25
+    },
+    {
+      "file": "src/services/crmGovernanceService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapEnrollment' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapExecution' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapInteraction' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapLead' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapPipeline' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapSequence' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/crmService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapTask' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/financeService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 8
+    },
+    {
+      "file": "src/services/growthWorkspaceService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 8
+    },
+    {
+      "file": "src/services/landingPageService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 18
+    },
+    {
+      "file": "src/services/marketingStudioService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 35
+    },
+    {
+      "file": "src/services/metaChannelService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/services/omnichannelService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 19
+    },
+    {
+      "file": "src/services/omnichannelService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'cleanPayload' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 20
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapBlueprint' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapClientSummary' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapContractDetails' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapMembership' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapModule' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapOrganization' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/platformService.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'mapRole' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/proposalService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 5
+    },
+    {
+      "file": "src/services/reportService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/services/supportService.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 7
+    },
+    {
+      "file": "src/stores/authStore.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'_password' is assigned a value but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/types/automation.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 4
+    },
+    {
+      "file": "src/types/crmClosing.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'CrmLead' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    }
+  ]
+}

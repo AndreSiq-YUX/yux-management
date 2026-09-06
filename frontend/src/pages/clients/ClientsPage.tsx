@@ -86,7 +86,7 @@ export function ClientsPage() {
         setTotalPages(response.pagination?.totalPages || 1)
         setCurrentPage(page)
       }
-    } catch (error) {
+    } catch {
       toast.error('Erro ao carregar clientes')
     } finally {
       setLoading(false)
