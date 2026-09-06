@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { StrategyIngestionUploadInput, StrategyPack } from '@/types/strategyEngine'
+import type { StrategyIngestionUploadInput, StrategyPack, StrategyPackItem } from '@/types/strategyEngine'
 import { StrategyPacksPanel } from './StrategyPacksPanel'
 
 const pack = {
@@ -82,20 +82,69 @@ describe('StrategyPacksPanel upload', () => {
     expect(fileInput.files?.[0]?.name).toBe('guia.txt')
   })
 
-  async function renderPanel(onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>) {
+  it('mostra a evidência e exige motivo antes da aprovação humana', async () => {
+    const onReviewItem = vi.fn(async () => undefined)
+    const item: StrategyPackItem = {
+      id: '10000000-0000-4000-8000-000000000013', packId: pack.id, itemType: 'concept_card',
+      title: 'Diagnosticar antes da oferta', summary: 'Pitch prematuro', body: 'Qualifique primeiro.',
+      profileKeys: [], stageTags: [], retrievalTags: [], status: 'proposed', priority: 100, confidence: 0.91,
+      payload: { evidence: [{ locator: 'page:2', excerpt: 'qualifique o problema' }] },
+      createdAt: '2026-09-06T00:00:00.000Z', updatedAt: '2026-09-06T00:00:00.000Z',
+    }
+    await renderPanel(vi.fn(), [item], onReviewItem)
+    expect(container.textContent).toContain('page:2: “qualifique o problema”')
+    const approve = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Aprovar'))!
+    expect(approve.disabled).toBe(true)
+    const reason = container.querySelector<HTMLInputElement>('input[placeholder="Motivo da decisão ou ajuste"]')!
+    await act(async () => setInputValue(reason, 'Evidência conferida'))
+    await act(async () => approve.click())
+    expect(onReviewItem).toHaveBeenCalledWith(item.id, 'approved', 'Evidência conferida')
+  })
+
+  it('permite editar a proposta mantendo-a pendente de aprovação', async () => {
+    const onReviewItem = vi.fn(async () => undefined)
+    const item: StrategyPackItem = {
+      id: '10000000-0000-4000-8000-000000000014', packId: pack.id, itemType: 'concept_card',
+      title: 'Título inicial', summary: 'Problema', body: 'Princípio inicial.',
+      profileKeys: [], stageTags: [], retrievalTags: [], status: 'proposed', priority: 100,
+      payload: { evidence: [{ locator: 'section:1', excerpt: 'trecho literal' }] },
+      createdAt: '2026-09-06T00:00:00.000Z', updatedAt: '2026-09-06T00:00:00.000Z',
+    }
+    await renderPanel(vi.fn(), [item], onReviewItem)
+    await act(async () => container.querySelector('summary')!.click())
+    const title = container.querySelector<HTMLInputElement>(`input[aria-label="Título da proposta ${item.title}"]`)!
+    const principle = container.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Princípio da proposta ${item.title}"]`)!
+    const reason = container.querySelector<HTMLInputElement>('input[placeholder="Motivo da decisão ou ajuste"]')!
+    await act(async () => {
+      setInputValue(title, 'Título revisado')
+      setTextareaValue(principle, 'Princípio revisado.')
+      setInputValue(reason, 'Ajuste editorial com fonte preservada')
+    })
+    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Salvar ajuste'))!
+    await act(async () => save.click())
+    expect(onReviewItem).toHaveBeenCalledWith(item.id, 'proposed', 'Ajuste editorial com fonte preservada', {
+      title: 'Título revisado', principle: 'Princípio revisado.',
+    })
+  })
+
+  async function renderPanel(
+    onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>,
+    items: StrategyPackItem[] = [],
+    onReviewItem = vi.fn(async () => undefined),
+  ) {
     await act(async () => {
       root.render(
         <MemoryRouter>
           <StrategyPacksPanel
             packs={[pack]}
-            items={[]}
+            items={items}
             jobs={[]}
             bindings={[]}
             profiles={[]}
             organizations={[]}
             onSavePack={vi.fn()}
             onSaveItem={vi.fn()}
-            onUpdateItemStatus={vi.fn()}
+            onReviewItem={onReviewItem}
             onCreateJob={onCreateJob}
             onSaveBinding={vi.fn()}
           />
@@ -107,6 +156,13 @@ describe('StrategyPacksPanel upload', () => {
 
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function setTextareaValue(input: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
   input.dispatchEvent(new Event('change', { bubbles: true }))

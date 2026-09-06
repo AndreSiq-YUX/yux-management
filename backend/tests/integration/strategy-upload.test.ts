@@ -33,7 +33,7 @@ it('recebe arquivos reais e recupera a ingestão sem publicar conteúdo não ext
     expect(afterRestart.body.status).toBe('queued')
     await rig.workerTick()
     const completed = await rig.request('yux_admin', 'GET', `/api/strategy-engine/ingestions/${created.ingestionId}`)
-    expect(completed.body).toMatchObject({ status: 'completed', stage: 'proposals', attempt: 1 })
+    expect(completed.body).toMatchObject({ status: 'curation_unavailable', stage: 'curation', attempt: 1 })
     const chunks = await rig.sql(`SELECT chunk_text FROM public.yux_strategy_source_chunks WHERE document_id=$1`, [uploaded.body.documentId])
     expect(chunks.rows.map(row => row.chunk_text).join(' ')).toContain('Sempre validar os dados')
 

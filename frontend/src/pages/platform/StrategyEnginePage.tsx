@@ -326,7 +326,7 @@ export function StrategyEnginePage() {
           organizations={data.organizations}
           onSavePack={input => reloadAfter(() => strategyEngineService.upsertStrategyPack(input))}
           onSaveItem={input => reloadAfter(() => strategyEngineService.upsertStrategyPackItem(input))}
-          onUpdateItemStatus={(id, status) => reloadAfter(() => strategyEngineService.updateStrategyPackItemStatus(id, status))}
+          onReviewItem={(id, status, reason, changes) => reloadAfter(() => strategyEngineService.reviewStrategyPackItem(id, status, reason, changes))}
           onCreateJob={input => reloadAfter(() => strategyEngineService.createStrategyIngestionJob(input))}
           onSaveBinding={input => reloadAfter(() => strategyEngineService.upsertStrategyPackBinding(input))}
         />

@@ -311,6 +311,8 @@ export function mapStrategyPackItem(row: DbRow): StrategyPackItem {
     sourceReference: stringValue(row.source_reference) || undefined,
     status: stringValue(row.status, 'proposed'),
     priority: numberOrDefault(row.priority, 100),
+    confidence: row.confidence === undefined || row.confidence === null ? undefined : numberOrDefault(row.confidence, 0),
+    reviewReason: stringValue(row.review_reason) || undefined,
     payload: typeof row.payload === 'object' && row.payload !== null ? row.payload as Record<string, unknown> : {},
     createdAt: stringValue(row.created_at),
     updatedAt: stringValue(row.updated_at),
@@ -739,6 +741,19 @@ export const strategyEngineService = {
     })
     await apiBinaryRequest(`/strategy-engine/ingestions/${ingestion.ingestionId}/file`, input.file)
     return apiRequest(`/strategy-engine/ingestions/${ingestion.ingestionId}`)
+  },
+
+  async reviewStrategyPackItem(
+    id: string,
+    status: 'approved' | 'rejected' | 'proposed',
+    reason: string,
+    changes?: { title?: string; principle?: string },
+  ) {
+    const row = await apiRequest<DbRow>(`/strategy-engine/pack-items/${id}/review`, {
+      method: 'PATCH',
+      body: { status, reason, changes },
+    })
+    return mapStrategyPackItem(row)
   },
 
   async getConversationAssistants(filters: { organizationId?: string } = {}) {

@@ -1,6 +1,6 @@
 import type pg from 'pg'
 
-export function recordProviderUsage(pool: pg.Pool, input: {
+export function recordProviderUsage(pool: Pick<pg.Pool, 'query'>, input: {
   organizationId?: string
   providerKey: string
   model?: string

@@ -21,12 +21,23 @@ export async function extractKnowledgeText(input: {
   title: string
 }): Promise<ExtractedKnowledge> {
   let body = ''
+  let locatedPdfSections: LocatedSection[] | null = null
+  let locatedPdfChunks: ExtractedKnowledge['chunks'] | null = null
   if (input.mimeType === 'text/plain' || input.mimeType === 'text/markdown') {
     body = input.content.toString('utf8')
   } else if (input.mimeType === 'application/pdf') {
     const parser = new PDFParse({ data: input.content })
     try {
-      body = (await parser.getText()).text
+      const parsed = await parser.getText()
+      const pages = parsed.pages
+        .map(page => ({ pageNumber: page.num, body: normalizeText(page.text) }))
+        .filter(page => page.body)
+      body = pages.map(page => page.body).join('\n\n')
+      locatedPdfSections = pages.map(page => ({ locator: `page:${page.pageNumber}`, body: page.body }))
+      locatedPdfChunks = pages.flatMap(page => chunkKnowledgeText(page.body, input.title).map((chunk, index) => ({
+        ...chunk,
+        sourceLocator: `page:${page.pageNumber}:chunk:${index + 1}`,
+      })))
     } finally {
       await parser.destroy()
     }
@@ -38,8 +49,8 @@ export async function extractKnowledgeText(input: {
 
   const normalized = normalizeText(body)
   if (normalized.length < 10) throw domainError(422, 'knowledge_text_extraction_empty')
-  const sections = locateTextSections(normalized)
-  return { title: input.title.trim(), body: normalized, sections, chunks: chunkKnowledgeText(normalized, input.title) }
+  const sections = locatedPdfSections || locateTextSections(normalized)
+  return { title: input.title.trim(), body: normalized, sections, chunks: locatedPdfChunks || chunkKnowledgeText(normalized, input.title) }
 }
 
 export function extractManualKnowledge(title: string, body: string): ExtractedKnowledge {

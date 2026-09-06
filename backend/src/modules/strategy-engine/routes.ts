@@ -13,6 +13,7 @@ import {
   uploadStrategyIngestion,
 } from "./ingestion.js";
 import { createBullMqJobId } from "../../jobs/queue.js";
+import { reviewStrategyProposal } from "./curation.js";
 
 const packParams = z.object({ packId: z.string().uuid() });
 const releaseParams = z.object({ releaseId: z.string().uuid() });
@@ -26,6 +27,23 @@ const ingestionBody = z.object({
   byteSize: z.number().int().positive(),
   sourceName: z.string().trim().min(1).max(500).optional(),
   sourceKind: z.string().trim().min(1).max(120).optional(),
+});
+const itemParams = z.object({ itemId: z.string().uuid() });
+const proposalReviewBody = z.object({
+  status: z.enum(["approved", "rejected", "proposed"]),
+  reason: z.string().trim().min(1).max(1000),
+  changes: z.object({
+    title: z.string().trim().min(1).max(300).optional(),
+    principle: z.string().trim().min(1).max(4000).optional(),
+    problem: z.string().max(2000).optional(),
+    diagnosticQuestions: z.array(z.string()).max(20).optional(),
+    applicability: z.array(z.string()).max(20).optional(),
+    contraindications: z.array(z.string()).max(20).optional(),
+    decisionRules: z.array(z.string()).max(20).optional(),
+    recommendedActions: z.array(z.string()).max(20).optional(),
+    successCriteria: z.array(z.string()).max(20).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+  }).optional(),
 });
 
 const allowedTables = new Set([
@@ -195,6 +213,24 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
         .catch(() => undefined);
     }
     return ingestion;
+  });
+
+  app.patch("/pack-items/:itemId/review", async (request, reply) => {
+    const context = requireInternalRole(request);
+    const user = await getAuthenticatedUser(request, reply);
+    if (!user) return reply;
+    const params = itemParams.safeParse(request.params);
+    const body = proposalReviewBody.safeParse(request.body);
+    if (!params.success || !body.success)
+      return reply.code(400).send({ error: "invalid_strategy_review" });
+    return runWithDatabaseRequestContext(
+      { role: context.role, organizationIds: context.organizationIds, serviceRole: "api" },
+      () => reviewStrategyProposal(app.pg, {
+        itemId: params.data.itemId,
+        reviewedBy: user.id,
+        ...body.data,
+      }),
+    );
   });
 
   app.post("/packs/:packId/releases", async (request, reply) => {

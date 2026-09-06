@@ -15,6 +15,7 @@ import type {
   StrategyPackInput,
   StrategyPackItem,
   StrategyPackItemInput,
+  StrategyPackItemReviewChanges,
 } from '@/types/strategyEngine'
 
 const moduleOptions = [
@@ -56,7 +57,7 @@ export function StrategyPacksPanel({
   organizations,
   onSavePack,
   onSaveItem,
-  onUpdateItemStatus,
+  onReviewItem,
   onCreateJob,
   onSaveBinding,
 }: {
@@ -68,7 +69,7 @@ export function StrategyPacksPanel({
   organizations: StrategyOrganization[]
   onSavePack: (input: StrategyPackInput) => Promise<unknown>
   onSaveItem: (input: StrategyPackItemInput) => Promise<unknown>
-  onUpdateItemStatus: (id: string, status: string) => Promise<unknown>
+  onReviewItem: (id: string, status: 'approved' | 'rejected' | 'proposed', reason: string, changes?: StrategyPackItemReviewChanges) => Promise<unknown>
   onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>
   onSaveBinding: (input: StrategyPackBindingInput) => Promise<unknown>
 }) {
@@ -92,6 +93,8 @@ export function StrategyPacksPanel({
   const [jobForm, setJobForm] = useState<{ sourceName: string; sourceKind: string; file: File | null }>({ sourceName: '', sourceKind: 'private_book', file: null })
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({})
+  const [reviewEdits, setReviewEdits] = useState<Record<string, { title: string; principle: string }>>({})
   const [itemForm, setItemForm] = useState({
     itemType: 'concept_card',
     title: '',
@@ -371,15 +374,61 @@ export function StrategyPacksPanel({
                     <div>
                       <p className="font-semibold text-gray-950">{item.title}</p>
                       <p className="mt-1 line-clamp-2 text-sm text-gray-600">{item.summary}</p>
+                      {typeof item.confidence === 'number' ? <p className="mt-1 text-xs text-gray-500">Confiança: {Math.round(item.confidence * 100)}%</p> : null}
                     </div>
                     <Pill value={item.status} />
                   </div>
+                  {Array.isArray(item.payload.evidence) ? (
+                    <div className="mt-3 rounded-md bg-gray-50 p-2 text-xs text-gray-700">
+                      <p className="font-semibold">Evidência da fonte</p>
+                      {(item.payload.evidence as Array<Record<string, unknown>>).slice(0, 2).map((evidence, index) => (
+                        <p key={`${item.id}-evidence-${index}`} className="mt-1">{String(evidence.locator || 'seção')}: “{String(evidence.excerpt || '')}”</p>
+                      ))}
+                    </div>
+                  ) : null}
+                  <details className="mt-3 rounded-md border bg-white p-2">
+                    <summary className="cursor-pointer text-sm font-medium text-gray-700">Editar proposta</summary>
+                    <div className="mt-2 space-y-2">
+                      <Input
+                        aria-label={`Título da proposta ${item.title}`}
+                        value={reviewEdits[item.id]?.title ?? item.title}
+                        onChange={event => setReviewEdits(current => ({
+                          ...current,
+                          [item.id]: { title: event.target.value, principle: current[item.id]?.principle ?? item.body },
+                        }))}
+                      />
+                      <Textarea
+                        aria-label={`Princípio da proposta ${item.title}`}
+                        rows={3}
+                        value={reviewEdits[item.id]?.principle ?? item.body}
+                        onChange={event => setReviewEdits(current => ({
+                          ...current,
+                          [item.id]: { title: current[item.id]?.title ?? item.title, principle: event.target.value },
+                        }))}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!reviewReasons[item.id]?.trim() || !(reviewEdits[item.id]?.title.trim()) || !(reviewEdits[item.id]?.principle.trim())}
+                        onClick={() => onReviewItem(item.id, 'proposed', reviewReasons[item.id], reviewEdits[item.id])}
+                      >
+                        Salvar ajuste
+                      </Button>
+                    </div>
+                  </details>
+                  <Input
+                    className="mt-3"
+                    placeholder="Motivo da decisão ou ajuste"
+                    value={reviewReasons[item.id] || ''}
+                    onChange={event => setReviewReasons(current => ({ ...current, [item.id]: event.target.value }))}
+                  />
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button size="sm" onClick={() => onUpdateItemStatus(item.id, 'approved')}>
+                    <Button size="sm" disabled={!reviewReasons[item.id]?.trim()} onClick={() => onReviewItem(item.id, 'approved', reviewReasons[item.id])}>
                       <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                       Aprovar
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => onUpdateItemStatus(item.id, 'archived')}>Arquivar</Button>
+                    <Button size="sm" variant="outline" disabled={!reviewReasons[item.id]?.trim()} onClick={() => onReviewItem(item.id, 'rejected', reviewReasons[item.id])}>Rejeitar</Button>
                   </div>
                 </article>
               )}

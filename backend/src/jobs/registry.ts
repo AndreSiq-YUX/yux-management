@@ -166,7 +166,7 @@ export const jobRegistry = {
   }), providerSyncPayload),
   'email.send': registered('external', 120_000, ({ pool }, data) => handleEmailSend(pool, data)),
   'strategy.adminChat': registered('interactive', 180_000, ({ pool, env }, data) => handleStrategyAdminChat(pool, env, data)),
-  'strategy.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleStrategyIndexKnowledge(pool, data, { storageRoot: env.KNOWLEDGE_STORAGE_DIR, signal }), z.object({
+  'strategy.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleStrategyIndexKnowledge(pool, env, data, { storageRoot: env.KNOWLEDGE_STORAGE_DIR, signal }), z.object({
     ingestionId: uuid,
     documentId: uuid,
     organizationId: uuid,

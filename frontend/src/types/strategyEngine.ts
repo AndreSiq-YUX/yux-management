@@ -373,9 +373,16 @@ export interface StrategyPackItem {
   sourceReference?: string
   status: string
   priority: number
+  confidence?: number
+  reviewReason?: string
   payload: Record<string, unknown>
   createdAt: string
   updatedAt: string
+}
+
+export interface StrategyPackItemReviewChanges {
+  title?: string
+  principle?: string
 }
 
 export interface StrategyPackItemInput {

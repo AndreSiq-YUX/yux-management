@@ -6,9 +6,20 @@ import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileTypeFromFile } from 'file-type'
 import type pg from 'pg'
+import type { AppEnv } from '../../config/env.js'
 import { extractKnowledgeText } from '../company-intelligence/text-extraction.js'
+import { embedPassages } from '../company-intelligence/jina-embeddings.js'
+import { recordProviderUsage } from '../health/provider-usage.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { JOB_LEASE_DURATION_MS, classifyLeaseFailure, createLeaseOwner, startLeaseHeartbeat } from '../../jobs/leases.js'
+import {
+  curateStrategyWithRuntime,
+  strategyItemHash,
+  validateStrategyEvidence,
+  type StrategyCurationItem,
+  type StrategyCurationResult,
+  type StrategyCurationSection,
+} from './curation.js'
 
 export const STRATEGY_INGESTION_HARD_LIMIT_BYTES = 50 * 1024 * 1024
 const ALLOWED_MIME_TYPES = new Set([
@@ -248,14 +259,25 @@ async function commitUploadedFile(
   }
 }
 
-export async function handleStrategyIndexKnowledge(pool: pg.Pool, data: Record<string, unknown>, options: { storageRoot?: string; signal?: AbortSignal } = {}) {
+export async function handleStrategyIndexKnowledge(
+  pool: pg.Pool,
+  env: AppEnv,
+  data: Record<string, unknown>,
+  options: {
+    storageRoot?: string
+    signal?: AbortSignal
+    curate?: typeof curateStrategyWithRuntime
+    embed?: typeof embedPassages
+    afterEmbeddingCheckpoint?: () => Promise<void> | void
+  } = {},
+) {
   const ingestionId = typeof data.ingestionId === 'string' ? data.ingestionId : ''
   const documentId = typeof data.documentId === 'string' ? data.documentId : ''
   if (!ingestionId || !documentId) throw new Error('strategy_ingestion_context_required')
   const owner = createLeaseOwner('strategy-ingestion')
   const claimed = (await pool.query<IngestionRow>(
     `UPDATE public.yux_strategy_ingestion_jobs
-     SET status='extracting',current_step='extraction',attempt_count=attempt_count+1,
+     SET status='extracting',attempt_count=attempt_count+1,
          lease_owner=$3,lease_until=NOW()+($4::text || ' milliseconds')::interval,error_message=NULL
      WHERE id=$1 AND document_id=$2 AND (
        status='queued' OR (status='failed' AND failure_class='recoverable')
@@ -273,45 +295,51 @@ export async function handleStrategyIndexKnowledge(pool: pg.Pool, data: Record<s
     )
     return renewed.rowCount === 1
   })
+  let failureStep = claimed.current_step
   try {
     if (options.signal?.aborted) throw options.signal.reason
     if (!claimed.storage_path || !claimed.sha256) throw new Error('strategy_ingestion_file_context_required')
     const absolutePath = resolveStrategyStoragePath(strategyStorageRoot(options.storageRoot), claimed.storage_path)
     if (!(await fileMatches(absolutePath, claimed.sha256, Number(claimed.byte_size)))) throw new Error('strategy_ingestion_file_not_intact')
-    const extracted = await extractKnowledgeText({ content: await readFile(absolutePath), mimeType: claimed.mime_type, title: claimed.source_name })
-    if (claimed.mime_type === 'application/pdf' && !hasMeaningfulPdfText(extracted.body)) {
-      throw Object.assign(new Error('knowledge_text_extraction_empty'), { statusCode: 422 })
+    if (claimed.current_step === 'extraction') await extractAndCheckpoint(pool, claimed, absolutePath, owner, attempt)
+    failureStep = 'curation'
+    if (env.KNOWLEDGE_CURATION_ENABLED === false) {
+      await finishWithoutCuration(pool, ingestionId, owner, attempt)
+      return { ingestionId, documentId, curationUnavailable: true }
     }
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      await client.query(`DELETE FROM public.yux_strategy_source_chunks WHERE document_id=$1`, [documentId])
-      for (const [index, chunk] of extracted.chunks.entries()) {
-        const chunkHash = createHash('sha256').update(`${documentId}:${index}:${chunk.body}`).digest('hex')
-        await client.query(
-          `INSERT INTO public.yux_strategy_source_chunks (
-             document_id,section_key,chunk_index,chunk_hash,chunk_text,token_estimate,source_scope,
-             visibility,human_review_status,metadata
-           ) VALUES ($1,$2,$3,$4,$5,$6,'internal','internal_only','pending',$7::jsonb)`,
-          [documentId, chunk.title || 'section', index, chunkHash, chunk.body, chunk.tokenCount, JSON.stringify({ sourceLocator: chunk.sourceLocator, ingestionId })],
+    const sections = await loadStrategySections(pool, claimed)
+    const results = await curateCheckpointedBatches(pool, env, claimed, sections, options)
+    const items = deduplicateCuratedItems(results.flatMap(result => result.items))
+    const proposed = await persistStrategyProposals(pool, claimed, items, sections)
+    await pool.query(
+      `UPDATE public.yux_strategy_ingestion_jobs SET current_step='embedding' WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
+      [ingestionId, owner, attempt],
+    )
+    failureStep = 'embedding'
+    if (proposed.length) {
+      const embedded = await embedCheckpointed(pool, env, claimed, proposed, options)
+      for (const [index, item] of proposed.entries()) {
+        await pool.query(
+          `UPDATE public.yux_strategy_pack_items
+           SET payload=payload || $2::jsonb,updated_at=NOW() WHERE id=$1`,
+          [item.id, JSON.stringify({ embedding: embedded.vectors[index], embeddingModel: embedded.model, embeddingDimensions: embedded.dimensions, embeddingStatus: 'ready' })],
         )
       }
-      const completed = await client.query(
-        `UPDATE public.yux_strategy_ingestion_jobs
-         SET status='completed',current_step='proposals',proposed_counts=$4::jsonb,completed_at=NOW(),
-             lease_owner=NULL,lease_until=NULL,error_message=NULL,failure_class=NULL
-         WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
-        [ingestionId, owner, attempt, JSON.stringify({ chunks: extracted.chunks.length })],
-      )
-      if (completed.rowCount !== 1) throw new Error('strategy_ingestion_claim_lost')
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined)
-      throw error
-    } finally {
-      client.release()
     }
-    return { ingestionId, documentId, chunks: extracted.chunks.length }
+    const completed = await pool.query(
+      `UPDATE public.yux_strategy_ingestion_jobs
+       SET status='completed',current_step='review',proposed_counts=$4::jsonb,completed_at=NOW(),
+           lease_owner=NULL,lease_until=NULL,error_message=NULL,failure_class=NULL,
+           curation_prompt_version=$5,curation_provider=$6,curation_model=$7
+       WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
+      [
+        ingestionId, owner, attempt,
+        JSON.stringify({ chunks: sections.length, items: proposed.length }),
+        results[0]?.promptVersion || null, results[0]?.provider || null, results[0]?.model || null,
+      ],
+    )
+    if (completed.rowCount !== 1) throw new Error('strategy_ingestion_claim_lost')
+    return { ingestionId, documentId, chunks: sections.length, proposals: proposed.length }
   } catch (error) {
     const requiresOcr = claimed.mime_type === 'application/pdf' && messageOf(error).includes('knowledge_text_extraction_empty')
     await pool.query(
@@ -323,7 +351,7 @@ export async function handleStrategyIndexKnowledge(pool: pg.Pool, data: Record<s
         owner,
         attempt,
         requiresOcr ? 'extraction_requires_ocr' : 'failed',
-        requiresOcr ? 'ocr' : 'extraction',
+        requiresOcr ? 'ocr' : failureStep,
         requiresOcr ? 'extraction_requires_ocr' : messageOf(error),
         requiresOcr ? 'configuration' : classifyLeaseFailure(error),
       ],
@@ -337,6 +365,263 @@ export async function handleStrategyIndexKnowledge(pool: pg.Pool, data: Record<s
 
 export function hasMeaningfulPdfText(value: string) {
   return value.replace(/--\s*\d+\s+of\s+\d+\s*--/gi, '').replace(/\s+/g, '').length >= 10
+}
+
+async function extractAndCheckpoint(pool: pg.Pool, ingestion: IngestionRow, absolutePath: string, owner: string, attempt: number) {
+  const extracted = await extractKnowledgeText({ content: await readFile(absolutePath), mimeType: ingestion.mime_type, title: ingestion.source_name })
+  if (ingestion.mime_type === 'application/pdf' && !hasMeaningfulPdfText(extracted.body)) {
+    throw Object.assign(new Error('knowledge_text_extraction_empty'), { statusCode: 422 })
+  }
+  const extractionHash = createHash('sha256').update(extracted.body).digest('hex')
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`DELETE FROM public.yux_strategy_source_chunks WHERE document_id=$1`, [ingestion.document_id])
+    for (const [index, chunk] of extracted.chunks.entries()) {
+      const chunkHash = createHash('sha256').update(`${ingestion.document_id}:${index}:${chunk.body}`).digest('hex')
+      await client.query(
+        `INSERT INTO public.yux_strategy_source_chunks (
+           document_id,section_key,chunk_index,chunk_hash,chunk_text,token_estimate,source_scope,
+           visibility,human_review_status,metadata
+         ) VALUES ($1,$2,$3,$4,$5,$6,'internal','internal_only','pending',$7::jsonb)`,
+        [ingestion.document_id, chunk.title || 'section', index, chunkHash, chunk.body, chunk.tokenCount, JSON.stringify({ sourceLocator: chunk.sourceLocator, ingestionId: ingestion.id })],
+      )
+    }
+    const checkpoint = await client.query(
+      `UPDATE public.yux_strategy_ingestion_jobs
+       SET current_step='curation',extraction_hash=$4,proposed_counts=$5::jsonb
+       WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
+      [ingestion.id, owner, attempt, extractionHash, JSON.stringify({ chunks: extracted.chunks.length })],
+    )
+    if (checkpoint.rowCount !== 1) throw new Error('strategy_ingestion_claim_lost')
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally { client.release() }
+}
+
+async function finishWithoutCuration(pool: pg.Pool, ingestionId: string, owner: string, attempt: number) {
+  await pool.query(
+    `UPDATE public.yux_strategy_ingestion_jobs
+     SET status='curation_unavailable',current_step='curation',error_message='knowledge_curation_disabled',
+         failure_class='configuration',lease_owner=NULL,lease_until=NULL
+     WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
+    [ingestionId, owner, attempt],
+  )
+}
+
+async function loadStrategySections(pool: pg.Pool, ingestion: IngestionRow): Promise<StrategyCurationSection[]> {
+  if (!ingestion.document_id || !ingestion.sha256) throw new Error('strategy_ingestion_document_required')
+  const result = await pool.query<{ section_key: string; chunk_text: string; metadata: Record<string, unknown> }>(
+    `SELECT section_key,chunk_text,metadata FROM public.yux_strategy_source_chunks WHERE document_id=$1 ORDER BY chunk_index,id`,
+    [ingestion.document_id],
+  )
+  return result.rows.map((row, index) => {
+    const locator = typeof row.metadata?.sourceLocator === 'string' ? row.metadata.sourceLocator : `section:${index + 1}`
+    const pageMatch = /^page:(\d+)/.exec(locator)
+    return {
+      locator,
+      documentId: ingestion.document_id!,
+      documentHash: ingestion.sha256!,
+      ...(pageMatch ? { page: Number(pageMatch[1]) } : { section: locator }),
+      heading: row.section_key,
+      body: row.chunk_text,
+    }
+  })
+}
+
+async function curateCheckpointedBatches(
+  pool: pg.Pool,
+  env: AppEnv,
+  ingestion: IngestionRow,
+  sections: StrategyCurationSection[],
+  options: { signal?: AbortSignal; curate?: typeof curateStrategyWithRuntime },
+) {
+  const batches = batchStrategySections(sections)
+  const results: StrategyCurationResult[] = []
+  const curate = options.curate || curateStrategyWithRuntime
+  for (const [batchIndex, batch] of batches.entries()) {
+    if (options.signal?.aborted) throw options.signal.reason
+    const inputHash = createHash('sha256').update(JSON.stringify(batch)).digest('hex')
+    const saved = (await pool.query<{ status: string; input_hash: string; output: unknown }>(
+      `INSERT INTO public.yux_strategy_curation_batches (ingestion_id,batch_index,input_hash,status,attempt_count,started_at)
+       VALUES ($1,$2,$3,'running',1,NOW())
+       ON CONFLICT (ingestion_id,batch_index) DO UPDATE SET
+         input_hash=EXCLUDED.input_hash,status=CASE WHEN yux_strategy_curation_batches.input_hash=EXCLUDED.input_hash AND yux_strategy_curation_batches.status='completed' THEN 'completed' ELSE 'running' END,
+         attempt_count=CASE WHEN yux_strategy_curation_batches.input_hash=EXCLUDED.input_hash THEN yux_strategy_curation_batches.attempt_count+1 ELSE 1 END,
+         output=CASE WHEN yux_strategy_curation_batches.input_hash=EXCLUDED.input_hash THEN yux_strategy_curation_batches.output ELSE NULL END,
+         started_at=NOW(),error_message=NULL
+       RETURNING status,input_hash,output`,
+      [ingestion.id, batchIndex, inputHash],
+    )).rows[0]!
+    if (saved.status === 'completed' && saved.input_hash === inputHash && saved.output) {
+      results.push(saved.output as StrategyCurationResult)
+      continue
+    }
+    try {
+      const result = await curate(env, { organizationId: ingestion.organization_id, sections: batch })
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          `UPDATE public.yux_strategy_curation_batches SET status='completed',output=$4::jsonb,provider=$5,model=$6,
+             prompt_version=$7,prompt_hash=$8,input_tokens=$9,output_tokens=$10,completed_at=NOW()
+           WHERE ingestion_id=$1 AND batch_index=$2 AND input_hash=$3`,
+          [ingestion.id, batchIndex, inputHash, JSON.stringify(result), result.provider, result.model, result.promptVersion, result.promptHash || null, result.usage.inputTokens, result.usage.outputTokens],
+        )
+        await recordProviderUsage(client, {
+          organizationId: ingestion.organization_id, providerKey: result.provider, model: result.model,
+          correlationId: ingestion.id,
+          reportedUsage: { ...result.usage, operation: 'strategy_curation', batchIndex },
+          measurementStatus: 'unavailable', measurementReason: 'provider_price_not_reported',
+        })
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined)
+        throw error
+      } finally { client.release() }
+      results.push(result)
+    } catch (error) {
+      await pool.query(
+        `UPDATE public.yux_strategy_curation_batches SET status='failed',error_message=$4 WHERE ingestion_id=$1 AND batch_index=$2 AND input_hash=$3`,
+        [ingestion.id, batchIndex, inputHash, messageOf(error)],
+      ).catch(() => undefined)
+      throw error
+    }
+  }
+  await pool.query(
+    `UPDATE public.yux_strategy_ingestion_jobs SET curation_input_hash=$2,curation_output=$3::jsonb WHERE id=$1`,
+    [ingestion.id, createHash('sha256').update(JSON.stringify(sections)).digest('hex'), JSON.stringify(results)],
+  )
+  return results
+}
+
+type EmbeddingCheckpoint = Awaited<ReturnType<typeof embedPassages>>
+
+async function embedCheckpointed(
+  pool: pg.Pool,
+  env: AppEnv,
+  ingestion: IngestionRow,
+  proposed: Array<{ id: string; body: string }>,
+  options: { signal?: AbortSignal; embed?: typeof embedPassages; afterEmbeddingCheckpoint?: () => Promise<void> | void },
+): Promise<EmbeddingCheckpoint> {
+  const inputHash = createHash('sha256').update(JSON.stringify(proposed)).digest('hex')
+  const checkpoint = (await pool.query<{ embedding_input_hash: string | null; embedding_output: unknown }>(
+    `SELECT embedding_input_hash,embedding_output FROM public.yux_strategy_ingestion_jobs WHERE id=$1`,
+    [ingestion.id],
+  )).rows[0]
+  if (checkpoint?.embedding_input_hash === inputHash && checkpoint.embedding_output) {
+    return validateEmbeddingCheckpoint(checkpoint.embedding_output, proposed.length)
+  }
+  const embed = options.embed || embedPassages
+  const embedded = validateEmbeddingCheckpoint(
+    await embed(env, proposed.map(item => item.body), undefined, options.signal),
+    proposed.length,
+  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      `UPDATE public.yux_strategy_ingestion_jobs SET embedding_input_hash=$2,embedding_output=$3::jsonb,
+         embedding_model=$4,embedding_dimensions=$5,embedding_tokens=$6 WHERE id=$1`,
+      [ingestion.id, inputHash, JSON.stringify(embedded), embedded.model, embedded.dimensions, embedded.tokens],
+    )
+    await recordProviderUsage(client, {
+      organizationId: ingestion.organization_id, providerKey: 'jina_ai', model: embedded.model, correlationId: ingestion.id,
+      reportedUsage: { tokens: embedded.tokens, items: proposed.length, dimensions: embedded.dimensions, operation: 'strategy_embedding' },
+      measurementStatus: 'unavailable', measurementReason: 'provider_price_not_reported',
+    })
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally { client.release() }
+  await options.afterEmbeddingCheckpoint?.()
+  return embedded
+}
+
+function validateEmbeddingCheckpoint(value: unknown, expectedCount: number): EmbeddingCheckpoint {
+  if (!value || typeof value !== 'object') throw new Error('invalid_strategy_embedding_checkpoint')
+  const output = value as Partial<EmbeddingCheckpoint>
+  if (typeof output.model !== 'string' || !Number.isInteger(output.dimensions) || !Array.isArray(output.vectors)
+    || output.vectors.length !== expectedCount || typeof output.tokens !== 'number'
+    || output.vectors.some(vector => !Array.isArray(vector) || vector.length !== output.dimensions || vector.some(entry => typeof entry !== 'number'))) {
+    throw new Error('invalid_strategy_embedding_checkpoint')
+  }
+  return output as EmbeddingCheckpoint
+}
+
+function batchStrategySections(sections: StrategyCurationSection[], maxChars = 12_000) {
+  const batches: StrategyCurationSection[][] = []
+  let current: StrategyCurationSection[] = []
+  let size = 0
+  for (const section of sections) {
+    if (current.length && size + section.body.length > maxChars) {
+      batches.push(current)
+      current = []
+      size = 0
+    }
+    current.push(section)
+    size += section.body.length
+  }
+  if (current.length) batches.push(current)
+  return batches
+}
+
+function deduplicateCuratedItems(items: StrategyCurationItem[]) {
+  const selected = new Map<string, StrategyCurationItem>()
+  for (const item of items) {
+    const hash = strategyItemHash(item)
+    const existing = selected.get(hash)
+    if (!existing || item.confidence > existing.confidence) selected.set(hash, item)
+  }
+  return [...selected.values()]
+}
+
+async function persistStrategyProposals(pool: pg.Pool, ingestion: IngestionRow, items: StrategyCurationItem[], sections: StrategyCurationSection[]) {
+  if (!ingestion.pack_id || !ingestion.document_id) throw new Error('strategy_ingestion_pack_required')
+  const persisted: Array<{ id: string; body: string }> = []
+  for (const item of items) {
+    if (!validateStrategyEvidence(item, sections)) throw new Error('strategy_curation_evidence_mismatch')
+    const contentHash = strategyItemHash(item)
+    const existing = (await pool.query<{ id: string }>(
+      `SELECT id FROM public.yux_strategy_pack_items WHERE pack_id=$1 AND content_hash=$2`,
+      [ingestion.pack_id, contentHash],
+    )).rows[0]
+    if (existing) {
+      persisted.push({ id: existing.id, body: item.principle })
+      continue
+    }
+    const peers = (await pool.query<{ id: string; title: string; body: string }>(
+      `SELECT id,title,body FROM public.yux_strategy_pack_items WHERE pack_id=$1 AND item_type=$2 AND status IN ('proposed','review','approved')`,
+      [ingestion.pack_id, item.kind],
+    )).rows
+    const conflicts = peers
+      .map(peer => ({ ...peer, similarity: textSimilarity(item.principle, peer.body) }))
+      .filter(peer => peer.similarity >= 0.72)
+      .map(peer => ({ itemId: peer.id, title: peer.title, similarity: peer.similarity, disposition: 'review_merge_or_conflict' }))
+    const payload = { ...item, conflicts: [...item.conflicts, ...conflicts], curationPromptVersion: 'strategy-curation:v1', sourceOrigin: 'document_extracted' }
+    const row = (await pool.query<{ id: string }>(
+      `INSERT INTO public.yux_strategy_pack_items (
+         pack_id,item_type,title,summary,body,source_reference,status,priority,payload,source_origin,
+         source_document_id,content_hash,confidence
+       ) VALUES ($1,$2,$3,$4,$5,$6,'proposed',100,$7::jsonb,'document_extracted',$8,$9,$10)
+       RETURNING id`,
+      [ingestion.pack_id, item.kind, item.title, item.problem, item.principle, item.evidence[0]?.locator, JSON.stringify(payload), ingestion.document_id, contentHash, item.confidence],
+    )).rows[0]!
+    persisted.push({ id: row.id, body: item.principle })
+  }
+  return persisted
+}
+
+function textSimilarity(left: string, right: string) {
+  const a = new Set(left.normalize('NFKC').toLocaleLowerCase('pt-BR').split(/[^\p{L}\p{N}]+/u).filter(Boolean))
+  const b = new Set(right.normalize('NFKC').toLocaleLowerCase('pt-BR').split(/[^\p{L}\p{N}]+/u).filter(Boolean))
+  if (!a.size || !b.size) return 0
+  let intersection = 0
+  for (const token of a) if (b.has(token)) intersection += 1
+  return intersection / new Set([...a, ...b]).size
 }
 
 function ingestionView(row: IngestionRow) {

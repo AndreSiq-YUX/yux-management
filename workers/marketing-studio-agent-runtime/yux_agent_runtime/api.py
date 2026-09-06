@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
+from .strategy_curation import StrategyCurationService
 from .providers import ProviderRequestError
 from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
@@ -68,6 +69,21 @@ class CurateKnowledgeRequest(BaseModel):
     sections: list[KnowledgeSectionRequest] = Field(min_length=1, max_length=80)
 
 
+class StrategySectionRequest(BaseModel):
+    locator: str
+    document_id: str
+    document_hash: str
+    page: int | None = None
+    section: str | None = None
+    heading: str | None = None
+    body: str
+
+
+class CurateStrategyRequest(BaseModel):
+    organization_id: str
+    sections: list[StrategySectionRequest] = Field(min_length=1, max_length=40)
+
+
 class WebsitePageRequest(BaseModel):
     url: str
     title: str | None = None
@@ -94,6 +110,7 @@ def require_runtime_token(authorization: str | None = Header(default=None)) -> N
 def create_app(
     store: AgentRuntimeStore | None = None,
     knowledge_service: KnowledgeIntelligenceService | None = None,
+    strategy_curation_service: StrategyCurationService | None = None,
     mission_supervisor: MissionSupervisor | None = None,
     mission_conversation_workflow: MissionConversationWorkflow | None = None,
 ) -> FastAPI:
@@ -106,6 +123,7 @@ def create_app(
     # lazily from Postgres so health checks do not depend on OpenRouter or RAG.
     engine: StrategyWorkflowEngine | None = StrategyWorkflowEngine(runtime_store) if store is not None else None
     curator = knowledge_service or KnowledgeIntelligenceService.from_env()
+    strategy_curator = strategy_curation_service or StrategyCurationService.from_env()
     supervisor = mission_supervisor
     conversation = mission_conversation_workflow
 
@@ -253,6 +271,16 @@ def create_app(
             raise HTTPException(status_code=413, detail="knowledge_curation_input_too_large")
         try:
             return curator.curate([item.model_dump() for item in request.sections])
+        except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post("/strategy/curate", dependencies=[Depends(require_runtime_token)])
+    def curate_strategy(request: CurateStrategyRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, profile_key="strategy_curator", audience="internal_operator")
+        if sum(len(item.body) for item in request.sections) > 120_000:
+            raise HTTPException(status_code=413, detail="strategy_curation_input_too_large")
+        try:
+            return strategy_curator.curate([item.model_dump() for item in request.sections])
         except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
