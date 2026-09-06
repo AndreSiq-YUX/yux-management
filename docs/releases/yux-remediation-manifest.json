@@ -6,8 +6,8 @@
   "release": {
     "commit": null,
     "branch": "codex/yux-remediation-integrated",
-    "technicalAcceptanceCommit": "8d759a2cd1bb8ff92e1291865709ec4ecb4f6a29",
-    "technicalAcceptanceRun": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34065960262"
+    "technicalAcceptanceCommit": "50004cb83568603cbaa7f7ad2d853c1ebb952417",
+    "technicalAcceptanceRun": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34068006799"
   },
   "scope": {
     "stage": "preparation_only",
@@ -94,13 +94,13 @@
   "suites": {
     "releasePreparation": {
       "status": "passed",
-      "commit": "d066704a4c608a2a8135b032380abe6305931343",
-      "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34067099016",
+      "commit": "50004cb83568603cbaa7f7ad2d853c1ebb952417",
+      "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34068006799",
       "jobsPassed": 8
     },
     "technicalAcceptance": {
       "status": "passed",
-      "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34065960262",
+      "run": "https://github.com/AndreSiq-YUX/yux-management/actions/runs/34068006799",
       "jobsPassed": 8,
       "journeysPassed": 7,
       "journeysTotal": 7
@@ -156,21 +156,21 @@
       "status": "not_run",
       "scope": "pilot_target",
       "evidence": [
-        "technical_ci_run_34065960262"
+        "technical_ci_run_34068006799"
       ]
     },
     "contracts_passed": {
       "status": "not_run",
       "scope": "deployed_service_images",
       "evidence": [
-        "technical_ci_run_34065960262"
+        "technical_ci_run_34068006799"
       ]
     },
     "journeys_passed": {
       "status": "not_run",
       "scope": "pilot_target_with_external_and_human_gates",
       "evidence": [
-        "technical_ci_run_34065960262"
+        "technical_ci_run_34068006799"
       ]
     },
     "strategic_quality_passed": {

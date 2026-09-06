@@ -5,13 +5,19 @@ Atualizado em 2026-09-06. Estado: **bloqueado; nenhum piloto implantado**.
 ## Identidade preparada
 
 - Branch candidata: `codex/yux-remediation-integrated`.
-- Aceite técnico: commit `8d759a2cd1bb8ff92e1291865709ec4ecb4f6a29`.
-- GitHub Actions: execução `34065960262`, oito jobs aprovados; J1–J7 técnicos
+- Aceite técnico atual: commit `50004cb83568603cbaa7f7ad2d853c1ebb952417`.
+- GitHub Actions: execução `34068006799`, oito jobs aprovados; J1–J7 técnicos
   passaram e a integração persistente passou 23 arquivos/33 testes.
 - Preparação T32: commits `6e8191b` e `d066704`; execução `34067099016`
   aprovada nos oito jobs. O segundo commit adicionou uma única repetição para
   falha transitória do instalador de SBOM, mantendo a segunda falha bloqueante.
 - Manifesto: `docs/releases/yux-remediation-manifest.json`, validado na CI.
+- Estabilização final: a validação posterior ao primeiro registro revelou uma
+  edição de perfil vulnerável a uma atualização equivalente e uma recarga
+  repetitiva da timeline omnichannel. O commit `8c0dda8` preserva a edição em
+  andamento, limita cada carga de mensagens e adiciona regressões unitárias. O
+  commit `50004cb` corrigiu a observação do endpoint real de resolução; a
+  execução final passou sem repetição automática de jornadas mutáveis.
 - Release implantável: ainda sem commit final, digests, hash final do manifesto,
   backup restaurado ou organizações aprovadas.
 

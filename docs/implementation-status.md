@@ -16,7 +16,7 @@ the target VPS/Dokploy environment.
   execution and operational smoke test.
 
 - The integrated remediation technical gate passed all eight CI jobs and seven
-  browser journeys at commit `8d759a2`. The release manifest, compatibility
+  browser journeys at commit `50004cb` in run `34068006799`. The release manifest, compatibility
   rollout and non-destructive rollback procedure are now versioned under
   `docs/releases/yux-remediation-manifest.json` and
   `docs/runbooks/yux-remediation-rollout.md`.
@@ -24,6 +24,9 @@ the target VPS/Dokploy environment.
   image digests, a restored recent backup, target migration/login verification,
   official provider sandboxes, the paid/blind strategic evaluation, complete
   J1–J6 effect linkage and three moderated users remain required.
+- The final browser stabilization preserves company-profile edits across
+  equivalent data refreshes and prevents repeated omnichannel timeline loads;
+  both paths now have focused regression tests in addition to J1 and J6.
 
 > Historical sections below may mention Supabase migrations or Edge Functions.
 > They are archival evidence from before the VPS migration, not a production
