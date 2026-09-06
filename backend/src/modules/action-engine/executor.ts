@@ -678,12 +678,24 @@ export async function skipAction(pool: Connectable, input: { actionId: string; o
 }
 
 export async function resolveHumanTask(pool: Connectable, input: {
-  actionId: string; organizationId: string; actualMinutes: number; actorId: string; result: Record<string, unknown>
+  actionId: string; organizationId: string; actualMinutes: number; actorId: string; result: Record<string, unknown>; expectedVersion?: string
 }) {
   if (!Number.isInteger(input.actualMinutes) || input.actualMinutes <= 0) throw new Error('actual_minutes_required')
-  return transaction(pool, async (client) => {
-    const action = await client.query<{ mission_id: string; idempotency_key: string; capability_key: string; budget: Record<string, unknown> }>(
-      `SELECT run.mission_id, run.idempotency_key, step.capability_key, mission.budget
+  if (Object.keys(input.result).length === 0) throw new Error('human_task_evidence_required')
+  return transaction(pool, (client) => resolveHumanTaskInTransaction(client, input))
+}
+
+export async function resolveHumanTaskInTransaction(client: Queryable, input: {
+  actionId: string; organizationId: string; actualMinutes: number; actorId: string; result: Record<string, unknown>; expectedVersion?: string
+}) {
+    if (!Number.isInteger(input.actualMinutes) || input.actualMinutes <= 0) throw new Error('actual_minutes_required')
+    if (Object.keys(input.result).length === 0) throw new Error('human_task_evidence_required')
+    const action = await client.query<{
+      mission_id: string; idempotency_key: string; capability_key: string; budget: Record<string, unknown>;
+      updated_at: string | Date; output: Record<string, unknown>
+    }>(
+      `SELECT run.mission_id, run.idempotency_key, run.updated_at, run.output,
+              step.capability_key, mission.budget
        FROM public.action_runs run JOIN public.action_plan_steps step ON step.id = run.plan_step_id
        JOIN public.action_missions mission ON mission.id = run.mission_id
        WHERE run.id = $1 AND run.organization_id = $2 AND run.status = 'running' FOR UPDATE OF run`,
@@ -691,6 +703,9 @@ export async function resolveHumanTask(pool: Connectable, input: {
     )
     const row = action.rows[0]
     if (!row || row.capability_key !== 'human.task.create') throw new Error('action_not_human_task')
+    if (input.expectedVersion && new Date(row.updated_at).toISOString() !== new Date(input.expectedVersion).toISOString()) {
+      throw new Error('action_version_conflict')
+    }
     const rate = String(row.budget.humanHourlyRateBrl ?? '')
     if (!rate) throw new Error('human_cost_rate_missing')
     const { recordHumanTaskCost } = await import('./economics.js')
@@ -703,13 +718,33 @@ export async function resolveHumanTask(pool: Connectable, input: {
       idempotencyKey: `${row.idempotency_key}:human:actual`, actualMinutes: String(input.actualMinutes), humanHourlyRateBrl: rate,
       metadata: { resolvedBy: input.actorId },
     })
-    await client.query(`UPDATE public.action_runs SET status = 'succeeded', output = $2, completed_at = NOW(), updated_at = NOW() WHERE id = $1`, [input.actionId, input.result])
+    const taskId = humanTaskId(row.output)
+    if (taskId) {
+      await client.query(
+        `UPDATE public.action_observations
+         SET payload = payload || $2::jsonb
+         WHERE id = $1 AND organization_id = $3 AND mission_id = $4 AND observation_type = 'human_task_created'`,
+        [taskId, { status: 'completed', evidence: input.result, minutesSpent: input.actualMinutes, completedBy: input.actorId, completedAt: new Date().toISOString() }, input.organizationId, row.mission_id],
+      )
+    }
+    await client.query(
+      `UPDATE public.action_runs
+       SET status = 'succeeded', output = output || $2::jsonb, completed_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [input.actionId, { resolution: input.result, actualMinutes: input.actualMinutes, resolvedBy: input.actorId }],
+    )
     await recordDomainEvent(client, {
       eventType: 'action.succeeded', organizationId: input.organizationId, aggregateType: 'action_run', aggregateId: input.actionId,
       actor: { type: 'user', id: input.actorId }, payload: { missionId: row.mission_id, capabilityKey: 'human.task.create', actualMinutes: input.actualMinutes },
     })
     return { id: input.actionId, missionId: row.mission_id, status: 'succeeded' as const }
-  })
+}
+
+function humanTaskId(output: Record<string, unknown>) {
+  const value = output.output
+  if (!value || typeof value !== 'object') return null
+  const taskId = Reflect.get(value, 'taskId')
+  return typeof taskId === 'string' ? taskId : null
 }
 
 function hashSubject(value: string): string {

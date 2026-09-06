@@ -109,8 +109,8 @@ export const actionEngineService = {
   decideApproval: (organizationId: string, approval: MissionApproval, decision: 'approved' | 'rejected' | 'changes_requested', reasonKey?: DecisionReasonKey, comment?: string) =>
     apiRequest(`${root}/approvals/${approval.id}/decide`, { method: 'POST', body: { organizationId, subjectHash: approval.subjectHash, decision, reasonKey, comment } }),
   retryAction: (organizationId: string, actionId: string) => apiRequest(`${root}/actions/${actionId}/retry`, { method: 'POST', body: { organizationId, reason: 'Nova tentativa solicitada pela operação' } }),
-  resolveHumanTask: (organizationId: string, actionId: string, actualMinutes: number) => apiRequest(`${root}/actions/${actionId}/resolve-human-task`, {
-    method: 'POST', body: { organizationId, actualMinutes, result: { resolvedFrom: 'missions_ui' } },
+  resolveHumanTask: (organizationId: string, actionId: string, actualMinutes: number, evidence: string) => apiRequest(`${root}/actions/${actionId}/resolve-human-task`, {
+    method: 'POST', body: { organizationId, actualMinutes, result: { note: evidence, resolvedFrom: 'missions_ui' } },
   }),
   getMetrics: (missionId: string, organizationId: string) => apiRequest<MissionMetrics>(`${root}/missions/${missionId}/metrics?${query({ organizationId })}`),
   getEconomics: (missionId: string, organizationId: string) => apiRequest<MissionEconomics>(`${root}/missions/${missionId}/economics?${query({ organizationId })}`),

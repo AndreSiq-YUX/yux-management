@@ -46,7 +46,7 @@ describe('MissionArtifactsPanel', () => {
 })
 
 describe('HumanTaskResolutionDialog', () => {
-  it('requires positive actual minutes before completing the task', async () => {
+  it('requires evidence and positive actual minutes before completing the task', async () => {
     const onConfirm = vi.fn()
     const { root } = await render(<HumanTaskResolutionDialog action={humanAction} busy={false} onCancel={vi.fn()} onConfirm={onConfirm} />)
     const confirm = findButton('Registrar e concluir')!
@@ -56,9 +56,12 @@ describe('HumanTaskResolutionDialog', () => {
     expect(document.body.textContent).toContain('entre 1 e 1.440')
     expect(confirm.disabled).toBe(true)
     await act(async () => { setInput(input, '42') })
+    expect(confirm.disabled).toBe(true)
+    const evidence = document.querySelector<HTMLTextAreaElement>('#human-task-evidence')!
+    await act(async () => { setTextarea(evidence, 'Contato confirmado pelo cliente') })
     expect(confirm.disabled).toBe(false)
     await act(async () => confirm.click())
-    expect(onConfirm).toHaveBeenCalledWith(42)
+    expect(onConfirm).toHaveBeenCalledWith(42, 'Contato confirmado pelo cliente')
     act(() => root.unmount())
   })
 })
@@ -75,5 +78,9 @@ async function render(element: ReactNode): Promise<{ root: Root }> {
 function findButton(text: string) { return [...document.body.querySelectorAll('button')].find(button => button.textContent?.includes(text)) }
 function setInput(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }))
+}
+function setTextarea(input: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter?.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }))
 }

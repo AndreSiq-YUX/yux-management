@@ -25,6 +25,7 @@ type MissionDetailProps = {
   artifacts: MissionArtifact[];
   activity?: MissionActivityItem[];
   conversationHref?: string;
+  dailyQueueHref?: string;
   artifactHref?: (artifact: { kind: string; entityId?: string }) => string | undefined;
   onCommand: (command: 'qualify' | 'plan' | 'start' | 'pause' | 'resume' | 'evaluate' | 'cancel') => void;
   onApprovePlan: (approval: MissionApproval) => void;
@@ -63,7 +64,7 @@ export function MissionDetail(props: MissionDetailProps) {
         <MissionMetricsPanel metrics={metrics} metricSpec={mission.metricSpec} showTechnicalProof={props.showTechnicalProof} />
         {isCampaignLaunch ? <MissionGuardrailsPanel metrics={metrics} metricSpec={mission.metricSpec} status={mission.status} /> : null}
         {props.operationalControls ? <AutonomyControlCenter mission={mission} controls={props.operationalControls} canWrite={canWrite} busy={busy} onPause={() => props.onCommand('pause')} onRequestGrant={props.onRequestAutonomyGrant} onApproveGrant={props.onApproveAutonomyGrant} onRevokeGrant={props.onRevokeAutonomyGrant} onCapabilityControl={props.onCapabilityControl} /> : null}
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]"><MissionExecutionTimeline actions={actions} canWrite={canWrite} busyActionId={busy?.replace('action:', '')} onRetry={props.onRetryAction} onResolveHuman={props.onResolveHuman} /><MissionApprovalsPanel approvals={approvals} canWrite={canWrite} busyApprovalId={busy?.replace('approval:', '')} onDecision={props.onApprovalDecision} /></div>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]"><MissionExecutionTimeline actions={actions} canWrite={canWrite} busyActionId={busy?.replace('action:', '')} dailyQueueHref={props.dailyQueueHref} onRetry={props.onRetryAction} onResolveHuman={props.onResolveHuman} /><MissionApprovalsPanel approvals={approvals} canWrite={canWrite} busyApprovalId={busy?.replace('approval:', '')} onDecision={props.onApprovalDecision} /></div>
         <MissionEconomicsPanel economics={economics} />
       </>}
     </div>

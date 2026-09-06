@@ -1217,7 +1217,7 @@ export async function registerActionEngineRoutes(app: FastifyInstance) {
   app.post('/actions/:actionId/resolve-human-task', async (request, reply) => {
     const ctx = requireAuth(request)
     const params = z.object({ actionId: uuid }).safeParse(request.params)
-    const body = z.object({ organizationId: uuid, actualMinutes: z.number().int().positive().max(24 * 60), result: z.record(z.string(), z.unknown()).default({}) }).safeParse(request.body)
+    const body = z.object({ organizationId: uuid, actualMinutes: z.number().int().positive().max(24 * 60), result: z.record(z.string(), z.unknown()).refine(value => Object.keys(value).length > 0) }).safeParse(request.body)
     if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_human_task_resolution' })
     requireAccess(ctx, 'action_engine.write', { organizationId: body.data.organizationId })
     try {
@@ -1412,7 +1412,7 @@ function sendDomainError(reply: FastifyReply, error: unknown) {
     mission_not_ready: 409, mission_plan_not_approved: 409,
     approval_not_found: 404, approval_already_decided: 409, plan_approval_requires_version_context: 409,
     action_not_retryable: 409, action_skip_not_allowed: 409, action_not_human_task: 409,
-    actual_minutes_required: 400, human_cost_rate_missing: 409,
+    actual_minutes_required: 400, human_task_evidence_required: 400, human_cost_rate_missing: 409,
     simulation_plan_not_found: 404, simulation_report_not_found: 404,
     simulation_report_requires_shadow_mode: 409,
     decision_feedback_reason_required: 400, decision_feedback_reason_invalid: 400, decision_feedback_reason_not_allowed: 400,

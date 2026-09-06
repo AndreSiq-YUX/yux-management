@@ -6,6 +6,8 @@ type Queryable = {
   query: <TRow = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: TRow[]; rowCount?: number | null }>
 }
 
+type TaskActor = Pick<AuthUser, 'id' | 'role'>
+
 export type CrmTaskFilters = {
   organizationId: string
   crmInstanceId: string
@@ -46,6 +48,7 @@ type TaskRow = {
   pipeline_name: string | null
   stage_name: string | null
   assigned_to_name: string | null
+  updated_at: string | Date
 }
 
 type TaskAccessRow = TaskRow & {
@@ -101,7 +104,7 @@ export async function listCrmTasks(pool: pg.Pool, user: AuthUser, filters: CrmTa
   const result = await pool.query<TaskRow>(
     `SELECT task.id, task.organization_id, task.lead_id, task.enrollment_id,
             task.title, task.description, task.status, task.priority, task.due_at,
-            task.completed_at, task.cancelled_at, task.assigned_to,
+            task.completed_at, task.cancelled_at, task.assigned_to, task.updated_at,
             lead.name AS lead_name, lead.company AS lead_company,
             pipeline.name AS pipeline_name, stage.name AS stage_name,
             assignee.name AS assigned_to_name
@@ -160,7 +163,7 @@ export async function patchCrmTask(pool: pg.Pool, user: AuthUser, taskId: string
        WHERE task.id = $1
        RETURNING task.id, task.organization_id, task.lead_id, task.enrollment_id,
                  task.title, task.description, task.status, task.priority, task.due_at,
-                 task.completed_at, task.cancelled_at, task.assigned_to,
+                 task.completed_at, task.cancelled_at, task.assigned_to, task.updated_at,
                  ''::text AS lead_name, NULL::text AS lead_company,
                  NULL::text AS pipeline_name, NULL::text AS stage_name,
                  NULL::text AS assigned_to_name`,
@@ -209,11 +212,81 @@ export async function patchCrmTask(pool: pg.Pool, user: AuthUser, taskId: string
   }
 }
 
-async function getTaskForUpdate(pool: Queryable, user: AuthUser, taskId: string) {
+export async function completeCrmTask(pool: Queryable, user: TaskActor, input: {
+  taskId: string
+  organizationId: string
+  expectedVersion: string
+  evidence: Record<string, unknown>
+  minutesSpent: number
+}) {
+  const existing = await getTaskForUpdate(pool, user, input.taskId)
+  if (existing.organization_id !== input.organizationId) throw domainError(404, 'task_not_found')
+  if (existing.assigned_to && existing.assigned_to !== user.id && user.role !== 'yux_admin') {
+    throw domainError(403, 'task_assignment_forbidden')
+  }
+  if (existing.status !== 'pending') throw domainError(409, 'task_already_resolved')
+  if (toIso(existing.updated_at) !== toIso(input.expectedVersion)) throw domainError(409, 'task_version_conflict')
+
+  const completedAt = new Date().toISOString()
+  const completion = {
+    evidence: input.evidence,
+    minutesSpent: input.minutesSpent,
+    completedBy: user.id,
+    completedAt,
+  }
+  const result = await pool.query<TaskRow>(
+    `UPDATE public.lead_tasks task
+     SET status = 'completed', completed_at = $2, cancelled_at = NULL,
+         metadata = jsonb_set(task.metadata, '{workItemCompletion}', $3::jsonb, TRUE),
+         updated_by = $4, updated_at = NOW()
+     WHERE task.id = $1 AND task.status = 'pending' AND task.updated_at = $5::timestamptz
+     RETURNING task.id, task.organization_id, task.lead_id, task.enrollment_id,
+               task.title, task.description, task.status, task.priority, task.due_at,
+               task.completed_at, task.cancelled_at, task.assigned_to, task.updated_at,
+               ''::text AS lead_name, NULL::text AS lead_company,
+               NULL::text AS pipeline_name, NULL::text AS stage_name,
+               NULL::text AS assigned_to_name`,
+    [input.taskId, completedAt, completion, user.id, input.expectedVersion],
+  )
+  const updated = result.rows[0]
+  if (!updated) throw domainError(409, 'task_version_conflict')
+
+  await pool.query(
+    `UPDATE public.leads
+     SET next_follow_up_at = (
+       SELECT MIN(due_at) FROM public.lead_tasks
+       WHERE lead_id = $1 AND status = 'pending'
+     ), updated_at = NOW()
+     WHERE id = $1`,
+    [existing.lead_id],
+  )
+  await recordDomainEvent(pool, {
+    eventType: 'lead.task_completed',
+    organizationId: existing.organization_id,
+    crmInstanceId: existing.crm_instance_id ?? undefined,
+    aggregateType: 'task',
+    aggregateId: input.taskId,
+    leadId: existing.lead_id,
+    actor: { type: 'user', id: user.id },
+    payload: {
+      taskId: input.taskId,
+      leadId: existing.lead_id,
+      status: 'completed',
+      dueAt: updated.due_at,
+      priority: updated.priority,
+      assignedTo: updated.assigned_to,
+      evidence: input.evidence,
+      minutesSpent: input.minutesSpent,
+    },
+  })
+  return mapTask(updated)
+}
+
+async function getTaskForUpdate(pool: Queryable, user: TaskActor, taskId: string) {
   const result = await pool.query<TaskAccessRow>(
     `SELECT task.id, task.organization_id, task.lead_id, task.enrollment_id,
             task.title, task.description, task.status, task.priority, task.due_at,
-            task.completed_at, task.cancelled_at, task.assigned_to,
+            task.completed_at, task.cancelled_at, task.assigned_to, task.updated_at,
             lead.name AS lead_name, lead.company AS lead_company,
             pipeline.name AS pipeline_name, stage.name AS stage_name,
             assignee.name AS assigned_to_name,
@@ -288,7 +361,12 @@ function mapTask(row: TaskRow) {
     pipelineName: row.pipeline_name ?? undefined,
     stageName: row.stage_name ?? undefined,
     assignedToName: row.assigned_to_name ?? undefined,
+    ...(row.updated_at ? { version: toIso(row.updated_at) } : {}),
   }
+}
+
+function toIso(value: string | Date) {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 }
 
 function encodeCursor(dueAt: string, id: string) {
@@ -309,6 +387,6 @@ function domainError(statusCode: number, message: string) {
   return Object.assign(new Error(message), { statusCode })
 }
 
-function isInternal(user: AuthUser) {
+function isInternal(user: TaskActor) {
   return user.role === 'yux_admin' || user.role === 'yux_operator'
 }

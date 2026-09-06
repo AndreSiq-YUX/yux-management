@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { TaskEditorDialog } from '@/components/crm/tasks/TaskEditorDialog'
 import { TaskFilters } from '@/components/crm/tasks/TaskFilters'
 import { TaskList } from '@/components/crm/tasks/TaskList'
+import { WorkItemsDailyQueue } from '@/components/work-items/WorkItemsDailyQueue'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
 import { usePortalCrmContext } from '@/hooks/usePortalCrmContext'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
@@ -76,6 +77,7 @@ export function PortalCommercialTasksPage() {
       primaryAction={{ label: 'Abrir Leads', href: '/portal/comercial/leads' }}
       secondaryActions={[{ label: 'Funis', href: '/portal/comercial/funis' }, { label: 'Empresas / Contas', href: '/portal/comercial/contas' }]}
     >
+      {organization?.id ? <WorkItemsDailyQueue organizationId={organization.id} onCompleted={reload} /> : null}
       <section className="rounded-lg border bg-white p-5" aria-labelledby="task-center-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><h2 id="task-center-title" className="text-base font-semibold text-gray-900">Central de tarefas</h2><p className="mt-1 text-sm text-gray-600">Acompanhe a fila operacional e mantenha o próximo passo do lead atualizado.</p></div>
