@@ -181,7 +181,7 @@ it('impede ativar um grafo ciclico e retorna erro recuperavel', async () => {
       organizationId: rig.ids.organizationA,
     })
     expect(activation.statusCode).toBe(422)
-    expect(activation.body.message).toBe('automation_graph_invalid')
+    expect(activation.body.error).toBe('automation_graph_invalid')
     expect((await rig.sql(
       'SELECT status,is_enabled,active_version_id FROM public.automation_flows WHERE id=$1',
       [flowId],

@@ -423,16 +423,16 @@ export async function saveAutomationSimulation(pool: pg.Pool, user: AuthUser, in
        organization_id, flow_id, event_type, sample_payload, matched,
        condition_results, planned_actions, blocked_reasons, created_by
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7::jsonb, $8, $9)
      RETURNING *`,
     [
       input.organizationId,
       input.flowId,
       input.eventType,
-      input.samplePayload,
+      JSON.stringify(input.samplePayload),
       input.matched,
-      input.conditionResults,
-      input.plannedActions,
+      JSON.stringify(input.conditionResults),
+      JSON.stringify(input.plannedActions),
       input.blockedReasons,
       user.id,
     ],
