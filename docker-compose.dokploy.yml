@@ -197,19 +197,19 @@ services:
       KNOWLEDGE_CURATION_MODEL: ${KNOWLEDGE_CURATION_MODEL:-openai/gpt-4.1-mini}
     restart: unless-stopped
 
+x-yux-backup-required-volumes:
+  yux_postgres_data: postgres
+  yux_redis_data: redis-aof
+  yux_materials_data: materials
+  yux_omnichannel_attachments_data: omnichannel-attachments
+  yux_company_knowledge_data: company-knowledge
+
 volumes:
+  # Docker volume labels are immutable. Keep the backup inventory in the
+  # extension above so existing production volumes are reused without a
+  # destructive recreation prompt during a Compose update.
   yux_postgres_data:
-    labels:
-      yux.backup.required: "postgres"
   yux_redis_data:
-    labels:
-      yux.backup.required: "redis-aof"
   yux_materials_data:
-    labels:
-      yux.backup.required: "materials"
   yux_omnichannel_attachments_data:
-    labels:
-      yux.backup.required: "omnichannel-attachments"
   yux_company_knowledge_data:
-    labels:
-      yux.backup.required: "company-knowledge"
