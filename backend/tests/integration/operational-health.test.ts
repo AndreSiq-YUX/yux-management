@@ -33,7 +33,7 @@ it("separa readiness de saúde operacional e não transforma custo desconhecido 
     await rig.sql(
       `INSERT INTO public.provider_usage_events (
          provider_key,model,correlation_id,reported_usage,cost_brl,measurement_status,measurement_reason
-       ) VALUES ('jina_ai','jina-embeddings-v3',$1,'{"tokens":42}',NULL,'unavailable','provider_price_not_reported')`,
+       ) VALUES ('openrouter','qwen/qwen3-embedding-8b',$1,'{"tokens":42}',NULL,'unavailable','provider_price_not_reported')`,
       [randomUUID()],
     );
     await rig.sql(

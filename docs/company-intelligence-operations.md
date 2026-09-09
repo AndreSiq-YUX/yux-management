@@ -38,11 +38,14 @@ Confirme que `0125_company_intelligence_hub.sql` e
 
 Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 
-- `OPENROUTER_API_KEY` no Agent Harness, para curadoria e extração estruturada;
+- `OPENROUTER_API_KEY` na API, nos workers e no Agent Harness, para curadoria,
+  extração estruturada e embeddings;
+- `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
+- `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
+- `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
 - `KNOWLEDGE_CURATION_MODEL` (padrão `openai/gpt-4.1-mini`);
-- `JINA_API_KEY` no backend worker e no Agent Harness;
-- `JINA_EMBEDDING_MODEL` (padrão `jina-embeddings-v3`);
-- `JINA_EMBEDDING_DIMENSIONS` (padrão `1024`);
+- `JINA_API_KEY` no backend worker e no Agent Harness somente para Reader,
+  Search e Grounding, quando essas ferramentas forem usadas;
 - `KNOWLEDGE_CURATION_ENABLED=true`;
 - `KNOWLEDGE_CURATION_MAX_BATCH_CHARS=12000`;
 - `KNOWLEDGE_WEBSITE_MAX_PAGES=30` por padrão, configurável entre 1 e 50;
@@ -93,8 +96,10 @@ governados que podem ser vinculados ao agente estratégico e ao Actual Engine.
   em `extraction_requires_ocr` e não segue silenciosamente.
 - OpenRouter, no Agent Harness, transforma os trechos em `concept_card`,
   `playbook`, `rubric` ou `prompt_rule` com evidência literal verificável.
-- Jina gera os embeddings. A interface impede uma nova ingestão estruturada
+- OpenRouter gera os embeddings com `qwen/qwen3-embedding-8b`. A interface impede uma nova ingestão estruturada
   quando Harness, curadoria ou embeddings não estão configurados.
+- As requisições de embedding recusam rotas de provedores marcados como
+  coletores de dados (`data_collection=deny`).
 - Jobs antigos com status `uploaded`, mas sem `document_id` e `sha256`, guardam
   apenas metadados históricos. O arquivo precisa ser reenviado; não apague o
   registro antigo, pois ele documenta o estado anterior.
@@ -116,9 +121,9 @@ internos em contexto de cliente.
 - A requisição HTTP aceita no máximo 25 MB para acomodar o arquivo codificado em base64.
 - O original é preservado em chunks brutos para auditoria. A publicação normal
   substitui o corpo consumido pelos agentes pelos itens curados e aprovados.
-- A busca híbrida combina similaridade dos embeddings Jina armazenados em
+- A busca híbrida combina similaridade dos embeddings OpenRouter armazenados em
   JSONB, relevância textual e qualidade. Não depende de pgvector e mantém
-  fallback textual se a Jina estiver indisponível.
+  fallback textual se o provedor de embeddings estiver indisponível.
 - Falhas de extração impedem a publicação. Falhas somente de LLM/embedding
   deixam o processamento degradado e exigem confirmação explícita para publicar
   o texto original.

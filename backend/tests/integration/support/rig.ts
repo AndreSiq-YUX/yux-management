@@ -83,6 +83,7 @@ export async function createIntegrationRig(options: { corsOrigin?: string } = {}
     GLOBAL_RATE_LIMIT_MAX: '5000',
     N8N_CRM_WEBHOOK_URL: provider.baseUrl,
     N8N_WEBHOOK_SECRET: 'integration-webhook-secret',
+    OPENROUTER_API_KEY: 'integration-openrouter-api-key',
     JINA_API_KEY: 'integration-jina-api-key',
     KNOWLEDGE_CURATION_ENABLED: 'false',
     KNOWLEDGE_STORAGE_DIR: storageRoot,

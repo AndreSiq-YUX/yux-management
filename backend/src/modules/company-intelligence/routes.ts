@@ -29,7 +29,7 @@ import {
   upsertCompanyProfile,
 } from './repository.js'
 import { extractManualKnowledge } from './text-extraction.js'
-import { embedJinaTexts } from './jina-embeddings.js'
+import { embedOpenRouterTexts } from './openrouter-embeddings.js'
 import {
   auditDraftKnowledge,
   draftKnowledgeAuditQuerySchema,
@@ -156,8 +156,8 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     let embeddingModel: string | undefined
     try {
       const env = loadEnv()
-      if (env.JINA_API_KEY) {
-        const embedded = await embedJinaTexts(env, [parsed.data.queryText], 'retrieval.query')
+      if (env.OPENROUTER_API_KEY) {
+        const embedded = await embedOpenRouterTexts(env, [parsed.data.queryText], 'search_query')
         queryEmbedding = embedded.vectors[0]
         embeddingModel = embedded.model
       }

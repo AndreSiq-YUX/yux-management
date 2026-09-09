@@ -7,7 +7,7 @@ from hashlib import sha256
 from typing import Any
 
 from .harness import Harness
-from .providers import JinaClient, OpenRouterClient
+from .providers import OpenRouterClient
 from .retrieval import StrategyRetrievalService
 from .runtime_store import AgentRuntimeStore
 from .workflow import StrategyWorkflowEngine
@@ -255,7 +255,7 @@ def build_strategy_workflow_engine(
         budget_policies=_active(store.list("agent_budget_policies", limit=500)),
         llm_client=llm_client or OpenRouterClient.from_env(),
     )
-    embedding_service = QueryEmbeddingService(JinaClient.from_env())
+    embedding_service = QueryEmbeddingService(OpenRouterClient.from_env())
     retrieval = StrategyRetrievalService(
         RuntimeStrategyKnowledgeStore(store),
         embedding_service=embedding_service,

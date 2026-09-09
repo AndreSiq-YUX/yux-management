@@ -130,7 +130,7 @@ describe('StrategyPacksPanel upload', () => {
       ...capabilities,
       structuredIngestion: { ...capabilities.structuredIngestion, embeddingConfigured: false, ready: false },
     })
-    expect(container.textContent).toContain('Embeddings Jina não configurados')
+    expect(container.textContent).toContain('Embeddings OpenRouter não configurados')
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enviar e processar'))?.disabled).toBe(true)
   })
 

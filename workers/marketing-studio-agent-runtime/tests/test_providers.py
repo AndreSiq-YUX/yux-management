@@ -37,6 +37,27 @@ class ProviderClientTest(unittest.TestCase):
         with self.assertRaises(ProviderRequestError):
             OpenRouterClient(api_key=None).chat_completion(model="x", messages=[])
 
+    def test_openrouter_embeddings_use_qwen_and_query_input_type(self):
+        calls = []
+
+        def transport(url, headers, payload, method):
+            calls.append((url, headers, payload, method))
+            return {"model": "qwen/qwen3-embedding-8b", "data": [{"index": 0, "embedding": [1.0, 0.0]}], "usage": {"total_tokens": 3}}
+
+        result = OpenRouterClient(api_key="or-key", transport=transport).embed_texts(
+            ["consulta semantica"], input_type="search_query", dimensions=2
+        )
+        self.assertEqual(calls[0][0], "https://openrouter.ai/api/v1/embeddings")
+        self.assertEqual(calls[0][2], {
+            "model": "qwen/qwen3-embedding-8b",
+            "input": ["consulta semantica"],
+            "input_type": "search_query",
+            "dimensions": 2,
+            "encoding_format": "float",
+            "provider": {"data_collection": "deny"},
+        })
+        self.assertEqual(result["vectors"], [[1.0, 0.0]])
+
     def test_jina_reader_search_and_grounding_use_bearer_key(self):
         calls = []
 
@@ -66,20 +87,6 @@ class ProviderClientTest(unittest.TestCase):
         self.assertEqual(calls[2][1]["Authorization"], "Bearer jina-key")
         self.assertEqual(grounding["factuality"], 0.91)
         self.assertEqual(grounding["tokens"], 1234)
-
-    def test_jina_embeddings_uses_retrieval_task(self):
-        calls = []
-
-        def transport(url, headers, payload, method):
-            calls.append((url, headers, payload, method))
-            return {"model": "jina-embeddings-v3", "data": [{"index": 0, "embedding": [1.0, 0.0]}], "usage": {"total_tokens": 3}}
-
-        result = JinaClient(api_key="jina-key", transport=transport).embed_texts(
-            ["consulta semantica"], task="retrieval.query", dimensions=2
-        )
-        self.assertEqual(calls[0][0], "https://api.jina.ai/v1/embeddings")
-        self.assertEqual(calls[0][2]["task"], "retrieval.query")
-        self.assertEqual(result["vectors"], [[1.0, 0.0]])
 
 
 if __name__ == "__main__":

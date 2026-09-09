@@ -15,7 +15,7 @@ it('retoma a curadoria por checkpoint e exige revisão humana com evidência vis
   const env = loadEnv({
     NODE_ENV: 'test', DATABASE_URL: rig.serviceDatabaseUrl('yux_worker'), REDIS_URL: 'redis://localhost:6379',
     SESSION_SECRET: 'curation-recovery-session-secret-32-characters', CORS_ORIGIN: 'http://integration.test',
-    KNOWLEDGE_STORAGE_DIR: rig.storageRoot, KNOWLEDGE_CURATION_ENABLED: 'true', JINA_API_KEY: 'test-jina',
+    KNOWLEDGE_STORAGE_DIR: rig.storageRoot, KNOWLEDGE_CURATION_ENABLED: 'true', OPENROUTER_API_KEY: 'test-openrouter', JINA_API_KEY: 'test-jina',
   })
   try {
     await rig.sql(

@@ -9,7 +9,7 @@ describe('strategy ingestion capabilities', () => {
       KNOWLEDGE_CURATION_ENABLED: true,
       YUX_AGENT_RUNTIME_URL: 'https://runtime.internal',
       YUX_AGENT_RUNTIME_TOKEN: 'runtime-secret',
-      JINA_API_KEY: 'jina-secret',
+      OPENROUTER_API_KEY: 'openrouter-secret',
     } as AppEnv)
 
     expect(capabilities).toEqual({

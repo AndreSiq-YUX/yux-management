@@ -8,7 +8,7 @@ import { fileTypeFromFile } from 'file-type'
 import type pg from 'pg'
 import type { AppEnv } from '../../config/env.js'
 import { extractKnowledgeText } from '../company-intelligence/text-extraction.js'
-import { embedPassages } from '../company-intelligence/jina-embeddings.js'
+import { embedPassages } from '../company-intelligence/openrouter-embeddings.js'
 import { recordProviderUsage } from '../health/provider-usage.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { JOB_LEASE_DURATION_MS, classifyLeaseFailure, createLeaseOwner, startLeaseHeartbeat } from '../../jobs/leases.js'
@@ -65,7 +65,7 @@ export function strategyIngestionCapabilities(env: AppEnv) {
   const maxBytes = effectiveStrategyIngestionLimit(env.STRATEGY_INGESTION_MAX_MB)
   const curationEnabled = env.KNOWLEDGE_CURATION_ENABLED !== false
   const runtimeConfigured = Boolean(env.YUX_AGENT_RUNTIME_URL && env.YUX_AGENT_RUNTIME_TOKEN)
-  const embeddingConfigured = Boolean(env.JINA_API_KEY)
+  const embeddingConfigured = Boolean(env.OPENROUTER_API_KEY)
   return {
     maxBytes,
     maxMb: maxBytes / (1024 * 1024),
@@ -558,7 +558,11 @@ async function embedCheckpointed(
   proposed: Array<{ id: string; body: string }>,
   options: { signal?: AbortSignal; embed?: typeof embedPassages; afterEmbeddingCheckpoint?: () => Promise<void> | void },
 ): Promise<EmbeddingCheckpoint> {
-  const inputHash = createHash('sha256').update(JSON.stringify(proposed)).digest('hex')
+  const inputHash = createHash('sha256').update(JSON.stringify({
+    model: env.OPENROUTER_EMBEDDING_MODEL || 'qwen/qwen3-embedding-8b',
+    dimensions: env.OPENROUTER_EMBEDDING_DIMENSIONS || 1024,
+    proposed,
+  })).digest('hex')
   const checkpoint = (await pool.query<{ embedding_input_hash: string | null; embedding_output: unknown }>(
     `SELECT embedding_input_hash,embedding_output FROM public.yux_strategy_ingestion_jobs WHERE id=$1`,
     [ingestion.id],
@@ -580,7 +584,7 @@ async function embedCheckpointed(
       [ingestion.id, inputHash, JSON.stringify(embedded), embedded.model, embedded.dimensions, embedded.tokens],
     )
     await recordProviderUsage(client, {
-      organizationId: ingestion.organization_id, providerKey: 'jina_ai', model: embedded.model, correlationId: ingestion.id,
+      organizationId: ingestion.organization_id, providerKey: 'openrouter', model: embedded.model, correlationId: ingestion.id,
       reportedUsage: { tokens: embedded.tokens, items: proposed.length, dimensions: embedded.dimensions, operation: 'strategy_embedding' },
       measurementStatus: 'unavailable', measurementReason: 'provider_price_not_reported',
     })

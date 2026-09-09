@@ -19,7 +19,7 @@ import {
 } from '../../modules/company-intelligence/repository.js'
 import { cleanKnowledgeSections } from '../../modules/company-intelligence/knowledge-cleanup.js'
 import { curateKnowledgeWithRuntime, type CuratedKnowledge } from '../../modules/company-intelligence/runtime-curation.js'
-import { embedPassages } from '../../modules/company-intelligence/jina-embeddings.js'
+import { embedPassages } from '../../modules/company-intelligence/openrouter-embeddings.js'
 import { extractCompanyProfileInBatches } from '../../modules/company-intelligence/runtime-curation.js'
 import { discoverCompanyWebsite } from '../../modules/company-intelligence/website-discovery.js'
 import { inspectWebsiteVisualIdentity } from '../../modules/company-intelligence/website-visual-identity.js'
@@ -98,7 +98,7 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
         const embed = dependencies.embed || embedPassages
         const embedded = await embed(effectiveEnv, chunks.map(chunk => chunk.body), undefined, dependencies.signal)
         await recordProviderUsage(pool,{
-          organizationId:document.organizationId,providerKey:'jina_ai',model:embedded.model,correlationId:run.id,
+          organizationId:document.organizationId,providerKey:'openrouter',model:embedded.model,correlationId:run.id,
           reportedUsage:{tokens:embedded.tokens,items:chunks.length,dimensions:embedded.dimensions},
           measurementStatus:'unavailable',measurementReason:'provider_price_not_reported',
         })

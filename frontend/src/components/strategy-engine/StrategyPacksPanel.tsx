@@ -61,7 +61,7 @@ function readinessMessages(capabilities: StrategyIngestionCapabilities) {
   const messages: string[] = []
   if (!capabilities.structuredIngestion.curationEnabled) messages.push('Curadoria estruturada está desativada')
   if (!capabilities.structuredIngestion.runtimeConfigured) messages.push('Harness estratégico não configurado')
-  if (!capabilities.structuredIngestion.embeddingConfigured) messages.push('Embeddings Jina não configurados')
+  if (!capabilities.structuredIngestion.embeddingConfigured) messages.push('Embeddings OpenRouter não configurados')
   return messages
 }
 
