@@ -14,7 +14,10 @@
 
 ## Dokploy Variables
 
-- `DATABASE_URL`
+- `MIGRATOR_DATABASE_URL` (uso exclusivo do serviço one-shot de migrations)
+- `YUX_API_DATABASE_URL` (login `yux_api`, sem superuser e sem bypass de RLS)
+- `YUX_WORKER_DATABASE_URL` (login `yux_worker`, sem superuser e sem bypass de RLS)
+- `YUX_RUNTIME_DATABASE_URL` (login `yux_runtime`, sem superuser e sem bypass de RLS)
 - `POSTGRES_PASSWORD`
 - `REDIS_URL=redis://yux-redis:6379`
 - `SESSION_SECRET`
@@ -29,13 +32,17 @@
 ## Deploy
 
 1. Rode `.\scripts\run-release-checks.ps1 -SkipInstall`.
-2. Em ambiente com Docker, rode `docker compose -f docker-compose.dokploy.yml config`.
-3. Faça deploy no Dokploy.
-4. Rode `npm run migrate:prod` dentro de `yux-backend-api`.
-5. Crie o admin inicial com `ADMIN_EMAIL=admin@yux.com.br ADMIN_PASSWORD='<senha>' npm run create-admin:prod`.
-6. Valide `/health`, `/api/health`, `/api/ready` e `/health` do runtime.
+2. Confirme no secret store do Dokploy as quatro URLs de banco acima. Nenhum serviço normal possui fallback para `DATABASE_URL`.
+3. Em ambiente com Docker, rode `docker compose -f docker-compose.dokploy.yml config`.
+4. Faça deploy no Dokploy. `yux-backend-migrate` aplica migrations antes da API/workers e `yux-volume-permissions` prepara os volumes para UID/GID `1000:1000`.
+5. Confirme que os dois serviços one-shot terminaram com código zero. Não execute migrations dentro de `yux-backend-api`.
+6. Crie o admin inicial, quando necessário, dentro da API com `ADMIN_EMAIL=admin@yux.com.br ADMIN_PASSWORD='<senha>' npm run create-admin:prod`.
+7. Valide `/health`, `/api/health`, `/api/ready`, `/api/health/operational` e `/health` do runtime.
+8. Confira `current_user`, `rolsuper=false` e `rolbypassrls=false` separadamente na API, worker e runtime.
 
 ## Backup
+
+> A configuração e o teste de restauração estão adiados no lote de correções de 2026-09-09 por decisão do proprietário. Este adiamento não altera o requisito antes do aceite final.
 
 Configure backup diario do Postgres antes de trafego real.
 

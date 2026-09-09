@@ -47,8 +47,13 @@ import yaml
 compose = yaml.safe_load(Path("docker-compose.dokploy.yml").read_text(encoding="utf-8"))
 required = {
     "yux-frontend",
+    "yux-backend-migrate",
+    "yux-volume-permissions",
     "yux-backend-api",
     "yux-backend-worker",
+    "yux-backend-worker-ingestion",
+    "yux-backend-worker-external",
+    "yux-backend-worker-maintenance",
     "yux-postgres",
     "yux-redis",
     "yux-agent-harness-runtime",
@@ -59,9 +64,29 @@ if missing:
     raise SystemExit(f"Missing services: {missing}")
 
 volumes = set((compose or {}).get("volumes", {}))
-for volume in ("yux_postgres_data", "yux_redis_data", "yux_materials_data", "yux_omnichannel_attachments_data"):
+for volume in (
+    "yux_postgres_data",
+    "yux_redis_data",
+    "yux_materials_data",
+    "yux_omnichannel_attachments_data",
+    "yux_company_knowledge_data",
+):
     if volume not in volumes:
         raise SystemExit(f"Missing volume: {volume}")
+
+api_environment = compose["services"]["yux-backend-api"].get("environment", {})
+if "MIGRATOR_DATABASE_URL" in api_environment:
+    raise SystemExit("Migrator credentials must not be exposed to yux-backend-api")
+
+for service_name in (
+    "yux-backend-api",
+    "yux-backend-worker",
+    "yux-agent-harness-runtime",
+):
+    depends_on = compose["services"][service_name].get("depends_on", {})
+    for prerequisite in ("yux-backend-migrate", "yux-volume-permissions"):
+        if depends_on.get(prerequisite, {}).get("condition") != "service_completed_successfully":
+            raise SystemExit(f"{service_name} must wait for {prerequisite}")
 '@
   Push-Location $repoRoot
   try {

@@ -19,9 +19,15 @@ it("separa readiness de saúde operacional e não transforma custo desconhecido 
     max: 2,
   });
   try {
+    const replacedWorkerId = randomUUID();
     await rig.sql(
       `INSERT INTO public.worker_process_heartbeats (instance_id,queue_classes,started_at,last_seen_at,metadata)
        VALUES ($1,ARRAY['interactive'],NOW()-INTERVAL '10 minutes',NOW()-INTERVAL '2 minutes','{}')`,
+      [replacedWorkerId],
+    );
+    await rig.sql(
+      `INSERT INTO public.worker_process_heartbeats (instance_id,queue_classes,started_at,last_seen_at,metadata)
+       VALUES ($1,ARRAY['interactive','ingestion','external','maintenance'],NOW()-INTERVAL '1 minute',NOW(),'{}')`,
       [randomUUID()],
     );
     await rig.sql(
@@ -100,8 +106,12 @@ it("separa readiness de saúde operacional e não transforma custo desconhecido 
       outbox: { abandonedLeases: 1, terminalFailures: 1 },
     });
     expect(snapshot.body.workers).toEqual(
-      expect.arrayContaining([expect.objectContaining({ status: "stale" })]),
+      expect.arrayContaining([expect.objectContaining({ status: "ok" })]),
     );
+    expect(snapshot.body.workers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ instanceId: replacedWorkerId })]),
+    );
+    expect(snapshot.body.workerHistory).toMatchObject({ replacedHeartbeatCount: 1 });
     expect(snapshot.body.providers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

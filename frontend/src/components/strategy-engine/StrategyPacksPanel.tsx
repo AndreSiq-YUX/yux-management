@@ -87,6 +87,7 @@ export function StrategyPacksPanel({
   const packBindings = useMemo(() => bindings.filter(binding => !selectedPack || binding.packId === selectedPack.id), [bindings, selectedPack])
   const pendingItems = packItems.filter(item => item.status === 'proposed' || item.status === 'review')
   const approvedItems = packItems.filter(item => item.status === 'approved')
+  const publishedPacks = packs.filter(pack => Boolean(pack.currentReleaseId))
 
   const [packForm, setPackForm] = useState({
     packKey: '',
@@ -222,9 +223,10 @@ export function StrategyPacksPanel({
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Metric label="Packs" value={packs.length} detail="Pacotes de doutrina e RAG" />
-        <Metric label="Itens aprovados" value={approvedItems.length} detail="Entram em runtime" />
+        <Metric label="Itens aprovados" value={approvedItems.length} detail="Aguardam publicação" />
+        <Metric label="Packs publicados" value={publishedPacks.length} detail="Release atual elegível" />
         <Metric label="Em revisao" value={pendingItems.length} detail="Aguardam curadoria humana" />
         <Metric label="Bindings" value={packBindings.length} detail="Agente, modulo e workspace" />
       </div>

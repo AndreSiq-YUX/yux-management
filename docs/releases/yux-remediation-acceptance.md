@@ -62,3 +62,11 @@ desligada com sua alternativa registrada, sem ser apresentada como concluída.
 Até lá, o manifesto permanece `blocked`, as organizações ficam vazias e as
 flags de efeitos novos permanecem desligadas. Este registro não autoriza acesso
 à produção, consumo pago ou contato externo.
+
+## Adendo de correções pós-implantação — 2026-09-09
+
+- Implementados localmente: isolamento do migrador; credenciais obrigatórias por serviço; preparação dos volumes; falha recuperável na ingestão; gate do Supervisor de Missões; rotas canônicas do Marketing Studio; seleção do heartbeat atual; diagnóstico operacional no Admin; e distinção entre aprovação e publicação estratégica.
+- Verificação técnica local: testes focados, type-checks e builds aprovados. A integração persistente exige PostgreSQL/Redis e será executada na CI.
+- Implantação: pendente de commit, push, execução verde da CI, provisionamento das credenciais por serviço no Dokploy e novo deploy observado.
+- Backup/restauração: adiado por decisão explícita do proprietário; permanece `not_run` e não será apresentado como gate cumprido.
+- Recuperação do livro ausente: depende do reenvio autorizado dos bytes e não faz parte da alteração de código.

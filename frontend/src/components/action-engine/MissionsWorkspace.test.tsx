@@ -70,6 +70,16 @@ describe('MissionsWorkspace', () => {
     expect(document.body.textContent).not.toContain('Pode explicar do seu jeito')
     act(() => root.unmount())
   })
+
+  it('explains when mission creation is disabled globally without suggesting a permission workaround', async () => {
+    vi.spyOn(actionEngineService, 'listMissions').mockResolvedValue([])
+    vi.spyOn(actionEngineService, 'listMissionConversations').mockResolvedValue([activeConversation()])
+    const { root } = await renderWorkspace({ mode: 'unavailable', reasonCode: 'mission_supervisor_disabled' })
+    expect(document.body.textContent).toContain('Supervisor de Missões não está habilitado')
+    expect(document.body.textContent).not.toContain('solicitar a criação a um administrador do workspace')
+    expect(document.body.textContent).toContain('Campanha para Londrina')
+    act(() => root.unmount())
+  })
 })
 
 async function renderWorkspace(missionCreation: { mode: 'conversation' | 'form' | 'unavailable'; reasonCode: string | null } = { mode: 'conversation', reasonCode: null }) { const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container); await act(async () => { root.render(<MemoryRouter><MissionsWorkspace organizationId="00000000-0000-4000-8000-000000000001" contractId="00000000-0000-4000-8000-000000000002" canWrite missionCreation={missionCreation} detailHref={id => `/missions/${id}`} conversationHref={id => `/missions/conversations/${id}`} /></MemoryRouter>); await flush(); await flush() }); return { root } }

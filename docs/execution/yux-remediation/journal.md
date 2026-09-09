@@ -423,3 +423,13 @@ frontend tests: PASS, 528 PASS
 - Rollout: o runbook central separa acesso/SQL, conhecimento e UX/efeitos; exige backup restaurado, readers antes de writers, workspace interno antes de uma organização piloto, 24 horas com amostras das rotinas e retorno sem downgrade destrutivo.
 - Aceite persistente atual: execução GitHub Actions `34068006799`, commit `50004cb`, conclusão `success` nos oito jobs. Backend, integração persistente, frontend, Agent Runtime, J1–J7 e as três imagens/SBOMs passaram. A execução anterior da preparação revelou uma falha transitória no instalador Syft somente na matriz frontend; build e scan haviam passado. A CI tenta esse instalador uma única vez adicional e continua falhando se a repetição não concluir. As jornadas continuam seriais e sem retry automático.
 - Bloqueios preservados: release commit/digests, restauração recente, alvo/matriz de tenants, imagens implantadas, sandbox oficial, T22 e três testes moderados continuam ausentes. O manifesto permanece `blocked`, com allowlist vazia e sem autoridade para produção, gasto ou contato externo.
+
+## T33 — Correções da verificação pós-implantação
+
+- Estado: implementação local concluída; implantação e evidência de produção pendentes.
+- Escopo: achados V01, V02, V03, V04, V06 e V07 do relatório de 2026-09-07. Backup/restauração (V05) foi explicitamente adiado pelo proprietário e continua bloqueando o aceite final.
+- Deploy: migrations saíram do processo da API para um serviço one-shot; API, workers e Harness exigem URLs próprias sem fallback privilegiado. Um segundo one-shot prepara os três volumes de aplicação para UID/GID `1000:1000`, e os processos normais só iniciam após os dois concluírem com sucesso.
+- Recuperação: falha ao criar a quarentena de ingestão agora percorre o tratamento protegido, persiste `status=failed` e `failure_class=recoverable`, evitando upload preso.
+- Produto: criação de missão respeita `MISSION_SUPERVISOR_ENABLED`; os cinco indicadores do Marketing Studio apontam para `/portal/marketing/studio`; e a interface diferencia item aprovado de pack efetivamente publicado pelo `current_release_id`.
+- Observabilidade: somente o heartbeat mais recente por classe de fila compõe o estado atual, classes ausentes são degradadas e registros substituídos ficam contabilizados como histórico. A página administrativa passou a exibir workers, filas, outbox e Harness com estado indisponível explícito.
+- Verificação local: testes focados, type-checks e builds de backend/frontend aprovados; Compose validado por parser YAML porque Docker não está instalado neste host. Integrações PostgreSQL/Redis ficam para a CI e a validação pós-deploy.

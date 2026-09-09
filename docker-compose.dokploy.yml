@@ -12,6 +12,44 @@ services:
       - yux-backend-api
     restart: unless-stopped
 
+  yux-backend-migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dokploy
+    command: ["node", "dist/scripts/apply-migrations.js"]
+    environment:
+      NODE_ENV: production
+      MIGRATOR_DATABASE_URL: ${MIGRATOR_DATABASE_URL:?MIGRATOR_DATABASE_URL is required}
+      YUX_DATABASE_SERVICE_ROLE: migrator
+    depends_on:
+      yux-postgres:
+        condition: service_healthy
+    restart: "no"
+
+  yux-volume-permissions:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dokploy
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p
+        /app/storage/materials
+        /app/storage/omnichannel-attachments
+        /app/storage/company-knowledge/.quarantine
+        /app/storage/company-knowledge/strategy
+        && chown -R 1000:1000
+        /app/storage/materials
+        /app/storage/omnichannel-attachments
+        /app/storage/company-knowledge
+    volumes:
+      - yux_materials_data:/app/storage/materials
+      - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
+      - yux_company_knowledge_data:/app/storage/company-knowledge
+    restart: "no"
+
   yux-backend-api:
     build:
       context: .
@@ -21,8 +59,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: ${YUX_API_DATABASE_URL:-${DATABASE_URL}}
-      MIGRATOR_DATABASE_URL: ${MIGRATOR_DATABASE_URL:-${DATABASE_URL}}
+      DATABASE_URL: ${YUX_API_DATABASE_URL:?YUX_API_DATABASE_URL is required}
       YUX_DATABASE_SERVICE_ROLE: api
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
@@ -75,9 +112,16 @@ services:
       - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
       - yux_company_knowledge_data:/app/storage/company-knowledge
     depends_on:
-      - yux-postgres
-      - yux-redis
-      - yux-agent-harness-runtime
+      yux-postgres:
+        condition: service_healthy
+      yux-redis:
+        condition: service_started
+      yux-agent-harness-runtime:
+        condition: service_started
+      yux-backend-migrate:
+        condition: service_completed_successfully
+      yux-volume-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   yux-backend-worker: &yux-worker-service
@@ -91,7 +135,7 @@ services:
       YUX_INTERACTIVE_CONCURRENCY: ${YUX_INTERACTIVE_CONCURRENCY:-2}
       YUX_DRAIN_LEGACY_QUEUE: ${YUX_DRAIN_LEGACY_QUEUE:-true}
       YUX_SCHEDULER_ENABLED: "false"
-      DATABASE_URL: ${YUX_WORKER_DATABASE_URL:-${DATABASE_URL}}
+      DATABASE_URL: ${YUX_WORKER_DATABASE_URL:?YUX_WORKER_DATABASE_URL is required}
       YUX_DATABASE_SERVICE_ROLE: worker
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@yux-redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
@@ -132,9 +176,16 @@ services:
       - yux_omnichannel_attachments_data:/app/storage/omnichannel-attachments
       - yux_company_knowledge_data:/app/storage/company-knowledge
     depends_on:
-      - yux-postgres
-      - yux-redis
-      - yux-agent-harness-runtime
+      yux-postgres:
+        condition: service_healthy
+      yux-redis:
+        condition: service_started
+      yux-agent-harness-runtime:
+        condition: service_started
+      yux-backend-migrate:
+        condition: service_completed_successfully
+      yux-volume-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   yux-backend-worker-ingestion:
@@ -172,6 +223,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - yux_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
 
   yux-redis:
@@ -189,12 +246,19 @@ services:
       - "8080"
     environment:
       YUX_AGENT_RUNTIME_TOKEN: ${YUX_AGENT_RUNTIME_TOKEN:?YUX_AGENT_RUNTIME_TOKEN is required}
-      DATABASE_URL: ${YUX_RUNTIME_DATABASE_URL:-${DATABASE_URL}}
+      DATABASE_URL: ${YUX_RUNTIME_DATABASE_URL:?YUX_RUNTIME_DATABASE_URL is required}
       YUX_RELEASE_COMMIT: ${YUX_RELEASE_COMMIT:-unrecorded}
       YUX_RELEASE_MANIFEST_SHA256: ${YUX_RELEASE_MANIFEST_SHA256:-unrecorded}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       JINA_API_KEY: ${JINA_API_KEY:-}
       KNOWLEDGE_CURATION_MODEL: ${KNOWLEDGE_CURATION_MODEL:-openai/gpt-4.1-mini}
+    depends_on:
+      yux-postgres:
+        condition: service_healthy
+      yux-backend-migrate:
+        condition: service_completed_successfully
+      yux-volume-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 x-yux-backup-required-volumes:

@@ -144,6 +144,63 @@ export interface PlatformAdminHealthSummary {
   recentAuditEventCount: number
 }
 
+export interface OperationalHealthSnapshot {
+  status: 'ok' | 'degraded'
+  measuredAt: string
+  windows: {
+    workerHeartbeatSeconds: number
+    workerStaleAfterSeconds: number
+    interactiveMaxWaitTargetMs: number
+  }
+  workers: Array<{
+    instanceId: string
+    queueClasses: string[]
+    status: 'ok' | 'stale'
+    startedAt: string | null
+    lastSeenAt: string | null
+    metadata: Record<string, unknown>
+  }>
+  workerHistory: {
+    heartbeatRowCount: number
+    replacedHeartbeatCount: number
+  }
+  queues: Array<{
+    queueClass: string
+    name: string
+    status: 'ok' | 'unavailable'
+    counts: Record<string, number> | null
+    oldestPendingAgeMs: number | null
+    reason: string | null
+  }>
+  outbox: {
+    pendingCount: number
+    abandonedLeases: number
+    terminalFailures: number
+    configurationFailures: number
+    oldestPendingAgeSeconds: number | null
+  }
+  harness: {
+    status: 'ok' | 'failed' | 'unavailable'
+    reason: string | null
+    checkedAt: string | null
+  }
+  providers: Array<{
+    provider: string
+    configured: boolean
+    source: string
+    verifiedAt: string | null
+  }>
+  usage: Array<{
+    provider: string
+    model: string | null
+    reportedUsage: Record<string, unknown>
+    costBrl: string | null
+    measurementStatus: string
+    reason: string | null
+    measuredAt: string | null
+  }>
+}
+
 export interface AdminHubSummary {
   clientCount: number
   activeContractCount: number

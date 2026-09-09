@@ -5,6 +5,7 @@ import type {
   ClientModuleLimitSource,
   EmailProviderConnection,
   EmailProviderConnectionStatus,
+  OperationalHealthSnapshot,
   PlatformAdminAuditEvent,
   PlatformLimitStatus,
   PlatformProviderConnection,
@@ -300,6 +301,10 @@ export function buildSmtp2GoSubaccountPayload(input: Smtp2GoSubaccountInput) {
 }
 
 export class AdminPlatformService {
+  async getOperationalHealth(): Promise<OperationalHealthSnapshot> {
+    return apiRequest<OperationalHealthSnapshot>('/health/operational')
+  }
+
   async getProviderConnections(): Promise<PlatformProviderConnection[]> {
     return apiRequest<PlatformProviderConnection[]>('/platform/admin/provider-connections')
   }

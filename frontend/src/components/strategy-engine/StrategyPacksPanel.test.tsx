@@ -104,6 +104,19 @@ describe('StrategyPacksPanel upload', () => {
     expect(onReviewItem).toHaveBeenCalledWith(item.id, 'approved', 'Evidência conferida')
   })
 
+  it('separa itens aprovados de packs efetivamente publicados no runtime', async () => {
+    const item: StrategyPackItem = {
+      id: '10000000-0000-4000-8000-000000000012', packId: pack.id, itemType: 'concept_card',
+      title: 'Item aguardando publicação', summary: 'Resumo', body: 'Regra', profileKeys: [], stageTags: [],
+      retrievalTags: [], status: 'approved', priority: 100, payload: {}, createdAt: pack.createdAt, updatedAt: pack.updatedAt,
+    }
+    await renderPanel(vi.fn(), [item])
+
+    expect(container.textContent).toContain('Itens aprovados1Aguardam publicação')
+    expect(container.textContent).toContain('Packs publicados0Release atual elegível')
+    expect(container.textContent).not.toContain('Entram em runtime')
+  })
+
   it('permite editar a proposta mantendo-a pendente de aprovação', async () => {
     const onReviewItem = vi.fn(async () => undefined)
     const item: StrategyPackItem = {

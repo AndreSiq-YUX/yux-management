@@ -9,6 +9,7 @@ import {
   buildStrategyProfilePayload,
   mapStrategyChatMessage,
   mapStrategyChatSession,
+  mapStrategyPack,
 } from './strategyEngineService'
 
 describe('strategyEngineService payload builders', () => {
@@ -172,5 +173,16 @@ describe('strategyEngineService payload builders', () => {
       modelName: 'openai/gpt-4.1-mini',
       toolResults: [{ tool: 'crm_leads', count: 2 }],
     })
+  })
+
+  it('maps the current publication release without treating pack status as runtime eligibility', () => {
+    expect(mapStrategyPack({
+      id: 'pack-1',
+      pack_key: 'sales-playbook',
+      name: 'Sales Playbook',
+      current_release_id: 'release-4',
+      created_at: '2026-09-09T10:00:00.000Z',
+      updated_at: '2026-09-09T11:00:00.000Z',
+    }).currentReleaseId).toBe('release-4')
   })
 })

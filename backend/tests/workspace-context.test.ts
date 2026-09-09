@@ -14,6 +14,7 @@ const contractId = '00000000-0000-4000-8000-000000000020'
 const env = {
   NODE_ENV: 'test' as const, PORT: 4000, DATABASE_URL: 'postgresql://localhost/test', REDIS_URL: 'redis://localhost:6379',
   SESSION_COOKIE_NAME: 'yux_session', SESSION_SECRET: 'test-secret-value-with-at-least-32-chars', CORS_ORIGIN: 'http://localhost:3000',
+  MISSION_SUPERVISOR_ENABLED: true,
   MISSION_CONVERSATIONS_ENABLED: true, MISSION_CONVERSATIONS_TENANT_ALLOWLIST: internalOrganizationId,
 }
 
@@ -163,6 +164,9 @@ describe('WorkspaceContextV1', () => {
     })
     expect(resolveMissionCreation({ ...env, MISSION_CONVERSATIONS_ENABLED: false }, internalOrganizationId, true, true)).toEqual({
       mode: 'form', reasonCode: 'mission_conversation_disabled',
+    })
+    expect(resolveMissionCreation({ ...env, MISSION_SUPERVISOR_ENABLED: false }, internalOrganizationId, true, true)).toEqual({
+      mode: 'unavailable', reasonCode: 'mission_supervisor_disabled',
     })
     expect(resolveMissionCreation(env, internalOrganizationId, true, false).mode).toBe('unavailable')
   })

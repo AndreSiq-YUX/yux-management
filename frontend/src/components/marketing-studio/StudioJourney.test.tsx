@@ -36,9 +36,9 @@ const emptySummary: StudioJourneySummary = {
   window: { since: '2026-08-01T00:00:00.000Z', until: '2026-09-01T00:00:00.000Z' },
   counts: { activeFlows: 0, generatedAssets: 0, pendingReviews: 0, scheduledAssets: 0, failedPublications: 0 },
   links: {
-    activeFlows: '/portal/marketing-studio#flows', generatedAssets: '/portal/marketing-studio#contents',
-    pendingReviews: '/portal/marketing-studio#reviews', scheduledAssets: '/portal/marketing-studio#calendar',
-    failedPublications: '/portal/marketing-studio#publishing',
+    activeFlows: '/portal/marketing/studio#flows', generatedAssets: '/portal/marketing/studio#contents',
+    pendingReviews: '/portal/marketing/studio#reviews', scheduledAssets: '/portal/marketing/studio#calendar',
+    failedPublications: '/portal/marketing/studio#publishing',
   },
   campaigns: [], contents: [], workflows: [], publishingRuns: [], calendarItems: [], connections: [],
 }
@@ -59,6 +59,13 @@ describe('StudioJourney', () => {
     expect(document.body.textContent).toContain('Conteúdos no período0')
     expect(document.body.textContent).not.toContain('Sincronizado')
     expect(document.body.textContent).not.toContain('Editor de nós')
+    expect([...document.querySelectorAll('a')].map(link => link.getAttribute('href'))).toEqual(expect.arrayContaining([
+      '/portal/marketing/studio#flows',
+      '/portal/marketing/studio#contents',
+      '/portal/marketing/studio#reviews',
+      '/portal/marketing/studio#calendar',
+      '/portal/marketing/studio#publishing',
+    ]))
 
     const planButton = [...document.querySelectorAll('button')].find(button => button.textContent === 'Planejar campanha')!
     await act(async () => { planButton.click(); await flush() })

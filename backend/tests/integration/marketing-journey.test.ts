@@ -18,6 +18,13 @@ it('percorre planejamento, refresh, revisão, nova versão e publicação contro
     const empty = await rig.request('client_admin_A', 'GET', summaryUrl)
     expect(empty.statusCode).toBe(200)
     expect(empty.body.counts).toMatchObject({ activeFlows: 0, generatedAssets: 0 })
+    expect(empty.body.links).toEqual({
+      activeFlows: '/portal/marketing/studio#flows',
+      generatedAssets: '/portal/marketing/studio#contents',
+      pendingReviews: '/portal/marketing/studio#reviews',
+      scheduledAssets: '/portal/marketing/studio#calendar',
+      failedPublications: '/portal/marketing/studio#publishing',
+    })
 
     const planKey = `studio-plan-${randomUUID()}`
     const plan = await rig.request('client_admin_A', 'POST', '/api/marketing-studio/journey/plans', {

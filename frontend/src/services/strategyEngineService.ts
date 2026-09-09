@@ -282,6 +282,7 @@ export function mapAgentShadowExperiment(row: DbRow): AgentShadowExperiment {
 export function mapStrategyPack(row: DbRow): StrategyPack {
   return {
     id: stringValue(row.id),
+    currentReleaseId: stringValue(row.current_release_id) || undefined,
     packKey: stringValue(row.pack_key),
     name: stringValue(row.name),
     description: stringValue(row.description),

@@ -328,6 +328,7 @@ export interface StrategyAgentBinding {
 
 export interface StrategyPack {
   id: string
+  currentReleaseId?: string
   packKey: string
   name: string
   description: string

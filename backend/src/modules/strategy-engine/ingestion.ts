@@ -149,8 +149,8 @@ export async function uploadStrategyIngestion(pool: pg.Pool, input: {
   const root = strategyStorageRoot(input.storageRoot)
   const quarantine = path.join(root, '.quarantine')
   const tempPath = path.join(quarantine, `${claimed.id}-${randomUUID()}.part`)
-  await mkdir(quarantine, { recursive: true })
   try {
+    await mkdir(quarantine, { recursive: true })
     const streamed = await streamToTemporaryFile(input.payload, tempPath, Math.min(input.maxBytes, Number(claimed.byte_size)))
     if (streamed.byteSize !== Number(claimed.byte_size)) throw domainError(400, 'strategy_file_size_mismatch')
     if (input.expectedSha256 && input.expectedSha256.toLowerCase() !== streamed.sha256) throw domainError(400, 'strategy_file_hash_mismatch')

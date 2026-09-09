@@ -7,6 +7,7 @@ import { adminPlatformService } from '@/services/adminPlatformService'
 import type {
   PlatformAdminAuditEvent,
   PlatformLimitStatus,
+  OperationalHealthSnapshot,
   PlatformProviderConnection,
   PlatformUsageCounter,
 } from '@/types/adminPlatform'
@@ -106,10 +107,66 @@ function LimitStatusBadge({ status }: { status: PlatformLimitStatus }) {
   )
 }
 
+function OperationalHealthSection({ snapshot, unavailable }: { snapshot: OperationalHealthSnapshot | null; unavailable: boolean }) {
+  if (unavailable || !snapshot) {
+    return (
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4" aria-label="Operação em tempo real">
+        <h2 className="text-base font-semibold text-amber-950">Operação em tempo real</h2>
+        <p className="mt-2 text-sm text-amber-800">Diagnóstico operacional indisponível. Os indicadores administrativos abaixo continuam válidos.</p>
+      </section>
+    )
+  }
+
+  const healthyWorkers = snapshot.workers.filter(worker => worker.status === 'ok').length
+  const healthyQueues = snapshot.queues.filter(queue => queue.status === 'ok').length
+  const replaced = snapshot.workerHistory.replacedHeartbeatCount
+  const statusClassName = snapshot.status === 'ok'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : 'border-amber-200 bg-amber-50 text-amber-700'
+
+  return (
+    <section className="rounded-lg border bg-white p-4" aria-label="Operação em tempo real">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Operação em tempo real</h2>
+          <p className="mt-1 text-sm text-gray-600">Workers atuais, filas, entrega de eventos e execução do Harness.</p>
+        </div>
+        <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase ${statusClassName}`}>
+          {snapshot.status === 'ok' ? 'Saudável' : 'Degradado'}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-md border border-gray-100 bg-gray-50 p-3">
+          <h3 className="text-sm font-semibold text-gray-900">Workers atuais</h3>
+          <p className="mt-2 text-xl font-semibold text-gray-950">{healthyWorkers}/{snapshot.workers.length}</p>
+          <p className="mt-1 text-xs text-gray-500">{replaced} {replaced === 1 ? 'substituído' : 'substituídos'} no histórico</p>
+        </article>
+        <article className="rounded-md border border-gray-100 bg-gray-50 p-3">
+          <h3 className="text-sm font-semibold text-gray-900">Filas BullMQ</h3>
+          <p className="mt-2 text-xl font-semibold text-gray-950">{healthyQueues}/{snapshot.queues.length}</p>
+          <p className="mt-1 text-xs text-gray-500">filas acessíveis agora</p>
+        </article>
+        <article className="rounded-md border border-gray-100 bg-gray-50 p-3">
+          <h3 className="text-sm font-semibold text-gray-900">Outbox</h3>
+          <p className="mt-2 text-xl font-semibold text-gray-950">{snapshot.outbox.pendingCount}</p>
+          <p className="mt-1 text-xs text-gray-500">pendentes · {snapshot.outbox.abandonedLeases} leases abandonados</p>
+        </article>
+        <article className="rounded-md border border-gray-100 bg-gray-50 p-3">
+          <h3 className="text-sm font-semibold text-gray-900">Harness</h3>
+          <p className="mt-2 text-xl font-semibold capitalize text-gray-950">{snapshot.harness.status}</p>
+          <p className="mt-1 text-xs text-gray-500">{snapshot.harness.reason ?? `checado em ${formatDate(snapshot.harness.checkedAt)}`}</p>
+        </article>
+      </div>
+    </section>
+  )
+}
+
 export function AdminHealthPage() {
   const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
   const [usageCounters, setUsageCounters] = useState<PlatformUsageCounter[]>([])
   const [auditEvents, setAuditEvents] = useState<PlatformAdminAuditEvent[]>([])
+  const [operationalHealth, setOperationalHealth] = useState<OperationalHealthSnapshot | null>(null)
+  const [operationalUnavailable, setOperationalUnavailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -119,18 +176,24 @@ export function AdminHealthPage() {
     async function loadHealth() {
       setLoading(true)
       setError(null)
+      setOperationalUnavailable(false)
 
       try {
-        const [loadedProviders, loadedUsageCounters, loadedAuditEvents] = await Promise.all([
+        const [loadedProviders, loadedUsageCounters, loadedAuditEvents, operationalResult] = await Promise.all([
           adminPlatformService.getProviderConnections(),
           adminPlatformService.getUsageCounters(),
           adminPlatformService.getAuditEvents(50),
+          adminPlatformService.getOperationalHealth()
+            .then(value => ({ value, unavailable: false }))
+            .catch(() => ({ value: null, unavailable: true })),
         ])
 
         if (active) {
           setProviders(loadedProviders)
           setUsageCounters(loadedUsageCounters)
           setAuditEvents(loadedAuditEvents)
+          setOperationalHealth(operationalResult.value)
+          setOperationalUnavailable(operationalResult.unavailable)
         }
       } catch (error) {
         console.error('Error loading admin health:', error)
@@ -213,6 +276,8 @@ export function AdminHealthPage() {
           icon={Mail}
         />
       </div>
+
+      {!loading ? <OperationalHealthSection snapshot={operationalHealth} unavailable={operationalUnavailable} /> : null}
 
       {!loading && !error && (
         <>

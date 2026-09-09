@@ -4,10 +4,88 @@ import { QUEUE_NAMES, createQueue, createRedisConnection, type JobQueueClass } f
 import { getOutboxOperationalSnapshot } from '../events/repository.js'
 import { resolveEffectiveProviderCredential } from '../platform/provider-credentials.js'
 
+export type WorkerHeartbeatRow = {
+  instance_id: string
+  queue_classes: string[]
+  started_at: Date | string
+  last_seen_at: Date | string
+  metadata: Record<string, unknown>
+}
+
+export type CurrentWorkerHeartbeat = {
+  instanceId: string
+  queueClasses: JobQueueClass[]
+  status: 'ok' | 'stale'
+  startedAt: string | null
+  lastSeenAt: string | null
+  metadata: Record<string, unknown>
+}
+
+const WORKER_STALE_AFTER_MS = 90_000
+
+export function selectCurrentWorkerHeartbeats(
+  rows: WorkerHeartbeatRow[],
+  measuredAt: Date,
+  staleAfterMs = WORKER_STALE_AFTER_MS,
+) {
+  const queueClasses = Object.keys(QUEUE_NAMES) as JobQueueClass[]
+  const latestByQueueClass = new Map<JobQueueClass, WorkerHeartbeatRow>()
+
+  for (const row of rows) {
+    for (const queueClass of row.queue_classes) {
+      if (!queueClasses.includes(queueClass as JobQueueClass)) continue
+      const typedQueueClass = queueClass as JobQueueClass
+      const current = latestByQueueClass.get(typedQueueClass)
+      if (!current || new Date(row.last_seen_at).getTime() > new Date(current.last_seen_at).getTime()) {
+        latestByQueueClass.set(typedQueueClass, row)
+      }
+    }
+  }
+
+  const currentInstances = new Map<string, { row: WorkerHeartbeatRow; queueClasses: JobQueueClass[] }>()
+  for (const queueClass of queueClasses) {
+    const row = latestByQueueClass.get(queueClass)
+    if (!row) continue
+    const instance = currentInstances.get(row.instance_id) ?? { row, queueClasses: [] }
+    instance.queueClasses.push(queueClass)
+    currentInstances.set(row.instance_id, instance)
+  }
+
+  const workers: CurrentWorkerHeartbeat[] = [...currentInstances.entries()].map(([instanceId, current]) => {
+    const lastSeenAt = new Date(current.row.last_seen_at)
+    return {
+      instanceId,
+      queueClasses: current.queueClasses,
+      status: measuredAt.getTime() - lastSeenAt.getTime() > staleAfterMs ? 'stale' : 'ok',
+      startedAt: new Date(current.row.started_at).toISOString(),
+      lastSeenAt: lastSeenAt.toISOString(),
+      metadata: current.row.metadata,
+    }
+  })
+
+  for (const queueClass of queueClasses) {
+    if (latestByQueueClass.has(queueClass)) continue
+    workers.push({
+      instanceId: `missing:${queueClass}`,
+      queueClasses: [queueClass],
+      status: 'stale',
+      startedAt: null,
+      lastSeenAt: null,
+      metadata: { reason: 'worker_queue_class_missing' },
+    })
+  }
+
+  return {
+    workers,
+    heartbeatRowCount: rows.length,
+    replacedHeartbeatCount: Math.max(0, rows.length - currentInstances.size),
+  }
+}
+
 export async function buildOperationalSnapshot(pool: pg.Pool, env: AppEnv, fetchImpl: typeof fetch = fetch) {
   const measuredAt = new Date()
   const [heartbeats, outbox, queues, harness, usage] = await Promise.all([
-    pool.query<{ instance_id:string;queue_classes:string[];started_at:Date|string;last_seen_at:Date|string;metadata:Record<string,unknown> }>(
+    pool.query<WorkerHeartbeatRow>(
       `SELECT instance_id,queue_classes,started_at,last_seen_at,metadata FROM public.worker_process_heartbeats ORDER BY last_seen_at DESC`,
     ),
     getOutboxOperationalSnapshot(pool),
@@ -18,18 +96,8 @@ export async function buildOperationalSnapshot(pool: pg.Pool, env: AppEnv, fetch
          FROM public.provider_usage_events ORDER BY provider_key,created_at DESC`,
     ),
   ])
-  const workers = heartbeats.rows.map(row => {
-    const lastSeenAt = new Date(row.last_seen_at)
-    return {
-      instanceId: row.instance_id,
-      queueClasses: row.queue_classes,
-      status: measuredAt.getTime() - lastSeenAt.getTime() > 90_000 ? 'stale' : 'ok',
-      startedAt: new Date(row.started_at).toISOString(),
-      lastSeenAt: lastSeenAt.toISOString(),
-      metadata: row.metadata,
-    }
-  })
-  if (!workers.length) workers.push({ instanceId:'none',queueClasses:[],status:'stale',startedAt:measuredAt.toISOString(),lastSeenAt:measuredAt.toISOString(),metadata:{} })
+  const workerSelection = selectCurrentWorkerHeartbeats(heartbeats.rows, measuredAt)
+  const workers = workerSelection.workers
   const [jina,smtp] = await Promise.all([
     resolveEffectiveProviderCredential(pool,env,'jina_ai'),
     resolveEffectiveProviderCredential(pool,env,'smtp2go'),
@@ -47,6 +115,10 @@ export async function buildOperationalSnapshot(pool: pg.Pool, env: AppEnv, fetch
     measuredAt: measuredAt.toISOString(),
     windows: { workerHeartbeatSeconds: 30, workerStaleAfterSeconds: 90, interactiveMaxWaitTargetMs: 5_000 },
     workers,
+    workerHistory: {
+      heartbeatRowCount: workerSelection.heartbeatRowCount,
+      replacedHeartbeatCount: workerSelection.replacedHeartbeatCount,
+    },
     queues,
     outbox,
     harness,

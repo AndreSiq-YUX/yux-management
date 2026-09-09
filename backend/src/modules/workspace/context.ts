@@ -94,13 +94,14 @@ export async function resolveWorkspaceContext(
 }
 
 export function resolveMissionCreation(
-  config: Pick<AppEnv, 'MISSION_CONVERSATIONS_ENABLED' | 'MISSION_CONVERSATIONS_TENANT_ALLOWLIST'>,
+  config: Pick<AppEnv, 'MISSION_SUPERVISOR_ENABLED' | 'MISSION_CONVERSATIONS_ENABLED' | 'MISSION_CONVERSATIONS_TENANT_ALLOWLIST'>,
   organizationId: string,
   canWrite: boolean,
   actionEngineAvailable: boolean,
 ): WorkspaceContextV1['missionCreation'] {
   if (!actionEngineAvailable) return { mode: 'unavailable', reasonCode: 'action_engine_not_entitled' }
   if (!canWrite) return { mode: 'unavailable', reasonCode: 'mission_write_not_permitted' }
+  if (config.MISSION_SUPERVISOR_ENABLED === false) return { mode: 'unavailable', reasonCode: 'mission_supervisor_disabled' }
   if (isMissionConversationRolloutEnabled(config, organizationId)) return { mode: 'conversation', reasonCode: null }
   const allowlist = new Set((config.MISSION_CONVERSATIONS_TENANT_ALLOWLIST ?? '').split(',').map(item => item.trim()).filter(Boolean))
   return {
