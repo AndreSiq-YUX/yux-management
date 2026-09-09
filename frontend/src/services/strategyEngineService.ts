@@ -25,6 +25,7 @@ import type {
   StrategyModelRoute,
   StrategyModelRouteInput,
   StrategyOutcomeInput,
+  StrategyIngestionCapabilities,
   StrategyIngestionJob,
   StrategyIngestionJobInput,
   StrategyIngestionUploadInput,
@@ -315,6 +316,9 @@ export function mapStrategyPackItem(row: DbRow): StrategyPackItem {
     stageTags: stringArray(row.stage_tags),
     retrievalTags: stringArray(row.retrieval_tags),
     sourceReference: stringValue(row.source_reference) || undefined,
+    sourceDocumentId: stringValue(row.source_document_id) || undefined,
+    sourceOrigin: stringValue(row.source_origin) || undefined,
+    contentHash: stringValue(row.content_hash) || undefined,
     status: stringValue(row.status, 'proposed'),
     priority: numberOrDefault(row.priority, 100),
     confidence: row.confidence === undefined || row.confidence === null ? undefined : numberOrDefault(row.confidence, 0),
@@ -732,6 +736,14 @@ export const strategyEngineService = {
     if (filters.status) query = query.eq('status', filters.status)
     const data = await requireData<DbRow[]>(query)
     return data.map(mapStrategyIngestionJob)
+  },
+
+  getStrategyIngestionCapabilities() {
+    return apiRequest<StrategyIngestionCapabilities>('/strategy-engine/ingestion-capabilities')
+  },
+
+  retryStrategyIngestion(ingestionId: string) {
+    return apiRequest(`/strategy-engine/ingestions/${ingestionId}/retry`, { method: 'POST' })
   },
 
   async createStrategyIngestionJob(input: StrategyIngestionUploadInput) {

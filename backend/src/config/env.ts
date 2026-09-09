@@ -91,7 +91,7 @@ const envSchema = z.object({
   OMNICHANNEL_ATTACHMENTS_DIR: z.string().optional(),
   OMNICHANNEL_ATTACHMENT_MAX_MB: z.coerce.number().int().positive().optional(),
   KNOWLEDGE_STORAGE_DIR: z.string().optional(),
-  STRATEGY_INGESTION_MAX_MB: z.coerce.number().int().min(1).max(50).optional(),
+  STRATEGY_INGESTION_MAX_MB: z.coerce.number().int().min(1).max(256).optional(),
 }).superRefine((env, context) => {
   if (env.NODE_ENV === 'production' && !env.PROVIDER_SECRET_ENCRYPTION_KEY_B64) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['PROVIDER_SECRET_ENCRYPTION_KEY_B64'], message: 'PROVIDER_SECRET_ENCRYPTION_KEY_B64 is required in production' })

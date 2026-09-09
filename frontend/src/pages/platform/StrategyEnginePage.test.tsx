@@ -32,6 +32,12 @@ vi.mock('@/services/strategyEngineService', () => ({
     getStrategyPackItems: vi.fn(async () => []),
     getStrategyPackBindings: vi.fn(async () => []),
     getStrategyIngestionJobs: vi.fn(async () => []),
+    getStrategyIngestionCapabilities: vi.fn(async () => ({
+      maxBytes: 150 * 1024 * 1024,
+      maxMb: 150,
+      acceptedMimeTypes: ['application/pdf'],
+      structuredIngestion: { curationEnabled: true, runtimeConfigured: true, embeddingConfigured: true, ready: true },
+    })),
     runStrategyAdminChat: vi.fn(),
     updateAgentProfile: vi.fn(),
     upsertModelRoute: vi.fn(),

@@ -10,6 +10,8 @@ import {
   createStrategyIngestion,
   effectiveStrategyIngestionLimit,
   getStrategyIngestion,
+  retryStrategyIngestion,
+  strategyIngestionCapabilities,
   uploadStrategyIngestion,
 } from "./ingestion.js";
 import { createBullMqJobId } from "../../jobs/queue.js";
@@ -109,10 +111,20 @@ async function getAuthenticatedUser(
 }
 
 export async function registerStrategyEngineRoutes(app: FastifyInstance) {
+  const ingestionMaxBytes = effectiveStrategyIngestionLimit(
+    app.config.STRATEGY_INGESTION_MAX_MB,
+  );
   app.addContentTypeParser(
     "application/octet-stream",
     (_request, payload, done) => done(null, payload),
   );
+
+  app.get("/ingestion-capabilities", async (request, reply) => {
+    requireInternalRole(request);
+    const user = await getAuthenticatedUser(request, reply);
+    if (!user) return reply;
+    return strategyIngestionCapabilities(app.config);
+  });
 
   app.post("/packs/:packId/ingestions", async (request, reply) => {
     const context = requireInternalRole(request);
@@ -122,9 +134,6 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     const body = ingestionBody.safeParse(request.body);
     if (!params.success || !body.success)
       return reply.code(400).send({ error: "invalid_strategy_ingestion" });
-    const maxBytes = effectiveStrategyIngestionLimit(
-      app.config.STRATEGY_INGESTION_MAX_MB,
-    );
     const ingestion = await runWithDatabaseRequestContext(
       {
         role: context.role,
@@ -137,7 +146,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
           ...body.data,
           uploadedBy: user.id,
           organizationIds: context.organizationIds,
-          maxBytes,
+          maxBytes: ingestionMaxBytes,
         }),
     );
     return reply.code(201).send(ingestion);
@@ -145,7 +154,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
 
   app.put(
     "/ingestions/:ingestionId/file",
-    { bodyLimit: 50 * 1024 * 1024 },
+    { bodyLimit: ingestionMaxBytes },
     async (request, reply) => {
       const context = requireInternalRole(request);
       const user = await getAuthenticatedUser(request, reply);
@@ -172,9 +181,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
             payload: request.body as Readable,
             expectedSha256,
             storageRoot: app.config.KNOWLEDGE_STORAGE_DIR,
-            maxBytes: effectiveStrategyIngestionLimit(
-              app.config.STRATEGY_INGESTION_MAX_MB,
-            ),
+            maxBytes: ingestionMaxBytes,
           }),
       );
       await app.jobQueue
@@ -218,6 +225,29 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
         .catch(() => undefined);
     }
     return ingestion;
+  });
+
+  app.post("/ingestions/:ingestionId/retry", async (request, reply) => {
+    const context = requireInternalRole(request);
+    const user = await getAuthenticatedUser(request, reply);
+    if (!user) return reply;
+    const params = ingestionParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid_strategy_ingestion" });
+    const ingestion = await runWithDatabaseRequestContext(
+      { role: context.role, organizationIds: context.organizationIds, serviceRole: "api" },
+      () => retryStrategyIngestion(app.pg, params.data.ingestionId),
+    );
+    if (!ingestion.documentId) return reply.code(409).send({ error: "strategy_ingestion_reupload_required" });
+    await app.jobQueue.add(
+      "strategy.indexKnowledge",
+      {
+        ingestionId: ingestion.ingestionId,
+        documentId: ingestion.documentId,
+        organizationId: ingestion.organizationId,
+      },
+      { jobId: createBullMqJobId("strategy-retry", ingestion.ingestionId, ingestion.attempt) },
+    );
+    return reply.code(202).send(ingestion);
   });
 
   app.patch("/pack-items/:itemId/review", async (request, reply) => {

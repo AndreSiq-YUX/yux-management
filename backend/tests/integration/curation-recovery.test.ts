@@ -73,7 +73,12 @@ it('retoma a curadoria por checkpoint e exige revisão humana com evidência vis
 
     await runWorker(workerPool, () => handleStrategyIndexKnowledge(workerPool, env, jobData, { curate, embed, afterEmbeddingCheckpoint }))
     const completed = await rig.request('yux_admin', 'GET', `/api/strategy-engine/ingestions/${created.body.ingestionId}`)
-    expect(completed.body).toMatchObject({ status: 'completed', stage: 'review', attempt: 3, proposedCounts: { items: 1 } })
+    expect(completed.body).toMatchObject({
+      status: 'completed',
+      stage: 'review',
+      attempt: 3,
+      proposedCounts: { items: 1, curationBatchesCompleted: 1, curationBatchesTotal: 1 },
+    })
     const proposals = await rig.sql(`SELECT id,status,payload FROM public.yux_strategy_pack_items WHERE pack_id=$1 AND source_document_id=$2`, [packId, uploaded.body.documentId])
     expect(proposals.rows).toHaveLength(1)
     expect(proposals.rows[0].status).toBe('proposed')

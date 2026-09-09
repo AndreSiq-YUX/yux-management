@@ -78,6 +78,38 @@ Arquivar é recuperável e substitui exclusão destrutiva. Um arquivo duplicado 
 8. Provoque uma expressão cadastrada em **O que não falar**: a resposta deve ficar bloqueada, sem despacho automático, e deve haver handoff.
 9. Repita a consulta em outra organização e confirme que nenhum conteúdo da YUX aparece.
 
+## Livros privados nos Strategy Packs
+
+Livros e doutrinas usados pelo Harness principal entram por **Admin YUX > YUX
+Strategy Engine > Strategy Packs**. Esse fluxo é diferente da Base de
+Conhecimento de uma organização cliente: ele produz artefatos estratégicos
+governados que podem ser vinculados ao agente estratégico e ao Actual Engine.
+
+- O limite padrão é 150 MiB e pode ser configurado por
+  `STRATEGY_INGESTION_MAX_MB` até o teto de 256 MiB.
+- O upload é binário e transmitido em streaming; o original é guardado no
+  volume persistente com SHA-256 antes de entrar na fila.
+- PDF com camada de texto mantém localizadores por página. PDF sem texto entra
+  em `extraction_requires_ocr` e não segue silenciosamente.
+- OpenRouter, no Agent Harness, transforma os trechos em `concept_card`,
+  `playbook`, `rubric` ou `prompt_rule` com evidência literal verificável.
+- Jina gera os embeddings. A interface impede uma nova ingestão estruturada
+  quando Harness, curadoria ou embeddings não estão configurados.
+- Jobs antigos com status `uploaded`, mas sem `document_id` e `sha256`, guardam
+  apenas metadados históricos. O arquivo precisa ser reenviado; não apague o
+  registro antigo, pois ele documenta o estado anterior.
+- Itens `seed_example` não entram na publicação governada. Somente itens
+  aprovados com documento, hash, embedding e evidência válida são elegíveis.
+- A primeira publicação de material privado deve ser `internal_only`, com
+  perfis permitidos e bloqueados explícitos.
+
+Para validar um livro, acompanhe o job até `completed/review`, confira propostas
+distribuídas entre o começo, meio e fim da obra e registre o motivo de cada
+aprovação ou rejeição. Depois da publicação, execute consultas distintivas de
+diagnóstico, desenho de funil, recuperação de clientes e estratégia de oferta;
+o trace deve apontar o release atual e os cards respaldados, sem expor trechos
+internos em contexto de cliente.
+
 ## Limites e recuperação
 
 - O limite padrão é 10 MB por arquivo, respeitando a configuração global/da organização existente.

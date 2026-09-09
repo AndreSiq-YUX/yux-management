@@ -21,13 +21,15 @@ import {
   type StrategyCurationSection,
 } from './curation.js'
 
-export const STRATEGY_INGESTION_HARD_LIMIT_BYTES = 50 * 1024 * 1024
-const ALLOWED_MIME_TYPES = new Set([
+export const STRATEGY_INGESTION_DEFAULT_LIMIT_BYTES = 150 * 1024 * 1024
+export const STRATEGY_INGESTION_HARD_LIMIT_BYTES = 256 * 1024 * 1024
+export const STRATEGY_INGESTION_ALLOWED_MIME_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'text/plain',
   'text/markdown',
-])
+] as const
+const ALLOWED_MIME_TYPES = new Set<string>(STRATEGY_INGESTION_ALLOWED_MIME_TYPES)
 
 type IngestionRow = {
   id: string
@@ -55,8 +57,26 @@ type IngestionRow = {
 }
 
 export function effectiveStrategyIngestionLimit(maxMb?: number) {
-  const configured = Number.isFinite(maxMb) ? Math.max(1, Math.floor(maxMb!)) * 1024 * 1024 : STRATEGY_INGESTION_HARD_LIMIT_BYTES
+  const configured = Number.isFinite(maxMb) ? Math.max(1, Math.floor(maxMb!)) * 1024 * 1024 : STRATEGY_INGESTION_DEFAULT_LIMIT_BYTES
   return Math.min(STRATEGY_INGESTION_HARD_LIMIT_BYTES, configured)
+}
+
+export function strategyIngestionCapabilities(env: AppEnv) {
+  const maxBytes = effectiveStrategyIngestionLimit(env.STRATEGY_INGESTION_MAX_MB)
+  const curationEnabled = env.KNOWLEDGE_CURATION_ENABLED !== false
+  const runtimeConfigured = Boolean(env.YUX_AGENT_RUNTIME_URL && env.YUX_AGENT_RUNTIME_TOKEN)
+  const embeddingConfigured = Boolean(env.JINA_API_KEY)
+  return {
+    maxBytes,
+    maxMb: maxBytes / (1024 * 1024),
+    acceptedMimeTypes: [...STRATEGY_INGESTION_ALLOWED_MIME_TYPES],
+    structuredIngestion: {
+      curationEnabled,
+      runtimeConfigured,
+      embeddingConfigured,
+      ready: curationEnabled && runtimeConfigured && embeddingConfigured,
+    },
+  }
 }
 
 export async function createStrategyIngestion(pool: pg.Pool, input: {
@@ -121,6 +141,23 @@ export async function getStrategyIngestion(pool: Pick<pg.Pool, 'query'>, ingesti
     [ingestionId],
   )).rows[0]
   return row ? ingestionView(row) : null
+}
+
+export async function retryStrategyIngestion(pool: Pick<pg.Pool, 'query'>, ingestionId: string) {
+  const retried = (await pool.query<IngestionRow>(
+    `UPDATE public.yux_strategy_ingestion_jobs
+     SET status='queued',error_message=NULL,failure_class=NULL,lease_owner=NULL,lease_until=NULL,updated_at=NOW()
+     WHERE id=$1 AND document_id IS NOT NULL AND sha256 IS NOT NULL AND storage_path IS NOT NULL
+       AND status IN ('failed','curation_unavailable')
+       AND (lease_until IS NULL OR lease_until < NOW())
+     RETURNING *`,
+    [ingestionId],
+  )).rows[0]
+  if (retried) return ingestionView(retried)
+  const existing = await getStrategyIngestion(pool, ingestionId)
+  if (!existing) throw domainError(404, 'strategy_ingestion_not_found')
+  if (!existing.documentId || !existing.sha256) throw domainError(409, 'strategy_ingestion_reupload_required')
+  throw domainError(409, 'strategy_ingestion_not_retryable')
 }
 
 export async function uploadStrategyIngestion(pool: pg.Pool, input: {
@@ -328,7 +365,7 @@ export async function handleStrategyIndexKnowledge(
     }
     const completed = await pool.query(
       `UPDATE public.yux_strategy_ingestion_jobs
-       SET status='completed',current_step='review',proposed_counts=$4::jsonb,completed_at=NOW(),
+       SET status='completed',current_step='review',proposed_counts=proposed_counts || $4::jsonb,completed_at=NOW(),
            lease_owner=NULL,lease_until=NULL,error_message=NULL,failure_class=NULL,
            curation_prompt_version=$5,curation_provider=$6,curation_model=$7
        WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
@@ -438,9 +475,11 @@ async function curateCheckpointedBatches(
   sections: StrategyCurationSection[],
   options: { signal?: AbortSignal; curate?: typeof curateStrategyWithRuntime },
 ) {
-  const batches = batchStrategySections(sections)
+  const batches = batchStrategySections(sections, env.KNOWLEDGE_CURATION_MAX_BATCH_CHARS || 12_000)
   const results: StrategyCurationResult[] = []
   const curate = options.curate || curateStrategyWithRuntime
+  let completedBatches = 0
+  await updateCurationProgress(pool, ingestion.id, completedBatches, batches.length)
   for (const [batchIndex, batch] of batches.entries()) {
     if (options.signal?.aborted) throw options.signal.reason
     const inputHash = createHash('sha256').update(JSON.stringify(batch)).digest('hex')
@@ -457,6 +496,8 @@ async function curateCheckpointedBatches(
     )).rows[0]!
     if (saved.status === 'completed' && saved.input_hash === inputHash && saved.output) {
       results.push(saved.output as StrategyCurationResult)
+      completedBatches += 1
+      await updateCurationProgress(pool, ingestion.id, completedBatches, batches.length)
       continue
     }
     try {
@@ -482,6 +523,8 @@ async function curateCheckpointedBatches(
         throw error
       } finally { client.release() }
       results.push(result)
+      completedBatches += 1
+      await updateCurationProgress(pool, ingestion.id, completedBatches, batches.length)
     } catch (error) {
       await pool.query(
         `UPDATE public.yux_strategy_curation_batches SET status='failed',error_message=$4 WHERE ingestion_id=$1 AND batch_index=$2 AND input_hash=$3`,
@@ -495,6 +538,15 @@ async function curateCheckpointedBatches(
     [ingestion.id, createHash('sha256').update(JSON.stringify(sections)).digest('hex'), JSON.stringify(results)],
   )
   return results
+}
+
+async function updateCurationProgress(pool: Pick<pg.Pool, 'query'>, ingestionId: string, completed: number, total: number) {
+  await pool.query(
+    `UPDATE public.yux_strategy_ingestion_jobs
+     SET current_step='curation',proposed_counts=proposed_counts || $2::jsonb,updated_at=NOW()
+     WHERE id=$1`,
+    [ingestionId, JSON.stringify({ curationBatchesCompleted: completed, curationBatchesTotal: total })],
+  )
 }
 
 type EmbeddingCheckpoint = Awaited<ReturnType<typeof embedPassages>>

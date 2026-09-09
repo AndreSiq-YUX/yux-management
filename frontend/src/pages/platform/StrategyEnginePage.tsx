@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Activity, Bot, BrainCircuit, Database, GitBranch, MessageCircle, MessageSquare, PackageCheck, Route, Workflow } from 'lucide-react'
 import { AgentHandoffPanel } from '@/components/strategy-engine/AgentHandoffPanel'
@@ -23,6 +23,7 @@ import type {
   StrategyChatSession,
   StrategyConceptCard,
   StrategyConversationAssistant,
+  StrategyIngestionCapabilities,
   StrategyIngestionJob,
   StrategyKnowledgeStats,
   StrategyLlmProvider,
@@ -57,6 +58,7 @@ type StrategyAdminData = {
   strategyPackItems: StrategyPackItem[]
   strategyPackBindings: StrategyPackBinding[]
   ingestionJobs: StrategyIngestionJob[]
+  ingestionCapabilities: StrategyIngestionCapabilities
   knowledgeStats: StrategyKnowledgeStats
   agentRuns: AgentExecutionRun[]
   autonomyPolicies: AgentAutonomyPolicy[]
@@ -86,6 +88,12 @@ const emptyData: StrategyAdminData = {
   strategyPackItems: [],
   strategyPackBindings: [],
   ingestionJobs: [],
+  ingestionCapabilities: {
+    maxBytes: 50 * 1024 * 1024,
+    maxMb: 50,
+    acceptedMimeTypes: [],
+    structuredIngestion: { curationEnabled: false, runtimeConfigured: false, embeddingConfigured: false, ready: false },
+  },
   knowledgeStats: { documents: 0, chunks: 0, assets: 0, cards: 0, retrievals: 0 },
   agentRuns: [],
   autonomyPolicies: [],
@@ -139,6 +147,7 @@ export function StrategyEnginePage() {
         strategyPackItems,
         strategyPackBindings,
         ingestionJobs,
+        ingestionCapabilities,
         knowledgeStats,
         agentRuns,
         autonomyPolicies,
@@ -165,6 +174,7 @@ export function StrategyEnginePage() {
         strategyEngineService.getStrategyPackItems(),
         strategyEngineService.getStrategyPackBindings(),
         strategyEngineService.getStrategyIngestionJobs(),
+        strategyEngineService.getStrategyIngestionCapabilities().catch(() => emptyData.ingestionCapabilities),
         strategyEngineService.getKnowledgeStats(),
         strategyEngineService.getAgentExecutionRuns(),
         strategyEngineService.getAgentAutonomyPolicies(),
@@ -192,6 +202,7 @@ export function StrategyEnginePage() {
         strategyPackItems,
         strategyPackBindings,
         ingestionJobs,
+        ingestionCapabilities,
         knowledgeStats,
         agentRuns,
         autonomyPolicies,
@@ -217,6 +228,26 @@ export function StrategyEnginePage() {
     const tab = new URLSearchParams(location.search).get('tab')
     if (tab && tabs.some(item => item.key === tab)) setActiveTab(tab)
   }, [location.search])
+
+  const refreshIngestionState = useCallback(async () => {
+    const [ingestionJobs, strategyPackItems, strategyPacks, knowledgeStats] = await Promise.all([
+      strategyEngineService.getStrategyIngestionJobs(),
+      strategyEngineService.getStrategyPackItems(),
+      strategyEngineService.getStrategyPacks(),
+      strategyEngineService.getKnowledgeStats(),
+    ])
+    setData(current => ({ ...current, ingestionJobs, strategyPackItems, strategyPacks, knowledgeStats }))
+  }, [])
+
+  const hasActiveIngestion = data.ingestionJobs.some(job => ['awaiting_upload', 'uploading', 'queued', 'extracting'].includes(job.status))
+
+  useEffect(() => {
+    if (activeTab !== 'packs' || !hasActiveIngestion) return
+    const interval = window.setInterval(() => {
+      void refreshIngestionState().catch(error => console.error('Error refreshing strategy ingestion:', error))
+    }, 3_000)
+    return () => window.clearInterval(interval)
+  }, [activeTab, hasActiveIngestion, refreshIngestionState])
 
   async function reloadAfter(action: () => Promise<unknown>) {
     await action()
@@ -327,6 +358,7 @@ export function StrategyEnginePage() {
           packs={data.strategyPacks}
           items={data.strategyPackItems}
           jobs={data.ingestionJobs}
+          ingestionCapabilities={data.ingestionCapabilities}
           bindings={data.strategyPackBindings}
           profiles={data.profiles}
           organizations={data.organizations}
@@ -334,7 +366,12 @@ export function StrategyEnginePage() {
           onSaveItem={input => reloadAfter(() => strategyEngineService.upsertStrategyPackItem(input))}
           onReviewItem={(id, status, reason, changes) => reloadAfter(() => strategyEngineService.reviewStrategyPackItem(id, status, reason, changes))}
           onPublishPack={(packId, input) => reloadAfterResult(() => strategyEngineService.publishStrategyPack(packId, input))}
-          onCreateJob={input => reloadAfter(() => strategyEngineService.createStrategyIngestionJob(input))}
+          onCreateJob={input => strategyEngineService.createStrategyIngestionJob(input)}
+          onRefreshJobs={refreshIngestionState}
+          onRetryJob={async ingestionId => {
+            await strategyEngineService.retryStrategyIngestion(ingestionId)
+            await refreshIngestionState()
+          }}
           onSaveBinding={input => reloadAfter(() => strategyEngineService.upsertStrategyPackBinding(input))}
         />
       )}

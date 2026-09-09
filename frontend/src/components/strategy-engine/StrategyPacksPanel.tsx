@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type {
   StrategyAgentProfile,
+  StrategyIngestionCapabilities,
   StrategyIngestionJob,
   StrategyIngestionUploadInput,
   StrategyOrganization,
@@ -52,10 +53,36 @@ function Pill({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${statusTone(value)}`}>{value}</span>
 }
 
+function isLegacyMetadataOnly(job: StrategyIngestionJob) {
+  return job.status === 'uploaded' && !job.documentId && !job.sha256
+}
+
+function readinessMessages(capabilities: StrategyIngestionCapabilities) {
+  const messages: string[] = []
+  if (!capabilities.structuredIngestion.curationEnabled) messages.push('Curadoria estruturada está desativada')
+  if (!capabilities.structuredIngestion.runtimeConfigured) messages.push('Harness estratégico não configurado')
+  if (!capabilities.structuredIngestion.embeddingConfigured) messages.push('Embeddings Jina não configurados')
+  return messages
+}
+
+function jobStageLabel(job: StrategyIngestionJob) {
+  if (isLegacyMetadataOnly(job)) return 'Aguardando reenvio do arquivo real'
+  const labels: Record<string, string> = {
+    upload: 'Recebendo e validando o arquivo',
+    extraction: 'Extraindo texto e páginas',
+    curation: 'Criando artefatos estratégicos com evidência',
+    embedding: 'Gerando embeddings para busca',
+    review: 'Pronto para revisão humana',
+    ocr: 'O PDF precisa de OCR antes da curadoria',
+  }
+  return labels[job.currentStep] || job.currentStep
+}
+
 export function StrategyPacksPanel({
   packs,
   items,
   jobs,
+  ingestionCapabilities,
   bindings,
   profiles,
   organizations,
@@ -64,11 +91,14 @@ export function StrategyPacksPanel({
   onReviewItem,
   onPublishPack,
   onCreateJob,
+  onRefreshJobs,
+  onRetryJob,
   onSaveBinding,
 }: {
   packs: StrategyPack[]
   items: StrategyPackItem[]
   jobs: StrategyIngestionJob[]
+  ingestionCapabilities: StrategyIngestionCapabilities
   bindings: StrategyPackBinding[]
   profiles: StrategyAgentProfile[]
   organizations: StrategyOrganization[]
@@ -77,6 +107,8 @@ export function StrategyPacksPanel({
   onReviewItem: (id: string, status: 'approved' | 'rejected' | 'proposed', reason: string, changes?: StrategyPackItemReviewChanges) => Promise<unknown>
   onPublishPack: (packId: string, input: StrategyPackPublicationInput) => Promise<StrategyPackPublicationResult>
   onCreateJob: (input: StrategyIngestionUploadInput) => Promise<unknown>
+  onRefreshJobs: () => Promise<void>
+  onRetryJob: (ingestionId: string) => Promise<void>
   onSaveBinding: (input: StrategyPackBindingInput) => Promise<unknown>
 }) {
   const yuxWorkspace = organizations.find(organization => organization.isInternalGrowthWorkspace)
@@ -87,7 +119,10 @@ export function StrategyPacksPanel({
   const packBindings = useMemo(() => bindings.filter(binding => !selectedPack || binding.packId === selectedPack.id), [bindings, selectedPack])
   const pendingItems = packItems.filter(item => item.status === 'proposed' || item.status === 'review')
   const approvedItems = packItems.filter(item => item.status === 'approved')
+  const publishableApprovedItems = approvedItems.filter(item => item.sourceDocumentId && item.contentHash && item.sourceOrigin !== 'seed_example')
+  const legacyApprovedItems = approvedItems.length - publishableApprovedItems.length
   const publishedPacks = packs.filter(pack => Boolean(pack.currentReleaseId))
+  const missingReadiness = readinessMessages(ingestionCapabilities)
 
   const [packForm, setPackForm] = useState({
     packKey: '',
@@ -140,6 +175,14 @@ export function StrategyPacksPanel({
   async function submitJob(event: FormEvent) {
     event.preventDefault()
     if (!selectedPack || !jobForm.file || uploading) return
+    if (jobForm.file.size > ingestionCapabilities.maxBytes) {
+      setUploadError(`O arquivo excede o limite de ${ingestionCapabilities.maxMb} MB.`)
+      return
+    }
+    if (!ingestionCapabilities.structuredIngestion.ready) {
+      setUploadError(`A ingestão estruturada ainda não está pronta: ${missingReadiness.join('; ')}.`)
+      return
+    }
     const form = event.currentTarget
     setUploading(true)
     setUploadError('')
@@ -150,6 +193,7 @@ export function StrategyPacksPanel({
         sourceKind: jobForm.sourceKind,
         file: jobForm.file,
       })
+      await onRefreshJobs()
       setJobForm({ sourceName: '', sourceKind: 'private_book', file: null })
       const input = form.querySelector<HTMLInputElement>('input[type="file"]')
       if (input) input.value = ''
@@ -158,6 +202,15 @@ export function StrategyPacksPanel({
     } finally {
       setUploading(false)
     }
+  }
+
+  function selectUploadFile(file: File | null) {
+    setJobForm(current => ({ ...current, file }))
+    if (file && file.size > ingestionCapabilities.maxBytes) {
+      setUploadError(`O arquivo excede o limite de ${ingestionCapabilities.maxMb} MB.`)
+      return
+    }
+    setUploadError('')
   }
 
   async function submitItem(event: FormEvent) {
@@ -225,7 +278,7 @@ export function StrategyPacksPanel({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Metric label="Packs" value={packs.length} detail="Pacotes de doutrina e RAG" />
-        <Metric label="Itens aprovados" value={approvedItems.length} detail="Aguardam publicação" />
+        <Metric label="Aprovados com fonte" value={publishableApprovedItems.length} detail="Elegíveis para publicação" />
         <Metric label="Packs publicados" value={publishedPacks.length} detail="Release atual elegível" />
         <Metric label="Em revisao" value={pendingItems.length} detail="Aguardam curadoria humana" />
         <Metric label="Bindings" value={packBindings.length} detail="Agente, modulo e workspace" />
@@ -290,7 +343,7 @@ export function StrategyPacksPanel({
                     <span className="rounded-full bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-200">{selectedPack.visibility}</span>
                   </div>
                 </div>
-                <Button variant="outline" onClick={() => setPublicationOpen(true)} disabled={!approvedItems.length}>
+                <Button variant="outline" onClick={() => setPublicationOpen(true)} disabled={!publishableApprovedItems.length}>
                   Publicar pack
                 </Button>
               </div>
@@ -319,12 +372,25 @@ export function StrategyPacksPanel({
                 <Input
                   type="file"
                   accept=".pdf,.txt,.md,.docx,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={event => setJobForm({ ...jobForm, file: event.target.files?.[0] || null })}
+                  onChange={event => selectUploadFile(event.target.files?.[0] || null)}
                   required
                 />
-                <p className="text-xs text-gray-500">PDF, TXT, Markdown ou DOCX, até 50 MB.</p>
+                <p className="text-xs text-gray-500">PDF, TXT, Markdown ou DOCX, até {ingestionCapabilities.maxMb} MB.</p>
+                {missingReadiness.length ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                    {missingReadiness.join(' · ')}
+                  </p>
+                ) : (
+                  <p className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+                    Curadoria, harness e embeddings estão configurados.
+                  </p>
+                )}
                 {uploadError ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">{uploadError}</p> : null}
-                <Button type="submit" className="w-full" disabled={!selectedPack || !jobForm.file || uploading}>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!selectedPack || !jobForm.file || uploading || !ingestionCapabilities.structuredIngestion.ready || Boolean(jobForm.file && jobForm.file.size > ingestionCapabilities.maxBytes)}
+                >
                   {uploading ? 'Enviando arquivo…' : 'Enviar e processar'}
                 </Button>
               </div>
@@ -464,11 +530,29 @@ export function StrategyPacksPanel({
                     <Pill value={job.status} />
                   </div>
                   <p className="mt-2 text-xs text-gray-500">Etapa atual: {job.currentStep}</p>
+                  <p className="mt-1 text-xs text-gray-600">{jobStageLabel(job)}</p>
                   <p className="mt-1 text-xs text-gray-500">Tentativa: {job.attempt}</p>
+                  {isLegacyMetadataOnly(job) ? (
+                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                      Reenvio necessário: este registro antigo guardou somente o nome do arquivo.
+                    </p>
+                  ) : null}
+                  {Number(job.proposedCounts.chunks || 0) > 0 ? <p className="mt-1 text-xs text-gray-500">Trechos extraídos: {Number(job.proposedCounts.chunks)}</p> : null}
+                  {Number(job.proposedCounts.items || 0) > 0 ? <p className="mt-1 text-xs text-gray-500">Artefatos propostos: {Number(job.proposedCounts.items)}</p> : null}
+                  {Number(job.proposedCounts.curationBatchesTotal || 0) > 0 ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Lotes de curadoria: {Number(job.proposedCounts.curationBatchesCompleted || 0)} de {Number(job.proposedCounts.curationBatchesTotal)}
+                    </p>
+                  ) : null}
                   {job.recoverableError ? (
                     <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
                       {job.recoverableError.message}{job.recoverableError.recoverable ? ' — o processamento pode ser retomado.' : ''}
                     </p>
+                  ) : null}
+                  {job.documentId && (job.status === 'failed' || job.status === 'curation_unavailable') ? (
+                    <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => void onRetryJob(job.id)}>
+                      Retomar processamento
+                    </Button>
                   ) : null}
                 </article>
               )}
@@ -479,10 +563,15 @@ export function StrategyPacksPanel({
       {selectedPack && publicationOpen ? (
         <StrategyPublicationDialog
           pack={selectedPack}
-          approvedItems={approvedItems}
+          approvedItems={publishableApprovedItems}
           onClose={() => setPublicationOpen(false)}
           onPublish={input => onPublishPack(selectedPack.id, input)}
         />
+      ) : null}
+      {legacyApprovedItems > 0 ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {legacyApprovedItems} item(ns) aprovado(s) de exemplo não possuem documento e evidência verificável; por segurança, não entram na nova publicação.
+        </p>
       ) : null}
     </div>
   )

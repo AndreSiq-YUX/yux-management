@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { StrategyIngestionUploadInput, StrategyPack, StrategyPackItem } from '@/types/strategyEngine'
+import type { StrategyIngestionCapabilities, StrategyIngestionJob, StrategyIngestionUploadInput, StrategyPack, StrategyPackItem } from '@/types/strategyEngine'
 import { StrategyPacksPanel } from './StrategyPacksPanel'
 
 const pack = {
@@ -25,6 +25,18 @@ const pack = {
   createdAt: '2026-09-06T00:00:00.000Z',
   updatedAt: '2026-09-06T00:00:00.000Z',
 } satisfies StrategyPack
+
+const capabilities = {
+  maxBytes: 150 * 1024 * 1024,
+  maxMb: 150,
+  acceptedMimeTypes: ['application/pdf', 'text/plain'],
+  structuredIngestion: {
+    curationEnabled: true,
+    runtimeConfigured: true,
+    embeddingConfigured: true,
+    ready: true,
+  },
+} satisfies StrategyIngestionCapabilities
 
 describe('StrategyPacksPanel upload', () => {
   let container: HTMLDivElement
@@ -85,6 +97,59 @@ describe('StrategyPacksPanel upload', () => {
     expect(fileInput.files?.[0]?.name).toBe('guia.txt')
   })
 
+  it('usa o limite informado pelo backend e bloqueia o arquivo antes da transmissão', async () => {
+    const onCreateJob = vi.fn(async () => undefined)
+    await renderPanel(onCreateJob)
+    expect(container.textContent).toContain('até 150 MB')
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    const oversized = new File(['x'], 'livro.pdf', { type: 'application/pdf' })
+    Object.defineProperty(oversized, 'size', { configurable: true, value: 151 * 1024 * 1024 })
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [oversized] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('excede o limite de 150 MB')
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enviar e processar'))?.disabled).toBe(true)
+    expect(onCreateJob).not.toHaveBeenCalled()
+  })
+
+  it('explica que upload legado sem documento precisa de reenvio', async () => {
+    const legacyJob: StrategyIngestionJob = {
+      id: 'legacy-1', packId: pack.id, sourceName: 'The Black Book', sourceKind: 'private_book', fileName: 'The Black Book.pdf',
+      status: 'uploaded', currentStep: 'upload', attempt: 0, proposedCounts: {}, metadata: {},
+      createdAt: pack.createdAt, updatedAt: pack.updatedAt,
+    }
+    await renderPanel(vi.fn(), [], vi.fn(), undefined, [legacyJob])
+    expect(container.textContent).toContain('Reenvio necessário: este registro antigo guardou somente o nome do arquivo.')
+  })
+
+  it('não permite iniciar curadoria estruturada quando os provedores não estão configurados', async () => {
+    await renderPanel(vi.fn(), [], vi.fn(), undefined, [], {
+      ...capabilities,
+      structuredIngestion: { ...capabilities.structuredIngestion, embeddingConfigured: false, ready: false },
+    })
+    expect(container.textContent).toContain('Embeddings Jina não configurados')
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enviar e processar'))?.disabled).toBe(true)
+  })
+
+  it('retoma um job falho sem pedir novo upload quando o documento está preservado', async () => {
+    const onRetryJob = vi.fn(async () => undefined)
+    const failedJob: StrategyIngestionJob = {
+      id: 'failed-1', packId: pack.id, documentId: 'document-1', sha256: 'a'.repeat(64), sourceName: 'The Black Book',
+      sourceKind: 'private_book', fileName: 'The Black Book.pdf', status: 'failed', currentStep: 'curation', attempt: 2,
+      proposedCounts: { chunks: 379, curationBatchesCompleted: 21, curationBatchesTotal: 61 }, metadata: {},
+      recoverableError: { message: 'curation_transport_interrupted', recoverable: true },
+      createdAt: pack.createdAt, updatedAt: pack.updatedAt,
+    }
+    await renderPanel(vi.fn(), [], vi.fn(), undefined, [failedJob], capabilities, onRetryJob)
+    expect(container.textContent).toContain('Lotes de curadoria: 21 de 61')
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Retomar processamento'))!
+    await act(async () => retry.click())
+    expect(onRetryJob).toHaveBeenCalledWith('failed-1')
+  })
+
   it('mostra a evidência e exige motivo antes da aprovação humana', async () => {
     const onReviewItem = vi.fn(async () => undefined)
     const item: StrategyPackItem = {
@@ -112,8 +177,9 @@ describe('StrategyPacksPanel upload', () => {
     }
     await renderPanel(vi.fn(), [item])
 
-    expect(container.textContent).toContain('Itens aprovados1Aguardam publicação')
+    expect(container.textContent).toContain('Aprovados com fonte0Elegíveis para publicação')
     expect(container.textContent).toContain('Packs publicados0Release atual elegível')
+    expect(container.textContent).toContain('1 item(ns) aprovado(s) de exemplo não possuem documento e evidência verificável')
     expect(container.textContent).not.toContain('Entram em runtime')
   })
 
@@ -165,6 +231,7 @@ describe('StrategyPacksPanel upload', () => {
     const item: StrategyPackItem = {
       id: '10000000-0000-4000-8000-000000000015', packId: pack.id, itemType: 'concept_card', title: 'Princípio aprovado',
       summary: 'Problema', body: 'Regra', profileKeys: [], stageTags: [], retrievalTags: [], status: 'approved', priority: 100,
+      sourceDocumentId: '30000000-0000-4000-8000-000000000001', sourceOrigin: 'document_extracted', contentHash: 'b'.repeat(64),
       payload: {}, createdAt: '2026-09-06T00:00:00.000Z', updatedAt: '2026-09-06T00:00:00.000Z',
     }
     const onPublishPack = vi.fn(async () => ({ publicationId: '20000000-0000-4000-8000-000000000001', version: 4, contentHash: 'a'.repeat(64) }))
@@ -190,6 +257,9 @@ describe('StrategyPacksPanel upload', () => {
     items: StrategyPackItem[] = [],
     onReviewItem = vi.fn(async () => undefined),
     onPublishPack = vi.fn(async () => ({ publicationId: '', version: 1, contentHash: 'a'.repeat(64) })),
+    jobs: StrategyIngestionJob[] = [],
+    ingestionCapabilities: StrategyIngestionCapabilities = capabilities,
+    onRetryJob = vi.fn(async () => undefined),
   ) {
     await act(async () => {
       root.render(
@@ -197,7 +267,8 @@ describe('StrategyPacksPanel upload', () => {
           <StrategyPacksPanel
             packs={[pack]}
             items={items}
-            jobs={[]}
+            jobs={jobs}
+            ingestionCapabilities={ingestionCapabilities}
             bindings={[]}
             profiles={[]}
             organizations={[]}
@@ -206,6 +277,8 @@ describe('StrategyPacksPanel upload', () => {
             onReviewItem={onReviewItem}
             onPublishPack={onPublishPack}
             onCreateJob={onCreateJob}
+            onRefreshJobs={vi.fn(async () => undefined)}
+            onRetryJob={onRetryJob}
             onSaveBinding={vi.fn()}
           />
         </MemoryRouter>,

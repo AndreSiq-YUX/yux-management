@@ -375,6 +375,9 @@ export interface StrategyPackItem {
   stageTags: string[]
   retrievalTags: string[]
   sourceReference?: string
+  sourceDocumentId?: string
+  sourceOrigin?: string
+  contentHash?: string
   status: string
   priority: number
   confidence?: number
@@ -382,6 +385,18 @@ export interface StrategyPackItem {
   payload: Record<string, unknown>
   createdAt: string
   updatedAt: string
+}
+
+export interface StrategyIngestionCapabilities {
+  maxBytes: number
+  maxMb: number
+  acceptedMimeTypes: string[]
+  structuredIngestion: {
+    curationEnabled: boolean
+    runtimeConfigured: boolean
+    embeddingConfigured: boolean
+    ready: boolean
+  }
 }
 
 export interface StrategyPackPublicationInput {

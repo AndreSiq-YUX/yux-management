@@ -14,6 +14,19 @@ it('recebe arquivos reais e recupera a ingestão sem publicar conteúdo não ext
       [packId, `upload-${packId}`, rig.ids.organizationA],
     )
 
+    const capabilities = await rig.request('yux_admin', 'GET', '/api/strategy-engine/ingestion-capabilities')
+    expect(capabilities.statusCode).toBe(200)
+    expect(capabilities.body).toMatchObject({
+      maxBytes: 150 * 1024 * 1024,
+      maxMb: 150,
+      structuredIngestion: {
+        curationEnabled: false,
+        runtimeConfigured: false,
+        embeddingConfigured: true,
+        ready: false,
+      },
+    })
+
     const denied = await rig.request('client_admin_A', 'POST', `/api/strategy-engine/packs/${packId}/ingestions`, {
       fileName: 'guia.txt', mimeType: 'text/plain', byteSize: text.length,
     })

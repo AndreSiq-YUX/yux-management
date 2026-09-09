@@ -20,6 +20,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 import {
   effectiveStrategyIngestionLimit,
   hasMeaningfulPdfText,
+  retryStrategyIngestion,
+  STRATEGY_INGESTION_DEFAULT_LIMIT_BYTES,
   STRATEGY_INGESTION_HARD_LIMIT_BYTES,
   uploadStrategyIngestion,
 } from '../src/modules/strategy-engine/ingestion.js'
@@ -31,10 +33,11 @@ describe('strategy ingestion boundaries', () => {
     expect(hasMeaningfulPdfText('Conteúdo estratégico válido\n\n-- 1 of 1 --')).toBe(true)
   })
 
-  it('limita a configuração efetiva ao teto de 50 MiB', () => {
-    expect(effectiveStrategyIngestionLimit()).toBe(STRATEGY_INGESTION_HARD_LIMIT_BYTES)
+  it('aceita livros completos pelo padrão de 150 MiB e preserva o teto de segurança', () => {
+    expect(effectiveStrategyIngestionLimit()).toBe(STRATEGY_INGESTION_DEFAULT_LIMIT_BYTES)
     expect(effectiveStrategyIngestionLimit(10)).toBe(10 * 1024 * 1024)
-    expect(effectiveStrategyIngestionLimit(200)).toBe(STRATEGY_INGESTION_HARD_LIMIT_BYTES)
+    expect(effectiveStrategyIngestionLimit(200)).toBe(200 * 1024 * 1024)
+    expect(effectiveStrategyIngestionLimit(300)).toBe(STRATEGY_INGESTION_HARD_LIMIT_BYTES)
   })
 
   it('preserva os números reais das páginas do PDF', async () => {
@@ -81,5 +84,29 @@ describe('strategy ingestion boundaries', () => {
       'EACCES: strategy storage is not writable',
     ])
     filesystemFailure.root = ''
+  })
+
+  it('retoma o processamento preservando documento, hash e checkpoint', async () => {
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        if (!sql.includes("SET status='queued'")) return { rows: [] }
+        return { rows: [{
+          id: 'ingestion-1', pack_id: 'pack-1', document_id: 'document-1', organization_id: 'organization-1',
+          source_name: 'Livro', source_kind: 'private_book', file_name: 'livro.pdf', mime_type: 'application/pdf',
+          byte_size: 119183723, sha256: 'a'.repeat(64), storage_path: 'strategy/document-1.pdf', status: 'queued',
+          current_step: 'curation', attempt_count: 2, failure_class: null, error_message: null, lease_owner: null,
+          lease_until: null, uploaded_by: 'user-1', proposed_counts: { chunks: 379, curationBatchesCompleted: 21, curationBatchesTotal: 61 },
+          created_at: new Date('2026-09-09T10:00:00.000Z'), updated_at: new Date('2026-09-09T10:05:00.000Z'),
+        }] }
+      }),
+    }
+
+    await expect(retryStrategyIngestion(pool as never, 'ingestion-1')).resolves.toMatchObject({
+      status: 'queued',
+      documentId: 'document-1',
+      sha256: 'a'.repeat(64),
+      stage: 'curation',
+      proposedCounts: { curationBatchesCompleted: 21, curationBatchesTotal: 61 },
+    })
   })
 })
