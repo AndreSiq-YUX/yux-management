@@ -932,15 +932,54 @@ export const strategyEngineService = {
       session: DbRow
       userMessage: DbRow
       assistantMessage: DbRow
+      pending?: boolean
+      jobId?: string | number
       route?: StrategyAdminChatResponse['route']
     }>('run-strategy-admin-chat', input)
     return {
       session: mapStrategyChatSession(row.session),
       userMessage: mapStrategyChatMessage(row.userMessage),
       assistantMessage: mapStrategyChatMessage(row.assistantMessage),
+      pending: row.pending,
+      jobId: row.jobId === undefined ? undefined : String(row.jobId),
       route: row.route,
     }
   },
+}
+
+export async function waitForStrategyChatCompletion(input: {
+  sessionId: string
+  assistantMessageId: string
+  loadMessages?: (sessionId: string) => Promise<StrategyChatMessage[]>
+  timeoutMs?: number
+  intervalMs?: number
+  signal?: AbortSignal
+}) {
+  const loadMessages = input.loadMessages ?? strategyEngineService.getStrategyChatMessages
+  const timeoutMs = input.timeoutMs ?? 180_000
+  const intervalMs = input.intervalMs ?? 2_000
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (input.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const messages = await loadMessages(input.sessionId)
+    const assistant = messages.find(message => message.id === input.assistantMessageId)
+    if (assistant?.status === 'completed' || assistant?.status === 'failed') {
+      return { messages, assistant }
+    }
+    await wait(intervalMs, input.signal)
+  }
+  throw new Error('A analise estrategica excedeu o tempo de espera. Ela pode continuar processando em segundo plano.')
+}
+
+function wait(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(resolve, milliseconds)
+    signal?.addEventListener('abort', () => {
+      window.clearTimeout(timeout)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }, { once: true })
+  })
 }
 
 function strategyFileMimeType(file: File) {

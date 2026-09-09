@@ -34,7 +34,7 @@ import {
 import { handleRadarOpportunityAnalysis } from './handlers/radar.js'
 import { handleStrategyAdminChat } from './handlers/strategy.js'
 import { handleStrategyIndexKnowledge } from '../modules/strategy-engine/ingestion.js'
-import { createIdempotencyKey, type JobName, type JobQueueClass, type QueueJobData } from './queue.js'
+import { createIdempotencyKey, type EnqueueJobOptions, type JobName, type JobQueueClass, type QueueJobData } from './queue.js'
 
 export type RegisteredJobQueue = {
   add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }): Promise<{ id?: string | number | undefined }>
@@ -186,15 +186,16 @@ export function parseRegisteredJobData(name: JobName, data: QueueJobData) {
 }
 
 export function enqueueRegisteredJob(
-  queue: { add(name: string, data: QueueJobData, options?: { delay?: number; jobId?: string }): Promise<{ id?: string | number | undefined }> },
+  queue: { add(name: string, data: QueueJobData, options?: EnqueueJobOptions): Promise<{ id?: string | number | undefined }> },
   name: JobName,
   data: QueueJobData,
-  options?: { delay?: number; jobId?: string },
+  options?: EnqueueJobOptions,
 ) {
   const parsed = parseRegisteredJobData(name, data)
   return queue.add(name, parsed, {
     jobId: options?.jobId ?? createIdempotencyKey(name, parsed),
     ...(options?.delay !== undefined ? { delay: options.delay } : {}),
+    ...(options?.attempts !== undefined ? { attempts: options.attempts } : {}),
   })
 }
 

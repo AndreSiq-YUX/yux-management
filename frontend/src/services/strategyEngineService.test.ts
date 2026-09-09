@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildAssistantRoutingRulePayload,
   buildHandoffPayload,
@@ -10,6 +10,7 @@ import {
   mapStrategyChatMessage,
   mapStrategyChatSession,
   mapStrategyPack,
+  waitForStrategyChatCompletion,
 } from './strategyEngineService'
 
 describe('strategyEngineService payload builders', () => {
@@ -173,6 +174,27 @@ describe('strategyEngineService payload builders', () => {
       modelName: 'openai/gpt-4.1-mini',
       toolResults: [{ tool: 'crm_leads', count: 2 }],
     })
+  })
+
+  it('waits until the durable assistant message is completed', async () => {
+    const queued = {
+      id: 'assistant-1', sessionId: 'session-1', role: 'assistant' as const,
+      content: 'Processando', status: 'running', inputTokens: 0, outputTokens: 0,
+      safeContext: {}, toolResults: [], createdAt: '2026-09-09T10:00:00.000Z',
+    }
+    const completed = { ...queued, content: 'Plano final', status: 'completed' }
+    const loadMessages = vi.fn()
+      .mockResolvedValueOnce([queued])
+      .mockResolvedValueOnce([completed])
+
+    await expect(waitForStrategyChatCompletion({
+      sessionId: 'session-1',
+      assistantMessageId: 'assistant-1',
+      loadMessages,
+      timeoutMs: 100,
+      intervalMs: 1,
+    })).resolves.toEqual({ messages: [completed], assistant: completed })
+    expect(loadMessages).toHaveBeenCalledTimes(2)
   })
 
   it('maps the current publication release without treating pack status as runtime eligibility', () => {

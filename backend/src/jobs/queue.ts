@@ -59,6 +59,7 @@ export type JobName = (typeof JOB_NAMES)[number]
 
 export type QueueJobData = Record<string, unknown>
 export type RedisConnectionOptions = NonNullable<QueueOptions['connection']>
+export type EnqueueJobOptions = Pick<JobsOptions, 'attempts' | 'delay' | 'jobId'>
 
 const defaultJobOptions: JobsOptions = {
   attempts: 3,

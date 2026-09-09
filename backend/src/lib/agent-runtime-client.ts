@@ -2,10 +2,15 @@ import type { AppEnv } from '../config/env.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../modules/action-engine/generated/mission-wire.js'
 import { validateMissionConversationTurnResponseWire } from '../modules/action-engine/mission-wire-validator.js'
 
-export async function invokeAgentRuntime<T>(env: AppEnv, path: string, body: Record<string, unknown>): Promise<T> {
+export async function invokeAgentRuntime<T>(
+  env: AppEnv,
+  path: string,
+  body: Record<string, unknown>,
+  options: { timeoutMs?: number } = {},
+): Promise<T> {
   if (!env.YUX_AGENT_RUNTIME_URL || !env.YUX_AGENT_RUNTIME_TOKEN) throw new Error('agent_runtime_not_configured')
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 60_000)
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 60_000)
   try {
     const response = await fetch(`${env.YUX_AGENT_RUNTIME_URL.replace(/\/$/, '')}${path}`, {
       method: 'POST',

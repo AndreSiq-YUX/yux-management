@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Bot, Building2, FileText, Lightbulb, Loader2, Map, MessageSquarePlus, Send, ShieldCheck } from 'lucide-react'
-import { strategyEngineService } from '@/services/strategyEngineService'
+import { strategyEngineService, waitForStrategyChatCompletion } from '@/services/strategyEngineService'
 import type { StrategyAdminChatMode, StrategyChatMessage, StrategyChatSession, StrategyLlmProvider, StrategyModelRoute, StrategyOrganization } from '@/types/strategyEngine'
 
 const promptPresets: Array<{ mode: StrategyAdminChatMode; label: string; icon: typeof Lightbulb; prompt: string }> = [
@@ -64,6 +64,7 @@ export function StrategyAdminChatPanel({
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const pendingRequest = useRef<AbortController | null>(null)
   const growthRoute = modelRoutes.find(route => route.agentType === 'growth_strategist' && route.routingTier === 'default' && route.status === 'active')
   const activeProvider = growthRoute ? providers.find(provider => (provider.provider_key || provider.providerKey) === growthRoute.provider && provider.status === 'active') : null
 
@@ -98,6 +99,8 @@ export function StrategyAdminChatPanel({
     return () => { active = false }
   }, [selectedSessionId])
 
+  useEffect(() => () => pendingRequest.current?.abort(), [])
+
   function startNewSession() {
     setSelectedSessionId('')
     setMessages([])
@@ -118,6 +121,9 @@ export function StrategyAdminChatPanel({
     if (!trimmed || sending) return
     setSending(true)
     setError(null)
+    pendingRequest.current?.abort()
+    const controller = new AbortController()
+    pendingRequest.current = controller
     try {
       const response = await strategyEngineService.runStrategyAdminChat({
         sessionId: selectedSessionId || undefined,
@@ -128,10 +134,23 @@ export function StrategyAdminChatPanel({
       setSelectedSessionId(response.session.id)
       setMessages(current => [...current, response.userMessage, response.assistantMessage])
       setInput('')
+      if (response.pending || ['queued', 'running'].includes(response.assistantMessage.status)) {
+        const completed = await waitForStrategyChatCompletion({
+          sessionId: response.session.id,
+          assistantMessageId: response.assistantMessage.id,
+          signal: controller.signal,
+        })
+        setMessages(completed.messages)
+        if (completed.assistant.status === 'failed') {
+          throw new Error(completed.assistant.errorMessage || 'Nao foi possivel concluir a analise estrategica.')
+        }
+      }
       await onRefreshSessions()
     } catch (sendError) {
+      if (sendError instanceof DOMException && sendError.name === 'AbortError') return
       setError(sendError instanceof Error ? sendError.message : 'Nao foi possivel rodar o estrategista YUX.')
     } finally {
+      if (pendingRequest.current === controller) pendingRequest.current = null
       setSending(false)
     }
   }
@@ -249,7 +268,9 @@ export function StrategyAdminChatPanel({
                     <Bot className="h-3.5 w-3.5" aria-hidden="true" />
                     {message.role === 'user' ? 'Voce' : `Growth Strategist${message.modelName ? ` / ${message.modelName}` : ''}`}
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {message.status === 'failed' ? message.errorMessage || message.content : message.content}
+                  </p>
                 </div>
               </article>
             ))}

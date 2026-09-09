@@ -4,6 +4,11 @@ import { hashSessionToken } from '../../auth/session.js'
 import { requireAuth, requireInternalRole, requireMembership } from '../../http/guards.js'
 import type { JobName } from '../../jobs/queue.js'
 import { completeMetaChannelOAuth, disconnectMetaChannel, refreshMetaChannelHealth, startMetaChannelOAuth, testMetaChannel } from '../../lib/meta-channel-oauth.js'
+import {
+  markStrategyAdminChatQueueFailure,
+  prepareStrategyAdminChat,
+  strategyAdminChatRequestSchema,
+} from '../strategy-engine/admin-chat.js'
 
 type FunctionPolicy = {
   minRole: 'internal' | 'client_admin'
@@ -109,6 +114,36 @@ export async function registerFunctionRoutes(app: FastifyInstance) {
     if (params.data.name === 'disconnect-meta-channel') return disconnectMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
     if (params.data.name === 'refresh-meta-channel-health') return refreshMetaChannelHealth(app.pg, organizationId!, String(body.connectionId || ''))
     if (params.data.name === 'send-meta-channel-test') return testMetaChannel(app.pg, organizationId!, String(body.connectionId || ''))
+
+    if (params.data.name === 'run-strategy-admin-chat') {
+      const chatRequest = strategyAdminChatRequestSchema.safeParse(body)
+      if (!chatRequest.success) return reply.code(400).send({ error: 'invalid_strategy_chat_request' })
+      const prepared = await prepareStrategyAdminChat(app.pg, ctx.userId, chatRequest.data)
+      try {
+        const job = await app.jobQueue.add('strategy.adminChat', {
+          requestedBy: ctx.userId,
+          functionName: params.data.name,
+          organizationId: prepared.jobBody.organizationId ?? null,
+          body: prepared.jobBody,
+        }, { attempts: 1 })
+        return reply.code(202).send({
+          success: true,
+          pending: true,
+          functionName: params.data.name,
+          jobId: job.id,
+          session: prepared.session,
+          userMessage: prepared.userMessage,
+          assistantMessage: prepared.assistantMessage,
+        })
+      } catch (error) {
+        await markStrategyAdminChatQueueFailure(
+          app.pg,
+          prepared.jobBody.assistantMessageId,
+          prepared.jobBody.sessionId,
+        )
+        throw error
+      }
+    }
 
     if (params.data.name === 'sync-ad-metrics') {
       const readiness = await app.pg.query<{ ready: boolean; missing: string | null }>(

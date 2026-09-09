@@ -9,7 +9,7 @@ import { createPgAuthStore, registerAuthRoutes, type AuthStore } from './auth/ro
 import { loadEnv, type AppEnv } from './config/env.js'
 import { createPool } from './db/client.js'
 import { contextPlugin } from './http/context-plugin.js'
-import type { JobName, QueueJobData } from './jobs/queue.js'
+import type { EnqueueJobOptions, JobName, QueueJobData } from './jobs/queue.js'
 import { parseRegisteredJobData } from './jobs/registry.js'
 import { createRoutedJobQueue } from './jobs/router.js'
 import { registerAiAssistantRoutes } from './modules/ai-assistant/routes.js'
@@ -50,7 +50,7 @@ declare module 'fastify' {
 }
 
 export type AppJobQueue = {
-  add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }): Promise<{ id?: string | number | undefined }>
+  add(name: JobName, data: QueueJobData, options?: EnqueueJobOptions): Promise<{ id?: string | number | undefined }>
   close(): Promise<void>
 }
 

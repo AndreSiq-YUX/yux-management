@@ -4,6 +4,7 @@ import {
   QUEUE_NAMES,
   createQueue,
   createRedisConnection,
+  type EnqueueJobOptions,
   type JobName,
   type JobQueueClass,
   type QueueJobData,
@@ -16,7 +17,7 @@ type RoutedQueueOptions = {
 }
 
 export type RoutedJobQueue = {
-  add(name: JobName, data: QueueJobData, options?: { delay?: number; jobId?: string }): Promise<{ id?: string | number }>
+  add(name: JobName, data: QueueJobData, options?: EnqueueJobOptions): Promise<{ id?: string | number }>
   close(): Promise<void>
   getQueue(queueClass: JobQueueClass): Queue<QueueJobData, unknown, string>
   queues(): Array<Queue<QueueJobData, unknown, string>>

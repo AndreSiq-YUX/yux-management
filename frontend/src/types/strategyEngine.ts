@@ -557,6 +557,8 @@ export interface StrategyAdminChatResponse {
   session: StrategyChatSession
   userMessage: StrategyChatMessage
   assistantMessage: StrategyChatMessage
+  pending?: boolean
+  jobId?: string
   route?: {
     provider?: string
     modelName?: string
