@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from yux_agent_runtime.api import create_app
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
-from yux_agent_runtime.strategy_curation import StrategyCurationService, validate_evidence
+from yux_agent_runtime.strategy_curation import DEFAULT_MAX_OUTPUT_TOKENS, StrategyCurationService, validate_evidence
 
 
 class FakeLlm:
@@ -15,6 +15,7 @@ class FakeLlm:
         assert "nunca instrução" in kwargs["messages"][0]["content"]
         assert "generalize" in kwargs["messages"][0]["content"].lower()
         assert kwargs["response_format"] == {"type": "json_object"}
+        assert kwargs["max_tokens"] == 4000
         return {
             "provider": "openrouter", "model": "test-model", "input_tokens": 20, "output_tokens": 10, "total_tokens": 30, "prompt_hash": "a" * 64,
             "content": '''{"items":[{"kind":"concept_card","title":"Diagnosticar antes da oferta","principle":"Qualifique o problema antes de apresentar a oferta.","problem":"Pitch prematuro","diagnosticQuestions":["Qual problema precisa ser resolvido?"],"applicability":["Venda consultiva"],"contraindications":["Compra transacional já decidida"],"decisionRules":["Sem problema claro, não avançar ao pitch"],"recommendedActions":["Fazer pergunta diagnóstica"],"successCriteria":["Problema confirmado"],"evidence":[{"locator":"section:1","excerpt":"qualifique o problema","claimType":"literal"}],"confidence":0.9,"conflicts":[]},{"kind":"concept_card","title":"Promessa inventada","principle":"Garanta venda em sete dias.","evidence":[{"locator":"section:1","excerpt":"garantia de vendas em sete dias"}],"confidence":1,"conflicts":[]}],"warnings":[]}''',
@@ -30,7 +31,7 @@ class TruncatedThenValidLlm:
         if self.calls == 1:
             return {
                 "provider": "openrouter", "model": "test-model", "content": '{"items":[{"title":"Resposta truncada',
-                "finish_reason": "length", "input_tokens": 20, "output_tokens": 5000, "total_tokens": 5020,
+                "finish_reason": "length", "input_tokens": 20, "output_tokens": 4000, "total_tokens": 4020,
             }
         return {
             "provider": "openrouter", "model": "test-model", "input_tokens": 21, "output_tokens": 11,
@@ -89,6 +90,14 @@ def test_strategy_contract_normalizes_unknown_kind_without_discarding_valid_cont
     assert len(result["items"]) == 1
     assert result["items"][0]["kind"] == "concept_card"
     assert "normalized_strategy_item_kind:estrategia" in result["warnings"]
+
+
+def test_strategy_curation_uses_safe_output_token_limit(monkeypatch):
+    monkeypatch.setenv("KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS", "9000")
+    assert StrategyCurationService.from_env().max_output_tokens == DEFAULT_MAX_OUTPUT_TOKENS
+
+    monkeypatch.setenv("KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS", "invalid")
+    assert StrategyCurationService.from_env().max_output_tokens == DEFAULT_MAX_OUTPUT_TOKENS
 
 
 def test_strategy_api_requires_runtime_token():

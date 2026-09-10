@@ -115,8 +115,8 @@ describe('strategy ingestion boundaries', () => {
     const sections = [{
       locator: 'section:1', documentId: 'document-1', documentHash: 'a'.repeat(64), body: 'Conteúdo estratégico.',
     }]
-    expect(strategyCurationCheckpointHash(sections, 'strategy-curation:v2'))
-      .not.toBe(strategyCurationCheckpointHash(sections, 'strategy-curation:v3'))
+    expect(strategyCurationCheckpointHash(sections, 'strategy-curation:v3'))
+      .not.toBe(strategyCurationCheckpointHash(sections, 'strategy-curation:v4'))
   })
 
   it('permite reprocessar uma conclusão vazia sem solicitar novo upload', async () => {
