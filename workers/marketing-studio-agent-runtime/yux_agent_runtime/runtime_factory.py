@@ -70,6 +70,8 @@ def _latest_by(records: list[dict[str, Any]], key: str) -> dict[str, dict[str, A
 class RuntimeStrategyKnowledgeStore:
     store: AgentRuntimeStore
     candidate_limit: int | None = None
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = None
 
     @staticmethod
     def _normalize_profile_access(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -100,14 +102,21 @@ class RuntimeStrategyKnowledgeStore:
             "chunk_id",
         )
 
-    @staticmethod
     def _with_latest_embedding(
+        self,
         records: list[dict[str, Any]],
         embeddings: list[dict[str, Any]],
         foreign_key: str,
     ) -> list[dict[str, Any]]:
         latest: dict[str, dict[str, Any]] = {}
         for embedding in embeddings:
+            if self.embedding_model and str(embedding.get("embedding_model") or "") != self.embedding_model:
+                continue
+            values = embedding.get("embedding_values") or embedding.get("embedding")
+            if self.embedding_dimensions is not None and (
+                not isinstance(values, list) or len(values) != self.embedding_dimensions
+            ):
+                continue
             record_id = str(embedding.get(foreign_key) or "")
             if not record_id:
                 continue
@@ -257,7 +266,11 @@ def build_strategy_workflow_engine(
     )
     embedding_service = QueryEmbeddingService(OpenRouterClient.from_env())
     retrieval = StrategyRetrievalService(
-        RuntimeStrategyKnowledgeStore(store),
+        RuntimeStrategyKnowledgeStore(
+            store,
+            embedding_model=embedding_service.model,
+            embedding_dimensions=embedding_service.dimensions,
+        ),
         embedding_service=embedding_service,
     )
     workflows = _latest_by(_active(store.list("strategy_workflow_specs", limit=200)), "workflow_key")

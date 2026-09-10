@@ -26,6 +26,51 @@ class RuntimeFactoryTest(unittest.TestCase):
         self.assertEqual(knowledge.list_cards()[0]["embedding_content_hash"], "new")
         self.assertEqual(knowledge.list_chunks()[0]["embedding_values"], [0.5, 0.5])
 
+    def test_runtime_strategy_store_only_joins_embeddings_from_active_model_and_dimensions(self):
+        store = InMemoryAgentRuntimeStore({
+            "yux_strategy_concept_cards": [{"id": "card-1", "concept": "Card"}],
+            "yux_strategy_card_embeddings": [
+                {
+                    "card_id": "card-1", "embedding_values": [1.0, 0.0],
+                    "embedding_model": "qwen/qwen3-embedding-8b", "created_at": "2026-03-01",
+                },
+                {
+                    "card_id": "card-1", "embedding_values": [0.5, 0.5, 0.0],
+                    "embedding_model": "google/gemini-embedding-2", "created_at": "2026-03-02",
+                },
+                {
+                    "card_id": "card-1", "embedding_values": [0.0, 1.0],
+                    "embedding_model": "google/gemini-embedding-2", "content_hash": "matching",
+                    "created_at": "2026-03-01",
+                },
+            ],
+        })
+
+        knowledge = RuntimeStrategyKnowledgeStore(
+            store,
+            embedding_model="google/gemini-embedding-2",
+            embedding_dimensions=2,
+        )
+
+        self.assertEqual(knowledge.list_cards()[0]["embedding_values"], [0.0, 1.0])
+        self.assertEqual(knowledge.list_cards()[0]["embedding_content_hash"], "matching")
+
+    def test_runtime_strategy_store_omits_unknown_embeddings_when_model_is_required(self):
+        store = InMemoryAgentRuntimeStore({
+            "yux_strategy_concept_cards": [{"id": "card-1", "concept": "Card"}],
+            "yux_strategy_card_embeddings": [
+                {"card_id": "card-1", "embedding_values": [1.0, 0.0], "created_at": "2026-03-01"},
+            ],
+        })
+
+        knowledge = RuntimeStrategyKnowledgeStore(
+            store,
+            embedding_model="google/gemini-embedding-2",
+            embedding_dimensions=2,
+        )
+
+        self.assertNotIn("embedding_values", knowledge.list_cards()[0])
+
     def test_factory_loads_profile_route_rag_workflow_and_autonomy_from_store(self):
         store = InMemoryAgentRuntimeStore({
             "yux_strategy_agent_profiles": [{
