@@ -8,7 +8,11 @@ import { fileTypeFromFile } from 'file-type'
 import type pg from 'pg'
 import type { AppEnv } from '../../config/env.js'
 import { extractKnowledgeText } from '../company-intelligence/text-extraction.js'
-import { embedPassages } from '../company-intelligence/openrouter-embeddings.js'
+import {
+  embedPassages,
+  OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS,
+  OPENROUTER_DEFAULT_EMBEDDING_MODEL,
+} from '../company-intelligence/openrouter-embeddings.js'
 import { recordProviderUsage } from '../health/provider-usage.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { JOB_LEASE_DURATION_MS, classifyLeaseFailure, createLeaseOwner, startLeaseHeartbeat } from '../../jobs/leases.js'
@@ -30,7 +34,10 @@ export const STRATEGY_INGESTION_ALLOWED_MIME_TYPES = [
   'text/markdown',
 ] as const
 const ALLOWED_MIME_TYPES = new Set<string>(STRATEGY_INGESTION_ALLOWED_MIME_TYPES)
-export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v9'
+// Bump the checkpoint contract whenever the curation policy/model safety
+// contract changes. This prevents a retry from silently reusing artifacts
+// generated under an older (possibly paid) model configuration.
+export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v10'
 
 type IngestionRow = {
   id: string
@@ -608,8 +615,8 @@ async function embedCheckpointed(
   options: { signal?: AbortSignal; embed?: typeof embedPassages; afterEmbeddingCheckpoint?: () => Promise<void> | void },
 ): Promise<EmbeddingCheckpoint> {
   const inputHash = createHash('sha256').update(JSON.stringify({
-    model: env.OPENROUTER_EMBEDDING_MODEL || 'google/gemini-embedding-2',
-    dimensions: env.OPENROUTER_EMBEDDING_DIMENSIONS || 768,
+    model: env.OPENROUTER_EMBEDDING_MODEL || OPENROUTER_DEFAULT_EMBEDDING_MODEL,
+    dimensions: env.OPENROUTER_EMBEDDING_DIMENSIONS || OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS,
     proposed,
   })).digest('hex')
   const checkpoint = (await pool.query<{ embedding_input_hash: string | null; embedding_output: unknown }>(

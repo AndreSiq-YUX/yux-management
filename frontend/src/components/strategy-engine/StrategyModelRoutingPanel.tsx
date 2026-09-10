@@ -19,7 +19,7 @@ export function StrategyModelRoutingPanel({
   const providerKeys = providers.map(provider => provider.provider_key || provider.providerKey).filter(Boolean)
   const [form, setForm] = useState({
     provider: defaultProvider?.provider_key || defaultProvider?.providerKey || 'openrouter',
-    modelName: 'openai/gpt-4.1-mini',
+    modelName: 'nex-agi/nex-n2.5-mini:free',
     fallbackModelName: '',
     routingTier: 'default',
     maxInputTokens: 8000,
@@ -35,7 +35,7 @@ export function StrategyModelRoutingPanel({
     setSaved(false)
     setForm({
       provider: route?.provider || defaultProvider?.provider_key || defaultProvider?.providerKey || 'openrouter',
-      modelName: route?.modelName || 'openai/gpt-4.1-mini',
+      modelName: route?.modelName || 'nex-agi/nex-n2.5-mini:free',
       fallbackModelName: route?.fallbackModelName || '',
       routingTier: route?.routingTier || 'default',
       maxInputTokens: route?.maxInputTokens || 8000,

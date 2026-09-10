@@ -12,7 +12,7 @@ The raw source stays `internal_only` by default. Client-facing agents receive co
   - `pdftotext` for text extraction.
   - `pdftoppm` for page image generation.
 - Optional real embeddings:
-  - `JINA_API_KEY` when using `--provider jina`.
+  - `OPENROUTER_API_KEY` and explicit approval in `OPENROUTER_ALLOWED_PAID_MODELS` when using `--provider openrouter`.
 
 ## Pipeline
 
@@ -26,7 +26,7 @@ node scripts/strategy-knowledge/embed-concept-cards.mjs --input scripts/strategy
 node scripts/strategy-knowledge/import-knowledge.mjs --documents .strategy-work/pages-clean.jsonl --chunks .strategy-work/chunks.jsonl --assets .strategy-work/assets.jsonl --cards scripts/strategy-knowledge/example-concept-cards.json --cardEmbeddings .strategy-work/card-embeddings.jsonl
 ```
 
-Use `--provider jina --model jina-embeddings-v4` on `embed-concept-cards.mjs` only when `JINA_API_KEY` is configured. The default `mock` provider creates deterministic local embeddings for smoke tests and pipeline validation.
+Use `--provider openrouter` on `embed-concept-cards.mjs` when `OPENROUTER_API_KEY` is configured and the selected model is explicitly approved. The default is `qwen/qwen3-embedding-8b` with 1024 dimensions; pass `--model` and `--dimensions` together when intentionally selecting another approved model. Jina remains available only for Reader, Search and Grounding; it is not used for embeddings. The default `mock` provider creates deterministic local embeddings for smoke tests and pipeline validation.
 
 ## Review Rules
 

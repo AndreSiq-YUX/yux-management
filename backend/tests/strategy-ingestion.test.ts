@@ -117,6 +117,8 @@ describe('strategy ingestion boundaries', () => {
     }]
     expect(strategyCurationCheckpointHash(sections, 'strategy-curation:v8'))
       .not.toBe(strategyCurationCheckpointHash(sections, 'strategy-curation:v9'))
+    expect(strategyCurationCheckpointHash(sections, 'strategy-curation:v9'))
+      .not.toBe(strategyCurationCheckpointHash(sections, 'strategy-curation:v10'))
   })
 
   it('permite reprocessar uma conclusão vazia sem solicitar novo upload', async () => {

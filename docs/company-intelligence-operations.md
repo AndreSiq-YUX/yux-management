@@ -41,8 +41,8 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `OPENROUTER_API_KEY` na API, nos workers e no Agent Harness, para curadoria,
   extração estruturada e embeddings;
 - `OPENROUTER_ALLOWED_PAID_MODELS` contém a lista explícita, separada por vírgulas, de modelos pagos aprovados; sem essa aprovação o runtime recusa a chamada antes de transmiti-la ao provedor;
-- `OPENROUTER_EMBEDDING_MODEL` (padrão `google/gemini-embedding-2`);
-- `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `768`);
+- `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
+- `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
 - `KNOWLEDGE_CURATION_MODEL` (padrão gratuito `nex-agi/nex-n2.5-mini:free`);
 - `KNOWLEDGE_CURATION_FALLBACK_MODELS` fica vazio por padrão para impedir fallback silencioso para um modelo pago;
@@ -105,7 +105,7 @@ governados que podem ser vinculados ao agente estratégico e ao Actual Engine.
   generalizado e manter aplicabilidade e contraindicações explícitas. Se o
   modelo devolver outra categoria, o item é normalizado para `concept_card`
   sem dispensar as validações de título, princípio e evidência.
-- OpenRouter gera os embeddings com `google/gemini-embedding-2`, quando explicitamente aprovado em `OPENROUTER_ALLOWED_PAID_MODELS`. A interface impede uma nova ingestão estruturada
+- OpenRouter gera os embeddings com `qwen/qwen3-embedding-8b` por padrão, quando explicitamente aprovado em `OPENROUTER_ALLOWED_PAID_MODELS`. Gemini, Voyage e outros modelos só entram quando configurados explicitamente nessa allowlist. A interface impede uma nova ingestão estruturada
   quando Harness, curadoria ou embeddings não estão configurados.
 - As requisições de embedding recusam rotas de provedores marcados como
   coletores de dados (`data_collection=deny`).

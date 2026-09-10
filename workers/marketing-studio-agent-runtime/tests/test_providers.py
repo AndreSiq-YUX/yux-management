@@ -72,7 +72,7 @@ class ProviderClientTest(unittest.TestCase):
             client = OpenRouterClient.from_env()
         self.assertEqual(client.allowed_paid_models, frozenset({"google/gemini-embedding-2"}))
 
-    def test_openrouter_embeddings_use_gemini_and_query_input_type(self):
+    def test_openrouter_embeddings_use_configured_model_and_query_input_type(self):
         calls = []
 
         def transport(url, headers, payload, method):
@@ -84,7 +84,7 @@ class ProviderClientTest(unittest.TestCase):
             transport=transport,
             allowed_paid_models=frozenset({"google/gemini-embedding-2"}),
         ).embed_texts(
-            ["consulta semantica"], input_type="search_query", dimensions=2
+            ["consulta semantica"], input_type="search_query", model="google/gemini-embedding-2", dimensions=2
         )
         self.assertEqual(calls[0][0], "https://openrouter.ai/api/v1/embeddings")
         self.assertEqual(calls[0][2], {
@@ -96,6 +96,25 @@ class ProviderClientTest(unittest.TestCase):
             "provider": {"data_collection": "deny"},
         })
         self.assertEqual(result["vectors"], [[1.0, 0.0]])
+
+    def test_openrouter_embeddings_default_to_qwen_1024(self):
+        calls = []
+        vector = [1.0] + [0.0] * 1023
+
+        def transport(url, headers, payload, method):
+            calls.append((url, headers, payload, method))
+            return {"data": [{"index": 0, "embedding": vector}]}
+
+        result = OpenRouterClient(
+            api_key="or-key",
+            transport=transport,
+            allowed_paid_models=frozenset({"qwen/qwen3-embedding-8b"}),
+        ).embed_texts(["texto"], input_type="search_document")
+
+        self.assertEqual(calls[0][2]["model"], "qwen/qwen3-embedding-8b")
+        self.assertEqual(calls[0][2]["dimensions"], 1024)
+        self.assertEqual(result["dimensions"], 1024)
+        self.assertEqual(result["vectors"], [vector])
 
     def test_jina_reader_search_and_grounding_use_bearer_key(self):
         calls = []

@@ -10,8 +10,7 @@ export const openAiDirectFallbackDefaults: PlatformProviderConnectionInput = {
   isDefault: false,
   publicConfig: {
     baseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4.1-mini',
-    purpose: 'fallback externo quando o OpenRouter estiver indisponivel',
+    purpose: 'fallback externo configurado manualmente quando o OpenRouter estiver indisponivel',
     managedBy: 'YUX Hub Admin',
     requiredSecret: 'OPENAI_API_KEY',
   },
@@ -28,8 +27,8 @@ export const openRouterDefaults: PlatformProviderConnectionInput = {
   publicConfig: {
     baseUrl: 'https://openrouter.ai/api/v1',
     chatCompletionsPath: '/chat/completions',
-    primaryModel: 'openai/gpt-4.1-mini',
-    fallbackModels: ['anthropic/claude-sonnet-4', 'google/gemini-2.5-flash'],
+    primaryModel: 'nex-agi/nex-n2.5-mini:free',
+    fallbackModels: [],
     providerRouting: {
       allowFallbacks: true,
       sort: 'throughput',

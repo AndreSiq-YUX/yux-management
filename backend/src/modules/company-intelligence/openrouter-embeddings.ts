@@ -10,8 +10,12 @@ export type OpenRouterEmbeddingBatch = {
   tokens: number
 }
 
-const DEFAULT_MODEL = 'google/gemini-embedding-2'
-const DEFAULT_DIMENSIONS = 768
+/**
+ * The default embedding model is deliberately centralized here so ingestion,
+ * retrieval and re-embedding checkpoints cannot silently disagree.
+ */
+export const OPENROUTER_DEFAULT_EMBEDDING_MODEL = 'qwen/qwen3-embedding-8b'
+export const OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS = 1024
 export const OPENROUTER_EMBEDDING_BATCH_SIZE = 32
 
 function isFreeOpenRouterModel(model: string) {
@@ -37,8 +41,8 @@ export async function embedOpenRouterTexts(
   signal?: AbortSignal,
 ): Promise<OpenRouterEmbeddingBatch> {
   if (!env.OPENROUTER_API_KEY) throw new Error('openrouter_api_key_required')
-  const model = env.OPENROUTER_EMBEDDING_MODEL || DEFAULT_MODEL
-  const dimensions = env.OPENROUTER_EMBEDDING_DIMENSIONS || DEFAULT_DIMENSIONS
+  const model = env.OPENROUTER_EMBEDDING_MODEL || OPENROUTER_DEFAULT_EMBEDDING_MODEL
+  const dimensions = env.OPENROUTER_EMBEDDING_DIMENSIONS || OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS
   assertOpenRouterModelApproved(env, model)
   if (!texts.length) return { model, dimensions, vectors: [], tokens: 0 }
   const vectors: number[][] = []

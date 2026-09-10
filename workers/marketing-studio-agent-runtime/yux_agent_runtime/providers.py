@@ -148,8 +148,8 @@ class OpenRouterClient:
         texts: list[str],
         *,
         input_type: str,
-        model: str = "google/gemini-embedding-2",
-        dimensions: int = 768,
+        model: str = "qwen/qwen3-embedding-8b",
+        dimensions: int = 1024,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise ProviderRequestError("missing_openrouter_api_key")
