@@ -39,6 +39,16 @@ class TruncatedThenValidLlm:
         }
 
 
+class UnknownKindLlm:
+    def chat_completion(self, **kwargs):
+        assert "concept_card, playbook, rubric ou prompt_rule" in kwargs["messages"][0]["content"]
+        return {
+            "provider": "openrouter", "model": "test-model", "input_tokens": 20, "output_tokens": 10,
+            "total_tokens": 30, "prompt_hash": "d" * 64,
+            "content": '''{"items":[{"kind":"estrategia","title":"Diagnosticar antes da oferta","principle":"Qualifique o problema antes de apresentar a oferta.","problem":"Pitch prematuro","diagnosticQuestions":["Qual problema precisa ser resolvido?"],"applicability":["Venda consultiva"],"contraindications":["Compra transacional já decidida"],"decisionRules":["Sem problema claro, não avançar ao pitch"],"recommendedActions":["Fazer pergunta diagnóstica"],"successCriteria":["Problema confirmado"],"evidence":[{"locator":"section:1","excerpt":"qualifique o problema","claimType":"literal"}],"confidence":0.9,"conflicts":[]}],"warnings":[]}''',
+        }
+
+
 def test_evidence_must_exist_in_source():
     assert validate_evidence("Antes da oferta, qualifique o problema.", "qualifique o problema") is True
     assert validate_evidence("Antes da oferta, qualifique o problema.", "garantia de vendas em sete dias") is False
@@ -67,6 +77,18 @@ def test_strategy_curation_retries_truncated_json_without_losing_source_contract
     assert llm.calls == 2
     assert result["items"][0]["evidence"][0]["claimType"] == "derived"
     assert result["items"][0]["evidence"][0]["excerpt"] == "analise o mecanismo antes de repetir a tática"
+
+
+def test_strategy_contract_normalizes_unknown_kind_without_discarding_valid_content():
+    service = StrategyCurationService(UnknownKindLlm(), "test-model")
+    result = service.curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+
+    assert len(result["items"]) == 1
+    assert result["items"][0]["kind"] == "concept_card"
+    assert "normalized_strategy_item_kind:estrategia" in result["warnings"]
 
 
 def test_strategy_api_requires_runtime_token():

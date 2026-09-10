@@ -97,7 +97,9 @@ governados que podem ser vinculados ao agente estratégico e ao Actual Engine.
 - OpenRouter, no Agent Harness, transforma os trechos em `concept_card`,
   `playbook`, `rubric` ou `prompt_rule` com evidência literal verificável. Casos
   específicos podem originar princípios derivados, mas o mecanismo deve ser
-  generalizado e manter aplicabilidade e contraindicações explícitas.
+  generalizado e manter aplicabilidade e contraindicações explícitas. Se o
+  modelo devolver outra categoria, o item é normalizado para `concept_card`
+  sem dispensar as validações de título, princípio e evidência.
 - OpenRouter gera os embeddings com `qwen/qwen3-embedding-8b`. A interface impede uma nova ingestão estruturada
   quando Harness, curadoria ou embeddings não estão configurados.
 - As requisições de embedding recusam rotas de provedores marcados como
