@@ -166,7 +166,10 @@ export const jobRegistry = {
   }), providerSyncPayload),
   'email.send': registered('external', 120_000, ({ pool }, data) => handleEmailSend(pool, data)),
   'strategy.adminChat': registered('interactive', 180_000, ({ pool, env }, data) => handleStrategyAdminChat(pool, env, data)),
-  'strategy.indexKnowledge': registered('ingestion', 1_800_000, ({ pool, env, signal }, data) => handleStrategyIndexKnowledge(pool, env, data, { storageRoot: env.KNOWLEDGE_STORAGE_DIR, signal }), z.object({
+  // Full-book curation can involve dozens of checkpointed calls to the
+  // approved free model. Keep the lease heartbeat/checkpoints, but allow the
+  // single durable job enough wall-clock time to finish without being aborted.
+  'strategy.indexKnowledge': registered('ingestion', 3_600_000, ({ pool, env, signal }, data) => handleStrategyIndexKnowledge(pool, env, data, { storageRoot: env.KNOWLEDGE_STORAGE_DIR, signal }), z.object({
     ingestionId: uuid,
     documentId: uuid,
     organizationId: uuid,

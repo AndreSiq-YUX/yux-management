@@ -18,7 +18,7 @@ it('mantém schema, handler, classe, timeout e sandbox explícitos para todo Job
   }
   expect(jobRegistry['provider.syncMetrics'].queueClass).toBe('external')
   expect(jobRegistry['company-intelligence.indexKnowledge'].queueClass).toBe('ingestion')
-  expect(jobRegistry['strategy.indexKnowledge'].timeoutMs).toBe(1_800_000)
+  expect(jobRegistry['strategy.indexKnowledge'].timeoutMs).toBe(3_600_000)
   expect(jobRegistry['action-engine.processMissionConversation'].queueClass).toBe('interactive')
   expect(jobRegistry['maintenance.purgeExpiredTraces'].queueClass).toBe('maintenance')
   expect(jobRegistry['omnichannel.simulateChannelEvent'].sandboxOnly).toBe(true)
