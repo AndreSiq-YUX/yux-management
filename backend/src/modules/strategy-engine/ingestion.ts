@@ -608,8 +608,8 @@ async function embedCheckpointed(
   options: { signal?: AbortSignal; embed?: typeof embedPassages; afterEmbeddingCheckpoint?: () => Promise<void> | void },
 ): Promise<EmbeddingCheckpoint> {
   const inputHash = createHash('sha256').update(JSON.stringify({
-    model: env.OPENROUTER_EMBEDDING_MODEL || 'qwen/qwen3-embedding-8b',
-    dimensions: env.OPENROUTER_EMBEDDING_DIMENSIONS || 1024,
+    model: env.OPENROUTER_EMBEDDING_MODEL || 'google/gemini-embedding-2',
+    dimensions: env.OPENROUTER_EMBEDDING_DIMENSIONS || 768,
     proposed,
   })).digest('hex')
   const checkpoint = (await pool.query<{ embedding_input_hash: string | null; embedding_output: unknown }>(

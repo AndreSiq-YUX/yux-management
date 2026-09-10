@@ -14,7 +14,7 @@ from yux_agent_runtime.providers import OpenRouterClient
 def test_live_supervisor_returns_a_catalog_and_source_bound_proposal() -> None:
     profile = ModelProfile(
         key="mission_supervisor", version=1, provider="openrouter",
-        model=os.getenv("OPENROUTER_MISSION_SUPERVISOR_MODEL", "openai/gpt-4.1-mini"),
+        model=os.getenv("OPENROUTER_MISSION_SUPERVISOR_MODEL", "nex-agi/nex-n2.5-mini:free"),
         temperature=0, max_tokens=2400, timeout_seconds=60, max_cost_brl="5",
         prompt_bundle_hash=sha256(b"yux-mission-supervisor-v1").hexdigest(),
     )

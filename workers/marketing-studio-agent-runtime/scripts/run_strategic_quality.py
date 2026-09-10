@@ -171,7 +171,7 @@ def base_tables(case: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return {
         "yux_strategy_agent_profiles": [{"id": "eval-profile", "profile_key": "growth_strategist", "status": "active", "allowed_tools": [], "forbidden_actions": [], "max_cards": 12, "max_chunks": 4}],
         "marketing_agent_global_prompts": [{"id": "eval-prompt", "agent_type": "growth_strategist", "status": "active", "system_prompt": "Responda em JSON, use apenas fontes fornecidas e explicite limitações.", "prompt_version": 1}],
-        "model_routing_rules": [{"id": "eval-route", "agent_type": "growth_strategist", "routing_tier": "default", "provider": "openrouter", "model_name": os.getenv("OPENROUTER_STRATEGIC_QUALITY_MODEL", "openai/gpt-4.1-mini"), "status": "active", "max_output_tokens": 1800, "temperature": 0}],
+        "model_routing_rules": [{"id": "eval-route", "agent_type": "growth_strategist", "routing_tier": "default", "provider": "openrouter", "model_name": os.getenv("OPENROUTER_STRATEGIC_QUALITY_MODEL", "nex-agi/nex-n2.5-mini:free"), "status": "active", "max_output_tokens": 1800, "temperature": 0}],
         "organization_company_profiles": [{"id": "eval-company", "organization_id": "eval-org", "trade_name": "Empresa avaliada", "description": case.get("message")}],
         "marketing_brand_profiles": [], "marketing_products_services": []}
 

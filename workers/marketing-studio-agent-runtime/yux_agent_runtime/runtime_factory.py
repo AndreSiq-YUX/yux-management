@@ -17,7 +17,7 @@ from .mission_supervisor import MissionSupervisor
 from .model_profiles import ModelProfile
 
 
-DEFAULT_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_MODEL = "nex-agi/nex-n2.5-mini:free"
 
 
 def build_mission_supervisor(

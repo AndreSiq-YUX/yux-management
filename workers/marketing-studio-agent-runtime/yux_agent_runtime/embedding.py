@@ -11,8 +11,8 @@ from .providers import OpenRouterClient, ProviderRequestError
 @dataclass
 class QueryEmbeddingService:
     client: OpenRouterClient
-    model: str = field(default_factory=lambda: os.getenv("OPENROUTER_EMBEDDING_MODEL", "qwen/qwen3-embedding-8b"))
-    dimensions: int = field(default_factory=lambda: int(os.getenv("OPENROUTER_EMBEDDING_DIMENSIONS", "1024")))
+    model: str = field(default_factory=lambda: os.getenv("OPENROUTER_EMBEDDING_MODEL", "google/gemini-embedding-2"))
+    dimensions: int = field(default_factory=lambda: int(os.getenv("OPENROUTER_EMBEDDING_DIMENSIONS", "768")))
     ttl_seconds: int = 300
     cache: dict[str, tuple[float, list[float]]] = field(default_factory=dict)
 

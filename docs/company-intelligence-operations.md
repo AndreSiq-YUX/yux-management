@@ -40,11 +40,12 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 
 - `OPENROUTER_API_KEY` na API, nos workers e no Agent Harness, para curadoria,
   extração estruturada e embeddings;
-- `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
-- `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
+- `OPENROUTER_ALLOWED_PAID_MODELS` contém a lista explícita, separada por vírgulas, de modelos pagos aprovados; sem essa aprovação o runtime recusa a chamada antes de transmiti-la ao provedor;
+- `OPENROUTER_EMBEDDING_MODEL` (padrão `google/gemini-embedding-2`);
+- `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `768`);
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
-- `KNOWLEDGE_CURATION_MODEL` (padrão `qwen/qwen3.5-9b`, de baixo custo e compatível com saída estruturada);
-- `KNOWLEDGE_CURATION_FALLBACK_MODELS` (padrão `mistralai/mistral-small-3.2-24b-instruct,openai/gpt-oss-20b`, usado de forma ordenada quando o modelo principal estiver indisponível);
+- `KNOWLEDGE_CURATION_MODEL` (padrão gratuito `nex-agi/nex-n2.5-mini:free`);
+- `KNOWLEDGE_CURATION_FALLBACK_MODELS` fica vazio por padrão para impedir fallback silencioso para um modelo pago;
 - `KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS` (padrão e teto seguro `4000`, mínimo `1000`);
 - a curadoria estratégica usa JSON Schema estrito, exige ao menos uma evidência literalmente verificável quando o modelo propõe itens, usa até quatro tentativas por lote e bloqueia provedores que coletem o conteúdo para treinamento;
 - a conta OpenRouter precisa manter saldo positivo; sem saldo, o job falha de forma recuperável, preserva o arquivo e os trechos extraídos e informa `openrouter_credit_required`;
@@ -104,7 +105,7 @@ governados que podem ser vinculados ao agente estratégico e ao Actual Engine.
   generalizado e manter aplicabilidade e contraindicações explícitas. Se o
   modelo devolver outra categoria, o item é normalizado para `concept_card`
   sem dispensar as validações de título, princípio e evidência.
-- OpenRouter gera os embeddings com `qwen/qwen3-embedding-8b`. A interface impede uma nova ingestão estruturada
+- OpenRouter gera os embeddings com `google/gemini-embedding-2`, quando explicitamente aprovado em `OPENROUTER_ALLOWED_PAID_MODELS`. A interface impede uma nova ingestão estruturada
   quando Harness, curadoria ou embeddings não estão configurados.
 - As requisições de embedding recusam rotas de provedores marcados como
   coletores de dados (`data_collection=deny`).

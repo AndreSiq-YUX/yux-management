@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from yux_agent_runtime.providers import JinaClient, OpenRouterClient, ProviderRequestError
 
@@ -16,7 +17,11 @@ class ProviderClientTest(unittest.TestCase):
                 "usage": {"prompt_tokens": 20, "completion_tokens": 12, "total_tokens": 32, "cost": 0.0042},
             }
 
-        client = OpenRouterClient(api_key="or-key", transport=transport)
+        client = OpenRouterClient(
+            api_key="or-key",
+            transport=transport,
+            allowed_paid_models=frozenset({"openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"}),
+        )
         response = client.chat_completion(
             model="openai/gpt-4.1-mini",
             fallback_models=["anthropic/claude-sonnet-4"],
@@ -40,19 +45,50 @@ class ProviderClientTest(unittest.TestCase):
         with self.assertRaises(ProviderRequestError):
             OpenRouterClient(api_key=None).chat_completion(model="x", messages=[])
 
-    def test_openrouter_embeddings_use_qwen_and_query_input_type(self):
+    def test_openrouter_rejects_unapproved_paid_model_before_transport(self):
         calls = []
 
         def transport(url, headers, payload, method):
             calls.append((url, headers, payload, method))
-            return {"model": "qwen/qwen3-embedding-8b", "data": [{"index": 0, "embedding": [1.0, 0.0]}], "usage": {"total_tokens": 3}}
+            return {}
 
-        result = OpenRouterClient(api_key="or-key", transport=transport).embed_texts(
+        with self.assertRaisesRegex(ProviderRequestError, "paid_openrouter_model_not_approved"):
+            OpenRouterClient(api_key="or-key", transport=transport, enforce_paid_model_approval=True).chat_completion(
+                model="openai/gpt-4.1-mini", messages=[]
+            )
+        self.assertEqual(calls, [])
+
+    def test_openrouter_allows_free_model_without_paid_allowlist(self):
+        def transport(url, headers, payload, method):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+        response = OpenRouterClient(api_key="or-key", transport=transport).chat_completion(
+            model="nex-agi/nex-n2.5-mini:free", messages=[]
+        )
+        self.assertEqual(response["content"], "ok")
+
+    def test_openrouter_reads_only_explicit_paid_model_approvals(self):
+        with patch.dict("os.environ", {"OPENROUTER_ALLOWED_PAID_MODELS": "google/gemini-embedding-2"}, clear=False):
+            client = OpenRouterClient.from_env()
+        self.assertEqual(client.allowed_paid_models, frozenset({"google/gemini-embedding-2"}))
+
+    def test_openrouter_embeddings_use_gemini_and_query_input_type(self):
+        calls = []
+
+        def transport(url, headers, payload, method):
+            calls.append((url, headers, payload, method))
+            return {"model": "google/gemini-embedding-2", "data": [{"index": 0, "embedding": [1.0, 0.0]}], "usage": {"total_tokens": 3}}
+
+        result = OpenRouterClient(
+            api_key="or-key",
+            transport=transport,
+            allowed_paid_models=frozenset({"google/gemini-embedding-2"}),
+        ).embed_texts(
             ["consulta semantica"], input_type="search_query", dimensions=2
         )
         self.assertEqual(calls[0][0], "https://openrouter.ai/api/v1/embeddings")
         self.assertEqual(calls[0][2], {
-            "model": "qwen/qwen3-embedding-8b",
+            "model": "google/gemini-embedding-2",
             "input": ["consulta semantica"],
             "input_type": "search_query",
             "dimensions": 2,

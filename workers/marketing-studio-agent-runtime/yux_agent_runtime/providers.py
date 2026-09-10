@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from hashlib import sha256
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.error import HTTPError
 from urllib.parse import quote
@@ -15,6 +15,18 @@ class ProviderRequestError(Exception):
 
 
 Transport = Callable[[str, dict[str, str], dict[str, Any] | None, str], dict[str, Any] | str]
+
+
+def _configured_paid_models() -> frozenset[str]:
+    return frozenset(
+        model.strip()
+        for model in os.getenv("OPENROUTER_ALLOWED_PAID_MODELS", "").split(",")
+        if model.strip()
+    )
+
+
+def _is_free_openrouter_model(model: str) -> bool:
+    return model == "openrouter/free" or model.endswith(":free")
 
 
 def _default_transport(url: str, headers: dict[str, str], payload: dict[str, Any] | None, method: str) -> dict[str, Any] | str:
@@ -48,10 +60,26 @@ class OpenRouterClient:
     api_key: str | None = None
     base_url: str = "https://openrouter.ai/api/v1"
     transport: Transport = _default_transport
+    allowed_paid_models: frozenset[str] = field(default_factory=frozenset)
+    enforce_paid_model_approval: bool = False
 
     @classmethod
     def from_env(cls) -> "OpenRouterClient":
-        return cls(api_key=os.getenv("OPENROUTER_API_KEY"))
+        return cls(
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            allowed_paid_models=_configured_paid_models(),
+            enforce_paid_model_approval=True,
+        )
+
+    def _require_model_approval(self, models: list[str]) -> None:
+        if not self.enforce_paid_model_approval:
+            return
+        denied = [
+            model for model in models
+            if not _is_free_openrouter_model(model) and model not in self.allowed_paid_models
+        ]
+        if denied:
+            raise ProviderRequestError(f"paid_openrouter_model_not_approved:{denied[0]}")
 
     def chat_completion(
         self,
@@ -66,6 +94,7 @@ class OpenRouterClient:
     ) -> dict[str, Any]:
         if not self.api_key:
             raise ProviderRequestError("missing_openrouter_api_key")
+        self._require_model_approval([model, *(fallback_models or [])])
 
         payload: dict[str, Any] = {
             "model": model,
@@ -119,11 +148,12 @@ class OpenRouterClient:
         texts: list[str],
         *,
         input_type: str,
-        model: str = "qwen/qwen3-embedding-8b",
-        dimensions: int = 1024,
+        model: str = "google/gemini-embedding-2",
+        dimensions: int = 768,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise ProviderRequestError("missing_openrouter_api_key")
+        self._require_model_approval([model])
         response = self.transport(
             f"{self.base_url.rstrip('/')}/embeddings",
             _bearer_headers(self.api_key),

@@ -13,8 +13,8 @@ from .providers import OpenRouterClient, ProviderRequestError
 
 PROMPT_VERSION = "strategy-curation:v9"
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
-DEFAULT_CURATION_MODEL = "qwen/qwen3.5-9b"
-DEFAULT_CURATION_FALLBACK_MODELS = ("mistralai/mistral-small-3.2-24b-instruct", "openai/gpt-oss-20b")
+DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
+DEFAULT_CURATION_FALLBACK_MODELS: tuple[str, ...] = ()
 MAX_CURATION_ATTEMPTS = 4
 RESPONSE_FORMAT = {
     "type": "json_schema",

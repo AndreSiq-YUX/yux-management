@@ -80,6 +80,7 @@ const envSchema = z.object({
   OAUTH_ALLOWED_REDIRECT_URIS: optionalString,
   PROVIDER_SECRET_ENCRYPTION_KEY_B64: optionalString,
   OPENROUTER_API_KEY: optionalString,
+  OPENROUTER_ALLOWED_PAID_MODELS: optionalString,
   OPENROUTER_EMBEDDING_MODEL: optionalString,
   OPENROUTER_EMBEDDING_DIMENSIONS: z.coerce.number().int().min(1).max(4096).optional(),
   OPENROUTER_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).optional(),
