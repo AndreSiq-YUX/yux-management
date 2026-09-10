@@ -43,9 +43,13 @@ class CustomerContextService:
         query: str,
         assistant_id: str | None = None,
         external: bool = False,
+        audience: str | None = None,
     ) -> dict[str, Any]:
         if not organization_id:
             return {}
+        retrieval_audience = audience or ("external_contact" if external else "client_user")
+        if retrieval_audience not in {"internal_operator", "client_user", "external_contact"}:
+            raise ValueError("invalid_customer_context_audience")
 
         company = _latest(self.store.list("organization_company_profiles", {"organization_id": organization_id}, limit=2))
         brands = self.store.list("marketing_brand_profiles", {"organization_id": organization_id}, limit=20)
@@ -63,7 +67,7 @@ class CustomerContextService:
                 organization_id=organization_id,
                 contract_id=contract_id,
                 profile_key=profile_key,
-                audience="external_contact" if external else "client_user",
+                audience=retrieval_audience,
                 module_key="marketing_studio",
                 workflow_key=None,
                 channel=None,

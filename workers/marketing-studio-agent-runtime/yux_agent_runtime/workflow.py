@@ -315,6 +315,7 @@ class StrategyWorkflowEngine:
                     query=message,
                     assistant_id=assistant_id,
                     external=retrieval_audience == "external_contact",
+                    audience=retrieval_audience,
                 )
             supplied = retrieval_context or {}
             if retrieved or company_context or supplied:

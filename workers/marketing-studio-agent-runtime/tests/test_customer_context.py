@@ -91,6 +91,38 @@ class CustomerContextTest(unittest.TestCase):
         )
         self.assertIn("company:relevant-after-raw", {item["id"] for item in result["company_chunks"]})
 
+    def test_forwards_internal_operator_audience_to_authorized_retrieval(self):
+        class AuthorizedStore(InMemoryAgentRuntimeStore):
+            def __init__(self, tables):
+                super().__init__(tables=tables)
+                self.authorized_calls = []
+
+            def retrieve_authorized_knowledge(self, **kwargs):
+                self.authorized_calls.append(kwargs)
+                return []
+
+        store = AuthorizedStore(self.store.tables)
+
+        CustomerContextService(store).retrieve(
+            organization_id="org-a",
+            contract_id="contract-a",
+            profile_key="growth_strategist",
+            query="diagnóstico",
+            audience="internal_operator",
+        )
+
+        self.assertEqual(store.authorized_calls[0]["audience"], "internal_operator")
+
+    def test_rejects_unknown_explicit_audience(self):
+        with self.assertRaisesRegex(ValueError, "invalid_customer_context_audience"):
+            CustomerContextService(self.store).retrieve(
+                organization_id="org-a",
+                contract_id=None,
+                profile_key="growth_strategist",
+                query="diagnóstico",
+                audience="unknown",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
