@@ -42,6 +42,25 @@ class TruncatedThenValidLlm:
         }
 
 
+class ReasoningWrappedLlm(FakeLlm):
+    def chat_completion(self, **kwargs):
+        response = super().chat_completion(**kwargs)
+        response["content"] = "<think>Vou organizar os campos.</think>\nAqui está o resultado:\n```json\n" + response["content"] + "\n```\n"
+        return response
+
+
+class AlwaysInvalidJsonLlm:
+    def __init__(self):
+        self.calls = 0
+
+    def chat_completion(self, **kwargs):
+        self.calls += 1
+        return {
+            "provider": "openrouter", "model": kwargs["model"], "input_tokens": 20, "output_tokens": 4000,
+            "total_tokens": 4020, "finish_reason": "length", "content": "resposta incompleta",
+        }
+
+
 class UnknownKindLlm:
     def chat_completion(self, **kwargs):
         assert "concept_card, playbook, rubric ou prompt_rule" in kwargs["messages"][0]["content"]
@@ -118,6 +137,30 @@ def test_strategy_curation_retries_truncated_json_without_losing_source_contract
     assert llm.calls == 2
     assert result["items"][0]["evidence"][0]["claimType"] == "derived"
     assert result["items"][0]["evidence"][0]["excerpt"] == "analise o mecanismo antes de repetir a tática"
+
+
+def test_strategy_curation_extracts_json_wrapped_in_reasoning_and_markdown():
+    service = StrategyCurationService(ReasoningWrappedLlm(), "test-model")
+    result = service.curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+
+    assert len(result["items"]) == 1
+
+
+def test_strategy_curation_degrades_only_the_unusable_batch_after_json_retries(monkeypatch):
+    monkeypatch.setattr("yux_agent_runtime.strategy_curation.time.sleep", lambda _seconds: None)
+    llm = AlwaysInvalidJsonLlm()
+    service = StrategyCurationService(llm, "test-model")
+    result = service.curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+
+    assert llm.calls == 4
+    assert result["items"] == []
+    assert "unusable_strategy_curation_json_after_retry" in result["warnings"]
 
 
 def test_strategy_contract_normalizes_unknown_kind_without_discarding_valid_content():

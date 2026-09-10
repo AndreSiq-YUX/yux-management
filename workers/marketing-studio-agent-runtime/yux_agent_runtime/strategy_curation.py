@@ -11,11 +11,18 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-PROMPT_VERSION = "strategy-curation:v9"
+PROMPT_VERSION = "strategy-curation:v10"
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
 DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
 DEFAULT_CURATION_FALLBACK_MODELS: tuple[str, ...] = ()
 MAX_CURATION_ATTEMPTS = 4
+RETRY_INSTRUCTION = "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, limite-se a no máximo 3 itens concisos e feche corretamente o objeto JSON."
+COMPACT_RETRY_INSTRUCTION = (
+    "Retorne somente o objeto JSON do contrato, sem Markdown, explicações ou raciocínio. "
+    "Para evitar truncamento, retorne no máximo 1 item, com textos curtos (até 200 caracteres), "
+    "no máximo 2 entradas por lista e somente 1 evidence com excerpt literal de até 240 caracteres. "
+    "Se não houver item sustentado pela fonte, use items vazio e preserve um warning curto."
+)
 RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
@@ -100,15 +107,55 @@ def _score(value: Any) -> float:
 
 
 def _json_content(value: str) -> dict[str, Any]:
-    clean = value.strip()
-    if clean.startswith("```"):
-        clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", clean, flags=re.IGNORECASE)
+    clean = _extract_json_object(value)
     parsed = json.loads(clean)
     if not isinstance(parsed, dict):
         raise ProviderRequestError("invalid_strategy_curation_payload")
     if not isinstance(parsed.get("items"), list) or not isinstance(parsed.get("warnings", []), list):
         raise ProviderRequestError("invalid_strategy_curation_payload")
     return parsed
+
+
+def _extract_json_object(value: str) -> str:
+    """Extract one complete JSON object from provider prose/reasoning.
+
+    Some free reasoning models place a ``<think>`` block or a short Markdown
+    preamble around an otherwise valid object.  We keep the parser strict about
+    balancing braces and quoted strings, while allowing that non-contract text
+    to be discarded before JSON validation.
+    """
+    clean = value.strip()
+    if clean.startswith("```"):
+        clean = re.sub(r"^```(?:json)?\s*", "", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\s*```$", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"<think>.*?</think>", "", clean, flags=re.IGNORECASE | re.DOTALL)
+    clean = re.sub(r"<analysis>.*?</analysis>", "", clean, flags=re.IGNORECASE | re.DOTALL)
+    start = clean.find("{")
+    if start < 0:
+        raise json.JSONDecodeError("no JSON object", clean, 0)
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(clean)):
+        char = clean[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return clean[start:index + 1]
+    raise json.JSONDecodeError("unterminated JSON object", clean, start)
 
 
 def _retryable_provider_error(error: ProviderRequestError) -> bool:
@@ -185,7 +232,7 @@ class StrategyCurationService:
         usage = {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0}
         last_provider_error: ProviderRequestError | None = None
         model_attempts = (self.model, self.model, *self.fallback_models)
-        retry_instruction = "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, limite-se a no máximo 3 itens concisos e feche corretamente o objeto JSON."
+        retry_instruction = RETRY_INSTRUCTION
         for attempt in range(MAX_CURATION_ATTEMPTS):
             attempt_model = model_attempts[min(attempt, len(model_attempts) - 1)]
             attempt_messages = messages if attempt == 0 else [
@@ -223,7 +270,8 @@ class StrategyCurationService:
                     retry_instruction = (
                         "A resposta anterior criou itens, mas nenhuma evidence era uma substring literal da fonte. "
                         "Gere novamente e copie cada excerpt exatamente, caractere por caractere, de um único body recebido; "
-                        "não traduza, não corrija capitalização, não altere pontuação e mantenha o locator correspondente."
+                        "não traduza, não corrija capitalização, não altere pontuação e mantenha o locator correspondente. "
+                        f"{COMPACT_RETRY_INSTRUCTION}"
                     )
                     time.sleep(min(2 ** attempt, 4))
                     continue
@@ -231,7 +279,12 @@ class StrategyCurationService:
                 break
             except (json.JSONDecodeError, ProviderRequestError) as error:
                 if attempt == MAX_CURATION_ATTEMPTS - 1:
-                    raise ProviderRequestError("invalid_strategy_curation_json_after_retry") from error
+                    payload = {
+                        "items": [],
+                        "warnings": ["unusable_strategy_curation_json_after_retry"],
+                    }
+                    break
+                retry_instruction = COMPACT_RETRY_INSTRUCTION
                 time.sleep(min(2 ** attempt, 4))
         if payload is None and last_provider_error is not None:
             raise last_provider_error
