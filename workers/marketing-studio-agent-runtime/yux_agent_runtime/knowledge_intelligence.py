@@ -10,7 +10,7 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-DEFAULT_CURATION_MODEL = "qwen/qwen3-next-80b-a3b-instruct:free"
+DEFAULT_CURATION_MODEL = "openrouter/free"
 
 
 def _normalized(value: str) -> str:
