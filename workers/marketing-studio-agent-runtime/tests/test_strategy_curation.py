@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from yux_agent_runtime.api import create_app
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 from yux_agent_runtime.providers import ProviderRequestError
-from yux_agent_runtime.strategy_curation import DEFAULT_CURATION_MODEL, DEFAULT_MAX_OUTPUT_TOKENS, StrategyCurationService, validate_evidence
+from yux_agent_runtime.strategy_curation import DEFAULT_CURATION_FALLBACK_MODELS, DEFAULT_CURATION_MODEL, DEFAULT_MAX_OUTPUT_TOKENS, StrategyCurationService, validate_evidence
 
 
 class FakeLlm:
@@ -115,7 +115,32 @@ def test_strategy_curation_uses_safe_output_token_limit(monkeypatch):
 
 def test_strategy_curation_uses_cost_free_structured_output_model_by_default(monkeypatch):
     monkeypatch.delenv("KNOWLEDGE_CURATION_MODEL", raising=False)
-    assert StrategyCurationService.from_env().model == DEFAULT_CURATION_MODEL
+    monkeypatch.delenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", raising=False)
+    service = StrategyCurationService.from_env()
+    assert service.model == DEFAULT_CURATION_MODEL
+    assert service.fallback_models == DEFAULT_CURATION_FALLBACK_MODELS
+
+
+def test_strategy_curation_uses_controlled_fallback_after_primary_failures(monkeypatch):
+    monkeypatch.setattr("yux_agent_runtime.strategy_curation.time.sleep", lambda _seconds: None)
+
+    class CapturingLlm(FakeLlm):
+        def __init__(self):
+            self.models = []
+
+        def chat_completion(self, **kwargs):
+            self.models.append(kwargs["model"])
+            if len(self.models) < 3:
+                raise ProviderRequestError("provider_http_404:model unavailable")
+            return super().chat_completion(**kwargs)
+
+    llm = CapturingLlm()
+    result = StrategyCurationService(llm, "primary-model", fallback_models=("openrouter/free",)).curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+    assert llm.models == ["primary-model", "primary-model", "openrouter/free"]
+    assert len(result["items"]) == 1
 
 
 def test_strategy_curation_retries_transient_provider_failure(monkeypatch):

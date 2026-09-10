@@ -11,9 +11,10 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-PROMPT_VERSION = "strategy-curation:v7"
+PROMPT_VERSION = "strategy-curation:v8"
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
-DEFAULT_CURATION_MODEL = "openrouter/free"
+DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
+DEFAULT_CURATION_FALLBACK_MODELS = ("openrouter/free",)
 MAX_CURATION_ATTEMPTS = 4
 RESPONSE_FORMAT = {
     "type": "json_schema",
@@ -112,7 +113,7 @@ def _json_content(value: str) -> dict[str, Any]:
 
 def _retryable_provider_error(error: ProviderRequestError) -> bool:
     message = str(error).lower()
-    return any(marker in message for marker in ("timeout", "timed out", "aborted", "provider_http_429", "provider_http_502", "provider_http_503", "provider_http_504"))
+    return any(marker in message for marker in ("timeout", "timed out", "aborted", "provider_http_404", "provider_http_429", "provider_http_502", "provider_http_503", "provider_http_504"))
 
 
 @dataclass
@@ -120,6 +121,7 @@ class StrategyCurationService:
     llm_client: OpenRouterClient
     model: str = DEFAULT_CURATION_MODEL
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
+    fallback_models: tuple[str, ...] = DEFAULT_CURATION_FALLBACK_MODELS
 
     @classmethod
     def from_env(cls) -> "StrategyCurationService":
@@ -127,10 +129,16 @@ class StrategyCurationService:
             configured_tokens = int(os.getenv("KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
         except ValueError:
             configured_tokens = DEFAULT_MAX_OUTPUT_TOKENS
+        configured_fallbacks = tuple(
+            model.strip()
+            for model in os.getenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", ",".join(DEFAULT_CURATION_FALLBACK_MODELS)).split(",")
+            if model.strip()
+        )
         return cls(
             OpenRouterClient.from_env(),
             os.getenv("KNOWLEDGE_CURATION_MODEL", DEFAULT_CURATION_MODEL),
             max(1000, min(4000, configured_tokens)),
+            configured_fallbacks,
         )
 
     def curate(self, sections: list[dict[str, str]]) -> dict[str, Any]:
@@ -158,14 +166,16 @@ class StrategyCurationService:
         payload: dict[str, Any] | None = None
         usage = {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0}
         last_provider_error: ProviderRequestError | None = None
+        model_attempts = (self.model, self.model, *self.fallback_models)
         for attempt in range(MAX_CURATION_ATTEMPTS):
+            attempt_model = model_attempts[min(attempt, len(model_attempts) - 1)]
             attempt_messages = messages if attempt == 0 else [
                 *messages,
                 {"role": "user", "content": "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, limite-se a no máximo 3 itens concisos e feche corretamente o objeto JSON."},
             ]
             try:
                 response = self.llm_client.chat_completion(
-                    model=self.model,
+                    model=attempt_model,
                     temperature=0,
                     max_tokens=self.max_output_tokens,
                     response_format=RESPONSE_FORMAT,

@@ -10,7 +10,7 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-DEFAULT_CURATION_MODEL = "openrouter/free"
+DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
 
 
 def _normalized(value: str) -> str:

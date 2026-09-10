@@ -43,7 +43,8 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
 - `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
-- `KNOWLEDGE_CURATION_MODEL` (padrão `openrouter/free`, que roteia para um modelo gratuito disponível e compatível com saída estruturada, sem consumo de créditos por token);
+- `KNOWLEDGE_CURATION_MODEL` (padrão `nex-agi/nex-n2.5-mini:free`, gratuito e compatível com saída estruturada);
+- `KNOWLEDGE_CURATION_FALLBACK_MODELS` (padrão `openrouter/free`, usado automaticamente quando o modelo principal estiver indisponível);
 - `KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS` (padrão e teto seguro `4000`, mínimo `1000`);
 - a curadoria estratégica usa JSON Schema estrito, até quatro tentativas por lote e janela de quatro minutos para acomodar a latência variável dos endpoints gratuitos;
 - `JINA_API_KEY` no backend worker e no Agent Harness somente para Reader,
