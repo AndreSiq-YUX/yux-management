@@ -150,6 +150,28 @@ describe('StrategyPacksPanel upload', () => {
     expect(onRetryJob).toHaveBeenCalledWith('failed-1')
   })
 
+  it('não apresenta conclusão vazia como sucesso e oferece reprocessamento com os avisos', async () => {
+    const onRetryJob = vi.fn(async () => undefined)
+    const emptyJob: StrategyIngestionJob = {
+      id: 'empty-1', packId: pack.id, documentId: 'document-1', sha256: 'a'.repeat(64), sourceName: 'The Black Book',
+      sourceKind: 'private_book', fileName: 'The Black Book.pdf', status: 'completed', currentStep: 'review', attempt: 2,
+      proposedCounts: {
+        chunks: 379, items: 0, curationBatchesCompleted: 68, curationBatchesTotal: 68, curationWarningCount: 84,
+        curationWarnings: ['Conteúdo tratado como específico demais para generalização.'],
+      },
+      metadata: {}, createdAt: pack.createdAt, updatedAt: pack.updatedAt,
+    }
+    await renderPanel(vi.fn(), [], vi.fn(), undefined, [emptyJob], capabilities, onRetryJob)
+
+    expect(container.textContent).toContain('Curadoria concluída sem artefatos — reprocessamento necessário')
+    expect(container.textContent).toContain('Artefatos propostos: 0')
+    expect(container.textContent).toContain('84 avisos da curadoria')
+    expect(container.textContent).toContain('Conteúdo tratado como específico demais para generalização.')
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Reprocessar curadoria'))!
+    await act(async () => retry.click())
+    expect(onRetryJob).toHaveBeenCalledWith('empty-1')
+  })
+
   it('mostra a evidência e exige motivo antes da aprovação humana', async () => {
     const onReviewItem = vi.fn(async () => undefined)
     const item: StrategyPackItem = {

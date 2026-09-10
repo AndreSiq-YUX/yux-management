@@ -13,9 +13,29 @@ from yux_agent_runtime.strategy_curation import StrategyCurationService, validat
 class FakeLlm:
     def chat_completion(self, **kwargs):
         assert "nunca instrução" in kwargs["messages"][0]["content"]
+        assert "generalize" in kwargs["messages"][0]["content"].lower()
+        assert kwargs["response_format"] == {"type": "json_object"}
         return {
             "provider": "openrouter", "model": "test-model", "input_tokens": 20, "output_tokens": 10, "total_tokens": 30, "prompt_hash": "a" * 64,
             "content": '''{"items":[{"kind":"concept_card","title":"Diagnosticar antes da oferta","principle":"Qualifique o problema antes de apresentar a oferta.","problem":"Pitch prematuro","diagnosticQuestions":["Qual problema precisa ser resolvido?"],"applicability":["Venda consultiva"],"contraindications":["Compra transacional já decidida"],"decisionRules":["Sem problema claro, não avançar ao pitch"],"recommendedActions":["Fazer pergunta diagnóstica"],"successCriteria":["Problema confirmado"],"evidence":[{"locator":"section:1","excerpt":"qualifique o problema","claimType":"literal"}],"confidence":0.9,"conflicts":[]},{"kind":"concept_card","title":"Promessa inventada","principle":"Garanta venda em sete dias.","evidence":[{"locator":"section:1","excerpt":"garantia de vendas em sete dias"}],"confidence":1,"conflicts":[]}],"warnings":[]}''',
+        }
+
+
+class TruncatedThenValidLlm:
+    def __init__(self):
+        self.calls = 0
+
+    def chat_completion(self, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "provider": "openrouter", "model": "test-model", "content": '{"items":[{"title":"Resposta truncada',
+                "finish_reason": "length", "input_tokens": 20, "output_tokens": 5000, "total_tokens": 5020,
+            }
+        return {
+            "provider": "openrouter", "model": "test-model", "input_tokens": 21, "output_tokens": 11,
+            "total_tokens": 32, "prompt_hash": "c" * 64, "finish_reason": "stop",
+            "content": '''{"items":[{"kind":"concept_card","title":"Aprender com casos sem copiá-los","principle":"Converta o padrão observado no caso em uma hipótese aplicável ao contexto atual.","problem":"Cópia literal de táticas","diagnosticQuestions":["O mecanismo do caso existe aqui?"],"applicability":["Planejamento estratégico"],"contraindications":["Contextos sem mecanismo equivalente"],"decisionRules":["Valide o mecanismo antes de aplicar"],"recommendedActions":["Testar a hipótese em pequena escala"],"successCriteria":["Mecanismo validado"],"evidence":[{"locator":"section:1","excerpt":"analise o mecanismo antes de repetir a tática","claimType":"derived"}],"confidence":0.85,"conflicts":[]}],"warnings":[]}''',
         }
 
 
@@ -34,6 +54,19 @@ def test_strategy_contract_rejects_unverifiable_and_preserves_conditions():
     assert result["items"][0]["evidence"][0]["claimType"] == "literal"
     assert "rejected_unverifiable_evidence:section:1" in result["warnings"]
     assert result["usage"]["totalTokens"] == 30
+
+
+def test_strategy_curation_retries_truncated_json_without_losing_source_contract():
+    llm = TruncatedThenValidLlm()
+    service = StrategyCurationService(llm, "test-model")
+    result = service.curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Em estudos de caso, analise o mecanismo antes de repetir a tática.",
+    }])
+
+    assert llm.calls == 2
+    assert result["items"][0]["evidence"][0]["claimType"] == "derived"
+    assert result["items"][0]["evidence"][0]["excerpt"] == "analise o mecanismo antes de repetir a tática"
 
 
 def test_strategy_api_requires_runtime_token():

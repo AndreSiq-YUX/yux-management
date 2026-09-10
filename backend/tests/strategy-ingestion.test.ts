@@ -21,6 +21,7 @@ import {
   effectiveStrategyIngestionLimit,
   hasMeaningfulPdfText,
   retryStrategyIngestion,
+  strategyCurationCheckpointHash,
   STRATEGY_INGESTION_DEFAULT_LIMIT_BYTES,
   STRATEGY_INGESTION_HARD_LIMIT_BYTES,
   uploadStrategyIngestion,
@@ -107,6 +108,39 @@ describe('strategy ingestion boundaries', () => {
       sha256: 'a'.repeat(64),
       stage: 'curation',
       proposedCounts: { curationBatchesCompleted: 21, curationBatchesTotal: 61 },
+    })
+  })
+
+  it('invalida checkpoints quando o contrato de curadoria muda', () => {
+    const sections = [{
+      locator: 'section:1', documentId: 'document-1', documentHash: 'a'.repeat(64), body: 'Conteúdo estratégico.',
+    }]
+    expect(strategyCurationCheckpointHash(sections, 'strategy-curation:v1'))
+      .not.toBe(strategyCurationCheckpointHash(sections, 'strategy-curation:v2'))
+  })
+
+  it('permite reprocessar uma conclusão vazia sem solicitar novo upload', async () => {
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("SET status='queued'")) {
+          expect(sql).toContain("status='completed'")
+          expect(sql).toContain("proposed_counts->>'items'")
+          expect(sql).toContain("THEN 'curation'")
+          return { rows: [{
+            id: 'ingestion-empty', pack_id: 'pack-1', document_id: 'document-1', organization_id: 'organization-1',
+            source_name: 'Livro', source_kind: 'private_book', file_name: 'livro.pdf', mime_type: 'application/pdf',
+            byte_size: 119183723, sha256: 'a'.repeat(64), storage_path: 'strategy/document-1.pdf', status: 'queued',
+            current_step: 'curation', attempt_count: 2, failure_class: null, error_message: null, lease_owner: null,
+            lease_until: null, uploaded_by: 'user-1', proposed_counts: { chunks: 379 },
+            created_at: new Date('2026-09-09T10:00:00.000Z'), updated_at: new Date('2026-09-09T10:05:00.000Z'),
+          }] }
+        }
+        return { rows: [] }
+      }),
+    }
+
+    await expect(retryStrategyIngestion(pool as never, 'ingestion-empty')).resolves.toMatchObject({
+      status: 'queued', stage: 'curation', proposedCounts: { chunks: 379 },
     })
   })
 })

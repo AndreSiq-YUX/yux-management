@@ -30,6 +30,7 @@ export const STRATEGY_INGESTION_ALLOWED_MIME_TYPES = [
   'text/markdown',
 ] as const
 const ALLOWED_MIME_TYPES = new Set<string>(STRATEGY_INGESTION_ALLOWED_MIME_TYPES)
+export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v2'
 
 type IngestionRow = {
   id: string
@@ -146,9 +147,16 @@ export async function getStrategyIngestion(pool: Pick<pg.Pool, 'query'>, ingesti
 export async function retryStrategyIngestion(pool: Pick<pg.Pool, 'query'>, ingestionId: string) {
   const retried = (await pool.query<IngestionRow>(
     `UPDATE public.yux_strategy_ingestion_jobs
-     SET status='queued',error_message=NULL,failure_class=NULL,lease_owner=NULL,lease_until=NULL,updated_at=NOW()
+     SET status='queued',
+         current_step=CASE WHEN status='completed' THEN 'curation' ELSE current_step END,
+         proposed_counts=CASE WHEN status='completed'
+           THEN (proposed_counts - 'items' - 'curationWarnings' - 'curationWarningCount')
+             || '{"curationBatchesCompleted":0}'::jsonb
+           ELSE proposed_counts END,
+         completed_at=NULL,error_message=NULL,failure_class=NULL,lease_owner=NULL,lease_until=NULL,updated_at=NOW()
      WHERE id=$1 AND document_id IS NOT NULL AND sha256 IS NOT NULL AND storage_path IS NOT NULL
-       AND status IN ('failed','curation_unavailable')
+       AND (status IN ('failed','curation_unavailable')
+         OR (status='completed' AND COALESCE(proposed_counts->>'items','0')='0'))
        AND (lease_until IS NULL OR lease_until < NOW())
      RETURNING *`,
     [ingestionId],
@@ -347,7 +355,12 @@ export async function handleStrategyIndexKnowledge(
     const sections = await loadStrategySections(pool, claimed)
     const results = await curateCheckpointedBatches(pool, env, claimed, sections, options)
     const items = deduplicateCuratedItems(results.flatMap(result => result.items))
-    const proposed = await persistStrategyProposals(pool, claimed, items, sections)
+    const warningSummary = summarizeCurationWarnings(results)
+    if (!items.length) {
+      await finishWithoutArtifacts(pool, claimed, owner, attempt, sections.length, warningSummary)
+      return { ingestionId, documentId, chunks: sections.length, proposals: 0, curationEmpty: true }
+    }
+    const proposed = await persistStrategyProposals(pool, claimed, items, sections, results[0]?.promptVersion)
     await pool.query(
       `UPDATE public.yux_strategy_ingestion_jobs SET current_step='embedding' WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
       [ingestionId, owner, attempt],
@@ -371,7 +384,7 @@ export async function handleStrategyIndexKnowledge(
        WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
       [
         ingestionId, owner, attempt,
-        JSON.stringify({ chunks: sections.length, items: proposed.length }),
+        JSON.stringify({ chunks: sections.length, items: proposed.length, ...warningSummary }),
         results[0]?.promptVersion || null, results[0]?.provider || null, results[0]?.model || null,
       ],
     )
@@ -448,6 +461,42 @@ async function finishWithoutCuration(pool: pg.Pool, ingestionId: string, owner: 
   )
 }
 
+async function finishWithoutArtifacts(
+  pool: pg.Pool,
+  ingestion: IngestionRow,
+  owner: string,
+  attempt: number,
+  chunks: number,
+  warningSummary: { curationWarnings: string[]; curationWarningCount: number },
+) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      `UPDATE public.yux_strategy_curation_batches
+       SET status='failed',error_message='strategy_curation_no_artifacts'
+       WHERE ingestion_id=$1 AND status='completed'`,
+      [ingestion.id],
+    )
+    const updated = await client.query(
+      `UPDATE public.yux_strategy_ingestion_jobs
+       SET status='failed',current_step='curation',
+           proposed_counts=proposed_counts || $4::jsonb,
+           error_message='strategy_curation_no_artifacts',failure_class='recoverable',
+           lease_owner=NULL,lease_until=NULL
+       WHERE id=$1 AND lease_owner=$2 AND attempt_count=$3`,
+      [ingestion.id, owner, attempt, JSON.stringify({ chunks, items: 0, ...warningSummary })],
+    )
+    if (updated.rowCount !== 1) throw new Error('strategy_ingestion_claim_lost')
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
 async function loadStrategySections(pool: pg.Pool, ingestion: IngestionRow): Promise<StrategyCurationSection[]> {
   if (!ingestion.document_id || !ingestion.sha256) throw new Error('strategy_ingestion_document_required')
   const result = await pool.query<{ section_key: string; chunk_text: string; metadata: Record<string, unknown> }>(
@@ -482,7 +531,7 @@ async function curateCheckpointedBatches(
   await updateCurationProgress(pool, ingestion.id, completedBatches, batches.length)
   for (const [batchIndex, batch] of batches.entries()) {
     if (options.signal?.aborted) throw options.signal.reason
-    const inputHash = createHash('sha256').update(JSON.stringify(batch)).digest('hex')
+    const inputHash = strategyCurationCheckpointHash(batch)
     const saved = (await pool.query<{ status: string; input_hash: string; output: unknown }>(
       `INSERT INTO public.yux_strategy_curation_batches (ingestion_id,batch_index,input_hash,status,attempt_count,started_at)
        VALUES ($1,$2,$3,'running',1,NOW())
@@ -625,6 +674,23 @@ function batchStrategySections(sections: StrategyCurationSection[], maxChars = 1
   return batches
 }
 
+export function strategyCurationCheckpointHash(
+  sections: StrategyCurationSection[],
+  promptVersion = STRATEGY_CURATION_PROMPT_VERSION,
+) {
+  return createHash('sha256').update(JSON.stringify({ promptVersion, sections })).digest('hex')
+}
+
+function summarizeCurationWarnings(results: StrategyCurationResult[]) {
+  const warnings = results.flatMap(result => result.warnings)
+  return {
+    curationWarnings: [...new Set(warnings.map(warning => warning.trim()).filter(Boolean))]
+      .slice(0, 12)
+      .map(warning => warning.slice(0, 300)),
+    curationWarningCount: warnings.length,
+  }
+}
+
 function deduplicateCuratedItems(items: StrategyCurationItem[]) {
   const selected = new Map<string, StrategyCurationItem>()
   for (const item of items) {
@@ -635,7 +701,13 @@ function deduplicateCuratedItems(items: StrategyCurationItem[]) {
   return [...selected.values()]
 }
 
-async function persistStrategyProposals(pool: pg.Pool, ingestion: IngestionRow, items: StrategyCurationItem[], sections: StrategyCurationSection[]) {
+async function persistStrategyProposals(
+  pool: pg.Pool,
+  ingestion: IngestionRow,
+  items: StrategyCurationItem[],
+  sections: StrategyCurationSection[],
+  promptVersion = STRATEGY_CURATION_PROMPT_VERSION,
+) {
   if (!ingestion.pack_id || !ingestion.document_id) throw new Error('strategy_ingestion_pack_required')
   const persisted: Array<{ id: string; body: string }> = []
   for (const item of items) {
@@ -657,7 +729,7 @@ async function persistStrategyProposals(pool: pg.Pool, ingestion: IngestionRow, 
       .map(peer => ({ ...peer, similarity: textSimilarity(item.principle, peer.body) }))
       .filter(peer => peer.similarity >= 0.72)
       .map(peer => ({ itemId: peer.id, title: peer.title, similarity: peer.similarity, disposition: 'review_merge_or_conflict' }))
-    const payload = { ...item, conflicts: [...item.conflicts, ...conflicts], curationPromptVersion: 'strategy-curation:v1', sourceOrigin: 'document_extracted' }
+    const payload = { ...item, conflicts: [...item.conflicts, ...conflicts], curationPromptVersion: promptVersion, sourceOrigin: 'document_extracted' }
     const row = (await pool.query<{ id: string }>(
       `INSERT INTO public.yux_strategy_pack_items (
          pack_id,item_type,title,summary,body,source_reference,status,priority,payload,source_origin,

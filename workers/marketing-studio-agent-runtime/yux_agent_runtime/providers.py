@@ -62,6 +62,7 @@ class OpenRouterClient:
         temperature: float = 0.4,
         fallback_models: list[str] | None = None,
         session_id: str | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise ProviderRequestError("missing_openrouter_api_key")
@@ -77,6 +78,8 @@ class OpenRouterClient:
             payload["models"] = [model, *fallback_models]
         if session_id:
             payload["session_id"] = session_id
+        if response_format:
+            payload["response_format"] = response_format
 
         response = self.transport(
             f"{self.base_url.rstrip('/')}/chat/completions",

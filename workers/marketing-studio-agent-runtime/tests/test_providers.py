@@ -22,12 +22,14 @@ class ProviderClientTest(unittest.TestCase):
             fallback_models=["anthropic/claude-sonnet-4"],
             messages=[{"role": "user", "content": "Gerar post"}],
             session_id="run-1",
+            response_format={"type": "json_object"},
         )
 
         self.assertEqual(calls[0][0], "https://openrouter.ai/api/v1/chat/completions")
         self.assertEqual(calls[0][1]["Authorization"], "Bearer or-key")
         self.assertEqual(calls[0][2]["models"], ["openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"])
         self.assertEqual(calls[0][2]["session_id"], "run-1")
+        self.assertEqual(calls[0][2]["response_format"], {"type": "json_object"})
         self.assertEqual(response["content"], "Texto gerado")
         self.assertEqual(response["input_tokens"], 20)
         self.assertEqual(response["output_tokens"], 12)

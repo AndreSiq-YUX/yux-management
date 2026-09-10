@@ -45,7 +45,7 @@ function splitCsv(value: string) {
 function statusTone(status: string) {
   if (['published', 'approved', 'active', 'completed'].includes(status)) return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
   if (['review', 'proposed', 'uploaded', 'extracting'].includes(status)) return 'bg-amber-50 text-amber-700 ring-amber-200'
-  if (['archived', 'failed', 'blocked'].includes(status)) return 'bg-red-50 text-red-700 ring-red-200'
+  if (['archived', 'failed', 'blocked', 'atenção'].includes(status)) return 'bg-red-50 text-red-700 ring-red-200'
   return 'bg-gray-50 text-gray-700 ring-gray-200'
 }
 
@@ -55,6 +55,12 @@ function Pill({ value }: { value: string }) {
 
 function isLegacyMetadataOnly(job: StrategyIngestionJob) {
   return job.status === 'uploaded' && !job.documentId && !job.sha256
+}
+
+function isCompletedWithoutArtifacts(job: StrategyIngestionJob) {
+  return job.status === 'completed'
+    && Object.prototype.hasOwnProperty.call(job.proposedCounts, 'items')
+    && Number(job.proposedCounts.items || 0) === 0
 }
 
 function readinessMessages(capabilities: StrategyIngestionCapabilities) {
@@ -67,6 +73,9 @@ function readinessMessages(capabilities: StrategyIngestionCapabilities) {
 
 function jobStageLabel(job: StrategyIngestionJob) {
   if (isLegacyMetadataOnly(job)) return 'Aguardando reenvio do arquivo real'
+  if (isCompletedWithoutArtifacts(job)) {
+    return 'Curadoria concluída sem artefatos — reprocessamento necessário'
+  }
   const labels: Record<string, string> = {
     upload: 'Recebendo e validando o arquivo',
     extraction: 'Extraindo texto e páginas',
@@ -76,6 +85,19 @@ function jobStageLabel(job: StrategyIngestionJob) {
     ocr: 'O PDF precisa de OCR antes da curadoria',
   }
   return labels[job.currentStep] || job.currentStep
+}
+
+function jobErrorMessage(job: StrategyIngestionJob) {
+  if (job.recoverableError?.message === 'strategy_curation_no_artifacts') {
+    return 'A curadoria não encontrou artefatos utilizáveis. O arquivo foi preservado e pode ser reprocessado.'
+  }
+  return job.recoverableError?.message || ''
+}
+
+function jobCurationWarnings(job: StrategyIngestionJob) {
+  return Array.isArray(job.proposedCounts.curationWarnings)
+    ? job.proposedCounts.curationWarnings.filter((warning): warning is string => typeof warning === 'string' && Boolean(warning.trim()))
+    : []
 }
 
 export function StrategyPacksPanel({
@@ -527,7 +549,7 @@ export function StrategyPacksPanel({
                       <p className="font-semibold text-gray-950">{job.sourceName}</p>
                       <p className="mt-1 text-xs text-gray-600">{job.sourceKind} / {job.fileName || 'sem arquivo'}</p>
                     </div>
-                    <Pill value={job.status} />
+                    <Pill value={isCompletedWithoutArtifacts(job) ? 'atenção' : job.status} />
                   </div>
                   <p className="mt-2 text-xs text-gray-500">Etapa atual: {job.currentStep}</p>
                   <p className="mt-1 text-xs text-gray-600">{jobStageLabel(job)}</p>
@@ -538,7 +560,7 @@ export function StrategyPacksPanel({
                     </p>
                   ) : null}
                   {Number(job.proposedCounts.chunks || 0) > 0 ? <p className="mt-1 text-xs text-gray-500">Trechos extraídos: {Number(job.proposedCounts.chunks)}</p> : null}
-                  {Number(job.proposedCounts.items || 0) > 0 ? <p className="mt-1 text-xs text-gray-500">Artefatos propostos: {Number(job.proposedCounts.items)}</p> : null}
+                  {Object.prototype.hasOwnProperty.call(job.proposedCounts, 'items') ? <p className="mt-1 text-xs text-gray-500">Artefatos propostos: {Number(job.proposedCounts.items || 0)}</p> : null}
                   {Number(job.proposedCounts.curationBatchesTotal || 0) > 0 ? (
                     <p className="mt-1 text-xs text-gray-500">
                       Lotes de curadoria: {Number(job.proposedCounts.curationBatchesCompleted || 0)} de {Number(job.proposedCounts.curationBatchesTotal)}
@@ -546,12 +568,20 @@ export function StrategyPacksPanel({
                   ) : null}
                   {job.recoverableError ? (
                     <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                      {job.recoverableError.message}{job.recoverableError.recoverable ? ' — o processamento pode ser retomado.' : ''}
+                      {jobErrorMessage(job)}{job.recoverableError.recoverable ? ' — o processamento pode ser retomado.' : ''}
                     </p>
                   ) : null}
-                  {job.documentId && (job.status === 'failed' || job.status === 'curation_unavailable') ? (
+                  {Number(job.proposedCounts.curationWarningCount || 0) > 0 ? (
+                    <details className="mt-2 rounded-md border bg-gray-50 p-2 text-xs text-gray-700">
+                      <summary className="cursor-pointer font-medium">{Number(job.proposedCounts.curationWarningCount)} avisos da curadoria</summary>
+                      <ul className="mt-2 list-disc space-y-1 pl-4">
+                        {jobCurationWarnings(job).map((warning, index) => <li key={`${job.id}-warning-${index}`}>{warning}</li>)}
+                      </ul>
+                    </details>
+                  ) : null}
+                  {job.documentId && (job.status === 'failed' || job.status === 'curation_unavailable' || isCompletedWithoutArtifacts(job)) ? (
                     <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => void onRetryJob(job.id)}>
-                      Retomar processamento
+                      {job.status === 'completed' ? 'Reprocessar curadoria' : 'Retomar processamento'}
                     </Button>
                   ) : null}
                 </article>
