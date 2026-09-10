@@ -125,7 +125,7 @@ it('não conclui uma curadoria vazia e reprocessa o documento preservado', async
     )
     const emptyCurate = vi.fn(async () => ({
       items: [], warnings: ['Conteúdo específico demais.'], provider: 'openrouter', model: 'integration-model',
-      promptVersion: 'strategy-curation:v8', promptHash: 'a'.repeat(64),
+      promptVersion: 'strategy-curation:v9', promptHash: 'a'.repeat(64),
       usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
     }))
     const embed = vi.fn(async (_env: typeof env, texts: string[]) => ({
@@ -165,7 +165,7 @@ it('não conclui uma curadoria vazia e reprocessa o documento preservado', async
           }],
           confidence: 0.9, conflicts: [],
         }],
-        warnings: [], provider: 'openrouter', model: 'integration-model', promptVersion: 'strategy-curation:v8', promptHash: 'b'.repeat(64),
+        warnings: [], provider: 'openrouter', model: 'integration-model', promptVersion: 'strategy-curation:v9', promptHash: 'b'.repeat(64),
         usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
       }
     })

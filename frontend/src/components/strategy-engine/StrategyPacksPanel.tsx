@@ -91,6 +91,10 @@ function jobErrorMessage(job: StrategyIngestionJob) {
   if (job.recoverableError?.message === 'strategy_curation_no_artifacts') {
     return 'A curadoria não encontrou artefatos utilizáveis. O arquivo foi preservado e pode ser reprocessado.'
   }
+  if (job.recoverableError?.message.includes('openrouter_credit_required')
+    || job.recoverableError?.message.includes('provider_http_402')) {
+    return 'O saldo da OpenRouter é insuficiente. Recarregue a conta e retome o processamento; o arquivo e os trechos extraídos estão preservados.'
+  }
   return job.recoverableError?.message || ''
 }
 

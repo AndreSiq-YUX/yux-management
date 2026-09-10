@@ -11,10 +11,10 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-PROMPT_VERSION = "strategy-curation:v8"
+PROMPT_VERSION = "strategy-curation:v9"
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
-DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
-DEFAULT_CURATION_FALLBACK_MODELS = ("openrouter/free",)
+DEFAULT_CURATION_MODEL = "qwen/qwen3.5-9b"
+DEFAULT_CURATION_FALLBACK_MODELS = ("mistralai/mistral-small-3.2-24b-instruct", "openai/gpt-oss-20b")
 MAX_CURATION_ATTEMPTS = 4
 RESPONSE_FORMAT = {
     "type": "json_schema",
@@ -116,6 +116,24 @@ def _retryable_provider_error(error: ProviderRequestError) -> bool:
     return any(marker in message for marker in ("timeout", "timed out", "aborted", "provider_http_404", "provider_http_429", "provider_http_502", "provider_http_503", "provider_http_504"))
 
 
+def _has_grounded_candidate(payload: dict[str, Any], sources: dict[str, dict[str, Any]]) -> bool:
+    raw_items = payload.get("items") or []
+    if not raw_items:
+        return True
+    return any(
+        isinstance(raw, dict)
+        and bool(str(raw.get("title") or "").strip())
+        and bool(str(raw.get("principle") or "").strip())
+        and any(
+            isinstance(proof, dict)
+            and (source := sources.get(str(proof.get("locator") or ""))) is not None
+            and validate_evidence(str(source.get("body") or ""), str(proof.get("excerpt") or ""))
+            for proof in raw.get("evidence") or []
+        )
+        for raw in raw_items
+    )
+
+
 @dataclass
 class StrategyCurationService:
     llm_client: OpenRouterClient
@@ -167,11 +185,12 @@ class StrategyCurationService:
         usage = {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0}
         last_provider_error: ProviderRequestError | None = None
         model_attempts = (self.model, self.model, *self.fallback_models)
+        retry_instruction = "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, limite-se a no máximo 3 itens concisos e feche corretamente o objeto JSON."
         for attempt in range(MAX_CURATION_ATTEMPTS):
             attempt_model = model_attempts[min(attempt, len(model_attempts) - 1)]
             attempt_messages = messages if attempt == 0 else [
                 *messages,
-                {"role": "user", "content": "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, limite-se a no máximo 3 itens concisos e feche corretamente o objeto JSON."},
+                {"role": "user", "content": retry_instruction},
             ]
             try:
                 response = self.llm_client.chat_completion(
@@ -191,9 +210,22 @@ class StrategyCurationService:
             usage["outputTokens"] += int(response.get("output_tokens") or 0)
             usage["totalTokens"] += int(response.get("total_tokens") or 0)
             try:
-                payload = _json_content(str(response.get("content") or ""))
+                candidate = _json_content(str(response.get("content") or ""))
+                if not _has_grounded_candidate(candidate, sources):
+                    if attempt == MAX_CURATION_ATTEMPTS - 1:
+                        raise ProviderRequestError("invalid_strategy_curation_evidence_after_retry")
+                    retry_instruction = (
+                        "A resposta anterior criou itens, mas nenhuma evidence era uma substring literal da fonte. "
+                        "Gere novamente e copie cada excerpt exatamente, caractere por caractere, de um único body recebido; "
+                        "não traduza, não corrija capitalização, não altere pontuação e mantenha o locator correspondente."
+                    )
+                    time.sleep(min(2 ** attempt, 4))
+                    continue
+                payload = candidate
                 break
             except (json.JSONDecodeError, ProviderRequestError) as error:
+                if str(error) == "invalid_strategy_curation_evidence_after_retry":
+                    raise
                 if attempt == MAX_CURATION_ATTEMPTS - 1:
                     raise ProviderRequestError("invalid_strategy_curation_json_after_retry") from error
                 time.sleep(min(2 ** attempt, 4))

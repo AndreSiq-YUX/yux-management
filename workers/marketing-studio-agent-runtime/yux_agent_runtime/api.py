@@ -24,6 +24,15 @@ from .workflow import StrategyWorkflowEngine, estimate_workflow_credits, resolve
 logger = logging.getLogger(__name__)
 
 
+def provider_http_exception(error: ProviderRequestError) -> HTTPException:
+    message = str(error)
+    if "provider_http_402" in message:
+        return HTTPException(status_code=402, detail="openrouter_credit_required")
+    if "data policy" in message.lower():
+        return HTTPException(status_code=503, detail="openrouter_private_provider_unavailable")
+    return HTTPException(status_code=502, detail=message)
+
+
 class IngestEventRequest(BaseModel):
     organization_id: str | None = None
     client_id: str | None = None
@@ -280,7 +289,9 @@ def create_app(
             raise HTTPException(status_code=413, detail="knowledge_curation_input_too_large")
         try:
             return curator.curate([item.model_dump() for item in request.sections])
-        except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
+        except ProviderRequestError as error:
+            raise provider_http_exception(error) from error
+        except (ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
     @app.post("/strategy/curate", dependencies=[Depends(require_runtime_token)])
@@ -290,7 +301,9 @@ def create_app(
             raise HTTPException(status_code=413, detail="strategy_curation_input_too_large")
         try:
             return strategy_curator.curate([item.model_dump() for item in request.sections])
-        except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
+        except ProviderRequestError as error:
+            raise provider_http_exception(error) from error
+        except (ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
     @app.post("/knowledge/extract-company-profile", dependencies=[Depends(require_runtime_token)])
@@ -301,7 +314,9 @@ def create_app(
             raise HTTPException(status_code=413, detail="website_extraction_input_too_large")
         try:
             return curator.extract_company_profile([item.model_dump() for item in request.pages])
-        except (ProviderRequestError, ValueError, json.JSONDecodeError) as error:
+        except ProviderRequestError as error:
+            raise provider_http_exception(error) from error
+        except (ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
         except Exception as error:
             logger.exception("Unexpected website profile extraction failure")

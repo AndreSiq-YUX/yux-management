@@ -63,6 +63,23 @@ class TransientThenValidLlm(FakeLlm):
         return super().chat_completion(**kwargs)
 
 
+class UngroundedThenValidLlm(FakeLlm):
+    def __init__(self):
+        self.calls = 0
+        self.retry_message = ""
+
+    def chat_completion(self, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "provider": "openrouter", "model": "test-model", "input_tokens": 20, "output_tokens": 10,
+                "total_tokens": 30, "prompt_hash": "e" * 64,
+                "content": '''{"items":[{"kind":"concept_card","title":"Evidência parafraseada","principle":"Qualifique primeiro.","problem":"Pitch prematuro","diagnosticQuestions":[],"applicability":[],"contraindications":[],"decisionRules":[],"recommendedActions":[],"successCriteria":[],"evidence":[{"locator":"section:1","excerpt":"faça uma qualificação completa","claimType":"derived"}],"confidence":0.8,"conflicts":[]}],"warnings":[]}''',
+            }
+        self.retry_message = kwargs["messages"][-1]["content"]
+        return super().chat_completion(**kwargs)
+
+
 def test_evidence_must_exist_in_source():
     assert validate_evidence("Antes da oferta, qualifique o problema.", "qualifique o problema") is True
     assert validate_evidence("Antes da oferta, qualifique o problema.", "garantia de vendas em sete dias") is False
@@ -113,12 +130,24 @@ def test_strategy_curation_uses_safe_output_token_limit(monkeypatch):
     assert StrategyCurationService.from_env().max_output_tokens == DEFAULT_MAX_OUTPUT_TOKENS
 
 
-def test_strategy_curation_uses_cost_free_structured_output_model_by_default(monkeypatch):
+def test_strategy_curation_uses_low_cost_private_structured_output_model_by_default(monkeypatch):
     monkeypatch.delenv("KNOWLEDGE_CURATION_MODEL", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", raising=False)
     service = StrategyCurationService.from_env()
     assert service.model == DEFAULT_CURATION_MODEL
     assert service.fallback_models == DEFAULT_CURATION_FALLBACK_MODELS
+
+
+def test_strategy_curation_retries_when_proposed_items_have_no_literal_evidence(monkeypatch):
+    monkeypatch.setattr("yux_agent_runtime.strategy_curation.time.sleep", lambda _seconds: None)
+    llm = UngroundedThenValidLlm()
+    result = StrategyCurationService(llm, "test-model").curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+    assert llm.calls == 2
+    assert "caractere por caractere" in llm.retry_message
+    assert len(result["items"]) == 1
 
 
 def test_strategy_curation_uses_controlled_fallback_after_primary_failures(monkeypatch):
@@ -135,11 +164,11 @@ def test_strategy_curation_uses_controlled_fallback_after_primary_failures(monke
             return super().chat_completion(**kwargs)
 
     llm = CapturingLlm()
-    result = StrategyCurationService(llm, "primary-model", fallback_models=("openrouter/free",)).curate([{
+    result = StrategyCurationService(llm, "primary-model", fallback_models=("fallback-model",)).curate([{
         "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
         "body": "Antes da oferta, qualifique o problema.",
     }])
-    assert llm.models == ["primary-model", "primary-model", "openrouter/free"]
+    assert llm.models == ["primary-model", "primary-model", "fallback-model"]
     assert len(result["items"]) == 1
 
 
@@ -160,3 +189,20 @@ def test_strategy_api_requires_runtime_token():
     payload = {"organization_id": "org-1", "sections": [{"locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64, "body": "Antes da oferta, qualifique o problema."}]}
     assert client.post("/strategy/curate", json=payload).status_code == 401
     assert client.post("/strategy/curate", headers={"Authorization": "Bearer test-runtime-token"}, json=payload).status_code == 200
+
+
+def test_strategy_api_reports_openrouter_credit_requirement_without_provider_payload():
+    class CreditRequiredCuration:
+        def curate(self, _sections):
+            raise ProviderRequestError('provider_http_402:{"error":{"message":"sensitive provider detail"}}')
+
+    client = TestClient(create_app(InMemoryAgentRuntimeStore(), strategy_curation_service=CreditRequiredCuration()))
+    response = client.post(
+        "/strategy/curate",
+        headers={"Authorization": "Bearer test-runtime-token"},
+        json={"organization_id": "org-1", "sections": [{
+            "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64, "body": "texto",
+        }]},
+    )
+    assert response.status_code == 402
+    assert response.json() == {"detail": "openrouter_credit_required"}

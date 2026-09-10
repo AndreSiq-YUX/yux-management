@@ -73,6 +73,7 @@ class OpenRouterClient:
             "max_completion_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
+            "provider": {"data_collection": "deny"},
         }
         if fallback_models:
             payload["models"] = [model, *fallback_models]

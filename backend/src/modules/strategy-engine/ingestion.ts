@@ -30,7 +30,7 @@ export const STRATEGY_INGESTION_ALLOWED_MIME_TYPES = [
   'text/markdown',
 ] as const
 const ALLOWED_MIME_TYPES = new Set<string>(STRATEGY_INGESTION_ALLOWED_MIME_TYPES)
-export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v8'
+export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v9'
 
 type IngestionRow = {
   id: string

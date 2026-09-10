@@ -30,6 +30,7 @@ class ProviderClientTest(unittest.TestCase):
         self.assertEqual(calls[0][2]["models"], ["openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"])
         self.assertEqual(calls[0][2]["session_id"], "run-1")
         self.assertEqual(calls[0][2]["response_format"], {"type": "json_object"})
+        self.assertEqual(calls[0][2]["provider"], {"data_collection": "deny"})
         self.assertEqual(response["content"], "Texto gerado")
         self.assertEqual(response["input_tokens"], 20)
         self.assertEqual(response["output_tokens"], 12)

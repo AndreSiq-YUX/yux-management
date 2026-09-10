@@ -150,6 +150,19 @@ describe('StrategyPacksPanel upload', () => {
     expect(onRetryJob).toHaveBeenCalledWith('failed-1')
   })
 
+  it('explica a recarga necessária sem pedir novo upload do documento', async () => {
+    const creditJob: StrategyIngestionJob = {
+      id: 'credit-1', packId: pack.id, documentId: 'document-1', sha256: 'a'.repeat(64), sourceName: 'The Black Book',
+      sourceKind: 'private_book', fileName: 'The Black Book.pdf', status: 'failed', currentStep: 'curation', attempt: 3,
+      proposedCounts: { chunks: 379, curationBatchesCompleted: 0, curationBatchesTotal: 68 }, metadata: {},
+      recoverableError: { message: 'agent_runtime_402:openrouter_credit_required', recoverable: false },
+      createdAt: pack.createdAt, updatedAt: pack.updatedAt,
+    }
+    await renderPanel(vi.fn(), [], vi.fn(), undefined, [creditJob])
+    expect(container.textContent).toContain('O saldo da OpenRouter é insuficiente')
+    expect(container.textContent).toContain('o arquivo e os trechos extraídos estão preservados')
+  })
+
   it('não apresenta conclusão vazia como sucesso e oferece reprocessamento com os avisos', async () => {
     const onRetryJob = vi.fn(async () => undefined)
     const emptyJob: StrategyIngestionJob = {

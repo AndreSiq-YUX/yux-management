@@ -43,10 +43,11 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
 - `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
-- `KNOWLEDGE_CURATION_MODEL` (padrão `nex-agi/nex-n2.5-mini:free`, gratuito e compatível com saída estruturada);
-- `KNOWLEDGE_CURATION_FALLBACK_MODELS` (padrão `openrouter/free`, usado automaticamente quando o modelo principal estiver indisponível);
+- `KNOWLEDGE_CURATION_MODEL` (padrão `qwen/qwen3.5-9b`, de baixo custo e compatível com saída estruturada);
+- `KNOWLEDGE_CURATION_FALLBACK_MODELS` (padrão `mistralai/mistral-small-3.2-24b-instruct,openai/gpt-oss-20b`, usado de forma ordenada quando o modelo principal estiver indisponível);
 - `KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS` (padrão e teto seguro `4000`, mínimo `1000`);
-- a curadoria estratégica usa JSON Schema estrito, até quatro tentativas por lote e janela de quatro minutos para acomodar a latência variável dos endpoints gratuitos;
+- a curadoria estratégica usa JSON Schema estrito, exige ao menos uma evidência literalmente verificável quando o modelo propõe itens, usa até quatro tentativas por lote e bloqueia provedores que coletem o conteúdo para treinamento;
+- a conta OpenRouter precisa manter saldo positivo; sem saldo, o job falha de forma recuperável, preserva o arquivo e os trechos extraídos e informa `openrouter_credit_required`;
 - `JINA_API_KEY` no backend worker e no Agent Harness somente para Reader,
   Search e Grounding, quando essas ferramentas forem usadas;
 - `KNOWLEDGE_CURATION_ENABLED=true`;
