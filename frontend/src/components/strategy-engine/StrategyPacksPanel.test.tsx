@@ -262,6 +262,37 @@ describe('StrategyPacksPanel upload', () => {
     expect(container.textContent).not.toContain('Item duplicado')
   })
 
+  it('permite revisar todos os itens pendentes sem limitar a lista aos oito primeiros', async () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({
+      packId: pack.id,
+      itemType: 'concept_card',
+      id: `10000000-0000-4000-8000-0000000000${30 + index}`,
+      title: `Item pendente ${index + 1}`,
+      summary: 'Resumo',
+      body: 'Regra',
+      profileKeys: [],
+      stageTags: [],
+      retrievalTags: [],
+      status: 'proposed',
+      priority: 100,
+      payload: { evidence: [{ locator: `page:${index + 1}`, excerpt: `evidência ${index + 1}` }] },
+      createdAt: pack.createdAt,
+      updatedAt: pack.updatedAt,
+    })) satisfies StrategyPackItem[]
+
+    await renderPanel(vi.fn(), items)
+    expect(container.textContent).toContain('Item pendente 8')
+    expect(container.textContent).not.toContain('Item pendente 9')
+    const showMore = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Mostrar mais'))!
+    expect(showMore.textContent).toContain('2 restantes')
+
+    await act(async () => showMore.click())
+
+    expect(container.textContent).toContain('Item pendente 9')
+    expect(container.textContent).toContain('Item pendente 10')
+    expect(container.textContent).toContain('Todos os 10 itens estão visíveis.')
+  })
+
   it('publica exatamente o público, os perfis e os itens confirmados no diálogo', async () => {
     const item: StrategyPackItem = {
       id: '10000000-0000-4000-8000-000000000015', packId: pack.id, itemType: 'concept_card', title: 'Princípio aprovado',

@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, CheckCircle2, Database, FileUp, GitBranch, PackageCheck, Plus, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -711,18 +711,46 @@ function ListSection<T extends { id: string }>({
   empty,
   items,
   render,
+  pageSize = 8,
 }: {
   title: string
   empty: string
   items: T[]
   render: (item: T) => ReactNode
+  pageSize?: number
 }) {
+  const [visibleCount, setVisibleCount] = useState(pageSize)
+  const itemIdentity = items.map(item => item.id).join(',')
+
+  useEffect(() => {
+    setVisibleCount(pageSize)
+  }, [itemIdentity, pageSize])
+
+  const visibleItems = items.slice(0, visibleCount)
+
   return (
     <section className="rounded-lg border bg-white p-4">
       <h2 className="text-base font-semibold text-gray-900">{title}</h2>
       {items.length === 0
         ? <p className="mt-3 rounded-md border border-dashed p-3 text-sm text-gray-500">{empty}</p>
-        : <div className="mt-3 space-y-2">{items.slice(0, 8).map(render)}</div>}
+        : (
+          <>
+            <div className="mt-3 space-y-2">{visibleItems.map(render)}</div>
+            {visibleItems.length < items.length ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3 w-full"
+                onClick={() => setVisibleCount(current => Math.min(current + pageSize, items.length))}
+              >
+                Mostrar mais ({items.length - visibleItems.length} restantes)
+              </Button>
+            ) : null}
+            {items.length > pageSize && visibleItems.length === items.length ? (
+              <p className="mt-3 text-center text-xs text-gray-500">Todos os {items.length} itens estão visíveis.</p>
+            ) : null}
+          </>
+        )}
     </section>
   )
 }
