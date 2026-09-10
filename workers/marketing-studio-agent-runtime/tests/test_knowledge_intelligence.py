@@ -7,7 +7,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:
 from fastapi.testclient import TestClient
 
 from yux_agent_runtime.api import create_app
-from yux_agent_runtime.knowledge_intelligence import KnowledgeIntelligenceService
+from yux_agent_runtime.knowledge_intelligence import DEFAULT_CURATION_MODEL, KnowledgeIntelligenceService
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 
 
@@ -54,6 +54,9 @@ class UnexpectedWebsiteFailure:
 
 
 class KnowledgeIntelligenceTest(unittest.TestCase):
+    def test_uses_cost_free_curation_model_by_default(self):
+        self.assertEqual(KnowledgeIntelligenceService(FakeLlm()).model, DEFAULT_CURATION_MODEL)
+
     def setUp(self):
         self.service = KnowledgeIntelligenceService(FakeLlm(), model="test-model")
 

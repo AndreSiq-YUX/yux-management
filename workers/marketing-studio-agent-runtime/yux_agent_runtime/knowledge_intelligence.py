@@ -10,6 +10,9 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
+DEFAULT_CURATION_MODEL = "qwen/qwen3-next-80b-a3b-instruct:free"
+
+
 def _normalized(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
@@ -34,13 +37,13 @@ def _json_content(value: str) -> dict[str, Any]:
 @dataclass
 class KnowledgeIntelligenceService:
     llm_client: OpenRouterClient
-    model: str = "openai/gpt-4.1-mini"
+    model: str = DEFAULT_CURATION_MODEL
 
     @classmethod
     def from_env(cls) -> "KnowledgeIntelligenceService":
         return cls(
             llm_client=OpenRouterClient.from_env(),
-            model=os.getenv("KNOWLEDGE_CURATION_MODEL", "openai/gpt-4.1-mini"),
+            model=os.getenv("KNOWLEDGE_CURATION_MODEL", DEFAULT_CURATION_MODEL),
         )
 
     def curate(self, sections: list[dict[str, str]]) -> dict[str, Any]:

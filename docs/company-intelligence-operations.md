@@ -43,7 +43,7 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
 - `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
-- `KNOWLEDGE_CURATION_MODEL` (padrão `openai/gpt-4.1-mini`);
+- `KNOWLEDGE_CURATION_MODEL` (padrão `qwen/qwen3-next-80b-a3b-instruct:free`, com suporte a saída estruturada e sem consumo de créditos por token);
 - `KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS` (padrão e teto seguro `4000`, mínimo `1000`);
 - `JINA_API_KEY` no backend worker e no Agent Harness somente para Reader,
   Search e Grounding, quando essas ferramentas forem usadas;

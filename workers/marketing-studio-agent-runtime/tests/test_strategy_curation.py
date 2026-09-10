@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from yux_agent_runtime.api import create_app
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
-from yux_agent_runtime.strategy_curation import DEFAULT_MAX_OUTPUT_TOKENS, StrategyCurationService, validate_evidence
+from yux_agent_runtime.strategy_curation import DEFAULT_CURATION_MODEL, DEFAULT_MAX_OUTPUT_TOKENS, StrategyCurationService, validate_evidence
 
 
 class FakeLlm:
@@ -98,6 +98,11 @@ def test_strategy_curation_uses_safe_output_token_limit(monkeypatch):
 
     monkeypatch.setenv("KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS", "invalid")
     assert StrategyCurationService.from_env().max_output_tokens == DEFAULT_MAX_OUTPUT_TOKENS
+
+
+def test_strategy_curation_uses_cost_free_structured_output_model_by_default(monkeypatch):
+    monkeypatch.delenv("KNOWLEDGE_CURATION_MODEL", raising=False)
+    assert StrategyCurationService.from_env().model == DEFAULT_CURATION_MODEL
 
 
 def test_strategy_api_requires_runtime_token():
