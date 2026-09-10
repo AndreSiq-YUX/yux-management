@@ -198,7 +198,10 @@ class HarnessTest(unittest.TestCase):
         self.assertNotIn("strategy_context", result["agent_runs"][0])
 
     def test_harness_executes_openrouter_when_enabled(self):
+        captured = []
+
         def transport(url, headers, payload, method):
+            captured.append(payload)
             return {
                 "id": "chat-1",
                 "model": payload["model"],
@@ -231,6 +234,7 @@ class HarnessTest(unittest.TestCase):
             "user_input": "Escreva para LinkedIn",
             "execute_llm": True,
             "workflow_run_id": "run-1",
+            "response_format": {"type": "json_object"},
         })
 
         output = result["agent_runs"][0]["output_payload"]
@@ -238,6 +242,7 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(output["content"], "Post gerado pelo OpenRouter")
         self.assertEqual(result["agent_runs"][0]["input_tokens"], 30)
         self.assertEqual(result["agent_runs"][0]["output_tokens"], 15)
+        self.assertEqual(captured[0]["response_format"], {"type": "json_object"})
 
 
 if __name__ == "__main__":

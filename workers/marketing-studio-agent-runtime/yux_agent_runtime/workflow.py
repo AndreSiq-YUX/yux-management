@@ -677,6 +677,7 @@ class StrategyWorkflowEngine:
             },
             "user_input": message,
             "execute_llm": True,
+            "response_format": {"type": "json_object"},
             "workflow_run_id": run_id,
             "organization_id": organization_id,
             "client_id": client_id,

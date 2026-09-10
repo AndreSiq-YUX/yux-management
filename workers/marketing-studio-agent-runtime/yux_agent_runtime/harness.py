@@ -324,6 +324,7 @@ class Harness:
             max_tokens=int(route.get("max_output_tokens", 1200)),
             temperature=float(route.get("temperature", 0.4)),
             session_id=state.get("workflow_run_id") or state.get("session_id"),
+            response_format=state.get("response_format"),
             messages=[
                 {"role": "system", "content": prompt["system_prompt"]},
                 {

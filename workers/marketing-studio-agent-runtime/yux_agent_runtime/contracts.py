@@ -347,7 +347,22 @@ def parse_json_object(content: str) -> dict[str, Any]:
     try:
         value = json.loads(text)
     except json.JSONDecodeError as error:
-        raise AgentContractError("agent_output_invalid_json") from error
+        # Some otherwise JSON-capable providers append an explanation or a
+        # repeated draft after the first complete object. Decode the first
+        # complete object deterministically; the selected object still passes
+        # the same strict downstream contract validation.
+        value = None
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r"\{", text):
+            try:
+                candidate, _end = decoder.raw_decode(text[match.start():])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                value = candidate
+                break
+        if value is None:
+            raise AgentContractError("agent_output_invalid_json") from error
     if not isinstance(value, dict):
         raise AgentContractError("agent_output_object_required")
     return value
