@@ -45,6 +45,7 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
 - `KNOWLEDGE_CURATION_MODEL` (padrão `openrouter/free`, que roteia para um modelo gratuito disponível e compatível com saída estruturada, sem consumo de créditos por token);
 - `KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS` (padrão e teto seguro `4000`, mínimo `1000`);
+- a curadoria estratégica usa JSON Schema estrito, até quatro tentativas por lote e janela de quatro minutos para acomodar a latência variável dos endpoints gratuitos;
 - `JINA_API_KEY` no backend worker e no Agent Harness somente para Reader,
   Search e Grounding, quando essas ferramentas forem usadas;
 - `KNOWLEDGE_CURATION_ENABLED=true`;

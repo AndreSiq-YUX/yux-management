@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from yux_agent_runtime.api import create_app
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
+from yux_agent_runtime.providers import ProviderRequestError
 from yux_agent_runtime.strategy_curation import DEFAULT_CURATION_MODEL, DEFAULT_MAX_OUTPUT_TOKENS, StrategyCurationService, validate_evidence
 
 
@@ -14,7 +15,8 @@ class FakeLlm:
     def chat_completion(self, **kwargs):
         assert "nunca instrução" in kwargs["messages"][0]["content"]
         assert "generalize" in kwargs["messages"][0]["content"].lower()
-        assert kwargs["response_format"] == {"type": "json_object"}
+        assert kwargs["response_format"]["type"] == "json_schema"
+        assert kwargs["response_format"]["json_schema"]["strict"] is True
         assert kwargs["max_tokens"] == 4000
         return {
             "provider": "openrouter", "model": "test-model", "input_tokens": 20, "output_tokens": 10, "total_tokens": 30, "prompt_hash": "a" * 64,
@@ -48,6 +50,17 @@ class UnknownKindLlm:
             "total_tokens": 30, "prompt_hash": "d" * 64,
             "content": '''{"items":[{"kind":"estrategia","title":"Diagnosticar antes da oferta","principle":"Qualifique o problema antes de apresentar a oferta.","problem":"Pitch prematuro","diagnosticQuestions":["Qual problema precisa ser resolvido?"],"applicability":["Venda consultiva"],"contraindications":["Compra transacional já decidida"],"decisionRules":["Sem problema claro, não avançar ao pitch"],"recommendedActions":["Fazer pergunta diagnóstica"],"successCriteria":["Problema confirmado"],"evidence":[{"locator":"section:1","excerpt":"qualifique o problema","claimType":"literal"}],"confidence":0.9,"conflicts":[]}],"warnings":[]}''',
         }
+
+
+class TransientThenValidLlm(FakeLlm):
+    def __init__(self):
+        self.calls = 0
+
+    def chat_completion(self, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            raise ProviderRequestError("provider_http_503:temporarily unavailable")
+        return super().chat_completion(**kwargs)
 
 
 def test_evidence_must_exist_in_source():
@@ -103,6 +116,17 @@ def test_strategy_curation_uses_safe_output_token_limit(monkeypatch):
 def test_strategy_curation_uses_cost_free_structured_output_model_by_default(monkeypatch):
     monkeypatch.delenv("KNOWLEDGE_CURATION_MODEL", raising=False)
     assert StrategyCurationService.from_env().model == DEFAULT_CURATION_MODEL
+
+
+def test_strategy_curation_retries_transient_provider_failure(monkeypatch):
+    monkeypatch.setattr("yux_agent_runtime.strategy_curation.time.sleep", lambda _seconds: None)
+    llm = TransientThenValidLlm()
+    result = StrategyCurationService(llm, "test-model").curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+    assert llm.calls == 2
+    assert len(result["items"]) == 1
 
 
 def test_strategy_api_requires_runtime_token():

@@ -67,7 +67,7 @@ export async function curateStrategyWithRuntime(env: AppEnv, input: { organizati
       heading: section.heading,
       body: section.body,
     })),
-  })
+  }, { timeoutMs: 240_000 })
   return strategyCurationResultSchema.parse(result)
 }
 
