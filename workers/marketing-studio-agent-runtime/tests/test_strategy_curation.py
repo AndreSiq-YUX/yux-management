@@ -80,6 +80,16 @@ class UngroundedThenValidLlm(FakeLlm):
         return super().chat_completion(**kwargs)
 
 
+class AlwaysUngroundedLlm(UngroundedThenValidLlm):
+    def chat_completion(self, **kwargs):
+        self.calls += 1
+        return {
+            "provider": "openrouter", "model": kwargs["model"], "input_tokens": 20, "output_tokens": 10,
+            "total_tokens": 30, "prompt_hash": "f" * 64,
+            "content": '''{"items":[{"kind":"concept_card","title":"Evidência parafraseada","principle":"Qualifique primeiro.","problem":"Pitch prematuro","diagnosticQuestions":[],"applicability":[],"contraindications":[],"decisionRules":[],"recommendedActions":[],"successCriteria":[],"evidence":[{"locator":"section:1","excerpt":"faça uma qualificação completa","claimType":"derived"}],"confidence":0.8,"conflicts":[]}],"warnings":[]}''',
+        }
+
+
 def test_evidence_must_exist_in_source():
     assert validate_evidence("Antes da oferta, qualifique o problema.", "qualifique o problema") is True
     assert validate_evidence("Antes da oferta, qualifique o problema.", "garantia de vendas em sete dias") is False
@@ -148,6 +158,18 @@ def test_strategy_curation_retries_when_proposed_items_have_no_literal_evidence(
     assert llm.calls == 2
     assert "caractere por caractere" in llm.retry_message
     assert len(result["items"]) == 1
+
+
+def test_strategy_curation_records_unusable_batch_after_all_grounding_attempts(monkeypatch):
+    monkeypatch.setattr("yux_agent_runtime.strategy_curation.time.sleep", lambda _seconds: None)
+    llm = AlwaysUngroundedLlm()
+    result = StrategyCurationService(llm, "primary-model", fallback_models=("fallback-a", "fallback-b")).curate([{
+        "locator": "section:1", "document_id": "doc-1", "document_hash": "b" * 64,
+        "body": "Antes da oferta, qualifique o problema.",
+    }])
+    assert llm.calls == 4
+    assert result["items"] == []
+    assert "unusable_strategy_curation_evidence_after_retry" in result["warnings"]
 
 
 def test_strategy_curation_uses_controlled_fallback_after_primary_failures(monkeypatch):

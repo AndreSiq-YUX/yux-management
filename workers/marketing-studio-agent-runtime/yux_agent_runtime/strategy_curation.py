@@ -213,7 +213,13 @@ class StrategyCurationService:
                 candidate = _json_content(str(response.get("content") or ""))
                 if not _has_grounded_candidate(candidate, sources):
                     if attempt == MAX_CURATION_ATTEMPTS - 1:
-                        raise ProviderRequestError("invalid_strategy_curation_evidence_after_retry")
+                        candidate["items"] = []
+                        candidate["warnings"] = [
+                            *[str(warning) for warning in candidate.get("warnings") or []],
+                            "unusable_strategy_curation_evidence_after_retry",
+                        ]
+                        payload = candidate
+                        break
                     retry_instruction = (
                         "A resposta anterior criou itens, mas nenhuma evidence era uma substring literal da fonte. "
                         "Gere novamente e copie cada excerpt exatamente, caractere por caractere, de um único body recebido; "
@@ -224,8 +230,6 @@ class StrategyCurationService:
                 payload = candidate
                 break
             except (json.JSONDecodeError, ProviderRequestError) as error:
-                if str(error) == "invalid_strategy_curation_evidence_after_retry":
-                    raise
                 if attempt == MAX_CURATION_ATTEMPTS - 1:
                     raise ProviderRequestError("invalid_strategy_curation_json_after_retry") from error
                 time.sleep(min(2 ** attempt, 4))
