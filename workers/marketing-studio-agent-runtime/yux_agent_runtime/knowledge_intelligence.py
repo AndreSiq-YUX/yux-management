@@ -10,7 +10,9 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
+# The same approved high-quality model is used for generic company knowledge
+# curation and strategy-pack curation. Embeddings remain a separate concern.
+DEFAULT_CURATION_MODEL = "openai/gpt-5.6-luna-pro"
 
 
 def _normalized(value: str) -> str:

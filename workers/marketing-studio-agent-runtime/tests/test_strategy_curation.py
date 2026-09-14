@@ -194,13 +194,22 @@ def test_strategy_curation_uses_the_approved_strategy_model_by_default(monkeypat
 
 
 def test_strategy_curation_model_overrides_generic_knowledge_model(monkeypatch):
-    monkeypatch.setenv("KNOWLEDGE_CURATION_MODEL", "nex-agi/nex-n2.5-mini:free")
+    monkeypatch.setenv("KNOWLEDGE_CURATION_MODEL", "generic-model")
     monkeypatch.setenv("STRATEGY_CURATION_MODEL", "openai/gpt-5.6-luna-pro")
     monkeypatch.setenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", "generic/fallback")
     monkeypatch.setenv("STRATEGY_CURATION_FALLBACK_MODELS", "")
     service = StrategyCurationService.from_env()
     assert service.model == "openai/gpt-5.6-luna-pro"
     assert service.fallback_models == ()
+
+
+def test_strategy_curation_does_not_inherit_generic_model_when_specific_model_is_unset(monkeypatch):
+    monkeypatch.setenv("KNOWLEDGE_CURATION_MODEL", "generic-model")
+    monkeypatch.delenv("STRATEGY_CURATION_MODEL", raising=False)
+    monkeypatch.delenv("STRATEGY_CURATION_FALLBACK_MODELS", raising=False)
+    service = StrategyCurationService.from_env()
+    assert service.model == DEFAULT_CURATION_MODEL
+    assert service.fallback_models == DEFAULT_CURATION_FALLBACK_MODELS
 
 
 def test_strategy_curation_retries_when_proposed_items_have_no_literal_evidence(monkeypatch):

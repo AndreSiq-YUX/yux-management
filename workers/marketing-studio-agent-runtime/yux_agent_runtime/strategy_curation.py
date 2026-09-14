@@ -198,14 +198,13 @@ class StrategyCurationService:
             model.strip()
             for model in os.getenv(
                 "STRATEGY_CURATION_FALLBACK_MODELS",
-                os.getenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", ",".join(DEFAULT_CURATION_FALLBACK_MODELS)),
+                ",".join(DEFAULT_CURATION_FALLBACK_MODELS),
             ).split(",")
             if model.strip()
         )
         return cls(
             OpenRouterClient.from_env(),
-            os.getenv("STRATEGY_CURATION_MODEL")
-            or os.getenv("KNOWLEDGE_CURATION_MODEL", DEFAULT_CURATION_MODEL),
+            os.getenv("STRATEGY_CURATION_MODEL", DEFAULT_CURATION_MODEL),
             max(1000, min(4000, configured_tokens)),
             configured_fallbacks,
         )

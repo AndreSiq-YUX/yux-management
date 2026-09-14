@@ -54,7 +54,7 @@ class UnexpectedWebsiteFailure:
 
 
 class KnowledgeIntelligenceTest(unittest.TestCase):
-    def test_uses_cost_free_curation_model_by_default(self):
+    def test_uses_approved_luna_pro_model_by_default(self):
         self.assertEqual(KnowledgeIntelligenceService(FakeLlm()).model, DEFAULT_CURATION_MODEL)
 
     def setUp(self):

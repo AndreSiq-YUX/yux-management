@@ -44,10 +44,12 @@ Também configure nos serviços indicados pelo `docker-compose.dokploy.yml`:
 - `OPENROUTER_EMBEDDING_MODEL` (padrão `qwen/qwen3-embedding-8b`);
 - `OPENROUTER_EMBEDDING_DIMENSIONS` (padrão `1024`);
 - `OPENROUTER_EMBEDDING_TIMEOUT_MS` (padrão `45000`);
-- `KNOWLEDGE_CURATION_MODEL` (padrão gratuito `nex-agi/nex-n2.5-mini:free`);
+- `KNOWLEDGE_CURATION_MODEL` (padrão aprovado `openai/gpt-5.6-luna-pro`, usado
+  pela curadoria genérica, treinamento da empresa e extração de perfil);
 - `KNOWLEDGE_CURATION_FALLBACK_MODELS` fica vazio por padrão para impedir fallback silencioso para um modelo pago;
 - `STRATEGY_CURATION_MODEL` controla exclusivamente a curadoria de livros e
-  Strategy Packs (padrão aprovado `openai/gpt-5.6-luna-pro`);
+  Strategy Packs (padrão aprovado `openai/gpt-5.6-luna-pro`); ele não herda mais
+  o modelo genérico por engano;
 - `STRATEGY_CURATION_FALLBACK_MODELS` fica vazio por padrão para impedir
   fallback silencioso para outro modelo pago;
 - `KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS` (padrão e teto seguro `4000`, mínimo `1000`);
