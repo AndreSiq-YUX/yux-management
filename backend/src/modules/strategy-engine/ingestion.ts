@@ -37,7 +37,7 @@ const ALLOWED_MIME_TYPES = new Set<string>(STRATEGY_INGESTION_ALLOWED_MIME_TYPES
 // Bump the checkpoint contract whenever the curation policy/model safety
 // contract changes. This prevents a retry from silently reusing artifacts
 // generated under an older (possibly paid) model configuration.
-export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v10'
+export const STRATEGY_CURATION_PROMPT_VERSION = 'strategy-curation:v11'
 
 type IngestionRow = {
   id: string

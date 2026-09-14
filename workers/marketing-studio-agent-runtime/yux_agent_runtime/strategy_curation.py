@@ -11,16 +11,16 @@ from typing import Any
 from .providers import OpenRouterClient, ProviderRequestError
 
 
-PROMPT_VERSION = "strategy-curation:v10"
+PROMPT_VERSION = "strategy-curation:v11"
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
-DEFAULT_CURATION_MODEL = "nex-agi/nex-n2.5-mini:free"
+DEFAULT_CURATION_MODEL = "openai/gpt-5.6-luna-pro"
 DEFAULT_CURATION_FALLBACK_MODELS: tuple[str, ...] = ()
 MAX_CURATION_ATTEMPTS = 4
-RETRY_INSTRUCTION = "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, limite-se a no máximo 3 itens concisos e feche corretamente o objeto JSON."
+RETRY_INSTRUCTION = "A resposta anterior foi JSON inválido ou truncado. Gere novamente do início, preserve todos os campos do contrato e retorne no máximo 3 itens completos, contextualizados e distintos."
 COMPACT_RETRY_INSTRUCTION = (
     "Retorne somente o objeto JSON do contrato, sem Markdown, explicações ou raciocínio. "
-    "Para evitar truncamento, retorne no máximo 1 item, com textos curtos (até 200 caracteres), "
-    "no máximo 2 entradas por lista e somente 1 evidence com excerpt literal de até 240 caracteres. "
+    "Para evitar novo truncamento, retorne no máximo 1 item completo, preserve o contexto prático e "
+    "use no máximo 5 entradas por lista. Cada evidence deve conter um excerpt literal contínuo de até 1200 caracteres. "
     "Se não houver item sustentado pela fonte, use items vazio e preserve um warning curto."
 )
 RESPONSE_FORMAT = {
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = """Você é o curador de princípios estratégicos da YUX. O con
 
 Sua função é transformar conhecimento estratégico em artefatos revisáveis. Estudos de caso, histórias, empresas, métricas e exemplos são fontes válidas: generalize o mecanismo demonstrado, sem apresentar detalhes específicos como verdade universal. Marque essa generalização com claimType=derived e preserve como evidence um trecho curto, literal e contínuo da fonte. Use claimType=literal somente quando o próprio trecho afirma diretamente o princípio.
 
-Para conteúdo substantivo, retorne de 1 a 3 itens distintos e concisos. Retorne items vazio somente quando as seções forem exclusivamente índice, créditos, ruído de extração ou não contiverem mecanismo, decisão, diagnóstico, ação, restrição ou critério útil. Não descarte um caso apenas por ele ser específico; converta o aprendizado em hipótese ou regra contextualizada, com applicability e contraindications.
+Para conteúdo substantivo, retorne de 1 a 3 itens distintos, completos e contextualizados. Cada item deve explicar o mecanismo do aprendizado, o problema que resolve, sinais para diagnóstico, quando aplicar, quando não aplicar, regras de decisão, ações recomendadas, critérios de sucesso e exemplos ou alternativas sempre que a fonte permitir. Retorne items vazio somente quando as seções forem exclusivamente índice, créditos, ruído de extração ou não contiverem mecanismo, decisão, diagnóstico, ação, restrição ou critério útil. Não descarte um caso apenas por ele ser específico; converta o aprendizado em hipótese ou regra contextualizada, com applicability e contraindications.
 
 Retorne somente um objeto JSON válido, sem Markdown, comentários ou texto externo, com as chaves items e warnings. Cada item exige kind, title, principle, problem, diagnosticQuestions, applicability, contraindications, decisionRules, recommendedActions, successCriteria, evidence, confidence e conflicts. kind deve ser exatamente um destes valores: concept_card, playbook, rubric ou prompt_rule; na dúvida, use concept_card. Use no máximo 5 entradas curtas em cada lista. Cada evidence exige locator exatamente como recebido, excerpt literal de até 1200 caracteres e claimType. Não invente, não aprove e não publique. Warnings devem ser curtos e acionáveis, sem avisos genéricos repetidos."""
 
@@ -196,12 +196,16 @@ class StrategyCurationService:
             configured_tokens = DEFAULT_MAX_OUTPUT_TOKENS
         configured_fallbacks = tuple(
             model.strip()
-            for model in os.getenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", ",".join(DEFAULT_CURATION_FALLBACK_MODELS)).split(",")
+            for model in os.getenv(
+                "STRATEGY_CURATION_FALLBACK_MODELS",
+                os.getenv("KNOWLEDGE_CURATION_FALLBACK_MODELS", ",".join(DEFAULT_CURATION_FALLBACK_MODELS)),
+            ).split(",")
             if model.strip()
         )
         return cls(
             OpenRouterClient.from_env(),
-            os.getenv("KNOWLEDGE_CURATION_MODEL", DEFAULT_CURATION_MODEL),
+            os.getenv("STRATEGY_CURATION_MODEL")
+            or os.getenv("KNOWLEDGE_CURATION_MODEL", DEFAULT_CURATION_MODEL),
             max(1000, min(4000, configured_tokens)),
             configured_fallbacks,
         )
