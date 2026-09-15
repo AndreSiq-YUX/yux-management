@@ -122,20 +122,20 @@ YUX_RELEASE_COMMIT=<commit-completo-aprovado>
 YUX_RELEASE_MANIFEST_SHA256=<sha256-do-manifesto-aprovado>
 
 VITE_API_BASE_URL=/api
-VITE_MISSION_FORM_COMPATIBILITY=true
+VITE_MISSION_FORM_COMPATIBILITY=false
 MATERIALS_STORAGE_DIR=/app/storage/materials
 OMNICHANNEL_ATTACHMENTS_DIR=/app/storage/omnichannel-attachments
 OMNICHANNEL_ATTACHMENT_MAX_MB=25
 
 YUX_AGENT_RUNTIME_URL=http://yux-agent-harness-runtime:8080
 YUX_AGENT_RUNTIME_TOKEN=<token-longo-aleatorio>
-MISSION_SUPERVISOR_ENABLED=false
-MISSION_DECISIONS_ENABLED=false
-MISSION_DECISION_NOTIFICATIONS_ENABLED=false
-MISSION_SIMULATION_REPORTS_ENABLED=false
-MISSION_DECISION_FEEDBACK_ENABLED=false
-MISSION_CONVERSATIONS_ENABLED=false
-MISSION_CONVERSATIONS_TENANT_ALLOWLIST=
+MISSION_SUPERVISOR_ENABLED=true
+MISSION_DECISIONS_ENABLED=true
+MISSION_DECISION_NOTIFICATIONS_ENABLED=true
+MISSION_SIMULATION_REPORTS_ENABLED=true
+MISSION_DECISION_FEEDBACK_ENABLED=true
+MISSION_CONVERSATIONS_ENABLED=true
+MISSION_CONVERSATIONS_TENANT_ALLOWLIST=<uuid-da-organizacao-yux-piloto>
 PROVIDER_SECRET_ENCRYPTION_KEY_B64=<resultado-de-openssl-rand-base64-32>
 OPENROUTER_API_KEY=<valor-se-usar>
 JINA_API_KEY=<valor-se-usar>
@@ -161,6 +161,11 @@ META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID=
 META_WEBHOOK_VERIFY_TOKEN=<token-de-verificacao-da-Meta>
 OAUTH_ALLOWED_REDIRECT_URIS=https://hub.yux.com.br/oauth/meta/callback
 ```
+
+O bloco acima habilita o fluxo conversacional completo de missões. Substitua
+`<uuid-da-organizacao-yux-piloto>` pelo UUID real do workspace autorizado; não
+deixe a allowlist vazia durante o piloto, pois uma lista vazia libera todos os
+tenants quando `MISSION_CONVERSATIONS_ENABLED=true`.
 
 Regras importantes:
 

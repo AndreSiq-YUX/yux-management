@@ -157,12 +157,14 @@ async function extractFile(storagePath: string | undefined, mimeType: string | u
   return extractKnowledgeText({ content: await readKnowledgeFile(storagePath), mimeType, title })
 }
 
-export function batchLocatedSections(sections: LocatedSection[], maxCharacters = 18_000) {
+export function batchLocatedSections(sections: LocatedSection[], maxCharacters = 18_000, maxSections = 80) {
+  const characterLimit = Math.max(1, Math.floor(maxCharacters))
+  const sectionLimit = Math.max(1, Math.min(80, Math.floor(maxSections)))
   const batches: LocatedSection[][] = []
   let current: LocatedSection[] = []
   let size = 0
-  for (const section of sections) {
-    if (current.length && size + section.body.length > maxCharacters) {
+  for (const section of sections.flatMap(item => splitLocatedSection(item, characterLimit))) {
+    if (current.length && (current.length >= sectionLimit || size + section.body.length > characterLimit)) {
       batches.push(current)
       current = []
       size = 0
@@ -172,6 +174,33 @@ export function batchLocatedSections(sections: LocatedSection[], maxCharacters =
   }
   if (current.length) batches.push(current)
   return batches
+}
+
+function splitLocatedSection(section: LocatedSection, maxCharacters: number): LocatedSection[] {
+  if (section.body.length <= maxCharacters) return [section]
+
+  const parts: LocatedSection[] = []
+  let offset = 0
+  while (offset < section.body.length) {
+    let end = Math.min(section.body.length, offset + maxCharacters)
+    if (end < section.body.length) {
+      const candidate = section.body.slice(offset, end)
+      const minimumBreak = Math.floor(maxCharacters * 0.6)
+      const newline = candidate.lastIndexOf('\n')
+      const space = candidate.lastIndexOf(' ')
+      const breakAt = Math.max(newline, space)
+      if (breakAt >= minimumBreak) end = offset + breakAt + 1
+    }
+    const partNumber = parts.length + 1
+    parts.push({
+      ...section,
+      locator: `${section.locator}:chars:${offset + 1}-${end}`,
+      heading: section.heading ? `${section.heading} (parte ${partNumber})` : undefined,
+      body: section.body.slice(offset, end),
+    })
+    offset = end
+  }
+  return parts
 }
 
 function deduplicateCuratedFacts(results: CuratedKnowledge[]) {
