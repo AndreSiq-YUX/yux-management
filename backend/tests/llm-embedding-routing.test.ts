@@ -35,6 +35,23 @@ describe('central embedding routing', () => {
     expect(config.attempts.map(a => a.model)).toEqual(['global'])
   })
 
+  it('places the function default and manual fallbacks after the winning override', async () => {
+    const routes = [
+      { ...rules[0], model_name: 'override', organization_id: 'mine', routing_tier: 'premium', fallback_routes: [{ provider: 'openrouter', modelName: 'override-fallback' }] },
+      { ...rules[0], model_name: 'function', fallback_routes: [{ provider: 'openai_direct', modelName: 'function-fallback' }], fallback_model_name: 'function' },
+      rules[1],
+      { ...rules[0], model_name: 'other-tenant', organization_id: 'other' },
+    ]
+    const context = { organizationId: 'mine', routingTier: 'premium' }
+    const config = await resolveEmbeddingConfiguration(pool(routes), env, context)
+    expect(config.attempts.map(a => a.model)).toEqual(['override', 'override-fallback', 'function', 'function-fallback', 'global'])
+    routes[1].status = 'paused'
+    const pausedGeneral = await resolveEmbeddingConfiguration(pool(routes), env, context)
+    expect(pausedGeneral.attempts.map(a => a.model)).toEqual(['override', 'override-fallback', 'global'])
+    routes[0].status = 'paused'
+    await expect(resolveEmbeddingConfiguration(pool(routes), env, context)).rejects.toThrow('llm_route_not_active')
+  })
+
   it('does not bypass a paused route', async () => {
     await expect(resolveEmbeddingConfiguration(pool([{ ...rules[0], status: 'paused' }, rules[1]]), env)).rejects.toThrow('llm_route_not_active')
   })

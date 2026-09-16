@@ -15,11 +15,11 @@ def _matches(route: dict[str, Any], context: dict[str, Any]) -> bool:
     return all(not route.get(key) or str(route[key]) == str(context.get(key) or "") for key in SCOPES)
 
 
-def _pick(routes: list[dict[str, Any]], key: str, tier: str, context: dict[str, Any]) -> dict[str, Any] | None:
+def _pick(routes: list[dict[str, Any]], key: str, tier: str, context: dict[str, Any], *, kind: str = "chat") -> dict[str, Any] | None:
     if key in {"global_llm", "global_embeddings"}:
         routes = [r for r in routes if not any(r.get(scope) for scope in SCOPES) and r.get("routing_tier", "default") == "default"]
     candidates = [r for r in routes if _matches(r, context)
-                  and (r.get("agent_type") == key or (key not in {"global_llm", "global_embeddings"} and not r.get("agent_type") and r.get("agent_id") == context.get("agent_id") and bool(r.get("agent_id"))))
+                  and (r.get("agent_type") == key or (kind == "chat" and key not in {"global_llm", "global_embeddings", "knowledge_embeddings"} and not r.get("agent_type") and r.get("agent_id") == context.get("agent_id") and bool(r.get("agent_id"))))
                   and r.get("routing_tier", "default") in {tier, "default"}]
     candidates.sort(key=lambda r: (sum(bool(r.get(s)) for s in SCOPES), r.get("routing_tier", "default") == tier, int(r.get("version") or 1), str(r.get("updated_at") or "")), reverse=True)
     return dict(candidates[0]) if candidates else None
@@ -39,7 +39,7 @@ def legacy_route(key: str, kind: str = "chat") -> dict[str, Any]:
     elif key in {"strategy_curator", "knowledge_curator"}:
         variable = "STRATEGY_CURATION_MODEL" if key == "strategy_curator" else "KNOWLEDGE_CURATION_MODEL"
         model = os.getenv(variable) or "openai/gpt-5.6-luna-pro"
-        tokens, temperature = (max(1000, min(4000, int(os.getenv("KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS", "4000")))), 0) if key == "strategy_curator" else (2400, 0)
+        tokens, temperature = (max(1000, min(4000, int(os.getenv("KNOWLEDGE_CURATION_MAX_OUTPUT_TOKENS", "4000")))), 0) if key == "strategy_curator" else (6500, 0)
         if key == "strategy_curator":
             fallback = [{"provider": "openrouter", "modelName": value.strip()} for value in os.getenv("STRATEGY_CURATION_FALLBACK_MODELS", "").split(",") if value.strip()]
     return dict(agent_type=key, provider="openrouter", model_name=model, fallback_routes=fallback,
@@ -50,13 +50,19 @@ def legacy_route(key: str, kind: str = "chat") -> dict[str, Any]:
 def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "default", context: dict[str, Any] | None = None, kind: str = "chat") -> dict[str, Any]:
     context = context or {}
     global_key = "global_embeddings" if kind == "embedding" else "global_llm"
-    route = _pick(routes, key, tier, context)
+    function_key = key
+    route = _pick(routes, key, tier, context, kind=kind)
     if route is None and key in {"automation_lead_classification", "automation_message_generation", "automation_proposal_generation"}:
         inherited_key = str(context.get("profile_key") or (context.get("agent") or {}).get("agent_type") or "ai_sdr_comercial_1")
-        route = _pick(routes, inherited_key, tier, context)
+        route = _pick(routes, inherited_key, tier, context, kind=kind)
+        if route is not None:
+            function_key = inherited_key
     if route is None and key in {"campaign_launch_specialist", "funnel_nurture_specialist"}:
-        route = _pick(routes, "mission_supervisor", tier, context)
-    global_route = _pick(routes, global_key, tier, context)
+        route = _pick(routes, "mission_supervisor", tier, context, kind=kind)
+        if route is not None:
+            function_key = "mission_supervisor"
+    general_route = _pick(routes, function_key, "default", {}, kind=kind)
+    global_route = _pick(routes, global_key, tier, context, kind=kind)
     if route is None:
         route = global_route or legacy_route(key, kind)
     if route.get("status", "active") != "active":
@@ -77,6 +83,8 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
         if item.get("fallback_model_name"):
             append({"provider": item["provider"], "modelName": item["fallback_model_name"]})
     extend(route)
+    if general_route and general_route.get("status", "active") == "active":
+        extend(general_route)
     if global_route and global_route.get("status", "active") == "active":
         extend(global_route)
     return {**route, "attempts": attempts}

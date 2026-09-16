@@ -26,6 +26,7 @@ export async function resolveEmbeddingConfiguration(pool: pg.Pool, env: AppEnv, 
   const rows = result.rows.filter(row => scopeKeys.every((key, index) => !row[key] || String(row[key]) === String(scopeValues[index] || '')) && [tier, 'default'].includes(row.routing_tier || 'default'))
   rows.sort((a, b) => scopeKeys.filter(key => b[key]).length - scopeKeys.filter(key => a[key]).length || Number(b.routing_tier === tier) - Number(a.routing_tier === tier) || Number(b.version || 1) - Number(a.version || 1) || String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
   const global = rows.find(row => row.agent_type === 'global_embeddings' && (row.routing_tier || 'default') === 'default' && scopeKeys.every(key => !row[key]))
+  const general = rows.find(row => row.agent_type === 'knowledge_embeddings' && (row.routing_tier || 'default') === 'default' && scopeKeys.every(key => !row[key]))
   const selected = rows.find(row => row.agent_type === 'knowledge_embeddings') || global
   if (selected && selected.status !== 'active') throw new Error('llm_route_not_active')
   const legacy = legacyEmbeddingConfiguration(env)
@@ -44,6 +45,7 @@ export async function resolveEmbeddingConfiguration(pool: pg.Pool, env: AppEnv, 
   }
   if (selected) extend(selected)
   else append('openrouter', legacy.attempts[0].model, false)
+  if (general?.status === 'active') extend(general)
   if (global?.status === 'active') extend(global)
   const credentials = new Map<Provider, Pick<EmbeddingAttempt, 'apiKey' | 'baseUrl' | 'credentialError'>>()
   for (const attempt of attempts) {

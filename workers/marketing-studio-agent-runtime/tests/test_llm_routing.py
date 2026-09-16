@@ -22,6 +22,43 @@ def test_fallback_order_and_provider_identity():
     assert attempted == ["primary", "local", "global"]
 
 
+def test_override_then_function_then_global_with_ordered_deduplicated_fallbacks():
+    routes = [
+        {**route("curator", "override", organization_id="mine", fallback_routes=[{"provider": "openai_direct", "modelName": "override-fallback"}]), "routing_tier": "premium"},
+        route("curator", "function", fallback_routes=[{"provider": "openrouter", "modelName": "function-fallback"}], fallback_model_name="function-fallback"),
+        route("global_llm", "global", "openai_direct"),
+        route("curator", "other-tenant", organization_id="other"),
+    ]
+    resolved = resolve_route(routes, "curator", tier="premium", context={"organization_id": "mine"})
+    assert [a["modelName"] for a in resolved["attempts"]] == ["override", "override-fallback", "function", "function-fallback", "global"]
+    routes[1]["status"] = "paused"
+    assert [a["modelName"] for a in resolve_route(routes, "curator", tier="premium", context={"organization_id": "mine"})["attempts"]] == ["override", "override-fallback", "global"]
+    routes[0]["status"] = "paused"
+    with pytest.raises(ProviderAuthorizationError):
+        resolve_route(routes, "curator", tier="premium", context={"organization_id": "mine"})
+
+
+def test_embeddings_do_not_inherit_agent_only_chat_routes():
+    routes = [route("knowledge_embeddings", "embedding"), route(None, "chat-only", organization_id="mine", agent_id="agent")]
+    resolved = resolve_route(routes, "knowledge_embeddings", context={"organization_id": "mine", "agent_id": "agent"}, kind="embedding")
+    assert [a["modelName"] for a in resolved["attempts"]] == ["embedding"]
+
+
+@pytest.mark.parametrize("explicit_limit,expected", [(None, [2400, 6500]), (1700, [1700, 1700])])
+def test_knowledge_legacy_preserves_extraction_ceiling_and_admin_limits(explicit_limit, expected):
+    from yux_agent_runtime.knowledge_intelligence import KnowledgeIntelligenceService
+    calls = []
+    class Client:
+        def chat_completion(self, **kwargs):
+            calls.append(kwargs["max_tokens"])
+            return {"model": kwargs["model"], "content": '{"facts": [], "suggestions": []}'}
+    routes = [] if explicit_limit is None else [route("knowledge_curator", "admin-model", max_output_tokens=explicit_limit)]
+    service = KnowledgeIntelligenceService(RoutedLlmClient("knowledge_curator", lambda: routes, lambda _: {"openrouter": Client()}))
+    service.curate([{"locator": "1", "body": "Source facts."}])
+    service.extract_company_profile([{"url": "https://example.test", "content": "Company details."}])
+    assert calls == expected
+
+
 def test_tenant_route_isolation_and_tier_precedence():
     routes = [route("curator", "global"), route("curator", "other", organization_id="b"), route("curator", "scoped", organization_id="a"), {**route("curator", "premium"), "routing_tier": "premium", "organization_id": "a"}]
     assert resolve_route(routes, "curator", context={"organization_id": "a"}, tier="premium")["model_name"] == "premium"
