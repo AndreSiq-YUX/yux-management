@@ -39,6 +39,15 @@ describe('central embedding routing', () => {
     await expect(resolveEmbeddingConfiguration(pool([{ ...rules[0], status: 'paused' }, rules[1]]), env)).rejects.toThrow('llm_route_not_active')
   })
 
+  it('ignores scoped and non-default historical globals even when their context matches', async () => {
+    const config = await resolveEmbeddingConfiguration(pool([
+      { ...rules[1], model_name: 'scoped-global', organization_id: 'mine' },
+      { ...rules[1], model_name: 'premium-global', routing_tier: 'premium' },
+      rules[1],
+    ]), env, { organizationId: 'mine', routingTier: 'premium' })
+    expect(config.attempts.map(attempt => attempt.model)).toEqual(['global'])
+  })
+
   it('does not bypass provider authorization with fallback', async () => {
     const config = await resolveEmbeddingConfiguration(pool(), env)
     const transport = vi.fn(async () => new Response('{}', { status: 403 })) as any

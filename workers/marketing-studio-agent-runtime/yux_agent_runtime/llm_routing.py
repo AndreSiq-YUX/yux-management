@@ -16,6 +16,8 @@ def _matches(route: dict[str, Any], context: dict[str, Any]) -> bool:
 
 
 def _pick(routes: list[dict[str, Any]], key: str, tier: str, context: dict[str, Any]) -> dict[str, Any] | None:
+    if key in {"global_llm", "global_embeddings"}:
+        routes = [r for r in routes if not any(r.get(scope) for scope in SCOPES) and r.get("routing_tier", "default") == "default"]
     candidates = [r for r in routes if _matches(r, context)
                   and (r.get("agent_type") == key or (key not in {"global_llm", "global_embeddings"} and not r.get("agent_type") and r.get("agent_id") == context.get("agent_id") and bool(r.get("agent_id"))))
                   and r.get("routing_tier", "default") in {tier, "default"}]

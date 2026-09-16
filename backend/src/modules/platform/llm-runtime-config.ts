@@ -25,7 +25,7 @@ export async function resolveEmbeddingConfiguration(pool: pg.Pool, env: AppEnv, 
   const tier = scope.routingTier || 'default'
   const rows = result.rows.filter(row => scopeKeys.every((key, index) => !row[key] || String(row[key]) === String(scopeValues[index] || '')) && [tier, 'default'].includes(row.routing_tier || 'default'))
   rows.sort((a, b) => scopeKeys.filter(key => b[key]).length - scopeKeys.filter(key => a[key]).length || Number(b.routing_tier === tier) - Number(a.routing_tier === tier) || Number(b.version || 1) - Number(a.version || 1) || String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
-  const global = rows.find(row => row.agent_type === 'global_embeddings')
+  const global = rows.find(row => row.agent_type === 'global_embeddings' && (row.routing_tier || 'default') === 'default' && scopeKeys.every(key => !row[key]))
   const selected = rows.find(row => row.agent_type === 'knowledge_embeddings') || global
   if (selected && selected.status !== 'active') throw new Error('llm_route_not_active')
   const legacy = legacyEmbeddingConfiguration(env)

@@ -29,6 +29,13 @@ def test_tenant_route_isolation_and_tier_precedence():
     assert resolve_route(routes, "curator", context={"organization_id": "a", "agent_id": "x"})["model_name"] == "scoped"
 
 
+@pytest.mark.parametrize("key,kind", [("global_llm", "chat"), ("global_embeddings", "embedding")])
+def test_globals_ignore_historical_scopes_and_nondefault_tiers(key, kind):
+    routes = [route(key, "scoped-global", organization_id="mine"), {**route(key, "premium-global"), "routing_tier": "premium"}, route(key, "global")]
+    resolved = resolve_route(routes, "unconfigured-function", tier="premium", context={"organization_id": "mine"}, kind=kind)
+    assert [attempt["modelName"] for attempt in resolved["attempts"]] == ["global"]
+
+
 def test_paused_route_blocks_global_and_legacy():
     routes = [{**route("curator", "paused"), "status": "paused"}, route("global_llm", "global")]
     with pytest.raises(ProviderAuthorizationError):
