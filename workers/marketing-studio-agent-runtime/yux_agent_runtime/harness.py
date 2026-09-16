@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 import json
 from typing import Any
@@ -185,7 +185,10 @@ def select_model_route(
         if route.get("status", "active") == "active" and _scope_matches(route, context)
     ]
     active_routes.sort(key=_scope_specificity, reverse=True)
+    route_agent_type = str((context or {}).get("model_route_key") or "").strip()
     for predicate in (
+        lambda route: bool(route_agent_type) and route.get("agent_type") == route_agent_type and route.get("routing_tier") == tier,
+        lambda route: bool(route_agent_type) and route.get("agent_type") == route_agent_type,
         lambda route: route.get("agent_id") == agent.get("id") and route.get("routing_tier") == tier,
         lambda route: route.get("agent_type") == agent.get("agent_type") and route.get("routing_tier") == tier,
         lambda route: route.get("agent_type") == agent.get("agent_type"),
@@ -248,6 +251,7 @@ class Harness:
     tool_policies: list[dict[str, Any]]
     budget_policies: list[dict[str, Any]]
     llm_client: OpenRouterClient | None = None
+    provider_clients: dict[str, OpenRouterClient] = field(default_factory=dict)
 
     def execute_agent(self, state: dict[str, Any]) -> dict[str, Any]:
         agent = state["agent"]
@@ -313,12 +317,11 @@ class Harness:
     ) -> dict[str, Any] | None:
         if not state.get("execute_llm"):
             return None
-        if route.get("provider") != "openrouter":
-            return None
-        if self.llm_client is None:
+        client = self.provider_clients.get(str(route.get("provider") or "")) or self.llm_client
+        if client is None:
             return None
 
-        response = self.llm_client.chat_completion(
+        response = client.chat_completion(
             model=route["model_name"],
             fallback_models=[route["fallback_model_name"]] if route.get("fallback_model_name") else None,
             max_tokens=int(route.get("max_output_tokens", 1200)),

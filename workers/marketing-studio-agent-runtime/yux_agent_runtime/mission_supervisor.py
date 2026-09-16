@@ -84,6 +84,7 @@ class MissionSupervisor:
                 messages=messages,
                 max_tokens=self.profile.max_tokens,
                 temperature=self.profile.temperature,
+                fallback_models=self.profile.fallback_models,
                 session_id=str((value.get("mission") or {}).get("id") or "") or None,
             )
         except ProviderRequestError as error:

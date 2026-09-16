@@ -1,11 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
+import type { AppEnv } from '../../config/env.js'
 import { hashSessionToken } from '../../auth/session.js'
 import { forbidden } from '../../http/errors.js'
 import { requireAdminRole, requireAuth } from '../../http/guards.js'
 import { testCnpjaProvider } from '../radar/cnpjaClient.js'
 import {
   getAdminChannelConnections,
+  getAdminLlmRouteById,
+  getAdminLlmRoutes,
   getAdminHubSummary,
   getAuditEvents,
   getClientModuleLimits,
@@ -14,6 +17,7 @@ import {
   getOrganizationsWithLimits,
   loadPlatformProviderSecret,
   getProviderConnectionById,
+  getProviderConnectionByKey,
   getProviderConnections,
   getSmtp2GoSummary,
   getSmtp2GoSubaccounts,
@@ -26,6 +30,7 @@ import {
   upsertClientModuleLimit,
   upsertEmailProviderConnection,
   upsertProviderConnection,
+  upsertAdminLlmRoute,
   upsertSmtp2GoSubaccount,
 } from './adminRepository.js'
 import {
@@ -141,6 +146,21 @@ const providerConnectionSchema = z.object({
 
 const providerSecretSchema = z.object({
   apiKey: z.string().min(10),
+})
+
+const llmRouteParams = z.object({ routeId: z.string().uuid() })
+const llmRouteSchema = z.object({
+  id: z.string().uuid().optional(),
+  agentType: z.enum(['action_engine_strategist', 'mission_supervisor']),
+  routingTier: z.enum(['cheap', 'default', 'premium', 'fallback']).default('default'),
+  provider: z.enum(['openrouter', 'openai_direct']),
+  modelName: z.string().min(1),
+  fallbackModelName: z.string().nullable().optional(),
+  maxInputTokens: z.number().int().positive().max(1_000_000).default(16000),
+  maxOutputTokens: z.number().int().positive().max(100_000).default(2200),
+  temperature: z.number().min(0).max(2).default(0.2),
+  maxCostPerRun: z.number().nonnegative().default(0),
+  status: z.enum(['active', 'paused', 'archived']).default('active'),
 })
 
 const emailProviderConnectionSchema = z.object({
@@ -260,7 +280,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'unsupported_provider_test' })
     }
 
-    const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', app.config.SESSION_SECRET)
+    const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', providerSecretKeyMaterial(app.config))
     const result = await testProviderConnection(provider.providerKey, apiKey, provider.publicConfig)
     const updatedProvider = await updateProviderConnectionHealth(app.pg, provider.id, {
       status: result.ok ? 'active' : 'failed',
@@ -297,7 +317,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       secretKind: 'api_key',
       value: parsed.data.apiKey,
       metadata: { provider: provider.providerKey, source: 'admin' },
-    }, app.config.SESSION_SECRET)
+    }, providerSecretKeyMaterial(app.config))
 
     const updatedProvider = await getProviderConnectionById(app.pg, provider.id)
 
@@ -306,6 +326,38 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       reference: secret.reference,
       provider: updatedProvider,
     }
+  })
+
+  app.get('/admin/llm-routes', async (request, reply) => {
+    requireAdminRole(request)
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    return getAdminLlmRoutes(app.pg)
+  })
+
+  app.post('/admin/llm-routes', async (request, reply) => {
+    requireAdminRole(request)
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const parsed = llmRouteSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
+    return upsertAdminLlmRoute(app.pg, parsed.data)
+  })
+
+  app.post('/admin/llm-routes/:routeId/test', async (request, reply) => {
+    requireAdminRole(request)
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = llmRouteParams.safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
+    const route = await getAdminLlmRouteById(app.pg, params.data.routeId)
+    if (!route) return reply.code(404).send({ error: 'llm_route_not_found' })
+    const provider = await getProviderConnectionByKey(app.pg, route.provider)
+    if (!provider) return reply.code(409).send({ error: 'llm_provider_not_configured' })
+    const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', providerSecretKeyMaterial(app.config))
+      ?? providerCredentialFromEnvironment(app.config, provider.providerKey)
+    const result = await testLlmRoute(provider.providerKey, apiKey, provider.publicConfig, route.modelName)
+    return { ...result, model: route.modelName, provider: provider.providerKey, checkedAt: new Date().toISOString() }
   })
 
   app.get('/admin/email-provider-connections', async (request, reply) => {
@@ -714,7 +766,7 @@ type Smtp2GoTestResult = {
 }
 
 function isCredentialManagedProvider(providerKey: string) {
-  return providerKey === 'smtp2go' || providerKey === 'cnpja'
+  return ['smtp2go', 'cnpja', 'openrouter', 'openai_direct'].includes(providerKey)
 }
 
 async function testProviderConnection(
@@ -724,7 +776,77 @@ async function testProviderConnection(
 ): Promise<Smtp2GoTestResult> {
   if (providerKey === 'smtp2go') return testSmtp2GoProvider(apiKey)
   if (providerKey === 'cnpja') return testCnpjaProvider(apiKey, publicConfig as Parameters<typeof testCnpjaProvider>[1])
+  if (providerKey === 'openrouter' || providerKey === 'openai_direct') {
+    return testLlmProvider(providerKey, apiKey, publicConfig)
+  }
   return { ok: false, message: 'Provedor nao suportado para teste automatico.' }
+}
+
+function providerSecretKeyMaterial(config: AppEnv) {
+  return config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+    ? `provider-key:${config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}`
+    : config.SESSION_SECRET
+}
+
+function providerCredentialFromEnvironment(config: AppEnv, providerKey: string) {
+  return providerKey === 'openrouter' ? config.OPENROUTER_API_KEY ?? null : null
+}
+
+function llmBaseUrl(providerKey: string, publicConfig?: Record<string, unknown>) {
+  const configured = typeof publicConfig?.baseUrl === 'string' ? publicConfig.baseUrl.trim() : ''
+  if (configured) return configured.replace(/\/$/, '')
+  return providerKey === 'openai_direct' ? 'https://api.openai.com/v1' : 'https://openrouter.ai/api/v1'
+}
+
+async function testLlmProvider(
+  providerKey: string,
+  apiKey: string | null,
+  publicConfig?: Record<string, unknown>,
+): Promise<Smtp2GoTestResult> {
+  if (!apiKey) return { ok: false, message: 'API key do provedor LLM nao foi cadastrada.' }
+  try {
+    const response = await fetch(`${llmBaseUrl(providerKey, publicConfig)}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) return { ok: false, message: `O provedor recusou a credencial (HTTP ${response.status}).` }
+    return { ok: true, message: 'Credencial validada e catalogo de modelos acessivel.' }
+  } catch {
+    return { ok: false, message: 'Nao foi possivel conectar ao provedor LLM.' }
+  }
+}
+
+async function testLlmRoute(
+  providerKey: string,
+  apiKey: string | null,
+  publicConfig: Record<string, unknown> | undefined,
+  model: string,
+): Promise<Smtp2GoTestResult> {
+  if (!apiKey) return { ok: false, message: 'API key do provedor LLM nao foi cadastrada.' }
+  const payload: Record<string, unknown> = {
+    model,
+    messages: [{ role: 'user', content: 'Responda apenas OK.' }],
+    max_completion_tokens: 8,
+    temperature: 0,
+    stream: false,
+  }
+  if (providerKey === 'openrouter') payload.provider = { data_collection: 'deny' }
+  try {
+    const response = await fetch(`${llmBaseUrl(providerKey, publicConfig)}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45_000),
+    })
+    if (!response.ok) return { ok: false, message: `O modelo nao respondeu corretamente (HTTP ${response.status}).` }
+    const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+    const content = body.choices?.[0]?.message?.content?.trim()
+    return content
+      ? { ok: true, message: `Modelo respondeu com sucesso: ${content.slice(0, 80)}` }
+      : { ok: false, message: 'O provedor respondeu, mas o modelo nao retornou conteudo.' }
+  } catch {
+    return { ok: false, message: 'O teste do modelo excedeu o tempo ou falhou na conexao.' }
+  }
 }
 
 async function testSmtp2GoProvider(apiKey?: string | null): Promise<Smtp2GoTestResult> {

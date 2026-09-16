@@ -142,7 +142,7 @@ class FunnelNurtureSpecialistWorkflow:
         try:
             response = self.client.chat_completion(
                 model=self.profile.model, messages=messages, max_tokens=self.profile.max_tokens,
-                temperature=self.profile.temperature,
+                temperature=self.profile.temperature, fallback_models=self.profile.fallback_models,
                 session_id=f"{(value.get('mission') or {}).get('id', '')}:{node}",
             )
             return parse_json_object(str(response.get("content") or ""))

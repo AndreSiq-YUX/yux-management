@@ -136,7 +136,8 @@ class CampaignLaunchSpecialistWorkflow:
         try:
             response = self.client.chat_completion(
                 model=self.profile.model, messages=self.compose_messages(node, value), max_tokens=self.profile.max_tokens,
-                temperature=self.profile.temperature, session_id=f"{(value.get('mission') or {}).get('id', '')}:{node}",
+                temperature=self.profile.temperature, fallback_models=self.profile.fallback_models,
+                session_id=f"{(value.get('mission') or {}).get('id', '')}:{node}",
             )
             return parse_json_object(str(response.get("content") or ""))
         except ProviderRequestError as error:

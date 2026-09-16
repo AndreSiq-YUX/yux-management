@@ -59,6 +59,7 @@ def _bearer_headers(api_key: str, extra: dict[str, str] | None = None) -> dict[s
 class OpenRouterClient:
     api_key: str | None = None
     base_url: str = "https://openrouter.ai/api/v1"
+    provider_name: str = "openrouter"
     transport: Transport = _default_transport
     allowed_paid_models: frozenset[str] = field(default_factory=frozenset)
     enforce_paid_model_approval: bool = False
@@ -102,9 +103,10 @@ class OpenRouterClient:
             "max_completion_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
-            "provider": {"data_collection": "deny"},
         }
-        if fallback_models:
+        if self.provider_name == "openrouter":
+            payload["provider"] = {"data_collection": "deny"}
+        if fallback_models and self.provider_name == "openrouter":
             payload["models"] = [model, *fallback_models]
         if session_id:
             payload["session_id"] = session_id
@@ -113,7 +115,10 @@ class OpenRouterClient:
 
         response = self.transport(
             f"{self.base_url.rstrip('/')}/chat/completions",
-            _bearer_headers(self.api_key, {"X-OpenRouter-Experimental-Metadata": "enabled"}),
+            _bearer_headers(
+                self.api_key,
+                {"X-OpenRouter-Experimental-Metadata": "enabled"} if self.provider_name == "openrouter" else None,
+            ),
             payload,
             "POST",
         )
@@ -130,7 +135,7 @@ class OpenRouterClient:
         if not isinstance(usage, dict):
             usage = {}
         return {
-            "provider": "openrouter",
+            "provider": self.provider_name,
             "model": response.get("model") or model,
             "content": message.get("content") or "",
             "finish_reason": choice.get("finish_reason"),

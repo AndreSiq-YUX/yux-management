@@ -27,8 +27,6 @@ export const openRouterDefaults: PlatformProviderConnectionInput = {
   publicConfig: {
     baseUrl: 'https://openrouter.ai/api/v1',
     chatCompletionsPath: '/chat/completions',
-    primaryModel: 'nex-agi/nex-n2.5-mini:free',
-    fallbackModels: [],
     providerRouting: {
       allowFallbacks: true,
       sort: 'throughput',

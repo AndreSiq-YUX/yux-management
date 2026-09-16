@@ -74,6 +74,34 @@ export interface ProviderCredentialSaveResult {
   provider?: PlatformProviderConnection
 }
 
+export type AdminLlmUseCase = 'action_engine_strategist' | 'mission_supervisor'
+
+export interface AdminLlmRoute {
+  id: string
+  agentType: AdminLlmUseCase
+  routingTier: 'cheap' | 'default' | 'premium' | 'fallback'
+  provider: string
+  modelName: string
+  fallbackModelName: string | null
+  maxInputTokens: number
+  maxOutputTokens: number
+  temperature: number
+  maxCostPerRun: number
+  status: 'active' | 'paused' | 'archived'
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type AdminLlmRouteInput = Omit<AdminLlmRoute, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
+
+export interface AdminLlmRouteTestResult {
+  ok: boolean
+  message: string
+  model: string
+  provider: string
+  checkedAt: string
+}
+
 export interface EmailProviderConnectionInput {
   id?: string
   organizationId: string
@@ -327,6 +355,18 @@ export class AdminPlatformService {
       method: 'POST',
       body: { apiKey },
     })
+  }
+
+  async getLlmRoutes(): Promise<AdminLlmRoute[]> {
+    return apiRequest<AdminLlmRoute[]>('/platform/admin/llm-routes')
+  }
+
+  async upsertLlmRoute(input: AdminLlmRouteInput): Promise<AdminLlmRoute> {
+    return apiRequest<AdminLlmRoute>('/platform/admin/llm-routes', { method: 'POST', body: input })
+  }
+
+  async testLlmRoute(routeId: string): Promise<AdminLlmRouteTestResult> {
+    return apiRequest<AdminLlmRouteTestResult>(`/platform/admin/llm-routes/${routeId}/test`, { method: 'POST' })
   }
 
   async getEmailProviderConnections(): Promise<EmailProviderConnection[]> {

@@ -175,6 +175,26 @@ describe('adminPlatformService', () => {
     })
   })
 
+  it('loads, saves and tests Action Engine LLM routes through admin endpoints', async () => {
+    const route = {
+      id: 'route-1', agentType: 'action_engine_strategist', routingTier: 'default',
+      provider: 'openrouter', modelName: 'openai/gpt-5.6-luna-pro', fallbackModelName: null,
+      maxInputTokens: 16000, maxOutputTokens: 2200, temperature: 0.2,
+      maxCostPerRun: 0.01, status: 'active',
+    } as const
+    apiRequestMock.mockResolvedValueOnce([route]).mockResolvedValueOnce(route).mockResolvedValueOnce({
+      ok: true, message: 'Modelo respondeu com sucesso: OK', model: route.modelName,
+      provider: route.provider, checkedAt: '2026-09-15T12:00:00.000Z',
+    })
+
+    await expect(adminPlatformService.getLlmRoutes()).resolves.toEqual([route])
+    await expect(adminPlatformService.upsertLlmRoute(route)).resolves.toEqual(route)
+    await expect(adminPlatformService.testLlmRoute(route.id)).resolves.toMatchObject({ ok: true })
+    expect(apiRequestMock).toHaveBeenNthCalledWith(1, '/platform/admin/llm-routes')
+    expect(apiRequestMock).toHaveBeenNthCalledWith(2, '/platform/admin/llm-routes', { method: 'POST', body: route })
+    expect(apiRequestMock).toHaveBeenNthCalledWith(3, '/platform/admin/llm-routes/route-1/test', { method: 'POST' })
+  })
+
   it('builds SMTP2GO organization connection payloads', () => {
     expect(buildEmailProviderConnectionPayload({
       organizationId: 'org-1',

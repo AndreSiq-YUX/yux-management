@@ -95,7 +95,7 @@ export function ProviderConnectionEditor({
   const [credentialSaved, setCredentialSaved] = useState(false)
   const [testResult, setTestResult] = useState<ProviderConnectionTestResult | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const isLockedProviderKey = defaults.providerKey === 'smtp2go' || defaults.providerKey === 'cnpja'
+  const isLockedProviderKey = ['smtp2go', 'cnpja', 'openrouter', 'openai_direct'].includes(defaults.providerKey)
   const providerKeyValue = isLockedProviderKey ? defaults.providerKey : providerKey
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -333,7 +333,7 @@ export function ProviderConnectionEditor({
               disabled={testing || saving || savingCredential || !provider?.id}
               onClick={handleTestConnection}
               className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-              title={provider?.id ? 'Testa a credencial master no backend sem enviar email.' : 'Salve o provedor antes de testar.'}
+              title={provider?.id ? 'Testa a credencial no backend sem expor o segredo.' : 'Salve o provedor antes de testar.'}
             >
               <Wifi className="h-4 w-4" aria-hidden="true" />
               {testing ? 'Testando...' : 'Testar conexao'}

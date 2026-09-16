@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import base64
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha256
 from typing import Any
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .harness import Harness
 from .providers import OpenRouterClient
@@ -18,6 +21,59 @@ from .model_profiles import ModelProfile
 
 
 DEFAULT_MODEL = "nex-agi/nex-n2.5-mini:free"
+
+
+def _provider_api_key(store: AgentRuntimeStore, provider_key: str) -> tuple[str | None, dict[str, Any]]:
+    loader = getattr(store, "load_provider_credential_envelope", None)
+    try:
+        envelope = loader(provider_key) if callable(loader) else None
+    except Exception:
+        envelope = None
+    public_config = dict((envelope or {}).get("public_config") or {})
+    encryption_key = os.getenv("PROVIDER_SECRET_ENCRYPTION_KEY_B64", "").strip()
+    if envelope and encryption_key:
+        try:
+            key = base64.b64decode(encryption_key)
+            nonce = base64.b64decode(str(envelope["nonce"]))
+            ciphertext = base64.b64decode(str(envelope["ciphertext"]))
+            auth_tag = base64.b64decode(str(envelope["auth_tag"]))
+            value = AESGCM(key).decrypt(nonce, ciphertext + auth_tag, None).decode("utf-8")
+            if value:
+                return value, public_config
+        except Exception:
+            pass
+    environment_key = "OPENROUTER_API_KEY" if provider_key == "openrouter" else "OPENAI_API_KEY"
+    return os.getenv(environment_key), public_config
+
+
+def _provider_clients(store: AgentRuntimeStore, routes: list[dict[str, Any]]) -> dict[str, OpenRouterClient]:
+    clients: dict[str, OpenRouterClient] = {}
+    env_approved = {
+        model.strip()
+        for model in os.getenv("OPENROUTER_ALLOWED_PAID_MODELS", "").split(",")
+        if model.strip()
+    }
+    for provider_key in {str(route.get("provider") or "") for route in routes} | {"openrouter"}:
+        if provider_key not in {"openrouter", "openai_direct"}:
+            continue
+        api_key, public_config = _provider_api_key(store, provider_key)
+        configured_url = str(public_config.get("baseUrl") or "").strip()
+        default_url = "https://api.openai.com/v1" if provider_key == "openai_direct" else "https://openrouter.ai/api/v1"
+        approved = env_approved | {
+            str(model).strip()
+            for route in routes
+            if route.get("provider") == provider_key and route.get("status", "active") == "active"
+            for model in (route.get("model_name"), route.get("fallback_model_name"))
+            if model
+        }
+        clients[provider_key] = OpenRouterClient(
+            api_key=api_key,
+            base_url=configured_url or default_url,
+            provider_name=provider_key,
+            allowed_paid_models=frozenset(approved),
+            enforce_paid_model_approval=provider_key == "openrouter",
+        )
+    return clients
 
 
 def build_mission_supervisor(
@@ -44,10 +100,12 @@ def build_mission_supervisor(
         max_tokens=int(route.get("max_output_tokens") or 2400),
         timeout_seconds=int(route.get("timeout_seconds") or 45),
         max_cost_brl=Decimal(str(route.get("max_cost_per_run") or "0")),
+        fallback_models=[str(route["fallback_model_name"])] if route.get("fallback_model_name") else [],
         fallback_profile_keys=[],
         prompt_bundle_hash=sha256(b"yux-mission-supervisor-v1").hexdigest(),
     )
-    return MissionSupervisor(llm_client or OpenRouterClient.from_env(), profile)
+    clients = _provider_clients(store, routes)
+    return MissionSupervisor(llm_client or clients.get(profile.provider) or OpenRouterClient.from_env(), profile)
 
 
 def _active(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -257,14 +315,16 @@ def build_strategy_workflow_engine(
     tool_policies.extend(
         _profile_tool_policies(store.list("yux_strategy_profile_tool_policies", limit=500), agents)
     )
+    provider_clients = {} if llm_client is not None else _provider_clients(store, routes)
     harness = Harness(
         global_prompts=prompts,
         routes=routes,
         tool_policies=tool_policies,
         budget_policies=_active(store.list("agent_budget_policies", limit=500)),
         llm_client=llm_client or OpenRouterClient.from_env(),
+        provider_clients=provider_clients,
     )
-    embedding_service = QueryEmbeddingService(OpenRouterClient.from_env())
+    embedding_service = QueryEmbeddingService(provider_clients.get("openrouter") or OpenRouterClient.from_env())
     retrieval = StrategyRetrievalService(
         RuntimeStrategyKnowledgeStore(
             store,

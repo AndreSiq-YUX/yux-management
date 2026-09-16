@@ -117,6 +117,16 @@ describe('platform route RBAC', () => {
     expect(response.json()).toEqual({ error: 'forbidden' })
   })
 
+  it('rejects client administrators from Action Engine LLM routing', async () => {
+    const { authStore, token } = authenticatedStore('client_admin')
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({ method: 'GET', url: '/api/platform/admin/llm-routes', headers: cookie(token) })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'forbidden' })
+  })
+
   it('allows YUX administrators to read the global platform admin surface', async () => {
     const { authStore, token } = authenticatedStore('yux_admin')
     app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })

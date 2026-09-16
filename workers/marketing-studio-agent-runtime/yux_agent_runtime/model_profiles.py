@@ -19,6 +19,7 @@ class ModelProfile(BaseModel):
     max_tokens: int = Field(ge=1)
     timeout_seconds: int = Field(ge=1, le=600)
     max_cost_brl: Decimal = Field(ge=0)
+    fallback_models: list[str] = Field(default_factory=list)
     fallback_profile_keys: list[str] = Field(default_factory=list)
     prompt_bundle_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 

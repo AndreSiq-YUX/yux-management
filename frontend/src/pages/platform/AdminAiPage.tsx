@@ -4,9 +4,11 @@ import { AlertTriangle, Bot, BrainCircuit, Building2, DollarSign, Layers3, Serve
 import { AdminMetricCard } from '@/components/platform/admin/AdminMetricCard'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
+import { LlmUseCaseRoutingPanel } from '@/components/platform/admin/LlmUseCaseRoutingPanel'
 import { isProviderFailing } from '@/lib/platform/adminRules'
 import { openAiDirectFallbackDefaults, openRouterDefaults } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
+import type { AdminLlmRoute } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
 
 const governanceSections = [
@@ -38,29 +40,34 @@ const governanceSections = [
 
 export function AdminAiPage() {
   const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
+  const [llmRoutes, setLlmRoutes] = useState<AdminLlmRoute[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadProviders(active = true) {
+  async function loadProviders(shouldApply: () => boolean = () => true) {
     setLoading(true)
     setError(null)
 
     try {
-      const result = await adminPlatformService.getProviderConnections()
-      if (active) {
+      const [result, routes] = await Promise.all([
+        adminPlatformService.getProviderConnections(),
+        adminPlatformService.getLlmRoutes(),
+      ])
+      if (shouldApply()) {
         setProviders(result.filter(provider => provider.providerType === 'llm'))
+        setLlmRoutes(routes)
       }
     } catch (error) {
       console.error('Error loading LLM administration:', error)
-      if (active) setError('Nao foi possivel carregar a administracao de IA/LLM.')
+      if (shouldApply()) setError('Nao foi possivel carregar a administracao de IA/LLM.')
     } finally {
-      if (active) setLoading(false)
+      if (shouldApply()) setLoading(false)
     }
   }
 
   useEffect(() => {
     let active = true
-    loadProviders()
+    void loadProviders(() => active)
 
     return () => {
       active = false
@@ -69,6 +76,7 @@ export function AdminAiPage() {
 
   const openRouterProvider = providers.find(provider => provider.providerKey === 'openrouter')
   const openAiProvider = providers.find(provider => provider.providerKey === 'openai_direct')
+  const actionEngineProviders = providers.filter(provider => ['openrouter', 'openai_direct'].includes(provider.providerKey))
   const fallbackProviders = providers.filter(provider => provider.providerKey !== 'openrouter')
   const activeProviders = providers.filter(provider => provider.status === 'active').length
   const defaultProviders = providers.filter(provider => provider.isDefault).length
@@ -92,8 +100,8 @@ export function AdminAiPage() {
       </div>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        OpenRouter e OpenAI direto usam secrets server-side. Configure aqui os modelos, fallback e nomes de secrets; cadastre os
-        valores reais como <span className="font-mono">OPENROUTER_API_KEY</span> e <span className="font-mono">OPENAI_API_KEY</span>.
+        OpenRouter e OpenAI direto usam credenciais criptografadas no servidor. Configure a conexão, salve a API key e defina abaixo
+        o modelo de cada caso de uso. A chave nunca volta para o navegador.
       </div>
 
       {loading && <p className="text-sm text-gray-600">Carregando administracao de IA/LLM...</p>}
@@ -135,7 +143,7 @@ export function AdminAiPage() {
         <section className="grid gap-4 xl:grid-cols-2">
           <ProviderConnectionEditor
             title="OpenRouter principal"
-            description="Define modelo principal, fallbackModels do OpenRouter e provedor externo caso o roteador falhe."
+            description="Gerencia a credencial e a conexão do OpenRouter. Os modelos são definidos separadamente por caso de uso."
             provider={openRouterProvider}
             defaults={{
               ...openRouterDefaults,
@@ -146,6 +154,9 @@ export function AdminAiPage() {
               await adminPlatformService.upsertProviderConnection(input)
               await loadProviders()
             }}
+            onTest={providerId => adminPlatformService.testProviderConnection(providerId)}
+            onSaveCredential={(providerId, apiKey) => adminPlatformService.saveProviderCredential(providerId, apiKey)}
+            credentialLabel="API key do OpenRouter"
           />
           <ProviderConnectionEditor
             title="OpenAI direto"
@@ -156,8 +167,24 @@ export function AdminAiPage() {
               await adminPlatformService.upsertProviderConnection(input)
               await loadProviders()
             }}
+            onTest={providerId => adminPlatformService.testProviderConnection(providerId)}
+            onSaveCredential={(providerId, apiKey) => adminPlatformService.saveProviderCredential(providerId, apiKey)}
+            credentialLabel="API key da OpenAI"
           />
         </section>
+      )}
+
+      {!loading && !error && (
+        <LlmUseCaseRoutingPanel
+          providers={actionEngineProviders}
+          routes={llmRoutes}
+          onSave={async input => {
+            const saved = await adminPlatformService.upsertLlmRoute(input)
+            setLlmRoutes(current => [...current.filter(item => item.id !== saved.id && item.agentType !== saved.agentType), saved])
+            return saved
+          }}
+          onTest={routeId => adminPlatformService.testLlmRoute(routeId)}
+        />
       )}
 
       {!loading && !error && (

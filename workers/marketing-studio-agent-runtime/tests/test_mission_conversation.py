@@ -170,6 +170,10 @@ class MissionConversationWorkflowTest(unittest.TestCase):
                 "id": "route-growth", "agent_type": "growth_strategist", "routing_tier": "default",
                 "provider": "openrouter", "model_name": "test/model", "status": "active",
                 "max_output_tokens": 1800, "temperature": 0,
+            }, {
+                "id": "route-action-engine", "agent_type": "action_engine_strategist", "routing_tier": "default",
+                "provider": "openrouter", "model_name": "test/action-engine-model", "status": "active",
+                "max_output_tokens": 2200, "temperature": 0.1,
             }],
             "yux_strategy_concept_cards": [{
                 "id": "card-growth", "concept": "Diagnóstico antes do canal", "category": "growth",
@@ -294,6 +298,7 @@ class MissionConversationWorkflowTest(unittest.TestCase):
         self.assertIn("Diagnóstico comercial antes da campanha", prompt)
         self.assertNotIn("Segredo interno do cliente", prompt)
         self.assertNotIn("Não pode vazar", prompt)
+        self.assertEqual(captured[0]["model"], "test/action-engine-model")
 
     def test_context_hash_is_deterministic_and_trace_id_is_per_run(self):
         captured = []

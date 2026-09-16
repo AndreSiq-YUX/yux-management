@@ -39,6 +39,9 @@ class AgentRuntimeStore(Protocol):
     def list(self, table: str, filters: dict[str, Any] | None = None, limit: int | None = None) -> list[dict[str, Any]]:
         ...
 
+    def load_provider_credential_envelope(self, provider_key: str) -> dict[str, Any] | None:
+        ...
+
 
 @dataclass
 class InMemoryAgentRuntimeStore:
@@ -66,6 +69,13 @@ class InMemoryAgentRuntimeStore:
                 records.append(dict(record))
         return records[:limit] if limit is not None else records
 
+    def load_provider_credential_envelope(self, provider_key: str) -> dict[str, Any] | None:
+        record = next(
+            (item for item in self.tables.get("provider_credential_envelopes", []) if item.get("provider_key") == provider_key),
+            None,
+        )
+        return dict(record) if record else None
+
 
 @dataclass
 class SupabaseAgentRuntimeStore:
@@ -90,6 +100,11 @@ class SupabaseAgentRuntimeStore:
             query = query.limit(limit)
         response = query.execute()
         return response.data or []
+
+    def load_provider_credential_envelope(self, provider_key: str) -> dict[str, Any] | None:
+        response = self.client.rpc("runtime_provider_secret_envelope", {"p_provider_key": provider_key}).execute()
+        data = response.data or []
+        return data[0] if data else None
 
 
 class PostgresAgentRuntimeStore:
@@ -250,6 +265,14 @@ class PostgresAgentRuntimeStore:
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute(f"SELECT * FROM public.{table} WHERE {where}{suffix}", values)
             return [self._row(dict(row)) for row in cursor.fetchall()]
+
+    def load_provider_credential_envelope(self, provider_key: str) -> dict[str, Any] | None:
+        """Read the encrypted credential envelope exposed to the runtime, never the secrets table."""
+        self.set_internal_scope()
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute("SELECT * FROM private.runtime_provider_secret_envelope(%s)", [provider_key])
+            row = cursor.fetchone()
+            return self._row(dict(row)) if row else None
 
     def retrieve_authorized_knowledge(
         self,

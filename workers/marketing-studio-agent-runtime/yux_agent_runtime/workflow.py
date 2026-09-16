@@ -602,6 +602,11 @@ class StrategyWorkflowEngine:
             organization_id=organization_id,
             client_id=client_id,
             contract_id=contract_id,
+            model_route_key=(
+                "action_engine_strategist"
+                if plan["workflow_key"] == "mission_intake_conversation"
+                else None
+            ),
         )
         parsed = parse_json_object(provider["content"])
         if plan["workflow_key"] == "mission_intake_conversation":
@@ -644,6 +649,7 @@ class StrategyWorkflowEngine:
         organization_id: str | None = None,
         client_id: str | None = None,
         contract_id: str | None = None,
+        model_route_key: str | None = None,
     ) -> dict[str, Any]:
         if self.harness is None:
             raise RuntimeError("agent_harness_not_configured")
@@ -682,6 +688,7 @@ class StrategyWorkflowEngine:
             "organization_id": organization_id,
             "client_id": client_id,
             "contract_id": contract_id,
+            "model_route_key": model_route_key,
         })
         output = result["agent_runs"][-1]["output_payload"]
         if output.get("dry_run") or not output.get("content"):

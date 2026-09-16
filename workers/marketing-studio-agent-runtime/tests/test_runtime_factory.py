@@ -1,5 +1,10 @@
 import json
+import base64
+import os
 import unittest
+from unittest.mock import patch
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from yux_agent_runtime.providers import OpenRouterClient
 from yux_agent_runtime.runtime_factory import RuntimeStrategyKnowledgeStore, build_strategy_workflow_engine
@@ -7,6 +12,31 @@ from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 
 
 class RuntimeFactoryTest(unittest.TestCase):
+    def test_factory_uses_admin_encrypted_openrouter_credential_and_route_consent(self):
+        key = os.urandom(32)
+        nonce = os.urandom(12)
+        encrypted = AESGCM(key).encrypt(nonce, b"admin-openrouter-key", None)
+        store = InMemoryAgentRuntimeStore({
+            "provider_credential_envelopes": [{
+                "provider_key": "openrouter",
+                "public_config": {"baseUrl": "https://openrouter.ai/api/v1"},
+                "ciphertext": base64.b64encode(encrypted[:-16]).decode(),
+                "nonce": base64.b64encode(nonce).decode(),
+                "auth_tag": base64.b64encode(encrypted[-16:]).decode(),
+            }],
+            "model_routing_rules": [{
+                "agent_type": "action_engine_strategist", "routing_tier": "default",
+                "provider": "openrouter", "model_name": "paid/admin-selected", "status": "active",
+            }],
+        })
+
+        with patch.dict("os.environ", {"PROVIDER_SECRET_ENCRYPTION_KEY_B64": base64.b64encode(key).decode()}, clear=False):
+            engine = build_strategy_workflow_engine(store)
+
+        client = engine.harness.provider_clients["openrouter"]
+        self.assertEqual(client.api_key, "admin-openrouter-key")
+        self.assertIn("paid/admin-selected", client.allowed_paid_models)
+
     def test_runtime_strategy_store_joins_latest_card_and_chunk_embeddings(self):
         store = InMemoryAgentRuntimeStore({
             "yux_strategy_concept_cards": [{"id": "card-1", "concept": "Card"}],

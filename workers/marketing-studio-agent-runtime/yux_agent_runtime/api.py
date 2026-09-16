@@ -144,15 +144,15 @@ def create_app(
 
     def mission_planner() -> MissionSupervisor:
         nonlocal supervisor
-        if supervisor is None:
-            supervisor = build_mission_supervisor(runtime_store)
-        return supervisor
+        if supervisor is not None:
+            return supervisor
+        return build_mission_supervisor(runtime_store)
 
     def conversation_workflow() -> MissionConversationWorkflow:
         nonlocal conversation
-        if conversation is None:
-            conversation = MissionConversationWorkflow(workflow_engine())
-        return conversation
+        if conversation is not None:
+            return conversation
+        return MissionConversationWorkflow(build_strategy_workflow_engine(runtime_store))
 
     def validate_tenant(
         organization_id: str | None,

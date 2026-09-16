@@ -52,6 +52,20 @@ export type PlatformProviderSecretInput = {
   metadata?: Record<string, unknown>
 }
 
+export type AdminLlmRouteInput = {
+  id?: string
+  agentType: 'action_engine_strategist' | 'mission_supervisor'
+  routingTier?: 'cheap' | 'default' | 'premium' | 'fallback'
+  provider: string
+  modelName: string
+  fallbackModelName?: string | null
+  maxInputTokens?: number
+  maxOutputTokens?: number
+  temperature?: number
+  maxCostPerRun?: number
+  status?: 'active' | 'paused' | 'archived'
+}
+
 export type ClientModuleLimitInput = {
   id?: string
   organizationId: string
@@ -100,6 +114,95 @@ export async function getProviderConnectionById(pool: pg.Pool, id: string) {
   )
 
   return result.rows[0] ? mapProviderConnection(result.rows[0]) : null
+}
+
+export async function getProviderConnectionByKey(pool: pg.Pool, providerKey: string) {
+  const result = await pool.query(
+    `SELECT id, provider_type, provider_key, display_name, environment, status, public_config,
+            secret_reference, last_checked_at, last_error, is_default, fallback_provider_id, created_at, updated_at
+     FROM public.platform_provider_connections
+     WHERE provider_key = $1
+       AND provider_type = 'llm'
+       AND environment = 'production'
+     ORDER BY is_default DESC, updated_at DESC
+     LIMIT 1`,
+    [providerKey],
+  )
+
+  return result.rows[0] ? mapProviderConnection(result.rows[0]) : null
+}
+
+export async function getAdminLlmRoutes(pool: pg.Pool) {
+  const result = await pool.query(
+    `SELECT id, agent_type, routing_tier, provider, model_name, fallback_model_name,
+            max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
+            created_at, updated_at
+     FROM public.model_routing_rules
+     WHERE organization_id IS NULL
+       AND client_id IS NULL
+       AND contract_id IS NULL
+       AND agent_id IS NULL
+       AND agent_type = ANY($1::text[])
+       AND routing_tier = 'default'
+     ORDER BY agent_type, routing_tier`,
+    [['action_engine_strategist', 'mission_supervisor']],
+  )
+  return result.rows.map(mapAdminLlmRoute)
+}
+
+export async function getAdminLlmRouteById(pool: pg.Pool, id: string) {
+  const result = await pool.query(
+    `SELECT id, agent_type, routing_tier, provider, model_name, fallback_model_name,
+            max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
+            created_at, updated_at
+     FROM public.model_routing_rules
+     WHERE id = $1::uuid
+       AND agent_type = ANY($2::text[])
+       AND routing_tier = 'default'
+     LIMIT 1`,
+    [id, ['action_engine_strategist', 'mission_supervisor']],
+  )
+  return result.rows[0] ? mapAdminLlmRoute(result.rows[0]) : null
+}
+
+export async function upsertAdminLlmRoute(pool: pg.Pool, input: AdminLlmRouteInput) {
+  const values = [
+    input.agentType,
+    input.routingTier ?? 'default',
+    input.provider.trim(),
+    input.modelName.trim(),
+    input.fallbackModelName?.trim() || null,
+    input.maxInputTokens ?? 16000,
+    input.maxOutputTokens ?? 2200,
+    input.temperature ?? 0.2,
+    input.maxCostPerRun ?? 0,
+    input.status ?? 'active',
+  ]
+  const result = input.id
+    ? await pool.query(
+        `UPDATE public.model_routing_rules
+         SET agent_type = $1, routing_tier = $2, provider = $3, model_name = $4,
+             fallback_model_name = $5, max_input_tokens = $6, max_output_tokens = $7,
+             temperature = $8, max_cost_per_run = $9, status = $10, updated_at = NOW()
+         WHERE id = $11::uuid
+           AND agent_type = ANY($12::text[])
+         RETURNING id, agent_type, routing_tier, provider, model_name, fallback_model_name,
+           max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
+           created_at, updated_at`,
+        [...values, input.id, ['action_engine_strategist', 'mission_supervisor']],
+      )
+    : await pool.query(
+        `INSERT INTO public.model_routing_rules (
+           agent_type, routing_tier, provider, model_name, fallback_model_name,
+           max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         RETURNING id, agent_type, routing_tier, provider, model_name, fallback_model_name,
+           max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
+           created_at, updated_at`,
+        values,
+      )
+  if (!result.rows[0]) throw new Error('llm_route_not_found')
+  return mapAdminLlmRoute(result.rows[0])
 }
 
 export async function updateProviderConnectionHealth(pool: pg.Pool, id: string, input: { status: string; lastError?: string | null }) {
@@ -639,6 +742,24 @@ function mapProviderConnection(row: any) {
     lastError: row.last_error ?? null,
     isDefault: Boolean(row.is_default),
     fallbackProviderId: row.fallback_provider_id ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapAdminLlmRoute(row: any) {
+  return {
+    id: row.id,
+    agentType: row.agent_type,
+    routingTier: row.routing_tier,
+    provider: row.provider,
+    modelName: row.model_name,
+    fallbackModelName: row.fallback_model_name ?? null,
+    maxInputTokens: numberValue(row.max_input_tokens),
+    maxOutputTokens: numberValue(row.max_output_tokens),
+    temperature: numberValue(row.temperature),
+    maxCostPerRun: numberValue(row.max_cost_per_run),
+    status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
