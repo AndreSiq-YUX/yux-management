@@ -28,7 +28,7 @@ Este é um único entregável integrado: API, interface e runtime compartilham o
 
 **Files:**
 - Create: `backend/src/modules/platform/llm-routing.ts` (catálogo/resolução/credenciais para embeddings; nomes podem ser especializados mantendo o contrato abaixo).
-- Create: `backend/src/db/migrations/0174_centralized_llm_routing.sql` (usar próximo número disponível se necessário).
+- Create: `backend/src/db/migrations/0173_centralized_llm_routing.sql` (próximo número disponível confirmado).
 - Modify: `backend/src/modules/platform/adminRepository.ts`, `backend/src/modules/platform/routes.ts`.
 - Modify: `backend/src/modules/company-intelligence/openrouter-embeddings.ts`, `backend/src/modules/company-intelligence/routes.ts`, `backend/src/jobs/handlers/company-intelligence.ts`, `backend/src/modules/strategy-engine/ingestion.ts`.
 - Modify: `frontend/src/services/adminPlatformService.ts`, `frontend/src/pages/platform/AdminAiPage.tsx`, `frontend/src/components/platform/admin/LlmUseCaseRoutingPanel.tsx`, `frontend/src/pages/platform/StrategyEnginePage.tsx`.
@@ -37,7 +37,7 @@ Este é um único entregável integrado: API, interface e runtime compartilham o
 - Test: testes de API/repositório Admin, embeddings backend, página Admin e Strategy Engine, resolução de rotas Python, curadoria, harness, supervisor e especialistas.
 
 **Interfaces:**
-- `AdminLlmRoute.agentType: string`; preservar `routingTier: cheap | default | premium | fallback` e escopos `organizationId`, `clientId`, `contractId`, `agentId` opcionais/nulos.
+- `AdminLlmRoute.agentType: string | null`; null preserva rotas legadas exclusivas por agente; preservar `routingTier: cheap | default | premium | fallback` e escopos `organizationId`, `clientId`, `contractId`, `agentId` opcionais/nulos.
 - `fallbackRoutes: Array<{ provider: 'openrouter' | 'openai_direct'; modelName: string }>` representa fallbacks manuais ordenados, inclusive entre provedores. Preservar `fallbackModelName` como compatibilidade e migrá-lo sem duplicar tentativas.
 - `AdminLlmUseCaseDefinition = { key: string; title: string; description: string; kind: 'chat' | 'embedding'; group: string }`.
 - `GET /platform/admin/llm-use-cases` retorna catálogo fixo de serviços + perfis estratégicos + agentes de marketing + chaves de rotas existentes, sem duplicatas.
@@ -54,7 +54,7 @@ Este é um único entregável integrado: API, interface e runtime compartilham o
 - Importar configurações legadas do ambiente para rotas persistidas somente quando a rota correspondente não existir, sem sobrescrever escolhas do Admin, inclusive pausadas. O import deve respeitar a aprovação preexistente de modelos pagos, ser idempotente e ficar visível na página. Se isso não puder ser feito com segurança, retornar a configuração efetiva como origem legada claramente visível e permitir salvar para substituir; não esconder env atrás de campos vazios.
 - Embeddings: fixar uma configuração efetiva por lote; fallback implica repetir o lote inteiro, nunca misturar modelos dentro de uma saída. Registrar identidade real do modelo. Consulta utiliza filtros de modelo/dimensão, e índices antigos permanecem intactos. Mostrar aviso de que trocar o modelo exige reindexação para manter cobertura da busca. Não iniciar reindexação paga automaticamente.
 
-- [ ] **Step 1: RED — testes de contrato e comportamento antes das alterações.**
+- [x] **Step 1: RED — testes de contrato e comportamento antes das alterações.**
 
 ```python
 def test_fallback_order_and_provider_identity():
@@ -76,7 +76,7 @@ expect(screen.getByRole('link', { name: /configurar.*IA\/LLM/i })).toHaveAttribu
 
 Run focused Vitest/pytest tests; record the expected RED output in the report. Implement concrete fixtures using existing test conventions, with no live provider calls.
 
-- [ ] **Step 2: Banco/API — ampliar o contrato sem excluir dados.**
+- [x] **Step 2: Banco/API — ampliar o contrato sem excluir dados.**
 
 ```sql
 ALTER TABLE public.model_routing_rules
@@ -86,7 +86,7 @@ ALTER TABLE public.model_routing_rules
 
 Validate ordered fallback objects and supported provider keys, trimmed nonempty names, existing scopes/tier/status/limits. List all existing routes; safely update by validated scope/id (do not reassign a route across tenants accidentally), and avoid inserting duplicate logical routes when saving twice without an id. Extend model test to use embeddings endpoint for embedding cases and return only safe metadata. The test button must explain that clicking it requests a real provider call and may incur cost; do not invoke it during development.
 
-- [ ] **Step 3: Python — uma cadeia efetiva para todos os serviços.**
+- [x] **Step 3: Python — uma cadeia efetiva para todos os serviços.**
 
 ```python
 class RoutedLlmClient:
@@ -101,14 +101,14 @@ class RoutedLlmClient:
 
 Implement actual code (the snippets specify the interface, not production bodies). Apply to Harness route calls, mission supervisor, independent campaign/funnel specialists, both curators and QueryEmbeddingService. Prefer shared builders in runtime_factory. Keep dependency injection of isolated stores and mocked services compatible. Refresh configuration lazily per request, without making health checks require providers or a database query.
 
-- [ ] **Step 4: Backend embeddings — usar a mesma rota persistida.**
+- [x] **Step 4: Backend embeddings — usar a mesma rota persistida.**
 
 Resolve selected provider, credential and model from `knowledge_embeddings`/`global_embeddings`, preserving legacy function callers and injected test transports. Wire database-aware configuration into all embedding call sites and checkpoint input hashes. Do not load a new route midway through a checkpointed batch. Keep approvals and vector validation. Retrieval records the actual query model/dimensions, not an unrelated environment default.
 
-- [ ] **Step 5: Interface — centralizar sem reduzir controles.**
+- [x] **Step 5: Interface — centralizar sem reduzir controles.**
 
 Load providers/routes/catalogue concurrently in AdminAiPage. Use a selectable/filterable grouped catalogue rather than rendering dozens of huge editors. Preserve edits per exact scope/tier and display configured/inherited/legacy status. Expose main provider/model, ordered fallback providers/models, existing token/temperature/cost/status controls, and scope/tier overrides. Include global text and global embedding editors and warning about vector reindexing. Leave provider API-key save/test controls in this central page. Replace Strategy Engine model editor with an explanatory link to `/admin/ai`, preserving other tabs and profile settings. Update links/copy pointing at the old editor.
 
-- [ ] **Step 6: GREEN — verificar e revisar o conjunto.**
+- [x] **Step 6: GREEN — verificar e revisar o conjunto.**
 
 Run focused Admin API/repository, backend embeddings/ingestion, frontend Admin/Strategy tests and Python routing/runtime/curation/supervisor tests. Then run full backend/frontend type checks and Python suite, package tests/builds proportionate to touched code. Confirm no secrets logged, no live calls, no existing data overwritten, no hidden hardcoded active model path. Update release manifest if it requires the new migration. Record exact results and any preexisting failures separately. Commit only feature-owned files on the current branch; do not push/deploy.
