@@ -10,7 +10,9 @@ from typing import Any
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .harness import Harness
-from .providers import OpenRouterClient
+from .providers import OpenRouterClient, ProviderAuthorizationError, ProviderAvailabilityError
+from urllib.parse import urlparse
+from .llm_routing import RoutedLlmClient, resolve_route
 from .retrieval import StrategyRetrievalService
 from .runtime_store import AgentRuntimeStore
 from .workflow import StrategyWorkflowEngine
@@ -24,12 +26,18 @@ DEFAULT_MODEL = "nex-agi/nex-n2.5-mini:free"
 
 
 def _provider_api_key(store: AgentRuntimeStore, provider_key: str) -> tuple[str | None, dict[str, Any]]:
+    configuration_loader = getattr(store, "load_provider_configuration", None)
+    configuration = configuration_loader(provider_key) if callable(configuration_loader) else None
+    if configuration and configuration.get("status") in {"disabled", "needs_reauth", "failed"}:
+        raise ProviderAvailabilityError("llm_provider_not_active")
     loader = getattr(store, "load_provider_credential_envelope", None)
     try:
         envelope = loader(provider_key) if callable(loader) else None
-    except Exception:
-        envelope = None
-    public_config = dict((envelope or {}).get("public_config") or {})
+    except Exception as error:
+        raise ProviderAvailabilityError("provider_credentials_unavailable") from error
+    public_config = dict((configuration or envelope or {}).get("public_config") or {})
+    if configuration and configuration.get("has_credential") and not envelope:
+        raise ProviderAvailabilityError("provider_credentials_invalid")
     encryption_key = os.getenv("PROVIDER_SECRET_ENCRYPTION_KEY_B64", "").strip()
     if envelope and encryption_key:
         try:
@@ -40,10 +48,23 @@ def _provider_api_key(store: AgentRuntimeStore, provider_key: str) -> tuple[str 
             value = AESGCM(key).decrypt(nonce, ciphertext + auth_tag, None).decode("utf-8")
             if value:
                 return value, public_config
-        except Exception:
-            pass
+        except Exception as error:
+            raise ProviderAvailabilityError("provider_credentials_invalid") from error
+    if envelope:
+        raise ProviderAvailabilityError("provider_credentials_invalid")
     environment_key = "OPENROUTER_API_KEY" if provider_key == "openrouter" else "OPENAI_API_KEY"
     return os.getenv(environment_key), public_config
+
+
+class _LazyProviderClient:
+    def __init__(self, factory):
+        self.factory = factory
+        self.client = None
+
+    def __getattr__(self, name):
+        if self.client is None:
+            self.client = self.factory()
+        return getattr(self.client, name)
 
 
 def _provider_clients(store: AgentRuntimeStore, routes: list[dict[str, Any]]) -> dict[str, OpenRouterClient]:
@@ -53,11 +74,9 @@ def _provider_clients(store: AgentRuntimeStore, routes: list[dict[str, Any]]) ->
         for model in os.getenv("OPENROUTER_ALLOWED_PAID_MODELS", "").split(",")
         if model.strip()
     }
-    for provider_key in {str(route.get("provider") or "") for route in routes} | {"openrouter"}:
+    for provider_key in {"openrouter", "openai_direct"}:
         if provider_key not in {"openrouter", "openai_direct"}:
             continue
-        api_key, public_config = _provider_api_key(store, provider_key)
-        configured_url = str(public_config.get("baseUrl") or "").strip()
         default_url = "https://api.openai.com/v1" if provider_key == "openai_direct" else "https://openrouter.ai/api/v1"
         approved = env_approved | {
             str(model).strip()
@@ -66,30 +85,39 @@ def _provider_clients(store: AgentRuntimeStore, routes: list[dict[str, Any]]) ->
             for model in (route.get("model_name"), route.get("fallback_model_name"))
             if model
         }
-        clients[provider_key] = OpenRouterClient(
-            api_key=api_key,
-            base_url=configured_url or default_url,
-            provider_name=provider_key,
-            allowed_paid_models=frozenset(approved),
-            enforce_paid_model_approval=provider_key == "openrouter",
-        )
+        approved |= {
+            str(item.get("modelName") or "").strip()
+            for route in routes if route.get("status", "active") == "active"
+            for item in route.get("fallback_routes") or [] if item.get("provider") == provider_key
+        }
+        def build(provider_key=provider_key, default_url=default_url, approved=frozenset(approved)):
+            api_key, config = _provider_api_key(store, provider_key)
+            base_url = str(config.get("baseUrl") or default_url).strip().rstrip("/")
+            parsed = urlparse(base_url)
+            wrong_vendor = "api.openai.com" if provider_key == "openrouter" else "openrouter.ai"
+            if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.hostname == wrong_vendor:
+                raise ProviderAvailabilityError("invalid_provider_base_url")
+            return OpenRouterClient(api_key=api_key, base_url=base_url, provider_name=provider_key,
+                                    allowed_paid_models=approved, enforce_paid_model_approval=True)
+        clients[provider_key] = _LazyProviderClient(build)
     return clients
+
+
+def build_routed_client(store: AgentRuntimeStore, key: str, *, context: dict[str, Any] | None = None, tier: str = "default", kind: str = "chat", llm_client=None) -> RoutedLlmClient:
+    return RoutedLlmClient(
+        key, lambda: store.list("model_routing_rules", limit=None),
+        (lambda routes: {"openrouter": llm_client, "openai_direct": llm_client}) if llm_client is not None else (lambda routes: _provider_clients(store, routes)),
+        context=context or {}, tier=tier, kind=kind,
+    )
 
 
 def build_mission_supervisor(
     store: AgentRuntimeStore,
     llm_client: OpenRouterClient | None = None,
+    context: dict[str, Any] | None = None,
 ) -> MissionSupervisor:
-    routes = _active(store.list("model_routing_rules", limit=500))
-    route = next(
-        (
-            item for item in routes
-            if item.get("agent_type") == "mission_supervisor"
-            and not item.get("organization_id")
-            and item.get("routing_tier", "default") == "default"
-        ),
-        {},
-    )
+    routes = store.list("model_routing_rules", limit=None)
+    route = resolve_route(routes, "mission_supervisor", context=context)
     model = str(route.get("model_name") or os.getenv("OPENROUTER_MISSION_SUPERVISOR_MODEL") or os.getenv("OPENROUTER_DEFAULT_MODEL") or DEFAULT_MODEL)
     profile = ModelProfile(
         key="mission_supervisor",
@@ -104,8 +132,12 @@ def build_mission_supervisor(
         fallback_profile_keys=[],
         prompt_bundle_hash=sha256(b"yux-mission-supervisor-v1").hexdigest(),
     )
-    clients = _provider_clients(store, routes)
-    return MissionSupervisor(llm_client or clients.get(profile.provider) or OpenRouterClient.from_env(), profile)
+    from .campaign_launch import CampaignLaunchSpecialistWorkflow
+    from .funnel_nurture import FunnelNurtureSpecialistWorkflow
+    client = build_routed_client(store, "mission_supervisor", context=context, llm_client=llm_client)
+    return MissionSupervisor(client, profile,
+        campaign_launch=CampaignLaunchSpecialistWorkflow(build_routed_client(store, "campaign_launch_specialist", context=context, llm_client=llm_client), profile),
+        funnel_nurture=FunnelNurtureSpecialistWorkflow(build_routed_client(store, "funnel_nurture_specialist", context=context, llm_client=llm_client), profile))
 
 
 def _active(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -130,6 +162,7 @@ class RuntimeStrategyKnowledgeStore:
     candidate_limit: int | None = None
     embedding_model: str | None = None
     embedding_dimensions: int | None = None
+    embedding_service: QueryEmbeddingService | None = None
 
     @staticmethod
     def _normalize_profile_access(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -166,13 +199,15 @@ class RuntimeStrategyKnowledgeStore:
         embeddings: list[dict[str, Any]],
         foreign_key: str,
     ) -> list[dict[str, Any]]:
+        model = self.embedding_service.model if self.embedding_service else self.embedding_model
+        dimensions = self.embedding_service.dimensions if self.embedding_service else self.embedding_dimensions
         latest: dict[str, dict[str, Any]] = {}
         for embedding in embeddings:
-            if self.embedding_model and str(embedding.get("embedding_model") or "") != self.embedding_model:
+            if model and str(embedding.get("embedding_model") or "") != model:
                 continue
             values = embedding.get("embedding_values") or embedding.get("embedding")
-            if self.embedding_dimensions is not None and (
-                not isinstance(values, list) or len(values) != self.embedding_dimensions
+            if dimensions is not None and (
+                not isinstance(values, list) or len(values) != dimensions
             ):
                 continue
             record_id = str(embedding.get(foreign_key) or "")
@@ -259,32 +294,6 @@ def _build_prompts(
     return prompts
 
 
-def _build_routes(agents: dict[str, dict[str, Any]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    routes = [dict(record) for record in records]
-    configured_global = {
-        str(route.get("agent_type"))
-        for route in routes
-        if route.get("agent_type") and not route.get("organization_id") and route.get("routing_tier", "default") == "default"
-    }
-    default_model = os.getenv("OPENROUTER_DEFAULT_MODEL", DEFAULT_MODEL)
-    for profile_key in agents:
-        if profile_key not in configured_global:
-            routes.append(
-                {
-                    "agent_type": profile_key,
-                    "routing_tier": "default",
-                    "provider": "openrouter",
-                    "model_name": default_model,
-                    "max_input_tokens": 16000,
-                    "max_output_tokens": 1600,
-                    "temperature": 0.2,
-                    "max_cost_per_run": 0,
-                    "status": "active",
-                }
-            )
-    return routes
-
-
 def _profile_tool_policies(
     records: list[dict[str, Any]],
     agents: dict[str, dict[str, Any]],
@@ -303,6 +312,7 @@ def _profile_tool_policies(
 def build_strategy_workflow_engine(
     store: AgentRuntimeStore,
     llm_client: OpenRouterClient | None = None,
+    context: dict[str, Any] | None = None,
 ) -> StrategyWorkflowEngine:
     profiles = _active(store.list("yux_strategy_agent_profiles", limit=200))
     agents = _build_agents(profiles)
@@ -310,26 +320,27 @@ def build_strategy_workflow_engine(
         agents,
         _active(store.list("marketing_agent_global_prompts", limit=200)),
     )
-    routes = _build_routes(agents, _active(store.list("model_routing_rules", limit=500)))
+    routes = store.list("model_routing_rules", limit=None)
     tool_policies = _active(store.list("marketing_agent_tool_policies", limit=500))
     tool_policies.extend(
         _profile_tool_policies(store.list("yux_strategy_profile_tool_policies", limit=500), agents)
     )
-    provider_clients = {} if llm_client is not None else _provider_clients(store, routes)
     harness = Harness(
         global_prompts=prompts,
         routes=routes,
         tool_policies=tool_policies,
         budget_policies=_active(store.list("agent_budget_policies", limit=500)),
         llm_client=llm_client or OpenRouterClient.from_env(),
-        provider_clients=provider_clients,
+        routed_client_factory=lambda key, state: build_routed_client(store, key, context={**(context or {}), **state, "agent_id": state.get("agent", {}).get("id")}, tier=state.get("routing_tier", "default"), llm_client=llm_client),
+        route_loader=lambda: store.list("model_routing_rules", limit=None),
     )
-    embedding_service = QueryEmbeddingService(provider_clients.get("openrouter") or OpenRouterClient.from_env())
+    embedding_service = QueryEmbeddingService(build_routed_client(store, "knowledge_embeddings", context=context, kind="embedding"))
     retrieval = StrategyRetrievalService(
         RuntimeStrategyKnowledgeStore(
             store,
             embedding_model=embedding_service.model,
             embedding_dimensions=embedding_service.dimensions,
+            embedding_service=embedding_service,
         ),
         embedding_service=embedding_service,
     )

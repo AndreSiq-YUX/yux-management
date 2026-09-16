@@ -159,6 +159,13 @@ class MissionSupervisor:
             messages,
             usage,
         )
+        result["trace"]["provider"] = response.get("provider") or self.profile.provider
+        result["trace"]["specialists"] = [*getattr(self.campaign_launch, "traces", []), *getattr(self.funnel_nurture, "traces", [])]
+        parameters = response.get("request_parameters") or {}
+        result["trace"]["parameters"].update({
+            "temperature": parameters.get("temperature", self.profile.temperature),
+            "maxTokens": parameters.get("max_tokens", self.profile.max_tokens),
+        })
         return result
 
     @staticmethod

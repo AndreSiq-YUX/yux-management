@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import math
 from hashlib import sha256
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -12,6 +13,14 @@ from urllib.request import Request, urlopen
 
 class ProviderRequestError(Exception):
     """Raised when a live provider request fails with a protected message."""
+
+
+class ProviderAuthorizationError(ProviderRequestError):
+    """A policy/credential denial is terminal and must never cause fallback."""
+
+
+class ProviderAvailabilityError(ProviderRequestError):
+    """Unavailable credentials/provider can use an explicitly configured fallback."""
 
 
 Transport = Callable[[str, dict[str, str], dict[str, Any] | None, str], dict[str, Any] | str]
@@ -36,10 +45,10 @@ def _default_transport(url: str, headers: dict[str, str], payload: dict[str, Any
         with urlopen(request, timeout=45) as response:  # nosec B310 - URLs are fixed provider endpoints.
             text = response.read().decode("utf-8")
     except HTTPError as error:
-        body = error.read().decode("utf-8", errors="replace")
-        raise ProviderRequestError(f"provider_http_{error.code}:{body[:240]}") from error
+        error_class = ProviderAuthorizationError if error.code in {401, 403} else ProviderRequestError
+        raise error_class(f"provider_http_{error.code}") from error
     except Exception as error:  # pragma: no cover - exercised through mocked transport.
-        raise ProviderRequestError(str(error)) from error
+        raise ProviderRequestError("provider_transport_unavailable") from error
 
     try:
         return json.loads(text)
@@ -80,7 +89,7 @@ class OpenRouterClient:
             if not _is_free_openrouter_model(model) and model not in self.allowed_paid_models
         ]
         if denied:
-            raise ProviderRequestError(f"paid_openrouter_model_not_approved:{denied[0]}")
+            raise ProviderAuthorizationError(f"paid_openrouter_model_not_approved:{denied[0]}")
 
     def chat_completion(
         self,
@@ -94,7 +103,7 @@ class OpenRouterClient:
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
-            raise ProviderRequestError("missing_openrouter_api_key")
+            raise ProviderAvailabilityError(f"missing_{self.provider_name}_api_key")
         self._require_model_approval([model, *(fallback_models or [])])
 
         payload: dict[str, Any] = {
@@ -157,7 +166,7 @@ class OpenRouterClient:
         dimensions: int = 1024,
     ) -> dict[str, Any]:
         if not self.api_key:
-            raise ProviderRequestError("missing_openrouter_api_key")
+            raise ProviderAvailabilityError(f"missing_{self.provider_name}_api_key")
         self._require_model_approval([model])
         response = self.transport(
             f"{self.base_url.rstrip('/')}/embeddings",
@@ -165,10 +174,9 @@ class OpenRouterClient:
             {
                 "model": model,
                 "input": texts,
-                "input_type": input_type,
+                **({"input_type": input_type, "provider": {"data_collection": "deny"}} if self.provider_name == "openrouter" else {}),
                 "dimensions": dimensions,
                 "encoding_format": "float",
-                "provider": {"data_collection": "deny"},
             },
             "POST",
         )
@@ -179,12 +187,13 @@ class OpenRouterClient:
         if len(vectors) != len(texts) or any(
             not isinstance(vector, list)
             or len(vector) != dimensions
-            or any(not isinstance(value, (int, float)) for value in vector)
+            or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in vector)
             for vector in vectors
         ):
             raise ProviderRequestError("invalid_openrouter_embedding_vector")
         return {
             "model": response.get("model") or model,
+            "provider": self.provider_name,
             "dimensions": dimensions,
             "vectors": vectors,
             "tokens": int((response.get("usage") or {}).get("total_tokens") or 0),

@@ -3,7 +3,7 @@ import type { Readable } from "node:stream";
 import { z } from "zod";
 import { hashSessionToken } from "../../auth/session.js";
 import { runWithDatabaseRequestContext } from "../../db/request-context.js";
-import { requireInternalRole } from "../../http/guards.js";
+import { requireInternalRole, requireAdminRole } from "../../http/guards.js";
 import { dataQuerySchema, executeDataQuery } from "../data/routes.js";
 import { getStrategyRelease, publishStrategyPack } from "./publications.js";
 import {
@@ -123,7 +123,11 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     requireInternalRole(request);
     const user = await getAuthenticatedUser(request, reply);
     if (!user) return reply;
-    return strategyIngestionCapabilities(app.config);
+    const { resolveEmbeddingConfiguration } = await import('../platform/llm-runtime-config.js');
+    const configured = await resolveEmbeddingConfiguration(app.pg, app.config).then(config => {
+      return config.attempts.some(attempt => Boolean(attempt.apiKey && attempt.approved && !attempt.credentialError));
+    }).catch(() => false);
+    return strategyIngestionCapabilities(app.config, configured);
   });
 
   app.post("/packs/:packId/ingestions", async (request, reply) => {
@@ -337,6 +341,7 @@ export async function registerStrategyEngineRoutes(app: FastifyInstance) {
     if (!parsed.success || !allowedTables.has(parsed.data.table)) {
       return reply.code(400).send({ error: "invalid_strategy_engine_query" });
     }
+    if (parsed.data.table === 'model_routing_rules' && parsed.data.operation !== 'select') requireAdminRole(request);
 
     return runWithDatabaseRequestContext(
       {

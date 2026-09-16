@@ -32,10 +32,11 @@ class RuntimeFactoryTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"PROVIDER_SECRET_ENCRYPTION_KEY_B64": base64.b64encode(key).decode()}, clear=False):
             engine = build_strategy_workflow_engine(store)
-
-        client = engine.harness.provider_clients["openrouter"]
-        self.assertEqual(client.api_key, "admin-openrouter-key")
-        self.assertIn("paid/admin-selected", client.allowed_paid_models)
+            routed = engine.harness.routed_client_factory("action_engine_strategist", {})
+            _, clients = routed.configuration()
+            client = clients["openrouter"]
+            self.assertEqual(client.api_key, "admin-openrouter-key")
+            self.assertIn("paid/admin-selected", client.allowed_paid_models)
 
     def test_runtime_strategy_store_joins_latest_card_and_chunk_embeddings(self):
         store = InMemoryAgentRuntimeStore({

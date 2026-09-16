@@ -252,18 +252,25 @@ class Harness:
     budget_policies: list[dict[str, Any]]
     llm_client: OpenRouterClient | None = None
     provider_clients: dict[str, OpenRouterClient] = field(default_factory=dict)
+    routed_client_factory: Any = None
+    route_loader: Any = None
 
     def execute_agent(self, state: dict[str, Any]) -> dict[str, Any]:
         agent = state["agent"]
         global_prompt = self.global_prompts[agent["agent_type"]]
         prompt = compose_prompt(global_prompt, agent, state.get("context", {}))
-        route = select_model_route(agent, self.routes, state.get("routing_tier", "default"), state)
+        if self.route_loader is not None:
+            from .llm_routing import resolve_route
+            route = resolve_route(self.route_loader(), str(state.get("model_route_key") or agent["agent_type"]), tier=state.get("routing_tier", "default"), context={**state, "agent_id": agent.get("id")})
+        else:
+            route = select_model_route(agent, self.routes, state.get("routing_tier", "default"), state)
         tools = filter_allowed_tools(agent, self.tool_policies, state)
         budget = self._find_budget(agent, state)
 
         estimated_credits = int(state.get("estimated_credits", 0))
         estimated_cost = float(state.get("estimated_cost", 0))
         enforce_budget(budget, estimated_credits, estimated_cost, int(state.get("runs_today", 0)))
+        enforce_budget(route, estimated_credits, estimated_cost, int(state.get("runs_today", 0)))
 
         provider_output = self._execute_llm_if_configured(state, prompt, route)
         output_payload = provider_output or {
@@ -279,8 +286,8 @@ class Harness:
             "agent_prompt_snapshot": prompt["agent_prompt"],
             "prompt_config_snapshot": prompt["prompt_config"],
             "compiled_prompt_hash": prompt["compiled_prompt_hash"],
-            "model_provider": route["provider"],
-            "model_name": route["model_name"],
+            "model_provider": output_payload.get("provider") or route["provider"],
+            "model_name": output_payload.get("model") or route["model_name"],
             "fallback_model_name": route.get("fallback_model_name"),
             "allowed_tools": tools,
             "credits_charged": estimated_credits,
@@ -318,6 +325,11 @@ class Harness:
         if not state.get("execute_llm"):
             return None
         client = self.provider_clients.get(str(route.get("provider") or "")) or self.llm_client
+        if self.routed_client_factory is not None:
+            client = self.routed_client_factory(str(state.get("model_route_key") or state["agent"]["agent_type"]), state)
+        elif self.provider_clients and str(route.get("provider") or "") not in self.provider_clients:
+            from .providers import ProviderAuthorizationError
+            raise ProviderAuthorizationError("llm_provider_not_configured")
         if client is None:
             return None
 

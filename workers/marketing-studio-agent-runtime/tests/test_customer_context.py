@@ -69,14 +69,26 @@ class CustomerContextTest(unittest.TestCase):
 
     def test_prefers_semantically_matching_approved_curated_fact(self):
         class Embeddings:
+            model = "test/embedding"
             def embed_query(self, _query):
                 return [1.0, 0.0]
+
+        for chunk in self.store.tables["marketing_knowledge_chunks"]:
+            chunk["embedding_model"] = "test/embedding"
 
         result = CustomerContextService(self.store, embedding_service=Embeddings()).retrieve(
             organization_id="org-a", contract_id="contract-a", profile_key="ai_sdr_comercial_1", query="diagnóstico", external=True
         )
         self.assertEqual(result["company_chunks"][0]["id"], "company:chunk-semantic")
         self.assertEqual(result["company_chunks"][0]["source_locator"], "page:4")
+
+    def test_vectors_from_other_models_do_not_override_keyword_ranking(self):
+        chunks = [
+            {"id": "wrong-model", "body": "unrelated", "embedding": [1.0, 0.0], "embedding_model": "old"},
+            {"id": "keyword", "body": "diagnostico", "embedding": [0.0, 1.0], "embedding_model": "current"},
+        ]
+        ranked = CustomerContextService._rank_chunks(chunks, "diagnostico", [1.0, 0.0], "current")
+        self.assertEqual(ranked[0]["id"], "keyword")
 
     def test_relevant_curated_fact_after_five_hundred_raw_rows_is_not_truncated(self):
         raw = [

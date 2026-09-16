@@ -136,7 +136,7 @@ class CustomerContextService:
         linked_ids = self._assistant_linked_entry_ids(assistant_id)
         ranked = self._rank_entries(entries, query, linked_ids)
         query_embedding = self.embedding_service.embed_query(query) if self.embedding_service is not None else None
-        ranked_curated = self._rank_chunks(curated_chunks, query, query_embedding)
+        ranked_curated = self._rank_chunks(curated_chunks, query, query_embedding, getattr(self.embedding_service, "model", None))
         if ranked_curated:
             snippets, source_ids = self._fit_curated_snippets(ranked_curated, documents_by_id)
             context_items = [
@@ -232,13 +232,13 @@ class CustomerContextService:
         return [entry for _, entry in scored]
 
     @staticmethod
-    def _rank_chunks(chunks: list[dict[str, Any]], query: str, query_embedding: list[float] | None) -> list[dict[str, Any]]:
+    def _rank_chunks(chunks: list[dict[str, Any]], query: str, query_embedding: list[float] | None, embedding_model: str | None = None) -> list[dict[str, Any]]:
         query_tokens = _tokens(query)
         scored = []
         for chunk in chunks:
             haystack = _tokens(f"{chunk.get('title', '')} {chunk.get('body', '')}")
             keyword = len(query_tokens.intersection(haystack)) / max(len(query_tokens), 1) if query_tokens else 0.0
-            vector = CustomerContextService._cosine(query_embedding, chunk.get("embedding"))
+            vector = CustomerContextService._cosine(query_embedding, chunk.get("embedding")) if embedding_model and chunk.get("embedding_model") == embedding_model else 0.0
             quality = float(chunk.get("quality_score") or 0)
             total = (0.60 * vector) + (0.25 * keyword) + (0.10 * quality)
             scored.append((total, str(chunk.get("updated_at") or ""), {**chunk, "retrieval_score": round(total, 6)}))

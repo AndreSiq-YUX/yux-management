@@ -30,6 +30,7 @@ import {
 } from './repository.js'
 import { extractManualKnowledge } from './text-extraction.js'
 import { embedOpenRouterTexts } from './openrouter-embeddings.js'
+import { resolveEmbeddingConfiguration } from '../platform/llm-runtime-config.js'
 import {
   auditDraftKnowledge,
   draftKnowledgeAuditQuerySchema,
@@ -156,8 +157,9 @@ export async function registerCompanyIntelligenceRoutes(app: FastifyInstance) {
     let embeddingModel: string | undefined
     try {
       const env = loadEnv()
-      if (env.OPENROUTER_API_KEY) {
-        const embedded = await embedOpenRouterTexts(env, [parsed.data.queryText], 'search_query')
+      {
+        const configuration = await resolveEmbeddingConfiguration(app.pg, env, parsed.data)
+        const embedded = await embedOpenRouterTexts(env, [parsed.data.queryText], 'search_query', undefined, undefined, configuration)
         queryEmbedding = embedded.vectors[0]
         embeddingModel = embedded.model
       }

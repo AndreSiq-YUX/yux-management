@@ -12,7 +12,8 @@ from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
 from .strategy_curation import StrategyCurationService
 from .providers import ProviderRequestError
-from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine
+from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine, build_routed_client
+from .llm_routing import effective_legacy_routes
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -131,28 +132,26 @@ def create_app(
     # Tests may inject an isolated store. Production configuration is loaded
     # lazily from Postgres so health checks do not depend on OpenRouter or RAG.
     engine: StrategyWorkflowEngine | None = StrategyWorkflowEngine(runtime_store) if store is not None else None
-    curator = knowledge_service or KnowledgeIntelligenceService.from_env()
-    strategy_curator = strategy_curation_service or StrategyCurationService.from_env()
     supervisor = mission_supervisor
     conversation = mission_conversation_workflow
 
-    def workflow_engine() -> StrategyWorkflowEngine:
-        nonlocal engine
-        if engine is None:
-            engine = build_strategy_workflow_engine(runtime_store)
-        return engine
+    def workflow_engine(context=None) -> StrategyWorkflowEngine:
+        return engine if engine is not None else build_strategy_workflow_engine(runtime_store, context=context)
 
-    def mission_planner() -> MissionSupervisor:
+    def mission_planner(context=None) -> MissionSupervisor:
         nonlocal supervisor
         if supervisor is not None:
             return supervisor
-        return build_mission_supervisor(runtime_store)
+        return build_mission_supervisor(runtime_store, context=context)
 
-    def conversation_workflow() -> MissionConversationWorkflow:
+    def conversation_workflow(context=None) -> MissionConversationWorkflow:
         nonlocal conversation
         if conversation is not None:
             return conversation
-        return MissionConversationWorkflow(build_strategy_workflow_engine(runtime_store))
+        return MissionConversationWorkflow(build_strategy_workflow_engine(runtime_store, context=context))
+
+    def knowledge_curator(context):
+        return knowledge_service or KnowledgeIntelligenceService(build_routed_client(runtime_store, "knowledge_curator", context=context))
 
     def validate_tenant(
         organization_id: str | None,
@@ -208,6 +207,10 @@ def create_app(
             },
         }
 
+    @app.post("/configuration/llm-routes", dependencies=[Depends(require_runtime_token)])
+    def llm_configuration() -> dict[str, Any]:
+        return {"routes": effective_legacy_routes(runtime_store.list("model_routing_rules", limit=None))}
+
     @app.post("/events/ingest", dependencies=[Depends(require_runtime_token)])
     def ingest_event(request: IngestEventRequest) -> dict[str, Any]:
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="ai_sdr_comercial_1", audience="external_contact")
@@ -236,7 +239,7 @@ def create_app(
             )
         except RuntimeError as error:
             raise HTTPException(status_code=402, detail=str(error)) from error
-        result = workflow_engine().execute(**request.model_dump(exclude={"estimated_credits"}))
+        result = workflow_engine(request.model_dump()).execute(**request.model_dump(exclude={"estimated_credits"}))
         return {**result, "credits": credits}
 
     @app.post("/missions/plan", dependencies=[Depends(require_runtime_token)])
@@ -247,7 +250,7 @@ def create_app(
         try:
             return plan_mission(
                 request.model_dump(),
-                None if request.proposed_plan is not None else mission_planner(),
+                None if request.proposed_plan is not None else mission_planner(request.model_dump()),
             )
         except MissionSupervisorError as error:
             status_code = 503 if str(error) == "mission_supervisor_model_unavailable" else 422
@@ -267,7 +270,7 @@ def create_app(
         except RuntimeError as error:
             raise HTTPException(status_code=402, detail=str(error)) from error
         try:
-            response = conversation_workflow().respond(request)
+            response = conversation_workflow(request.model_dump()).respond(request)
             return response.model_dump()
         except (ValidationError, ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -288,7 +291,7 @@ def create_app(
         if total_chars > 120_000:
             raise HTTPException(status_code=413, detail="knowledge_curation_input_too_large")
         try:
-            return curator.curate([item.model_dump() for item in request.sections])
+            return knowledge_curator(request.model_dump()).curate([item.model_dump() for item in request.sections])
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except (ValueError, json.JSONDecodeError) as error:
@@ -300,7 +303,10 @@ def create_app(
         if sum(len(item.body) for item in request.sections) > 120_000:
             raise HTTPException(status_code=413, detail="strategy_curation_input_too_large")
         try:
-            return strategy_curator.curate([item.model_dump() for item in request.sections])
+            curator = strategy_curation_service or StrategyCurationService.from_env()
+            if strategy_curation_service is None:
+                curator.llm_client = build_routed_client(runtime_store, "strategy_curator", context=request.model_dump())
+            return curator.curate([item.model_dump() for item in request.sections])
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except (ValueError, json.JSONDecodeError) as error:
@@ -313,7 +319,7 @@ def create_app(
         if total_chars > 400_000:
             raise HTTPException(status_code=413, detail="website_extraction_input_too_large")
         try:
-            return curator.extract_company_profile([item.model_dump() for item in request.pages])
+            return knowledge_curator(request.model_dump()).extract_company_profile([item.model_dump() for item in request.pages])
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except (ValueError, json.JSONDecodeError) as error:

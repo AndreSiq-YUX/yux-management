@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import { getContractOrganizationId } from '../../http/contract-organization.js'
-import { requireAuth, requireMembership } from '../../http/guards.js'
+import { requireAuth, requireMembership, requireAdminRole } from '../../http/guards.js'
 import { requirePlatformOperation } from '../../http/operation-policy.js'
 import { dataQuerySchema } from '../data/routes.js'
 import { createScopedTableRules, executeScopedDataQuery } from '../data/scoped-query.js'
@@ -261,6 +261,7 @@ export async function registerMarketingStudioRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_marketing_studio_query' })
     }
 
+    if (parsed.data.table === 'model_routing_rules' && parsed.data.operation !== 'select') requireAdminRole(request)
     return executeScopedDataQuery(app, requireAuth(request), parsed.data, marketingStudioTableRules)
   })
 

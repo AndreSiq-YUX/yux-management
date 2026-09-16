@@ -513,7 +513,8 @@ class StrategyRetrievalService:
 
             profile_match = 1 if profile_key in _string_list(record.get("allowed_agent_profile_keys")) else 0
             stage_match = 1 if _stage_matches(record, stage) else 0
-            vector_score = _vector_score(record, query_embedding)
+            model_matches = self.embedding_service is None or record.get("embedding_model") == getattr(self.embedding_service, "model", None)
+            vector_score = _vector_score(record, query_embedding) if model_matches else 0.0
             keyword_score = _keyword_score(query_tokens, record, fields)
             reviewed = 1 if record.get("human_review_status") == "approved" else 0
             sort_key = (

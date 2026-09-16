@@ -20,6 +20,7 @@ import {
 import { cleanKnowledgeSections } from '../../modules/company-intelligence/knowledge-cleanup.js'
 import { curateKnowledgeWithRuntime, type CuratedKnowledge } from '../../modules/company-intelligence/runtime-curation.js'
 import { embedPassages } from '../../modules/company-intelligence/openrouter-embeddings.js'
+import { resolveEmbeddingConfiguration } from '../../modules/platform/llm-runtime-config.js'
 import { extractCompanyProfileInBatches } from '../../modules/company-intelligence/runtime-curation.js'
 import { discoverCompanyWebsite } from '../../modules/company-intelligence/website-discovery.js'
 import { inspectWebsiteVisualIdentity } from '../../modules/company-intelligence/website-visual-identity.js'
@@ -96,9 +97,10 @@ export async function handleKnowledgeIndexing(pool: pg.Pool, env: AppEnv, data: 
 
       try {
         const embed = dependencies.embed || embedPassages
-        const embedded = await embed(effectiveEnv, chunks.map(chunk => chunk.body), undefined, dependencies.signal)
+        const configuration = dependencies.embed ? undefined : await resolveEmbeddingConfiguration(pool, effectiveEnv, document)
+        const embedded = await embed(effectiveEnv, chunks.map(chunk => chunk.body), undefined, dependencies.signal, configuration)
         await recordProviderUsage(pool,{
-          organizationId:document.organizationId,providerKey:'openrouter',model:embedded.model,correlationId:run.id,
+          organizationId:document.organizationId,providerKey:embedded.provider || 'openrouter',model:embedded.model,correlationId:run.id,
           reportedUsage:{tokens:embedded.tokens,items:chunks.length,dimensions:embedded.dimensions},
           measurementStatus:'unavailable',measurementReason:'provider_price_not_reported',
         })

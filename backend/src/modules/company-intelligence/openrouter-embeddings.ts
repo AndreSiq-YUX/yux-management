@@ -1,89 +1,65 @@
 import type { AppEnv } from '../../config/env.js'
+import { legacyEmbeddingConfiguration, type EmbeddingConfiguration } from '../platform/llm-runtime-config.js'
 
 type FetchLike = typeof fetch
 type EmbeddingInputType = 'search_document' | 'search_query'
-
-export type OpenRouterEmbeddingBatch = {
-  model: string
-  dimensions: number
-  vectors: number[][]
-  tokens: number
-}
-
-/**
- * The default embedding model is deliberately centralized here so ingestion,
- * retrieval and re-embedding checkpoints cannot silently disagree.
- */
+export type OpenRouterEmbeddingBatch = { provider?: 'openrouter' | 'openai_direct'; model: string; dimensions: number; vectors: number[][]; tokens: number }
 export const OPENROUTER_DEFAULT_EMBEDDING_MODEL = 'qwen/qwen3-embedding-8b'
 export const OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS = 1024
 export const OPENROUTER_EMBEDDING_BATCH_SIZE = 32
 
-function isFreeOpenRouterModel(model: string) {
-  return model === 'openrouter/free' || model.endsWith(':free')
-}
-
-function assertOpenRouterModelApproved(env: AppEnv, model: string) {
-  if (isFreeOpenRouterModel(model)) return
-  const approved = new Set(
-    (env.OPENROUTER_ALLOWED_PAID_MODELS || '')
-      .split(',')
-      .map(value => value.trim())
-      .filter(Boolean),
-  )
-  if (!approved.has(model)) throw new Error(`paid_openrouter_model_not_approved:${model}`)
-}
+class EmbeddingAuthorizationError extends Error {}
 
 export async function embedOpenRouterTexts(
-  env: AppEnv,
-  texts: string[],
-  inputType: EmbeddingInputType,
-  fetchImpl: FetchLike = fetch,
-  signal?: AbortSignal,
+  env: AppEnv, texts: string[], inputType: EmbeddingInputType,
+  fetchImpl: FetchLike = fetch, signal?: AbortSignal, configuration?: EmbeddingConfiguration,
 ): Promise<OpenRouterEmbeddingBatch> {
-  if (!env.OPENROUTER_API_KEY) throw new Error('openrouter_api_key_required')
-  const model = env.OPENROUTER_EMBEDDING_MODEL || OPENROUTER_DEFAULT_EMBEDDING_MODEL
-  const dimensions = env.OPENROUTER_EMBEDDING_DIMENSIONS || OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS
-  assertOpenRouterModelApproved(env, model)
-  if (!texts.length) return { model, dimensions, vectors: [], tokens: 0 }
-  const vectors: number[][] = []
-  let tokens = 0
-  let resolvedModel: string | null = null
-  for (let offset = 0; offset < texts.length; offset += OPENROUTER_EMBEDDING_BATCH_SIZE) {
-    const batch = texts.slice(offset, offset + OPENROUTER_EMBEDDING_BATCH_SIZE)
-    const timeoutSignal = AbortSignal.timeout(env.OPENROUTER_EMBEDDING_TIMEOUT_MS || 45_000)
-    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
-    const response = await fetchImpl('https://openrouter.ai/api/v1/embeddings', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        input: batch,
-        input_type: inputType,
-        dimensions,
-        encoding_format: 'float',
-        provider: { data_collection: 'deny' },
-      }),
-      signal: requestSignal,
-    })
-    if (!response.ok) throw new Error(`openrouter_embeddings_http_${response.status}`)
-    const payload = await response.json() as { data?: Array<{ index?: number; embedding?: unknown }>; model?: string; usage?: { total_tokens?: number } }
-    const ordered = [...(payload.data || [])].sort((left, right) => Number(left.index || 0) - Number(right.index || 0))
-    const batchVectors = ordered.map(item => {
-      if (!Array.isArray(item.embedding) || item.embedding.length !== dimensions || item.embedding.some(value => typeof value !== 'number')) {
-        throw new Error('invalid_openrouter_embedding_vector')
+  const config = configuration || legacyEmbeddingConfiguration(env)
+  const dimensions = config.dimensions
+  let lastError: unknown
+  for (const attempt of config.attempts) {
+    if (!attempt.approved) throw new EmbeddingAuthorizationError('paid_openrouter_model_not_approved:' + attempt.model)
+    // Each provider attempt starts the complete logical batch from zero.
+    const vectors: number[][] = []
+    let tokens = 0
+    let resolvedModel: string | null = null
+    try {
+      if (attempt.credentialError) throw new Error(attempt.credentialError)
+      if (!attempt.apiKey) throw new Error(attempt.provider + '_api_key_required')
+      for (let offset = 0; offset < texts.length; offset += OPENROUTER_EMBEDDING_BATCH_SIZE) {
+        signal?.throwIfAborted()
+        const batch = texts.slice(offset, offset + OPENROUTER_EMBEDDING_BATCH_SIZE)
+        const timeoutSignal = AbortSignal.timeout(env.OPENROUTER_EMBEDDING_TIMEOUT_MS || 45_000)
+        const response = await fetchImpl(attempt.baseUrl + '/embeddings', {
+          method: 'POST', headers: { Authorization: 'Bearer ' + attempt.apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: attempt.model, input: batch, dimensions, encoding_format: 'float',
+            ...(attempt.provider === 'openrouter' ? { input_type: inputType, provider: { data_collection: 'deny' } } : {}),
+          }), signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
+        })
+        if ([401, 403].includes(response.status)) throw new EmbeddingAuthorizationError(attempt.provider + '_embeddings_http_' + response.status)
+        if (!response.ok) throw new Error(attempt.provider + '_embeddings_http_' + response.status)
+        const payload = await response.json() as { data?: Array<{ index?: number; embedding?: unknown }>; model?: string; usage?: { total_tokens?: number } }
+        const ordered = [...(payload.data || [])].sort((a, b) => Number(a.index || 0) - Number(b.index || 0))
+        const batchVectors = ordered.map(item => {
+          if (!Array.isArray(item.embedding) || item.embedding.length !== dimensions || item.embedding.some(value => typeof value !== 'number' || !Number.isFinite(value))) throw new Error('invalid_openrouter_embedding_vector')
+          return item.embedding as number[]
+        })
+        if (batchVectors.length !== batch.length) throw new Error('invalid_openrouter_embedding_count')
+        const batchModel = payload.model || attempt.model
+        if (resolvedModel && batchModel !== resolvedModel) throw new Error('openrouter_embedding_model_changed')
+        resolvedModel = batchModel
+        vectors.push(...batchVectors)
+        tokens += Number(payload.usage?.total_tokens || 0)
       }
-      return item.embedding as number[]
-    })
-    if (batchVectors.length !== batch.length) throw new Error('invalid_openrouter_embedding_count')
-    const batchModel = payload.model || model
-    if (resolvedModel && batchModel !== resolvedModel) throw new Error('openrouter_embedding_model_changed')
-    vectors.push(...batchVectors)
-    tokens += Number(payload.usage?.total_tokens || 0)
-    resolvedModel = batchModel
+      return { provider: attempt.provider, model: resolvedModel || attempt.model, dimensions, vectors, tokens }
+    } catch (error) {
+      if (error instanceof EmbeddingAuthorizationError || signal?.aborted) throw error
+      lastError = error
+    }
   }
-  return { model: resolvedModel || model, dimensions, vectors, tokens }
+  throw lastError || new Error('llm_embedding_route_unavailable')
 }
 
-export function embedPassages(env: AppEnv, texts: string[], fetchImpl?: FetchLike, signal?: AbortSignal) {
-  return embedOpenRouterTexts(env, texts, 'search_document', fetchImpl, signal)
+export function embedPassages(env: AppEnv, texts: string[], fetchImpl?: FetchLike, signal?: AbortSignal, configuration?: EmbeddingConfiguration) {
+  return embedOpenRouterTexts(env, texts, 'search_document', fetchImpl, signal, configuration)
 }

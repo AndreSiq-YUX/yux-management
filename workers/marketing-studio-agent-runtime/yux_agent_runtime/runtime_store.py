@@ -76,6 +76,10 @@ class InMemoryAgentRuntimeStore:
         )
         return dict(record) if record else None
 
+    def load_provider_configuration(self, provider_key: str) -> dict[str, Any] | None:
+        record = next((item for item in self.tables.get("platform_provider_connections", []) if item.get("provider_key") == provider_key), None)
+        return dict(record) if record else None
+
 
 @dataclass
 class SupabaseAgentRuntimeStore:
@@ -105,6 +109,10 @@ class SupabaseAgentRuntimeStore:
         response = self.client.rpc("runtime_provider_secret_envelope", {"p_provider_key": provider_key}).execute()
         data = response.data or []
         return data[0] if data else None
+
+    def load_provider_configuration(self, provider_key: str) -> dict[str, Any] | None:
+        response = self.client.rpc("runtime_provider_configuration", {"p_provider_key": provider_key}).execute()
+        return (response.data or [None])[0]
 
 
 class PostgresAgentRuntimeStore:
@@ -268,11 +276,24 @@ class PostgresAgentRuntimeStore:
 
     def load_provider_credential_envelope(self, provider_key: str) -> dict[str, Any] | None:
         """Read the encrypted credential envelope exposed to the runtime, never the secrets table."""
-        self.set_internal_scope()
-        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
-            cursor.execute("SELECT * FROM private.runtime_provider_secret_envelope(%s)", [provider_key])
-            row = cursor.fetchone()
-            return self._row(dict(row)) if row else None
+        token = _runtime_database_scope.set(RuntimeDatabaseScope(role="yux_operator", organization_ids=()))
+        try:
+            with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+                cursor.execute("SELECT * FROM private.runtime_provider_secret_envelope(%s)", [provider_key])
+                row = cursor.fetchone()
+                return self._row(dict(row)) if row else None
+        finally:
+            _runtime_database_scope.reset(token)
+
+    def load_provider_configuration(self, provider_key: str) -> dict[str, Any] | None:
+        token = _runtime_database_scope.set(RuntimeDatabaseScope(role="yux_operator", organization_ids=()))
+        try:
+            with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+                cursor.execute("SELECT * FROM private.runtime_provider_configuration(%s)", [provider_key])
+                row = cursor.fetchone()
+                return self._row(dict(row)) if row else None
+        finally:
+            _runtime_database_scope.reset(token)
 
     def retrieve_authorized_knowledge(
         self,

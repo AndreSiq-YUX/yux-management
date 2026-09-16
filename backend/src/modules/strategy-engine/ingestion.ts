@@ -10,10 +10,9 @@ import type { AppEnv } from '../../config/env.js'
 import { extractKnowledgeText } from '../company-intelligence/text-extraction.js'
 import {
   embedPassages,
-  OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS,
-  OPENROUTER_DEFAULT_EMBEDDING_MODEL,
 } from '../company-intelligence/openrouter-embeddings.js'
 import { recordProviderUsage } from '../health/provider-usage.js'
+import { resolveEmbeddingConfiguration, legacyEmbeddingConfiguration } from '../platform/llm-runtime-config.js'
 import { recordDomainEvent } from '../events/repository.js'
 import { JOB_LEASE_DURATION_MS, classifyLeaseFailure, createLeaseOwner, startLeaseHeartbeat } from '../../jobs/leases.js'
 import {
@@ -69,11 +68,11 @@ export function effectiveStrategyIngestionLimit(maxMb?: number) {
   return Math.min(STRATEGY_INGESTION_HARD_LIMIT_BYTES, configured)
 }
 
-export function strategyIngestionCapabilities(env: AppEnv) {
+export function strategyIngestionCapabilities(env: AppEnv, embeddingReady?: boolean) {
   const maxBytes = effectiveStrategyIngestionLimit(env.STRATEGY_INGESTION_MAX_MB)
   const curationEnabled = env.KNOWLEDGE_CURATION_ENABLED !== false
   const runtimeConfigured = Boolean(env.YUX_AGENT_RUNTIME_URL && env.YUX_AGENT_RUNTIME_TOKEN)
-  const embeddingConfigured = Boolean(env.OPENROUTER_API_KEY)
+  const embeddingConfigured = embeddingReady ?? Boolean(env.OPENROUTER_API_KEY)
   return {
     maxBytes,
     maxMb: maxBytes / (1024 * 1024),
@@ -614,9 +613,10 @@ async function embedCheckpointed(
   proposed: Array<{ id: string; body: string }>,
   options: { signal?: AbortSignal; embed?: typeof embedPassages; afterEmbeddingCheckpoint?: () => Promise<void> | void },
 ): Promise<EmbeddingCheckpoint> {
+  const configuration = options.embed ? legacyEmbeddingConfiguration(env) : await resolveEmbeddingConfiguration(pool, env, { organizationId: ingestion.organization_id })
   const inputHash = createHash('sha256').update(JSON.stringify({
-    model: env.OPENROUTER_EMBEDDING_MODEL || OPENROUTER_DEFAULT_EMBEDDING_MODEL,
-    dimensions: env.OPENROUTER_EMBEDDING_DIMENSIONS || OPENROUTER_DEFAULT_EMBEDDING_DIMENSIONS,
+    attempts: configuration.attempts.map(attempt => ({ provider: attempt.provider, model: attempt.model })),
+    dimensions: configuration.dimensions,
     proposed,
   })).digest('hex')
   const checkpoint = (await pool.query<{ embedding_input_hash: string | null; embedding_output: unknown }>(
@@ -628,7 +628,7 @@ async function embedCheckpointed(
   }
   const embed = options.embed || embedPassages
   const embedded = validateEmbeddingCheckpoint(
-    await embed(env, proposed.map(item => item.body), undefined, options.signal),
+    await embed(env, proposed.map(item => item.body), undefined, options.signal, configuration),
     proposed.length,
   )
   const client = await pool.connect()
@@ -640,7 +640,7 @@ async function embedCheckpointed(
       [ingestion.id, inputHash, JSON.stringify(embedded), embedded.model, embedded.dimensions, embedded.tokens],
     )
     await recordProviderUsage(client, {
-      organizationId: ingestion.organization_id, providerKey: 'openrouter', model: embedded.model, correlationId: ingestion.id,
+      organizationId: ingestion.organization_id, providerKey: embedded.provider || 'openrouter', model: embedded.model, correlationId: ingestion.id,
       reportedUsage: { tokens: embedded.tokens, items: proposed.length, dimensions: embedded.dimensions, operation: 'strategy_embedding' },
       measurementStatus: 'unavailable', measurementReason: 'provider_price_not_reported',
     })

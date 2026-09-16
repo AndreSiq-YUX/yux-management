@@ -388,6 +388,7 @@ class StrategyWorkflowEngine:
                         run_id=run_id,
                         profile_key=profile_key,
                         source=source,
+                        mode=mode,
                         message=message,
                         plan=plan,
                         subagent_outputs=subagent_outputs,
@@ -543,6 +544,7 @@ class StrategyWorkflowEngine:
         organization_id: str | None,
         client_id: str | None,
         contract_id: str | None,
+        mode: str | None = None,
     ) -> dict[str, Any]:
         if plan["workflow_key"] == "mission_intake_conversation":
             source_catalog = []
@@ -605,7 +607,7 @@ class StrategyWorkflowEngine:
             model_route_key=(
                 "action_engine_strategist"
                 if plan["workflow_key"] == "mission_intake_conversation"
-                else None
+                else ({"ai_classify_lead": "automation_lead_classification", "ai_generate_message": "automation_message_generation", "ai_generate_proposal": "automation_proposal_generation"}.get(mode or "") if source == "automation" else None)
             ),
         )
         parsed = parse_json_object(provider["content"])
