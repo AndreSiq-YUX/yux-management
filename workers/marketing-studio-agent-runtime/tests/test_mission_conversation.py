@@ -1,5 +1,6 @@
 import json
 import unittest
+from uuid import UUID
 
 from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
 from yux_agent_runtime.mission_conversation import (
@@ -32,6 +33,28 @@ def request(audience="client_user"):
 
 
 class MissionConversationWorkflowTest(unittest.TestCase):
+    def test_company_context_reaches_strategist_with_production_uuid_trace_contract(self):
+        class UuidContextStore(InMemoryAgentRuntimeStore):
+            def insert(self, table, payload):
+                if table == "agent_context_snapshots":
+                    for column in ("card_ids", "chunk_ids", "asset_ids"):
+                        for value in payload[column]:
+                            UUID(value)
+                return super().insert(table, payload)
+
+        store = UuidContextStore(tables=self.make_store().tables)
+        captured = []
+        response = self.make_workflow(captured, store).respond(request())
+
+        self.assertEqual(response.kind, "questions")
+        self.assertEqual(len(captured), 1)
+        prompt = json.dumps(captured[0], ensure_ascii=False)
+        self.assertIn("Diagnóstico comercial antes da campanha", prompt)
+        self.assertIn("Empresa A", prompt)
+        self.assertEqual({item.ref for item in response.sources}, {"yux:card-growth", "customer:chunk-a"})
+        snapshot = store.tables["agent_context_snapshots"][0]
+        self.assertIn("company:chunk-a", [item["id"] for item in snapshot["safe_context"]["chunks"]])
+
     def test_normalizes_allowed_capability_key_shorthand_from_provider(self):
         typed_request = MissionConversationTurnRequestWire.model_validate({
             **request(),

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from time import perf_counter
 from typing import Any
+from uuid import UUID
 
 from .runtime_store import AgentRuntimeStore
 
@@ -51,6 +52,24 @@ def _sort_nested(value: Any) -> Any:
     if isinstance(value, list):
         return [_sort_nested(item) for item in value]
     return value
+
+
+def _uuid_references(values: list[str] | None) -> list[str]:
+    """UUID[] columns reference strategy resources, not namespaced evidence.
+
+    Company/legacy identifiers remain in safe_context and the model context.
+    Never strip their namespace: that would misidentify a company resource as
+    a strategy resource merely because its underlying identifier is a UUID.
+    """
+    references = []
+    for value in values or []:
+        if not isinstance(value, str):
+            continue
+        try:
+            references.append(str(UUID(value)))
+        except ValueError:
+            continue
+    return references
 
 
 @dataclass
@@ -107,9 +126,9 @@ class TraceRecorder:
                 "profile_key": profile_key,
                 "context_kind": context_kind,
                 "safe_context": sanitize_trace_payload(safe_context),
-                "card_ids": card_ids or [],
-                "chunk_ids": chunk_ids or [],
-                "asset_ids": asset_ids or [],
+                "card_ids": _uuid_references(card_ids),
+                "chunk_ids": _uuid_references(chunk_ids),
+                "asset_ids": _uuid_references(asset_ids),
                 "context_hash": stable_hash(safe_context),
                 "token_estimate": max(1, len(str(safe_context)) // 4) if safe_context else 0,
             },
