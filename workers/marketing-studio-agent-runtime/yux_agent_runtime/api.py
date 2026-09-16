@@ -357,7 +357,11 @@ def create_app(
                 # Insufficient balance is terminal for the job: retrying will not help.
                 runtime_store.update("agent_queue_jobs", job["id"], {"status": "dead_letter", "last_error": str(error)})
                 return {"processed": False, "reason": "insufficient_credits", "job_id": job["id"]}
-            result = workflow_engine().execute(
+            result = workflow_engine({
+                "organization_id": job.get("organization_id"),
+                "client_id": job.get("client_id"),
+                "contract_id": job.get("contract_id"),
+            }).execute(
                 message=str(payload.get("message") or ""),
                 profile_key=str(payload.get("profile_key") or "ai_sdr_comercial_1"),
                 source="whatsapp",
