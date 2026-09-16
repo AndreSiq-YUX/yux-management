@@ -37,10 +37,10 @@
   "migrations": {
     "checksumAlgorithm": "sha256:utf8:lf:bom-and-nul-removed:trim-start:v1",
     "aggregateAlgorithm": "sha256:filename-checksum-lines:v1",
-    "count": 73,
+    "count": 74,
     "first": "0001_auth_core.sql",
-    "last": "0172_admin_action_engine_llm_routing.sql",
-    "aggregateSha256": "1e0b4c0aef598424aafadf3b5f0f5352c86597c57d5789308158c4ed8e35004c",
+    "last": "0173_centralized_llm_routing.sql",
+    "aggregateSha256": "170a8c31ae1f70f10102835075ea9b2cb6ed77bc7b4153feaa0886665313e75d",
     "targetVerification": "not_run"
   },
   "contracts": {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Activity, Bot, BrainCircuit, Database, GitBranch, MessageCircle, MessageSquare, PackageCheck, Route, Workflow } from 'lucide-react'
 import { AgentHandoffPanel } from '@/components/strategy-engine/AgentHandoffPanel'
 import { AgentRecommendationPanel } from '@/components/strategy-engine/AgentRecommendationPanel'
@@ -7,7 +7,6 @@ import { StrategyAdminChatPanel } from '@/components/strategy-engine/StrategyAdm
 import { StrategyConversationAgentsPanel } from '@/components/strategy-engine/StrategyConversationAgentsPanel'
 import { StrategyHarnessPanel } from '@/components/strategy-engine/StrategyHarnessPanel'
 import { StrategyKnowledgePanel } from '@/components/strategy-engine/StrategyKnowledgePanel'
-import { StrategyModelRoutingPanel } from '@/components/strategy-engine/StrategyModelRoutingPanel'
 import { StrategyOverviewPanel } from '@/components/strategy-engine/StrategyOverviewPanel'
 import { StrategyPacksPanel } from '@/components/strategy-engine/StrategyPacksPanel'
 import { StrategyProfileConfigPanel } from '@/components/strategy-engine/StrategyProfileConfigPanel'
@@ -323,12 +322,11 @@ export function StrategyEnginePage() {
       )}
 
       {!loading && !error && activeTab === 'models' && (
-        <StrategyModelRoutingPanel
-          profiles={data.profiles}
-          providers={data.providers}
-          modelRoutes={data.modelRoutes}
-          onSave={input => reloadAfter(() => strategyEngineService.upsertModelRoute(input))}
-        />
+        <section className="space-y-3 rounded-lg border bg-white p-5">
+          <h2 className="text-lg font-semibold">Configuração central de modelos</h2>
+          <p className="text-sm text-gray-600">Os modelos e fallbacks de todos os perfis, atendimento, automações e serviços de conhecimento agora são administrados em IA/LLM. As rotas existentes foram preservadas. Os vínculos dos assistentes com seus perfis continuam nesta página.</p>
+          <Link to="/admin/ai" className="inline-flex rounded-md bg-yux-600 px-4 py-2 text-sm font-semibold text-white">Configurar modelos em IA/LLM</Link>
+        </section>
       )}
 
       {!loading && !error && activeTab === 'assistants' && (

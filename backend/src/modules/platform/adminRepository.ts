@@ -54,11 +54,16 @@ export type PlatformProviderSecretInput = {
 
 export type AdminLlmRouteInput = {
   id?: string
-  agentType: 'action_engine_strategist' | 'mission_supervisor'
+  agentType: string | null
+  organizationId?: string | null
+  clientId?: string | null
+  contractId?: string | null
+  agentId?: string | null
   routingTier?: 'cheap' | 'default' | 'premium' | 'fallback'
   provider: string
   modelName: string
   fallbackModelName?: string | null
+  fallbackRoutes?: Array<{ provider: string; modelName: string }>
   maxInputTokens?: number
   maxOutputTokens?: number
   temperature?: number
@@ -134,33 +139,26 @@ export async function getProviderConnectionByKey(pool: pg.Pool, providerKey: str
 
 export async function getAdminLlmRoutes(pool: pg.Pool) {
   const result = await pool.query(
-    `SELECT id, agent_type, routing_tier, provider, model_name, fallback_model_name,
+    `SELECT id, agent_type, organization_id, client_id, contract_id, agent_id,
+            routing_tier, provider, model_name, fallback_model_name, fallback_routes,
             max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
             created_at, updated_at
      FROM public.model_routing_rules
-     WHERE organization_id IS NULL
-       AND client_id IS NULL
-       AND contract_id IS NULL
-       AND agent_id IS NULL
-       AND agent_type = ANY($1::text[])
-       AND routing_tier = 'default'
-     ORDER BY agent_type, routing_tier`,
-    [['action_engine_strategist', 'mission_supervisor']],
+     ORDER BY agent_type NULLS LAST, routing_tier, updated_at DESC, id`,
   )
   return result.rows.map(mapAdminLlmRoute)
 }
 
 export async function getAdminLlmRouteById(pool: pg.Pool, id: string) {
   const result = await pool.query(
-    `SELECT id, agent_type, routing_tier, provider, model_name, fallback_model_name,
+    `SELECT id, agent_type, organization_id, client_id, contract_id, agent_id,
+            routing_tier, provider, model_name, fallback_model_name, fallback_routes,
             max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
             created_at, updated_at
      FROM public.model_routing_rules
      WHERE id = $1::uuid
-       AND agent_type = ANY($2::text[])
-       AND routing_tier = 'default'
      LIMIT 1`,
-    [id, ['action_engine_strategist', 'mission_supervisor']],
+    [id],
   )
   return result.rows[0] ? mapAdminLlmRoute(result.rows[0]) : null
 }
@@ -177,32 +175,52 @@ export async function upsertAdminLlmRoute(pool: pg.Pool, input: AdminLlmRouteInp
     input.temperature ?? 0.2,
     input.maxCostPerRun ?? 0,
     input.status ?? 'active',
+    input.organizationId ?? null,
+    input.clientId ?? null,
+    input.contractId ?? null,
+    input.agentId ?? null,
+    input.fallbackRoutes === undefined ? null : JSON.stringify(input.fallbackRoutes),
   ]
-  const result = input.id
-    ? await pool.query(
-        `UPDATE public.model_routing_rules
-         SET agent_type = $1, routing_tier = $2, provider = $3, model_name = $4,
-             fallback_model_name = $5, max_input_tokens = $6, max_output_tokens = $7,
-             temperature = $8, max_cost_per_run = $9, status = $10, updated_at = NOW()
-         WHERE id = $11::uuid
-           AND agent_type = ANY($12::text[])
-         RETURNING id, agent_type, routing_tier, provider, model_name, fallback_model_name,
-           max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
-           created_at, updated_at`,
-        [...values, input.id, ['action_engine_strategist', 'mission_supervisor']],
-      )
-    : await pool.query(
-        `INSERT INTO public.model_routing_rules (
-           agent_type, routing_tier, provider, model_name, fallback_model_name,
-           max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         RETURNING id, agent_type, routing_tier, provider, model_name, fallback_model_name,
-           max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
-           created_at, updated_at`,
-        values,
-      )
-  if (!result.rows[0]) throw new Error('llm_route_not_found')
-  return mapAdminLlmRoute(result.rows[0])
+  const scope = `agent_type IS NOT DISTINCT FROM $1::text AND routing_tier = $2
+    AND organization_id IS NOT DISTINCT FROM $11::uuid
+    AND client_id IS NOT DISTINCT FROM $12::uuid
+    AND contract_id IS NOT DISTINCT FROM $13::uuid
+    AND agent_id IS NOT DISTINCT FROM $14::uuid`
+  const returning = `id, agent_type, organization_id, client_id, contract_id, agent_id,
+    routing_tier, provider, model_name, fallback_model_name, fallback_routes,
+    max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status, created_at, updated_at`
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Serialize saves for one logical scope. Do not delete historical duplicates.
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify([values[0], values[1], ...values.slice(10, 14)])])
+    let id = input.id
+    if (!id) {
+      const existing = await client.query(`SELECT id FROM public.model_routing_rules
+        WHERE agent_type IS NOT DISTINCT FROM $1::text AND routing_tier = $2
+          AND organization_id IS NOT DISTINCT FROM $3::uuid AND client_id IS NOT DISTINCT FROM $4::uuid
+          AND contract_id IS NOT DISTINCT FROM $5::uuid AND agent_id IS NOT DISTINCT FROM $6::uuid
+        ORDER BY updated_at DESC, id LIMIT 1`, [values[0], values[1], ...values.slice(10, 14)])
+      id = existing.rows[0]?.id
+    }
+    const result = id
+      ? await client.query(`UPDATE public.model_routing_rules
+          SET provider = $3, model_name = $4, fallback_model_name = $5, max_input_tokens = $6,
+              max_output_tokens = $7, temperature = $8, max_cost_per_run = $9, status = $10,
+              fallback_routes = COALESCE($15::jsonb, fallback_routes), updated_at = NOW()
+          WHERE id = $16::uuid AND ${scope} RETURNING ${returning}`, [...values, id])
+      : await client.query(`INSERT INTO public.model_routing_rules (
+          agent_type, routing_tier, provider, model_name, fallback_model_name, max_input_tokens,
+          max_output_tokens, temperature, max_cost_per_run, status, organization_id, client_id,
+          contract_id, agent_id, fallback_routes
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::jsonb, '[]'::jsonb)) RETURNING ${returning}`, values)
+    if (!result.rows[0]) throw new Error('llm_route_not_found_or_scope_mismatch')
+    await client.query('COMMIT')
+    return mapAdminLlmRoute(result.rows[0])
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
 }
 
 export async function updateProviderConnectionHealth(pool: pg.Pool, id: string, input: { status: string; lastError?: string | null }) {
@@ -751,10 +769,16 @@ function mapAdminLlmRoute(row: any) {
   return {
     id: row.id,
     agentType: row.agent_type,
+    organizationId: row.organization_id ?? null,
+    clientId: row.client_id ?? null,
+    contractId: row.contract_id ?? null,
+    agentId: row.agent_id ?? null,
     routingTier: row.routing_tier,
     provider: row.provider,
     modelName: row.model_name,
     fallbackModelName: row.fallback_model_name ?? null,
+    fallbackRoutes: Array.isArray(row.fallback_routes) ? row.fallback_routes : [],
+    origin: 'database' as const,
     maxInputTokens: numberValue(row.max_input_tokens),
     maxOutputTokens: numberValue(row.max_output_tokens),
     temperature: numberValue(row.temperature),

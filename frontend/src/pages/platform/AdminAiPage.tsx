@@ -8,7 +8,7 @@ import { LlmUseCaseRoutingPanel } from '@/components/platform/admin/LlmUseCaseRo
 import { isProviderFailing } from '@/lib/platform/adminRules'
 import { openAiDirectFallbackDefaults, openRouterDefaults } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
-import type { AdminLlmRoute } from '@/services/adminPlatformService'
+import type { AdminLlmRoute, AdminLlmUseCaseDefinition } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
 
 const governanceSections = [
@@ -41,6 +41,8 @@ const governanceSections = [
 export function AdminAiPage() {
   const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
   const [llmRoutes, setLlmRoutes] = useState<AdminLlmRoute[]>([])
+  const [llmUseCases, setLlmUseCases] = useState<AdminLlmUseCaseDefinition[]>([])
+  const [legacyStatus, setLegacyStatus] = useState<'available' | 'unavailable'>('unavailable')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,13 +51,15 @@ export function AdminAiPage() {
     setError(null)
 
     try {
-      const [result, routes] = await Promise.all([
+      const [result, configuration] = await Promise.all([
         adminPlatformService.getProviderConnections(),
-        adminPlatformService.getLlmRoutes(),
+        adminPlatformService.getLlmConfiguration(),
       ])
       if (shouldApply()) {
         setProviders(result.filter(provider => provider.providerType === 'llm'))
-        setLlmRoutes(routes)
+        setLlmRoutes(configuration.routes)
+        setLlmUseCases(configuration.useCases)
+        setLegacyStatus(configuration.legacyStatus)
       }
     } catch (error) {
       console.error('Error loading LLM administration:', error)
@@ -160,7 +164,7 @@ export function AdminAiPage() {
           />
           <ProviderConnectionEditor
             title="OpenAI direto"
-            description="Fallback externo aprovado para indisponibilidade total do OpenRouter."
+            description="Gerencia a credencial da OpenAI direta, que pode ser escolhida como principal ou fallback nas rotas abaixo."
             provider={openAiProvider}
             defaults={openAiDirectFallbackDefaults}
             onSave={async input => {
@@ -178,9 +182,11 @@ export function AdminAiPage() {
         <LlmUseCaseRoutingPanel
           providers={actionEngineProviders}
           routes={llmRoutes}
+          useCases={llmUseCases}
+          legacyStatus={legacyStatus}
           onSave={async input => {
             const saved = await adminPlatformService.upsertLlmRoute(input)
-            setLlmRoutes(current => [...current.filter(item => item.id !== saved.id && item.agentType !== saved.agentType), saved])
+            setLlmRoutes(current => [...current.filter(item => item.id !== saved.id && !(item.origin === 'environment' && item.agentType === saved.agentType && item.routingTier === saved.routingTier && !saved.organizationId && !saved.clientId && !saved.contractId && !saved.agentId)), saved])
             return saved
           }}
           onTest={routeId => adminPlatformService.testLlmRoute(routeId)}

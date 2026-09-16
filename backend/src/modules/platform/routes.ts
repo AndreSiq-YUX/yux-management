@@ -5,6 +5,8 @@ import { hashSessionToken } from '../../auth/session.js'
 import { forbidden } from '../../http/errors.js'
 import { requireAdminRole, requireAuth } from '../../http/guards.js'
 import { testCnpjaProvider } from '../radar/cnpjaClient.js'
+import { getAdminLlmUseCases, isEmbeddingUseCase, LLM_PROVIDERS } from './llm-routing.js'
+import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import {
   getAdminChannelConnections,
   getAdminLlmRouteById,
@@ -151,16 +153,27 @@ const providerSecretSchema = z.object({
 const llmRouteParams = z.object({ routeId: z.string().uuid() })
 const llmRouteSchema = z.object({
   id: z.string().uuid().optional(),
-  agentType: z.enum(['action_engine_strategist', 'mission_supervisor']),
+  agentType: z.string().trim().min(1).max(200).nullable(),
+  organizationId: z.string().uuid().nullable().optional(),
+  clientId: z.string().uuid().nullable().optional(),
+  contractId: z.string().uuid().nullable().optional(),
+  agentId: z.string().uuid().nullable().optional(),
   routingTier: z.enum(['cheap', 'default', 'premium', 'fallback']).default('default'),
-  provider: z.enum(['openrouter', 'openai_direct']),
-  modelName: z.string().min(1),
-  fallbackModelName: z.string().nullable().optional(),
+  provider: z.enum(LLM_PROVIDERS),
+  modelName: z.string().trim().min(1).max(300),
+  fallbackModelName: z.string().trim().max(300).nullable().optional(),
+  fallbackRoutes: z.array(z.object({ provider: z.enum(LLM_PROVIDERS), modelName: z.string().trim().min(1).max(300) })).max(10).optional(),
   maxInputTokens: z.number().int().positive().max(1_000_000).default(16000),
   maxOutputTokens: z.number().int().positive().max(100_000).default(2200),
   temperature: z.number().min(0).max(2).default(0.2),
   maxCostPerRun: z.number().nonnegative().default(0),
   status: z.enum(['active', 'paused', 'archived']).default('active'),
+}).superRefine((route, ctx) => {
+  if (!route.agentType && !route.agentId) ctx.addIssue({ code: 'custom', message: 'Informe o caso de uso ou agente.', path: ['agentType'] })
+  if (['global_llm', 'global_embeddings'].includes(route.agentType || '')
+    && (route.organizationId || route.clientId || route.contractId || route.agentId || route.routingTier !== 'default')) {
+    ctx.addIssue({ code: 'custom', message: 'A rota global deve ser geral e usar a faixa padrão.', path: ['routingTier'] })
+  }
 })
 
 const emailProviderConnectionSchema = z.object({
@@ -173,6 +186,23 @@ const emailProviderConnectionSchema = z.object({
   dailySendLimit: z.number().int().nonnegative().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
+
+async function loadAdminLlmConfiguration(app: FastifyInstance) {
+  const saved = await getAdminLlmRoutes(app.pg)
+  if (!app.config.YUX_AGENT_RUNTIME_URL || !app.config.YUX_AGENT_RUNTIME_TOKEN) return { routes: saved, legacyStatus: 'unavailable' as const }
+  try {
+    const effective = await invokeAgentRuntime<{ routes: unknown[] }>(app.config, '/configuration/llm-routes', {}, { timeoutMs: 5000 })
+    const legacy = (Array.isArray(effective.routes) ? effective.routes : []).flatMap(value => {
+      const parsed = llmRouteSchema.safeParse(value)
+      if (!parsed.success || parsed.data.id || parsed.data.organizationId || parsed.data.clientId || parsed.data.contractId || parsed.data.agentId) return []
+      if (saved.some(route => route.agentType === parsed.data.agentType && !route.organizationId && !route.clientId && !route.contractId && !route.agentId && route.routingTier === parsed.data.routingTier)) return []
+      return [{ ...parsed.data, origin: 'environment' as const, originDetail: 'Configuração legada do runtime; salve para gerenciar pelo Admin.' }]
+    })
+    return { routes: [...saved, ...legacy], legacyStatus: 'available' as const }
+  } catch {
+    return { routes: saved, legacyStatus: 'unavailable' as const }
+  }
+}
 
 const smtp2GoSubaccountSchema = z.object({
   id: z.string().uuid().optional(),
@@ -332,7 +362,24 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     requireAdminRole(request)
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
-    return getAdminLlmRoutes(app.pg)
+    const configuration = await loadAdminLlmConfiguration(app)
+    if (configuration.legacyStatus === 'unavailable') reply.header('x-yux-llm-legacy-unavailable', 'true')
+    return configuration.routes
+  })
+
+  app.get('/admin/llm-configuration', async (request, reply) => {
+    requireAdminRole(request)
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const [configuration, useCases] = await Promise.all([loadAdminLlmConfiguration(app), getAdminLlmUseCases(app.pg)])
+    return { ...configuration, useCases }
+  })
+
+  app.get('/admin/llm-use-cases', async (request, reply) => {
+    requireAdminRole(request)
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    return getAdminLlmUseCases(app.pg)
   })
 
   app.post('/admin/llm-routes', async (request, reply) => {
@@ -341,7 +388,14 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     if (!user) return reply
     const parsed = llmRouteSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() })
-    return upsertAdminLlmRoute(app.pg, parsed.data)
+    try {
+      return await upsertAdminLlmRoute(app.pg, parsed.data)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'llm_route_not_found_or_scope_mismatch') {
+        return reply.code(409).send({ error: error.message })
+      }
+      throw error
+    }
   })
 
   app.post('/admin/llm-routes/:routeId/test', async (request, reply) => {
@@ -356,7 +410,8 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     if (!provider) return reply.code(409).send({ error: 'llm_provider_not_configured' })
     const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', providerSecretKeyMaterial(app.config))
       ?? providerCredentialFromEnvironment(app.config, provider.providerKey)
-    const result = await testLlmRoute(provider.providerKey, apiKey, provider.publicConfig, route.modelName)
+    if (route.status !== 'active') return reply.code(409).send({ error: 'llm_route_inactive' })
+    const result = await testLlmRoute(provider.providerKey, apiKey, provider.publicConfig, route.modelName, isEmbeddingUseCase(route.agentType))
     return { ...result, model: route.modelName, provider: provider.providerKey, checkedAt: new Date().toISOString() }
   })
 
@@ -789,7 +844,9 @@ function providerSecretKeyMaterial(config: AppEnv) {
 }
 
 function providerCredentialFromEnvironment(config: AppEnv, providerKey: string) {
-  return providerKey === 'openrouter' ? config.OPENROUTER_API_KEY ?? null : null
+  if (providerKey === 'openrouter') return config.OPENROUTER_API_KEY ?? null
+  if (providerKey === 'openai_direct') return config.OPENAI_API_KEY ?? null
+  return null
 }
 
 function llmBaseUrl(providerKey: string, publicConfig?: Record<string, unknown>) {
@@ -821,9 +878,12 @@ async function testLlmRoute(
   apiKey: string | null,
   publicConfig: Record<string, unknown> | undefined,
   model: string,
+  embedding = false,
 ): Promise<Smtp2GoTestResult> {
   if (!apiKey) return { ok: false, message: 'API key do provedor LLM nao foi cadastrada.' }
-  const payload: Record<string, unknown> = {
+  const payload: Record<string, unknown> = embedding ? {
+    model, input: ['Teste de conexão YUX.'], dimensions: 1024, encoding_format: 'float',
+  } : {
     model,
     messages: [{ role: 'user', content: 'Responda apenas OK.' }],
     max_completion_tokens: 8,
@@ -832,14 +892,17 @@ async function testLlmRoute(
   }
   if (providerKey === 'openrouter') payload.provider = { data_collection: 'deny' }
   try {
-    const response = await fetch(`${llmBaseUrl(providerKey, publicConfig)}/chat/completions`, {
+    const response = await fetch(`${llmBaseUrl(providerKey, publicConfig)}/${embedding ? 'embeddings' : 'chat/completions'}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(45_000),
     })
     if (!response.ok) return { ok: false, message: `O modelo nao respondeu corretamente (HTTP ${response.status}).` }
-    const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+    const body = await response.json() as { data?: Array<{ embedding?: number[] }>; choices?: Array<{ message?: { content?: string } }> }
+    if (embedding) return Array.isArray(body.data?.[0]?.embedding) && body.data[0].embedding.length === 1024 && body.data[0].embedding.every(Number.isFinite)
+      ? { ok: true, message: 'Modelo de embeddings respondeu com um vetor válido de 1024 dimensões.' }
+      : { ok: false, message: 'O modelo não retornou um vetor compatível de 1024 dimensões.' }
     const content = body.choices?.[0]?.message?.content?.trim()
     return content
       ? { ok: true, message: `Modelo respondeu com sucesso: ${content.slice(0, 80)}` }

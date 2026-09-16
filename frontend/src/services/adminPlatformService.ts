@@ -74,15 +74,29 @@ export interface ProviderCredentialSaveResult {
   provider?: PlatformProviderConnection
 }
 
-export type AdminLlmUseCase = 'action_engine_strategist' | 'mission_supervisor'
+export type AdminLlmUseCase = string
+export interface AdminLlmUseCaseDefinition {
+  key: string
+  title: string
+  description: string
+  kind: 'chat' | 'embedding'
+  group: string
+}
 
 export interface AdminLlmRoute {
-  id: string
-  agentType: AdminLlmUseCase
+  id?: string
+  agentType: AdminLlmUseCase | null
+  organizationId?: string | null
+  clientId?: string | null
+  contractId?: string | null
+  agentId?: string | null
   routingTier: 'cheap' | 'default' | 'premium' | 'fallback'
   provider: string
   modelName: string
   fallbackModelName: string | null
+  fallbackRoutes?: Array<{ provider: string; modelName: string }>
+  origin?: 'database' | 'environment'
+  originDetail?: string
   maxInputTokens: number
   maxOutputTokens: number
   temperature: number
@@ -92,7 +106,7 @@ export interface AdminLlmRoute {
   updatedAt?: string
 }
 
-export type AdminLlmRouteInput = Omit<AdminLlmRoute, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
+export type AdminLlmRouteInput = Omit<AdminLlmRoute, 'createdAt' | 'updatedAt' | 'origin' | 'originDetail'>
 
 export interface AdminLlmRouteTestResult {
   ok: boolean
@@ -359,6 +373,14 @@ export class AdminPlatformService {
 
   async getLlmRoutes(): Promise<AdminLlmRoute[]> {
     return apiRequest<AdminLlmRoute[]>('/platform/admin/llm-routes')
+  }
+
+  async getLlmUseCases(): Promise<AdminLlmUseCaseDefinition[]> {
+    return apiRequest<AdminLlmUseCaseDefinition[]>('/platform/admin/llm-use-cases')
+  }
+
+  async getLlmConfiguration(): Promise<{ routes: AdminLlmRoute[]; useCases: AdminLlmUseCaseDefinition[]; legacyStatus: 'available' | 'unavailable' }> {
+    return apiRequest('/platform/admin/llm-configuration')
   }
 
   async upsertLlmRoute(input: AdminLlmRouteInput): Promise<AdminLlmRoute> {

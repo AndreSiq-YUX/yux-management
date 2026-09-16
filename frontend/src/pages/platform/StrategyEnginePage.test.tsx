@@ -75,6 +75,9 @@ describe('StrategyEnginePage', () => {
       Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Modelos por Agente'))!.click()
     })
 
-    expect(container.textContent).toContain('crm_controller')
+    expect(container.querySelector('a[href="/admin/ai"]')?.textContent).toContain('Configurar modelos em IA/LLM')
+    expect(container.textContent).toContain('As rotas existentes foram preservadas')
+    expect(container.querySelector('input')).toBeNull()
+    await act(async () => root.unmount())
   })
 })
