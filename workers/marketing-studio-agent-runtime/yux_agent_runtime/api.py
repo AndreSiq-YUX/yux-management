@@ -5,7 +5,9 @@ import logging
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 
 from .queue import AgentEventQueue
@@ -19,6 +21,7 @@ from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .mission_contracts import MissionConversationTurnRequestWire
 from .mission_conversation import MissionConversationWorkflow
+from .mission_diagnostics import mission_failure_diagnostic
 from .workflow import StrategyWorkflowEngine, estimate_workflow_credits, resolve_retrieval_audience
 
 
@@ -127,6 +130,16 @@ def create_app(
     if not _runtime_token():
         raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
     app = FastAPI(title="YUX Agent Harness Runtime", version="1.0.0")
+
+    @app.exception_handler(RequestValidationError)
+    async def log_mission_request_validation(request: Request, error: RequestValidationError):
+        if request.url.path == "/missions/conversations/turn":
+            context = error.body if isinstance(error.body, dict) else {}
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="request", status=422, context=context,
+            )))
+        return await request_validation_exception_handler(request, error)
+
     runtime_store = store or PostgresAgentRuntimeStore()
     queue = AgentEventQueue(runtime_store)
     # Tests may inject an isolated store. Production configuration is loaded
@@ -258,7 +271,13 @@ def create_app(
 
     @app.post("/missions/conversations/turn", dependencies=[Depends(require_runtime_token)])
     def mission_conversation_turn(request: MissionConversationTurnRequestWire) -> dict[str, Any]:
-        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="growth_strategist", audience=request.audience)
+        try:
+            validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="growth_strategist", audience=request.audience)
+        except HTTPException as error:
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="tenant", status=error.status_code, context=request.model_dump(),
+            )))
+            raise
         try:
             reserve_billable_credits(
                 organization_id=request.organization_id,
@@ -273,15 +292,29 @@ def create_app(
             response = conversation_workflow(request.model_dump()).respond(request)
             return response.model_dump()
         except (ValidationError, ValueError, json.JSONDecodeError) as error:
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="processing", status=422, context=request.model_dump(),
+            )))
             raise HTTPException(status_code=422, detail=str(error)) from error
         except ProviderRequestError as error:
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="provider", status=503, context=request.model_dump(),
+            )))
             raise HTTPException(status_code=503, detail="mission_conversation_provider_unavailable") from error
         except RuntimeError as error:
-            if str(error) in (
-                "agent_harness_not_configured",
-                "agent_provider_output_required",
-            ) or str(error).startswith("strategy_profile_not_configured"):
+            unavailable = str(error) in (
+                "agent_harness_not_configured", "agent_provider_output_required",
+            ) or str(error).startswith("strategy_profile_not_configured")
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="processing", status=503 if unavailable else 500, context=request.model_dump(),
+            )))
+            if unavailable:
                 raise HTTPException(status_code=503, detail="mission_conversation_provider_unavailable") from error
+            raise
+        except Exception as error:
+            logger.error("%s", json.dumps(mission_failure_diagnostic(
+                error, stage="processing", status=500, context=request.model_dump(),
+            )))
             raise
 
     @app.post("/knowledge/curate", dependencies=[Depends(require_runtime_token)])
