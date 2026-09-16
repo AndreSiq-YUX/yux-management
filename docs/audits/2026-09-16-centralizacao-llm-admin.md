@@ -45,3 +45,5 @@ Instruções de operação: [Administração central de LLMs](../operations/llm-
 ## Decisão registrada
 
 Ruling: continuar na branch dedicada de correções existente, preservando o fluxo de trabalho e os arquivos alheios. Se a decisão precisar ser revista, as alterações estão isoladas em commits locais reversíveis; será necessário mover ou reverter esses commits.
+
+Ruling: manter as notas temporárias desta execução após a limpeza ser recusada pela proteção do ambiente, sem tentar contorná-la. Custo potencial: as notas/diffs permanecem em disco; o relatório permanente e os commits não são afetados. Nenhum arquivo foi removido.
