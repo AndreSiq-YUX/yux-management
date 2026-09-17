@@ -290,7 +290,17 @@ def _normalize_readiness(value: Any, questions: list[dict[str, Any]]) -> dict[st
 
 def _normalize_brief(value: Any, request: MissionConversationTurnRequestWire) -> dict[str, Any]:
     if isinstance(value, dict):
-        return dict(value)
+        brief = dict(value)
+        criteria = brief.get("acceptanceCriteria")
+        if isinstance(criteria, list):
+            # Qualitative criteria are not fabricated metric/operator/target values.
+            # Keep every original statement, order and structured criterion intact.
+            brief["acceptanceCriteria"] = [
+                {"description": item} if isinstance(item, str) and item.strip()
+                else dict(item) if isinstance(item, dict) else item
+                for item in criteria
+            ]
+        return brief
     current = request.currentBrief if isinstance(request.currentBrief, dict) else {}
     summary = _text(value)
     objective = _text(current.get("objective") or request.user_message)[:8_000]

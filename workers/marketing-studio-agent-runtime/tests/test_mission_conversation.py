@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
+from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire, MissionConversationTurnResponseWire
 from yux_agent_runtime.mission_conversation import (
     MissionConversationWorkflow,
     normalize_mission_conversation_response,
@@ -36,6 +36,45 @@ def request(audience="client_user"):
 
 
 class MissionConversationWorkflowTest(unittest.TestCase):
+    def normalize_brief_criteria(self, criteria):
+        parsed = {
+            "kind": "message", "reply": "Vamos qualificar a estratégia.", "questions": [],
+            "readiness": {"status": "needs_information", "knownFacts": [], "assumptions": [], "missing": []},
+            "brief": {"objective": "Captar clientes", "acceptanceCriteria": criteria},
+            "suggestedActions": [], "sourceRefs": [],
+        }
+        original = deepcopy(parsed)
+        response = normalize_mission_conversation_response(
+            parsed, request=MissionConversationTurnRequestWire.model_validate(request()),
+            retrieval_context={}, retrieval_trace_id="run-criteria", provider={},
+        )
+        self.assertEqual(parsed, original)
+        return response
+
+    def test_text_acceptance_criteria_preserve_full_content_without_inventing_metrics(self):
+        statements = ["Definir oferta e público", "Mapear objeções e alternativas", "Validar canais", "Medir conversão"]
+        response = self.normalize_brief_criteria(statements)
+        self.assertEqual(response.brief.acceptanceCriteria, [{"description": item} for item in statements])
+
+    def test_mixed_acceptance_criteria_keep_structured_metrics_and_nested_values_unchanged(self):
+        metric = {"key": "qualified_leads", "operator": "gte", "target": "20", "unit": "leads"}
+        qualitative = {"description": "Validar a oferta", "alternatives": ["Diagnóstico", "Demonstração"], "required": False}
+        response = self.normalize_brief_criteria([metric, "Confirmar orçamento", qualitative])
+        self.assertEqual(response.brief.acceptanceCriteria, [metric, {"description": "Confirmar orçamento"}, qualitative])
+
+    def test_ambiguous_acceptance_criteria_remain_invalid(self):
+        for item in (None, 0, False, ["canal", "meta"], "", "   "):
+            with self.subTest(item=item), self.assertRaises(ValidationError):
+                self.normalize_brief_criteria([item])
+
+    def test_acceptance_criteria_limit_is_not_silently_truncated(self):
+        with self.assertRaises(ValidationError):
+            self.normalize_brief_criteria([f"Critério {index}" for index in range(101)])
+
+    def test_acceptance_criteria_non_list_is_not_silently_discarded(self):
+        with self.assertRaises(ValidationError):
+            self.normalize_brief_criteria("Validar oferta")
+
     def normalize_claims(self, known_facts, assumptions=None, status="needs_information", kind="message"):
         parsed = {
             "kind": kind, "reply": "Vamos qualificar a estratégia.", "understood": {}, "questions": [],
@@ -407,6 +446,52 @@ class MissionConversationWorkflowTest(unittest.TestCase):
                          "knownFacts, assumptions e missing são arrays de objetos", "Cada knownFact exige key, value e sourceRef"):
             self.assertIn(expected, prompt)
         self.assertNotEqual(store.tables["agent_execution_runs"][0]["status"], "failed")
+
+    def test_full_workflow_recovers_four_text_criteria_in_one_mocked_call(self):
+        statements = ["Definir oferta", "Validar público", "Mapear objeções", "Medir conversão"]
+        claims = ["Quer captar clientes", "Precisa de estratégia", "Canais a confirmar"]
+
+        def provider_shape(body):
+            body["brief"]["acceptanceCriteria"] = statements
+            body["readiness"]["knownFacts"] = claims
+            return body
+
+        captured = []
+        store = self.make_store()
+        response = self.make_workflow(captured, store, provider_shape).respond(request())
+        self.assertEqual(response.brief.acceptanceCriteria, [{"description": item} for item in statements])
+        self.assertEqual(response.readiness.knownFacts, [])
+        self.assertEqual([item.value for item in response.readiness.assumptions], claims)
+        self.assertEqual(response.kind, "questions")
+        self.assertEqual({item.ref for item in response.sources}, {"yux:card-growth", "customer:chunk-a"})
+        self.assertEqual(len(captured), 1)
+        self.assertNotEqual(store.tables["agent_execution_runs"][0]["status"], "failed")
+
+    def test_provider_prompt_includes_canonical_schema_without_server_owned_fields(self):
+        captured = []
+        self.make_workflow(captured).respond(request())
+        prompt = "\n".join(item["content"] for item in captured[0]["messages"])
+        marker = "JSON Schema do contrato de saída (autoridade para tipos, campos, limites e valores permitidos): "
+        schema, _ = json.JSONDecoder().raw_decode(prompt.split(marker, 1)[1])
+        canonical = MissionConversationTurnResponseWire.model_json_schema()
+        for definition in ("MissionBriefWire", "MissionContextReadinessWire", "MissionConversationQuestionWire", "MissionSuggestedActionWire"):
+            self.assertEqual(schema["$defs"][definition], canonical["$defs"][definition])
+        for field in ("schemaVersion", "sources", "retrievalTraceId", "contextHash", "usage"):
+            self.assertNotIn(field, schema["properties"])
+            self.assertNotIn(field, schema["required"])
+        self.assertEqual(schema["properties"]["sourceRefs"]["items"], {"type": "string"})
+
+        def check_references(value):
+            if isinstance(value, dict):
+                if "$ref" in value:
+                    self.assertIn(value["$ref"].removeprefix("#/$defs/"), schema["$defs"])
+                for child in value.values():
+                    check_references(child)
+            elif isinstance(value, list):
+                for child in value:
+                    check_references(child)
+
+        check_references(schema)
 
     def test_reuses_harness_strategy_company_brand_product_and_curated_context(self):
         captured = []
