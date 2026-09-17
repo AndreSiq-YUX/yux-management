@@ -1,6 +1,9 @@
 import json
 import unittest
+from copy import deepcopy
 from uuid import UUID
+
+from pydantic import ValidationError
 
 from yux_agent_runtime.mission_contracts import MissionConversationTurnRequestWire
 from yux_agent_runtime.mission_conversation import (
@@ -33,6 +36,85 @@ def request(audience="client_user"):
 
 
 class MissionConversationWorkflowTest(unittest.TestCase):
+    def normalize_claims(self, known_facts, assumptions=None, status="needs_information", kind="message"):
+        parsed = {
+            "kind": kind, "reply": "Vamos qualificar a estratégia.", "understood": {}, "questions": [],
+            "readiness": {
+                "status": status, "knownFacts": known_facts,
+                "assumptions": assumptions or [], "missing": [],
+            },
+            "brief": {"objective": "Captar clientes", "requestedOutcome": "Leads"},
+            "suggestedActions": [], "sourceRefs": [],
+        }
+        original = deepcopy(parsed)
+        response = normalize_mission_conversation_response(
+            parsed, request=MissionConversationTurnRequestWire.model_validate(request()),
+            retrieval_context={"cards": [{"id": "card-growth", "concept": "Diagnóstico antes do canal"}]},
+            retrieval_trace_id="run-claims", provider={},
+        )
+        self.assertEqual(parsed, original)
+        return response
+
+    def test_text_known_facts_are_preserved_as_unverified_assumptions_without_invented_sources(self):
+        statements = ["Quer captar clientes", "Precisa de estratégia", "Canais ainda não definidos"]
+        response = self.normalize_claims(statements)
+        self.assertEqual(response.readiness.knownFacts, [])
+        self.assertEqual([item.value for item in response.readiness.assumptions], statements)
+        self.assertTrue(all(item.sourceRef is None for item in response.readiness.assumptions))
+        self.assertEqual(response.sources, [])
+
+    def test_mixed_claims_keep_verified_facts_and_preserve_false_and_nested_unsourced_values(self):
+        verified = {"key": "method", "value": "Diagnóstico", "sourceRef": "yux:card-growth"}
+        response = self.normalize_claims([
+            verified, "Canal a confirmar", {"key": "has_crm", "value": False},
+            {"key": "offer", "value": {"alternatives": ["Consultoria", "Projeto"]}, "sourceRef": None},
+        ], [{"key": "hypothesis", "value": "Oferta a validar"}, "Talvez começar pelo CRM"])
+        self.assertEqual([item.model_dump() for item in response.readiness.knownFacts], [verified])
+        values = [item.value for item in response.readiness.assumptions]
+        self.assertIn(False, values)
+        self.assertIn({"alternatives": ["Consultoria", "Projeto"]}, values)
+        self.assertIn("Talvez começar pelo CRM", values)
+        self.assertEqual([item.ref for item in response.sources], ["yux:card-growth"])
+
+    def test_demoted_facts_cannot_leave_conversation_ready_for_confirmation_or_plan(self):
+        for status in ("ready_for_brief_confirmation", "ready_for_plan"):
+            with self.subTest(status=status):
+                response = self.normalize_claims(["Orçamento supostamente aprovado"], status=status, kind="brief_confirmation")
+                self.assertEqual(response.readiness.status, "needs_information")
+                self.assertEqual(response.kind, "message")
+
+    def test_unknown_explicit_source_is_rejected_not_demoted_or_replaced(self):
+        for collection in ("fact", "assumption"):
+            with self.subTest(collection=collection):
+                claim = {"key": "invented", "value": "Afirmação", "sourceRef": "yux:invented"}
+                with self.assertRaisesRegex(ValueError, "mission_conversation_unknown_source_ref:yux:invented"):
+                    self.normalize_claims([claim] if collection == "fact" else [], [claim] if collection == "assumption" else [])
+
+    def test_ambiguous_claim_arrays_and_incomplete_objects_remain_invalid(self):
+        for claim in (["fato", "yux:card-growth"], {"key": "incomplete", "sourceRef": "yux:card-growth"}):
+            with self.subTest(claim=claim), self.assertRaises(ValidationError):
+                self.normalize_claims([claim])
+
+    def test_unverified_claim_limit_is_not_silently_truncated(self):
+        with self.assertRaises(ValidationError):
+            self.normalize_claims([f"Afirmação {index}" for index in range(101)])
+
+    def test_generated_claim_keys_do_not_collide_with_existing_claims(self):
+        response = self.normalize_claims(["Texto sem fonte"], [{"key": "unverified_fact_1", "value": "Existente"}])
+        keys = [item.key for item in response.readiness.assumptions]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_valid_verified_claim_keeps_ready_status_and_original_value(self):
+        verified = {"key": "method", "value": {"steps": ["Diagnóstico", "Oferta"]}, "sourceRef": "yux:card-growth"}
+        response = self.normalize_claims([verified], status="ready_for_brief_confirmation", kind="brief_confirmation")
+        self.assertEqual(response.kind, "brief_confirmation")
+        self.assertEqual(response.readiness.status, "ready_for_brief_confirmation")
+        self.assertEqual(response.readiness.knownFacts[0].model_dump(), verified)
+
+    def test_unexpected_claim_fields_are_not_silently_removed(self):
+        with self.assertRaises(ValidationError):
+            self.normalize_claims([{"key": "offer", "value": "Consultoria", "unexpected": "Must not disappear"}])
+
     def test_company_context_reaches_strategist_with_production_uuid_trace_contract(self):
         class UuidContextStore(InMemoryAgentRuntimeStore):
             def insert(self, table, payload):
@@ -251,7 +333,7 @@ class MissionConversationWorkflowTest(unittest.TestCase):
             }],
         })
 
-    def make_workflow(self, captured, store=None):
+    def make_workflow(self, captured, store=None, response_transform=None):
         def transport(_url, _headers, payload, _method):
             captured.append(payload)
             body = {
@@ -287,6 +369,8 @@ class MissionConversationWorkflowTest(unittest.TestCase):
                 }],
                 "sourceRefs": ["yux:card-growth", "customer:chunk-a"],
             }
+            if response_transform:
+                body = response_transform(body)
             return {
                 "id": "response-1", "model": payload["model"],
                 "choices": [{"message": {"content": json.dumps(body)}, "finish_reason": "stop"}],
@@ -297,6 +381,32 @@ class MissionConversationWorkflowTest(unittest.TestCase):
             store or self.make_store(), OpenRouterClient(api_key="test", transport=transport)
         )
         return MissionConversationWorkflow(engine)
+
+    def test_full_workflow_recovers_text_claims_in_one_mocked_call_and_keeps_book_company_context(self):
+        statements = ["Quer captar clientes", "Precisa de estratégia", "Canais a confirmar"]
+
+        def provider_shape(body):
+            body["readiness"]["knownFacts"] = statements
+            body["readiness"]["assumptions"] = ["Orçamento ainda não confirmado"]
+            return body
+
+        captured = []
+        store = self.make_store()
+        workflow = self.make_workflow(captured, store, provider_shape)
+        response = workflow.respond(request())
+
+        self.assertEqual(response.kind, "questions")
+        self.assertEqual(response.readiness.status, "needs_information")
+        self.assertEqual(response.readiness.knownFacts, [])
+        self.assertEqual([item.value for item in response.readiness.assumptions],
+                         ["Orçamento ainda não confirmado", *statements])
+        self.assertTrue(all(item.sourceRef is None for item in response.readiness.assumptions))
+        self.assertEqual(len(captured), 1)
+        prompt = json.dumps(captured[0], ensure_ascii=False)
+        for expected in ("Empresa A", "Diagnóstico comercial antes da campanha", "Diagnóstico antes do canal",
+                         "knownFacts, assumptions e missing são arrays de objetos", "Cada knownFact exige key, value e sourceRef"):
+            self.assertIn(expected, prompt)
+        self.assertNotEqual(store.tables["agent_execution_runs"][0]["status"], "failed")
 
     def test_reuses_harness_strategy_company_brand_product_and_curated_context(self):
         captured = []

@@ -173,6 +173,51 @@ def _normalize_questions(value: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def _normalize_readiness_claims(readiness: dict[str, Any]) -> bool:
+    """Preserve unsourced statements as assumptions, never fabricate grounding."""
+    raw_facts = readiness.get("knownFacts") if isinstance(readiness.get("knownFacts"), list) else []
+    raw_assumptions = readiness.get("assumptions") if isinstance(readiness.get("assumptions"), list) else []
+    used_keys = {
+        raw["key"] for raw in [*raw_facts, *raw_assumptions]
+        if isinstance(raw, dict) and isinstance(raw.get("key"), str)
+    }
+
+    def generated_key(prefix: str, index: int) -> str:
+        key = f"{prefix}_{index}"
+        suffix = 1
+        while key in used_keys:
+            key = f"{prefix}_{index}_{suffix}"
+            suffix += 1
+        used_keys.add(key)
+        return key
+
+    assumptions = []
+    for index, raw in enumerate(raw_assumptions, start=1):
+        if isinstance(raw, str) and raw.strip():
+            assumptions.append({"key": generated_key("assumption", index), "value": raw})
+        else:
+            # Ambiguous/malformed structures still fail the strict contract.
+            assumptions.append(dict(raw) if isinstance(raw, dict) else raw)
+
+    facts = []
+    demoted = False
+    for index, raw in enumerate(raw_facts, start=1):
+        if isinstance(raw, str) and raw.strip():
+            assumptions.append({"key": generated_key("unverified_fact", index), "value": raw})
+            demoted = True
+        elif (isinstance(raw, dict) and raw.get("sourceRef") in (None, "")
+              and isinstance(raw.get("key"), str) and raw["key"].strip() and "value" in raw):
+            assumptions.append({**raw, "sourceRef": None})
+            demoted = True
+        else:
+            # Explicit references are retained for catalog verification;
+            # unknown/invalid references cannot be rescued by normalization.
+            facts.append(dict(raw) if isinstance(raw, dict) else raw)
+    readiness["knownFacts"] = facts
+    readiness["assumptions"] = assumptions
+    return demoted
+
+
 def _normalize_readiness(value: Any, questions: list[dict[str, Any]]) -> dict[str, Any]:
     if isinstance(value, dict):
         readiness = dict(value)
@@ -209,18 +254,15 @@ def _normalize_readiness(value: Any, questions: list[dict[str, Any]]) -> dict[st
                         "requiredFor": ["mission_planning"],
                     })
         readiness["missing"] = normalized_missing
-        readiness["knownFacts"] = (
-            readiness.get("knownFacts") if isinstance(readiness.get("knownFacts"), list) else []
-        )
-        readiness["assumptions"] = (
-            readiness.get("assumptions") if isinstance(readiness.get("assumptions"), list) else []
-        )
+        demoted_claims = _normalize_readiness_claims(readiness)
         status = _text(readiness.get("status"))
         if status not in {
             "needs_information", "needs_configuration",
             "ready_for_brief_confirmation", "ready_for_plan",
         }:
             readiness["status"] = "needs_information" if normalized_missing or questions else "ready_for_brief_confirmation"
+        if demoted_claims and readiness.get("status") in {"ready_for_brief_confirmation", "ready_for_plan"}:
+            readiness["status"] = "needs_information"
         return readiness
     if questions:
         missing = []
@@ -284,6 +326,8 @@ def _normalize_provider_shape(
         )
     if kind == "questions" and not questions:
         kind = "message"
+    if kind == "brief_confirmation" and readiness.get("status") not in {"ready_for_brief_confirmation", "ready_for_plan"}:
+        kind = "questions" if questions else "message"
     normalized.update({
         "kind": kind,
         "understood": understood,
