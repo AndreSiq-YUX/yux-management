@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { invokeMissionConversationTurn } from '../src/lib/agent-runtime-client.js'
+import { invokeAgentRuntime, invokeMissionConversationTurn } from '../src/lib/agent-runtime-client.js'
 import type { AppEnv } from '../src/config/env.js'
 import type { MissionConversationTurnRequestWire } from '../src/modules/action-engine/generated/mission-wire.js'
 
@@ -44,14 +44,47 @@ describe('Mission conversation runtime client', () => {
     expect(failedFetch).toHaveBeenCalledTimes(1)
   })
 
-  it('aborts after the shared 60-second timeout', async () => {
+  it('allows sequential retrieval and generation to finish after 60 seconds with only one call', async () => {
+    vi.useFakeTimers()
+    const fetch = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+      setTimeout(() => resolve(new Response(JSON.stringify(valid), { status: 200 })), 90_000)
+    }))
+    vi.stubGlobal('fetch', fetch)
+    const pending = invokeMissionConversationTurn(env, request)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(30_000)
+    await expect(pending).resolves.toEqual(valid)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('aborts an unresponsive conversation at 150 seconds without retrying', async () => {
+    vi.useFakeTimers()
+    const fetch = vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    }))
+    vi.stubGlobal('fetch', fetch)
+    const pending = invokeMissionConversationTurn(env, request)
+    const rejection = expect(pending).rejects.toThrow('aborted')
+    await vi.advanceTimersByTimeAsync(149_999)
+    expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await rejection
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('preserves the shared 60-second timeout for other runtime functions', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
     })))
-    const pending = invokeMissionConversationTurn(env, request)
+    const pending = invokeAgentRuntime(env, '/other-runtime-function', {})
     const rejection = expect(pending).rejects.toThrow('aborted')
     await vi.advanceTimersByTimeAsync(60_000)
     await rejection
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

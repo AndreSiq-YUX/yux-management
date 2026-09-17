@@ -2,6 +2,10 @@ import type { AppEnv } from '../config/env.js'
 import type { MissionConversationTurnRequestWire, MissionConversationTurnResponseWire } from '../modules/action-engine/generated/mission-wire.js'
 import { validateMissionConversationTurnResponseWire } from '../modules/action-engine/mission-wire-validator.js'
 
+// Intake performs retrieval/embeddings before generation. Keep its total budget
+// below the conversation job's 180-second deadline, without changing other calls.
+const MISSION_CONVERSATION_TIMEOUT_MS = 150_000
+
 export async function invokeAgentRuntime<T>(
   env: AppEnv,
   path: string,
@@ -30,7 +34,10 @@ export async function invokeMissionConversationTurn(
   body: MissionConversationTurnRequestWire,
 ): Promise<MissionConversationTurnResponseWire> {
   try {
-    const response = await invokeAgentRuntime<unknown>(env, '/missions/conversations/turn', body as unknown as Record<string, unknown>)
+    const response = await invokeAgentRuntime<unknown>(
+      env, '/missions/conversations/turn', body as unknown as Record<string, unknown>,
+      { timeoutMs: MISSION_CONVERSATION_TIMEOUT_MS },
+    )
     const validated = validateMissionConversationTurnResponseWire(response)
     if (!validated.usage
       || validated.usage.totalTokens !== validated.usage.inputTokens + validated.usage.outputTokens) {
