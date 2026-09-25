@@ -280,6 +280,9 @@ export async function listOutboundRetryLogs(pool: pg.Pool, user: AuthUser, conve
 
 export async function createHumanReply(pool: pg.Pool, user: AuthUser, input: { conversationId: string; connectionId?: string; body: string; authorUserId?: string; metadata?: JsonRecord }) {
   const conversation = await requireConversationAccess(pool, user, input.conversationId)
+  if (input.connectionId && input.connectionId !== conversation.connection_id) {
+    throw Object.assign(new Error('conversation_connection_mismatch'), { statusCode: 409 })
+  }
   const result = await pool.query<MessageRow>(
     `INSERT INTO public.messages (
        conversation_id, connection_id, direction, author_type, author_user_id, content_type, body, delivery_status, metadata

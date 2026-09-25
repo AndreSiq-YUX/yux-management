@@ -54,12 +54,12 @@ export function getIntegrationDatabaseUrl() {
   return databaseUrl
 }
 
-export async function createIntegrationRig(options: { corsOrigin?: string } = {}): Promise<IntegrationRig> {
+export async function createIntegrationRig(options: { corsOrigin?: string; queueMode?: 'redis' | 'stub' } = {}): Promise<IntegrationRig> {
   const databaseUrl = getIntegrationDatabaseUrl()
   const redisUrl = process.env.YUX_INTEGRATION_REDIS_URL
     || 'redis://:yux_test_redis_password@127.0.0.1:56379/0'
   const migrationPool = new pg.Pool({ connectionString: databaseUrl, max: 8 })
-  await assertPersistentServices(migrationPool, redisUrl)
+  await assertPersistentServices(migrationPool, redisUrl, options.queueMode !== 'stub')
   const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src/db/migrations')
   await applyMigrations(migrationPool, migrationsDir, { log: () => undefined })
   await provisionIntegrationServiceRoles(migrationPool)
@@ -67,10 +67,15 @@ export async function createIntegrationRig(options: { corsOrigin?: string } = {}
   const apiPool = createContextAwarePool(new pg.Pool({ connectionString: serviceDatabaseUrl(databaseUrl, 'yux_api'), max: 8 }), 'api')
   const workerPool = createContextAwarePool(new pg.Pool({ connectionString: serviceDatabaseUrl(databaseUrl, 'yux_worker'), max: 4 }), 'worker')
 
-  const redisConnection = createRedisConnection(redisUrl)
-  const queue = createRoutedJobQueue({ connection: redisConnection, prefix: 'yux-integration' })
-  await Promise.all(queue.queues().map(rawQueue => rawQueue.waitUntilReady()))
-  await Promise.all(queue.queues().map(rawQueue => rawQueue.obliterate({ force: true })))
+  const queue = options.queueMode === 'stub' ? null : createRoutedJobQueue({ connection: createRedisConnection(redisUrl), prefix: 'yux-integration' })
+  const appQueue: AppJobQueue = queue ?? {
+    async add(name) { throw new Error(`unexpected_integration_job_enqueue:${name}`) },
+    async close() {},
+  }
+  if (queue) {
+    await Promise.all(queue.queues().map(rawQueue => rawQueue.waitUntilReady()))
+    await Promise.all(queue.queues().map(rawQueue => rawQueue.obliterate({ force: true })))
+  }
   const provider = await createTestProviderServer()
   const storageRoot = await mkdtemp(path.join(tmpdir(), 'yux-integration-knowledge-'))
   const env = loadEnv({
@@ -96,7 +101,6 @@ export async function createIntegrationRig(options: { corsOrigin?: string } = {}
     YUX_AGENT_RUNTIME_URL: process.env.YUX_AGENT_RUNTIME_URL,
     YUX_AGENT_RUNTIME_TOKEN: process.env.YUX_AGENT_RUNTIME_TOKEN,
   })
-  const appQueue: AppJobQueue = queue
   let app = await createApp(apiPool, appQueue, env)
   const cookies = new Map<TestRole, string>()
 
@@ -131,6 +135,7 @@ export async function createIntegrationRig(options: { corsOrigin?: string } = {}
     },
     sql: (text, values) => migrationPool.query(text, values),
     async workerTick() {
+      if (!queue) throw new Error('integration_queue_unavailable_in_stub_mode')
       await appQueue.add('events.dispatchPending', { limit: 100, integrationTick: randomUUID() })
       const processor = createJobProcessor({ pool: workerPool, env, maintenanceQueue: appQueue })
       const workers = (Object.keys(QUEUE_NAMES) as JobQueueClass[]).map(queueClass => createWorker(
@@ -159,7 +164,7 @@ export async function createIntegrationRig(options: { corsOrigin?: string } = {}
     listen: (port = 4000) => app.listen({ host: '127.0.0.1', port }),
     async close() {
       await app.close()
-      await queue.close()
+      await appQueue.close()
       await apiPool.end()
       await workerPool.end()
       await migrationPool.end()
@@ -192,9 +197,10 @@ async function createApp(pool: pg.Pool, jobQueue: AppJobQueue, env: ReturnType<t
   return app
 }
 
-async function assertPersistentServices(pool: pg.Pool, redisUrl: string) {
+async function assertPersistentServices(pool: pg.Pool, redisUrl: string, checkRedis: boolean) {
   const database = await pool.query<{ name: string }>('SELECT current_database() AS name')
   if (!database.rows[0]?.name.startsWith('yux_test_')) throw new Error('integration_database_name_must_start_with_yux_test_')
+  if (!checkRedis) return
   const queue = createQueue('yux-integration-probe', createRedisConnection(redisUrl), { prefix: 'yux-integration-probe' })
   try { await queue.waitUntilReady() } finally { await queue.close() }
 }

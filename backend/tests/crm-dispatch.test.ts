@@ -13,10 +13,12 @@ const ids = {
 
 class FakePool {
   updates: Array<{ sql: string; values: unknown[] }> = []
+  queries: string[] = []
 
   constructor(private readonly intent: Record<string, unknown>) {}
 
   async query(sql: string, values: unknown[] = []) {
+    this.queries.push(sql)
     if (sql.includes('FROM public.automation_executions') && sql.includes('SELECT id')) {
       return { rows: [{ id: ids.execution, organization_id: ids.organization, lead_id: ids.lead, status: 'completed' }] }
     }
@@ -53,6 +55,10 @@ describe('CRM sequence durable dispatch consumer', () => {
       { messageId: ids.message, organizationId: ids.organization, executionId: ids.execution },
       { jobId: `crm-sequence-whatsapp-${ids.execution}` },
     )
+    expect(pool.queries.some(sql => sql.includes('connection.id = conversation.connection_id')
+      && sql.includes('connection.organization_id = conversation.organization_id')
+      && sql.includes('connection.channel = conversation.channel')
+      && sql.includes('connection.id = message.connection_id'))).toBe(true)
   })
 
   it('persists a visible block when WhatsApp consent was revoked before dispatch', async () => {

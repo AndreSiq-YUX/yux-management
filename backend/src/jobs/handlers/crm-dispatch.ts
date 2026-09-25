@@ -140,7 +140,11 @@ async function dispatchWhatsAppIntent(
        FROM public.messages message
        JOIN public.conversations conversation ON conversation.id = message.conversation_id
        JOIN public.omnichannel_contacts contact ON contact.id = conversation.contact_id
-       JOIN public.channel_connections connection ON connection.id = message.connection_id
+       JOIN public.channel_connections connection
+         ON connection.id = conversation.connection_id
+        AND connection.organization_id = conversation.organization_id
+        AND connection.channel = conversation.channel
+        AND connection.id = message.connection_id
       WHERE message.id = $1 AND conversation.organization_id = $2
         AND message.metadata->>'executionId' = $3
       LIMIT 1`,

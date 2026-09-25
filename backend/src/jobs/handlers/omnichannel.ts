@@ -288,9 +288,13 @@ export async function handleOutboundMessage(
   // Never issue a second provider request while the previous attempt has no terminal result.
   // A recovery process can explicitly mark stale attempts failed before re-dispatching them.
   if (previous.rows[0]?.status === 'processing') return { inProgress: true, runId: previous.rows[0].id }
-  const message = await pool.query<{ id: string; conversation_id: string; organization_id: string; connection_id: string | null; body: string | null; direction: string; author_type: string; content_type: string; metadata: Row; channel: string; phone: string | null; phone_number_id: string | null; protected_metadata_references: Row; consent_metadata: Row; inside_customer_window: boolean; opted_out: boolean; permission_revoked: boolean }>(
-    `SELECT m.id, m.conversation_id, c.organization_id, m.connection_id, m.body, m.direction, m.author_type, m.content_type, m.metadata,
+  const message = await pool.query<{ id: string; conversation_id: string; organization_id: string; connection_id: string | null; message_connection_id: string | null; connection_organization_id: string | null; connection_channel: string | null; body: string | null; direction: string; author_type: string; content_type: string; metadata: Row; channel: string; phone: string | null; phone_number_id: string | null; protected_metadata_references: Row; consent_metadata: Row; inside_customer_window: boolean; opted_out: boolean; permission_revoked: boolean }>(
+    `SELECT m.id, m.conversation_id, c.organization_id, c.connection_id,
+            m.connection_id AS message_connection_id,
+            m.body, m.direction, m.author_type, m.content_type, m.metadata,
             c.channel, contact.phone, contact.consent_metadata,
+            connection.organization_id AS connection_organization_id,
+            connection.channel AS connection_channel,
             connection.phone_number_id, connection.protected_metadata_references,
             EXISTS (
               SELECT 1 FROM public.messages inbound
@@ -314,12 +318,16 @@ export async function handleOutboundMessage(
        FROM public.messages m
        JOIN public.conversations c ON c.id = m.conversation_id
        JOIN public.omnichannel_contacts contact ON contact.id = c.contact_id
-       LEFT JOIN public.channel_connections connection ON connection.id = m.connection_id
+       LEFT JOIN public.channel_connections connection ON connection.id = c.connection_id
       WHERE m.id = $1 LIMIT 1`, [messageId])
   const row = message.rows[0]; if (!row) throw new Error('outbound_message_not_found')
   if (row.direction !== 'outbound') throw new Error('outbound_message_direction_required')
   if (row.author_type === 'ai' && row.metadata?.approvalStatus !== 'approved') throw new Error('ai_message_approval_required')
   if (row.channel !== 'whatsapp' || !row.connection_id) throw new Error('unsupported_outbound_channel')
+  if (row.message_connection_id !== row.connection_id) throw new Error('outbound_message_connection_mismatch')
+  if (row.connection_organization_id !== row.organization_id || row.connection_channel !== row.channel) {
+    throw new Error('outbound_message_connection_tenant_mismatch')
+  }
   if (!row.body?.trim() || !row.phone || !row.phone_number_id) throw new Error('outbound_message_provider_context_required')
   const crmSequenceMessage = row.metadata?.source === 'crm_sequence'
   const explicitConsent = row.metadata?.recipientOptIn === true

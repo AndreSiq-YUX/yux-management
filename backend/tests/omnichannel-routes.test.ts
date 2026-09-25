@@ -295,6 +295,23 @@ describe('omnichannel routes', () => {
     expect(jobQueue.jobs).toEqual([{ name: 'omnichannel.dispatchOutbound', data: { messageId: ids.message } }])
   })
 
+  it('rejects a human reply that names a connection different from the conversation', async () => {
+    const { authStore, token } = buildAuthenticatedAuthStore()
+    const jobQueue = new FakeJobQueue()
+    app = await buildServer(testEnv, { authStore, pool: new FakePool() as never, jobQueue })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/omnichannel/messages/human-reply',
+      headers: { cookie: sessionCookie(token) },
+      payload: { conversationId: ids.conversation, connectionId: ids.scheduling, body: 'Ola' },
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'conversation_connection_mismatch' })
+    expect(jobQueue.jobs).toEqual([])
+  })
+
   it('queues outbound dispatch on approve after proving message access', async () => {
     const { authStore, token } = buildAuthenticatedAuthStore()
     const jobQueue = new FakeJobQueue()
