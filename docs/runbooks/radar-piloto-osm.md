@@ -45,4 +45,10 @@ Se aparecerem dados errados, fonte desatualizada, problemas de licença ou compo
 
 Prévia local, sem banco nem contatos, do extrato Sul com cabeçalho `2026-09-25T20:24:36Z` e município IBGE `4113700` usando malha de qualidade máxima: **88 elementos médicos** mapeados, sendo 14 com site informado, 53 com telefone informado e 7 com e-mail informado; 13 relações não suportadas foram ignoradas. O MD5 local `73d7e6133c9bfc6ec121ad14f16f9233` correspondeu ao `.md5` publicado pela Geofabrik. Elementos não equivalem automaticamente a empresas únicas e dados informados ainda não foram confirmados.
 
-A migration e a importação completa foram validadas em banco PostgreSQL local isolado: snapshot `active`, 88 linhas de estabelecimentos, mesmas contagens de campos. Esse banco temporário foi removido após a conferência. **Nenhuma carga foi feita no banco de produção.**
+A migration e a importação completa foram validadas em banco PostgreSQL local isolado: snapshot `active`, 88 linhas de estabelecimentos, mesmas contagens de campos. Esse banco temporário foi removido após a conferência.
+
+## Primeiro lote em produção (26/09/2026)
+
+O deploy `3d20db6` terminou no Dokploy. O mesmo PBF com MD5 conferido foi carregado no banco de produção para Londrina/PR: snapshot `be6311d3-8c9a-4a0b-82c3-fa38852027eb`, 88 registros indexados e 13 relações ignoradas. A fonte foi ativada para o Radar interno YUX e a campanha existente “Teste primeira campanha de captação” gerou **10 candidatos pendentes de revisão**, sem importação para oportunidades ou envio de mensagens. O lote tinha 3 sites e 5 telefones informados, nenhum e-mail; custo de API da busca US$ 0. Run `29929d83-32f4-43fc-aacc-1d57754c38f0`, zero issues. Não repetir a busca no mesmo dia: o lote consumiu o limite diário de 10.
+
+As três verificações individuais de site não confirmaram presença: duas retornaram `unknown/request_failed` e uma `blocked/private_or_reserved_address`. Foi identificado que a consulta DNS trazia IPv6 junto a IPv4, embora o verificador conecte apenas via IPv4 validado. A correção restringe a resolução a IPv4; repetir a verificação bloqueada depois do próximo deploy. Respostas `unknown` não devem ser interpretadas como ausência de site. A curadoria dos 10 candidatos ainda está pendente.

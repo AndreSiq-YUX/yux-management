@@ -30,7 +30,9 @@ type Resolve = (hostname: string) => Promise<string[]>
 type Head = (url: URL, address: string) => Promise<HeadResult>
 
 async function defaultResolve(hostname: string) {
-  const results = await dns.lookup(hostname, { all: true, verbatim: true })
+  // The HTTP request is pinned to a validated IPv4 address below. Ignore AAAA
+  // records here so a public dual-stack host is not mistaken for an unsafe IP.
+  const results = await dns.lookup(hostname, { all: true, family: 4, verbatim: true })
   return results.map(result => result.address)
 }
 

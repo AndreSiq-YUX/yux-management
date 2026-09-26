@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import dns from 'node:dns/promises'
 import { checkRadarOsmSite, isPublicRadarSiteIp } from '../src/modules/radar/osm-site-check.js'
+
+vi.mock('node:dns/promises', () => ({ default: { lookup: vi.fn() } }))
 
 describe('Radar OSM site check', () => {
   it('rejects private, reserved and IPv6 addresses', () => {
@@ -22,6 +25,15 @@ describe('Radar OSM site check', () => {
     const missing = await checkRadarOsmSite('https://clinic.example', { resolve, head: async () => ({ status: 404 }) })
     expect(found.status).toBe('verified_present')
     expect(missing.status).toBe('unknown')
+  })
+
+  it('resolves only IPv4 records because requests pin the validated IPv4 address', async () => {
+    vi.mocked(dns.lookup).mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }] as never)
+    const head = vi.fn(async (_url: URL, address: string) => ({ status: 200, address }))
+    const result = await checkRadarOsmSite('https://clinic.example', { head })
+    expect(dns.lookup).toHaveBeenCalledWith('clinic.example', { all: true, family: 4, verbatim: true })
+    expect(head).toHaveBeenCalledWith(new URL('https://clinic.example'), '8.8.8.8')
+    expect(result.status).toBe('verified_present')
   })
 
   it('blocks private redirect destinations before contacting them', async () => {
