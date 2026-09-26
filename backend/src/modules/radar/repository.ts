@@ -28,6 +28,8 @@ import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearc
 import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
+import { resolveRadarOsmSegment } from './osm-segment-map.js'
+import { checkRadarOsmSite } from './osm-site-check.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -76,6 +78,7 @@ export type RadarCompanyInput = {
   cnaeMain?: string
   city?: string
   state?: string
+  address?: string
   phoneRaw?: string
   emailRaw?: string
   websiteUrl?: string
@@ -185,6 +188,14 @@ export async function updateRadarDataSource(
   patch: { enabled?: boolean; rateLimitPerDay?: number; defaultCostPerUnit?: number; termsNotes?: string },
 ) {
   requireRadarAccess(user)
+  const protectedSource = await pool.query<{ source_type: string }>(
+    `SELECT source_type FROM public.radar_data_sources WHERE id = $1 LIMIT 1`, [sourceId],
+  )
+  if (protectedSource.rows[0]?.source_type === 'osm_extract') {
+    if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
+    if (patch.defaultCostPerUnit !== undefined && patch.defaultCostPerUnit !== 0)
+      throw Object.assign(new Error('radar_osm_must_remain_free'), { statusCode: 400 })
+  }
   const result = await pool.query<RadarDataSourceRow>(
     `UPDATE public.radar_data_sources
      SET enabled = COALESCE($2, enabled),
@@ -525,6 +536,234 @@ export async function importRadarUrlsToCampaign(
   return { imported, analyzed, issues, runId }
 }
 
+type RadarOsmSnapshot = {
+  id: string
+  municipality_code: string
+  city: string
+  state: string
+  extracted_at: string
+  place_count: number
+  attribution: string
+}
+
+async function findRadarOsmSnapshot(queryable: RadarQueryable, city: string, state: string) {
+  const result = await queryable.query<RadarOsmSnapshot>(
+    `SELECT id, municipality_code, city, state, extracted_at, place_count, attribution
+     FROM public.radar_osm_snapshots
+     WHERE status = 'active' AND LOWER(city) = LOWER($1) AND state = $2
+     ORDER BY extracted_at DESC LIMIT 2`,
+    [city.trim(), state.trim().toUpperCase()],
+  )
+  return result.rows.length === 1 ? result.rows[0] : null
+}
+
+async function isInternalRadarOrganization(queryable: RadarQueryable, organizationId: string) {
+  const result = await queryable.query<{ allowed: boolean }>(
+    `SELECT (kind = 'yux' AND is_internal_growth_workspace = TRUE) AS allowed
+     FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
+  )
+  return result.rows[0]?.allowed === true
+}
+
+export async function getRadarOsmReadiness(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
+  requireRadarAccess(user)
+  const campaign = await pool.query<RadarCampaignRow>(
+    `SELECT * FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+    [campaignId, organizationId],
+  )
+  if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+  const row = campaign.rows[0]
+  const internalOrganization = await isInternalRadarOrganization(pool, organizationId)
+  const source = await findRadarDataSource(pool, organizationId, 'osm_extract')
+  const segmentKey = resolveRadarOsmSegment(row.target_segment)
+  const snapshot = await findRadarOsmSnapshot(pool, row.target_city, row.target_state)
+  const fresh = snapshot ? Date.now() - new Date(snapshot.extracted_at).getTime() <= 90 * 86400_000 : false
+  return {
+    ready: Boolean(internalOrganization && source?.enabled && segmentKey && snapshot && fresh),
+    reason: !internalOrganization ? 'Piloto disponível apenas para o workspace interno de crescimento da YUX.'
+      : !source?.enabled ? 'Fonte de dados abertos desativada pelo administrador.'
+      : !segmentKey ? 'Este segmento ainda não possui mapeamento OSM validado.'
+        : !snapshot ? 'Índice municipal ainda não carregado ou ambíguo.'
+          : !fresh ? 'Extrato desatualizado; é necessária nova carga.' : null,
+    segmentKey,
+    snapshot: snapshot ? {
+      municipalityCode: snapshot.municipality_code,
+      extractedAt: snapshot.extracted_at,
+      placeCount: snapshot.place_count,
+      attribution: snapshot.attribution,
+    } : null,
+  }
+}
+
+export async function runRadarOsmSearch(pool: pg.Pool, user: AuthUser, input: {
+  organizationId: string
+  campaignId: string
+  limit?: number
+}) {
+  requireRadarAccess(user)
+  const limit = input.limit ?? 10
+  assertSmallBatchLimit(limit)
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const campaignResult = await client.query<RadarCampaignRow>(
+      `SELECT * FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+      [input.campaignId, input.organizationId],
+    )
+    const campaign = campaignResult.rows[0]
+    if (!campaign) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+    const internalOrganization = await isInternalRadarOrganization(client, input.organizationId)
+    const sourceResult = await client.query<RadarDataSourceRow>(
+      `SELECT * FROM public.radar_data_sources
+       WHERE source_key = 'osm_extract' AND (organization_id IS NULL OR organization_id = $1)
+       ORDER BY organization_id NULLS LAST LIMIT 1`, [input.organizationId],
+    )
+    const source = sourceResult.rows[0] ? mapDataSource(sourceResult.rows[0]) : null
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
+    const segmentKey = resolveRadarOsmSegment(campaign.target_segment)
+    const snapshot = await findRadarOsmSnapshot(client, campaign.target_city, campaign.target_state)
+    const issues = [...governance.issues]
+    if (!internalOrganization) issues.push({ code: 'pilot_internal_only', sourceType: 'osm_extract', message: 'Piloto OSM restrito ao workspace interno da YUX.' })
+    if (!segmentKey) issues.push({ code: 'segment_unsupported', sourceType: 'osm_extract', message: 'Segmento sem mapeamento OSM validado.' })
+    if (!snapshot) issues.push({ code: 'snapshot_missing', sourceType: 'osm_extract', message: 'Índice municipal não carregado ou ambíguo.' })
+    else if (Date.now() - new Date(snapshot.extracted_at).getTime() > 90 * 86400_000)
+      issues.push({ code: 'snapshot_stale', sourceType: 'osm_extract', message: 'Extrato OSM desatualizado.' })
+    const run = await client.query<{ id: string }>(
+      `INSERT INTO public.radar_enrichment_runs
+        (organization_id, campaign_id, data_source_id, run_kind, status, provider,
+         input_payload, output_payload, started_at, completed_at)
+       VALUES ($1,$2,$3,'discovery',$4,'osm_extract',$5,$6,NOW(),NOW()) RETURNING id`,
+      [input.organizationId, input.campaignId, source?.id ?? null, issues.length ? 'failed' : 'succeeded',
+        JSON.stringify({ limit, city: campaign.target_city, state: campaign.target_state, segmentKey }),
+        JSON.stringify({ candidateCount: 0, issues })],
+    )
+    const runId = run.rows[0].id
+    if (issues.length || !snapshot || !segmentKey) {
+      await client.query('COMMIT')
+      return { candidates: [], issues, runId, snapshot: null }
+    }
+    const rows = await client.query<{
+      osm_type: string; osm_id: string; name: string; latitude: number; longitude: number;
+      address: string | null; website: string | null; phone: string | null; email: string | null;
+      source_url: string; tags: Record<string, string>
+    }>(
+      `SELECT osm_type, osm_id, name, latitude, longitude, address, website, phone, email, source_url, tags
+       FROM public.radar_osm_places
+       WHERE snapshot_id = $1 AND segment_key = $2
+       ORDER BY LOWER(name), osm_type, osm_id LIMIT 1000`,
+      [snapshot.id, segmentKey],
+    )
+    const seen = await client.query<{ dedupe_key: string }>(
+      `SELECT dedupe_key FROM public.radar_candidate_records WHERE campaign_id = $1`, [input.campaignId],
+    )
+    const seenKeys = new Set(seen.rows.map(row => row.dedupe_key))
+    const candidates: RadarCandidateRecord[] = []
+    const grouped = new Map<string, { place: (typeof rows.rows)[number]; sources: Array<{ osmType: string; osmId: string; url: string }> }>()
+    for (const place of rows.rows) {
+      const dedupeKey = `osm:${normalizeToken(place.name)}:${Math.round(place.latitude * 1000)}:${Math.round(place.longitude * 1000)}`
+      const sourceRef = { osmType: place.osm_type, osmId: place.osm_id, url: place.source_url }
+      const previous = grouped.get(dedupeKey)
+      if (previous) {
+        previous.sources.push(sourceRef)
+        const previousFilled = [previous.place.website, previous.place.phone, previous.place.email, previous.place.address].filter(Boolean).length
+        const currentFilled = [place.website, place.phone, place.email, place.address].filter(Boolean).length
+        if (currentFilled > previousFilled) previous.place = place
+      } else grouped.set(dedupeKey, { place, sources: [sourceRef] })
+    }
+    for (const [dedupeKey, group] of grouped) {
+      if (seenKeys.has(dedupeKey)) continue
+      seenKeys.add(dedupeKey)
+      const { place } = group
+      const normalizedPayload = {
+        tradeName: place.name, city: snapshot.city, state: snapshot.state, address: place.address,
+        websiteUrl: place.website, phoneRaw: place.phone, emailRaw: place.email,
+        siteStatus: place.website ? 'unverified' : 'unknown',
+      }
+      const inserted = await client.query<RadarCandidateRecordRow>(
+        `INSERT INTO public.radar_candidate_records
+          (organization_id, campaign_id, enrichment_run_id, source_type, source_url, title,
+           snippet, raw_payload, normalized_payload, dedupe_key, status)
+         VALUES ($1,$2,$3,'osm_extract',$4,$5,$6,$7,$8,$9,'pending_review') RETURNING *`,
+        [input.organizationId, input.campaignId, runId, place.source_url, place.name,
+          `Dados OSM; endereço: ${place.address ?? 'não informado'}; site: ${place.website ? 'informado, não verificado' : 'desconhecido'}.`,
+          JSON.stringify({ osmType: place.osm_type, osmId: place.osm_id, tags: place.tags,
+            osmSources: group.sources,
+            address: place.address, latitude: place.latitude, longitude: place.longitude,
+            snapshotId: snapshot.id, extractedAt: snapshot.extracted_at, attribution: snapshot.attribution }),
+          JSON.stringify(normalizedPayload), dedupeKey],
+      )
+      candidates.push(mapCandidate(inserted.rows[0]))
+      if (candidates.length >= limit) break
+    }
+    await updateRadarRunCompletion(client, runId, 'succeeded', {
+      candidateCount: candidates.length, snapshotId: snapshot.id, extractedAt: snapshot.extracted_at,
+      attribution: snapshot.attribution, estimatedApiCostUsd: 0,
+    }, null)
+    await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, candidates.length, 0)
+    await client.query('COMMIT')
+    return { candidates, issues: [], runId, snapshot: {
+      municipalityCode: snapshot.municipality_code, extractedAt: snapshot.extracted_at,
+      placeCount: snapshot.place_count, attribution: snapshot.attribution,
+    } }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function checkRadarOsmCandidateSite(pool: pg.Pool, user: AuthUser, candidateId: string) {
+  requireRadarAccess(user)
+  const found = await pool.query<RadarCandidateRecordRow>(
+    `SELECT * FROM public.radar_candidate_records WHERE id = $1 AND source_type = 'osm_extract' LIMIT 1`,
+    [candidateId],
+  )
+  const candidate = found.rows[0]
+  if (!candidate) throw Object.assign(new Error('radar_osm_candidate_not_found'), { statusCode: 404 })
+  if (candidate.status !== 'pending_review') throw Object.assign(new Error('radar_candidate_not_pending'), { statusCode: 409 })
+  const website = typeof candidate.normalized_payload?.websiteUrl === 'string'
+    ? candidate.normalized_payload.websiteUrl : null
+  const siteCheck = await checkRadarOsmSite(website)
+  const updated = await pool.query<RadarCandidateRecordRow>(
+    `UPDATE public.radar_candidate_records
+     SET raw_payload = jsonb_set(raw_payload, '{siteCheck}', $2::jsonb, true), updated_at = NOW()
+     WHERE id = $1 AND status = 'pending_review' RETURNING *`,
+    [candidateId, JSON.stringify(siteCheck)],
+  )
+  if (!updated.rows[0]) throw Object.assign(new Error('radar_candidate_not_pending'), { statusCode: 409 })
+  return mapCandidate(updated.rows[0])
+}
+
+export async function getRadarOsmPilotReport(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
+  requireRadarAccess(user)
+  const campaign = await pool.query<{ id: string }>(
+    `SELECT id FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+    [campaignId, organizationId],
+  )
+  if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+  const result = await pool.query<{
+    candidates: string; with_site: string; verified_sites: string; with_phone: string;
+    with_email: string; duplicates: string; imported: string
+  }>(
+    `SELECT COUNT(*)::text AS candidates,
+       COUNT(*) FILTER (WHERE NULLIF(normalized_payload->>'websiteUrl', '') IS NOT NULL)::text AS with_site,
+       COUNT(*) FILTER (WHERE raw_payload#>>'{siteCheck,status}' = 'verified_present')::text AS verified_sites,
+       COUNT(*) FILTER (WHERE NULLIF(normalized_payload->>'phoneRaw', '') IS NOT NULL)::text AS with_phone,
+       COUNT(*) FILTER (WHERE NULLIF(normalized_payload->>'emailRaw', '') IS NOT NULL)::text AS with_email,
+       COUNT(*) FILTER (WHERE status = 'duplicate')::text AS duplicates,
+       COUNT(*) FILTER (WHERE status = 'imported')::text AS imported
+     FROM public.radar_candidate_records
+     WHERE organization_id = $1 AND campaign_id = $2 AND source_type = 'osm_extract'`,
+    [organizationId, campaignId],
+  )
+  const row = result.rows[0]
+  return { candidates: Number(row.candidates), withSite: Number(row.with_site),
+    verifiedSites: Number(row.verified_sites), withPhone: Number(row.with_phone),
+    withEmail: Number(row.with_email), duplicates: Number(row.duplicates), imported: Number(row.imported),
+    estimatedApiCostUsd: 0, infrastructureCostIncluded: false }
+}
+
 export async function runRadarAssistedSearch(
   pool: pg.Pool,
   user: AuthUser,
@@ -841,6 +1080,7 @@ export async function importRadarCandidate(
       cnaeMain: typeof normalized.cnaeMain === 'string' ? normalized.cnaeMain : undefined,
       city: typeof normalized.city === 'string' ? normalized.city : undefined,
       state: typeof normalized.state === 'string' ? normalized.state : undefined,
+      address: typeof normalized.address === 'string' ? normalized.address : undefined,
       websiteUrl: typeof normalized.websiteUrl === 'string' ? normalized.websiteUrl : undefined,
       emailRaw: typeof normalized.emailRaw === 'string' ? normalized.emailRaw : undefined,
       phoneRaw: typeof normalized.phoneRaw === 'string' ? normalized.phoneRaw : undefined,
@@ -1015,10 +1255,10 @@ async function addRadarCompanyToCampaignWithClient(
 
   const company = await client.query<RadarCompanyRecordRow>(
     `INSERT INTO public.radar_company_records (
-       organization_id, cnpj, legal_name, trade_name, cnae_main, city, state,
+       organization_id, cnpj, legal_name, trade_name, cnae_main, city, state, address,
        phone_raw, email_raw, website_url, source_type, source_url, dedupe_key
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      ON CONFLICT (organization_id, dedupe_key)
      DO UPDATE SET updated_at = NOW()
      RETURNING *`,
@@ -1030,6 +1270,7 @@ async function addRadarCompanyToCampaignWithClient(
       input.cnaeMain ?? null,
       input.city ?? null,
       input.state ?? null,
+      input.address ?? null,
       input.phoneRaw ?? null,
       input.emailRaw ?? null,
       input.websiteUrl ?? null,

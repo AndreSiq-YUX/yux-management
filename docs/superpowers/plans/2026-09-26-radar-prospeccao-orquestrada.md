@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** tornar o Radar uma entrada governada e opcional por organização para uma jornada de descoberta, verificação, análise, CRM, proposta e atendimento SDR, sem Jina no caminho ativo.
+**Goal:** após o piloto automático OSM, tornar o Radar uma entrada governada e opcional por organização para uma jornada de descoberta, verificação, análise, CRM, proposta e atendimento SDR, sem Jina no caminho ativo.
 
 **Architecture:** separar fonte de descoberta, leitor de site, decisões tipadas, análise generativa e orquestração de CRM. A busca retorna candidatos; evidências verificadas e política habilitam transições idempotentes. O Admin escolhe modelos e fallbacks; integrações e custos de pesquisa ficam em fonte própria. Nenhuma migração ativa gasto ou envio.
 
@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- Nenhuma chamada paga a Brave, Jev ou outro provedor sem autorização explícita do usuário e configuração habilitada no Admin.
+- Nenhuma chamada paga a Brave, Parallel, CNPJa, Jev ou outro provedor sem autorização explícita do usuário e configuração habilitada no Admin.
+- O piloto OSM de `2026-09-26-radar-piloto-descoberta-automatica-osm.md` precede este plano; fonte OSM local não implica permissão para contato.
 - Jina não é fallback: leituras e buscas antigas ficam históricas, novas execuções não invocam `r.jina.ai` nem `s.jina.ai`.
 - Radar e prospecção começam desligados para todas as organizações; ativação é explícita, auditada e limitada ao contrato/papel.
 - Primeiro contato e proposta não são enviados pela mera descoberta; autorização do canal, política de WhatsApp, aprovação, limite e opt-out são revalidados no envio.
@@ -23,7 +24,7 @@
 
 | Unidade | Responsabilidade |
 | --- | --- |
-| `backend/src/modules/radar/discovery-provider.ts`, `brave-discovery.ts` | Interface de descoberta e adaptador autorizado, sem análise/CRM |
+| `backend/src/modules/radar/discovery-provider.ts`, `paid-discovery.ts` | Interface de descoberta e adaptadores opcionais autorizados, sem análise/CRM |
 | `backend/src/modules/radar/site-evidence.ts`, `site-browser.ts` | Segurança de URL, leitura HTTP, fallback Playwright, evidências e estado do site |
 | `backend/src/modules/radar/triage.ts` | Decisão tipada/limiar Jev opcional; nunca gera texto |
 | `backend/src/modules/radar/orchestration.ts` | Estados e eventos Radar→CRM com idempotência |
@@ -31,8 +32,8 @@
 | `backend/src/modules/platform/llm-routing.ts`, `adminRepository.ts`, `routes.ts` | Rotas de modelo/decisão, fallback, teste e escopo |
 | `frontend/src/components/radar/RadarWorkspace.tsx`, `frontend/src/lib/radar/radarRules.ts` | UI de fontes, estados, revisão e autorização por organização |
 | `frontend/src/pages/platform/AdminAiPage.tsx`, `frontend/src/lib/platform/moduleRegistry.ts` | Configuração de modelos e módulo Radar contratável |
-| `backend/src/db/migrations/0178_radar_orchestration.sql` | Contrato, fonte, site, estágios e eventos; usar próximo número livre se 0178 for ocupado antes da execução |
-| `backend/src/db/migrations/0179_radar_crm_nullable_contacts.sql` | Permitir lead de empresa sem e-mail sem fabricar identidade; ajustar restrições de contato |
+| `backend/src/db/migrations/0179_radar_orchestration.sql` | Contrato, fonte, site, estágios e eventos; usar próximo número livre se 0179 for ocupado antes da execução |
+| `backend/src/db/migrations/0180_radar_crm_nullable_contacts.sql` | Permitir lead de empresa sem e-mail sem fabricar identidade; ajustar restrições de contato |
 
 ## Review Focus
 
@@ -47,7 +48,7 @@
 ### Task 1: Módulo Radar por organização e governança de fontes
 
 **Files:**
-- Create: `backend/src/db/migrations/0178_radar_orchestration.sql`
+- Create: `backend/src/db/migrations/0179_radar_orchestration.sql`
 - Modify: `backend/src/modules/radar/repository.ts`, `backend/src/modules/radar/routes.ts`, `backend/src/modules/prospecting/service.ts`, `frontend/src/lib/platform/moduleRegistry.ts`, `frontend/src/lib/radar/radarRules.ts`, `frontend/src/components/radar/RadarWorkspace.tsx`
 - Test: `backend/tests/radar-routes.test.ts`, `backend/tests/prospecting-repository.test.ts`, `frontend/src/lib/radar/radarRules.test.ts`
 
@@ -81,13 +82,13 @@
 ### Task 3: Descoberta substituível, sem Jina ativo
 
 **Files:**
-- Create: `backend/src/modules/radar/discovery-provider.ts`, `backend/src/modules/radar/brave-discovery.ts`, `backend/tests/radar-discovery-provider.test.ts`
+- Create: `backend/src/modules/radar/discovery-provider.ts`, `backend/src/modules/radar/paid-discovery.ts`, `backend/tests/radar-discovery-provider.test.ts`
 - Modify: `backend/src/modules/radar/repository.ts`, `backend/src/modules/radar/routes.ts`, `backend/src/modules/radar/types.ts`, `backend/src/modules/radar/sourceRules.ts`, `frontend/src/components/radar/RadarWorkspace.tsx`, `backend/src/config/env.ts`
 - Test: `backend/tests/radar-routes.test.ts`, `backend/tests/radar-jina-client.test.ts`
 
 **Interfaces:**
 - Produces: `RadarDiscoveryProvider.search({ query, city, state, limit, organizationId }): Promise<{ candidates: RadarDiscoveredCandidate[]; usage: { requestCount: number; estimatedCostUsd: number } }>`; `RadarDiscoveredCandidate={name,url?,phone?,address?,sourceUrl?,sourceId?,snippet?,collectedAt}`; `resolveRadarDiscoveryProvider(config)` falha fechado.
-- Consumes: fonte e orçamento da Task 1 e leitor da Task 2. Brave é um adaptador disponível mas **desabilitado** até credencial, direitos de persistência e teto aprovados; manual/CSV/CNPJa continuam operacionais.
+- Consumes: fonte OSM do piloto, fonte e orçamento da Task 1 e leitor da Task 2. Adaptadores pagos são opcionais e **desabilitados** até credencial, direitos de persistência e teto aprovados; manual/CSV/CNPJa continuam operacionais.
 
 - [ ] **Step 1: Write failing tests.** Fonte desabilitada não chama rede; resposta simulada da fonte gera candidatos com proveniência; repetição deduplica; `web_search` não chama Jina; importação de URL usa leitor da Task 2; sem fonte aprovada retorna bloqueio legível.
 - [ ] **Step 2: Run red tests.** `cd backend; npm test -- tests/radar-discovery-provider.test.ts tests/radar-routes.test.ts tests/radar-jina-client.test.ts` → FAIL nos novos casos.
@@ -116,7 +117,7 @@
 
 **Files:**
 - Create: `backend/src/modules/radar/orchestration.ts`, `backend/tests/radar-orchestration.test.ts`
-- Create: `backend/src/db/migrations/0179_radar_crm_nullable_contacts.sql`
+- Create: `backend/src/db/migrations/0180_radar_crm_nullable_contacts.sql`
 - Modify: `backend/src/modules/radar/repository.ts`, `backend/src/modules/radar/routes.ts`, `backend/src/modules/crm/repository.ts`, `backend/src/modules/proposals/routes.ts`, `backend/src/modules/automations/mission-commands.ts`, `frontend/src/components/radar/RadarWorkspace.tsx`, `frontend/src/types/crm.ts`
 - Test: `backend/tests/radar-routes.test.ts`, `backend/tests/proposal-routes.test.ts`
 
@@ -159,7 +160,7 @@
 
 - [ ] **Step 1: Write failing integration test.** Organização própria com fonte simulada percorre descoberta→site→revisão→CRM→proposta rascunho→bloqueio/permitido de outreach→resposta→handoff; outra organização não vê os dados.
 - [ ] **Step 2: Run red test.** `cd backend; npm run test:integration -- tests/integration/radar-prospecting-journey.test.ts` → FAIL.
-- [ ] **Step 3: Complete runbook and documentation.** Preparar canário sem envio externo primeiro; só executar Brave/Jev com autorização específica e orçamento; registrar métricas de precisão, custo/candidato, leads válidos, entrega/resposta, falhas e opt-outs; atualizar catálogo depois de evidência real.
+- [ ] **Step 3: Complete runbook and documentation.** Preparar canário sem envio externo primeiro; só executar provedores pagos/Jev com autorização específica e orçamento; registrar métricas de precisão, custo/candidato, leads válidos, entrega/resposta, falhas e opt-outs; atualizar catálogo depois de evidência real.
 - [ ] **Step 4: Run full verification.** Integração da Step 2, `cd backend; npm test`, `cd backend; npm run build`, `cd frontend; npm run build` → PASS; canário de produção separado requer decisão de deploy e credenciais.
 - [ ] **Step 5: Commit.** `docs(radar): verify and document orchestrated prospecting rollout`.
 
@@ -167,4 +168,4 @@
 
 - Cobertura da spec: Task 1 governa o módulo; Task 2 lê o site; Task 3 troca a fonte e elimina Jina; Task 4 roteia modelos/Jev; Tasks 5–6 ligam CRM, proposta e agentes; Task 7 valida o percurso e atualiza catálogo.
 - Estados `unknown`/`blocked`, tenant, dedupe, opt-out/template e custo têm testes explícitos no dono do código.
-- Dependência comercial pendente: Brave e Jev permanecem desligados até autorização e confirmação de direitos/qualidade; a implementação pode usar mocks sem custo.
+- Dependência comercial pendente: fontes pagas e Jev permanecem desligados até autorização e confirmação de direitos/qualidade; a implementação pode usar mocks sem custo.

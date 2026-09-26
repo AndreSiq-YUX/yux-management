@@ -11,6 +11,7 @@ export type RadarSourceType =
   | 'cnpja_advanced_search'
   | 'cnpja_office_lookup'
   | 'future_paid_api'
+  | 'osm_extract'
 
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'

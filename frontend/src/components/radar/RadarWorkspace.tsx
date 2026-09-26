@@ -21,9 +21,9 @@ import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplica
 const initialForm = {
   name: '',
   campaignType: 'local_niche' as 'local_niche' | 'recently_opened',
-  targetSegment: 'Clinicas',
-  targetCity: 'Londrina',
-  targetState: 'PR',
+  targetSegment: '',
+  targetCity: '',
+  targetState: '',
   offerType: 'Diagnostico YUX 48h',
   dailyLimit: 5,
 }
@@ -35,6 +35,7 @@ const initialCompanyForm = {
   cnaeMain: '',
   city: '',
   state: '',
+  address: '',
   websiteUrl: '',
   emailRaw: '',
   phoneRaw: '',
@@ -131,6 +132,12 @@ const fallbackSources: RadarDataSource[] = [
     createdAt: '',
     updatedAt: '',
   },
+  {
+    id: 'fallback-osm-extract', sourceKey: 'osm_extract', sourceType: 'osm_extract',
+    displayName: 'Dados abertos OSM (índice local)', enabled: false, isPaid: false,
+    requiresSecret: false, termsNotes: 'Extrato municipal validado; fonte desligada por padrão.',
+    defaultCostPerUnit: 0, rateLimitPerDay: 10, createdAt: '', updatedAt: '',
+  },
 ]
 
 const candidateStatusLabels: Record<string, string> = {
@@ -159,6 +166,8 @@ export function RadarWorkspace() {
   const [metrics, setMetrics] = useState<RadarMetrics | null>(null)
   const [selectedOpportunity, setSelectedOpportunity] = useState<RadarOpportunity | null>(null)
   const [dataSources, setDataSources] = useState<RadarDataSource[]>([])
+  const [osmReadiness, setOsmReadiness] = useState<Awaited<ReturnType<typeof radarService.getOsmReadiness>> | null>(null)
+  const [osmReport, setOsmReport] = useState<Awaited<ReturnType<typeof radarService.getOsmReport>> | null>(null)
   const [candidates, setCandidates] = useState<RadarCandidateRecord[]>([])
   const [duplicates, setDuplicates] = useState<RadarDuplicateCandidate[]>([])
   const [runs, setRuns] = useState<RadarEnrichmentRun[]>([])
@@ -176,6 +185,7 @@ export function RadarWorkspace() {
 
   const canAccess = canShowRadarNavigation(context)
   const hasPendingAnalysis = opportunities.some(opportunity => opportunity.status === 'diagnosing')
+  const osmSourceEnabled = dataSources.find(source => source.sourceType === 'osm_extract')?.enabled
 
   useEffect(() => {
     if (!organizationId || !canAccess) return
@@ -233,6 +243,24 @@ export function RadarWorkspace() {
         }
       })
   }, [selectedCampaignId, canAccess])
+
+  useEffect(() => {
+    if (!selectedCampaignId || !organizationId || !canAccess) { setOsmReadiness(null); return }
+    let active = true
+    radarService.getOsmReadiness(selectedCampaignId, organizationId)
+      .then(result => { if (active) setOsmReadiness(result) })
+      .catch(() => { if (active) setOsmReadiness(null) })
+    return () => { active = false }
+  }, [selectedCampaignId, organizationId, canAccess, osmSourceEnabled])
+
+  useEffect(() => {
+    if (!selectedCampaignId || !organizationId || !canAccess) { setOsmReport(null); return }
+    let active = true
+    radarService.getOsmReport(selectedCampaignId, organizationId)
+      .then(result => { if (active) setOsmReport(result) })
+      .catch(() => { if (active) setOsmReport(null) })
+    return () => { active = false }
+  }, [selectedCampaignId, organizationId, canAccess])
 
   useEffect(() => {
     if (!selectedCampaignId || !canAccess || !hasPendingAnalysis) return
@@ -301,6 +329,7 @@ export function RadarWorkspace() {
         cnaeMain: companyForm.cnaeMain || undefined,
         city: companyForm.city || undefined,
         state: companyForm.state || undefined,
+        address: companyForm.address || undefined,
         websiteUrl: companyForm.websiteUrl || undefined,
         emailRaw: companyForm.emailRaw || undefined,
         phoneRaw: companyForm.phoneRaw || undefined,
@@ -365,6 +394,21 @@ export function RadarWorkspace() {
   const jinaReaderSource = findSource(workspaceSources, 'jina_reader')
   const searchSource = findSource(workspaceSources, searchForm.sourceType)
   const cnpjaSource = findSource(workspaceSources, 'cnpja_advanced_search')
+  const osmSource = findSource(workspaceSources, 'osm_extract')
+  const selectedCampaign = campaigns.find(campaign => campaign.id === selectedCampaignId)
+
+  const toggleOsmSource = async () => {
+    if (!osmSource || osmSource.id.startsWith('fallback-') || context.role?.key !== 'yux_admin' || actionLoading) return
+    try {
+      setActionLoading('osm-source')
+      const updated = await radarService.updateDataSource(osmSource.id, { enabled: !osmSource.enabled })
+      setDataSources(current => current.map(source => source.id === updated.id ? updated : source))
+      toast.success(updated.enabled ? 'Fonte OSM habilitada para o piloto' : 'Fonte OSM desabilitada')
+    } catch (error) {
+      console.error('Erro ao alterar fonte OSM:', error)
+      toast.error('Não foi possível alterar a fonte OSM')
+    } finally { setActionLoading(null) }
+  }
   const csvPreviewRows = getCsvPreviewRows(csvText, 4)
 
   const refreshCampaignSidebars = () => {
@@ -498,6 +542,24 @@ export function RadarWorkspace() {
     }
   }
 
+  const searchOsm = async () => {
+    if (!organizationId || !selectedCampaignId || actionLoading || !osmReadiness?.ready) return
+    try {
+      setActionLoading('osm')
+      const result = await radarService.searchOsm(selectedCampaignId, { organizationId, limit: Math.min(10, selectedCampaign?.dailyLimit ?? 10) })
+      setCandidates(current => mergeCandidates(result.candidates, current))
+      setLastImportSummary({ kind: 'osm', importedCount: 0, candidateCount: result.candidates.length,
+        issueCount: result.issues.length, issues: result.issues, runId: result.runId })
+      if (result.issues.length) toast.error(result.issues[0].message)
+      else toast.success(`${result.candidates.length} novos candidatos encontrados`)
+      refreshCampaignSidebars()
+      radarService.getOsmReport(selectedCampaignId, organizationId).then(setOsmReport).catch(() => undefined)
+    } catch (error) {
+      console.error('Erro na busca OSM Radar:', error)
+      toast.error('Não foi possível executar a busca nos dados abertos')
+    } finally { setActionLoading(null) }
+  }
+
   const searchCnpja = async (event: FormEvent) => {
     event.preventDefault()
     if (!organizationId || !selectedCampaignId || actionLoading) return
@@ -561,6 +623,20 @@ export function RadarWorkspace() {
     } finally {
       setActionLoading(null)
     }
+  }
+
+  const checkOsmSite = async (candidateId: string) => {
+    if (actionLoading) return
+    try {
+      setActionLoading(`osm-site-${candidateId}`)
+      const updated = await radarService.checkOsmSite(candidateId)
+      setCandidates(current => current.map(candidate => candidate.id === candidateId ? updated : candidate))
+      if (selectedCampaignId && organizationId) radarService.getOsmReport(selectedCampaignId, organizationId).then(setOsmReport).catch(() => undefined)
+      toast.success('Verificação do site registrada')
+    } catch (error) {
+      console.error('Erro na verificação do site OSM:', error)
+      toast.error('Não foi possível verificar o site')
+    } finally { setActionLoading(null) }
   }
 
   const discardCandidate = async (candidateId: string) => {
@@ -756,6 +832,11 @@ export function RadarWorkspace() {
                 )
               })}
             </div>
+            {osmSource && context.organization?.isInternalGrowthWorkspace && context.role?.key === 'yux_admin' && !osmSource.id.startsWith('fallback-') && (
+              <Button type="button" size="sm" variant="outline" className="mt-3" disabled={Boolean(actionLoading)} onClick={toggleOsmSource}>
+                {osmSource.enabled ? 'Desativar piloto OSM' : 'Ativar piloto OSM'}
+              </Button>
+            )}
           </section>
 
           <section className="rounded-md border bg-white p-4">
@@ -779,6 +860,17 @@ export function RadarWorkspace() {
             </div>
 
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-md border p-3">
+                <div className="mb-2 flex items-center gap-2"><Radar className="h-4 w-4 text-yux-700" /><h3 className="text-sm font-semibold text-slate-950">Busca automática em dados abertos</h3></div>
+                <p className="text-sm text-slate-600">Usa a cidade, UF e segmento desta campanha. Gera candidatos para revisão; não envia mensagens.</p>
+                <p className="mt-2 text-xs text-slate-500">{osmReadiness?.reason || (osmReadiness?.snapshot
+                  ? `Extrato de ${new Date(osmReadiness.snapshot.extractedAt).toLocaleDateString('pt-BR')} · ${osmReadiness.snapshot.placeCount} estabelecimentos indexados · ${osmReadiness.snapshot.attribution}`
+                  : 'Conferindo disponibilidade do índice municipal...')}</p>
+                <Button type="button" className="mt-3" disabled={!osmReadiness?.ready || Boolean(actionLoading)} onClick={searchOsm}>
+                  {actionLoading === 'osm' ? 'Buscando...' : 'Buscar automaticamente (dados abertos)'}
+                </Button>
+                {osmReport && <p className="mt-3 text-xs text-slate-600">Piloto: {osmReport.candidates} candidatos · {osmReport.withSite} com site informado · {osmReport.verifiedSites} sites confirmados · {osmReport.withPhone} com telefone · {osmReport.withEmail} com e-mail · {osmReport.imported} importados · API US$ 0 (infraestrutura à parte).</p>}
+              </div>
               <form className="rounded-md border p-3" onSubmit={addCompany}>
                 <div className="mb-3 flex items-center gap-2">
                   <Plus className="h-4 w-4 text-yux-700" />
@@ -791,6 +883,7 @@ export function RadarWorkspace() {
                   <Input placeholder="CNAE" value={companyForm.cnaeMain} onChange={event => setCompanyForm({ ...companyForm, cnaeMain: event.target.value })} />
                   <Input placeholder="Cidade" value={companyForm.city} onChange={event => setCompanyForm({ ...companyForm, city: event.target.value })} />
                   <Input placeholder="UF" value={companyForm.state} maxLength={2} onChange={event => setCompanyForm({ ...companyForm, state: event.target.value.toUpperCase() })} />
+                  <Input placeholder="Endereço público" value={companyForm.address} onChange={event => setCompanyForm({ ...companyForm, address: event.target.value })} />
                   <Input placeholder="Site" value={companyForm.websiteUrl} onChange={event => setCompanyForm({ ...companyForm, websiteUrl: event.target.value })} />
                   <Input placeholder="Email publico" value={companyForm.emailRaw} onChange={event => setCompanyForm({ ...companyForm, emailRaw: event.target.value })} />
                   <Input placeholder="Telefone" value={companyForm.phoneRaw} onChange={event => setCompanyForm({ ...companyForm, phoneRaw: event.target.value })} />
@@ -953,9 +1046,14 @@ export function RadarWorkspace() {
                         <p className="text-sm font-medium text-slate-950">{candidate.title}</p>
                         <p className="text-xs text-slate-500">{candidate.sourceType} - {candidateStatusLabels[candidate.status] || candidate.status}</p>
                         {candidate.snippet && <p className="mt-1 text-sm text-slate-600">{candidate.snippet}</p>}
+                        {candidate.sourceType === 'osm_extract' && candidate.sourceUrl && <a className="mt-1 block text-xs text-yux-700 underline" href={candidate.sourceUrl} target="_blank" rel="noreferrer">Ver elemento no OpenStreetMap</a>}
+                        {candidate.sourceType === 'osm_extract' && <p className="mt-1 text-xs text-slate-500">Site: {getOsmSiteCheckLabel(candidate)}</p>}
                         {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{candidate.errorMessage}</p>}
                       </div>
                       <div className="flex shrink-0 gap-2">
+                        {candidate.sourceType === 'osm_extract' && typeof candidate.normalizedPayload.websiteUrl === 'string' && (
+                          <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
+                        )}
                         <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>
                         <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => discardCandidate(candidate.id)}>Descartar</Button>
                       </div>
@@ -1107,7 +1205,16 @@ function getImportSummaryLabel(kind: RadarImportSummary['kind']) {
   if (kind === 'csv') return 'CSV'
   if (kind === 'urls') return 'URL/site'
   if (kind === 'cnpja') return 'CNPJa'
+  if (kind === 'osm') return 'Busca automática (dados abertos)'
   return 'Busca assistida'
+}
+
+function getOsmSiteCheckLabel(candidate: RadarCandidateRecord) {
+  const check = candidate.rawPayload?.siteCheck as { status?: string } | undefined
+  if (check?.status === 'verified_present') return 'confirmado por acesso HTTP'
+  if (check?.status === 'blocked') return 'verificação bloqueada por segurança'
+  if (check?.status === 'unknown') return 'não foi possível confirmar'
+  return candidate.normalizedPayload.websiteUrl ? 'informado no OSM, ainda não verificado' : 'não informado no OSM; situação desconhecida'
 }
 
 function recentDate(daysAgo: number) {

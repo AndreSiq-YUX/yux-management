@@ -9,6 +9,7 @@ export const radarSourceLabels: Record<string, string> = {
   public_registry: 'Fonte publica',
   cnpja_advanced_search: 'CNPJa - pesquisa avancada',
   cnpja_office_lookup: 'CNPJa - consulta CNPJ',
+  osm_extract: 'Dados abertos OSM (índice local)',
 }
 
 export function assertSmallBatchLimit(count: number, limit = RADAR_SMALL_BATCH_LIMIT) {

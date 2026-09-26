@@ -66,6 +66,9 @@ class FakeRadarPool {
   convertedAt: string | null = null
   convertedBy: string | null = null
   dataSourceEnabled = false
+  osmSnapshotActive = false
+  osmInternalOrganization = true
+  osmSeenKeys: string[] = []
   candidateStatus = 'pending_review'
   sourceUnitsUsed = 0
   sourceCostUsed = 0
@@ -82,10 +85,27 @@ class FakeRadarPool {
     const normalized = sql.replace(/\s+/g, ' ').trim()
 
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
+    if (normalized.includes("kind = 'yux' AND is_internal_growth_workspace")) return { rows: [{ allowed: this.osmInternalOrganization }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
 
     if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') return { rows: [] }
-    if (normalized.includes('FROM public.radar_data_sources')) return { rows: [dataSourceRow(this)] }
+    if (normalized.includes('FROM public.radar_data_sources')) return { rows: [
+      normalized.includes("source_key = 'osm_extract'") ? { ...dataSourceRow(this), source_key: 'osm_extract', source_type: 'osm_extract' } : dataSourceRow(this),
+    ] }
+    if (normalized.includes('FROM public.radar_osm_snapshots')) return { rows: this.osmSnapshotActive ? [{
+      id: '00000000-0000-4000-8000-000000000024', municipality_code: '4113700', city: 'Londrina', state: 'PR',
+      extracted_at: new Date().toISOString(), place_count: 2, attribution: '© OpenStreetMap contributors (ODbL)',
+    }] : [] }
+    if (normalized.includes('FROM public.radar_osm_places')) return { rows: [
+      { osm_type: 'node', osm_id: '10', name: 'Clínica A', latitude: -23.3, longitude: -51.2,
+        address: null, website: null, phone: null, email: null, source_url: 'https://www.openstreetmap.org/node/10', tags: { amenity: 'clinic' } },
+      { osm_type: 'way', osm_id: '20', name: 'Clínica B', latitude: -23.4, longitude: -51.1,
+        address: 'Rua A', website: 'https://clinicab.example', phone: null, email: null,
+        source_url: 'https://www.openstreetmap.org/way/20', tags: { healthcare: 'clinic' } },
+      { osm_type: 'way', osm_id: '21', name: 'Clínica A', latitude: -23.3001, longitude: -51.2001,
+        address: null, website: null, phone: null, email: null,
+        source_url: 'https://www.openstreetmap.org/way/21', tags: { healthcare: 'clinic' } },
+    ] }
     if (normalized.includes('UPDATE public.radar_data_sources')) {
       return { rows: [{ ...dataSourceRow(this), enabled: params[1] ?? true, rate_limit_per_day: params[2] ?? 50 }] }
     }
@@ -100,7 +120,10 @@ class FakeRadarPool {
       this.sourceCostUsed += Number(params[5] ?? 0)
       return { rows: [] }
     }
-    if (normalized.includes('SELECT * FROM public.radar_campaigns')) return { rows: [campaignRow()] }
+    if (normalized.includes('SELECT * FROM public.radar_campaigns')) return { rows: [
+      normalized.includes('FOR UPDATE') || normalized.includes('organization_id = $2 LIMIT 1')
+        ? { ...campaignRow(), target_segment: 'Clínicas médicas' } : campaignRow(),
+    ] }
     if (normalized.includes('SELECT id FROM public.radar_campaigns')) return { rows: [{ id: ids.campaign }] }
     if (normalized.includes("run_kind = 'analysis'") && normalized.includes("status IN ('pending', 'running')")) return { rows: [] }
     if (normalized.includes('FROM public.radar_enrichment_runs')) return { rows: [enrichmentRunRow()] }
@@ -154,7 +177,17 @@ class FakeRadarPool {
     if (normalized.includes('INSERT INTO public.radar_campaigns')) return { rows: [campaignRow()] }
     if (normalized.includes('INSERT INTO public.radar_enrichment_runs')) return { rows: [{ id: ids.enrichmentRun }] }
     if (normalized.includes('UPDATE public.radar_enrichment_runs')) return { rows: [] }
-    if (normalized.includes('INSERT INTO public.radar_candidate_records')) return { rows: [candidateRow({ sourceType: params[3] as string, title: params[5] as string, snippet: params[6] as string, dedupeKey: params[9] as string, status: params[10] as string })] }
+    if (normalized.includes('INSERT INTO public.radar_candidate_records')) {
+      if (normalized.includes("'osm_extract'")) {
+        this.osmSeenKeys.push(params[8] as string)
+        return { rows: [candidateRow({ sourceType: 'osm_extract', title: params[4] as string,
+          snippet: params[5] as string, dedupeKey: params[8] as string, status: 'pending_review' })] }
+      }
+      return { rows: [candidateRow({ sourceType: params[3] as string, title: params[5] as string, snippet: params[6] as string, dedupeKey: params[9] as string, status: params[10] as string })] }
+    }
+    if (normalized.includes('COUNT(*)::text AS candidates') && normalized.includes("source_type = 'osm_extract'"))
+      return { rows: [{ candidates: '2', with_site: '1', verified_sites: '0', with_phone: '0', with_email: '0', duplicates: '0', imported: '0' }] }
+    if (normalized.includes('SELECT dedupe_key FROM public.radar_candidate_records')) return { rows: this.osmSeenKeys.map(dedupe_key => ({ dedupe_key })) }
     if (normalized.includes('SELECT * FROM public.radar_candidate_records WHERE id = $1')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes('FROM public.radar_candidate_records')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes("SET status = 'imported'")) {
@@ -775,6 +808,59 @@ describe('radar routes', () => {
       issues: [expect.objectContaining({ code: 'source_disabled' })],
       runId: ids.enrichmentRun,
     })
+  })
+
+  it('keeps OSM discovery blocked without a loaded municipal snapshot', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = true
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'POST', url: `/api/radar/campaigns/${ids.campaign}/search-osm`,
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org, limit: 2 } })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({ candidates: [], issues: [expect.objectContaining({ code: 'snapshot_missing' })] })
+    expect(pool.queries.some(query => query.sql.includes('FROM public.radar_osm_places'))).toBe(false)
+  })
+
+  it('does not expose the OSM pilot to client organizations', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = true
+    pool.osmSnapshotActive = true
+    pool.osmInternalOrganization = false
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'POST', url: `/api/radar/campaigns/${ids.campaign}/search-osm`,
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org, limit: 2 } })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({ candidates: [], issues: [expect.objectContaining({ code: 'pilot_internal_only' })] })
+    expect(pool.queries.some(query => query.sql.includes('FROM public.radar_osm_places'))).toBe(false)
+  })
+
+  it('discovers OSM candidates without calling any external provider and does not repeat them', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.dataSourceEnabled = true
+    pool.osmSnapshotActive = true
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const request = () => app!.inject({ method: 'POST', url: `/api/radar/campaigns/${ids.campaign}/search-osm`,
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org, limit: 2 } })
+    const first = await request()
+    const second = await request()
+    expect(first.statusCode).toBe(201)
+    expect(first.json()).toMatchObject({ candidates: [
+      expect.objectContaining({ sourceType: 'osm_extract', status: 'pending_review' }),
+      expect.objectContaining({ sourceType: 'osm_extract', status: 'pending_review' }),
+    ], issues: [] })
+    expect(second.json().candidates).toEqual([])
+    expect(pool.queries.some(query => query.sql.includes('FROM public.radar_osm_places'))).toBe(true)
+    expect(pool.queries.some(query => query.sql.includes("'osm_extract'")
+      && query.sql.includes('INSERT INTO public.radar_candidate_records')
+      && (JSON.parse(query.params[6] as string) as { osmSources: unknown[] }).osmSources.length === 2)).toBe(true)
+    expect(pool.queries.some(query => /jina|cnpja/i.test(query.sql))).toBe(false)
+    const report = await app.inject({ method: 'GET', url: `/api/radar/campaigns/${ids.campaign}/osm-report?organizationId=${ids.org}`,
+      headers: { cookie: sessionCookie(token) } })
+    expect(report.statusCode).toBe(200)
+    expect(report.json()).toMatchObject({ candidates: 2, withSite: 1, verifiedSites: 0, estimatedApiCostUsd: 0 })
   })
 
   it('lists imports and discards radar candidates', async () => {

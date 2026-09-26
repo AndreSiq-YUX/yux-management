@@ -45,6 +45,7 @@ export const radarService = {
     cnaeMain?: string
     city?: string
     state?: string
+    address?: string
     websiteUrl?: string
     emailRaw?: string
     phoneRaw?: string
@@ -67,6 +68,30 @@ export const radarService = {
     return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/search-web`, { method: 'POST', body: input })
   },
 
+  async getOsmReadiness(campaignId: string, organizationId: string) {
+    return apiRequest<{
+      ready: boolean
+      reason: string | null
+      segmentKey: string | null
+      snapshot: { municipalityCode: string; extractedAt: string; placeCount: number; attribution: string } | null
+    }>(`/radar/campaigns/${campaignId}/osm-readiness${buildQuery({ organizationId })}`)
+  },
+
+  async getOsmReport(campaignId: string, organizationId: string) {
+    return apiRequest<{ candidates: number; withSite: number; verifiedSites: number; withPhone: number;
+      withEmail: number; duplicates: number; imported: number; estimatedApiCostUsd: number;
+      infrastructureCostIncluded: boolean }>(`/radar/campaigns/${campaignId}/osm-report${buildQuery({ organizationId })}`)
+  },
+
+  async searchOsm(campaignId: string, input: { organizationId: string; limit?: number }) {
+    return apiRequest<{
+      candidates: RadarCandidateRecord[]
+      issues: RadarImportIssue[]
+      runId: string
+      snapshot: { municipalityCode: string; extractedAt: string; placeCount: number; attribution: string } | null
+    }>(`/radar/campaigns/${campaignId}/search-osm`, { method: 'POST', body: input })
+  },
+
   async searchCnpja(campaignId: string, input: {
     organizationId: string
     query?: string
@@ -86,6 +111,10 @@ export const radarService = {
 
   async getCandidates(campaignId: string) {
     return apiRequest<RadarCandidateRecord[]>(`/radar/campaigns/${campaignId}/candidates`)
+  },
+
+  async checkOsmSite(candidateId: string) {
+    return apiRequest<RadarCandidateRecord>(`/radar/candidates/${candidateId}/check-osm-site`, { method: 'POST' })
   },
 
   async getDuplicates(campaignId: string) {

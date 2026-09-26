@@ -5,10 +5,13 @@ import {
   addRadarCompanyToCampaign,
   batchAnalyzeRadarOpportunities,
   batchEnrichRadarOpportunities,
+  checkRadarOsmCandidateSite,
   convertRadarOpportunityToLead,
   createRadarCampaign,
   discardRadarCandidate,
   getRadarCampaignMetrics,
+  getRadarOsmReadiness,
+  getRadarOsmPilotReport,
   importRadarCsvToCampaign,
   importRadarCandidate,
   importRadarUrlsToCampaign,
@@ -23,6 +26,7 @@ import {
   runRadarCnpjaAdvancedSearch,
   runRadarOpportunityAnalysis,
   runRadarAssistedSearch,
+  runRadarOsmSearch,
   updateRadarDuplicateCandidate,
   updateRadarDataSource,
   type RadarAnalysisRequest,
@@ -53,6 +57,7 @@ const addCompanySchema = z.object({
   cnaeMain: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  address: z.string().optional(),
   phoneRaw: z.string().optional(),
   emailRaw: z.string().email().optional(),
   websiteUrl: z.string().optional(),
@@ -90,6 +95,7 @@ const searchWebSchema = z.object({
   sourceType: z.enum(['jina_search', 'web_search']),
   limit: z.number().int().min(1).max(10).optional(),
 })
+const searchOsmSchema = z.object({ organizationId: uuid, limit: z.number().int().min(1).max(10).optional() })
 const searchCnpjaSchema = z.object({
   organizationId: uuid,
   query: z.string().optional(),
@@ -205,6 +211,33 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     return reply.code(201).send(await runRadarAssistedSearch(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
   })
 
+  app.get('/campaigns/:id/osm-readiness', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const query = campaignQuerySchema.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_radar_osm_query' })
+    return getRadarOsmReadiness(app.pg, user, query.data.organizationId, params.data.id)
+  })
+
+  app.post('/campaigns/:id/search-osm', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = searchOsmSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_osm_payload' })
+    return reply.code(201).send(await runRadarOsmSearch(app.pg, user, { ...parsed.data, campaignId: params.data.id }))
+  })
+
+  app.get('/campaigns/:id/osm-report', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const query = campaignQuerySchema.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_radar_osm_query' })
+    return getRadarOsmPilotReport(app.pg, user, query.data.organizationId, params.data.id)
+  })
+
   app.post('/campaigns/:id/search-cnpja', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
@@ -224,6 +257,14 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_radar_campaign_id' })
     return listRadarCandidates(app.pg, user, params.data.id)
+  })
+
+  app.post('/candidates/:id/check-osm-site', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'invalid_radar_candidate_id' })
+    return checkRadarOsmCandidateSite(app.pg, user, params.data.id)
   })
 
   app.post('/candidates/:id/import', async (request, reply) => {
