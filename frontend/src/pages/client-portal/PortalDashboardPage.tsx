@@ -47,9 +47,9 @@ const attentionClass: Record<PortalAttentionItem['priority'], string> = {
 
 const moduleStatusClass: Record<PortalModuleSummary['statusLabel'], string> = {
   Ativo: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  'Precisa de atencao': 'border-amber-200 bg-amber-50 text-amber-800',
+  'Precisa de atenção': 'border-amber-200 bg-amber-50 text-amber-800',
   'Sem dados': 'border-slate-200 bg-slate-50 text-slate-700',
-  'Em implantacao': 'border-indigo-200 bg-indigo-50 text-indigo-800',
+  'Em implantação': 'border-indigo-200 bg-indigo-50 text-indigo-800',
 }
 
 const moduleIcon: Record<string, LucideIcon> = {
@@ -212,7 +212,7 @@ function MainResultPanel({ result, portalPath }: { result: PortalMainResult; por
 function AttentionPanel({ items, portalPath }: { items: PortalAttentionItem[]; portalPath: (href?: string) => string }) {
   return (
     <section className="rounded-sm border border-slate-300 bg-white">
-      {sectionTitle('Pontos de atencao')}
+      {sectionTitle('Pontos de atenção')}
       <div className="space-y-3 p-4">
         {items.length === 0 ? (
           <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-4">
@@ -220,7 +220,7 @@ function AttentionPanel({ items, portalPath }: { items: PortalAttentionItem[]; p
               <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
               <div>
                 <h3 className="font-semibold text-emerald-950">Nada urgente agora</h3>
-                <p className="mt-1 text-sm leading-6 text-emerald-800">Acoes, aprovacoes e vencimentos principais nao indicam risco imediato.</p>
+                <p className="mt-1 text-sm leading-6 text-emerald-800">Ações, aprovações e vencimentos principais não indicam risco imediato.</p>
               </div>
             </div>
           </div>
@@ -327,7 +327,7 @@ function CompactList({
       {items.length > 0 && (
         <div className="border-t border-slate-200 px-4 py-3">
           <Link to={portalPath(variant === 'activity' ? '/portal/projetos/projetos' : '/portal/relatorios')} className="inline-flex items-center gap-2 text-xs font-semibold text-[#2563EB]">
-            {variant === 'activity' ? 'Ver todas as atividades' : 'Ver todas as recomendacoes'}
+            {variant === 'activity' ? 'Ver todas as atividades' : 'Ver todas as recomendações'}
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
@@ -345,7 +345,7 @@ function YuxWorkPanel({
 }) {
   return (
     <section className="rounded-sm border border-slate-300 bg-white">
-      {sectionTitle('Trabalho da YUX e recomendacoes')}
+      {sectionTitle('Trabalho da YUX e recomendações')}
       <div className="grid gap-4 p-4 xl:grid-cols-2">
         <CompactList
           emptyIcon={Briefcase}
@@ -357,7 +357,7 @@ function YuxWorkPanel({
         />
         <CompactList
           emptyIcon={Sparkles}
-          emptyText="Sem novas recomendacoes operacionais no momento."
+          emptyText="Sem novas recomendações operacionais no momento."
           items={model.recommendations}
           portalPath={portalPath}
           title="Recomendado agora"
@@ -380,7 +380,7 @@ function ModulesPanel({
   return (
     <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
       <section className="rounded-sm border border-slate-300 bg-white">
-        {sectionTitle('Modulos contratados')}
+        {sectionTitle('Módulos contratados')}
         <div className="grid gap-3 p-4 sm:grid-cols-2 2xl:grid-cols-4">
           {modules.map(module => {
             const Icon = moduleIcon[module.moduleKey] || LayoutGrid
@@ -395,7 +395,7 @@ function ModulesPanel({
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="truncate text-sm font-semibold text-[#141821]">{module.title}</h3>
                       <span className={`shrink-0 rounded-sm border px-2 py-0.5 text-[10px] font-semibold ${moduleStatusClass[module.statusLabel]}`}>
-                        {module.statusLabel === 'Precisa de atencao' ? 'Atencao' : module.statusLabel}
+                        {module.statusLabel === 'Precisa de atenção' ? 'Atenção' : module.statusLabel}
                       </span>
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{module.signal}</p>
@@ -413,7 +413,7 @@ function ModulesPanel({
 
       <section className="rounded-sm border border-slate-300 bg-white">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">Expansao recomendada</h2>
+          <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">Expansão recomendada</h2>
           <Link to={portalPath('/portal/suporte')} className="hidden items-center gap-2 text-xs font-semibold text-[#2563EB] sm:inline-flex">
             Ver todas as oportunidades
             <ArrowRight className="h-3.5 w-3.5" />
@@ -423,7 +423,7 @@ function ModulesPanel({
           {suggestions.length === 0 ? (
             <div className="rounded-sm border border-slate-200 bg-[#fafafa] p-4">
               <PackagePlus className="h-5 w-5 text-slate-500" />
-              <p className="mt-3 text-sm leading-6 text-slate-600">Nao ha sugestao prioritaria de modulo adicional para o estado atual do contrato.</p>
+              <p className="mt-3 text-sm leading-6 text-slate-600">Não há sugestão prioritária de módulo adicional para o estado atual do contrato.</p>
             </div>
           ) : suggestions.map(suggestion => {
             const Icon = moduleIcon[suggestion.moduleKey] || PackagePlus
@@ -509,7 +509,7 @@ export function PortalDashboardPage() {
     return (
       <PortalEmptyState
         title="Nenhum contrato ativo encontrado"
-        description="Entre em contato com a YUX para revisar o acesso ao portal e liberar os modulos contratados."
+        description="Entre em contato com a YUX para revisar o acesso ao portal e liberar os módulos contratados."
       />
     )
   }
@@ -519,10 +519,10 @@ export function PortalDashboardPage() {
       <header className="flex flex-col gap-5 border-b border-slate-200/80 pb-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="max-w-3xl">
           <h1 className="text-3xl font-semibold leading-tight tracking-[-0.01em] text-[#141821]">
-            Visao Geral do Cliente
+            Visão Geral do Cliente
           </h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-700">
-            Saude, resultado e proximas decisoes do contrato ativo.
+            Saúde, resultado e próximas decisões do contrato ativo.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-700">
             <span className="inline-flex h-8 items-center gap-2 rounded-sm border border-slate-300 bg-white px-3">
@@ -566,7 +566,7 @@ export function PortalDashboardPage() {
             className="inline-flex items-center gap-2 rounded-sm border border-[#2563eb] bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
           >
             <RefreshCw className="h-4 w-4" />
-            Atualizar visao
+            Atualizar visão
           </button>
         </div>
       </header>
@@ -576,9 +576,9 @@ export function PortalDashboardPage() {
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
               <div>
-                <h2 className="font-semibold text-amber-950">Nao foi possivel carregar todos os indicadores do cliente.</h2>
+                <h2 className="font-semibold text-amber-950">Não foi possível carregar todos os indicadores do cliente.</h2>
                 <p className="mt-1 text-sm leading-6 text-amber-800">
-                  Fontes indisponiveis: {model.unavailableSources.join(', ')}.
+                  Fontes indisponíveis: {model.unavailableSources.join(', ')}.
                 </p>
               </div>
             </div>

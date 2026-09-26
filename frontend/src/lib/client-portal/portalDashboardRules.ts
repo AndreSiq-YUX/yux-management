@@ -107,7 +107,7 @@ export interface PortalRecommendationItem {
 export interface PortalModuleSummary {
   moduleKey: string
   title: string
-  statusLabel: 'Ativo' | 'Precisa de atencao' | 'Sem dados' | 'Em implantacao'
+  statusLabel: 'Ativo' | 'Precisa de atenção' | 'Sem dados' | 'Em implantação'
   signal: string
   href: string
 }
@@ -154,11 +154,11 @@ const moduleLabels: Record<string, string> = {
   landing_pages: 'Landing Pages',
   marketing_studio: 'Marketing Studio',
   projects: 'Projetos',
-  proposals: 'Aprovacoes',
+  proposals: 'Aprovações',
   support: 'Suporte',
   finance: 'Financeiro',
-  bi_reports: 'Relatorios',
-  automations: 'Automacoes',
+  bi_reports: 'Relatórios',
+  automations: 'Automações',
   whatsapp_ai: 'Atendimento & IA',
 }
 
@@ -194,7 +194,7 @@ function resolveFocus(input: Pick<PortalDashboardInput, 'enabledModuleKeys' | 'f
 
 function calculateDataStatus(input: PortalDashboardInput): Pick<PortalExecutiveDashboardModel, 'dataStatus' | 'unavailableSources'> {
   const unavailableSources = [
-    input.actionError ? 'Proximas acoes' : null,
+    input.actionError ? 'Próximas ações' : null,
     input.crm.error ? 'Comercial' : null,
     input.marketing.error ? 'Marketing' : null,
   ].filter(Boolean) as string[]
@@ -244,9 +244,9 @@ function buildPulse(input: PortalDashboardInput, focus: PortalDashboardFocus): P
     return [
       { id: 'opportunities', label: 'Oportunidades', value: String(input.crm.leads.filter(lead => lead.status !== 'won' && lead.status !== 'lost').length), detail: `${formatBRL(openValue)} potencial`, tone: openValue > 0 ? 'positive' : 'neutral', href: '/portal/comercial/leads' },
       { id: 'followups', label: 'Follow-ups', value: String(input.crm.tasks.filter(task => task.status === 'pending').length), detail: `${overdue.length} vencidos`, tone: overdue.length > 0 ? 'critical' : 'healthy', href: '/portal/comercial/tarefas' },
-      { id: 'proposals', label: 'Propostas', value: String(input.actions.filter(action => action.kind === 'approval').length), detail: 'em decisao', tone: approvals.length > 0 ? 'attention' : 'neutral', href: '/portal/projetos/aprovacoes' },
-      { id: 'conversion', label: 'Conversao', value: input.crm.leads.length > 0 ? `${Math.round((input.crm.leads.filter(lead => lead.status === 'won').length / input.crm.leads.length) * 100)}%` : 'Sem dados', detail: 'periodo atual', tone: 'neutral', href: '/portal/relatorios' },
-      { id: 'health', label: 'Saude', value: criticalActions.length > 0 ? 'Atencao' : 'Saudavel', detail: `${criticalActions.length} bloqueio${criticalActions.length === 1 ? '' : 's'}`, tone: criticalActions.length > 0 ? 'attention' : 'healthy' },
+      { id: 'proposals', label: 'Propostas', value: String(input.actions.filter(action => action.kind === 'approval').length), detail: 'em decisão', tone: approvals.length > 0 ? 'attention' : 'neutral', href: '/portal/projetos/aprovacoes' },
+      { id: 'conversion', label: 'Conversão', value: input.crm.leads.length > 0 ? `${Math.round((input.crm.leads.filter(lead => lead.status === 'won').length / input.crm.leads.length) * 100)}%` : 'Sem dados', detail: 'período atual', tone: 'neutral', href: '/portal/relatorios' },
+      { id: 'health', label: 'Saúde', value: criticalActions.length > 0 ? 'Atenção' : 'Saudável', detail: `${criticalActions.length} bloqueio${criticalActions.length === 1 ? '' : 's'}`, tone: criticalActions.length > 0 ? 'attention' : 'healthy' },
     ]
   }
 
@@ -261,26 +261,26 @@ function buildPulse(input: PortalDashboardInput, focus: PortalDashboardFocus): P
       { id: 'cpl', label: 'CPL', value: cpl > 0 ? formatBRL(cpl) : 'Sem dados', detail: 'custo por lead', tone: cpl > 0 ? 'neutral' : 'attention' },
       { id: 'mroi', label: 'MROI', value: bestMroi > 0 ? `${bestMroi.toFixed(1)}x` : 'Sem dados', detail: 'melhor campanha', tone: bestMroi >= 3 ? 'positive' : 'neutral' },
       { id: 'campaigns', label: 'Campanhas', value: String(activeCampaigns.length), detail: 'ativas', tone: activeCampaigns.length > 0 ? 'healthy' : 'neutral', href: '/portal/marketing/campanhas' },
-      { id: 'creatives', label: 'Criativos', value: String(input.marketing.creativeSuggestions.length), detail: `${pendingReviews.length} revisoes`, tone: pendingReviews.length > 0 ? 'attention' : 'neutral', href: '/portal/marketing/criativos' },
+      { id: 'creatives', label: 'Criativos', value: String(input.marketing.creativeSuggestions.length), detail: `${pendingReviews.length} revisões`, tone: pendingReviews.length > 0 ? 'attention' : 'neutral', href: '/portal/marketing/criativos' },
     ]
   }
 
   if (focus === 'delivery') {
     return [
       { id: 'projects', label: 'Projetos', value: String(activeProjects.length), detail: 'ativos', tone: activeProjects.length > 0 ? 'healthy' : 'neutral', href: '/portal/projetos/projetos' },
-      { id: 'approvals', label: 'Aprovacoes', value: String(approvals.length), detail: 'pendentes', tone: approvals.length > 0 ? 'attention' : 'healthy', href: '/portal/projetos/aprovacoes' },
-      { id: 'milestones', label: 'Marcos', value: String(input.projects.filter(project => project.expectedEndDate).length), detail: 'proximos', tone: 'neutral' },
+      { id: 'approvals', label: 'Aprovações', value: String(approvals.length), detail: 'pendentes', tone: approvals.length > 0 ? 'attention' : 'healthy', href: '/portal/projetos/aprovacoes' },
+      { id: 'milestones', label: 'Marcos', value: String(input.projects.filter(project => project.expectedEndDate).length), detail: 'próximos', tone: 'neutral' },
       { id: 'support', label: 'Suporte', value: input.enabledModuleKeys.includes('support') ? 'Ativo' : 'N/A', detail: 'contratado', tone: input.enabledModuleKeys.includes('support') ? 'healthy' : 'neutral', href: '/portal/suporte' },
-      { id: 'health', label: 'Saude', value: criticalActions.length > 0 ? 'Atencao' : 'Saudavel', detail: `${criticalActions.length} bloqueios`, tone: criticalActions.length > 0 ? 'attention' : 'healthy' },
+      { id: 'health', label: 'Saúde', value: criticalActions.length > 0 ? 'Atenção' : 'Saudável', detail: `${criticalActions.length} bloqueios`, tone: criticalActions.length > 0 ? 'attention' : 'healthy' },
     ]
   }
 
   return [
-    { id: 'health', label: 'Saude geral', value: criticalActions.length > 0 ? 'Atencao' : 'Saudavel', detail: `${criticalActions.length} criticos`, tone: criticalActions.length > 0 ? 'attention' : 'healthy' },
+    { id: 'health', label: 'Saúde geral', value: criticalActions.length > 0 ? 'Atenção' : 'Saudável', detail: `${criticalActions.length} críticos`, tone: criticalActions.length > 0 ? 'attention' : 'healthy' },
     { id: 'result', label: 'Resultado', value: openValue > 0 ? formatBRL(openValue) : `${input.marketing.campaigns.length} frentes`, detail: openValue > 0 ? 'potencial comercial' : 'ativas', tone: openValue > 0 ? 'positive' : 'neutral' },
-    { id: 'attention', label: 'Pendencias', value: String(input.actions.length), detail: 'pontos de atencao', tone: input.actions.length > 0 ? 'attention' : 'healthy' },
+    { id: 'attention', label: 'Pendências', value: String(input.actions.length), detail: 'pontos de atenção', tone: input.actions.length > 0 ? 'attention' : 'healthy' },
     { id: 'delivery', label: 'Entrega', value: String(activeProjects.length), detail: 'projetos ativos', tone: activeProjects.length > 0 ? 'healthy' : 'neutral' },
-    { id: 'value', label: 'YUX', value: String(input.marketing.workflowRuns.length + input.projects.length), detail: 'acoes registradas', tone: 'neutral' },
+    { id: 'value', label: 'YUX', value: String(input.marketing.workflowRuns.length + input.projects.length), detail: 'ações registradas', tone: 'neutral' },
   ]
 }
 
@@ -298,7 +298,7 @@ function buildMainResult(input: PortalDashboardInput, focus: PortalDashboardFocu
       title: 'Resultado comercial',
       headlineMetric: openValue > 0 ? `${formatBRL(openValue)} em receita potencial` : `${input.crm.leads.length} leads no pipeline`,
       headlineDetail: `${input.crm.leads.filter(lead => lead.status !== 'won' && lead.status !== 'lost').length} oportunidades abertas`,
-      narrative: 'A leitura principal do contrato esta concentrada em pipeline, follow-ups e decisoes comerciais que podem acelerar receita.',
+      narrative: 'A leitura principal do contrato está concentrada em pipeline, follow-ups e decisões comerciais que podem acelerar receita.',
       signals: [
         { label: 'Pipeline', value: String(input.crm.leads.length), detail: 'leads monitorados', tone: input.crm.leads.length > 0 ? 'positive' : 'neutral' },
         { label: 'Follow-ups', value: String(overdue.length), detail: 'vencidos', tone: overdue.length > 0 ? 'critical' : 'healthy' },
@@ -316,11 +316,11 @@ function buildMainResult(input: PortalDashboardInput, focus: PortalDashboardFocu
       title: 'Performance de marketing',
       headlineMetric: `${campaignLeads} leads gerados`,
       headlineDetail: bestMroi > 0 ? `melhor MROI ${bestMroi.toFixed(1)}x` : `${activeCampaigns.length} campanhas ativas`,
-      narrative: 'A leitura principal prioriza campanhas, criativos, revisoes e recomendacoes para melhorar aquisicao e eficiencia.',
+      narrative: 'A leitura principal prioriza campanhas, criativos, revisões e recomendações para melhorar aquisição e eficiência.',
       signals: [
         { label: 'Campanhas', value: String(activeCampaigns.length), detail: 'ativas', tone: activeCampaigns.length > 0 ? 'healthy' : 'neutral' },
         { label: 'Criativos', value: String(input.marketing.creativeSuggestions.length), detail: 'em pauta', tone: input.marketing.creativeSuggestions.length > 0 ? 'attention' : 'neutral' },
-        { label: 'Revisoes', value: String(input.marketing.reviews.filter(review => review.status === 'pending').length), detail: 'pendentes', tone: 'attention' },
+        { label: 'Revisões', value: String(input.marketing.reviews.filter(review => review.status === 'pending').length), detail: 'pendentes', tone: 'attention' },
       ],
       ctaHref: '/portal/marketing/campanhas',
       ctaLabel: 'Ver marketing',
@@ -332,12 +332,12 @@ function buildMainResult(input: PortalDashboardInput, focus: PortalDashboardFocu
       focus,
       title: 'Andamento das entregas',
       headlineMetric: `${activeProjects.length} projetos ativos`,
-      headlineDetail: `${approvals.length} aprovacoes pendentes`,
-      narrative: 'A leitura principal prioriza entregas, aprovacoes, marcos e riscos que podem atrasar o plano contratado.',
+      headlineDetail: `${approvals.length} aprovações pendentes`,
+      narrative: 'A leitura principal prioriza entregas, aprovações, marcos e riscos que podem atrasar o plano contratado.',
       signals: [
         { label: 'Projetos', value: String(activeProjects.length), detail: 'em andamento', tone: activeProjects.length > 0 ? 'healthy' : 'neutral' },
-        { label: 'Aprovacoes', value: String(approvals.length), detail: 'aguardando cliente', tone: approvals.length > 0 ? 'attention' : 'healthy' },
-        { label: 'Revisao', value: String(input.projects.filter(project => project.status === 'REVIEW').length), detail: 'projetos em revisao', tone: 'attention' },
+        { label: 'Aprovações', value: String(approvals.length), detail: 'aguardando cliente', tone: approvals.length > 0 ? 'attention' : 'healthy' },
+        { label: 'Revisão', value: String(input.projects.filter(project => project.status === 'REVIEW').length), detail: 'projetos em revisão', tone: 'attention' },
       ],
       ctaHref: '/portal/projetos/projetos',
       ctaLabel: 'Ver projetos',
@@ -348,15 +348,15 @@ function buildMainResult(input: PortalDashboardInput, focus: PortalDashboardFocu
     focus,
     title: 'Resumo executivo',
     headlineMetric: openValue > 0 ? `${formatBRL(openValue)} em potencial` : `${input.actions.length} sinais ativos`,
-    headlineDetail: 'contrato monitorado por multiplas frentes',
-    narrative: 'A leitura executiva combina crescimento, entregas, pendencias e recomendacoes para priorizar a proxima decisao.',
+    headlineDetail: 'contrato monitorado por múltiplas frentes',
+    narrative: 'A leitura executiva combina crescimento, entregas, pendências e recomendações para priorizar a próxima decisão.',
     signals: [
       { label: 'Crescimento', value: openValue > 0 ? formatBRL(openValue) : String(campaignLeads), detail: openValue > 0 ? 'pipeline' : 'leads', tone: openValue > 0 || campaignLeads > 0 ? 'positive' : 'neutral' },
       { label: 'Entregas', value: String(activeProjects.length), detail: 'projetos ativos', tone: activeProjects.length > 0 ? 'healthy' : 'neutral' },
-      { label: 'Atencao', value: String(input.actions.length), detail: 'itens abertos', tone: input.actions.length > 0 ? 'attention' : 'healthy' },
+      { label: 'Atenção', value: String(input.actions.length), detail: 'itens abertos', tone: input.actions.length > 0 ? 'attention' : 'healthy' },
     ],
     ctaHref: '/portal/relatorios',
-    ctaLabel: 'Ver relatorios',
+    ctaLabel: 'Ver relatórios',
   }
 }
 
@@ -367,7 +367,7 @@ function buildAttentionItems(input: PortalDashboardInput): PortalAttentionItem[]
     kind: action.kind,
     title: action.title,
     description: action.description,
-    impactLabel: action.priority === 'critical' ? 'Pode travar resultado' : action.priority === 'high' ? 'Exige decisao' : 'Acompanhar',
+    impactLabel: action.priority === 'critical' ? 'Pode travar resultado' : action.priority === 'high' ? 'Exige decisão' : 'Acompanhar',
     expectedOwner: action.kind === 'finance' || action.kind === 'approval' ? 'Cliente' : action.kind === 'commercial' ? 'Equipe comercial' : 'YUX',
     href: action.href,
     actionLabel: action.kind === 'finance' ? 'Abrir financeiro' : action.kind === 'commercial' ? 'Abrir tarefas' : 'Abrir item',
@@ -381,8 +381,8 @@ function buildYuxActivity(input: PortalDashboardInput): PortalYuxActivityItem[] 
     items.push({
       id: `workflow-${run.id}`,
       title: run.status === 'succeeded' ? 'Fluxo de marketing executado' : 'Fluxo de marketing atualizado',
-      detail: run.runType ? `Origem: ${run.runType}` : 'Execucao registrada no Marketing Studio.',
-      impactLabel: 'Operacao acompanhada pela YUX',
+      detail: run.runType ? `Origem: ${run.runType}` : 'Execução registrada no Marketing Studio.',
+      impactLabel: 'Operação acompanhada pela YUX',
       href: '/portal/marketing/studio',
     })
   })
@@ -391,7 +391,7 @@ function buildYuxActivity(input: PortalDashboardInput): PortalYuxActivityItem[] 
     items.push({
       id: `project-${project.id}`,
       title: `${project.name} atualizado`,
-      detail: project.status === 'REVIEW' ? 'Entrega em revisao.' : 'Projeto acompanhado no portal.',
+      detail: project.status === 'REVIEW' ? 'Entrega em revisão.' : 'Projeto acompanhado no portal.',
       impactLabel: `${project.progress || 0}% de progresso`,
       href: '/portal/projetos/projetos',
     })
@@ -402,7 +402,7 @@ function buildYuxActivity(input: PortalDashboardInput): PortalYuxActivityItem[] 
       id: `content-${content.id}`,
       title: `${content.title} preparado`,
       detail: `Status: ${content.status}`,
-      impactLabel: 'Conteudo registrado',
+      impactLabel: 'Conteúdo registrado',
       href: '/portal/marketing/studio',
     })
   })
@@ -429,8 +429,8 @@ function buildRecommendations(input: PortalDashboardInput, focus: PortalDashboar
   if (approvals.length > 0) {
     recommendations.push({
       id: 'approvals',
-      title: 'Destravar aprovacoes pendentes',
-      detail: `${approvals.length} item${approvals.length === 1 ? '' : 's'} aguardando decisao.`,
+      title: 'Destravar aprovações pendentes',
+      detail: `${approvals.length} item${approvals.length === 1 ? '' : 's'} aguardando decisão.`,
       impactLabel: 'Acelera entregas',
       href: '/portal/projetos/aprovacoes',
     })
@@ -439,9 +439,9 @@ function buildRecommendations(input: PortalDashboardInput, focus: PortalDashboar
   if (pendingReviews.length > 0) {
     recommendations.push({
       id: 'reviews',
-      title: 'Revisar conteudos em aberto',
-      detail: `${pendingReviews.length} conteudo${pendingReviews.length === 1 ? '' : 's'} aguardando revisao.`,
-      impactLabel: 'Acelera publicacao',
+      title: 'Revisar conteúdos em aberto',
+      detail: `${pendingReviews.length} conteúdo${pendingReviews.length === 1 ? '' : 's'} aguardando revisão.`,
+      impactLabel: 'Acelera publicação',
       href: '/portal/marketing/studio',
     })
   }
@@ -449,9 +449,9 @@ function buildRecommendations(input: PortalDashboardInput, focus: PortalDashboar
   if (recommendations.length === 0) {
     recommendations.push({
       id: 'focus',
-      title: focus === 'marketing' ? 'Avaliar proxima campanha' : focus === 'delivery' ? 'Revisar proximos marcos' : 'Revisar proxima oportunidade',
-      detail: 'Nao ha bloqueios criticos nesta janela; use a proxima reuniao para priorizar ganho incremental.',
-      impactLabel: 'Mantem ritmo do contrato',
+      title: focus === 'marketing' ? 'Avaliar próxima campanha' : focus === 'delivery' ? 'Revisar próximos marcos' : 'Revisar próxima oportunidade',
+      detail: 'Não há bloqueios críticos nesta janela; use a próxima reunião para priorizar ganho incremental.',
+      impactLabel: 'Mantém ritmo do contrato',
       href: focus === 'marketing' ? '/portal/marketing/campanhas' : focus === 'delivery' ? '/portal/projetos/projetos' : '/portal/comercial/leads',
     })
   }
@@ -460,9 +460,9 @@ function buildRecommendations(input: PortalDashboardInput, focus: PortalDashboar
 }
 
 function moduleStatusFor(moduleKey: string, input: PortalDashboardInput): PortalModuleSummary['statusLabel'] {
-  if (input.actions.some(action => action.priority === 'critical' && moduleHref(moduleKey) === action.href)) return 'Precisa de atencao'
-  if (moduleKey === 'crm' && input.crm.loading) return 'Em implantacao'
-  if ((moduleKey === 'campaigns' || moduleKey === 'marketing_studio') && input.marketing.loading) return 'Em implantacao'
+  if (input.actions.some(action => action.priority === 'critical' && moduleHref(moduleKey) === action.href)) return 'Precisa de atenção'
+  if (moduleKey === 'crm' && input.crm.loading) return 'Em implantação'
+  if ((moduleKey === 'campaigns' || moduleKey === 'marketing_studio') && input.marketing.loading) return 'Em implantação'
   if (moduleKey === 'crm' && input.crm.leads.length === 0) return 'Sem dados'
   if (moduleKey === 'campaigns' && input.marketing.campaigns.length === 0) return 'Sem dados'
   return 'Ativo'
@@ -488,11 +488,11 @@ function moduleHref(moduleKey: string) {
 function moduleSignal(moduleKey: string, input: PortalDashboardInput) {
   if (moduleKey === 'crm') return `${input.crm.leads.length} leads, ${overdueTasks(input.crm.tasks).length} follow-ups vencidos`
   if (moduleKey === 'campaigns') return `${input.marketing.campaigns.filter(campaign => campaign.lifecycleStatus === 'active').length} campanhas ativas`
-  if (moduleKey === 'marketing_studio') return `${input.marketing.reviews.filter(review => review.status === 'pending').length} revisoes pendentes`
+  if (moduleKey === 'marketing_studio') return `${input.marketing.reviews.filter(review => review.status === 'pending').length} revisões pendentes`
   if (moduleKey === 'projects') return `${input.projects.filter(project => project.status === 'ACTIVE' || project.status === 'REVIEW').length} projetos ativos`
-  if (moduleKey === 'proposals') return `${pendingApprovals(input.approvals).length} aprovacoes pendentes`
+  if (moduleKey === 'proposals') return `${pendingApprovals(input.approvals).length} aprovações pendentes`
   if (moduleKey === 'finance') return `${input.invoices.length} faturas monitoradas`
-  return 'Modulo liberado no contrato'
+  return 'Módulo liberado no contrato'
 }
 
 function buildActiveModules(input: PortalDashboardInput): PortalModuleSummary[] {
@@ -515,8 +515,8 @@ function buildExpansionSuggestions(input: PortalDashboardInput): PortalExpansion
     suggestions.push({
       id: 'automations',
       moduleKey: 'automations',
-      moduleName: 'Automacao comercial',
-      reason: 'Ha follow-ups e tarefas recorrentes no CRM.',
+      moduleName: 'Automação comercial',
+      reason: 'Há follow-ups e tarefas recorrentes no CRM.',
       expectedGain: 'Reduzir trabalho manual da equipe comercial.',
       ctaLabel: 'Conversar com a YUX',
       href: '/portal/suporte',
@@ -529,8 +529,8 @@ function buildExpansionSuggestions(input: PortalDashboardInput): PortalExpansion
       id: 'marketing-studio',
       moduleKey: 'marketing_studio',
       moduleName: 'Marketing Studio',
-      reason: 'Existem campanhas ativas, mas o fluxo de conteudo e aprovacao nao esta centralizado.',
-      expectedGain: 'Acelerar criacao, revisao e publicacao.',
+      reason: 'Existem campanhas ativas, mas o fluxo de conteúdo e aprovação não está centralizado.',
+      expectedGain: 'Acelerar criacao, revisão e publicação.',
       ctaLabel: 'Entender modulo',
       href: '/portal/suporte',
       confidence: 'medium',
@@ -541,8 +541,8 @@ function buildExpansionSuggestions(input: PortalDashboardInput): PortalExpansion
     suggestions.push({
       id: 'bi-reports',
       moduleKey: 'bi_reports',
-      moduleName: 'Relatorios BI',
-      reason: 'O contrato ja possui multiplas frentes com dados operacionais.',
+      moduleName: 'Relatórios BI',
+      reason: 'O contrato ja possui múltiplas frentes com dados operacionais.',
       expectedGain: 'Consolidar leitura executiva recorrente.',
       ctaLabel: 'Solicitar proposta',
       href: '/portal/suporte',

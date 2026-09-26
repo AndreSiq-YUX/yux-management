@@ -23,7 +23,7 @@ describe('buildNavigation', () => {
     expect(items[0]).toEqual({ label: 'Dashboard', href: '/dashboard' })
     expect(labels).toContain('Clientes')
     expect(labels).toContain('Contratos')
-    expect(labels).toContain('Conversoes de Leads')
+    expect(labels).toContain('Conversões de Leads')
     expect(labels).toContain('Selecionar Cliente')
     expect(labels).toContain('Crescimento YUX')
     expect(labels).toContain('Projetos')
@@ -64,7 +64,7 @@ describe('buildNavigation', () => {
     })
     const labels = items.map(item => item.label)
 
-    expect(items[0]).toEqual({ label: 'Visao Geral', href: '/portal' })
+    expect(items[0]).toEqual({ label: 'Visão Geral', href: '/portal' })
     expect(labels).toContain('Projetos')
     expect(labels).toContain('Campanhas')
     expect(labels).toContain('Suporte')
@@ -95,7 +95,7 @@ describe('buildNavigation', () => {
       'Canais',
       'Landing Pages',
       'Campanhas',
-      'Relatorios',
+      'Relatórios',
     ]))
 
     expect(portalRoutes).toEqual(expect.arrayContaining([
@@ -253,44 +253,44 @@ describe('buildNavigationGroups', () => {
     })
 
     expect(groups.map(group => group.label)).toEqual([
-      'Visao Geral',
+      'Visão Geral',
       'Clientes & Contratos',
-      'Operacao',
+      'Operação',
       'Workspaces dos Clientes',
-      'Administracao da Plataforma',
+      'Administração da Plataforma',
       'Financeiro',
     ])
-    expect(groups.find(group => group.label === 'Visao Geral')?.items).toEqual([
+    expect(groups.find(group => group.label === 'Visão Geral')?.items).toEqual([
       { label: 'Dashboard', href: '/dashboard' },
     ])
     expect(groups.find(group => group.label === 'Clientes & Contratos')?.items).toEqual([
       { label: 'Clientes', href: '/clients', moduleKey: 'clients' },
-      { label: 'Conversoes de Leads', href: '/client-conversions', moduleKey: 'crm' },
+      { label: 'Conversões de Leads', href: '/client-conversions', moduleKey: 'crm' },
       { label: 'Contratos', href: '/contracts' },
       { label: 'Pacotes', href: '/packages' },
-      { label: 'Modulos Contratados', href: '/modules' },
-      { label: 'Creditos e Limites', href: '/admin/limits' },
+      { label: 'Módulos Contratados', href: '/modules' },
+      { label: 'Créditos e Limites', href: '/admin/limits' },
     ])
     expect(groups.find(group => group.label === 'Workspaces dos Clientes')?.items).toEqual([
       { label: 'Selecionar Cliente', href: '/client-workspaces' },
       { label: 'Crescimento YUX', href: '/client-workspaces' },
     ])
-    expect(groups.find(group => group.label === 'Administracao da Plataforma')?.items).toEqual([
+    expect(groups.find(group => group.label === 'Administração da Plataforma')?.items).toEqual([
       { label: 'Admin YUX Hub', href: '/admin' },
       { label: 'Modelos Setoriais', href: '/blueprints', moduleKey: 'blueprints' },
-      { label: 'Catalogo de Modulos', href: '/admin/modules-governance' },
-      { label: 'Integracoes Globais', href: '/admin/integrations' },
+      { label: 'Catálogo de Módulos', href: '/admin/modules-governance' },
+      { label: 'Integrações Globais', href: '/admin/integrations' },
       { label: 'IA / Modelos / Custos', href: '/admin/ai' },
       { label: 'Strategy Engine', href: '/admin/strategy-engine' },
       { label: 'Aprendizado de Missões', href: '/admin/mission-learning' },
       { label: 'Canais', href: '/admin/channels' },
       { label: 'Email', href: '/admin/email' },
-      { label: 'Modelos de Email', href: '/admin/email/templates' },
-      { label: 'Saude da Plataforma', href: '/admin/health' },
+      { label: 'Modelos de E-mail', href: '/admin/email/templates' },
+      { label: 'Saúde da Plataforma', href: '/admin/health' },
     ])
     expect(groups.find(group => group.label === 'Financeiro')?.items).toEqual([
       { label: 'Faturas', href: '/finance', moduleKey: 'finance' },
-      { label: 'Cobrancas', href: '/finance', moduleKey: 'finance' },
+      { label: 'Cobranças', href: '/finance', moduleKey: 'finance' },
       { label: 'Receita', href: '/finance', moduleKey: 'finance' },
     ])
   })
@@ -306,14 +306,14 @@ describe('buildNavigationGroups', () => {
       },
       enabledModuleKeys: ['crm', 'projects', 'support', 'finance'],
     })
-    const operacaoItems = groups.find(group => group.label === 'Operacao')?.items
+    const operacaoItems = groups.find(group => group.label === 'Operação')?.items
     const clientOperationItems = groups.find(group => group.label === 'Workspaces dos Clientes')?.items
     const financeiroItems = groups.find(group => group.label === 'Financeiro')?.items
 
     expect(operacaoItems).toEqual([
       { label: 'Projetos', href: '/projects', moduleKey: 'projects' },
-      { label: 'Entregaveis', href: '/projects', moduleKey: 'projects' },
-      { label: 'Aprovacoes', href: '/projects', moduleKey: 'projects' },
+      { label: 'Entregáveis', href: '/projects', moduleKey: 'projects' },
+      { label: 'Aprovações', href: '/projects', moduleKey: 'projects' },
     ])
     expect(clientOperationItems).toEqual([
       { label: 'Selecionar Cliente', href: '/client-workspaces' },
@@ -357,16 +357,16 @@ describe('buildNavigationGroups', () => {
     })
 
     expect(groups.map(group => group.label)).toEqual([
-      'Visao Geral',
+      'Visão Geral',
       'Empresa',
       'Comercial',
       'Atendimento & IA',
       'Marketing',
       'Projetos',
-      'Relatorios',
+      'Relatórios',
       'Suporte',
       'Financeiro',
-      'Configuracoes da Conta',
+      'Configurações da Conta',
     ])
     expect(groups.find(group => group.label === 'Comercial')?.items).toEqual(expect.arrayContaining([
       { label: 'Leads', href: '/portal/comercial/leads', moduleKey: 'crm' },
@@ -381,8 +381,8 @@ describe('buildNavigationGroups', () => {
       { label: 'Formulários externos', href: '/portal/marketing/formularios', moduleKey: 'landing_pages' },
       { label: 'Campanhas', href: '/portal/marketing/campanhas', moduleKey: 'campaigns' },
       { label: 'Marketing Studio', href: '/portal/marketing/studio', moduleKey: 'marketing_studio' },
-      { label: 'Central de Conteudo', href: '/portal/marketing/conteudo', moduleKey: 'marketing_studio' },
-      { label: 'Criativos e Inspiracoes', href: '/portal/marketing/criativos', moduleKey: 'marketing_studio' },
+      { label: 'Central de Conteúdo', href: '/portal/marketing/conteudo', moduleKey: 'marketing_studio' },
+      { label: 'Criativos e Inspirações', href: '/portal/marketing/criativos', moduleKey: 'marketing_studio' },
     ]))
   })
 
@@ -399,7 +399,7 @@ describe('buildNavigationGroups', () => {
       enabledModuleKeys: ['automations'],
     })
 
-    expect(groups.find(group => group.label === 'Automacoes')?.items).toEqual([
+    expect(groups.find(group => group.label === 'Automações')?.items).toEqual([
       { label: 'Fluxos', href: '/portal/automacoes/fluxos', moduleKey: 'automations' },
       { label: 'Templates', href: '/portal/automacoes/templates', moduleKey: 'automations' },
       { label: 'Execucoes', href: '/portal/automacoes/execucoes', moduleKey: 'automations' },
@@ -434,11 +434,11 @@ describe('buildNavigationGroups', () => {
       enabledModuleKeys: [],
     })
 
-    expect(portalGroups.find(group => group.label === 'Configuracoes da Conta')?.items).toContainEqual({
-      label: 'Modelos de Email',
+    expect(portalGroups.find(group => group.label === 'Configurações da Conta')?.items).toContainEqual({
+      label: 'Modelos de E-mail',
       href: '/portal/configuracoes/emails',
     })
-    expect(workspaceGroups.find(group => group.label === 'Configuracoes da Conta')?.items).toEqual([
+    expect(workspaceGroups.find(group => group.label === 'Configurações da Conta')?.items).toEqual([
       { label: 'Conta', href: '/client-workspaces/org-client-1/configuracoes/conta' },
     ])
   })
@@ -476,8 +476,8 @@ describe('buildNavigationGroups', () => {
       label: 'Workspaces dos Clientes',
       items: [{ label: 'Selecionar Cliente', href: '/client-workspaces' }],
     })
-    expect(groups.find(group => group.label === 'Visao Geral')?.items).toEqual([
-      { label: 'Visao Geral', href: '/client-workspaces/org-client-1' },
+    expect(groups.find(group => group.label === 'Visão Geral')?.items).toEqual([
+      { label: 'Visão Geral', href: '/client-workspaces/org-client-1' },
     ])
     expect(groups.find(group => group.label === 'Comercial')?.items).toEqual(expect.arrayContaining([
       { label: 'Leads', href: '/client-workspaces/org-client-1/comercial/leads', moduleKey: 'crm' },
@@ -543,7 +543,7 @@ describe('buildNavigationGroups', () => {
     expect(breadcrumbs).toEqual([
       { label: 'Portal do Cliente', href: '/portal' },
       { label: 'Marketing' },
-      { label: 'Calendario Editorial' },
+      { label: 'Calendário Editorial' },
     ])
   })
 })

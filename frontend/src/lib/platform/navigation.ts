@@ -21,7 +21,7 @@ export interface BreadcrumbItem {
 
 const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = [
   {
-    label: 'Visao Geral',
+    label: 'Visão Geral',
     items: [
       { label: 'Dashboard', href: '/dashboard' },
     ],
@@ -30,20 +30,20 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
     label: 'Clientes & Contratos',
     items: [
       { label: 'Clientes', href: '/clients', moduleKey: 'clients' },
-      { label: 'Conversoes de Leads', href: '/client-conversions', moduleKey: 'crm' },
+      { label: 'Conversões de Leads', href: '/client-conversions', moduleKey: 'crm' },
       { label: 'Contratos', href: '/contracts' },
       { label: 'Pacotes', href: '/packages' },
-      { label: 'Modulos Contratados', href: '/modules' },
-      { label: 'Creditos e Limites', href: '/admin/limits' },
+      { label: 'Módulos Contratados', href: '/modules' },
+      { label: 'Créditos e Limites', href: '/admin/limits' },
     ],
   },
   {
-    label: 'Operacao',
+    label: 'Operação',
     items: [
       { label: 'Missões', href: '/missions', moduleKey: 'action_engine' },
       { label: 'Projetos', href: '/projects', moduleKey: 'projects' },
-      { label: 'Entregaveis', href: '/projects', moduleKey: 'projects' },
-      { label: 'Aprovacoes', href: '/projects', moduleKey: 'projects' },
+      { label: 'Entregáveis', href: '/projects', moduleKey: 'projects' },
+      { label: 'Aprovações', href: '/projects', moduleKey: 'projects' },
       { label: 'Suporte', href: '/support', moduleKey: 'support' },
     ],
   },
@@ -55,26 +55,26 @@ const internalModuleGroups: Array<{ label: string; items: NavigationItem[] }> = 
     ],
   },
   {
-    label: 'Administracao da Plataforma',
+    label: 'Administração da Plataforma',
     items: [
       { label: 'Admin YUX Hub', href: '/admin' },
       { label: 'Modelos Setoriais', href: '/blueprints', moduleKey: 'blueprints' },
-      { label: 'Catalogo de Modulos', href: '/admin/modules-governance' },
-      { label: 'Integracoes Globais', href: '/admin/integrations' },
+      { label: 'Catálogo de Módulos', href: '/admin/modules-governance' },
+      { label: 'Integrações Globais', href: '/admin/integrations' },
       { label: 'IA / Modelos / Custos', href: '/admin/ai' },
       { label: 'Strategy Engine', href: '/admin/strategy-engine' },
       { label: 'Aprendizado de Missões', href: '/admin/mission-learning' },
       { label: 'Canais', href: '/admin/channels' },
-      { label: 'Email', href: '/admin/email' },
-      { label: 'Modelos de Email', href: '/admin/email/templates' },
-      { label: 'Saude da Plataforma', href: '/admin/health' },
+      { label: 'E-mail', href: '/admin/email' },
+      { label: 'Modelos de E-mail', href: '/admin/email/templates' },
+      { label: 'Saúde da Plataforma', href: '/admin/health' },
     ],
   },
   {
     label: 'Financeiro',
     items: [
       { label: 'Faturas', href: '/finance', moduleKey: 'finance' },
-      { label: 'Cobrancas', href: '/finance', moduleKey: 'finance' },
+      { label: 'Cobranças', href: '/finance', moduleKey: 'finance' },
       { label: 'Receita', href: '/finance', moduleKey: 'finance' },
     ],
   },
@@ -100,17 +100,17 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
 
   const groups: NavigationGroup[] = [
     {
-      label: 'Visao Geral',
-      items: [{ label: 'Visao Geral', href: href() }],
+      label: 'Visão Geral',
+      items: [{ label: 'Visão Geral', href: href() }],
     },
     {
       label: 'Empresa',
       items: [
         { label: 'Perfil da Empresa', href: href('/empresa/perfil') },
-        { label: 'Usuarios e Equipe', href: href('/empresa/usuarios') },
+        { label: 'Usuários e Equipe', href: href('/empresa/usuarios') },
         { label: 'Base de Conhecimento', href: href('/empresa/conhecimento') },
         { label: 'Marca e Tom de Voz', href: href('/empresa/marca') },
-        { label: 'Integracoes', href: href('/empresa/integracoes') },
+        { label: 'Integrações', href: href('/empresa/integracoes') },
       ],
     },
     {
@@ -140,22 +140,22 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
         ...moduleItem(context, { label: 'Formulários externos', href: href('/marketing/formularios'), moduleKey: 'landing_pages' }),
         ...moduleItem(context, { label: 'Campanhas', href: href('/marketing/campanhas'), moduleKey: 'campaigns' }),
         ...moduleItem(context, { label: 'Marketing Studio', href: href('/marketing/studio'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Central de Conteudo', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Calendario Editorial', href: href('/marketing/calendario'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Criativos e Inspiracoes', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Central de Conteúdo', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Calendário Editorial', href: href('/marketing/calendario'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Criativos e Inspirações', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
       ],
     },
     {
-      label: 'Automacoes',
+      label: 'Automações',
       items: [
         ...moduleItem(context, { label: 'Fluxos', href: href('/automacoes/fluxos'), moduleKey: 'automations' }),
         ...moduleItem(context, { label: 'Templates', href: href('/automacoes/templates'), moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Execucoes', href: href('/automacoes/execucoes'), moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Execuções', href: href('/automacoes/execucoes'), moduleKey: 'automations' }),
         ...moduleItem(context, { label: 'Logs', href: href('/automacoes/logs'), moduleKey: 'automations' }),
       ],
     },
     {
-      label: 'Execucao YUX',
+      label: 'Execução YUX',
       items: [
         ...moduleItem(context, { label: 'Missões', href: href('/missoes'), moduleKey: 'action_engine' }),
       ],
@@ -164,14 +164,14 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
       label: 'Projetos',
       items: [
         ...moduleItem(context, { label: 'Projetos', href: href('/projetos/projetos'), moduleKey: 'projects' }),
-        ...moduleItem(context, { label: 'Aprovacoes', href: href('/projetos/aprovacoes'), moduleKey: 'projects' }),
+        ...moduleItem(context, { label: 'Aprovações', href: href('/projetos/aprovacoes'), moduleKey: 'projects' }),
         ...moduleItem(context, { label: 'Documentos', href: href('/projetos/documentos'), moduleKey: 'projects' }),
         ...moduleItem(context, { label: 'Propostas', href: href('/projetos/aprovacoes'), moduleKey: 'proposals' }),
       ],
     },
     {
-      label: 'Relatorios',
-      items: moduleItem(context, { label: 'Relatorios', href: href('/relatorios'), moduleKey: 'bi_reports' }),
+      label: 'Relatórios',
+      items: moduleItem(context, { label: 'Relatórios', href: href('/relatorios'), moduleKey: 'bi_reports' }),
     },
     {
       label: 'Suporte',
@@ -182,10 +182,10 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
       items: moduleItem(context, { label: 'Financeiro', href: href('/financeiro'), moduleKey: 'finance' }),
     },
     {
-      label: 'Configuracoes da Conta',
+      label: 'Configurações da Conta',
       items: [
         { label: 'Conta', href: href('/configuracoes/conta') },
-        ...(context.mode === 'portal' ? [{ label: 'Modelos de Email', href: href('/configuracoes/emails') }] : []),
+        ...(context.mode === 'portal' ? [{ label: 'Modelos de E-mail', href: href('/configuracoes/emails') }] : []),
       ],
     },
   ]
