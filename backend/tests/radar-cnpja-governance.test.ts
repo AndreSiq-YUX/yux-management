@@ -3,15 +3,21 @@ import { runRadarCnpjaAdvancedSearch } from '../src/modules/radar/repository.js'
 import type { AuthUser } from '../src/auth/routes.js'
 
 const admin = { id: '00000000-0000-4000-8000-000000000001', role: 'yux_admin' } as AuthUser
+const operator = { ...admin, role: 'yux_operator' } as AuthUser
 const organizationId = '00000000-0000-4000-8000-000000000002'
 const campaignId = '00000000-0000-4000-8000-000000000003'
 
 class PoolFixture {
   used = 0
+  pendingUsed = 0
+  failCandidateWrite = false
   queries: string[] = []
   async connect() { return { query: this.query.bind(this), release() {} } }
   async query(sql: string, _params: unknown[] = []) {
     this.queries.push(sql)
+    if (sql === 'BEGIN') { this.pendingUsed = 0; return { rows: [] } }
+    if (sql === 'COMMIT') { this.used += this.pendingUsed; this.pendingUsed = 0; return { rows: [] } }
+    if (sql === 'ROLLBACK') { this.pendingUsed = 0; return { rows: [] } }
     if (sql.includes("kind = 'yux'")) return { rows: [{ allowed: true }] }
     if (sql.includes('FROM public.radar_data_sources')) return { rows: [{
       id: '00000000-0000-4000-8000-000000000004', organization_id: null,
@@ -25,8 +31,9 @@ class PoolFixture {
     }] }
     if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ id: campaignId, daily_limit: 10, budget_limit: '1.00' }] }
     if (sql.includes('FROM public.radar_source_usage_counters')) return { rows: [{ units: this.used, estimated_cost: this.used * 0.025 }] }
-    if (sql.includes('INSERT INTO public.radar_source_usage_counters')) { this.used++; return { rows: [] } }
+    if (sql.includes('INSERT INTO public.radar_source_usage_counters')) { this.pendingUsed++; return { rows: [] } }
     if (sql.includes('INSERT INTO public.radar_enrichment_runs')) return { rows: [{ id: '00000000-0000-4000-8000-000000000006' }] }
+    if (sql.includes('INSERT INTO public.radar_candidate_records') && this.failCandidateWrite) throw new Error('candidate_write_failed')
     return { rows: [] }
   }
 }
@@ -42,5 +49,29 @@ describe('CNPJa search governance', () => {
     expect(search).toHaveBeenCalledTimes(1)
     expect(pool.used).toBe(1)
     expect(pool.queries.some(sql => sql.includes('pg_advisory_xact_lock'))).toBe(true)
+  })
+
+  it('rejects operators before loading the paid credential or reserving quota', async () => {
+    const pool = new PoolFixture()
+    const search = vi.fn(async () => [])
+    const loadSecret = vi.fn(async () => 'fixture')
+    await expect(runRadarCnpjaAdvancedSearch(pool as never, operator, {
+      organizationId, campaignId, state: 'PR', limit: 1, secretKeyMaterial: 'fixture',
+    }, { loadSecret, search })).rejects.toMatchObject({ statusCode: 403 })
+    expect(loadSecret).not.toHaveBeenCalled()
+    expect(search).not.toHaveBeenCalled()
+    expect(pool.used).toBe(0)
+  })
+
+  it('keeps the credit reservation after a provider response when candidate persistence fails', async () => {
+    const pool = new PoolFixture()
+    pool.failCandidateWrite = true
+    const search = vi.fn(async () => [{ taxId: '12345678000190', tradeName: 'Empresa Exemplo',
+      cnaes: [], websiteStatus: 'unknown' as const, rawPayload: {} }])
+    await expect(runRadarCnpjaAdvancedSearch(pool as never, admin, {
+      organizationId, campaignId, state: 'PR', limit: 1, secretKeyMaterial: 'fixture',
+    }, { loadSecret: async () => 'fixture', search })).rejects.toThrow('candidate_write_failed')
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(pool.used).toBe(1)
   })
 })

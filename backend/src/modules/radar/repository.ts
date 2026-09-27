@@ -923,6 +923,9 @@ export async function runRadarCnpjaAdvancedSearch(
   } = {},
 ) {
   requireRadarAccess(user)
+  if (user.role !== 'yux_admin') {
+    throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
+  }
   const limit = input.limit ?? 5
   assertSmallBatchLimit(limit)
 
@@ -939,6 +942,8 @@ export async function runRadarCnpjaAdvancedSearch(
     : null
   const providerIssue = getCnpjaProviderIssue(provider, apiKey)
   const client = await pool.connect()
+  let runId: string
+  let estimatedCost = 0
 
   try {
     await client.query('BEGIN')
@@ -954,6 +959,7 @@ export async function runRadarCnpjaAdvancedSearch(
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
       [`radar:${input.organizationId}:cnpja_advanced_search`])
     const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1)
+    estimatedCost = governance.estimatedCost
     const issues = [...governance.issues]
     if (providerIssue) issues.push(providerIssue)
 
@@ -979,6 +985,7 @@ export async function runRadarCnpjaAdvancedSearch(
         }),
       ],
     )
+    runId = run.rows[0].id
 
     if (issues.length > 0) {
       await updateRadarRunCompletion(client, run.rows[0].id, 'failed', { candidateCount: 0, estimatedCost: governance.estimatedCost, issues }, issues.map(issue => issue.message).join('; '))
@@ -987,35 +994,44 @@ export async function runRadarCnpjaAdvancedSearch(
     }
 
     await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, 1, governance.estimatedCost)
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 
-    let results: CnpjaCandidate[] = []
-    try {
-      results = await (dependencies.search ?? searchCnpjaAdvanced)({
-        apiKey: apiKey as string,
-        config: provider?.publicConfig as CnpjaProviderConfig | undefined,
-        query: input.query,
-        city: input.city,
-        state: input.state,
-        cnaes: input.cnaes,
-        openingFrom: input.openingFrom,
-        openingTo: input.openingTo,
-        limit,
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Falha ao executar pesquisa avancada no CNPJa.'
-      const failedIssues = [{ code: 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
-      await updateRadarRunCompletion(client, run.rows[0].id, 'failed', { candidateCount: 0, estimatedCost: governance.estimatedCost, issues: failedIssues }, message)
-      await client.query('COMMIT')
-      return { candidates: [], issues: failedIssues, runId: run.rows[0].id }
-    }
+  let results: CnpjaCandidate[] = []
+  try {
+    results = await (dependencies.search ?? searchCnpjaAdvanced)({
+      apiKey: apiKey as string,
+      config: provider?.publicConfig as CnpjaProviderConfig | undefined,
+      query: input.query,
+      city: input.city,
+      state: input.state,
+      cnaes: input.cnaes,
+      openingFrom: input.openingFrom,
+      openingTo: input.openingTo,
+      limit,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Falha ao executar pesquisa avancada no CNPJa.'
+    const failedIssues = [{ code: 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
+    await updateRadarRunCompletion(pool, runId, 'failed', { candidateCount: 0, estimatedCost, issues: failedIssues }, message)
+    return { candidates: [], issues: failedIssues, runId }
+  }
 
+  const candidateClient = await pool.connect()
+  try {
+    await candidateClient.query('BEGIN')
     const candidates: RadarCandidateRecord[] = []
     for (const result of results) {
       const title = result.tradeName || result.legalName || result.taxId || 'Empresa CNPJa'
       const dedupeKey = result.taxId
         ? `cnpj:${result.taxId}`
         : `cnpja:${normalizeToken(title)}:${normalizeToken(result.city || '')}:${normalizeToken(result.state || '')}`
-      const duplicateStatus = await hasExistingCompanyByCnpjaCandidate(client, input.organizationId, result)
+      const duplicateStatus = await hasExistingCompanyByCnpjaCandidate(candidateClient, input.organizationId, result)
       const normalizedPayload = {
         tradeName: result.tradeName,
         legalName: result.legalName,
@@ -1031,7 +1047,7 @@ export async function runRadarCnpjaAdvancedSearch(
         emailRaw: result.email,
         phoneRaw: result.phone,
       }
-      const inserted = await client.query<RadarCandidateRecordRow>(
+      const inserted = await candidateClient.query<RadarCandidateRecordRow>(
         `INSERT INTO public.radar_candidate_records (
            organization_id, campaign_id, enrichment_run_id, source_type, source_url, title,
            snippet, raw_payload, normalized_payload, dedupe_key, status
@@ -1046,7 +1062,7 @@ export async function runRadarCnpjaAdvancedSearch(
         [
           input.organizationId,
           input.campaignId,
-          run.rows[0].id,
+          runId,
           result.sourceUrl ?? null,
           title,
           buildCnpjaCandidateSnippet(result),
@@ -1059,14 +1075,19 @@ export async function runRadarCnpjaAdvancedSearch(
       candidates.push(mapCandidate(inserted.rows[0]))
     }
 
-    await updateRadarRunCompletion(client, run.rows[0].id, 'succeeded', { candidateCount: candidates.length, estimatedCost: governance.estimatedCost }, null)
-    await client.query('COMMIT')
-    return { candidates, issues: [], runId: run.rows[0].id }
+    await updateRadarRunCompletion(candidateClient, runId, 'succeeded', { candidateCount: candidates.length, estimatedCost }, null)
+    await candidateClient.query('COMMIT')
+    return { candidates, issues: [], runId }
   } catch (error) {
-    await client.query('ROLLBACK')
+    await candidateClient.query('ROLLBACK')
+    const message = error instanceof Error ? error.message : 'Falha ao salvar os candidatos CNPJa.'
+    try {
+      await updateRadarRunCompletion(pool, runId, 'failed', { candidateCount: 0, estimatedCost,
+        issues: [{ code: 'candidate_write_failed', sourceType: 'cnpja_advanced_search', message }] }, message)
+    } catch { /* The durable usage reservation remains even if this status update fails. */ }
     throw error
   } finally {
-    client.release()
+    candidateClient.release()
   }
 }
 

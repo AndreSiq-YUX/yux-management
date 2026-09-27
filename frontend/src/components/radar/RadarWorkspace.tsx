@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Building2, CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import {
   getRadarScoreTone,
 } from '@/lib/radar/radarRules'
 import { buildRadarPlaceSearchDefaults, getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from '@/lib/radar/radarSourceRules'
+import { awaitCurrentRadarPlacePreview } from '@/lib/radar/radarPlacePreviewGuard'
 import { radarService } from '@/services/radarService'
 import { usePlatformContext } from '@/stores/platformStore'
 import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportSummary, RadarMetrics, RadarOpportunity, RadarPlacePreview, RadarSourceType } from '@/types/radar'
@@ -191,6 +192,9 @@ export function RadarWorkspace() {
   const [placeForm, setPlaceForm] = useState({ query: '', city: '', state: '',
     sourceType: 'serper_places' as 'serper_places' | 'brave_place_search', limit: 5 })
   const [placePreview, setPlacePreview] = useState<{ places: RadarPlacePreview[]; attribution: string } | null>(null)
+  const placeRequestSequence = useRef(0)
+  const currentPlaceSelection = useRef('')
+  currentPlaceSelection.current = `${organizationId ?? ''}:${selectedCampaignId ?? ''}:${placeForm.sourceType}`
   const [sourceCostDrafts, setSourceCostDrafts] = useState<Record<string, string>>({})
   const [sourceLimitDrafts, setSourceLimitDrafts] = useState<Record<string, string>>({})
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
@@ -224,6 +228,11 @@ export function RadarWorkspace() {
         setDataSources([])
       })
   }, [organizationId, canAccess])
+
+  useEffect(() => {
+    placeRequestSequence.current += 1
+    setPlacePreview(null)
+  }, [organizationId])
 
   useEffect(() => {
     if (!selectedCampaignId || !canAccess) return
@@ -596,6 +605,7 @@ export function RadarWorkspace() {
   const searchCnpja = async (event: FormEvent) => {
     event.preventDefault()
     if (!organizationId || !selectedCampaignId || actionLoading) return
+    if (context.role?.key !== 'yux_admin') { toast.error('Somente o Admin pode executar a pesquisa CNPJa.'); return }
 
     const blockedReason = getSourceBlockedReason(cnpjaSource)
     if (blockedReason) {
@@ -646,18 +656,29 @@ export function RadarWorkspace() {
   const previewPlaces = async (event: FormEvent) => {
     event.preventDefault()
     if (!organizationId || !selectedCampaignId || actionLoading || !isSmallBatch(placeForm.limit)) return
+    if (context.role?.key !== 'yux_admin') { toast.error('Somente o Admin pode consultar fontes locais pagas.'); return }
     const blockedReason = getSourceBlockedReason(placeSource)
     if (blockedReason) { toast.error(blockedReason); return }
+    const requestKey = `${currentPlaceSelection.current}:${++placeRequestSequence.current}`
+    const getCurrentKey = () => `${currentPlaceSelection.current}:${placeRequestSequence.current}`
     try {
       setActionLoading('place-preview')
       setPlacePreview(null)
-      const result = await radarService.previewPlaces(selectedCampaignId, { organizationId, ...placeForm })
+      const result = await awaitCurrentRadarPlacePreview(
+        radarService.previewPlaces(selectedCampaignId, { organizationId, ...placeForm }), requestKey, getCurrentKey)
+      if (!result) return
       setPlacePreview({ places: result.places, attribution: result.attribution })
       toast.success(`${result.places.length} resultados exibidos temporariamente`)
     } catch (error) {
       console.error('Erro na prévia de busca local:', error)
-      toast.error('Não foi possível consultar a fonte local; verifique chave, limite e orçamento')
+      if (requestKey === getCurrentKey()) toast.error('Não foi possível consultar a fonte local; verifique chave, limite e orçamento')
     } finally { setActionLoading(null) }
+  }
+
+  const changePlaceForm = (patch: Partial<typeof placeForm>) => {
+    placeRequestSequence.current += 1
+    setPlacePreview(null)
+    setPlaceForm(current => ({ ...current, ...patch }))
   }
 
   const importCandidate = async (candidateId: string) => {
@@ -852,6 +873,7 @@ export function RadarWorkspace() {
             <div className="flex items-center justify-between gap-2 text-sm font-medium text-slate-700">
               <span>{getRadarCampaignStatusLabel(campaign.status)}</span>
               <Button type="button" size="sm" variant={selectedCampaignId === campaign.id ? 'default' : 'outline'} onClick={() => {
+                placeRequestSequence.current += 1
                 setSelectedCampaignId(campaign.id)
                 setCnpjaForm(current => ({ ...current, city: campaign.targetCity, state: campaign.targetState }))
                 setPlaceForm(buildRadarPlaceSearchDefaults(campaign))
@@ -1069,8 +1091,9 @@ export function RadarWorkspace() {
                   </label>
                   <Input type="number" min="1" max="10" value={cnpjaForm.limit} onChange={event => setCnpjaForm({ ...cnpjaForm, limit: Number(event.target.value) })} />
                   <div className="md:col-span-3 flex items-center justify-between gap-3">
-                    <p className="text-xs text-slate-500">{getSourceBlockedReason(cnpjaSource) || 'Gera candidatos por CNPJ para revisao antes da importacao.'}</p>
-                    <Button type="submit" disabled={Boolean(getSourceBlockedReason(cnpjaSource)) || actionLoading === 'cnpja'}>
+                    <p className="text-xs text-slate-500">{context.role?.key !== 'yux_admin' ? 'Pesquisa CNPJa reservada ao Admin.'
+                      : getSourceBlockedReason(cnpjaSource) || 'Gera candidatos por CNPJ para revisao antes da importacao.'}</p>
+                    <Button type="submit" disabled={context.role?.key !== 'yux_admin' || Boolean(getSourceBlockedReason(cnpjaSource)) || actionLoading === 'cnpja'}>
                       {actionLoading === 'cnpja' ? 'Pesquisando...' : 'Pesquisar CNPJa'}
                     </Button>
                   </div>
@@ -1081,26 +1104,25 @@ export function RadarWorkspace() {
                   <h3 className="text-sm font-semibold text-slate-950">Busca local (pré-visualização)</h3></div>
                 <div className="grid gap-3 md:grid-cols-6">
                   <Input className="md:col-span-2" aria-label="Segmento ou termo da busca local" placeholder="Segmento ou termo" required value={placeForm.query}
-                    onChange={event => setPlaceForm({ ...placeForm, query: event.target.value })} />
+                    onChange={event => changePlaceForm({ query: event.target.value })} />
                   <Input aria-label="Cidade da busca local" placeholder="Cidade" required value={placeForm.city}
-                    onChange={event => setPlaceForm({ ...placeForm, city: event.target.value })} />
+                    onChange={event => changePlaceForm({ city: event.target.value })} />
                   <Input aria-label="UF da busca local" placeholder="UF" required maxLength={2} value={placeForm.state}
-                    onChange={event => setPlaceForm({ ...placeForm, state: event.target.value.toUpperCase() })} />
+                    onChange={event => changePlaceForm({ state: event.target.value.toUpperCase() })} />
                   <Input aria-label="Limite de resultados da busca local" type="number" min="1" max="10" value={placeForm.limit}
-                    onChange={event => setPlaceForm({ ...placeForm, limit: Number(event.target.value) })} />
+                    onChange={event => changePlaceForm({ limit: Number(event.target.value) })} />
                   <select aria-label="Fonte da busca local" className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={placeForm.sourceType} onChange={event => {
-                      setPlaceForm({ ...placeForm, sourceType: event.target.value as typeof placeForm.sourceType })
-                      setPlacePreview(null)
+                      changePlaceForm({ sourceType: event.target.value as typeof placeForm.sourceType })
                     }}>
                     <option value="serper_places">Serper Places</option>
                     <option value="brave_place_search">Brave Place Search</option>
                   </select>
                   <div className="md:col-span-6 flex items-center justify-between gap-3">
-                    <p className="text-xs text-slate-500">{getSourceBlockedReason(placeSource)
+                    <p className="text-xs text-slate-500">{context.role?.key !== 'yux_admin' ? 'Consulta de fontes pagas reservada ao Admin.' : getSourceBlockedReason(placeSource)
                       || 'Uma consulta pode consumir crédito. Os resultados não serão salvos no Radar ou CRM.'}</p>
                     <Button type="submit" disabled={!placeForm.query.trim() || !placeForm.city.trim() || !placeForm.state.trim()
-                      || Boolean(getSourceBlockedReason(placeSource)) || Boolean(actionLoading)}>
+                      || context.role?.key !== 'yux_admin' || Boolean(getSourceBlockedReason(placeSource)) || Boolean(actionLoading)}>
                       {actionLoading === 'place-preview' ? 'Consultando...' : 'Consultar fonte'}</Button>
                   </div>
                 </div>
