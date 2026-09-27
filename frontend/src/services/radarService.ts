@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/apiClient'
-import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity } from '@/types/radar'
+import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 
 type RadarImportResponse = {
   imported: RadarOpportunity[]
@@ -103,6 +103,12 @@ export const radarService = {
     limit?: number
   }) {
     return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/search-cnpja`, { method: 'POST', body: input })
+  },
+
+  async previewPlaces(campaignId: string, input: { organizationId: string; sourceType: 'serper_places' | 'brave_place_search';
+    query: string; city: string; state: string; limit: number }) {
+    return apiRequest<{ places: RadarPlacePreview[]; sourceType: string; attribution: string; storagePolicy: 'transient_only' }>(
+      `/radar/campaigns/${campaignId}/preview-places`, { method: 'POST', body: input })
   },
 
   async getOpportunities(campaignId: string) {

@@ -1,7 +1,23 @@
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 export type RadarOpportunityStatus = 'raw' | 'enriching' | 'enriched' | 'diagnosing' | 'diagnosed' | 'message_drafted' | 'review_pending' | 'approved' | 'rejected' | 'discarded' | 'opted_out' | 'converted'
 export type RadarMessageStatus = 'draft' | 'approved' | 'rejected' | 'converted'
-export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'cnpja_advanced_search' | 'cnpja_office_lookup' | 'future_paid_api' | 'osm_extract'
+export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'cnpja_advanced_search' | 'cnpja_office_lookup' | 'future_paid_api' | 'osm_extract' | 'serper_places' | 'brave_place_search'
+
+export interface RadarPlacePreview {
+  provider: 'serper_places' | 'brave_place_search'
+  name: string
+  address?: string
+  websiteUrl?: string
+  websiteStatus: 'unknown' | 'unverified'
+  phone?: string
+  email?: string
+  instagramUrl?: string
+  rating?: number
+  reviewCount?: number
+  sourceUrl?: string
+  observedAt: string
+  storagePolicy: 'transient_only'
+}
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'
 export type RadarDuplicateStatus = 'pending' | 'confirmed' | 'dismissed' | 'merged'

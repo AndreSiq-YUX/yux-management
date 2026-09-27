@@ -3,6 +3,8 @@ import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderCo
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import {
   cnpjaProviderDefaults,
+  serperPlacesProviderDefaults,
+  bravePlaceProviderDefaults,
   jinaAiProviderDefaults,
   openAiDirectFallbackDefaults,
   openRouterDefaults,
@@ -45,6 +47,8 @@ export function AdminIntegrationsPage() {
   const smtpProvider = providers.find(provider => provider.providerKey === 'smtp2go')
   const jinaProvider = providers.find(provider => provider.providerKey === 'jina_ai')
   const cnpjaProvider = providers.find(provider => provider.providerKey === 'cnpja')
+  const serperProvider = providers.find(provider => provider.providerKey === 'serper')
+  const bravePlaceProvider = providers.find(provider => provider.providerKey === 'brave_place')
   const fallbackProviders = providers.filter(provider => provider.providerType === 'llm' && provider.providerKey !== 'openrouter')
 
   return (
@@ -122,6 +126,28 @@ export function AdminIntegrationsPage() {
             }}
             credentialLabel="API key CNPJa"
             credentialHelp="Cole aqui a API key real do CNPJa. O backend criptografa e salva; o valor nao volta para o frontend."
+          />
+          <ProviderConnectionEditor
+            title="Serper Places"
+            description="Busca local no Brasil para pré-visualização transitória. Não grava resultados no CRM. O teste de conexão consome uma consulta; confirme seu plano antes de testar."
+            provider={serperProvider}
+            defaults={serperPlacesProviderDefaults}
+            onSave={async input => { await adminPlatformService.upsertProviderConnection(input); await loadProviders() }}
+            onTest={providerId => adminPlatformService.testProviderConnection(providerId)}
+            onSaveCredential={(providerId, apiKey) => adminPlatformService.saveProviderCredential(providerId, apiKey)}
+            credentialLabel="API key Serper"
+            credentialHelp="A chave fica criptografada no backend; os resultados não são persistidos."
+          />
+          <ProviderConnectionEditor
+            title="Brave Place Search"
+            description="Busca local no Brasil para pré-visualização transitória. O plano padrão não autoriza retenção de resultados. O teste de conexão consome uma consulta; confirme seu plano antes de testar."
+            provider={bravePlaceProvider}
+            defaults={bravePlaceProviderDefaults}
+            onSave={async input => { await adminPlatformService.upsertProviderConnection(input); await loadProviders() }}
+            onTest={providerId => adminPlatformService.testProviderConnection(providerId)}
+            onSaveCredential={(providerId, apiKey) => adminPlatformService.saveProviderCredential(providerId, apiKey)}
+            credentialLabel="API key Brave"
+            credentialHelp="A chave fica criptografada no backend; os resultados não são persistidos."
           />
           <div className="xl:col-span-2">
             <ProviderConnectionEditor

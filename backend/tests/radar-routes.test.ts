@@ -66,6 +66,7 @@ class FakeRadarPool {
   convertedAt: string | null = null
   convertedBy: string | null = null
   dataSourceEnabled = false
+  protectedSourceType: string | null = null
   osmSnapshotActive = false
   osmInternalOrganization = true
   osmSeenKeys: string[] = []
@@ -90,7 +91,9 @@ class FakeRadarPool {
 
     if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') return { rows: [] }
     if (normalized.includes('FROM public.radar_data_sources')) return { rows: [
-      normalized.includes("source_key = 'osm_extract'") ? { ...dataSourceRow(this), source_key: 'osm_extract', source_type: 'osm_extract' } : dataSourceRow(this),
+      normalized.includes('SELECT source_type, default_cost_per_unit FROM') && this.protectedSourceType
+        ? { source_type: this.protectedSourceType, default_cost_per_unit: '0' }
+        : normalized.includes("source_key = 'osm_extract'") ? { ...dataSourceRow(this), source_key: 'osm_extract', source_type: 'osm_extract' } : dataSourceRow(this),
     ] }
     if (normalized.includes('FROM public.radar_osm_snapshots')) return { rows: this.osmSnapshotActive ? [{
       id: '00000000-0000-4000-8000-000000000024', municipality_code: '4113700', city: 'Londrina', state: 'PR',
@@ -662,6 +665,61 @@ describe('radar routes', () => {
     expect(list.json()[0]).toMatchObject({ sourceKey: 'jina_reader', enabled: false })
     expect(update.statusCode).toBe(200)
     expect(update.json()).toMatchObject({ sourceKey: 'jina_reader', enabled: true, rateLimitPerDay: 10 })
+  })
+
+  it('prevents operators from enabling CNPJa even when they can manage Radar', async () => {
+    const { authStore, token } = buildAuthStore('yux_operator')
+    const pool = new FakeRadarPool()
+    pool.protectedSourceType = 'cnpja_advanced_search'
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'PATCH', url: `/api/radar/data-sources/${ids.dataSource}`,
+      headers: { cookie: sessionCookie(token) }, payload: { enabled: true } })
+    expect(response.statusCode).toBe(403)
+    expect(pool.queries.some(query => query.sql.includes('UPDATE public.radar_data_sources'))).toBe(false)
+  })
+
+  it('blocks CNPJa discovery outside the YUX internal organization before reading provider credentials', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.osmInternalOrganization = false
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'POST', url: `/api/radar/campaigns/${ids.campaign}/search-cnpja`,
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org, city: 'Curitiba', state: 'PR', limit: 2 } })
+    expect(response.statusCode).toBe(403)
+    expect(pool.queries.some(query => query.sql.includes('FROM public.platform_provider_connections'))).toBe(false)
+  })
+
+  it('rejects a CNPJa city without UF before consuming provider credits', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'POST', url: `/api/radar/campaigns/${ids.campaign}/search-cnpja`,
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org, city: 'Curitiba', limit: 2 } })
+    expect(response.statusCode).toBe(400)
+    expect(pool.queries.some(query => query.sql.includes('FROM public.platform_provider_connections'))).toBe(false)
+  })
+
+  it('keeps local place previews disabled until the catalog is enabled', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'POST', url: `/api/radar/campaigns/${ids.campaign}/preview-places`,
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org,
+        sourceType: 'brave_place_search', query: 'clínicas', city: 'Curitiba', state: 'PR', limit: 2 } })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ error: 'radar_source_disabled' })
+    expect(pool.queries.some(query => query.sql.includes('INSERT INTO public.radar_candidate_records'))).toBe(false)
+  })
+
+  it('requires an approved estimated unit cost before activating a paid place source', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    pool.protectedSourceType = 'serper_places'
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'PATCH', url: `/api/radar/data-sources/${ids.dataSource}`,
+      headers: { cookie: sessionCookie(token) }, payload: { enabled: true } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ error: 'radar_source_cost_approval_required' })
   })
 
   it('adds a company to a radar campaign', async () => {

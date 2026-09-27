@@ -34,19 +34,23 @@ export type CnpjaCandidate = {
   legalName?: string
   tradeName?: string
   cnaeMain?: string
+  cnaes: string[]
+  registrationStatus?: string
+  address?: string
   city?: string
   state?: string
   email?: string
   phone?: string
   openingDate?: string
+  websiteStatus: 'unknown'
   sourceUrl?: string
   rawPayload: Record<string, unknown>
 }
 
 const DEFAULT_CONFIG: Required<CnpjaProviderConfig> = {
   baseUrl: 'https://api.cnpja.com',
-  advancedSearchPath: '/office/search',
-  advancedSearchMethod: 'POST',
+  advancedSearchPath: '/office',
+  advancedSearchMethod: 'GET',
   officeLookupPath: '/office/:taxId',
   defaultStrategy: 'CACHE_IF_FRESH',
   maxAgeDays: 7,
@@ -54,20 +58,21 @@ const DEFAULT_CONFIG: Required<CnpjaProviderConfig> = {
   defaultResultLimit: 10,
 }
 
+const municipalityCache = new Map<string, { expiresAt: number; items: Array<{ id: number; nome: string }> }>()
+
 export async function searchCnpjaAdvanced(input: CnpjaAdvancedSearchInput) {
   if (!input.apiKey) throw Object.assign(new Error('cnpja_api_key_missing'), { statusCode: 400 })
   const config = resolveConfig(input.config)
   const limit = Math.min(Math.max(input.limit ?? config.defaultResultLimit, 1), 10)
-  const url = buildAdvancedSearchUrl(config, input, limit)
   const fetchImpl = input.fetchImpl ?? fetch
+  const municipalityCode = input.city ? await resolveMunicipalityCode(input.city, input.state, fetchImpl, !input.fetchImpl) : undefined
+  const url = buildAdvancedSearchUrl(config, input, limit, municipalityCode)
   const response = await fetchImpl(url, {
-    method: config.advancedSearchMethod,
+    method: 'GET',
     headers: {
       Accept: 'application/json',
       Authorization: input.apiKey,
-      ...(config.advancedSearchMethod === 'POST' ? { 'Content-Type': 'application/json' } : {}),
     },
-    body: config.advancedSearchMethod === 'POST' ? JSON.stringify(buildAdvancedSearchPayload(input, limit)) : undefined,
   })
   const body = await response.json().catch(() => null)
 
@@ -135,8 +140,9 @@ export async function testCnpjaProvider(apiKey?: string | null, config?: CnpjaPr
 export function buildCnpjaCandidateSnippet(candidate: CnpjaCandidate) {
   return [
     candidate.taxId ? `CNPJ ${candidate.taxId}` : undefined,
+    candidate.registrationStatus,
     candidate.openingDate ? `abertura ${candidate.openingDate}` : undefined,
-    [candidate.city, candidate.state].filter(Boolean).join('/'),
+    candidate.address || [candidate.city, candidate.state].filter(Boolean).join('/'),
     candidate.cnaeMain,
   ].filter(Boolean).join(' - ')
 }
@@ -154,39 +160,50 @@ function resolveConfig(config?: CnpjaProviderConfig) {
   } satisfies Required<CnpjaProviderConfig>
 }
 
-function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: CnpjaAdvancedSearchInput, limit: number) {
-  const path = config.advancedSearchPath.startsWith('/') ? config.advancedSearchPath : `/${config.advancedSearchPath}`
+function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: CnpjaAdvancedSearchInput, limit: number, municipalityCode?: number) {
+  // The official CNPJá search contract is GET /office with flat, dotted query keys.
+  // Ignore legacy provider path/method settings that pointed to the nonexistent POST /office/search.
+  const path = '/office'
   const url = new URL(`${config.baseUrl}${path}`)
   url.searchParams.set('limit', String(limit))
-  if (config.advancedSearchMethod === 'GET') {
-    if (input.query) url.searchParams.set('query', input.query)
-    if (input.city) url.searchParams.set('city', input.city)
-    if (input.state) url.searchParams.set('state', input.state)
-    if (input.openingFrom) url.searchParams.set('openingFrom', input.openingFrom)
-    if (input.openingTo) url.searchParams.set('openingTo', input.openingTo)
-    if (input.cnaes?.length) url.searchParams.set('cnaes', input.cnaes.join(','))
-  }
+  url.searchParams.set('status.id.in', '2')
+  if (input.query?.trim()) url.searchParams.set('names.in', input.query.trim())
+  if (municipalityCode) url.searchParams.set('address.municipality.in', String(municipalityCode))
+  if (input.state?.trim()) url.searchParams.set('address.state.in', input.state.trim().toUpperCase())
+  if (input.openingFrom) url.searchParams.set('founded.gte', input.openingFrom)
+  if (input.openingTo) url.searchParams.set('founded.lte', input.openingTo)
+  const cnaes = input.cnaes?.map(value => value.replace(/\D/g, '')).filter(Boolean)
+  if (cnaes?.length) url.searchParams.set('mainActivity.id.in', cnaes.join(','))
   return url.toString()
 }
 
-function buildAdvancedSearchPayload(input: CnpjaAdvancedSearchInput, limit: number) {
-  return {
-    limit,
-    offset: 0,
-    query: input.query || undefined,
-    filters: {
-      address: {
-        city: input.city || undefined,
-        state: input.state || undefined,
-      },
-      openingDate: {
-        from: input.openingFrom || undefined,
-        to: input.openingTo || undefined,
-      },
-      mainActivity: input.cnaes?.length ? { ids: input.cnaes.map(value => value.replace(/\D/g, '')).filter(Boolean) } : undefined,
-      status: 'active',
-    },
+async function resolveMunicipalityCode(city: string, state: string | undefined, fetchImpl: typeof fetch, useCache: boolean) {
+  const uf = state?.trim().toUpperCase()
+  if (!uf || !/^[A-Z]{2}$/.test(uf)) throw new Error('cnpja_city_requires_state')
+  let cached = useCache ? municipalityCache.get(uf) : undefined
+  if (!cached || cached.expiresAt < Date.now()) {
+    const response = await fetchImpl(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) throw new Error('cnpja_municipality_lookup_failed')
+    const body: unknown = await response.json().catch(() => null)
+    if (!Array.isArray(body)) throw new Error('cnpja_municipality_lookup_failed')
+    cached = {
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      items: body.filter((item): item is { id: number; nome: string } =>
+        isRecord(item) && typeof item.id === 'number' && typeof item.nome === 'string'),
+    }
+    if (useCache) municipalityCache.set(uf, cached)
   }
+  const normalized = normalizeCity(city)
+  const matches = cached.items.filter(item => normalizeCity(item.nome) === normalized)
+  if (matches.length !== 1) throw new Error('cnpja_municipality_not_found')
+  return matches[0].id
+}
+
+function normalizeCity(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR')
 }
 
 function extractCnpjaItems(body: unknown): unknown[] {
@@ -220,21 +237,41 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
   const cnaeMain = stringValue(mainActivity.text) || stringValue(mainActivity.description) || stringValue(mainActivity.id) || stringValue(record.cnae)
   const openingDate = stringValue(record.founded) || stringValue(record.openingDate) || stringValue(record.dataAbertura)
   const email = firstContact(emails)
-  const phone = firstContact(phones)
+  const phone = firstPhone(phones)
   const cleanedTaxId = taxId ? taxId.replace(/\D/g, '') : undefined
+  const sideActivities = arrayValue(record.sideActivities) || arrayValue(record.secondaryActivities) || []
+  const cnaes = [mainActivity, ...sideActivities]
+    .map(activity => objectValue(activity))
+    .map(activity => stringValue(activity?.id) || stringValue(activity?.code))
+    .filter((activity): activity is string => Boolean(activity))
+  const status = objectValue(record.status)
+  const registrationStatus = stringValue(status?.text) || stringValue(record.registrationStatus)
+  const addressParts = [
+    stringValue(address.street), stringValue(address.number), stringValue(address.district),
+    [city, state].filter(Boolean).join('/'), stringValue(address.zip) || stringValue(address.zipCode),
+  ].filter(Boolean)
+  const formattedAddress = addressParts.join(', ') || undefined
 
   return {
     taxId: cleanedTaxId,
     legalName,
     tradeName,
     cnaeMain,
+    cnaes,
+    registrationStatus,
+    address: formattedAddress,
     city,
     state,
     email,
     phone,
     openingDate,
+    websiteStatus: 'unknown',
     sourceUrl: cleanedTaxId ? `https://cnpja.com/office/${cleanedTaxId}` : undefined,
-    rawPayload: record,
+    rawPayload: {
+      taxId: cleanedTaxId, legalName, tradeName, cnaeMain, cnaes,
+      registrationStatus, address: formattedAddress, city, state, email, phone,
+      openingDate, websiteStatus: 'unknown',
+    },
   }
 }
 
@@ -258,6 +295,18 @@ function firstContact(values?: unknown[]) {
     if (isRecord(value)) {
       const formatted = stringValue(value.value) || stringValue(value.address) || stringValue(value.number)
       if (formatted) return formatted
+    }
+  }
+  return undefined
+}
+
+function firstPhone(values?: unknown[]) {
+  if (!values) return undefined
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (isRecord(value)) {
+      const number = stringValue(value.number)
+      if (number) return `${stringValue(value.area) ?? ''}${number}`
     }
   }
   return undefined

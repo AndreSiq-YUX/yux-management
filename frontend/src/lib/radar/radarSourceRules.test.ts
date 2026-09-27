@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canUseRadarSource, getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from './radarSourceRules'
+import { canUseRadarSource, getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines, buildRadarPlaceSearchDefaults } from './radarSourceRules'
 
 describe('radarSourceRules', () => {
   it('allows manual and csv while blocking disabled governed providers', () => {
@@ -23,5 +23,10 @@ describe('radarSourceRules', () => {
       'trade_name,city',
       'A,Londrina',
     ])
+  })
+
+  it('starts local searches from the selected campaign instead of a fixed city', () => {
+    expect(buildRadarPlaceSearchDefaults({ targetSegment: 'Revendas', targetCity: 'Maringá', targetState: 'PR' }))
+      .toEqual({ query: 'Revendas', city: 'Maringá', state: 'PR', sourceType: 'serper_places', limit: 5 })
   })
 })

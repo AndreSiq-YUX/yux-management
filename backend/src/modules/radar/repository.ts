@@ -30,6 +30,7 @@ import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { resolveRadarOsmSegment } from './osm-segment-map.js'
 import { checkRadarOsmSite } from './osm-site-check.js'
+import { searchRadarPlaces, type RadarPlaceProvider } from './place-providers.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -66,6 +67,17 @@ export type RadarCnpjaSearchInput = {
   openingFrom?: string
   openingTo?: string
   limit?: number
+  secretKeyMaterial: string
+}
+
+export type RadarPlacePreviewInput = {
+  organizationId: string
+  campaignId: string
+  sourceType: RadarPlaceProvider
+  query: string
+  city: string
+  state: string
+  limit: number
   secretKeyMaterial: string
 }
 
@@ -188,13 +200,17 @@ export async function updateRadarDataSource(
   patch: { enabled?: boolean; rateLimitPerDay?: number; defaultCostPerUnit?: number; termsNotes?: string },
 ) {
   requireRadarAccess(user)
-  const protectedSource = await pool.query<{ source_type: string }>(
-    `SELECT source_type FROM public.radar_data_sources WHERE id = $1 LIMIT 1`, [sourceId],
+  const protectedSource = await pool.query<{ source_type: string; default_cost_per_unit: string | number }>(
+    `SELECT source_type, default_cost_per_unit FROM public.radar_data_sources WHERE id = $1 LIMIT 1`, [sourceId],
   )
-  if (protectedSource.rows[0]?.source_type === 'osm_extract') {
+  if (['osm_extract', 'cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search'].includes(protectedSource.rows[0]?.source_type ?? '')) {
     if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
-    if (patch.defaultCostPerUnit !== undefined && patch.defaultCostPerUnit !== 0)
+    if (protectedSource.rows[0]?.source_type === 'osm_extract' && patch.defaultCostPerUnit !== undefined && patch.defaultCostPerUnit !== 0)
       throw Object.assign(new Error('radar_osm_must_remain_free'), { statusCode: 400 })
+  }
+  if (patch.enabled === true && ['serper_places', 'brave_place_search'].includes(protectedSource.rows[0]?.source_type ?? '')
+      && Number(patch.defaultCostPerUnit ?? protectedSource.rows[0]?.default_cost_per_unit ?? 0) <= 0) {
+    throw Object.assign(new Error('radar_source_cost_approval_required'), { statusCode: 400 })
   }
   const result = await pool.query<RadarDataSourceRow>(
     `UPDATE public.radar_data_sources
@@ -901,15 +917,25 @@ export async function runRadarCnpjaAdvancedSearch(
   pool: pg.Pool,
   user: AuthUser,
   input: RadarCnpjaSearchInput,
+  dependencies: {
+    search?: typeof searchCnpjaAdvanced
+    loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
+  } = {},
 ) {
   requireRadarAccess(user)
   const limit = input.limit ?? 5
   assertSmallBatchLimit(limit)
 
+  if (!await isInternalRadarOrganization(pool, input.organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
+  }
+
   const source = await findRadarDataSource(pool, input.organizationId, 'cnpja_advanced_search')
   const provider = await findCnpjaProvider(pool)
   const apiKey = provider?.status === 'active'
-    ? await loadPlatformProviderSecret(pool, provider.id, 'api_key', input.secretKeyMaterial)
+    ? dependencies.loadSecret
+      ? await dependencies.loadSecret(pool, provider.id, input.secretKeyMaterial)
+      : await loadPlatformProviderSecret(pool, provider.id, 'api_key', input.secretKeyMaterial)
     : null
   const providerIssue = getCnpjaProviderIssue(provider, apiKey)
   const client = await pool.connect()
@@ -925,7 +951,9 @@ export async function runRadarCnpjaAdvancedSearch(
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
 
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
+      [`radar:${input.organizationId}:cnpja_advanced_search`])
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1)
     const issues = [...governance.issues]
     if (providerIssue) issues.push(providerIssue)
 
@@ -958,9 +986,11 @@ export async function runRadarCnpjaAdvancedSearch(
       return { candidates: [], issues, runId: run.rows[0].id }
     }
 
+    await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, 1, governance.estimatedCost)
+
     let results: CnpjaCandidate[] = []
     try {
-      results = await searchCnpjaAdvanced({
+      results = await (dependencies.search ?? searchCnpjaAdvanced)({
         apiKey: apiKey as string,
         config: provider?.publicConfig as CnpjaProviderConfig | undefined,
         query: input.query,
@@ -991,6 +1021,11 @@ export async function runRadarCnpjaAdvancedSearch(
         legalName: result.legalName,
         cnpj: result.taxId,
         cnaeMain: result.cnaeMain,
+        cnaes: result.cnaes,
+        registrationStatus: result.registrationStatus,
+        openingDate: result.openingDate,
+        address: result.address,
+        websiteStatus: result.websiteStatus,
         city: result.city,
         state: result.state,
         emailRaw: result.email,
@@ -1024,9 +1059,6 @@ export async function runRadarCnpjaAdvancedSearch(
       candidates.push(mapCandidate(inserted.rows[0]))
     }
 
-    if (candidates.length > 0) {
-      await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, candidates.length, governance.estimatedCost)
-    }
     await updateRadarRunCompletion(client, run.rows[0].id, 'succeeded', { candidateCount: candidates.length, estimatedCost: governance.estimatedCost }, null)
     await client.query('COMMIT')
     return { candidates, issues: [], runId: run.rows[0].id }
@@ -1036,6 +1068,72 @@ export async function runRadarCnpjaAdvancedSearch(
   } finally {
     client.release()
   }
+}
+
+export async function runRadarPlacePreview(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: RadarPlacePreviewInput,
+  dependencies: {
+    fetchImpl?: typeof fetch
+    loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
+  } = {},
+) {
+  requireRadarAccess(user)
+  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
+  }
+  assertSmallBatchLimit(input.limit)
+  const source = await findRadarDataSource(pool, input.organizationId, input.sourceType)
+  if (!source?.enabled) throw Object.assign(new Error('radar_source_disabled'), { statusCode: 409 })
+  if (source.defaultCostPerUnit <= 0) {
+    throw Object.assign(new Error('radar_source_cost_approval_required'), { statusCode: 409 })
+  }
+
+  const campaign = await pool.query<{ id: string }>(
+    `SELECT id FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+    [input.campaignId, input.organizationId],
+  )
+  if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+
+  const provider = await pool.query<{ id: string; status: string }>(
+    `SELECT id, status FROM public.platform_provider_connections
+     WHERE provider_key = $1 AND environment = 'production'
+     ORDER BY is_default DESC, updated_at DESC LIMIT 1`,
+    [input.sourceType === 'serper_places' ? 'serper' : 'brave_place'],
+  )
+  const configured = provider.rows[0]
+  if (configured?.status !== 'active') {
+    throw Object.assign(new Error('radar_place_provider_not_active'), { statusCode: 409 })
+  }
+  const apiKey = dependencies.loadSecret
+    ? await dependencies.loadSecret(pool, configured.id, input.secretKeyMaterial)
+    : await loadPlatformProviderSecret(pool, configured.id, 'api_key', input.secretKeyMaterial)
+  if (!apiKey) throw Object.assign(new Error('radar_place_provider_secret_missing'), { statusCode: 409 })
+
+  // Reserve the one external request before making it. Only usage metadata is persisted.
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
+      [`radar:${input.organizationId}:${input.sourceType}`])
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1)
+    if (!governance.allowed) {
+      throw Object.assign(new Error(governance.issues[0]?.code ?? 'radar_source_governance_blocked'), { statusCode: 409 })
+    }
+    await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, 1, governance.estimatedCost)
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+
+  const places = await searchRadarPlaces({ provider: input.sourceType, apiKey, query: input.query,
+    city: input.city, state: input.state, limit: input.limit, fetchImpl: dependencies.fetchImpl })
+  return { places, sourceType: input.sourceType, storagePolicy: 'transient_only' as const,
+    attribution: input.sourceType === 'serper_places' ? 'Serper Places / Google' : 'Brave Place Search' }
 }
 
 export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
@@ -1945,7 +2043,7 @@ async function evaluateRadarSourceGovernance(
      LIMIT 1`,
     [campaignId, organizationId],
   )
-  const dailyLimit = Math.min(source.rateLimitPerDay, campaign.rows[0]?.daily_limit ?? source.rateLimitPerDay)
+  const campaignDailyLimit = campaign.rows[0]?.daily_limit ?? source.rateLimitPerDay
   const budgetLimit = campaign.rows[0]?.budget_limit !== null && campaign.rows[0]?.budget_limit !== undefined
     ? Number(campaign.rows[0].budget_limit)
     : undefined
@@ -1961,14 +2059,29 @@ async function evaluateRadarSourceGovernance(
   )
   const usedUnits = Number(usage.rows[0]?.units ?? 0)
   const usedCost = Number(usage.rows[0]?.estimated_cost ?? 0)
+  const organizationUsage = await queryable.query<{ units: string | number }>(
+    `SELECT COALESCE(SUM(units), 0) AS units
+     FROM public.radar_source_usage_counters
+     WHERE organization_id = $1 AND source_type = $2 AND usage_date = CURRENT_DATE`,
+    [organizationId, sourceType],
+  )
+  const organizationUsedUnits = Number(organizationUsage.rows[0]?.units ?? 0)
   const issues: Array<{ code: string; sourceType: string; message: string; limit?: number; used?: number }> = []
 
-  if (usedUnits + requestedUnits > dailyLimit) {
+  if (organizationUsedUnits + requestedUnits > source.rateLimitPerDay) {
     issues.push({
       code: 'source_limit_exceeded',
       sourceType,
       message: `Limite diario da fonte ${sourceType} excedido.`,
-      limit: dailyLimit,
+      limit: source.rateLimitPerDay,
+      used: organizationUsedUnits,
+    })
+  } else if (usedUnits + requestedUnits > campaignDailyLimit) {
+    issues.push({
+      code: 'source_limit_exceeded',
+      sourceType,
+      message: `Limite diario da campanha excedido para ${sourceType}.`,
+      limit: campaignDailyLimit,
       used: usedUnits,
     })
   }

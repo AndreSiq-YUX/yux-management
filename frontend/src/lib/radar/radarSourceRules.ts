@@ -26,3 +26,8 @@ export function getCsvPreviewRows(value: string, maxRows = 3) {
 export function isSmallBatch(size: number) {
   return Number.isInteger(size) && size >= 1 && size <= RADAR_SMALL_BATCH_LIMIT
 }
+
+export function buildRadarPlaceSearchDefaults(campaign: { targetSegment: string; targetCity: string; targetState: string }) {
+  return { query: campaign.targetSegment, city: campaign.targetCity, state: campaign.targetState,
+    sourceType: 'serper_places' as const, limit: 5 }
+}

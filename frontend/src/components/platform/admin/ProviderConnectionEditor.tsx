@@ -95,7 +95,7 @@ export function ProviderConnectionEditor({
   const [credentialSaved, setCredentialSaved] = useState(false)
   const [testResult, setTestResult] = useState<ProviderConnectionTestResult | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const isLockedProviderKey = ['smtp2go', 'cnpja', 'openrouter', 'openai_direct'].includes(defaults.providerKey)
+  const isLockedProviderKey = ['smtp2go', 'cnpja', 'serper', 'brave_place', 'openrouter', 'openai_direct'].includes(defaults.providerKey)
   const providerKeyValue = isLockedProviderKey ? defaults.providerKey : providerKey
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

@@ -12,6 +12,8 @@ export type RadarSourceType =
   | 'cnpja_office_lookup'
   | 'future_paid_api'
   | 'osm_extract'
+  | 'serper_places'
+  | 'brave_place_search'
 
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'

@@ -31,7 +31,8 @@ describe('providerDefaults', () => {
     }))
     expect(cnpjaProviderDefaults.publicConfig).toEqual(expect.objectContaining({
       baseUrl: 'https://api.cnpja.com',
-      advancedSearchPath: '/office/search',
+      advancedSearchPath: '/office',
+      advancedSearchMethod: 'GET',
       officeLookupPath: '/office/:taxId',
       requiredSecret: 'cnpja:api_key',
     }))

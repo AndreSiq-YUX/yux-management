@@ -5,6 +5,7 @@ import { hashSessionToken } from '../../auth/session.js'
 import { forbidden } from '../../http/errors.js'
 import { requireAdminRole, requireAuth } from '../../http/guards.js'
 import { testCnpjaProvider } from '../radar/cnpjaClient.js'
+import { testRadarPlaceProvider } from '../radar/place-providers.js'
 import { getAdminLlmUseCases, isEmbeddingUseCase, LLM_PROVIDERS } from './llm-routing.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import {
@@ -821,7 +822,7 @@ type Smtp2GoTestResult = {
 }
 
 function isCredentialManagedProvider(providerKey: string) {
-  return ['smtp2go', 'cnpja', 'openrouter', 'openai_direct'].includes(providerKey)
+  return ['smtp2go', 'cnpja', 'serper', 'brave_place', 'openrouter', 'openai_direct'].includes(providerKey)
 }
 
 async function testProviderConnection(
@@ -831,6 +832,8 @@ async function testProviderConnection(
 ): Promise<Smtp2GoTestResult> {
   if (providerKey === 'smtp2go') return testSmtp2GoProvider(apiKey)
   if (providerKey === 'cnpja') return testCnpjaProvider(apiKey, publicConfig as Parameters<typeof testCnpjaProvider>[1])
+  if (providerKey === 'serper') return testRadarPlaceProvider('serper_places', apiKey)
+  if (providerKey === 'brave_place') return testRadarPlaceProvider('brave_place_search', apiKey)
   if (providerKey === 'openrouter' || providerKey === 'openai_direct') {
     return testLlmProvider(providerKey, apiKey, publicConfig)
   }

@@ -24,6 +24,7 @@ import {
   optOutRadarOpportunity,
   reviewRadarOpportunity,
   runRadarCnpjaAdvancedSearch,
+  runRadarPlacePreview,
   runRadarOpportunityAnalysis,
   runRadarAssistedSearch,
   runRadarOsmSearch,
@@ -100,13 +101,23 @@ const searchCnpjaSchema = z.object({
   organizationId: uuid,
   query: z.string().optional(),
   city: z.string().optional(),
-  state: z.string().optional(),
+  state: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).optional(),
   cnaes: z.array(z.string()).optional(),
-  openingFrom: z.string().optional(),
-  openingTo: z.string().optional(),
+  openingFrom: z.iso.date().optional(),
+  openingTo: z.iso.date().optional(),
   limit: z.number().int().min(1).max(10).optional(),
 }).refine(input => Boolean(input.query || input.city || input.state || input.cnaes?.length || input.openingFrom || input.openingTo), {
   message: 'radar_cnpja_search_requires_filter',
+}).refine(input => !input.city?.trim() || Boolean(input.state), {
+  message: 'radar_cnpja_city_requires_state',
+})
+const previewPlacesSchema = z.object({
+  organizationId: uuid,
+  sourceType: z.enum(['serper_places', 'brave_place_search']),
+  query: z.string().trim().min(1).max(160),
+  city: z.string().trim().min(1).max(100),
+  state: z.string().trim().length(2).transform(value => value.toUpperCase()),
+  limit: z.number().int().min(1).max(10),
 })
 const duplicateUpdateSchema = z.object({ status: z.enum(['confirmed', 'dismissed', 'merged']) })
 const batchOpportunitySchema = z.object({
@@ -247,8 +258,20 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     return reply.code(201).send(await runRadarCnpjaAdvancedSearch(app.pg, user, {
       ...parsed.data,
       campaignId: params.data.id,
-      secretKeyMaterial: app.config.SESSION_SECRET,
+      secretKeyMaterial: app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+        ? `provider-key:${app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : app.config.SESSION_SECRET,
     }))
+  })
+
+  app.post('/campaigns/:id/preview-places', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = previewPlacesSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_place_preview_payload' })
+    return runRadarPlacePreview(app.pg, user, { ...parsed.data, campaignId: params.data.id,
+      secretKeyMaterial: app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+        ? `provider-key:${app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : app.config.SESSION_SECRET })
   })
 
   app.get('/campaigns/:id/candidates', async (request, reply) => {

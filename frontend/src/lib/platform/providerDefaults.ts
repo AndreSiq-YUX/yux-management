@@ -107,8 +107,8 @@ export const cnpjaProviderDefaults: PlatformProviderConnectionInput = {
   isDefault: true,
   publicConfig: {
     baseUrl: 'https://api.cnpja.com',
-    advancedSearchPath: '/office/search',
-    advancedSearchMethod: 'POST',
+    advancedSearchPath: '/office',
+    advancedSearchMethod: 'GET',
     officeLookupPath: '/office/:taxId',
     defaultStrategy: 'CACHE_IF_FRESH',
     maxAgeDays: 7,
@@ -119,5 +119,37 @@ export const cnpjaProviderDefaults: PlatformProviderConnectionInput = {
     purpose: 'pesquisa avancada de empresas recem-abertas para Radar Comercial',
     managedBy: 'YUX Hub Admin',
     requiredSecret: 'cnpja:api_key',
+  },
+}
+
+export const serperPlacesProviderDefaults: PlatformProviderConnectionInput = {
+  providerType: 'internal_service',
+  providerKey: 'serper',
+  displayName: 'Serper Places',
+  environment: 'production',
+  status: 'not_configured',
+  secretReference: 'serper:api_key',
+  isDefault: true,
+  publicConfig: {
+    purpose: 'Radar local; somente pré-visualização transitória',
+    storagePolicy: 'transient_only',
+    managedBy: 'YUX Hub Admin',
+    requiredSecret: 'serper:api_key',
+  },
+}
+
+export const bravePlaceProviderDefaults: PlatformProviderConnectionInput = {
+  providerType: 'internal_service',
+  providerKey: 'brave_place',
+  displayName: 'Brave Place Search',
+  environment: 'production',
+  status: 'not_configured',
+  secretReference: 'brave_place:api_key',
+  isDefault: true,
+  publicConfig: {
+    purpose: 'Radar local; somente pré-visualização transitória',
+    storagePolicy: 'transient_only',
+    managedBy: 'YUX Hub Admin',
+    requiredSecret: 'brave_place:api_key',
   },
 }

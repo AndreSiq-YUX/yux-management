@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import { ProspectingPlanPanel } from '@/components/radar/ProspectingPlanPanel'
+import { RadarPlacePreviewPanel } from '@/components/radar/RadarPlacePreviewPanel'
 import {
   canConvertRadarOpportunity,
   canShowRadarNavigation,
@@ -13,10 +14,10 @@ import {
   getRadarOpportunityStatusLabel,
   getRadarScoreTone,
 } from '@/lib/radar/radarRules'
-import { getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from '@/lib/radar/radarSourceRules'
+import { buildRadarPlaceSearchDefaults, getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from '@/lib/radar/radarSourceRules'
 import { radarService } from '@/services/radarService'
 import { usePlatformContext } from '@/stores/platformStore'
-import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportSummary, RadarMetrics, RadarOpportunity, RadarSourceType } from '@/types/radar'
+import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportSummary, RadarMetrics, RadarOpportunity, RadarPlacePreview, RadarSourceType } from '@/types/radar'
 
 const initialForm = {
   name: '',
@@ -53,8 +54,8 @@ const initialSearchForm = {
 
 const initialCnpjaForm = {
   query: '',
-  city: 'Londrina',
-  state: 'PR',
+  city: '',
+  state: '',
   cnae: '',
   openingFrom: recentDate(60),
   openingTo: '',
@@ -138,6 +139,18 @@ const fallbackSources: RadarDataSource[] = [
     requiresSecret: false, termsNotes: 'Extrato municipal validado; fonte desligada por padrão.',
     defaultCostPerUnit: 0, rateLimitPerDay: 10, createdAt: '', updatedAt: '',
   },
+  {
+    id: 'fallback-serper-places', sourceKey: 'serper_places', sourceType: 'serper_places',
+    displayName: 'Serper Places', enabled: false, isPaid: true, requiresSecret: true,
+    termsNotes: 'Pré-visualização transitória; não salva resultados no CRM.',
+    defaultCostPerUnit: 0, rateLimitPerDay: 10, createdAt: '', updatedAt: '',
+  },
+  {
+    id: 'fallback-brave-place', sourceKey: 'brave_place_search', sourceType: 'brave_place_search',
+    displayName: 'Brave Place Search', enabled: false, isPaid: true, requiresSecret: true,
+    termsNotes: 'Pré-visualização transitória; plano padrão sem direito de retenção.',
+    defaultCostPerUnit: 0, rateLimitPerDay: 10, createdAt: '', updatedAt: '',
+  },
 ]
 
 const candidateStatusLabels: Record<string, string> = {
@@ -175,6 +188,11 @@ export function RadarWorkspace() {
   const [urlText, setUrlText] = useState('')
   const [searchForm, setSearchForm] = useState(initialSearchForm)
   const [cnpjaForm, setCnpjaForm] = useState(initialCnpjaForm)
+  const [placeForm, setPlaceForm] = useState({ query: '', city: '', state: '',
+    sourceType: 'serper_places' as 'serper_places' | 'brave_place_search', limit: 5 })
+  const [placePreview, setPlacePreview] = useState<{ places: RadarPlacePreview[]; attribution: string } | null>(null)
+  const [sourceCostDrafts, setSourceCostDrafts] = useState<Record<string, string>>({})
+  const [sourceLimitDrafts, setSourceLimitDrafts] = useState<Record<string, string>>({})
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
   const [lastImportSummary, setLastImportSummary] = useState<RadarImportSummary | null>(null)
   const [analyzeAfterImport, setAnalyzeAfterImport] = useState(false)
@@ -394,6 +412,7 @@ export function RadarWorkspace() {
   const jinaReaderSource = findSource(workspaceSources, 'jina_reader')
   const searchSource = findSource(workspaceSources, searchForm.sourceType)
   const cnpjaSource = findSource(workspaceSources, 'cnpja_advanced_search')
+  const placeSource = findSource(workspaceSources, placeForm.sourceType)
   const osmSource = findSource(workspaceSources, 'osm_extract')
   const selectedCampaign = campaigns.find(campaign => campaign.id === selectedCampaignId)
 
@@ -407,6 +426,20 @@ export function RadarWorkspace() {
     } catch (error) {
       console.error('Erro ao alterar fonte OSM:', error)
       toast.error('Não foi possível alterar a fonte OSM')
+    } finally { setActionLoading(null) }
+  }
+
+  const changeManagedSource = async (source: RadarDataSource, patch: { enabled?: boolean; defaultCostPerUnit?: number; rateLimitPerDay?: number }) => {
+    if (source.id.startsWith('fallback-') || context.role?.key !== 'yux_admin' || actionLoading) return
+    if (patch.enabled === true && source.isPaid && !window.confirm('Esta fonte pode consumir créditos. Confirma a ativação para consultas manuais limitadas?')) return
+    try {
+      setActionLoading(`source-${source.id}`)
+      const updated = await radarService.updateDataSource(source.id, patch)
+      setDataSources(current => current.map(item => item.id === updated.id ? updated : item))
+      toast.success(patch.enabled === undefined ? 'Limites e custo salvos' : updated.enabled ? 'Fonte ativada' : 'Fonte desativada')
+    } catch (error) {
+      console.error('Erro ao configurar fonte Radar:', error)
+      toast.error('Não foi possível alterar a fonte; confira custo e permissões')
     } finally { setActionLoading(null) }
   }
   const csvPreviewRows = getCsvPreviewRows(csvText, 4)
@@ -574,6 +607,10 @@ export function RadarWorkspace() {
       toast.error('Use no maximo 10 resultados por pesquisa.')
       return
     }
+    if (cnpjaForm.city.trim() && !/^[A-Z]{2}$/.test(cnpjaForm.state.trim().toUpperCase())) {
+      toast.error('Informe a UF com duas letras para localizar a cidade no IBGE.')
+      return
+    }
 
     try {
       setActionLoading('cnpja')
@@ -604,6 +641,23 @@ export function RadarWorkspace() {
     } finally {
       setActionLoading(null)
     }
+  }
+
+  const previewPlaces = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!organizationId || !selectedCampaignId || actionLoading || !isSmallBatch(placeForm.limit)) return
+    const blockedReason = getSourceBlockedReason(placeSource)
+    if (blockedReason) { toast.error(blockedReason); return }
+    try {
+      setActionLoading('place-preview')
+      setPlacePreview(null)
+      const result = await radarService.previewPlaces(selectedCampaignId, { organizationId, ...placeForm })
+      setPlacePreview({ places: result.places, attribution: result.attribution })
+      toast.success(`${result.places.length} resultados exibidos temporariamente`)
+    } catch (error) {
+      console.error('Erro na prévia de busca local:', error)
+      toast.error('Não foi possível consultar a fonte local; verifique chave, limite e orçamento')
+    } finally { setActionLoading(null) }
   }
 
   const importCandidate = async (candidateId: string) => {
@@ -799,6 +853,9 @@ export function RadarWorkspace() {
               <span>{getRadarCampaignStatusLabel(campaign.status)}</span>
               <Button type="button" size="sm" variant={selectedCampaignId === campaign.id ? 'default' : 'outline'} onClick={() => {
                 setSelectedCampaignId(campaign.id)
+                setCnpjaForm(current => ({ ...current, city: campaign.targetCity, state: campaign.targetState }))
+                setPlaceForm(buildRadarPlaceSearchDefaults(campaign))
+                setPlacePreview(null)
                 setSelectedOpportunity(null)
                 setSelectedOpportunityIds([])
                 setLastImportSummary(null)
@@ -825,9 +882,36 @@ export function RadarWorkspace() {
                       {blockedReason ? <Lock className="h-4 w-4 text-slate-400" /> : <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
                     </div>
                     <p className="mt-1 text-xs text-slate-500">{blockedReason || 'Disponivel para esta campanha.'}</p>
-                    <p className="mt-2 text-xs text-slate-600">Limite diario: {source.rateLimitPerDay}</p>
-                    <p className="mt-1 text-xs text-slate-600">Custo unitario: R$ {source.defaultCostPerUnit.toFixed(4)}</p>
+                    <p className="mt-2 text-xs text-slate-600">Limite diário da fonte por organização: {source.rateLimitPerDay}</p>
+                    <p className="mt-1 text-xs text-slate-600">{source.isPaid && source.defaultCostPerUnit === 0
+                      ? 'Custo em R$ ainda não aprovado; fonte bloqueada.'
+                      : `Custo estimado por chamada: R$ ${source.defaultCostPerUnit.toFixed(4)}`}</p>
                     {source.termsNotes && <p className="mt-1 text-xs text-slate-500">{source.termsNotes}</p>}
+                    {context.organization?.isInternalGrowthWorkspace && context.role?.key === 'yux_admin'
+                      && ['cnpja_advanced_search', 'serper_places', 'brave_place_search'].includes(source.sourceType)
+                      && !source.id.startsWith('fallback-') && (
+                        <div className="mt-3 space-y-2 border-t pt-2">
+                          {source.isPaid && <label className="block text-xs text-slate-600">Custo estimado por consulta em R$
+                            <Input type="number" min="0.000001" step="0.000001" value={sourceCostDrafts[source.id] ?? String(source.defaultCostPerUnit)}
+                              onChange={event => setSourceCostDrafts(current => ({ ...current, [source.id]: event.target.value }))} />
+                          </label>}
+                          <label className="block text-xs text-slate-600">Máximo de consultas por dia na organização
+                            <Input type="number" min="1" max="1000" step="1" value={sourceLimitDrafts[source.id] ?? String(source.rateLimitPerDay)}
+                              onChange={event => setSourceLimitDrafts(current => ({ ...current, [source.id]: event.target.value }))} />
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)
+                              || !Number.isInteger(Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay))
+                              || Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay) < 1}
+                              onClick={() => changeManagedSource(source, {
+                                defaultCostPerUnit: Number(sourceCostDrafts[source.id] ?? source.defaultCostPerUnit),
+                                rateLimitPerDay: Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay),
+                              })}>Salvar limites e custo</Button>
+                            <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading) || (!source.enabled && source.isPaid && source.defaultCostPerUnit <= 0)}
+                              onClick={() => changeManagedSource(source, { enabled: !source.enabled })}>{source.enabled ? 'Desativar' : 'Ativar'}</Button>
+                          </div>
+                        </div>
+                      )}
                   </div>
                 )
               })}
@@ -992,7 +1076,38 @@ export function RadarWorkspace() {
                   </div>
                 </div>
               </form>
+              <form className="rounded-md border p-3" onSubmit={previewPlaces}>
+                <div className="mb-3 flex items-center gap-2"><Search className="h-4 w-4 text-yux-700" />
+                  <h3 className="text-sm font-semibold text-slate-950">Busca local (pré-visualização)</h3></div>
+                <div className="grid gap-3 md:grid-cols-6">
+                  <Input className="md:col-span-2" aria-label="Segmento ou termo da busca local" placeholder="Segmento ou termo" required value={placeForm.query}
+                    onChange={event => setPlaceForm({ ...placeForm, query: event.target.value })} />
+                  <Input aria-label="Cidade da busca local" placeholder="Cidade" required value={placeForm.city}
+                    onChange={event => setPlaceForm({ ...placeForm, city: event.target.value })} />
+                  <Input aria-label="UF da busca local" placeholder="UF" required maxLength={2} value={placeForm.state}
+                    onChange={event => setPlaceForm({ ...placeForm, state: event.target.value.toUpperCase() })} />
+                  <Input aria-label="Limite de resultados da busca local" type="number" min="1" max="10" value={placeForm.limit}
+                    onChange={event => setPlaceForm({ ...placeForm, limit: Number(event.target.value) })} />
+                  <select aria-label="Fonte da busca local" className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={placeForm.sourceType} onChange={event => {
+                      setPlaceForm({ ...placeForm, sourceType: event.target.value as typeof placeForm.sourceType })
+                      setPlacePreview(null)
+                    }}>
+                    <option value="serper_places">Serper Places</option>
+                    <option value="brave_place_search">Brave Place Search</option>
+                  </select>
+                  <div className="md:col-span-6 flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-500">{getSourceBlockedReason(placeSource)
+                      || 'Uma consulta pode consumir crédito. Os resultados não serão salvos no Radar ou CRM.'}</p>
+                    <Button type="submit" disabled={!placeForm.query.trim() || !placeForm.city.trim() || !placeForm.state.trim()
+                      || Boolean(getSourceBlockedReason(placeSource)) || Boolean(actionLoading)}>
+                      {actionLoading === 'place-preview' ? 'Consultando...' : 'Consultar fonte'}</Button>
+                  </div>
+                </div>
+              </form>
             </div>
+
+            {placePreview && <RadarPlacePreviewPanel places={placePreview.places} attribution={placePreview.attribution} />}
 
             {lastImportSummary && (
               <div className="mt-4 rounded-md border bg-slate-50 p-3">
