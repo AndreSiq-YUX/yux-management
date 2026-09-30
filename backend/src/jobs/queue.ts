@@ -48,6 +48,8 @@ export const JOB_NAMES = [
   'strategy.adminChat',
   'strategy.indexKnowledge',
   'radar.analyzeOpportunity',
+  'radar.runRegionalDiscovery',
+  'radar.verifyRegionalCandidates',
   'company-intelligence.indexKnowledge',
   'company-intelligence.discoverWebsite',
   'proposal.convert',

@@ -88,6 +88,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   return responseBody as T
 }
 
+export async function apiRequestText(path: string): Promise<string> {
+  const response = await fetch(buildApiUrl(path), { credentials: 'include' })
+  if (!response.ok) throw new ApiClientError(response, await readJson(response))
+  return response.text()
+}
+
 export async function apiBinaryRequest<T>(path: string, body: Blob, headers?: HeadersInit): Promise<T> {
   const requestHeaders = new Headers(headers)
   requestHeaders.set('Content-Type', 'application/octet-stream')

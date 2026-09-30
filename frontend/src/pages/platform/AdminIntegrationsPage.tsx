@@ -18,24 +18,24 @@ export function AdminIntegrationsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadProviders(active = true) {
+  async function loadProviders(isActive: () => boolean = () => true) {
     setLoading(true)
     setError(null)
 
     try {
       const result = await adminPlatformService.getProviderConnections()
-      if (active) setProviders(result)
+      if (isActive()) setProviders(result)
     } catch (error) {
       console.error('Error loading platform provider connections:', error)
-      if (active) setError('Nao foi possivel carregar as integracoes globais.')
+      if (isActive()) setError('Nao foi possivel carregar as integracoes globais.')
     } finally {
-      if (active) setLoading(false)
+      if (isActive()) setLoading(false)
     }
   }
 
   useEffect(() => {
     let active = true
-    loadProviders()
+    void loadProviders(() => active)
 
     return () => {
       active = false
@@ -126,6 +126,7 @@ export function AdminIntegrationsPage() {
             }}
             credentialLabel="API key CNPJa"
             credentialHelp="Cole aqui a API key real do CNPJa. O backend criptografa e salva; o valor nao volta para o frontend."
+            showClientDeliveryLicenseControls
           />
           <ProviderConnectionEditor
             title="Serper Places"
@@ -140,14 +141,15 @@ export function AdminIntegrationsPage() {
           />
           <ProviderConnectionEditor
             title="Brave Place Search"
-            description="Busca local no Brasil para pré-visualização transitória. O plano padrão não autoriza retenção de resultados. O teste de conexão consome uma consulta; confirme seu plano antes de testar."
+            description="Busca local no Brasil. Persistência de resultados exige chave contratual específica, confirmação da licença e aprovação de custo da fonte no Radar. O teste de conexão consome uma consulta."
             provider={bravePlaceProvider}
             defaults={bravePlaceProviderDefaults}
             onSave={async input => { await adminPlatformService.upsertProviderConnection(input); await loadProviders() }}
             onTest={providerId => adminPlatformService.testProviderConnection(providerId)}
             onSaveCredential={(providerId, apiKey) => adminPlatformService.saveProviderCredential(providerId, apiKey)}
-            credentialLabel="API key Brave"
-            credentialHelp="A chave fica criptografada no backend; os resultados não são persistidos."
+            credentialLabel="API key Brave com licença adequada"
+            credentialHelp="A chave fica criptografada no backend. Somente ateste licença se esta chave específica permitir retenção."
+            showRetentionLicenseControls
           />
           <div className="xl:col-span-2">
             <ProviderConnectionEditor

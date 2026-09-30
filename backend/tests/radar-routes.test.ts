@@ -177,7 +177,10 @@ class FakeRadarPool {
         ],
       }
     }
-    if (normalized.includes('INSERT INTO public.radar_campaigns')) return { rows: [campaignRow()] }
+    if (normalized.includes('INSERT INTO public.radar_campaigns')) return { rows: [params[2] === 'regional_b2b'
+      ? { ...campaignRow(), name: params[1], campaign_type: 'regional_b2b', target_city: null, target_state: null,
+        target_states: params[9], product_focus: params[10] }
+      : campaignRow()] }
     if (normalized.includes('INSERT INTO public.radar_enrichment_runs')) return { rows: [{ id: ids.enrichmentRun }] }
     if (normalized.includes('UPDATE public.radar_enrichment_runs')) return { rows: [] }
     if (normalized.includes('INSERT INTO public.radar_candidate_records')) {
@@ -643,6 +646,21 @@ describe('radar routes', () => {
     expect(created.json()).toMatchObject({ id: ids.campaign, organizationId: ids.org, targetCity: 'Londrina' })
     expect(listed.statusCode).toBe(200)
     expect(listed.json()).toEqual([expect.objectContaining({ id: ids.campaign, dailyLimit: 5 })])
+  })
+
+  it('creates a three-state industrial-kitchen campaign without inventing a city', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'POST', url: '/api/radar/campaigns',
+      headers: { cookie: sessionCookie(token) }, payload: { organizationId: ids.org,
+        name: 'Cozinhas industriais', campaignType: 'regional_b2b', targetSegment: 'Cozinhas industriais',
+        targetStates: ['MG', 'SP', 'PR'], productFocus: ['massas frescas', 'massas congeladas'],
+        offerType: 'Fornecimento de massas', dailyLimit: 10 } })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({ campaignType: 'regional_b2b', targetStates: ['MG', 'SP', 'PR'], targetCity: '' })
+    const insert = pool.queries.find(query => query.sql.includes('INSERT INTO public.radar_campaigns'))
+    expect(insert?.params).toContainEqual(['MG', 'SP', 'PR'])
   })
 
   it('lists and updates governed radar data sources', async () => {

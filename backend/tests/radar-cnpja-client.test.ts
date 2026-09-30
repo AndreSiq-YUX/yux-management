@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
+import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, searchCnpjaAdvancedPage, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
 
 describe('radar CNPJa client', () => {
   it('searches advanced company records and normalizes candidates', async () => {
@@ -108,5 +108,21 @@ describe('radar CNPJa client', () => {
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => [{ id: 4113700, nome: 'Londrina' }] })) as unknown as typeof fetch
     await expect(searchCnpjaAdvanced({ apiKey: 'fixture', city: 'Cidade Inexistente', state: 'PR', fetchImpl })).rejects.toThrow('cnpja_municipality_not_found')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a cursor and finds industrial kitchens with CNAE as a secondary activity', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ records: [{ taxId: '12345678000190', alias: 'Cozinha Central',
+        mainActivity: { id: 5611201, text: 'Restaurantes' }, sideActivities: [{ id: 5620101, text: 'Refeições para empresas' }],
+        address: { state: 'MG', city: 'Belo Horizonte' } }], next: 'pagina-2' }),
+    })) as unknown as typeof fetch
+    const page = await searchCnpjaAdvancedPage({ apiKey: 'fixture', state: 'MG', cnaes: ['5620-1/01'],
+      includeSecondaryActivities: true, limit: 10, fetchImpl })
+    expect(page.nextToken).toBe('pagina-2')
+    expect(page.candidates[0].cnaes).toEqual(['5611201', '5620101'])
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('activities.id.in=5620101'), expect.anything())
+    await searchCnpjaAdvancedPage({ apiKey: 'fixture', token: 'pagina-2', limit: 10, fetchImpl })
+    expect(fetchImpl).toHaveBeenLastCalledWith('https://api.cnpja.com/office?limit=10&token=pagina-2', expect.anything())
   })
 })

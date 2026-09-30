@@ -3,20 +3,28 @@ import { z } from 'zod'
 import { hashSessionToken } from '../../auth/session.js'
 import {
   addRadarCompanyToCampaign,
+  approveRadarB2bProspect,
+  assertRadarRegionalBatchAccess,
   batchAnalyzeRadarOpportunities,
   batchEnrichRadarOpportunities,
   checkRadarOsmCandidateSite,
+  confirmRadarBraveSuggestion,
   convertRadarOpportunityToLead,
   createRadarCampaign,
   discardRadarCandidate,
+  enrichRadarCandidateWithLicensedBrave,
+  exportRadarB2bProspectsCsv,
   getRadarCampaignMetrics,
+  getRadarB2bProgress,
   getRadarOsmReadiness,
   getRadarOsmPilotReport,
   importRadarCsvToCampaign,
   importRadarCandidate,
   importRadarUrlsToCampaign,
+  inspectRadarCandidateBusinessSite,
   listRadarDataSources,
   listRadarCampaigns,
+  listRadarB2bProspects,
   listRadarCandidates,
   listRadarDuplicateCandidates,
   listRadarOpportunities,
@@ -40,15 +48,28 @@ const dataSourceQuerySchema = z.object({ organizationId: uuid })
 const createCampaignSchema = z.object({
   organizationId: uuid,
   name: z.string().min(1),
-  campaignType: z.enum(['local_niche', 'recently_opened']).optional(),
+  campaignType: z.enum(['local_niche', 'recently_opened', 'regional_b2b']).optional(),
   targetSegment: z.string().min(1),
-  targetCity: z.string().min(1),
-  targetState: z.string().min(2).max(2),
+  targetCity: z.string().min(1).optional(),
+  targetState: z.string().length(2).optional(),
+  targetStates: z.array(z.enum(['MG', 'SP', 'PR'])).min(1).max(3).optional(),
+  productFocus: z.array(z.string().trim().min(1)).max(12).optional(),
   targetKeywords: z.array(z.string()).optional(),
   targetCnaes: z.array(z.string()).optional(),
   offerType: z.string().min(1),
   budgetLimit: z.number().optional(),
   dailyLimit: z.number().int().min(1).max(10).optional(),
+}).superRefine((input, context) => {
+  if (input.campaignType === 'regional_b2b') {
+    if (!input.targetStates?.length || input.targetCity || input.targetState || !input.productFocus?.length) {
+      context.addIssue({ code: 'custom', message: 'regional_b2b_requires_states_and_products_without_city' })
+    }
+    if (input.targetStates && new Set(input.targetStates).size !== input.targetStates.length) {
+      context.addIssue({ code: 'custom', message: 'regional_b2b_duplicate_state' })
+    }
+  } else if (!input.targetCity || !input.targetState || input.targetStates?.length) {
+    context.addIssue({ code: 'custom', message: 'local_campaign_requires_city_and_state' })
+  }
 })
 const addCompanySchema = z.object({
   organizationId: uuid,
@@ -110,6 +131,11 @@ const searchCnpjaSchema = z.object({
   message: 'radar_cnpja_search_requires_filter',
 }).refine(input => !input.city?.trim() || Boolean(input.state), {
   message: 'radar_cnpja_city_requires_state',
+})
+const searchRegionalCnpjaSchema = z.object({
+  organizationId: uuid,
+  state: z.enum(['MG', 'SP', 'PR']),
+  limit: z.number().int().min(1).max(10).default(10),
 })
 const previewPlacesSchema = z.object({
   organizationId: uuid,
@@ -263,6 +289,40 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     }))
   })
 
+  app.post('/campaigns/:id/search-cnpja-regional', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = searchRegionalCnpjaSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_regional_search_payload' })
+    return reply.code(201).send(await runRadarCnpjaAdvancedSearch(app.pg, user, {
+      organizationId: parsed.data.organizationId,
+      campaignId: params.data.id,
+      regionalState: parsed.data.state,
+      limit: parsed.data.limit,
+      secretKeyMaterial: app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+        ? `provider-key:${app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : app.config.SESSION_SECRET,
+    }))
+  })
+
+  for (const [path, jobName] of [
+    ['/campaigns/:id/run-b2b-discovery', 'radar.runRegionalDiscovery'],
+    ['/campaigns/:id/run-b2b-verification', 'radar.verifyRegionalCandidates'],
+  ] as const) {
+    app.post(path, async (request, reply) => {
+      const user = await getAuthenticatedUser(request, reply)
+      if (!user) return reply
+      const params = z.object({ id: uuid }).safeParse(request.params)
+      const parsed = campaignQuerySchema.safeParse(request.body)
+      if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_b2b_batch_payload' })
+      await assertRadarRegionalBatchAccess(app.pg, user, parsed.data.organizationId, params.data.id)
+      const job = await app.jobQueue.add(jobName, { organizationId: parsed.data.organizationId,
+        campaignId: params.data.id, requestedBy: user.id },
+      { jobId: `radar-${jobName.replaceAll('.', '-')}-${params.data.id}-${Math.floor(Date.now() / 60000)}` })
+      return reply.code(202).send({ jobId: job.id, status: 'queued' })
+    })
+  }
+
   app.post('/campaigns/:id/preview-places', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
@@ -282,12 +342,94 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     return listRadarCandidates(app.pg, user, params.data.id)
   })
 
+  app.get('/campaigns/:id/b2b-prospects', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const query = campaignQuerySchema.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_radar_b2b_query' })
+    return listRadarB2bProspects(app.pg, user, query.data.organizationId, params.data.id)
+  })
+
+  app.get('/campaigns/:id/b2b-progress', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const query = campaignQuerySchema.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_radar_b2b_progress_query' })
+    return getRadarB2bProgress(app.pg, user, query.data.organizationId, params.data.id)
+  })
+
+  app.post('/candidates/:id/approve-b2b', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = campaignQuerySchema.extend({
+      manualEvidenceUrl: z.string().url().max(1000).optional(),
+      manualReviewNote: z.string().max(1000).optional(),
+    }).safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_b2b_approval_payload' })
+    return approveRadarB2bProspect(app.pg, user, { candidateId: params.data.id,
+      organizationId: parsed.data.organizationId,
+      manualEvidenceUrl: parsed.data.manualEvidenceUrl,
+      manualReviewNote: parsed.data.manualReviewNote })
+  })
+
+  app.get('/campaigns/:id/b2b-export.csv', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const query = campaignQuerySchema.safeParse(request.query)
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_radar_b2b_export_query' })
+    const csv = await exportRadarB2bProspectsCsv(app.pg, user, query.data.organizationId, params.data.id)
+    return reply.header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="radar-cozinhas-${params.data.id}.csv"`)
+      .send(csv)
+  })
+
   app.post('/candidates/:id/check-osm-site', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
     const params = z.object({ id: uuid }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_radar_candidate_id' })
     return checkRadarOsmCandidateSite(app.pg, user, params.data.id)
+  })
+
+  app.post('/candidates/:id/enrich-brave', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = campaignQuerySchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_brave_enrichment_payload' })
+    return enrichRadarCandidateWithLicensedBrave(app.pg, user, {
+      candidateId: params.data.id,
+      organizationId: parsed.data.organizationId,
+      secretKeyMaterial: app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
+        ? `provider-key:${app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : app.config.SESSION_SECRET,
+    })
+  })
+
+  app.post('/candidates/:id/confirm-brave-suggestion', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = campaignQuerySchema.extend({ sourceUrl: z.string().url().max(1000) }).safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_brave_suggestion_payload' })
+    return confirmRadarBraveSuggestion(app.pg, user, {
+      candidateId: params.data.id, organizationId: parsed.data.organizationId,
+      sourceUrl: parsed.data.sourceUrl,
+    })
+  })
+
+  app.post('/candidates/:id/inspect-business-site', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = campaignQuerySchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_site_inspection_payload' })
+    return inspectRadarCandidateBusinessSite(app.pg, user, {
+      candidateId: params.data.id, organizationId: parsed.data.organizationId,
+    })
   })
 
   app.post('/candidates/:id/import', async (request, reply) => {

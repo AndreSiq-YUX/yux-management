@@ -134,10 +134,12 @@ export interface RadarCampaign {
   id: string
   organizationId: string
   name: string
-  campaignType: 'local_niche' | 'recently_opened'
+  campaignType: 'local_niche' | 'recently_opened' | 'regional_b2b'
   targetSegment: string
   targetCity: string
   targetState: string
+  targetStates: string[]
+  productFocus: string[]
   targetKeywords: string[]
   targetCnaes: string[]
   offerType: string

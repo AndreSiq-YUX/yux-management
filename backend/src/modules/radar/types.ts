@@ -57,10 +57,12 @@ export type RadarCampaignRow = {
   id: string
   organization_id: string
   name: string
-  campaign_type: 'local_niche' | 'recently_opened'
+  campaign_type: 'local_niche' | 'recently_opened' | 'regional_b2b'
   target_segment: string
-  target_city: string
-  target_state: string
+  target_city: string | null
+  target_state: string | null
+  target_states?: string[]
+  product_focus?: string[]
   target_keywords: string[]
   target_cnaes: string[]
   offer_type: string
@@ -228,10 +230,12 @@ export interface RadarCampaign {
   id: string
   organizationId: string
   name: string
-  campaignType: 'local_niche' | 'recently_opened'
+  campaignType: 'local_niche' | 'recently_opened' | 'regional_b2b'
   targetSegment: string
   targetCity: string
   targetState: string
+  targetStates: string[]
+  productFocus: string[]
   targetKeywords: string[]
   targetCnaes: string[]
   offerType: string

@@ -1,4 +1,4 @@
-import { apiRequest } from '@/lib/apiClient'
+import { apiRequest, apiRequestText } from '@/lib/apiClient'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 
 type RadarImportResponse = {
@@ -33,7 +33,9 @@ export const radarService = {
     return apiRequest<RadarCampaign[]>(`/radar/campaigns${buildQuery({ organizationId })}`)
   },
 
-  async createCampaign(input: Pick<RadarCampaign, 'organizationId' | 'name' | 'campaignType' | 'targetSegment' | 'targetCity' | 'targetState' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & { budgetLimit?: number }) {
+  async createCampaign(input: Pick<RadarCampaign, 'organizationId' | 'name' | 'campaignType' | 'targetSegment' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & {
+    targetCity?: string; targetState?: string; targetStates?: string[]; productFocus?: string[]; budgetLimit?: number
+  }) {
     return apiRequest<RadarCampaign>('/radar/campaigns', { method: 'POST', body: input })
   },
 
@@ -105,6 +107,11 @@ export const radarService = {
     return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string }>(`/radar/campaigns/${campaignId}/search-cnpja`, { method: 'POST', body: input })
   },
 
+  async searchRegionalCnpja(campaignId: string, input: { organizationId: string; state: 'MG' | 'SP' | 'PR'; limit?: number }) {
+    return apiRequest<{ candidates: RadarCandidateRecord[]; issues: RadarImportIssue[]; runId: string;
+      nextToken?: string; completed?: boolean }>(`/radar/campaigns/${campaignId}/search-cnpja-regional`, { method: 'POST', body: input })
+  },
+
   async previewPlaces(campaignId: string, input: { organizationId: string; sourceType: 'serper_places' | 'brave_place_search';
     query: string; city: string; state: string; limit: number }) {
     return apiRequest<{ places: RadarPlacePreview[]; sourceType: string; attribution: string; storagePolicy: 'transient_only' }>(
@@ -121,6 +128,51 @@ export const radarService = {
 
   async checkOsmSite(candidateId: string) {
     return apiRequest<RadarCandidateRecord>(`/radar/candidates/${candidateId}/check-osm-site`, { method: 'POST' })
+  },
+
+  async enrichCandidateWithBrave(candidateId: string, organizationId: string) {
+    return apiRequest<{ matched: boolean; candidate?: RadarCandidateRecord; placesCount: number; reason?: string }>(
+      `/radar/candidates/${candidateId}/enrich-brave`, { method: 'POST', body: { organizationId } })
+  },
+
+  async confirmBraveSuggestion(candidateId: string, organizationId: string, sourceUrl: string) {
+    return apiRequest<{ candidate: RadarCandidateRecord }>(`/radar/candidates/${candidateId}/confirm-brave-suggestion`,
+      { method: 'POST', body: { organizationId, sourceUrl } })
+  },
+
+  async inspectBusinessSite(candidateId: string, organizationId: string) {
+    return apiRequest<{ site: { status: string; finalUrl?: string; emails: string[]; phones: string[] };
+      review: { kitchenStatus: string; productFit: string; reasons: string[] } }>(
+      `/radar/candidates/${candidateId}/inspect-business-site`, { method: 'POST', body: { organizationId } })
+  },
+
+  async getB2bProspects(campaignId: string, organizationId: string) {
+    return apiRequest<Array<RadarCandidateRecord & { kitchenStatus: string | null; productFit: string | null;
+      reasons: string[]; approvedAt: string | null; verificationMethod: 'automated' | 'manual' | null;
+      reviewNote: string | null; evidence: Array<{ kind: string; value: string; sourceUrl: string; observedAt: string }> }>>(
+      `/radar/campaigns/${campaignId}/b2b-prospects${buildQuery({ organizationId })}`)
+  },
+
+  async getB2bProgress(campaignId: string, organizationId: string) {
+    return apiRequest<{ states: Array<{ state: string; pages: number; candidates: number; completed: boolean }>;
+      candidates: number; checked: number; confirmed: number; approved: number }>(
+      `/radar/campaigns/${campaignId}/b2b-progress${buildQuery({ organizationId })}`)
+  },
+
+  async runB2bBatch(campaignId: string, organizationId: string, kind: 'discovery' | 'verification') {
+    const suffix = kind === 'discovery' ? 'run-b2b-discovery' : 'run-b2b-verification'
+    return apiRequest<{ jobId: string | number; status: string }>(`/radar/campaigns/${campaignId}/${suffix}`,
+      { method: 'POST', body: { organizationId } })
+  },
+
+  async approveB2bProspect(candidateId: string, organizationId: string,
+    manual?: { manualEvidenceUrl: string; manualReviewNote: string }) {
+    return apiRequest<{ candidateId: string; approved: boolean }>(`/radar/candidates/${candidateId}/approve-b2b`,
+      { method: 'POST', body: { organizationId, ...manual } })
+  },
+
+  async exportB2bProspects(campaignId: string, organizationId: string) {
+    return apiRequestText(`/radar/campaigns/${campaignId}/b2b-export.csv${buildQuery({ organizationId })}`)
   },
 
   async getDuplicates(campaignId: string) {

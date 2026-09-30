@@ -16,6 +16,8 @@ export type CnpjaAdvancedSearchInput = {
   city?: string
   state?: string
   cnaes?: string[]
+  includeSecondaryActivities?: boolean
+  token?: string
   openingFrom?: string
   openingTo?: string
   limit?: number
@@ -61,11 +63,16 @@ const DEFAULT_CONFIG: Required<CnpjaProviderConfig> = {
 const municipalityCache = new Map<string, { expiresAt: number; items: Array<{ id: number; nome: string }> }>()
 
 export async function searchCnpjaAdvanced(input: CnpjaAdvancedSearchInput) {
+  return (await searchCnpjaAdvancedPage(input)).candidates
+}
+
+export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): Promise<{ candidates: CnpjaCandidate[]; nextToken?: string }> {
   if (!input.apiKey) throw Object.assign(new Error('cnpja_api_key_missing'), { statusCode: 400 })
+  if (input.token && !/^[\w-]{1,256}$/.test(input.token)) throw Object.assign(new Error('cnpja_invalid_page_token'), { statusCode: 400 })
   const config = resolveConfig(input.config)
   const limit = Math.min(Math.max(input.limit ?? config.defaultResultLimit, 1), 10)
   const fetchImpl = input.fetchImpl ?? fetch
-  const municipalityCode = input.city ? await resolveMunicipalityCode(input.city, input.state, fetchImpl, !input.fetchImpl) : undefined
+  const municipalityCode = input.city && !input.token ? await resolveMunicipalityCode(input.city, input.state, fetchImpl, !input.fetchImpl) : undefined
   const url = buildAdvancedSearchUrl(config, input, limit, municipalityCode)
   const response = await fetchImpl(url, {
     method: 'GET',
@@ -82,10 +89,13 @@ export async function searchCnpjaAdvanced(input: CnpjaAdvancedSearchInput) {
     })
   }
 
-  return extractCnpjaItems(body)
+  const candidates = extractCnpjaItems(body)
     .map(normalizeCnpjaCandidate)
     .filter(candidate => candidate.taxId || candidate.tradeName || candidate.legalName)
     .slice(0, limit)
+  const record = isRecord(body) ? body : {}
+  const next = stringValue(record.next) || stringValue(record.nextToken)
+  return { candidates, nextToken: next && /^[\w-]{1,256}$/.test(next) ? next : undefined }
 }
 
 export async function lookupCnpjaOffice(input: CnpjaOfficeLookupInput) {
@@ -166,6 +176,10 @@ function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: Cn
   const path = '/office'
   const url = new URL(`${config.baseUrl}${path}`)
   url.searchParams.set('limit', String(limit))
+  if (input.token) {
+    url.searchParams.set('token', input.token)
+    return url.toString()
+  }
   url.searchParams.set('status.id.in', '2')
   if (input.query?.trim()) url.searchParams.set('names.in', input.query.trim())
   if (municipalityCode) url.searchParams.set('address.municipality.in', String(municipalityCode))
@@ -173,7 +187,7 @@ function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: Cn
   if (input.openingFrom) url.searchParams.set('founded.gte', input.openingFrom)
   if (input.openingTo) url.searchParams.set('founded.lte', input.openingTo)
   const cnaes = input.cnaes?.map(value => value.replace(/\D/g, '')).filter(Boolean)
-  if (cnaes?.length) url.searchParams.set('mainActivity.id.in', cnaes.join(','))
+  if (cnaes?.length) url.searchParams.set(input.includeSecondaryActivities ? 'activities.id.in' : 'mainActivity.id.in', cnaes.join(','))
   return url.toString()
 }
 

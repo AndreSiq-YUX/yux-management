@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../auth/routes.js'
 import type {
   RadarCampaign,
@@ -25,12 +26,16 @@ import type {
 import { parseRadarCsv, type RadarCsvImportIssue } from './csvImport.js'
 import { createRadarDuplicateCandidates } from './dedupe.js'
 import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
-import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
+import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { resolveRadarOsmSegment } from './osm-segment-map.js'
 import { checkRadarOsmSite } from './osm-site-check.js'
 import { searchRadarPlaces, type RadarPlaceProvider } from './place-providers.js'
+import { assertLicensedBraveRetention, bravePlaceMatchesLocation, selectBraveBusinessMatch } from './licensed-brave.js'
+import { inspectRadarBusinessSite } from './b2b-site-inspection.js'
+import { triageIndustrialKitchen } from './industrial-kitchen-triage.js'
+import { assertB2bDeliveryRights, formatB2bProspectCsv, type B2bProspectCsvRow } from './b2b-delivery.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -46,10 +51,12 @@ type RadarQueryable = {
 export type RadarCampaignInput = {
   organizationId: string
   name: string
-  campaignType?: 'local_niche' | 'recently_opened'
+  campaignType?: 'local_niche' | 'recently_opened' | 'regional_b2b'
   targetSegment: string
-  targetCity: string
-  targetState: string
+  targetCity?: string
+  targetState?: string
+  targetStates?: Array<'MG' | 'SP' | 'PR'>
+  productFocus?: string[]
   targetKeywords?: string[]
   targetCnaes?: string[]
   offerType: string
@@ -68,6 +75,7 @@ export type RadarCnpjaSearchInput = {
   openingTo?: string
   limit?: number
   secretKeyMaterial: string
+  regionalState?: 'MG' | 'SP' | 'PR'
 }
 
 export type RadarPlacePreviewInput = {
@@ -159,20 +167,23 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
   const result = await pool.query<RadarCampaignRow>(
     `INSERT INTO public.radar_campaigns (
        organization_id, name, campaign_type, target_segment, target_city, target_state,
-       target_keywords, target_cnaes, offer_type, budget_limit, daily_limit, created_by, owner_id
+       target_keywords, target_cnaes, offer_type, target_states, product_focus,
+       budget_limit, daily_limit, created_by, owner_id
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
      RETURNING *`,
     [
       input.organizationId,
       input.name.trim(),
       input.campaignType ?? 'local_niche',
       input.targetSegment.trim(),
-      input.targetCity.trim(),
-      input.targetState.trim().toUpperCase(),
+      input.targetCity?.trim() ?? null,
+      input.targetState?.trim().toUpperCase() ?? null,
       input.targetKeywords ?? [],
       input.targetCnaes ?? [],
       input.offerType.trim(),
+      input.targetStates ?? [],
+      input.productFocus ?? [],
       input.budgetLimit ?? null,
       input.dailyLimit ?? 10,
       user.id,
@@ -592,11 +603,13 @@ export async function getRadarOsmReadiness(pool: pg.Pool, user: AuthUser, organi
   const internalOrganization = await isInternalRadarOrganization(pool, organizationId)
   const source = await findRadarDataSource(pool, organizationId, 'osm_extract')
   const segmentKey = resolveRadarOsmSegment(row.target_segment)
-  const snapshot = await findRadarOsmSnapshot(pool, row.target_city, row.target_state)
+  const snapshot = row.target_city && row.target_state
+    ? await findRadarOsmSnapshot(pool, row.target_city, row.target_state) : null
   const fresh = snapshot ? Date.now() - new Date(snapshot.extracted_at).getTime() <= 90 * 86400_000 : false
   return {
     ready: Boolean(internalOrganization && source?.enabled && segmentKey && snapshot && fresh),
-    reason: !internalOrganization ? 'Piloto disponível apenas para o workspace interno de crescimento da YUX.'
+    reason: !row.target_city || !row.target_state ? 'Busca OSM disponível apenas para campanhas de uma cidade.'
+      : !internalOrganization ? 'Piloto disponível apenas para o workspace interno de crescimento da YUX.'
       : !source?.enabled ? 'Fonte de dados abertos desativada pelo administrador.'
       : !segmentKey ? 'Este segmento ainda não possui mapeamento OSM validado.'
         : !snapshot ? 'Índice municipal ainda não carregado ou ambíguo.'
@@ -637,7 +650,8 @@ export async function runRadarOsmSearch(pool: pg.Pool, user: AuthUser, input: {
     const source = sourceResult.rows[0] ? mapDataSource(sourceResult.rows[0]) : null
     const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
     const segmentKey = resolveRadarOsmSegment(campaign.target_segment)
-    const snapshot = await findRadarOsmSnapshot(client, campaign.target_city, campaign.target_state)
+    const snapshot = campaign.target_city && campaign.target_state
+      ? await findRadarOsmSnapshot(client, campaign.target_city, campaign.target_state) : null
     const issues = [...governance.issues]
     if (!internalOrganization) issues.push({ code: 'pilot_internal_only', sourceType: 'osm_extract', message: 'Piloto OSM restrito ao workspace interno da YUX.' })
     if (!segmentKey) issues.push({ code: 'segment_unsupported', sourceType: 'osm_extract', message: 'Segmento sem mapeamento OSM validado.' })
@@ -919,6 +933,7 @@ export async function runRadarCnpjaAdvancedSearch(
   input: RadarCnpjaSearchInput,
   dependencies: {
     search?: typeof searchCnpjaAdvanced
+    searchPage?: typeof searchCnpjaAdvancedPage
     loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
   } = {},
 ) {
@@ -944,17 +959,36 @@ export async function runRadarCnpjaAdvancedSearch(
   const client = await pool.connect()
   let runId: string
   let estimatedCost = 0
+  let pageToken: string | undefined
+  const leaseId = input.regionalState ? randomUUID() : undefined
 
   try {
     await client.query('BEGIN')
-    const campaign = await client.query<{ id: string }>(
-      `SELECT id
+    const campaign = await client.query<{ id: string; campaign_type?: string; target_states?: string[] }>(
+      `SELECT id, campaign_type, target_states
        FROM public.radar_campaigns
        WHERE id = $1 AND organization_id = $2
-       LIMIT 1`,
+       LIMIT 1 FOR UPDATE`,
       [input.campaignId, input.organizationId],
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
+    if (input.regionalState) {
+      if (campaign.rows[0].campaign_type !== 'regional_b2b' || !campaign.rows[0].target_states?.includes(input.regionalState)) {
+        throw Object.assign(new Error('radar_regional_state_not_in_campaign'), { statusCode: 400 })
+      }
+      const cursor = await client.query<{ next_token: string | null; completed: boolean; running_until: Date | null }>(
+        `SELECT next_token, completed, running_until
+         FROM public.radar_regional_discovery_cursors
+         WHERE campaign_id = $1 AND organization_id = $2 AND state = $3 AND provider = 'cnpja_advanced_search'
+         FOR UPDATE`, [input.campaignId, input.organizationId, input.regionalState],
+      )
+      const previous = cursor.rows[0]
+      if (previous?.completed) throw Object.assign(new Error('radar_regional_search_completed'), { statusCode: 409 })
+      if (previous?.running_until && new Date(previous.running_until).getTime() > Date.now()) {
+        throw Object.assign(new Error('radar_regional_search_in_progress'), { statusCode: 409 })
+      }
+      pageToken = previous?.next_token ?? undefined
+    }
 
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
       [`radar:${input.organizationId}:cnpja_advanced_search`])
@@ -982,6 +1016,8 @@ export async function runRadarCnpjaAdvancedSearch(
           openingFrom: input.openingFrom,
           openingTo: input.openingTo,
           limit,
+          regionalState: input.regionalState,
+          pageToken,
         }),
       ],
     )
@@ -994,6 +1030,16 @@ export async function runRadarCnpjaAdvancedSearch(
     }
 
     await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, 1, governance.estimatedCost)
+    if (input.regionalState) {
+      await client.query(
+        `INSERT INTO public.radar_regional_discovery_cursors
+           (organization_id, campaign_id, state, provider, next_token, lease_id, running_until)
+         VALUES ($1,$2,$3,'cnpja_advanced_search',$4,$5,NOW() + INTERVAL '2 minutes')
+         ON CONFLICT (campaign_id, state, provider) DO UPDATE
+           SET lease_id = EXCLUDED.lease_id, running_until = EXCLUDED.running_until, updated_at = NOW()`,
+        [input.organizationId, input.campaignId, input.regionalState, pageToken ?? null, leaseId],
+      )
+    }
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')
@@ -1003,22 +1049,34 @@ export async function runRadarCnpjaAdvancedSearch(
   }
 
   let results: CnpjaCandidate[] = []
+  let nextToken: string | undefined
   try {
-    results = await (dependencies.search ?? searchCnpjaAdvanced)({
+    const searchInput = {
       apiKey: apiKey as string,
       config: provider?.publicConfig as CnpjaProviderConfig | undefined,
-      query: input.query,
-      city: input.city,
-      state: input.state,
-      cnaes: input.cnaes,
+      query: input.regionalState ? undefined : input.query,
+      city: input.regionalState ? undefined : input.city,
+      state: input.regionalState ?? input.state,
+      cnaes: input.regionalState ? ['5620101'] : input.cnaes,
+      includeSecondaryActivities: Boolean(input.regionalState),
+      token: pageToken,
       openingFrom: input.openingFrom,
       openingTo: input.openingTo,
       limit,
-    })
+    }
+    if (input.regionalState) {
+      const page = await (dependencies.searchPage ?? searchCnpjaAdvancedPage)(searchInput)
+      results = page.candidates
+      nextToken = page.nextToken
+      if (nextToken && nextToken === pageToken) throw new Error('cnpja_repeated_page_token')
+    } else results = await (dependencies.search ?? searchCnpjaAdvanced)(searchInput)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao executar pesquisa avancada no CNPJa.'
     const failedIssues = [{ code: 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
     await updateRadarRunCompletion(pool, runId, 'failed', { candidateCount: 0, estimatedCost, issues: failedIssues }, message)
+    if (input.regionalState) await pool.query(
+      `UPDATE public.radar_regional_discovery_cursors SET lease_id = NULL, running_until = NULL, updated_at = NOW()
+       WHERE campaign_id = $1 AND state = $2 AND lease_id = $3`, [input.campaignId, input.regionalState, leaseId])
     return { candidates: [], issues: failedIssues, runId }
   }
 
@@ -1057,7 +1115,7 @@ export async function runRadarCnpjaAdvancedSearch(
          DO UPDATE SET updated_at = NOW(),
                        snippet = EXCLUDED.snippet,
                        raw_payload = EXCLUDED.raw_payload,
-                       normalized_payload = EXCLUDED.normalized_payload
+                       normalized_payload = public.radar_candidate_records.normalized_payload || EXCLUDED.normalized_payload
          RETURNING *`,
         [
           input.organizationId,
@@ -1075,15 +1133,26 @@ export async function runRadarCnpjaAdvancedSearch(
       candidates.push(mapCandidate(inserted.rows[0]))
     }
 
+    if (input.regionalState) await candidateClient.query(
+      `UPDATE public.radar_regional_discovery_cursors
+       SET next_token = $4, completed = $5, pages_processed = pages_processed + 1,
+           candidates_seen = candidates_seen + $6, lease_id = NULL, running_until = NULL, updated_at = NOW()
+       WHERE organization_id = $1 AND campaign_id = $2 AND state = $3 AND lease_id = $7`,
+      [input.organizationId, input.campaignId, input.regionalState, nextToken ?? null, !nextToken, results.length, leaseId],
+    )
+
     await updateRadarRunCompletion(candidateClient, runId, 'succeeded', { candidateCount: candidates.length, estimatedCost }, null)
     await candidateClient.query('COMMIT')
-    return { candidates, issues: [], runId }
+    return { candidates, issues: [], runId, nextToken, completed: input.regionalState ? !nextToken : undefined }
   } catch (error) {
     await candidateClient.query('ROLLBACK')
     const message = error instanceof Error ? error.message : 'Falha ao salvar os candidatos CNPJa.'
     try {
       await updateRadarRunCompletion(pool, runId, 'failed', { candidateCount: 0, estimatedCost,
         issues: [{ code: 'candidate_write_failed', sourceType: 'cnpja_advanced_search', message }] }, message)
+      if (input.regionalState) await pool.query(
+        `UPDATE public.radar_regional_discovery_cursors SET lease_id = NULL, running_until = NULL, updated_at = NOW()
+         WHERE campaign_id = $1 AND state = $2 AND lease_id = $3`, [input.campaignId, input.regionalState, leaseId])
     } catch { /* The durable usage reservation remains even if this status update fails. */ }
     throw error
   } finally {
@@ -1155,6 +1224,492 @@ export async function runRadarPlacePreview(
     city: input.city, state: input.state, limit: input.limit, fetchImpl: dependencies.fetchImpl })
   return { places, sourceType: input.sourceType, storagePolicy: 'transient_only' as const,
     attribution: input.sourceType === 'serper_places' ? 'Serper Places / Google' : 'Brave Place Search' }
+}
+
+export async function enrichRadarCandidateWithLicensedBrave(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: { organizationId: string; candidateId: string; secretKeyMaterial: string },
+  dependencies: {
+    search?: typeof searchRadarPlaces
+    loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
+  } = {},
+) {
+  requireRadarAccess(user)
+  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
+  }
+  const candidateResult = await pool.query<RadarCandidateRecordRow & { campaign_type: string }>(
+    `SELECT candidate.*, campaign.campaign_type
+     FROM public.radar_candidate_records candidate
+     JOIN public.radar_campaigns campaign ON campaign.id = candidate.campaign_id
+     WHERE candidate.id = $1 AND candidate.organization_id = $2 AND campaign.organization_id = $2
+     LIMIT 1`, [input.candidateId, input.organizationId],
+  )
+  const candidate = candidateResult.rows[0]
+  if (!candidate) throw Object.assign(new Error('radar_candidate_not_found'), { statusCode: 404 })
+  if (candidate.campaign_type !== 'regional_b2b' || candidate.source_type !== 'cnpja_advanced_search') {
+    throw Object.assign(new Error('radar_brave_candidate_not_eligible'), { statusCode: 409 })
+  }
+  const normalized = candidate.normalized_payload ?? {}
+  const name = typeof normalized.tradeName === 'string' ? normalized.tradeName : candidate.title
+  const city = typeof normalized.city === 'string' ? normalized.city : ''
+  const state = typeof normalized.state === 'string' ? normalized.state : ''
+  if (!name || !city || !/^[A-Z]{2}$/.test(state)) {
+    throw Object.assign(new Error('radar_brave_candidate_location_missing'), { statusCode: 409 })
+  }
+
+  const provider = await pool.query<{ id: string; status: string; public_config: Record<string, unknown> }>(
+    `SELECT id, status, public_config FROM public.platform_provider_connections
+     WHERE provider_key = 'brave_place' AND environment = 'production'
+     ORDER BY is_default DESC, updated_at DESC LIMIT 1`,
+  )
+  const connection = provider.rows[0]
+  if (connection?.status !== 'active') throw Object.assign(new Error('radar_place_provider_not_active'), { statusCode: 409 })
+  assertLicensedBraveRetention(connection.public_config ?? {})
+  const source = await findRadarDataSource(pool, input.organizationId, 'brave_place_search')
+  if (!source?.enabled || source.defaultCostPerUnit <= 0) {
+    throw Object.assign(new Error('radar_brave_source_not_approved'), { statusCode: 409 })
+  }
+  const apiKey = dependencies.loadSecret
+    ? await dependencies.loadSecret(pool, connection.id, input.secretKeyMaterial)
+    : await loadPlatformProviderSecret(pool, connection.id, 'api_key', input.secretKeyMaterial)
+  if (!apiKey) throw Object.assign(new Error('radar_place_provider_secret_missing'), { statusCode: 409 })
+
+  const reservation = await pool.connect()
+  try {
+    await reservation.query('BEGIN')
+    await reservation.query('SELECT pg_advisory_xact_lock(hashtext($1))',
+      [`radar:${input.organizationId}:brave_place_search`])
+    const governance = await evaluateRadarSourceGovernance(reservation, input.organizationId, candidate.campaign_id, source, 1)
+    if (!governance.allowed) throw Object.assign(new Error(governance.issues[0]?.code ?? 'radar_source_governance_blocked'), { statusCode: 409 })
+    await recordRadarSourceUsage(reservation, input.organizationId, candidate.campaign_id, source, 1, governance.estimatedCost)
+    await reservation.query('COMMIT')
+  } catch (error) {
+    await reservation.query('ROLLBACK')
+    throw error
+  } finally { reservation.release() }
+
+  const places = await (dependencies.search ?? searchRadarPlaces)({ provider: 'brave_place_search', apiKey,
+    query: name, city, state, limit: 5 })
+  const match = selectBraveBusinessMatch({ name, city, state }, places)
+  if (!match) {
+    const suggestions = places.filter(place => place.sourceUrl && place.address).slice(0, 5).map(place => ({
+      name: place.name, address: place.address, websiteUrl: place.websiteUrl,
+      phone: place.phone, instagramUrl: place.instagramUrl, rating: place.rating,
+      reviewCount: place.reviewCount, sourceUrl: place.sourceUrl, observedAt: place.observedAt,
+    }))
+    await pool.query(
+      `UPDATE public.radar_candidate_records
+       SET normalized_payload = normalized_payload || $3::jsonb, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND status = 'pending_review'`,
+      [input.candidateId, input.organizationId, JSON.stringify({ braveAttemptedAt: new Date().toISOString(),
+        braveMatchStatus: 'review', braveSuggestions: suggestions })],
+    )
+    return { matched: false, placesCount: places.length, suggestions, reason: 'identity_needs_review' as const }
+  }
+
+  const updatedPayload = {
+    ...normalized,
+    braveSourceUrl: match.sourceUrl,
+    braveObservedAt: match.observedAt,
+    braveAttemptedAt: new Date().toISOString(),
+    braveMatchStatus: 'matched',
+    websiteUrl: normalized.websiteUrl || match.websiteUrl,
+    websiteStatus: normalized.websiteUrl ? normalized.websiteStatus : match.websiteStatus,
+    phoneRaw: normalized.phoneRaw || match.phone,
+    address: normalized.address || match.address,
+    instagramUrl: match.instagramUrl,
+    rating: match.rating,
+    reviewCount: match.reviewCount,
+  }
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const locked = await client.query<RadarCandidateRecordRow>(
+      `SELECT * FROM public.radar_candidate_records WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+      [input.candidateId, input.organizationId],
+    )
+    if (!locked.rows[0] || locked.rows[0].status !== 'pending_review') {
+      throw Object.assign(new Error('radar_candidate_no_longer_pending'), { statusCode: 409 })
+    }
+    const fields = [
+      ['brave_match', match.name], ['website', match.websiteUrl], ['phone', match.phone],
+      ['address', match.address], ['instagram', match.instagramUrl],
+      ['rating', match.rating === undefined ? undefined : String(match.rating)],
+      ['review_count', match.reviewCount === undefined ? undefined : String(match.reviewCount)],
+    ] as const
+    for (const [kind, value] of fields) {
+      if (!value) continue
+      await client.query(
+        `INSERT INTO public.radar_b2b_evidence
+           (organization_id, campaign_id, candidate_id, kind, value, source_url, observed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (candidate_id, kind, value, source_url) DO NOTHING`,
+        [input.organizationId, candidate.campaign_id, input.candidateId, kind, value, match.sourceUrl, match.observedAt],
+      )
+    }
+    const updated = await client.query<RadarCandidateRecordRow>(
+      `UPDATE public.radar_candidate_records
+       SET normalized_payload = $3::jsonb, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 RETURNING *`,
+      [input.candidateId, input.organizationId, JSON.stringify(updatedPayload)],
+    )
+    await client.query('COMMIT')
+    return { matched: true, candidate: mapCandidate(updated.rows[0]), placesCount: places.length }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
+}
+
+export async function confirmRadarBraveSuggestion(pool: pg.Pool, user: AuthUser,
+  input: { organizationId: string; candidateId: string; sourceUrl: string }) {
+  requireRadarAccess(user)
+  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
+  }
+  const provider = await pool.query<{ public_config: Record<string, unknown> }>(
+    `SELECT public_config FROM public.platform_provider_connections
+     WHERE provider_key = 'brave_place' AND environment = 'production' AND status = 'active'
+     ORDER BY is_default DESC, updated_at DESC LIMIT 1`,
+  )
+  assertLicensedBraveRetention(provider.rows[0]?.public_config ?? {})
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query<RadarCandidateRecordRow & { campaign_type: string }>(
+      `SELECT candidate.*, campaign.campaign_type FROM public.radar_candidate_records candidate
+       JOIN public.radar_campaigns campaign ON campaign.id = candidate.campaign_id
+       WHERE candidate.id = $1 AND candidate.organization_id = $2 AND campaign.organization_id = $2
+       FOR UPDATE`, [input.candidateId, input.organizationId],
+    )
+    const candidate = result.rows[0]
+    if (!candidate || candidate.campaign_type !== 'regional_b2b' || candidate.status !== 'pending_review') {
+      throw Object.assign(new Error('radar_brave_candidate_not_eligible'), { statusCode: 409 })
+    }
+    const current = candidate.normalized_payload ?? {}
+    const suggestions = Array.isArray(current.braveSuggestions) ? current.braveSuggestions : []
+    const suggestion = suggestions.find(item => typeof item === 'object' && item !== null
+      && (item as Record<string, unknown>).sourceUrl === input.sourceUrl) as Record<string, unknown> | undefined
+    if (!suggestion || typeof suggestion.address !== 'string' || typeof suggestion.name !== 'string') {
+      throw Object.assign(new Error('radar_brave_suggestion_not_found'), { statusCode: 404 })
+    }
+    const city = typeof current.city === 'string' ? current.city : ''
+    const state = typeof current.state === 'string' ? current.state : ''
+    if (!bravePlaceMatchesLocation(city, state, suggestion.address)) {
+      throw Object.assign(new Error('radar_brave_suggestion_location_mismatch'), { statusCode: 409 })
+    }
+    const sourceUrl = input.sourceUrl
+    const observedAt = typeof suggestion.observedAt === 'string' ? suggestion.observedAt : new Date().toISOString()
+    const websiteUrl = typeof suggestion.websiteUrl === 'string' ? suggestion.websiteUrl : undefined
+    const phone = typeof suggestion.phone === 'string' ? suggestion.phone : undefined
+    const instagramUrl = typeof suggestion.instagramUrl === 'string' ? suggestion.instagramUrl : undefined
+    const updatedPayload = { ...current, braveSourceUrl: sourceUrl, braveObservedAt: observedAt,
+      braveMatchStatus: 'manual_matched', braveMatchedBy: user.id,
+      websiteUrl: current.websiteUrl || websiteUrl, websiteStatus: current.websiteUrl
+        ? current.websiteStatus : websiteUrl ? 'unverified' : 'unknown',
+      phoneRaw: current.phoneRaw || phone, address: current.address || suggestion.address,
+      instagramUrl, rating: suggestion.rating, reviewCount: suggestion.reviewCount }
+    const facts = [ ['brave_match', suggestion.name], ['website', websiteUrl], ['phone', phone],
+      ['address', suggestion.address], ['instagram', instagramUrl] ] as const
+    for (const [kind, value] of facts) {
+      if (typeof value !== 'string' || !value) continue
+      await client.query(
+        `INSERT INTO public.radar_b2b_evidence
+           (organization_id, campaign_id, candidate_id, kind, value, source_url, observed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (candidate_id, kind, value, source_url) DO NOTHING`,
+        [input.organizationId, candidate.campaign_id, input.candidateId, kind, value, sourceUrl, observedAt],
+      )
+    }
+    const updated = await client.query<RadarCandidateRecordRow>(
+      `UPDATE public.radar_candidate_records SET normalized_payload = $3::jsonb, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 RETURNING *`,
+      [input.candidateId, input.organizationId, JSON.stringify(updatedPayload)],
+    )
+    await client.query('COMMIT')
+    return { candidate: mapCandidate(updated.rows[0]) }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
+}
+
+export async function inspectRadarCandidateBusinessSite(
+  pool: pg.Pool,
+  user: AuthUser,
+  input: { organizationId: string; candidateId: string },
+  dependencies: { inspect?: typeof inspectRadarBusinessSite } = {},
+) {
+  requireRadarAccess(user)
+  if (!await isInternalRadarOrganization(pool, input.organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
+  }
+  const result = await pool.query<RadarCandidateRecordRow & { campaign_type: string; product_focus: string[] }>(
+    `SELECT candidate.*, campaign.campaign_type, campaign.product_focus
+     FROM public.radar_candidate_records candidate
+     JOIN public.radar_campaigns campaign ON campaign.id = candidate.campaign_id
+     WHERE candidate.id = $1 AND candidate.organization_id = $2 AND campaign.organization_id = $2
+     LIMIT 1`, [input.candidateId, input.organizationId],
+  )
+  const candidate = result.rows[0]
+  if (!candidate) throw Object.assign(new Error('radar_candidate_not_found'), { statusCode: 404 })
+  if (candidate.campaign_type !== 'regional_b2b' || candidate.status !== 'pending_review') {
+    throw Object.assign(new Error('radar_b2b_candidate_not_pending'), { statusCode: 409 })
+  }
+  const payload = candidate.normalized_payload ?? {}
+  const websiteUrl = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null
+  const site = await (dependencies.inspect ?? inspectRadarBusinessSite)(websiteUrl)
+  const review = triageIndustrialKitchen({
+    name: typeof payload.tradeName === 'string' ? payload.tradeName : candidate.title,
+    cnaes: Array.isArray(payload.cnaes) ? payload.cnaes.filter((value): value is string => typeof value === 'string') : [],
+    products: candidate.product_focus ?? [],
+    website: site,
+  })
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const locked = await client.query<RadarCandidateRecordRow>(
+      `SELECT * FROM public.radar_candidate_records WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+      [input.candidateId, input.organizationId],
+    )
+    if (!locked.rows[0] || locked.rows[0].status !== 'pending_review') {
+      throw Object.assign(new Error('radar_b2b_candidate_no_longer_pending'), { statusCode: 409 })
+    }
+    const finalUrl = site.status === 'verified_present' ? site.finalUrl : undefined
+    if (finalUrl) {
+      const facts = [
+        ['site_excerpt', site.text?.slice(0, 800)],
+        ...(review.kitchenStatus === 'confirmed' ? site.emails.map(value => ['email', value]) : []),
+        ...(review.kitchenStatus === 'confirmed' ? site.phones.map(value => ['phone', value]) : []),
+      ]
+      for (const [kind, value] of facts) {
+        if (!value) continue
+        await client.query(
+          `INSERT INTO public.radar_b2b_evidence
+             (organization_id, campaign_id, candidate_id, kind, value, source_url, observed_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (candidate_id, kind, value, source_url) DO NOTHING`,
+          [input.organizationId, candidate.campaign_id, input.candidateId, kind, value, finalUrl, site.checkedAt],
+        )
+      }
+    }
+    const current = locked.rows[0].normalized_payload ?? {}
+    const updatedPayload = { ...current, websiteStatus: site.status, siteCheckedAt: site.checkedAt,
+      siteFinalUrl: finalUrl, siteCheckReason: site.reason,
+      siteEmails: finalUrl && review.kitchenStatus === 'confirmed' ? site.emails : [],
+      sitePhones: finalUrl && review.kitchenStatus === 'confirmed' ? site.phones : [],
+      kitchenStatus: review.kitchenStatus, productFit: review.productFit, triageReasons: review.reasons }
+    await client.query(
+      `UPDATE public.radar_candidate_records SET normalized_payload = $3::jsonb, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2`,
+      [input.candidateId, input.organizationId, JSON.stringify(updatedPayload)],
+    )
+    await client.query(
+      `INSERT INTO public.radar_b2b_reviews
+         (candidate_id, organization_id, campaign_id, kitchen_status, product_fit, reasons)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (candidate_id) DO UPDATE SET
+         kitchen_status = EXCLUDED.kitchen_status, product_fit = EXCLUDED.product_fit,
+         reasons = EXCLUDED.reasons, verification_method = 'automated', review_note = NULL,
+         approved_by = NULL, approved_at = NULL, updated_at = NOW()`,
+      [input.candidateId, input.organizationId, candidate.campaign_id,
+        review.kitchenStatus, review.productFit, review.reasons],
+    )
+    await client.query('COMMIT')
+    return { site: { status: site.status, finalUrl: site.finalUrl, checkedAt: site.checkedAt, reason: site.reason,
+      emails: site.emails, phones: site.phones }, review }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
+}
+
+type B2bProspectRow = RadarCandidateRecordRow & {
+  kitchen_status: string | null
+  product_fit: string | null
+  reasons: string[] | null
+  approved_at: string | null
+  verification_method: 'automated' | 'manual' | null
+  review_note: string | null
+  evidence: Array<{ kind: string; value: string; sourceUrl: string; observedAt: string }>
+}
+
+export async function listRadarB2bProspects(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
+  requireRadarAccess(user)
+  if (!await isInternalRadarOrganization(pool, organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
+  }
+  const result = await pool.query<B2bProspectRow>(
+    `SELECT candidate.*, review.kitchen_status, review.product_fit, review.reasons, review.approved_at,
+       review.verification_method, review.review_note,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', evidence.kind, 'value', evidence.value,
+         'sourceUrl', evidence.source_url, 'observedAt', evidence.observed_at) ORDER BY evidence.observed_at DESC)
+         FROM public.radar_b2b_evidence evidence
+         WHERE evidence.candidate_id = candidate.id AND evidence.organization_id = $1), '[]'::jsonb) AS evidence
+     FROM public.radar_candidate_records candidate
+     JOIN public.radar_campaigns campaign ON campaign.id = candidate.campaign_id
+     LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id = candidate.id AND review.organization_id = $1
+     WHERE candidate.organization_id = $1 AND candidate.campaign_id = $2
+       AND campaign.organization_id = $1 AND campaign.campaign_type = 'regional_b2b'
+     ORDER BY candidate.created_at DESC`, [organizationId, campaignId],
+  )
+  return result.rows.map(row => ({ ...mapCandidate(row), kitchenStatus: row.kitchen_status,
+    productFit: row.product_fit, reasons: row.reasons ?? [], approvedAt: row.approved_at,
+    verificationMethod: row.verification_method, reviewNote: row.review_note,
+    evidence: row.evidence ?? [] }))
+}
+
+export async function assertRadarRegionalBatchAccess(pool: pg.Pool, user: AuthUser,
+  organizationId: string, campaignId: string) {
+  requireRadarAccess(user)
+  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
+  }
+  const result = await pool.query<{ id: string }>(
+    `SELECT id FROM public.radar_campaigns
+     WHERE id = $1 AND organization_id = $2 AND campaign_type = 'regional_b2b' LIMIT 1`,
+    [campaignId, organizationId],
+  )
+  if (!result.rows[0]) throw Object.assign(new Error('radar_regional_campaign_not_found'), { statusCode: 404 })
+}
+
+export async function getRadarB2bProgress(pool: pg.Pool, user: AuthUser,
+  organizationId: string, campaignId: string) {
+  requireRadarAccess(user)
+  if (!await isInternalRadarOrganization(pool, organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
+  }
+  const cursors = await pool.query<{ state: string; pages_processed: number; candidates_seen: number; completed: boolean }>(
+    `SELECT state, pages_processed, candidates_seen, completed
+     FROM public.radar_regional_discovery_cursors
+     WHERE organization_id = $1 AND campaign_id = $2 ORDER BY state`, [organizationId, campaignId],
+  )
+  const counts = await pool.query<{ candidates: string; checked: string; confirmed: string; approved: string }>(
+    `SELECT COUNT(DISTINCT candidate.id)::text AS candidates,
+       COUNT(DISTINCT candidate.id) FILTER (WHERE candidate.normalized_payload->>'siteCheckedAt' IS NOT NULL)::text AS checked,
+       COUNT(DISTINCT review.candidate_id) FILTER (WHERE review.kitchen_status = 'confirmed')::text AS confirmed,
+       COUNT(DISTINCT review.candidate_id) FILTER (WHERE review.approved_at IS NOT NULL)::text AS approved
+     FROM public.radar_candidate_records candidate
+     LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id = candidate.id AND review.organization_id = $1
+     WHERE candidate.organization_id = $1 AND candidate.campaign_id = $2`, [organizationId, campaignId],
+  )
+  const row = counts.rows[0]
+  return { states: cursors.rows.map(item => ({ state: item.state, pages: item.pages_processed,
+    candidates: item.candidates_seen, completed: item.completed })),
+    candidates: Number(row?.candidates ?? 0), checked: Number(row?.checked ?? 0),
+    confirmed: Number(row?.confirmed ?? 0), approved: Number(row?.approved ?? 0) }
+}
+
+export async function approveRadarB2bProspect(
+  pool: pg.Pool, user: AuthUser, input: { organizationId: string; candidateId: string;
+    manualEvidenceUrl?: string; manualReviewNote?: string },
+) {
+  requireRadarAccess(user)
+  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+    throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
+  }
+  const result = await pool.query<{ candidate_id: string; kitchen_status: string;
+    normalized_payload: Record<string, unknown> }>(
+    `SELECT review.candidate_id, review.kitchen_status, candidate.normalized_payload
+     FROM public.radar_b2b_reviews review
+     JOIN public.radar_candidate_records candidate ON candidate.id = review.candidate_id
+     WHERE review.candidate_id = $1 AND review.organization_id = $2
+       AND candidate.organization_id = $2 AND candidate.status = 'pending_review'
+     LIMIT 1`, [input.candidateId, input.organizationId],
+  )
+  const row = result.rows[0]
+  if (!row) {
+    throw Object.assign(new Error('radar_b2b_prospect_not_verified'), { statusCode: 409 })
+  }
+  const automated = row.kitchen_status === 'confirmed' && row.normalized_payload?.websiteStatus === 'verified_present'
+  if (!automated) {
+    const url = input.manualEvidenceUrl?.trim() ?? ''
+    const note = input.manualReviewNote?.trim() ?? ''
+    let parsedUrl: URL
+    try { parsedUrl = new URL(url) } catch {
+      throw Object.assign(new Error('radar_b2b_manual_evidence_required'), { statusCode: 400 })
+    }
+    if (!['https:', 'http:'].includes(parsedUrl.protocol) || !parsedUrl.hostname.includes('.')
+      || note.length < 20 || note.length > 1000) {
+      throw Object.assign(new Error('radar_b2b_manual_evidence_required'), { statusCode: 400 })
+    }
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const locked = await client.query<{ campaign_id: string }>(
+        `SELECT campaign_id FROM public.radar_candidate_records
+         WHERE id = $1 AND organization_id = $2 AND status = 'pending_review' FOR UPDATE`,
+        [input.candidateId, input.organizationId],
+      )
+      if (!locked.rows[0]) throw Object.assign(new Error('radar_b2b_prospect_not_verified'), { statusCode: 409 })
+      await client.query(
+        `INSERT INTO public.radar_b2b_evidence
+           (organization_id, campaign_id, candidate_id, kind, value, source_url)
+         VALUES ($1,$2,$3,'manual_confirmation',$4,$5)
+         ON CONFLICT (candidate_id, kind, value, source_url) DO NOTHING`,
+        [input.organizationId, locked.rows[0].campaign_id, input.candidateId, note, parsedUrl.toString()],
+      )
+      await client.query(
+        `UPDATE public.radar_b2b_reviews
+         SET kitchen_status = 'confirmed', verification_method = 'manual', review_note = $4,
+             reasons = array_append(reasons, 'Confirmação humana documentada: ' || $4),
+             approved_by = $3, approved_at = NOW(), updated_at = NOW()
+         WHERE candidate_id = $1 AND organization_id = $2`,
+        [input.candidateId, input.organizationId, user.id, note],
+      )
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
+  } else await pool.query(
+    `UPDATE public.radar_b2b_reviews SET approved_by = $3, approved_at = NOW(), updated_at = NOW()
+     WHERE candidate_id = $1 AND organization_id = $2`, [input.candidateId, input.organizationId, user.id],
+  )
+  return { candidateId: input.candidateId, approved: true }
+}
+
+export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
+  organizationId: string, campaignId: string) {
+  requireRadarAccess(user)
+  if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
+  const prospects = await listRadarB2bProspects(pool, user, organizationId, campaignId)
+  const approved = prospects.filter(item => item.approvedAt && item.kitchenStatus === 'confirmed'
+    && (item.verificationMethod === 'manual' || item.normalizedPayload.websiteStatus === 'verified_present'))
+  const config = await pool.query<{ provider_key: string; public_config: Record<string, unknown> }>(
+    `SELECT provider_key, public_config FROM public.platform_provider_connections
+     WHERE provider_key IN ('cnpja','brave_place') AND environment = 'production' AND is_default = TRUE`,
+  )
+  const cnpja = config.rows.find(row => row.provider_key === 'cnpja')?.public_config ?? {}
+  const brave = config.rows.find(row => row.provider_key === 'brave_place')?.public_config
+  const hasBraveFacts = approved.some(item => typeof item.normalizedPayload.braveSourceUrl === 'string')
+  assertB2bDeliveryRights(cnpja, brave, hasBraveFacts)
+  const rows: B2bProspectCsvRow[] = approved.map(item => {
+    const payload = item.normalizedPayload
+    const manualEvidence = item.evidence.find(fact => fact.kind === 'manual_confirmation')
+    const firstSitePhone = Array.isArray(payload.sitePhones) ? payload.sitePhones.find(value => typeof value === 'string') : undefined
+    const firstSiteEmail = Array.isArray(payload.siteEmails) ? payload.siteEmails.find(value => typeof value === 'string') : undefined
+    return {
+      name: item.title,
+      cnpj: typeof payload.cnpj === 'string' ? payload.cnpj : '',
+      city: typeof payload.city === 'string' ? payload.city : '',
+      state: typeof payload.state === 'string' ? payload.state : '',
+      websiteUrl: typeof payload.siteFinalUrl === 'string' ? payload.siteFinalUrl : '',
+      phone: typeof firstSitePhone === 'string' ? firstSitePhone : typeof payload.phoneRaw === 'string' ? payload.phoneRaw : '',
+      email: typeof firstSiteEmail === 'string' ? firstSiteEmail : typeof payload.emailRaw === 'string' ? payload.emailRaw : '',
+      kitchenStatus: item.kitchenStatus ?? '',
+      productFit: item.productFit ?? 'unknown',
+      evidenceUrl: item.verificationMethod === 'manual' && manualEvidence ? manualEvidence.sourceUrl
+        : typeof payload.siteFinalUrl === 'string' ? payload.siteFinalUrl : item.sourceUrl ?? '',
+      checkedAt: item.verificationMethod === 'manual' && manualEvidence ? manualEvidence.observedAt
+        : typeof payload.siteCheckedAt === 'string' ? payload.siteCheckedAt : '',
+      verificationMethod: item.verificationMethod ?? '',
+      reviewNote: item.reviewNote ?? '',
+    }
+  })
+  return formatB2bProspectCsv(rows)
 }
 
 export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
@@ -1770,8 +2325,10 @@ export function mapCampaign(row: RadarCampaignRow): RadarCampaign {
     name: row.name,
     campaignType: row.campaign_type,
     targetSegment: row.target_segment,
-    targetCity: row.target_city,
-    targetState: row.target_state,
+    targetCity: row.target_city ?? '',
+    targetState: row.target_state ?? '',
+    targetStates: row.target_states ?? [],
+    productFocus: row.product_focus ?? [],
     targetKeywords: row.target_keywords ?? [],
     targetCnaes: row.target_cnaes ?? [],
     offerType: row.offer_type,

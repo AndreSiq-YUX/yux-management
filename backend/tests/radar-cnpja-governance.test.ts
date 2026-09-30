@@ -11,9 +11,11 @@ class PoolFixture {
   used = 0
   pendingUsed = 0
   failCandidateWrite = false
+  regional = false
+  regionalCursor: { next_token: string | null; completed: boolean; running_until: null } | null = null
   queries: string[] = []
   async connect() { return { query: this.query.bind(this), release() {} } }
-  async query(sql: string, _params: unknown[] = []) {
+  async query(sql: string, params: unknown[] = []) {
     this.queries.push(sql)
     if (sql === 'BEGIN') { this.pendingUsed = 0; return { rows: [] } }
     if (sql === 'COMMIT') { this.used += this.pendingUsed; this.pendingUsed = 0; return { rows: [] } }
@@ -29,7 +31,15 @@ class PoolFixture {
     if (sql.includes('FROM public.platform_provider_connections')) return { rows: [{
       id: '00000000-0000-4000-8000-000000000005', status: 'active', public_config: {},
     }] }
-    if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ id: campaignId, daily_limit: 10, budget_limit: '1.00' }] }
+    if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ id: campaignId, daily_limit: 10, budget_limit: '1.00',
+      campaign_type: this.regional ? 'regional_b2b' : 'local_niche', target_states: this.regional ? ['MG', 'SP', 'PR'] : [] }] }
+    if (sql.includes('FROM public.radar_regional_discovery_cursors')) return { rows: this.regionalCursor ? [this.regionalCursor] : [] }
+    if (sql.includes('INSERT INTO public.radar_regional_discovery_cursors')) return { rows: [] }
+    if (sql.includes('UPDATE public.radar_regional_discovery_cursors')) {
+      if (sql.includes('pages_processed')) this.regionalCursor = { next_token: params[3] as string | null,
+        completed: params[4] as boolean, running_until: null }
+      return { rows: [] }
+    }
     if (sql.includes('FROM public.radar_source_usage_counters')) return { rows: [{ units: this.used, estimated_cost: this.used * 0.025 }] }
     if (sql.includes('INSERT INTO public.radar_source_usage_counters')) { this.pendingUsed++; return { rows: [] } }
     if (sql.includes('INSERT INTO public.radar_enrichment_runs')) return { rows: [{ id: '00000000-0000-4000-8000-000000000006' }] }
@@ -73,5 +83,22 @@ describe('CNPJa search governance', () => {
     }, { loadSecret: async () => 'fixture', search })).rejects.toThrow('candidate_write_failed')
     expect(search).toHaveBeenCalledTimes(1)
     expect(pool.used).toBe(1)
+  })
+
+  it('resumes regional discovery by state and searches both primary and secondary CNAEs', async () => {
+    const pool = new PoolFixture()
+    pool.regional = true
+    const searchPage = vi.fn(async (input: { token?: string }) => ({ candidates: [],
+      nextToken: input.token ? undefined : 'next-page' }))
+    const input = { organizationId, campaignId, regionalState: 'MG' as const, limit: 10, secretKeyMaterial: 'fixture' }
+    const first = await runRadarCnpjaAdvancedSearch(pool as never, admin, input,
+      { loadSecret: async () => 'fixture', searchPage: searchPage as never })
+    expect(first.nextToken).toBe('next-page')
+    expect(searchPage).toHaveBeenCalledWith(expect.objectContaining({ state: 'MG', cnaes: ['5620101'], includeSecondaryActivities: true }))
+    const second = await runRadarCnpjaAdvancedSearch(pool as never, admin, input,
+      { loadSecret: async () => 'fixture', searchPage: searchPage as never })
+    expect(second.completed).toBe(true)
+    expect(searchPage).toHaveBeenLastCalledWith(expect.objectContaining({ token: 'next-page' }))
+    expect(pool.used).toBe(2)
   })
 })

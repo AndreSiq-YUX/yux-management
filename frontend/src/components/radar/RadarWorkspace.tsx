@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
@@ -22,12 +22,24 @@ import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplica
 
 const initialForm = {
   name: '',
-  campaignType: 'local_niche' as 'local_niche' | 'recently_opened',
+  campaignType: 'local_niche' as 'local_niche' | 'recently_opened' | 'regional_b2b',
   targetSegment: '',
   targetCity: '',
   targetState: '',
+  targetStates: ['MG', 'SP', 'PR'] as string[],
+  productFocus: '',
   offerType: 'Diagnostico YUX 48h',
   dailyLimit: 5,
+}
+
+type BraveSuggestion = { name: string; address: string; sourceUrl: string; websiteUrl?: string; phone?: string }
+
+function getBraveSuggestions(payload: Record<string, unknown>): BraveSuggestion[] {
+  if (payload.braveMatchStatus !== 'review' || !Array.isArray(payload.braveSuggestions)) return []
+  return payload.braveSuggestions.filter((value): value is BraveSuggestion =>
+    typeof value === 'object' && value !== null
+    && typeof value.name === 'string' && typeof value.address === 'string'
+    && typeof value.sourceUrl === 'string')
 }
 
 const initialCompanyForm = {
@@ -183,6 +195,10 @@ export function RadarWorkspace() {
   const [osmReadiness, setOsmReadiness] = useState<Awaited<ReturnType<typeof radarService.getOsmReadiness>> | null>(null)
   const [osmReport, setOsmReport] = useState<Awaited<ReturnType<typeof radarService.getOsmReport>> | null>(null)
   const [candidates, setCandidates] = useState<RadarCandidateRecord[]>([])
+  const [b2bProspects, setB2bProspects] = useState<Awaited<ReturnType<typeof radarService.getB2bProspects>>>([])
+  const b2bProspectById = useMemo(() => new Map(b2bProspects.map(item => [item.id, item])), [b2bProspects])
+  const [b2bManualReviews, setB2bManualReviews] = useState<Record<string, { url: string; note: string }>>({})
+  const [b2bProgress, setB2bProgress] = useState<Awaited<ReturnType<typeof radarService.getB2bProgress>> | null>(null)
   const [duplicates, setDuplicates] = useState<RadarDuplicateCandidate[]>([])
   const [runs, setRuns] = useState<RadarEnrichmentRun[]>([])
   const [csvText, setCsvText] = useState('')
@@ -204,6 +220,7 @@ export function RadarWorkspace() {
   const [creating, setCreating] = useState(false)
   const [addingCompany, setAddingCompany] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [regionalProgress, setRegionalProgress] = useState<Record<string, string>>({})
 
   const canAccess = canShowRadarNavigation(context)
   const hasPendingAnalysis = opportunities.some(opportunity => opportunity.status === 'diagnosing')
@@ -272,6 +289,27 @@ export function RadarWorkspace() {
   }, [selectedCampaignId, canAccess])
 
   useEffect(() => {
+    const campaign = campaigns.find(item => item.id === selectedCampaignId)
+    if (!selectedCampaignId || !organizationId || campaign?.campaignType !== 'regional_b2b') {
+      setB2bProgress(null)
+      setB2bProspects([])
+      return
+    }
+    let active = true
+    const refresh = () => {
+      radarService.getB2bProgress(selectedCampaignId, organizationId).then(result => { if (active) setB2bProgress(result) })
+        .catch(error => console.error('Erro ao acompanhar o lote B2B:', error))
+      radarService.getB2bProspects(selectedCampaignId, organizationId).then(result => { if (active) setB2bProspects(result) })
+        .catch(error => console.error('Erro ao atualizar dossiês B2B:', error))
+      radarService.getCandidates(selectedCampaignId).then(result => { if (active) setCandidates(result) })
+        .catch(error => console.error('Erro ao atualizar candidatos B2B:', error))
+    }
+    refresh()
+    const interval = window.setInterval(refresh, 8_000)
+    return () => { active = false; window.clearInterval(interval) }
+  }, [selectedCampaignId, organizationId, campaigns])
+
+  useEffect(() => {
     if (!selectedCampaignId || !organizationId || !canAccess) { setOsmReadiness(null); return }
     let active = true
     radarService.getOsmReadiness(selectedCampaignId, organizationId)
@@ -317,9 +355,18 @@ export function RadarWorkspace() {
       setCreating(true)
       const campaign = await radarService.createCampaign({
         organizationId,
-        ...form,
+        name: form.name,
+        campaignType: form.campaignType,
+        targetSegment: form.targetSegment,
+        targetCity: form.campaignType === 'regional_b2b' ? undefined : form.targetCity,
+        targetState: form.campaignType === 'regional_b2b' ? undefined : form.targetState,
+        targetStates: form.campaignType === 'regional_b2b' ? form.targetStates : undefined,
+        productFocus: form.campaignType === 'regional_b2b'
+          ? form.productFocus.split(',').map(value => value.trim()).filter(Boolean) : undefined,
+        offerType: form.offerType,
+        dailyLimit: form.dailyLimit,
         targetKeywords: [form.targetSegment],
-        targetCnaes: [],
+        targetCnaes: form.campaignType === 'regional_b2b' ? ['5620101'] : [],
       })
 
       setCampaigns(current => [campaign, ...current])
@@ -421,6 +468,7 @@ export function RadarWorkspace() {
   const jinaReaderSource = findSource(workspaceSources, 'jina_reader')
   const searchSource = findSource(workspaceSources, searchForm.sourceType)
   const cnpjaSource = findSource(workspaceSources, 'cnpja_advanced_search')
+  const braveSource = findSource(workspaceSources, 'brave_place_search')
   const placeSource = findSource(workspaceSources, placeForm.sourceType)
   const osmSource = findSource(workspaceSources, 'osm_extract')
   const selectedCampaign = campaigns.find(campaign => campaign.id === selectedCampaignId)
@@ -653,6 +701,22 @@ export function RadarWorkspace() {
     }
   }
 
+  const searchRegionalCnpja = async (state: 'MG' | 'SP' | 'PR') => {
+    if (!organizationId || !selectedCampaignId || actionLoading || context.role?.key !== 'yux_admin') return
+    try {
+      setActionLoading(`regional-${state}`)
+      const result = await radarService.searchRegionalCnpja(selectedCampaignId, { organizationId, state, limit: 10 })
+      setCandidates(current => mergeCandidates(result.candidates, current))
+      setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
+      setRegionalProgress(current => ({ ...current, [state]: result.completed ? 'Busca concluída' : 'Há mais resultados; continuar' }))
+      toast.success(`${result.candidates.length} candidatos de ${state} registrados`)
+      refreshCampaignSidebars()
+    } catch (error) {
+      console.error('Erro na pesquisa regional CNPJá:', error)
+      toast.error('Não foi possível continuar esta busca. Confira fonte, limite e créditos.')
+    } finally { setActionLoading(null) }
+  }
+
   const previewPlaces = async (event: FormEvent) => {
     event.preventDefault()
     if (!organizationId || !selectedCampaignId || actionLoading || !isSmallBatch(placeForm.limit)) return
@@ -711,6 +775,99 @@ export function RadarWorkspace() {
     } catch (error) {
       console.error('Erro na verificação do site OSM:', error)
       toast.error('Não foi possível verificar o site')
+    } finally { setActionLoading(null) }
+  }
+
+  const enrichCandidateWithBrave = async (candidateId: string) => {
+    if (!organizationId || actionLoading) return
+    try {
+      setActionLoading(`brave-${candidateId}`)
+      const result = await radarService.enrichCandidateWithBrave(candidateId, organizationId)
+      if (result.candidate) setCandidates(current => current.map(item => item.id === candidateId ? result.candidate! : item))
+      else if (selectedCampaignId) setCandidates(await radarService.getCandidates(selectedCampaignId))
+      if (selectedCampaignId) setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
+      if (result.matched) toast.success('Dados da Brave vinculados com evidência à empresa')
+      else toast('Nenhuma correspondência segura; revise as sugestões antes de associar')
+    } catch (error) {
+      console.error('Erro no enriquecimento Brave:', error)
+      toast.error('Brave indisponível ou licença/chave de retenção ainda não confirmada no Admin')
+    } finally { setActionLoading(null) }
+  }
+
+  const confirmBraveSuggestion = async (candidateId: string, sourceUrl: string) => {
+    if (!organizationId || actionLoading || !window.confirm('Você verificou que este local corresponde à mesma empresa e cidade/UF?')) return
+    try {
+      setActionLoading(`brave-confirm-${candidateId}`)
+      const result = await radarService.confirmBraveSuggestion(candidateId, organizationId, sourceUrl)
+      setCandidates(current => current.map(item => item.id === candidateId ? result.candidate : item))
+      if (selectedCampaignId) setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
+      toast.success('Local associado por revisão humana; verifique o site e a atividade antes de aprovar')
+    } catch (error) {
+      console.error('Erro ao confirmar local Brave:', error)
+      toast.error('Não foi possível associar este local. Verifique a licença e a localidade.')
+    } finally { setActionLoading(null) }
+  }
+
+  const inspectBusinessSite = async (candidateId: string) => {
+    if (!organizationId || actionLoading) return
+    try {
+      setActionLoading(`b2b-site-${candidateId}`)
+      const result = await radarService.inspectBusinessSite(candidateId, organizationId)
+      const refreshed = await radarService.getCandidates(selectedCampaignId!)
+      setCandidates(refreshed)
+      setB2bProspects(await radarService.getB2bProspects(selectedCampaignId!, organizationId))
+      toast.success(`Verificação concluída: ${result.review.kitchenStatus}. Revise as evidências antes de entregar a lista.`)
+    } catch (error) {
+      console.error('Erro na verificação de site B2B:', error)
+      toast.error('Não foi possível verificar o site desta empresa')
+    } finally { setActionLoading(null) }
+  }
+
+  const approveB2bProspect = async (candidateId: string, manual = false) => {
+    if (!organizationId || !selectedCampaignId || actionLoading) return
+    try {
+      setActionLoading(`b2b-approve-${candidateId}`)
+      const review = b2bManualReviews[candidateId]
+      await radarService.approveB2bProspect(candidateId, organizationId, manual
+        ? { manualEvidenceUrl: review?.url ?? '', manualReviewNote: review?.note ?? '' } : undefined)
+      setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
+      toast.success('Empresa aprovada para a lista de contato telefônico manual')
+    } catch (error) {
+      console.error('Erro ao aprovar prospect B2B:', error)
+      toast.error('Confirme a atividade pelo site ou informe uma fonte pública e justificativa para a revisão manual')
+    } finally { setActionLoading(null) }
+  }
+
+  const runB2bBatch = async (kind: 'discovery' | 'verification') => {
+    if (!organizationId || !selectedCampaignId || actionLoading) return
+    const consent = kind === 'discovery'
+      ? 'Este lote pode consumir até 9 consultas pagas da CNPJá (até 3 páginas por UF). Continuar?'
+      : 'Este lote pode consumir até 10 consultas pagas da Brave licenciada para empresas sem site. Continuar?'
+    if (!window.confirm(consent)) return
+    try {
+      setActionLoading(`b2b-${kind}`)
+      await radarService.runB2bBatch(selectedCampaignId, organizationId, kind)
+      toast.success(kind === 'discovery' ? 'Busca regional iniciada em segundo plano' : 'Verificação de até 10 empresas iniciada')
+    } catch (error) {
+      console.error('Erro ao iniciar lote B2B:', error)
+      toast.error('Não foi possível iniciar o lote. Confira permissão, fonte e limites.')
+    } finally { setActionLoading(null) }
+  }
+
+  const exportB2bProspects = async () => {
+    if (!organizationId || !selectedCampaignId || actionLoading) return
+    try {
+      setActionLoading('b2b-export')
+      const csv = await radarService.exportB2bProspects(selectedCampaignId, organizationId)
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `radar-cozinhas-${selectedCampaignId}.csv`
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      console.error('Erro ao exportar prospectos B2B:', error)
+      toast.error('Confira as permissões de entrega das fontes CNPJá e Brave no Admin antes de exportar')
     } finally { setActionLoading(null) }
   }
 
@@ -832,15 +989,29 @@ export function RadarWorkspace() {
           <select
             className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
             value={form.campaignType}
-            onChange={event => setForm({ ...form, campaignType: event.target.value as 'local_niche' | 'recently_opened' })}
+            onChange={event => setForm({ ...form, campaignType: event.target.value as typeof form.campaignType })}
           >
             <option value="local_niche">Radar local por nicho</option>
             <option value="recently_opened">Empresas recem-abertas</option>
+            <option value="regional_b2b">Prospecção regional B2B</option>
           </select>
           <Input className="md:col-span-2" placeholder="Nome" value={form.name} required onChange={event => setForm({ ...form, name: event.target.value })} />
           <Input placeholder="Nicho" value={form.targetSegment} required onChange={event => setForm({ ...form, targetSegment: event.target.value })} />
-          <Input placeholder="Cidade" value={form.targetCity} required onChange={event => setForm({ ...form, targetCity: event.target.value })} />
-          <Input placeholder="UF" value={form.targetState} required maxLength={2} onChange={event => setForm({ ...form, targetState: event.target.value.toUpperCase() })} />
+          {form.campaignType === 'regional_b2b' ? <>
+            <div className="flex items-center gap-2 md:col-span-2" aria-label="Estados da prospecção">
+              {(['MG', 'SP', 'PR'] as const).map(state => <label key={state} className="flex items-center gap-1 text-sm">
+                <input type="checkbox" checked={form.targetStates.includes(state)} onChange={event => setForm(current => ({ ...current,
+                  targetStates: event.target.checked ? [...current.targetStates, state] : current.targetStates.filter(value => value !== state) }))} />{state}
+              </label>)}
+            </div>
+            <Input className="md:col-span-2" placeholder="Produtos separados por vírgula" value={form.productFocus} required
+              onChange={event => setForm({ ...form, productFocus: event.target.value })} />
+          </> : <>
+            <Input placeholder="Cidade" value={form.targetCity} required onChange={event => setForm({ ...form, targetCity: event.target.value })} />
+            <Input placeholder="UF" value={form.targetState} required maxLength={2} onChange={event => setForm({ ...form, targetState: event.target.value.toUpperCase() })} />
+          </>}
+          <Input className="md:col-span-2" placeholder="Oferta ou objetivo comercial" value={form.offerType} required
+            onChange={event => setForm({ ...form, offerType: event.target.value })} />
           <Input type="number" min="1" max="10" placeholder="Limite" value={form.dailyLimit} required onChange={event => setForm({ ...form, dailyLimit: Number(event.target.value) })} />
           <Button type="submit" disabled={creating}>
             <Plus className="mr-2 h-4 w-4" />
@@ -862,7 +1033,8 @@ export function RadarWorkspace() {
               <Radar className="mt-0.5 h-4 w-4 text-yux-700" />
               <div>
                 <p className="font-medium text-slate-950">{campaign.name}</p>
-                <p className="text-sm text-slate-500">{campaign.targetSegment} em {campaign.targetCity}/{campaign.targetState}</p>
+                <p className="text-sm text-slate-500">{campaign.targetSegment} em {campaign.campaignType === 'regional_b2b'
+                  ? campaign.targetStates.join(', ') : `${campaign.targetCity}/${campaign.targetState}`}</p>
               </div>
             </div>
             <div className="text-sm text-slate-600">
@@ -891,6 +1063,34 @@ export function RadarWorkspace() {
 
       {selectedCampaignId && (
         <>
+          {selectedCampaign?.campaignType === 'regional_b2b' && <section className="rounded-md border bg-white p-4">
+            <h2 className="font-semibold text-slate-950">Descoberta regional de cozinhas industriais</h2>
+            <p className="mt-1 text-sm text-slate-600">Busca CNPJá por CNAE 5620-1/01 principal ou secundário. Cada clique consulta até 10 estabelecimentos e consome uma unidade da fonte; os resultados ficam para verificação e contato telefônico manual.</p>
+            <p className="mt-1 text-xs text-slate-500">Produtos: {selectedCampaign.productFocus.join(', ') || 'não informados'}. CNAE é pista, não confirmação de cozinha industrial.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" size="sm" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)
+                || Boolean(getSourceBlockedReason(cnpjaSource))} onClick={() => runB2bBatch('discovery')}>
+                Buscar em lote nos três estados</Button>
+              <Button type="button" size="sm" variant="outline" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                onClick={() => runB2bBatch('verification')}>Verificar até 10 empresas</Button>
+            </div>
+            {b2bProgress && <p className="mt-2 text-xs text-slate-600">{b2bProgress.candidates} candidatos · {b2bProgress.checked} empresas inspecionadas · {b2bProgress.confirmed} cozinhas confirmadas · {b2bProgress.approved} aprovadas. {b2bProgress.states.map(item => `${item.state}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {selectedCampaign.targetStates.filter((state): state is 'MG' | 'SP' | 'PR' => ['MG', 'SP', 'PR'].includes(state)).map(state =>
+                <Button key={state} type="button" size="sm" variant="outline"
+                  disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading) || regionalProgress[state] === 'Busca concluída'
+                    || Boolean(getSourceBlockedReason(cnpjaSource))}
+                  onClick={() => searchRegionalCnpja(state)}>
+                  {actionLoading === `regional-${state}` ? `Buscando ${state}...` : `Buscar próximo lote — ${state}`}
+                </Button>)}
+            </div>
+            {Object.entries(regionalProgress).map(([state, message]) => <p key={state} className="mt-1 text-xs text-slate-600">{state}: {message}</p>)}
+            <div className="mt-3 flex items-center gap-3 border-t pt-3">
+              <span className="text-sm text-slate-600">{b2bProspects.filter(item => item.approvedAt).length} empresas aprovadas para contato manual</span>
+              <Button type="button" size="sm" variant="outline" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                onClick={exportB2bProspects}>Exportar lista verificada</Button>
+            </div>
+          </section>}
           <section className="rounded-md border bg-white p-4">
             <h2 className="text-base font-semibold text-slate-950">Fontes da campanha</h2>
             <p className="mt-1 text-sm text-slate-500">Fontes governadas aparecem bloqueadas ate o catalogo permitir uso operacional.</p>
@@ -1185,13 +1385,68 @@ export function RadarWorkspace() {
                         {candidate.snippet && <p className="mt-1 text-sm text-slate-600">{candidate.snippet}</p>}
                         {candidate.sourceType === 'osm_extract' && candidate.sourceUrl && <a className="mt-1 block text-xs text-yux-700 underline" href={candidate.sourceUrl} target="_blank" rel="noreferrer">Ver elemento no OpenStreetMap</a>}
                         {candidate.sourceType === 'osm_extract' && <p className="mt-1 text-xs text-slate-500">Site: {getOsmSiteCheckLabel(candidate)}</p>}
+                        {selectedCampaign?.campaignType === 'regional_b2b' && <div className="mt-1 space-y-1 text-xs text-slate-600">
+                          <p>CNPJ: {String(candidate.normalizedPayload.cnpj ?? 'não identificado')} · {String(candidate.normalizedPayload.city ?? '')}/{String(candidate.normalizedPayload.state ?? '')}</p>
+                          <p>Site: {typeof candidate.normalizedPayload.websiteUrl === 'string' ? <a className="text-yux-700 underline" href={candidate.normalizedPayload.websiteUrl} target="_blank" rel="noreferrer">{candidate.normalizedPayload.websiteUrl}</a> : 'ainda não encontrado'}</p>
+                          <p>Telefone: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} · Fonte complementar: {String(candidate.normalizedPayload.braveSourceUrl ?? 'não consultada')}</p>
+                          {getBraveSuggestions(candidate.normalizedPayload).map(suggestion =>
+                            <div key={suggestion.sourceUrl} className="mt-2 rounded border border-sky-200 bg-sky-50 p-2">
+                              <p className="font-medium">Sugestão Brave não associada: {suggestion.name}</p>
+                              <p>{suggestion.address} · Site: {suggestion.websiteUrl ?? 'não informado'} · Tel.: {suggestion.phone ?? 'não informado'}</p>
+                              <a className="text-yux-700 underline" href={suggestion.sourceUrl} target="_blank" rel="noreferrer">Conferir origem</a>
+                              <Button type="button" size="sm" variant="outline" className="ml-2"
+                                disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                                onClick={() => confirmBraveSuggestion(candidate.id, suggestion.sourceUrl)}>Associar após conferir</Button>
+                            </div>)}
+                          <p>Atividade: {b2bProspectById.get(candidate.id)?.kitchenStatus ?? 'aguardando verificação'} · Adequação: {b2bProspectById.get(candidate.id)?.productFit ?? 'desconhecida'}</p>
+                          {Array.isArray(candidate.normalizedPayload.triageReasons) && candidate.normalizedPayload.triageReasons.map((reason, index) => <p key={index}>{String(reason)}</p>)}
+                          {b2bProspectById.get(candidate.id)?.evidence.map((fact, index) =>
+                            <p key={index}>{fact.kind}: {fact.value.slice(0, 180)} · <a className="text-yux-700 underline" href={fact.sourceUrl} target="_blank" rel="noreferrer">fonte</a></p>)}
+                          {b2bProspectById.get(candidate.id)?.approvedAt &&
+                            <p className="font-medium text-emerald-700">Aprovada por verificação {b2bProspectById.get(candidate.id)?.verificationMethod === 'manual' ? 'humana' : 'automatizada'}.</p>}
+                          {candidate.status === 'pending_review' && context.role?.key === 'yux_admin'
+                            && b2bProspectById.get(candidate.id)?.kitchenStatus
+                            && b2bProspectById.get(candidate.id)?.kitchenStatus !== 'confirmed'
+                            && !b2bProspectById.get(candidate.id)?.approvedAt && (
+                            <div className="mt-2 space-y-2 rounded border border-amber-200 bg-amber-50 p-2">
+                              <p className="font-medium">Confirmação humana quando o site não comprova a atividade</p>
+                              <Input aria-label={`Fonte pública de ${candidate.title}`} placeholder="URL da fonte pública que comprova a atividade"
+                                value={b2bManualReviews[candidate.id]?.url ?? ''}
+                                onChange={event => setB2bManualReviews(current => ({ ...current,
+                                  [candidate.id]: { url: event.target.value, note: current[candidate.id]?.note ?? '' } }))} />
+                              <textarea aria-label={`Justificativa de ${candidate.title}`} className="w-full rounded border p-2"
+                                placeholder="Explique o que confirmou que é uma cozinha industrial (mín. 20 caracteres)"
+                                value={b2bManualReviews[candidate.id]?.note ?? ''}
+                                onChange={event => setB2bManualReviews(current => ({ ...current,
+                                  [candidate.id]: { url: current[candidate.id]?.url ?? '', note: event.target.value } }))} />
+                              <Button type="button" size="sm" disabled={Boolean(actionLoading)
+                                || !b2bManualReviews[candidate.id]?.url || (b2bManualReviews[candidate.id]?.note.length ?? 0) < 20}
+                                onClick={() => approveB2bProspect(candidate.id, true)}>Confirmar e aprovar manualmente</Button>
+                            </div>)}
+                        </div>}
                         {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{candidate.errorMessage}</p>}
                       </div>
                       <div className="flex shrink-0 gap-2">
                         {candidate.sourceType === 'osm_extract' && typeof candidate.normalizedPayload.websiteUrl === 'string' && (
                           <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
                         )}
-                        <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>
+                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.sourceType === 'cnpja_advanced_search'
+                          && candidate.status === 'pending_review' && <Button type="button" size="sm" variant="outline"
+                            disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading) || !braveSource?.enabled}
+                            onClick={() => enrichCandidateWithBrave(candidate.id)}>
+                            {actionLoading === `brave-${candidate.id}` ? 'Consultando...' : 'Enriquecer com Brave licenciada'}
+                          </Button>}
+                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.status === 'pending_review'
+                          && <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)}
+                            onClick={() => inspectBusinessSite(candidate.id)}>
+                            {actionLoading === `b2b-site-${candidate.id}` ? 'Verificando...' : 'Verificar site e atividade'}
+                          </Button>}
+                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.normalizedPayload.kitchenStatus === 'confirmed'
+                          && candidate.normalizedPayload.websiteStatus === 'verified_present'
+                          && !b2bProspectById.get(candidate.id)?.approvedAt
+                          && <Button type="button" size="sm" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                            onClick={() => approveB2bProspect(candidate.id)}>Aprovar para lista</Button>}
+                        {selectedCampaign?.campaignType !== 'regional_b2b' && <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>}
                         <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => discardCandidate(candidate.id)}>Descartar</Button>
                       </div>
                     </div>
