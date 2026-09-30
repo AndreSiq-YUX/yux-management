@@ -1,20 +1,7 @@
 import { assertLicensedBraveRetention, type LicensedBraveConfig } from './licensed-brave.js'
+import { RADAR_EXPORT_FIELDS, type RadarExportField } from './search-configuration.js'
 
-export type B2bProspectCsvRow = {
-  name: string
-  cnpj: string
-  city: string
-  state: string
-  websiteUrl: string
-  phone: string
-  email: string
-  kitchenStatus: string
-  productFit: string
-  evidenceUrl: string
-  checkedAt: string
-  verificationMethod: string
-  reviewNote: string
-}
+export type B2bProspectCsvRow = Partial<Record<RadarExportField, string>> & { name: string; cnpj: string }
 
 export function assertB2bDeliveryRights(
   cnpjaConfig: Record<string, unknown>, braveConfig: LicensedBraveConfig | undefined, hasBraveFacts: boolean,
@@ -33,14 +20,15 @@ export function assertB2bDeliveryRights(
   }
 }
 
-export function formatB2bProspectCsv(rows: B2bProspectCsvRow[]) {
-  const header = ['Empresa', 'CNPJ', 'Cidade', 'UF', 'Site verificado', 'Telefone', 'E-mail',
-    'Cozinha industrial', 'Aderência aos produtos', 'Fonte da evidência', 'Verificado em',
-    'Método de verificação', 'Nota da revisão']
-  const lines = rows.map(row => [row.name, row.cnpj, row.city, row.state, row.websiteUrl,
-    row.phone, row.email, row.kitchenStatus, row.productFit, row.evidenceUrl, row.checkedAt,
-    row.verificationMethod, row.reviewNote]
-    .map(csvCell).join(';'))
+export function formatB2bProspectCsv(rows: B2bProspectCsvRow[], fields: RadarExportField[] = [...RADAR_EXPORT_FIELDS]) {
+  const labels: Record<RadarExportField, string> = { name: 'Empresa', legalName: 'Razão social', cnpj: 'CNPJ',
+    city: 'Cidade', state: 'UF', address: 'Endereço', registrationStatus: 'Situação cadastral', cnaes: 'CNAEs',
+    websiteUrl: 'Site', websiteStatus: 'Verificação do site', phone: 'Telefone', email: 'E-mail',
+    instagramUrl: 'Instagram', rating: 'Avaliação', reviewCount: 'Quantidade de avaliações', targetStatus: 'Qualificação',
+    productFit: 'Aderência comercial', evidenceUrl: 'Fonte da evidência', checkedAt: 'Verificado em',
+    verificationMethod: 'Método de verificação', reviewNote: 'Nota da revisão' }
+  const header = fields.map(field => labels[field])
+  const lines = rows.map(row => fields.map(field => csvCell(row[field] ?? '')).join(';'))
   return `\uFEFF${header.map(csvCell).join(';')}\r\n${lines.join('\r\n')}\r\n`
 }
 

@@ -1,5 +1,7 @@
 # Piloto do Radar: cozinhas industriais MG, SP e PR
 
+> Documento histórico. Os botões, limites e critérios fixos abaixo foram substituídos pela [pesquisa configurável por campanha](radar-pesquisa-configuravel.md), migração 0181. Cozinhas e MG/SP/PR são valores editáveis de uma campanha, não limites do Radar. Use o novo runbook para a execução atual.
+
 ## Objetivo e fronteira
 
 Gerar uma lista de empresas reais para revisão e telefonemas **manuais** pela equipe do cliente. A campanha não envia WhatsApp, e-mail, proposta ou ligação. O Radar permanece restrito ao workspace interno YUX; a lista aprovada pode ser entregue em CSV, sujeito aos direitos de uso de cada fonte. A importação automática dessa campanha para o CRM geral fica desabilitada, pois o conversor antigo escolhe um funil/oferta genéricos e pressupõe e-mail. O CSV é o mecanismo de entrega/importação manual no CRM até existir um funil B2B específico.

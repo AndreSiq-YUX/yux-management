@@ -15,12 +15,14 @@ class SitePool {
       id: 'candidate', organization_id: 'org', campaign_id: 'campaign', campaign_type: 'regional_b2b',
       title: 'Cozinha Central Alfa', source_type: 'cnpja_advanced_search', status: 'pending_review',
       normalized_payload: { cnaes: ['5620101'], websiteUrl: 'https://alfa.example', city: 'Belo Horizonte', state: 'MG' },
-      product_focus: ['massas'],
+      target_cnaes: ['5620101'], configuration_revision: 1,
+      search_configuration: { qualification: { includeAnyTerms: ['cozinha industrial'], productTerms: ['massas'] } },
     }] }
     if (sql.includes('SELECT * FROM public.radar_candidate_records')) return { rows: [{
       id: 'candidate', organization_id: 'org', campaign_id: 'campaign', status: 'pending_review',
       normalized_payload: { cnaes: ['5620101'], websiteUrl: 'https://alfa.example' },
     }] }
+    if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ configuration_revision: 1 }] }
     return { rows: [] }
   }
 }
@@ -89,7 +91,7 @@ describe('Radar B2B public website inspection', () => {
       emails: ['contato@alfa.example'], phones: ['3133334444'] }))
     const result = await inspectRadarCandidateBusinessSite(pool as never, admin,
       { organizationId: 'org', candidateId: 'candidate' }, { inspect })
-    expect(result.review.kitchenStatus).toBe('confirmed')
+    expect(result.review.targetStatus).toBe('confirmed')
     expect(pool.queries.some(sql => sql.includes('INSERT INTO public.radar_b2b_reviews'))).toBe(true)
     expect(pool.queries.some(sql => sql.includes('INSERT INTO public.radar_b2b_evidence'))).toBe(true)
     expect(pool.queries.some(sql => sql.includes('radar_outreach_events'))).toBe(false)

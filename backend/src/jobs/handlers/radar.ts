@@ -4,6 +4,7 @@ import { executeRadarAnalysis } from '../../modules/radar/analysis-service.js'
 import type { AuthUser } from '../../auth/routes.js'
 import { enrichRadarCandidateWithLicensedBrave, inspectRadarCandidateBusinessSite,
   runRadarCnpjaAdvancedSearch } from '../../modules/radar/repository.js'
+import { buildRadarDiscoveryScopes, resolveRadarSearchConfiguration } from '../../modules/radar/search-configuration.js'
 
 export async function handleRadarOpportunityAnalysis(
   pool: pg.Pool,
@@ -16,7 +17,7 @@ export async function handleRadarOpportunityAnalysis(
   return executeRadarAnalysis(pool, env, { runId, opportunityId })
 }
 
-type RadarBatchData = { organizationId: string; campaignId: string; requestedBy: string }
+type RadarBatchData = { organizationId: string; campaignId: string; requestedBy: string; configurationRevision?: number }
 
 async function authorizedRadarBatch(pool: pg.Pool, data: Record<string, unknown>) {
   const input = data as RadarBatchData
@@ -27,13 +28,18 @@ async function authorizedRadarBatch(pool: pg.Pool, data: Record<string, unknown>
   )
   const row = user.rows[0]
   if (!row) throw new Error('radar_batch_admin_not_active')
-  const campaign = await pool.query<{ id: string; target_states: string[] }>(
-    `SELECT id, target_states FROM public.radar_campaigns
+  const campaign = await pool.query<{ id: string; target_states: string[]; search_configuration: unknown; configuration_revision: number }>(
+    `SELECT id, target_states, search_configuration, configuration_revision FROM public.radar_campaigns
      WHERE id = $1 AND organization_id = $2 AND campaign_type = 'regional_b2b' LIMIT 1`,
     [input.campaignId, input.organizationId],
   )
   if (!campaign.rows[0]) throw new Error('radar_batch_campaign_not_found')
-  return { input, states: campaign.rows[0].target_states,
+  const rowCampaign = campaign.rows[0]
+  const revision = rowCampaign.configuration_revision ?? 1
+  if (input.configurationRevision !== undefined && input.configurationRevision !== revision) throw new Error('radar_campaign_configuration_changed')
+  const configuration = resolveRadarSearchConfiguration(rowCampaign.search_configuration)
+  return { input, configuration, revision, scopes: buildRadarDiscoveryScopes({ targetStates: rowCampaign.target_states,
+    searchConfiguration: configuration, configurationRevision: revision }),
     user: { id: row.id, email: row.email, name: row.display_name, role: row.role } as AuthUser }
 }
 
@@ -45,29 +51,38 @@ function secretMaterial(env: AppEnv) {
 export async function handleRadarRegionalDiscovery(pool: pg.Pool, env: AppEnv,
   data: Record<string, unknown>, signal?: AbortSignal,
   dependencies: { discover?: typeof runRadarCnpjaAdvancedSearch } = {}) {
-  const { input, states, user } = await authorizedRadarBatch(pool, data)
+  const { input, scopes, configuration, revision, user } = await authorizedRadarBatch(pool, data)
   const summary: Record<string, { pages: number; candidates: number; status: string }> = {}
-  for (const state of states) summary[state] = { pages: 0, candidates: 0, status: 'pending' }
-  // Round-robin prevents the first state from consuming the whole daily quota.
-  for (let round = 0; round < 3; round++) {
-    for (const state of states) {
+  const completed = await pool.query<{ scope_key: string }>(
+    `SELECT scope_key FROM public.radar_regional_discovery_cursors
+     WHERE campaign_id = $1 AND organization_id = $2 AND scope_key = ANY($3::text[]) AND completed = TRUE`,
+    [input.campaignId, input.organizationId, scopes.map(scope => scope.key)],
+  )
+  const completedKeys = new Set(completed.rows.map(row => row.scope_key))
+  for (const scope of scopes) summary[scope.label] = { pages: 0, candidates: 0,
+    status: completedKeys.has(scope.key) ? 'completed' : 'pending' }
+  let queries = 0
+  for (let round = 0; round < configuration.batch.maxPagesPerScope; round++) {
+    for (const scope of scopes) {
       if (signal?.aborted) return { summary, interrupted: true }
-      if (!['MG', 'SP', 'PR'].includes(state)
-        || !['pending', 'more_available'].includes(summary[state].status)) continue
+      if (!['pending', 'more_available'].includes(summary[scope.label].status)) continue
+      if (queries >= configuration.batch.maxQueriesPerBatch) return { summary, interrupted: false, batchLimitReached: true }
       try {
+        queries++
         const result = await (dependencies.discover ?? runRadarCnpjaAdvancedSearch)(pool, user, {
           organizationId: input.organizationId, campaignId: input.campaignId,
-          regionalState: state as 'MG' | 'SP' | 'PR', limit: 10, secretKeyMaterial: secretMaterial(env),
+          regionalState: scope.state, regionalCity: scope.city, expectedRevision: revision,
+          limit: configuration.batch.pageSize, secretKeyMaterial: secretMaterial(env),
         })
         if (result.issues.length) {
-          summary[state].status = result.issues[0].code
+          summary[scope.label].status = result.issues[0].code
           continue
         }
-        summary[state].pages++
-        summary[state].candidates += result.candidates.length
-        summary[state].status = result.completed ? 'completed' : 'more_available'
+        summary[scope.label].pages++
+        summary[scope.label].candidates += result.candidates.length
+        summary[scope.label].status = result.completed ? 'completed' : 'more_available'
       } catch (error) {
-        summary[state].status = error instanceof Error ? error.message : 'failed'
+        summary[scope.label].status = error instanceof Error ? error.message : 'failed'
       }
     }
   }
@@ -78,39 +93,36 @@ export async function handleRadarRegionalVerification(pool: pg.Pool, env: AppEnv
   data: Record<string, unknown>, signal?: AbortSignal,
   dependencies: { enrich?: typeof enrichRadarCandidateWithLicensedBrave;
     inspect?: typeof inspectRadarCandidateBusinessSite } = {}) {
-  const { input, user } = await authorizedRadarBatch(pool, data)
+  const { input, user, configuration, revision } = await authorizedRadarBatch(pool, data)
   const result = await pool.query<{ id: string; normalized_payload: Record<string, unknown> }>(
     `SELECT id, normalized_payload FROM public.radar_candidate_records
      WHERE organization_id = $1 AND campaign_id = $2 AND source_type = 'cnpja_advanced_search'
-       AND status = 'pending_review' AND (normalized_payload->>'siteCheckedAt') IS NULL
-       AND ((normalized_payload->>'websiteUrl') IS NOT NULL
-         OR (normalized_payload->>'braveAttemptedAt') IS NULL)
-     ORDER BY created_at ASC LIMIT 10`, [input.organizationId, input.campaignId],
+       AND status = 'pending_review'
+       AND COALESCE(normalized_payload->>'discoveryRevision', '1') = $3::text
+       AND (normalized_payload->>'analysisRevision') IS DISTINCT FROM $3::text
+     ORDER BY created_at ASC LIMIT $4`, [input.organizationId, input.campaignId, revision, configuration.batch.verificationLimit],
   )
   const summary = { inspected: 0, matched: 0, needsReview: 0, errors: 0 }
   for (const candidate of result.rows) {
     if (signal?.aborted) return { summary, interrupted: true }
-    let website = typeof candidate.normalized_payload.websiteUrl === 'string'
+    const website = typeof candidate.normalized_payload.websiteUrl === 'string'
       ? candidate.normalized_payload.websiteUrl : ''
-    if (!website && !candidate.normalized_payload.braveAttemptedAt) {
+    if (configuration.sources.enrichWithBrave && !website
+      && String(candidate.normalized_payload.braveAttemptRevision ?? '') !== String(revision)) {
       try {
         const enrichment = await (dependencies.enrich ?? enrichRadarCandidateWithLicensedBrave)(pool, user, {
-          organizationId: input.organizationId, candidateId: candidate.id, secretKeyMaterial: secretMaterial(env),
+          organizationId: input.organizationId, candidateId: candidate.id, secretKeyMaterial: secretMaterial(env), expectedRevision: revision,
         })
         if (enrichment.matched) {
           summary.matched++
-          website = typeof enrichment.candidate?.normalizedPayload.websiteUrl === 'string'
-            ? enrichment.candidate.normalizedPayload.websiteUrl : ''
         } else summary.needsReview++
       } catch { summary.errors++ }
     }
-    if (website) {
-      try {
-        await (dependencies.inspect ?? inspectRadarCandidateBusinessSite)(pool, user,
-          { organizationId: input.organizationId, candidateId: candidate.id })
-        summary.inspected++
-      } catch { summary.errors++ }
-    }
+    try {
+      await (dependencies.inspect ?? inspectRadarCandidateBusinessSite)(pool, user,
+        { organizationId: input.organizationId, candidateId: candidate.id, expectedRevision: revision })
+      summary.inspected++
+    } catch { summary.errors++ }
   }
   return { summary, interrupted: false }
 }

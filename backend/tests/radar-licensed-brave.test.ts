@@ -27,7 +27,7 @@ class FixturePool {
     if (sql.includes('FROM public.radar_data_sources')) return { rows: [{ id: 'source', organization_id: null,
       source_key: 'brave_place_search', source_type: 'brave_place_search', display_name: 'Brave', enabled: true,
       is_paid: true, requires_secret: true, default_cost_per_unit: '0.01', rate_limit_per_day: 10 }] }
-    if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ daily_limit: 10, budget_limit: '1.00' }] }
+    if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ daily_limit: 10, budget_limit: '1.00', configuration_revision: 1 }] }
     if (sql.includes('FROM public.radar_source_usage_counters')) return { rows: [{ units: 0, estimated_cost: 0 }] }
     if (sql.includes('SELECT * FROM public.radar_candidate_records')) return { rows: [this.candidate] }
     if (sql.includes('UPDATE public.radar_candidate_records')) return { rows: [{ ...this.candidate,

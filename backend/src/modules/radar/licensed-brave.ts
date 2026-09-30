@@ -26,7 +26,14 @@ function normalizeBusinessName(value: string) {
 }
 
 export function bravePlaceMatchesLocation(city: string, state: string, address: string) {
-  const stateNames: Record<string, string> = { MG: 'minas gerais', SP: 'sao paulo', PR: 'parana' }
+  const stateNames: Record<string, string> = {
+    AC: 'acre', AL: 'alagoas', AP: 'amapa', AM: 'amazonas', BA: 'bahia', CE: 'ceara',
+    DF: 'distrito federal', ES: 'espirito santo', GO: 'goias', MA: 'maranhao', MT: 'mato grosso',
+    MS: 'mato grosso do sul', MG: 'minas gerais', PA: 'para', PB: 'paraiba', PR: 'parana',
+    PE: 'pernambuco', PI: 'piaui', RJ: 'rio de janeiro', RN: 'rio grande do norte',
+    RS: 'rio grande do sul', RO: 'rondonia', RR: 'roraima', SC: 'santa catarina', SP: 'sao paulo',
+    SE: 'sergipe', TO: 'tocantins',
+  }
   const normalizedCity = normalize(city)
   const normalizedAddress = normalize(address)
   const uf = state.toUpperCase()

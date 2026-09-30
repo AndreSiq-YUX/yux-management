@@ -1,3 +1,5 @@
+import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
+
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 export type RadarOpportunityStatus = 'raw' | 'enriching' | 'enriched' | 'diagnosing' | 'diagnosed' | 'message_drafted' | 'review_pending' | 'approved' | 'rejected' | 'discarded' | 'opted_out' | 'converted'
 export type RadarMessageStatus = 'draft' | 'approved' | 'rejected' | 'converted'
@@ -139,6 +141,8 @@ export interface RadarCampaign {
   targetCity: string
   targetState: string
   targetStates: string[]
+  searchConfiguration?: RadarSearchConfiguration
+  configurationRevision?: number
   productFocus: string[]
   targetKeywords: string[]
   targetCnaes: string[]

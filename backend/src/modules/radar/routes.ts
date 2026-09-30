@@ -12,6 +12,7 @@ import {
   convertRadarOpportunityToLead,
   createRadarCampaign,
   discardRadarCandidate,
+  duplicateRadarCampaign,
   enrichRadarCandidateWithLicensedBrave,
   exportRadarB2bProspectsCsv,
   getRadarCampaignMetrics,
@@ -38,8 +39,10 @@ import {
   runRadarOsmSearch,
   updateRadarDuplicateCandidate,
   updateRadarDataSource,
+  updateRadarCampaign,
   type RadarAnalysisRequest,
 } from './repository.js'
+import { radarSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
 
 const uuid = z.string().uuid()
 
@@ -52,20 +55,27 @@ const createCampaignSchema = z.object({
   targetSegment: z.string().min(1),
   targetCity: z.string().min(1).optional(),
   targetState: z.string().length(2).optional(),
-  targetStates: z.array(z.enum(['MG', 'SP', 'PR'])).min(1).max(3).optional(),
+  targetStates: z.array(radarStateSchema).min(1).max(27).optional(),
   productFocus: z.array(z.string().trim().min(1)).max(12).optional(),
-  targetKeywords: z.array(z.string()).optional(),
-  targetCnaes: z.array(z.string()).optional(),
+  searchConfiguration: radarSearchConfigurationSchema.optional(),
+  targetKeywords: z.array(z.string().trim().min(1).max(160)).max(50).optional(),
+  targetCnaes: z.array(z.string().transform(value => value.replace(/\D/g, '')).pipe(z.string().regex(/^\d{7}$/))).max(50).optional(),
   offerType: z.string().min(1),
-  budgetLimit: z.number().optional(),
-  dailyLimit: z.number().int().min(1).max(10).optional(),
+  budgetLimit: z.number().min(0).optional(),
+  dailyLimit: z.number().int().min(1).max(1000).optional(),
 }).superRefine((input, context) => {
   if (input.campaignType === 'regional_b2b') {
-    if (!input.targetStates?.length || input.targetCity || input.targetState || !input.productFocus?.length) {
-      context.addIssue({ code: 'custom', message: 'regional_b2b_requires_states_and_products_without_city' })
+    if (!input.targetStates?.length || input.targetCity || input.targetState) {
+      context.addIssue({ code: 'custom', message: 'regional_search_requires_states_without_single_city' })
     }
     if (input.targetStates && new Set(input.targetStates).size !== input.targetStates.length) {
       context.addIssue({ code: 'custom', message: 'regional_b2b_duplicate_state' })
+    }
+    if (input.searchConfiguration?.cities.some(city => !input.targetStates?.includes(city.state))) {
+      context.addIssue({ code: 'custom', message: 'city_state_outside_campaign_states' })
+    }
+    if (input.searchConfiguration?.qualification.requireCnaeMatch && !input.targetCnaes?.length) {
+      context.addIssue({ code: 'custom', message: 'required_cnae_rule_needs_cnaes' })
     }
   } else if (!input.targetCity || !input.targetState || input.targetStates?.length) {
     context.addIssue({ code: 'custom', message: 'local_campaign_requires_city_and_state' })
@@ -134,8 +144,9 @@ const searchCnpjaSchema = z.object({
 })
 const searchRegionalCnpjaSchema = z.object({
   organizationId: uuid,
-  state: z.enum(['MG', 'SP', 'PR']),
-  limit: z.number().int().min(1).max(10).default(10),
+  state: radarStateSchema,
+  city: z.string().trim().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(10).optional(),
 })
 const previewPlacesSchema = z.object({
   organizationId: uuid,
@@ -206,6 +217,24 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const parsed = createCampaignSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_radar_campaign_payload' })
     return reply.code(201).send(await createRadarCampaign(app.pg, user, parsed.data))
+  })
+
+  app.patch('/campaigns/:id', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = createCampaignSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_campaign_payload' })
+    return updateRadarCampaign(app.pg, user, params.data.id, parsed.data)
+  })
+
+  app.post('/campaigns/:id/duplicate', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    const params = z.object({ id: uuid }).safeParse(request.params)
+    const parsed = campaignQuerySchema.extend({ name: z.string().trim().min(1).max(200).optional() }).safeParse(request.body)
+    if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_campaign_duplicate_payload' })
+    return reply.code(201).send(await duplicateRadarCampaign(app.pg, user, { campaignId: params.data.id, ...parsed.data }))
   })
 
   app.post('/campaigns/:id/companies', async (request, reply) => {
@@ -299,6 +328,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
       organizationId: parsed.data.organizationId,
       campaignId: params.data.id,
       regionalState: parsed.data.state,
+      regionalCity: parsed.data.city,
       limit: parsed.data.limit,
       secretKeyMaterial: app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
         ? `provider-key:${app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : app.config.SESSION_SECRET,
@@ -315,10 +345,10 @@ export async function registerRadarRoutes(app: FastifyInstance) {
       const params = z.object({ id: uuid }).safeParse(request.params)
       const parsed = campaignQuerySchema.safeParse(request.body)
       if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_b2b_batch_payload' })
-      await assertRadarRegionalBatchAccess(app.pg, user, parsed.data.organizationId, params.data.id)
+      const configurationRevision = await assertRadarRegionalBatchAccess(app.pg, user, parsed.data.organizationId, params.data.id)
       const job = await app.jobQueue.add(jobName, { organizationId: parsed.data.organizationId,
-        campaignId: params.data.id, requestedBy: user.id },
-      { jobId: `radar-${jobName.replaceAll('.', '-')}-${params.data.id}-${Math.floor(Date.now() / 60000)}` })
+        campaignId: params.data.id, requestedBy: user.id, configurationRevision },
+      { jobId: `radar-${jobName.replaceAll('.', '-')}-${params.data.id}-v${configurationRevision}-${Math.floor(Date.now() / 60000)}` })
       return reply.code(202).send({ jobId: job.id, status: 'queued' })
     })
   }
@@ -383,7 +413,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_radar_b2b_export_query' })
     const csv = await exportRadarB2bProspectsCsv(app.pg, user, query.data.organizationId, params.data.id)
     return reply.header('Content-Type', 'text/csv; charset=utf-8')
-      .header('Content-Disposition', `attachment; filename="radar-cozinhas-${params.data.id}.csv"`)
+      .header('Content-Disposition', `attachment; filename="radar-prospectos-${params.data.id}.csv"`)
       .send(csv)
   })
 

@@ -13,6 +13,8 @@ export type CnpjaAdvancedSearchInput = {
   apiKey: string
   config?: CnpjaProviderConfig
   query?: string
+  excludedNameTerms?: string[]
+  registrationStatusIds?: number[]
   city?: string
   state?: string
   cnaes?: string[]
@@ -80,6 +82,7 @@ export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): 
       Accept: 'application/json',
       Authorization: input.apiKey,
     },
+    signal: AbortSignal.timeout(20_000),
   })
   const body = await response.json().catch(() => null)
 
@@ -180,8 +183,9 @@ function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: Cn
     url.searchParams.set('token', input.token)
     return url.toString()
   }
-  url.searchParams.set('status.id.in', '2')
+  url.searchParams.set('status.id.in', (input.registrationStatusIds ?? [2]).join(','))
   if (input.query?.trim()) url.searchParams.set('names.in', input.query.trim())
+  if (input.excludedNameTerms?.length) url.searchParams.set('names.nin', input.excludedNameTerms.join(','))
   if (municipalityCode) url.searchParams.set('address.municipality.in', String(municipalityCode))
   if (input.state?.trim()) url.searchParams.set('address.state.in', input.state.trim().toUpperCase())
   if (input.openingFrom) url.searchParams.set('founded.gte', input.openingFrom)

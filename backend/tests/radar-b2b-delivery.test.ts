@@ -10,9 +10,10 @@ class ReviewPool {
   async connect() { return { query: this.query.bind(this), release() {} } }
   async query(sql: string) {
     this.queries.push(sql)
+    if (sql.includes('FROM public.radar_campaigns campaign')) return { rows: [{ configuration_revision: 1 }] }
     if (sql.includes("kind = 'yux'")) return { rows: [{ allowed: true }] }
     if (sql.includes('FROM public.radar_b2b_reviews review')) return { rows: [{
-      candidate_id: 'candidate', kitchen_status: 'review', normalized_payload: { websiteStatus: 'unknown' },
+      candidate_id: 'candidate', target_status: 'review', normalized_payload: { websiteStatus: 'unknown' },
     }] }
     if (sql.includes('FROM public.radar_candidate_records') && sql.includes('FOR UPDATE')) {
       return { rows: [{ campaign_id: 'campaign' }] }
@@ -22,6 +23,12 @@ class ReviewPool {
 }
 
 describe('B2B prospect delivery', () => {
+  it('exports only the fields selected for the campaign in the selected order', () => {
+    const csv = formatB2bProspectCsv([{ name: 'Empresa Alfa', cnpj: '12345678000190', phone: '123', email: 'a@example.test' }], ['phone','name'])
+    expect(csv).toBe('\uFEFF"Telefone";"Empresa"\r\n"123";"Empresa Alfa"\r\n')
+    expect(csv).not.toContain('12345678000190')
+    expect(csv).not.toContain('a@example.test')
+  })
   it('requires documented permission for CNPJa and, when used, Brave client delivery', () => {
     expect(() => assertB2bDeliveryRights({}, undefined, false)).toThrow('radar_cnpja_client_delivery_not_approved')
     const cnpja = { clientDeliveryLicensed: true, licenseReference: 'CNPJA-1' }
@@ -33,7 +40,7 @@ describe('B2B prospect delivery', () => {
   it('exports verified facts and neutralizes spreadsheet formula injection', () => {
     const csv = formatB2bProspectCsv([{ name: '=HYPERLINK("https://bad.example")', cnpj: '12345678000190',
       city: 'Belo Horizonte', state: 'MG', websiteUrl: 'https://alfa.example', phone: '3133334444',
-      email: 'contato@alfa.example', kitchenStatus: 'confirmed', productFit: 'possible',
+      email: 'contato@alfa.example', targetStatus: 'confirmed', productFit: 'possible',
       evidenceUrl: 'https://alfa.example/', checkedAt: '2026-09-30T00:00:00.000Z',
       verificationMethod: 'manual', reviewNote: 'Atividade confirmada pela fonte pública.' }])
     expect(csv).toContain("'=HYPERLINK")

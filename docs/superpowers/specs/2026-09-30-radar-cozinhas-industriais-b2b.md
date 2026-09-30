@@ -1,5 +1,7 @@
 # Radar B2B: cozinhas industriais em MG, SP e PR
 
+> Este recorte foi generalizado após correção explícita do usuário. A pesquisa deve ser configurável para qualquer segmento e UF/cidade, sem regras setoriais no executor. Ver [pesquisa configurável](../../runbooks/radar-pesquisa-configuravel.md) para o funcionamento atual. Este documento registra a demanda específica original, não limites do produto.
+
 **Estado:** recorte aprovado para implementação em 30/09/2026; primeira versão técnica entregue para piloto controlado, ainda sem validação com dados reais nem deploy confirmado. Contato telefônico manual pela equipe do cliente, com entrega por CSV para acompanhamento no CRM. Nenhum crédito de API ou modelo pago é autorizado por este documento.
 
 ## Resultado esperado

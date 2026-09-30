@@ -176,9 +176,9 @@ export const jobRegistry = {
   }).passthrough()),
   'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
   'radar.runRegionalDiscovery': registered('external', 300_000, ({ pool, env, signal }, data) =>
-    handleRadarRegionalDiscovery(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid })),
+      handleRadarRegionalDiscovery(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
   'radar.verifyRegionalCandidates': registered('external', 300_000, ({ pool, env, signal }, data) =>
-    handleRadarRegionalVerification(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid })),
+      handleRadarRegionalVerification(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
   'company-intelligence.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleKnowledgeIndexing(pool, env, data, { signal })),
   'company-intelligence.discoverWebsite': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleWebsiteOnboarding(pool, env, data, { signal })),
   'proposal.convert': registered('interactive', 120_000, ({ pool }, data) => handleProposalConversion(pool, data.proposalId)),

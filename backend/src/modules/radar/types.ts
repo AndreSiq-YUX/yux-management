@@ -1,3 +1,5 @@
+import type { RadarSearchConfiguration } from './search-configuration.js'
+
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 
 export type RadarSourceType =
@@ -63,6 +65,8 @@ export type RadarCampaignRow = {
   target_state: string | null
   target_states?: string[]
   product_focus?: string[]
+  search_configuration?: unknown
+  configuration_revision?: number
   target_keywords: string[]
   target_cnaes: string[]
   offer_type: string
@@ -236,6 +240,8 @@ export interface RadarCampaign {
   targetState: string
   targetStates: string[]
   productFocus: string[]
+  searchConfiguration: RadarSearchConfiguration
+  configurationRevision: number
   targetKeywords: string[]
   targetCnaes: string[]
   offerType: string

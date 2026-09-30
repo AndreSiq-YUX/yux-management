@@ -32,7 +32,8 @@ class PoolFixture {
       id: '00000000-0000-4000-8000-000000000005', status: 'active', public_config: {},
     }] }
     if (sql.includes('FROM public.radar_campaigns')) return { rows: [{ id: campaignId, daily_limit: 10, budget_limit: '1.00',
-      campaign_type: this.regional ? 'regional_b2b' : 'local_niche', target_states: this.regional ? ['MG', 'SP', 'PR'] : [] }] }
+      campaign_type: this.regional ? 'regional_b2b' : 'local_niche', target_states: this.regional ? ['MG', 'SP', 'PR'] : [],
+      target_cnaes: ['6201501'], target_keywords: ['software'], configuration_revision: 1 }] }
     if (sql.includes('FROM public.radar_regional_discovery_cursors')) return { rows: this.regionalCursor ? [this.regionalCursor] : [] }
     if (sql.includes('INSERT INTO public.radar_regional_discovery_cursors')) return { rows: [] }
     if (sql.includes('UPDATE public.radar_regional_discovery_cursors')) {
@@ -94,7 +95,7 @@ describe('CNPJa search governance', () => {
     const first = await runRadarCnpjaAdvancedSearch(pool as never, admin, input,
       { loadSecret: async () => 'fixture', searchPage: searchPage as never })
     expect(first.nextToken).toBe('next-page')
-    expect(searchPage).toHaveBeenCalledWith(expect.objectContaining({ state: 'MG', cnaes: ['5620101'], includeSecondaryActivities: true }))
+    expect(searchPage).toHaveBeenCalledWith(expect.objectContaining({ state: 'MG', cnaes: ['6201501'], query: 'software', includeSecondaryActivities: true }))
     const second = await runRadarCnpjaAdvancedSearch(pool as never, admin, input,
       { loadSecret: async () => 'fixture', searchPage: searchPage as never })
     expect(second.completed).toBe(true)
