@@ -663,6 +663,21 @@ describe('radar routes', () => {
     expect(insert?.params).toContainEqual(['MG', 'SP', 'PR'])
   })
 
+  it.each([{states:['BA']},{states:['BA','SC']}])('creates a configurable statewide campaign for $states', async ({states}) => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method:'POST',url:'/api/radar/campaigns',
+      headers:{cookie:sessionCookie(token)},payload:{organizationId:ids.org,name:'Pesquisa editável',
+        campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:states,
+        offerType:'Consultoria',searchConfiguration:{cities:[]} } })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({targetStates:states,targetCity:''})
+    const insert = pool.queries.find(query => query.sql.includes('INSERT INTO public.radar_campaigns'))!
+    expect(insert.params[9]).toEqual(states)
+    expect(JSON.parse(insert.params[14] as string).cities).toEqual([])
+  })
+
   it('lists and updates governed radar data sources', async () => {
     const { authStore, token } = buildAuthStore()
     app = await buildServer(testEnv, { authStore, pool: new FakeRadarPool() as never, jobQueue: noopJobQueue })

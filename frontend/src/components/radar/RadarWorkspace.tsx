@@ -187,6 +187,10 @@ export function RadarWorkspace() {
   const [campaigns, setCampaigns] = useState<RadarCampaign[]>([])
   const [form, setForm] = useState(initialForm)
   const [configurationEditor, setConfigurationEditor] = useState<'new' | RadarCampaign | null>(null)
+  const [creationMode, setCreationMode] = useState<'regional' | 'local'>('regional')
+  const [newCampaignVersion, setNewCampaignVersion] = useState(0)
+  const activeConfigurationEditor = configurationEditor
+    ?? (context.role?.key === 'yux_admin' && creationMode === 'regional' ? 'new' : null)
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([])
@@ -703,16 +707,17 @@ export function RadarWorkspace() {
   }
 
   const saveCampaignConfiguration = async (input: RadarCampaignInput) => {
-    if (creating || !configurationEditor) return
+    if (creating || !activeConfigurationEditor) return
     setCreating(true)
     try {
-      const campaign = configurationEditor === 'new'
+      const campaign = activeConfigurationEditor === 'new'
         ? await radarService.createCampaign(input)
-        : (await radarService.updateCampaign(configurationEditor.id, input)).campaign
+        : (await radarService.updateCampaign(activeConfigurationEditor.id, input)).campaign
       setCampaigns(current => [campaign, ...current.filter(item => item.id !== campaign.id)])
       setSelectedCampaignId(campaign.id)
       setRegionalProgress({})
       setB2bProgress(null)
+      if (activeConfigurationEditor === 'new') setNewCampaignVersion(current => current + 1)
       setConfigurationEditor(null)
       setB2bProspects([])
       setB2bManualReviews({})
@@ -1024,14 +1029,21 @@ export function RadarWorkspace() {
 
       <section id="radar-search-configuration" className="rounded-md border bg-white p-4">
         <h2 className="text-base font-semibold text-slate-950">Configuração de campanhas</h2>
-        {context.role?.key === 'yux_admin' && <Button type="button" className="mt-3" variant="outline"
-          disabled={creating || Boolean(actionLoading)} onClick={() => setConfigurationEditor('new')}>Nova pesquisa configurável</Button>}
-        {configurationEditor && <RadarCampaignConfigurationForm
-          key={configurationEditor === 'new' ? 'new' : `${configurationEditor.id}-${configurationEditor.configurationRevision}`}
-          organizationId={organizationId || ''} initialCampaign={configurationEditor === 'new' ? undefined : configurationEditor}
-          busy={creating} onSubmit={saveCampaignConfiguration} onCancel={() => setConfigurationEditor(null)} />}
-        <p className="mt-3 text-xs text-slate-500">As opções abaixo mantêm a criação rápida de campanhas locais. Para filtros e qualificação editáveis, use Nova pesquisa configurável.</p>
-        <form className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
+        {context.role?.key === 'yux_admin' && <label className="mt-3 block text-sm font-medium">Tipo de criação
+          <select className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={creationMode}
+            disabled={creating || Boolean(actionLoading)} onChange={event => {
+              setCreationMode(event.target.value as typeof creationMode)
+              setConfigurationEditor(null)
+            }}>
+            <option value="regional">Pesquisa configurável — estados ou cidades</option>
+            <option value="local">Criação rápida local — uma cidade</option>
+          </select>
+        </label>}
+        {activeConfigurationEditor && <RadarCampaignConfigurationForm
+          key={activeConfigurationEditor === 'new' ? `new-${newCampaignVersion}` : `${activeConfigurationEditor.id}-${activeConfigurationEditor.configurationRevision}`}
+          organizationId={organizationId || ''} initialCampaign={activeConfigurationEditor === 'new' ? undefined : activeConfigurationEditor}
+          busy={creating} onSubmit={saveCampaignConfiguration} onCancel={() => { setConfigurationEditor(null); setCreationMode('local') }} />}
+        {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
           <select
             className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
             value={form.campaignType}
@@ -1051,7 +1063,7 @@ export function RadarWorkspace() {
             <Plus className="mr-2 h-4 w-4" />
             {creating ? 'Criando...' : 'Criar'}
           </Button>
-        </form>
+        </form>}
       </section>
 
       <section className="rounded-md border bg-white">

@@ -2,6 +2,24 @@ import { assertSmallBatchLimit } from './sourceRules.js'
 
 export type RadarPlaceProvider = 'serper_places' | 'brave_place_search'
 
+class RadarPlaceProviderError extends Error {
+  readonly statusCode = 502
+  constructor(readonly providerStatus: number, readonly invalidFields: string[] = []) {
+    super(`radar_place_provider_http_${providerStatus}`)
+  }
+}
+
+function getInvalidQueryFields(payload: unknown): string[] {
+  const meta = asRecord(asRecord(asRecord(payload)?.error)?.meta)
+  const allowed = new Set(['q', 'location', 'country', 'search_lang', 'ui_lang', 'count'])
+  const errors = Array.isArray(meta?.errors) ? meta.errors : []
+  return [...new Set(errors.flatMap(value => {
+    const loc = asRecord(value)?.loc
+    return Array.isArray(loc) && loc[0] === 'query' && typeof loc[1] === 'string' && allowed.has(loc[1])
+      ? [loc[1]] : []
+  }))]
+}
+
 export type RadarPlacePreview = {
   provider: RadarPlaceProvider
   name: string
@@ -38,7 +56,9 @@ export async function searchRadarPlaces(input: RadarPlaceSearchInput): Promise<R
   const request = input.provider === 'serper_places' ? buildSerperRequest(input) : buildBraveRequest(input)
   const response = await (input.fetchImpl ?? fetch)(request.url, { ...request.options, signal: AbortSignal.timeout(8000) })
   if (!response.ok) {
-    throw Object.assign(new Error(`radar_place_provider_http_${response.status}`), { statusCode: 502 })
+    const invalidFields = response.status === 422
+      ? getInvalidQueryFields(await response.json().catch(() => null)) : []
+    throw new RadarPlaceProviderError(response.status, invalidFields)
   }
   const payload: unknown = await response.json()
   const record = asRecord(payload)
@@ -56,8 +76,10 @@ export async function testRadarPlaceProvider(provider: RadarPlaceProvider, apiKe
     await searchRadarPlaces({ provider, apiKey, query: 'empresa', city: 'Curitiba', state: 'PR', limit: 1, fetchImpl })
     return { ok: true, message: 'Conexão validada. O teste consumiu uma consulta do provedor.' }
   } catch (error) {
-    const match = error instanceof Error ? /^radar_place_provider_http_(\d+)$/.exec(error.message) : null
-    return { ok: false, message: match ? `Provedor retornou HTTP ${match[1]}.` : 'Falha ao consultar o provedor.' }
+    const detail = error instanceof RadarPlaceProviderError && error.invalidFields.length
+      ? ` Parâmetros inválidos: ${error.invalidFields.join(', ')}.` : ''
+    return { ok: false, message: error instanceof RadarPlaceProviderError
+      ? `Provedor retornou HTTP ${error.providerStatus}.${detail}` : 'Falha ao consultar o provedor.' }
   }
 }
 
@@ -75,10 +97,11 @@ function buildSerperRequest(input: RadarPlaceSearchInput) {
 
 function buildBraveRequest(input: RadarPlaceSearchInput) {
   const url = new URL('https://api.search.brave.com/res/v1/local/place_search')
-  url.searchParams.set('q', input.query.trim())
-  url.searchParams.set('location', `${input.city.trim()} ${input.state.trim().toUpperCase()} Brazil`)
+  // Brave's non-US location format is city + country; preserve the UF in the query.
+  url.searchParams.set('q', `${input.query.trim()} ${input.city.trim()} ${input.state.trim().toUpperCase()} Brasil`)
+  url.searchParams.set('location', `${input.city.trim()} Brazil`)
   url.searchParams.set('country', 'BR')
-  url.searchParams.set('search_lang', 'pt')
+  url.searchParams.set('search_lang', 'pt-br')
   url.searchParams.set('ui_lang', 'pt-BR')
   url.searchParams.set('count', String(input.limit))
   return {

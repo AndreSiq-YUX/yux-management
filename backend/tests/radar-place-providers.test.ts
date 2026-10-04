@@ -35,6 +35,10 @@ describe('radar local place providers', () => {
     expect(url).toContain('https://api.search.brave.com/res/v1/local/place_search?')
     expect(new URL(url as string).searchParams.get('country')).toBe('BR')
     expect(new URL(url as string).searchParams.get('count')).toBe('2')
+    expect(new URL(url).searchParams.get('search_lang')).toBe('pt-br')
+    expect(new URL(url).searchParams.get('ui_lang')).toBe('pt-BR')
+    expect(new URL(url).searchParams.get('location')).toBe('Curitiba Brazil')
+    expect(new URL(url).searchParams.get('q')).toBe('clínicas Curitiba PR Brasil')
     expect((options?.headers as Record<string, string>)['X-Subscription-Token']).toBe('fixture')
     expect(results).toEqual([expect.objectContaining({ name: 'Empresa B', websiteUrl: 'https://example.test/',
       websiteStatus: 'unverified', phone: '4133335555', rating: 4.6, reviewCount: 14,
@@ -53,6 +57,20 @@ describe('radar local place providers', () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ message: 'bad fixture-key' }) })) as unknown as typeof fetch
     const result = await testRadarPlaceProvider('serper_places', 'fixture-key', fetchImpl)
     expect(result).toEqual({ ok: false, message: 'Provedor retornou HTTP 401.' })
+    expect(JSON.stringify(result)).not.toContain('fixture-key')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports only allowlisted validation fields for HTTP 422, never provider text or inputs', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 422, json: async () => ({
+      error: { message: 'bad fixture-key', meta: { errors: [
+        { loc: ['query', 'search_lang'], msg: 'fixture-key', input: 'fixture-key' },
+        { loc: ['header', 'X-Subscription-Token'], msg: 'fixture-key' },
+        { loc: ['query', 'fixture-key'] },
+      ] } },
+    }) })) as unknown as typeof fetch
+    const result = await testRadarPlaceProvider('brave_place_search', 'fixture-key', fetchImpl)
+    expect(result).toEqual({ ok: false, message: 'Provedor retornou HTTP 422. Parâmetros inválidos: search_lang.' })
     expect(JSON.stringify(result)).not.toContain('fixture-key')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })

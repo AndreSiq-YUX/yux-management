@@ -20,6 +20,8 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
   const [segment, setSegment] = useState(initialCampaign?.targetSegment ?? '')
   const [states, setStates] = useState<string[]>(initialCampaign?.targetStates ?? [])
   const [cities, setCities] = useState(() => (initialCampaign?.searchConfiguration?.cities ?? []).map(item => `${item.city}/${item.state}`).join('\n'))
+  const [geographicScope, setGeographicScope] = useState<'states' | 'cities'>(() =>
+    initialCampaign?.searchConfiguration?.cities.length ? 'cities' : 'states')
   const [keywords, setKeywords] = useState(initialCampaign?.targetKeywords.join(', ') ?? '')
   const [cnaes, setCnaes] = useState(initialCampaign?.targetCnaes.join(', ') ?? '')
   const [products, setProducts] = useState(initialCampaign?.productFocus.join(', ') ?? '')
@@ -36,6 +38,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
     setError(null)
     try {
       if (!states.length) throw new Error('Selecione pelo menos uma UF.')
+      if (geographicScope === 'cities' && !cities.trim()) throw new Error('Informe pelo menos uma cidade ou escolha Estados inteiros.')
       if (!config.exportFields.length) throw new Error('Selecione pelo menos um campo de entrega.')
       const codes = splitRadarTerms(cnaes).map(value => value.replace(/\D/g, ''))
       if (codes.some(value => value.length !== 7)) throw new Error('Cada CNAE deve ter sete dígitos.')
@@ -47,7 +50,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         targetStates: states, targetKeywords: splitRadarTerms(keywords), targetCnaes: codes,
         productFocus: splitRadarTerms(products), offerType: offer, dailyLimit,
         budgetLimit: budget === '' ? undefined : Number(budget),
-        searchConfiguration: { ...config, cities: parseRadarCities(cities, states), excludedNameTerms: splitRadarTerms(excludedNames),
+        searchConfiguration: { ...config, cities: geographicScope === 'states' ? [] : parseRadarCities(cities, states), excludedNameTerms: splitRadarTerms(excludedNames),
           qualification: { ...rules, includeAnyTerms: splitRadarTerms(rules.includeAnyTerms.join('\n')),
             includeAllTerms: splitRadarTerms(rules.includeAllTerms.join('\n')), excludeTerms: splitRadarTerms(rules.excludeTerms.join('\n')),
             productTerms: splitRadarTerms(rules.productTerms.join('\n')) } } })
@@ -64,11 +67,17 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         <Field label="Produtos e serviços de interesse (separados por vírgula)"><Input value={products} onChange={e => setProducts(e.target.value)} /></Field>
       </div>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Regiões da pesquisa</legend>
+        <div className="mb-3"><Field label="Abrangência geográfica"><select className={selectClass} value={geographicScope}
+          onChange={e => setGeographicScope(e.target.value as typeof geographicScope)}>
+          <option value="states">Estados inteiros — um ou mais</option><option value="cities">Cidades específicas — uma ou mais</option>
+        </select></Field></div>
+        <p className="mb-2 text-xs text-slate-500">Selecione as UFs que deseja pesquisar.</p>
         <div className="flex flex-wrap gap-3">{radarBrazilStates.map(state => <label key={state} className="flex items-center gap-1 text-sm">
           <input type="checkbox" checked={states.includes(state)} onChange={e => setStates(current => e.target.checked ? [...current, state] : current.filter(item => item !== state))} />{state}</label>)}</div>
-        <div className="mt-3"><Field label="Cidades opcionais — uma Cidade/UF por linha">
-          <textarea className="w-full rounded-md border p-2" rows={3} value={cities} onChange={e => setCities(e.target.value)} />
-        </Field><p className="text-xs text-slate-500">Sem cidades: pesquisa em toda a UF. Com cidades: pesquisa somente nas cidades listadas, dentro das UFs selecionadas.</p></div>
+        {geographicScope === 'cities' ? <div className="mt-3"><Field label="Cidades — uma Cidade/UF por linha">
+          <textarea className="w-full rounded-md border p-2" rows={3} required value={cities} onChange={e => setCities(e.target.value)} />
+        </Field><p className="text-xs text-slate-500">Pesquisa somente nas cidades listadas, dentro das UFs selecionadas.</p></div>
+          : <p className="mt-3 text-xs text-slate-500">Pesquisa em todo o território das UFs selecionadas. Não é necessário informar cidade. Os lotes respeitam os limites configurados; um lote não cobre automaticamente todo o estado.</p>}
       </fieldset>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Filtros de descoberta CNPJá</legend>
         <div className="grid gap-3 md:grid-cols-2">
