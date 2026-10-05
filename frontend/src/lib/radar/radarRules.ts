@@ -29,6 +29,13 @@ const opportunityStatusLabels: Record<RadarOpportunityStatus, string> = {
 export function canShowRadarNavigation(context: PlatformContext) {
   const role = context.role
 
+  if (!context.organization || !role || !['portal', 'client_workspace'].includes(context.mode)) return false
+  if (context.organization.kind === 'client' && !context.organization.isInternalGrowthWorkspace) {
+    return context.enabledModuleKeys.includes('radar')
+      && (role.permissions.includes('radar.read') || role.permissions.includes('radar:manage')
+        || (role.scope === 'internal' && role.permissions.includes('platform.manage')))
+  }
+
   return (
     context.mode === 'client_workspace'
     && context.organization?.isInternalGrowthWorkspace === true
@@ -37,6 +44,15 @@ export function canShowRadarNavigation(context: PlatformContext) {
       && (radarInternalRoleKeys.has(role.key) || role.permissions.includes('radar:manage') || role.permissions.includes('platform.manage'))
     ))
   )
+}
+
+export function canManageRadar(context: PlatformContext) {
+  return canShowRadarNavigation(context) && Boolean(context.role && (
+    context.role.permissions.includes('radar:manage')
+    || (context.role.scope === 'internal' && (
+      radarInternalRoleKeys.has(context.role.key) || context.role.permissions.includes('platform.manage')
+    ))
+  ))
 }
 
 export function buildRadarDedupeKey(input: Pick<RadarCompanyRecord, 'cnpj' | 'websiteUrl' | 'phoneRaw' | 'tradeName' | 'legalName' | 'city' | 'state'>) {

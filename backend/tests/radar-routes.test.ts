@@ -69,6 +69,7 @@ class FakeRadarPool {
   protectedSourceType: string | null = null
   osmSnapshotActive = false
   osmInternalOrganization = true
+  clientRadarAllowed = false
   osmSeenKeys: string[] = []
   candidateStatus = 'pending_review'
   sourceUnitsUsed = 0
@@ -86,6 +87,7 @@ class FakeRadarPool {
     const normalized = sql.replace(/\s+/g, ' ').trim()
 
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
+    if (sql.includes('JOIN public.memberships membership') && sql.includes("module.module_key = 'radar'")) return { rows: [{ allowed: this.clientRadarAllowed }] }
     if (normalized.includes("kind = 'yux' AND is_internal_growth_workspace")) return { rows: [{ allowed: this.osmInternalOrganization }] }
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
 
@@ -604,7 +606,7 @@ describe('radar routes', () => {
     expect(response.json()).toEqual({ error: 'not_authenticated' })
   })
 
-  it('restricts radar to internal YUX roles', async () => {
+  it('denies clients without an active Radar entitlement', async () => {
     const { authStore, token } = buildAuthStore('client_admin')
     app = await buildServer(testEnv, { authStore, pool: new FakeRadarPool() as never, jobQueue: noopJobQueue })
 
@@ -616,6 +618,18 @@ describe('radar routes', () => {
 
     expect(response.statusCode).toBe(403)
     expect(response.json()).toMatchObject({ error: 'radar_forbidden' })
+  })
+
+  it('allows the contracted client to list campaigns and revokes access when disabled', async () => {
+    const { authStore, token } = buildAuthStore('client_admin')
+    const pool = new FakeRadarPool()
+    pool.clientRadarAllowed = true
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const request = { method: 'GET' as const, url: `/api/radar/campaigns?organizationId=${ids.org}`,
+      headers: { cookie: sessionCookie(token) } }
+    expect((await app.inject(request)).statusCode).toBe(200)
+    pool.clientRadarAllowed = false
+    expect((await app.inject(request)).statusCode).toBe(403)
   })
 
   it('creates and lists radar campaigns', async () => {

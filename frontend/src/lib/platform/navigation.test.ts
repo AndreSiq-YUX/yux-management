@@ -16,6 +16,16 @@ const internalContext: PlatformContext = {
 }
 
 describe('buildNavigation', () => {
+  it('links entitled client Radar with its own module key, not CRM', () => {
+    const context: PlatformContext = {
+      ...internalContext, mode: 'portal',
+      organization: { id: 'org', kind: 'client', name: 'Cliente', slug: 'cliente', createdAt: '', updatedAt: '' },
+      role: { key: 'client_admin', name: 'Cliente', scope: 'client', permissions: ['radar.read'] },
+      enabledModuleKeys: ['radar'],
+    }
+    expect(buildNavigation(context)).toContainEqual({ label: 'Radar Comercial', href: '/portal/comercial/radar', moduleKey: 'radar' })
+    expect(buildNavigation({ ...context, enabledModuleKeys: ['crm'] }).some(item => item.moduleKey === 'radar')).toBe(false)
+  })
   it('builds internal navigation from active modules and permissions', () => {
     const items = buildNavigation(internalContext)
     const labels = items.map(item => item.label)

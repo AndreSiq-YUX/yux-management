@@ -2,6 +2,14 @@ import type { PlatformModule } from '@/types/platform'
 
 export const PLATFORM_MODULES: PlatformModule[] = [
   {
+    key: 'radar',
+    name: 'Radar Comercial',
+    base: false,
+    internalRoute: null,
+    portalRoute: '/portal/comercial/radar',
+    requiredPermissions: ['radar.read'],
+  },
+  {
     key: 'action_engine',
     name: 'Missões',
     base: false,

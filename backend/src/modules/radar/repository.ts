@@ -1,6 +1,7 @@
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../auth/routes.js'
+import { requireRadarScope } from './access.js'
 import type {
   RadarCampaign,
   RadarCampaignRow,
@@ -156,7 +157,7 @@ export function buildRadarDedupeKey(input: {
 }
 
 export async function listRadarCampaigns(pool: pg.Pool, user: AuthUser, organizationId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId })
   const result = await pool.query<RadarCampaignRow>(
     `SELECT *
      FROM public.radar_campaigns
@@ -168,9 +169,9 @@ export async function listRadarCampaigns(pool: pg.Pool, user: AuthUser, organiza
 }
 
 export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: RadarCampaignInput) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId }, true)
   if (input.campaignType === 'regional_b2b'
-    && (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId))) {
+    && (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId))) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const result = await pool.query<RadarCampaignRow>(
@@ -203,7 +204,8 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
 }
 
 export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaignId: string, input: RadarCampaignInput) {
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const client = await pool.connect()
@@ -252,7 +254,8 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
 
 export async function duplicateRadarCampaign(pool: pg.Pool, user: AuthUser,
   input: { campaignId: string; organizationId: string; name?: string }) {
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const result = await pool.query<RadarCampaignRow>(
@@ -267,7 +270,7 @@ export async function duplicateRadarCampaign(pool: pg.Pool, user: AuthUser,
 }
 
 export async function listRadarDataSources(pool: pg.Pool, user: AuthUser, organizationId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId })
   const result = await pool.query<RadarDataSourceRow>(
     `SELECT *
      FROM public.radar_data_sources
@@ -320,7 +323,7 @@ export async function updateRadarDataSource(
 }
 
 export async function listRadarOpportunities(pool: pg.Pool, user: AuthUser, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { campaignId })
   const result = await pool.query<RadarOpportunityWithRelationsRow>(
     `SELECT
        o.*,
@@ -362,7 +365,7 @@ async function fetchRadarOpportunityDetail(queryable: RadarQueryable, opportunit
 }
 
 export async function getRadarCampaignMetrics(pool: pg.Pool, user: AuthUser, campaignId: string): Promise<RadarMetrics> {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { campaignId })
   const result = await pool.query<{
     companies: string | number
     opportunities: string | number
@@ -434,7 +437,7 @@ export async function getRadarCampaignMetrics(pool: pg.Pool, user: AuthUser, cam
 }
 
 export async function addRadarCompanyToCampaign(pool: pg.Pool, user: AuthUser, input: RadarCompanyInput) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -454,7 +457,7 @@ export async function importRadarCsvToCampaign(
   user: AuthUser,
   input: { organizationId: string; campaignId: string; csv: string } & RadarPostCaptureOptions,
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   const parsed = parseRadarCsv(input.csv)
   const client = await pool.connect()
   const imported: RadarOpportunity[] = []
@@ -525,7 +528,7 @@ export async function importRadarUrlsToCampaign(
   user: AuthUser,
   input: { organizationId: string; campaignId: string; urls: string[] } & RadarPostCaptureOptions,
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   const urls = input.urls.map(url => url.trim()).filter(Boolean)
   assertSmallBatchLimit(urls.length)
 
@@ -658,23 +661,31 @@ async function findRadarOsmSnapshot(queryable: RadarQueryable, city: string, sta
   return result.rows.length === 1 ? result.rows[0] : null
 }
 
-async function isInternalRadarOrganization(queryable: RadarQueryable, organizationId: string) {
+async function isRadarEnabledOrganization(queryable: RadarQueryable, organizationId: string) {
   const result = await queryable.query<{ allowed: boolean }>(
-    `SELECT (kind = 'yux' AND is_internal_growth_workspace = TRUE) AS allowed
+    `SELECT ((kind = 'yux' AND is_internal_growth_workspace = TRUE)
+       OR (kind = 'client' AND EXISTS (
+         SELECT 1 FROM public.contract_modules module
+         WHERE module.contract_id = (
+           SELECT contract.id FROM public.contracts contract
+           WHERE contract.client_id = organizations.client_id AND contract.status = 'active'
+           ORDER BY contract.starts_at DESC, contract.id DESC LIMIT 1
+         ) AND module.module_key = 'radar' AND module.enabled = TRUE
+       ))) AS allowed
      FROM public.organizations WHERE id = $1 LIMIT 1`, [organizationId],
   )
   return result.rows[0]?.allowed === true
 }
 
 export async function getRadarOsmReadiness(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId, campaignId })
   const campaign = await pool.query<RadarCampaignRow>(
     `SELECT * FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`,
     [campaignId, organizationId],
   )
   if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
   const row = campaign.rows[0]
-  const internalOrganization = await isInternalRadarOrganization(pool, organizationId)
+  const internalOrganization = await isRadarEnabledOrganization(pool, organizationId)
   const source = await findRadarDataSource(pool, organizationId, 'osm_extract')
   const segmentKey = resolveRadarOsmSegment(row.target_segment)
   const snapshot = row.target_city && row.target_state
@@ -703,7 +714,7 @@ export async function runRadarOsmSearch(pool: pg.Pool, user: AuthUser, input: {
   campaignId: string
   limit?: number
 }) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   const limit = input.limit ?? 10
   assertSmallBatchLimit(limit)
   const client = await pool.connect()
@@ -715,7 +726,7 @@ export async function runRadarOsmSearch(pool: pg.Pool, user: AuthUser, input: {
     )
     const campaign = campaignResult.rows[0]
     if (!campaign) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
-    const internalOrganization = await isInternalRadarOrganization(client, input.organizationId)
+    const internalOrganization = await isRadarEnabledOrganization(client, input.organizationId)
     const sourceResult = await client.query<RadarDataSourceRow>(
       `SELECT * FROM public.radar_data_sources
        WHERE source_key = 'osm_extract' AND (organization_id IS NULL OR organization_id = $1)
@@ -818,7 +829,7 @@ export async function runRadarOsmSearch(pool: pg.Pool, user: AuthUser, input: {
 }
 
 export async function checkRadarOsmCandidateSite(pool: pg.Pool, user: AuthUser, candidateId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { candidateId }, true)
   const found = await pool.query<RadarCandidateRecordRow>(
     `SELECT * FROM public.radar_candidate_records WHERE id = $1 AND source_type = 'osm_extract' LIMIT 1`,
     [candidateId],
@@ -840,7 +851,7 @@ export async function checkRadarOsmCandidateSite(pool: pg.Pool, user: AuthUser, 
 }
 
 export async function getRadarOsmPilotReport(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId, campaignId })
   const campaign = await pool.query<{ id: string }>(
     `SELECT id FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`,
     [campaignId, organizationId],
@@ -881,7 +892,7 @@ export async function runRadarAssistedSearch(
     limit?: number
   },
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   const limit = input.limit ?? 5
   assertSmallBatchLimit(limit)
 
@@ -1011,14 +1022,14 @@ export async function runRadarCnpjaAdvancedSearch(
     loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
   } = {},
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
   if (user.role !== 'yux_admin') {
     throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
   }
   let limit = input.limit ?? 5
   assertSmallBatchLimit(limit)
 
-  if (!await isInternalRadarOrganization(pool, input.organizationId)) {
+  if (!await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
   }
 
@@ -1275,8 +1286,8 @@ export async function runRadarPlacePreview(
     loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
   } = {},
 ) {
-  requireRadarAccess(user)
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   assertSmallBatchLimit(input.limit)
@@ -1341,8 +1352,8 @@ export async function enrichRadarCandidateWithLicensedBrave(
     loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
   } = {},
 ) {
-  requireRadarAccess(user)
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, candidateId: input.candidateId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const candidateResult = await pool.query<RadarCandidateRecordRow & { campaign_type: string;
@@ -1491,8 +1502,8 @@ export async function enrichRadarCandidateWithLicensedBrave(
 
 export async function confirmRadarBraveSuggestion(pool: pg.Pool, user: AuthUser,
   input: { organizationId: string; candidateId: string; sourceUrl: string }) {
-  requireRadarAccess(user)
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, candidateId: input.candidateId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const provider = await pool.query<{ public_config: Record<string, unknown> }>(
@@ -1568,8 +1579,8 @@ export async function inspectRadarCandidateBusinessSite(
   input: { organizationId: string; candidateId: string; expectedRevision?: number },
   dependencies: { inspect?: typeof inspectRadarBusinessSite } = {},
 ) {
-  requireRadarAccess(user)
-  if (!await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, candidateId: input.candidateId }, true)
+  if (!await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
   }
   const result = await pool.query<RadarCandidateRecordRow & { campaign_type: string; target_cnaes: string[];
@@ -1684,8 +1695,8 @@ type B2bProspectRow = RadarCandidateRecordRow & {
 }
 
 export async function listRadarB2bProspects(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
-  requireRadarAccess(user)
-  if (!await isInternalRadarOrganization(pool, organizationId)) {
+  await requireRadarScope(pool, user, { organizationId, campaignId })
+  if (!await isRadarEnabledOrganization(pool, organizationId)) {
     throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
   }
   const result = await pool.query<B2bProspectRow>(
@@ -1712,8 +1723,8 @@ export async function listRadarB2bProspects(pool: pg.Pool, user: AuthUser, organ
 
 export async function assertRadarRegionalBatchAccess(pool: pg.Pool, user: AuthUser,
   organizationId: string, campaignId: string) {
-  requireRadarAccess(user)
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, organizationId)) {
+  await requireRadarScope(pool, user, { organizationId, campaignId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const result = await pool.query<{ id: string; configuration_revision: number }>(
@@ -1727,8 +1738,8 @@ export async function assertRadarRegionalBatchAccess(pool: pg.Pool, user: AuthUs
 
 export async function getRadarB2bProgress(pool: pg.Pool, user: AuthUser,
   organizationId: string, campaignId: string) {
-  requireRadarAccess(user)
-  if (!await isInternalRadarOrganization(pool, organizationId)) {
+  await requireRadarScope(pool, user, { organizationId, campaignId })
+  if (!await isRadarEnabledOrganization(pool, organizationId)) {
     throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
   }
   const campaignResult = await pool.query<RadarCampaignRow>(
@@ -1768,8 +1779,8 @@ export async function approveRadarB2bProspect(
   pool: pg.Pool, user: AuthUser, input: { organizationId: string; candidateId: string;
     manualEvidenceUrl?: string; manualReviewNote?: string },
 ) {
-  requireRadarAccess(user)
-  if (user.role !== 'yux_admin' || !await isInternalRadarOrganization(pool, input.organizationId)) {
+  await requireRadarScope(pool, user, { organizationId: input.organizationId, candidateId: input.candidateId }, true)
+  if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const client = await pool.connect()
@@ -1844,7 +1855,7 @@ export async function approveRadarB2bProspect(
 
 export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
   organizationId: string, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { organizationId, campaignId })
   if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
   const prospects = await listRadarB2bProspects(pool, user, organizationId, campaignId)
   const approved = prospects.filter(item => item.approvedAt && item.targetStatus === 'confirmed'
@@ -1896,7 +1907,7 @@ export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
 }
 
 export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { campaignId })
   const result = await pool.query<RadarCandidateRecordRow>(
     `SELECT *
      FROM public.radar_candidate_records
@@ -1913,7 +1924,7 @@ export async function importRadarCandidate(
   candidateId: string,
   options: RadarPostCaptureOptions = {},
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { candidateId }, true)
   let importedOpportunity: RadarOpportunity | null = null
   let importedCandidate: RadarCandidateRecord | null = null
   const client = await pool.connect()
@@ -1978,7 +1989,7 @@ export async function importRadarCandidate(
 }
 
 export async function discardRadarCandidate(pool: pg.Pool, user: AuthUser, candidateId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { candidateId }, true)
   const result = await pool.query<RadarCandidateRecordRow>(
     `UPDATE public.radar_candidate_records
      SET status = 'discarded', reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
@@ -1991,7 +2002,7 @@ export async function discardRadarCandidate(pool: pg.Pool, user: AuthUser, candi
 }
 
 export async function listRadarDuplicateCandidates(pool: pg.Pool, user: AuthUser, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { campaignId })
   const result = await pool.query(
     `SELECT *
      FROM public.radar_duplicate_candidates
@@ -2008,7 +2019,7 @@ export async function updateRadarDuplicateCandidate(
   duplicateId: string,
   status: 'confirmed' | 'dismissed' | 'merged',
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { duplicateId }, true)
   const result = await pool.query(
     `UPDATE public.radar_duplicate_candidates
      SET status = $2, updated_at = NOW()
@@ -2021,7 +2032,7 @@ export async function updateRadarDuplicateCandidate(
 }
 
 export async function batchAnalyzeRadarOpportunities(pool: pg.Pool, user: AuthUser, opportunityIds: string[]) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { opportunityIds }, true)
   assertSmallBatchLimit(opportunityIds.length)
   const requests: RadarAnalysisRequest[] = []
   for (const opportunityId of opportunityIds) {
@@ -2047,7 +2058,7 @@ async function analyzeCapturedRadarOpportunities(
 }
 
 export async function batchEnrichRadarOpportunities(pool: pg.Pool, user: AuthUser, opportunityIds: string[]) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { opportunityIds }, true)
   assertSmallBatchLimit(opportunityIds.length)
   const result = await pool.query<RadarOpportunityRow>(
     `UPDATE public.radar_opportunities
@@ -2061,7 +2072,7 @@ export async function batchEnrichRadarOpportunities(pool: pg.Pool, user: AuthUse
 }
 
 export async function listRadarRuns(pool: pg.Pool, user: AuthUser, campaignId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { campaignId })
   const result = await pool.query<RadarEnrichmentRunRow>(
     `SELECT *
      FROM public.radar_enrichment_runs
@@ -2207,7 +2218,7 @@ export async function reviewRadarOpportunity(
   opportunityId: string,
   status: 'approved' | 'rejected',
 ) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { opportunityId }, true)
   const result = await pool.query<RadarOpportunityRow>(
     `UPDATE public.radar_opportunities
      SET status = $2, updated_at = NOW()
@@ -2242,7 +2253,7 @@ export async function reviewRadarOpportunity(
 }
 
 export async function optOutRadarOpportunity(pool: pg.Pool, user: AuthUser, opportunityId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { opportunityId }, true)
   const result = await pool.query<RadarOpportunityRow>(
     `UPDATE public.radar_opportunities
      SET status = 'opted_out', updated_at = NOW()
@@ -2267,7 +2278,7 @@ export async function optOutRadarOpportunity(pool: pg.Pool, user: AuthUser, oppo
 }
 
 export async function runRadarOpportunityAnalysis(pool: pg.Pool, user: AuthUser, opportunityId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { opportunityId }, true)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -2370,7 +2381,7 @@ function normalizeRadarEvidence(value: unknown) {
 }
 
 export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUser, opportunityId: string) {
-  requireRadarAccess(user)
+  await requireRadarScope(pool, user, { opportunityId }, true, true)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')

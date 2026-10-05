@@ -10,6 +10,7 @@ import { RadarCampaignConfigurationForm } from '@/components/radar/RadarCampaign
 import { defaultRadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import {
   canConvertRadarOpportunity,
+  canManageRadar,
   canShowRadarNavigation,
   getRadarCampaignStatusLabel,
   getRadarCompanyDisplayName,
@@ -228,6 +229,10 @@ export function RadarWorkspace() {
   const [regionalProgress, setRegionalProgress] = useState<Record<string, string>>({})
 
   const canAccess = canShowRadarNavigation(context)
+  const canManage = canManageRadar(context)
+  const canUseCrm = context.organization?.isInternalGrowthWorkspace
+    || (context.enabledModuleKeys?.includes('crm') && (context.role?.permissions.includes('leads.write')
+      || (context.role?.scope === 'internal' && context.role.permissions.includes('platform.manage'))))
   const hasPendingAnalysis = opportunities.some(opportunity => opportunity.status === 'diagnosing')
   const osmSourceEnabled = dataSources.find(source => source.sourceType === 'osm_extract')?.enabled
 
@@ -295,7 +300,7 @@ export function RadarWorkspace() {
 
   useEffect(() => {
     const campaign = campaigns.find(item => item.id === selectedCampaignId)
-    if (!selectedCampaignId || !organizationId || campaign?.campaignType !== 'regional_b2b') {
+    if (!selectedCampaignId || !organizationId || !canAccess || campaign?.campaignType !== 'regional_b2b') {
       setB2bProgress(null)
       setB2bProspects([])
       return
@@ -312,7 +317,7 @@ export function RadarWorkspace() {
     refresh()
     const interval = window.setInterval(refresh, 8_000)
     return () => { active = false; window.clearInterval(interval) }
-  }, [selectedCampaignId, organizationId, campaigns])
+  }, [selectedCampaignId, organizationId, campaigns, canAccess])
 
   useEffect(() => {
     if (!selectedCampaignId || !organizationId || !canAccess) { setOsmReadiness(null); return }
@@ -1005,7 +1010,7 @@ export function RadarWorkspace() {
           <ShieldCheck className="h-4 w-4 text-slate-500" />
           Radar Comercial indisponivel
         </div>
-        <p className="mt-2 text-sm text-slate-600">Este modulo e interno da YUX e nao fica disponivel para clientes nesta fase.</p>
+        <p className="mt-2 text-sm text-slate-600">O Radar Comercial precisa estar habilitado no contrato ativo da empresa, com permissão de acesso para o seu usuário.</p>
       </section>
     )
   }
@@ -1019,19 +1024,23 @@ export function RadarWorkspace() {
         </div>
       </div>
 
-      <StrategyContextPanel
+      {canManage && <StrategyContextPanel
         organizationId={organizationId || ''}
         moduleKey="crm"
         recordType="radar"
         recordTitle="Radar Comercial"
         contextSummary="Use o Strategy Engine para orientar Analise da oportunidade, oferta recomendada, riscos, evidencias e proxima acao antes de qualquer conversao para lead."
-      />
+      />}
 
-      <section id="radar-search-configuration" className="rounded-md border bg-white p-4">
+      {!canManage && <p className="rounded-md border bg-blue-50 p-3 text-sm text-blue-900">
+        Acesso de consulta: acompanhe as campanhas, os dados e as análises. A operação das campanhas fica com a equipe YUX.
+      </p>}
+
+      {canManage && <section id="radar-search-configuration" className="rounded-md border bg-white p-4">
         <h2 className="text-base font-semibold text-slate-950">Configuração de campanhas</h2>
         {context.role?.key === 'yux_admin' && <label className="mt-3 block text-sm font-medium">Tipo de criação
           <select className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={creationMode}
-            disabled={creating || Boolean(actionLoading)} onChange={event => {
+            disabled={!canManage || creating || Boolean(actionLoading)} onChange={event => {
               setCreationMode(event.target.value as typeof creationMode)
               setConfigurationEditor(null)
             }}>
@@ -1059,12 +1068,12 @@ export function RadarWorkspace() {
           <Input className="md:col-span-2" placeholder="Oferta ou objetivo comercial" value={form.offerType} required
             onChange={event => setForm({ ...form, offerType: event.target.value })} />
           <Input type="number" min="1" max="10" placeholder="Limite" value={form.dailyLimit} required onChange={event => setForm({ ...form, dailyLimit: Number(event.target.value) })} />
-          <Button type="submit" disabled={creating}>
+          <Button type="submit" disabled={!canManage || creating}>
             <Plus className="mr-2 h-4 w-4" />
             {creating ? 'Criando...' : 'Criar'}
           </Button>
         </form>}
-      </section>
+      </section>}
 
       <section className="rounded-md border bg-white">
         <div className="border-b p-4">
@@ -1116,24 +1125,24 @@ export function RadarWorkspace() {
             <p className="mt-1 text-sm text-slate-600">Público: {selectedCampaign.targetSegment}. Oferta: {selectedCampaign.offerType}. CNAEs: {selectedCampaign.targetCnaes.join(', ') || 'sem filtro'}. A coleta não inicia contatos automáticos.</p>
             <p className="mt-1 text-xs text-slate-500">Produtos e serviços: {selectedCampaign.productFocus.join(', ') || 'não informados'}. Os critérios completos podem ser editados antes de executar a pesquisa.</p>
             {context.role?.key === 'yux_admin' && <div className="mt-3 flex gap-2">
-              <Button type="button" size="sm" variant="outline" disabled={creating || Boolean(actionLoading)} onClick={() => {
+              <Button type="button" size="sm" variant="outline" disabled={!canManage || creating || Boolean(actionLoading)} onClick={() => {
                 setConfigurationEditor(selectedCampaign)
                 document.getElementById('radar-search-configuration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }}>Editar configuração</Button>
-              <Button type="button" size="sm" variant="outline" disabled={creating || Boolean(actionLoading)} onClick={duplicateCampaign}>Duplicar pesquisa</Button>
+              <Button type="button" size="sm" variant="outline" disabled={!canManage || creating || Boolean(actionLoading)} onClick={duplicateCampaign}>Duplicar pesquisa</Button>
             </div>}
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button type="button" size="sm" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)
+              <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
                 || Boolean(getSourceBlockedReason(cnpjaSource))} onClick={() => runB2bBatch('discovery')}>
                 Buscar lote nas regiões configuradas</Button>
-              <Button type="button" size="sm" variant="outline" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+              <Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
                 onClick={() => runB2bBatch('verification')}>Verificar lote configurado</Button>
             </div>
             {b2bProgress && <p className="mt-2 text-xs text-slate-600">{b2bProgress.candidates} candidatos · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
               {(b2bProgress?.scopes ?? []).map(scope =>
                 <Button key={scope.key} type="button" size="sm" variant="outline"
-                  disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading) || scope.completed || regionalProgress[scope.label] === 'Busca concluída'
+                  disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || scope.completed || regionalProgress[scope.label] === 'Busca concluída'
                     || Boolean(getSourceBlockedReason(cnpjaSource))}
                   onClick={() => searchRegionalCnpja(scope.state, scope.city)}>
                   {actionLoading === `regional-${scope.label}` ? `Buscando ${scope.label}...` : `Buscar próxima página — ${scope.label}`}
@@ -1142,7 +1151,7 @@ export function RadarWorkspace() {
             {Object.entries(regionalProgress).map(([state, message]) => <p key={state} className="mt-1 text-xs text-slate-600">{state}: {message}</p>)}
             <div className="mt-3 flex items-center gap-3 border-t pt-3">
               <span className="text-sm text-slate-600">{b2bProspects.filter(item => item.approvedAt).length} empresas aprovadas para contato manual</span>
-              <Button type="button" size="sm" variant="outline" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+              <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)}
                 onClick={exportB2bProspects}>Exportar lista verificada</Button>
             </div>
           </section>}
@@ -1177,14 +1186,14 @@ export function RadarWorkspace() {
                               onChange={event => setSourceLimitDrafts(current => ({ ...current, [source.id]: event.target.value }))} />
                           </label>
                           <div className="flex flex-wrap gap-2">
-                            <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)
+                            <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading)
                               || !Number.isInteger(Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay))
                               || Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay) < 1}
                               onClick={() => changeManagedSource(source, {
                                 defaultCostPerUnit: Number(sourceCostDrafts[source.id] ?? source.defaultCostPerUnit),
                                 rateLimitPerDay: Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay),
                               })}>Salvar limites e custo</Button>
-                            <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading) || (!source.enabled && source.isPaid && source.defaultCostPerUnit <= 0)}
+                            <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading) || (!source.enabled && source.isPaid && source.defaultCostPerUnit <= 0)}
                               onClick={() => changeManagedSource(source, { enabled: !source.enabled })}>{source.enabled ? 'Desativar' : 'Ativar'}</Button>
                           </div>
                         </div>
@@ -1194,13 +1203,13 @@ export function RadarWorkspace() {
               })}
             </div>
             {osmSource && context.organization?.isInternalGrowthWorkspace && context.role?.key === 'yux_admin' && !osmSource.id.startsWith('fallback-') && (
-              <Button type="button" size="sm" variant="outline" className="mt-3" disabled={Boolean(actionLoading)} onClick={toggleOsmSource}>
+              <Button type="button" size="sm" variant="outline" className="mt-3" disabled={!canManage || Boolean(actionLoading)} onClick={toggleOsmSource}>
                 {osmSource.enabled ? 'Desativar piloto OSM' : 'Ativar piloto OSM'}
               </Button>
             )}
           </section>
 
-          <section className="rounded-md border bg-white p-4">
+          <fieldset disabled={!canManage} className="min-w-0 rounded-md border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-slate-950">Fontes de entrada</h2>
@@ -1227,7 +1236,7 @@ export function RadarWorkspace() {
                 <p className="mt-2 text-xs text-slate-500">{osmReadiness?.reason || (osmReadiness?.snapshot
                   ? `Extrato de ${new Date(osmReadiness.snapshot.extractedAt).toLocaleDateString('pt-BR')} · ${osmReadiness.snapshot.placeCount} estabelecimentos indexados · ${osmReadiness.snapshot.attribution}`
                   : 'Conferindo disponibilidade do índice municipal...')}</p>
-                <Button type="button" className="mt-3" disabled={!osmReadiness?.ready || Boolean(actionLoading)} onClick={searchOsm}>
+                <Button type="button" className="mt-3" disabled={!canManage || !osmReadiness?.ready || Boolean(actionLoading)} onClick={searchOsm}>
                   {actionLoading === 'osm' ? 'Buscando...' : 'Buscar automaticamente (dados abertos)'}
                 </Button>
                 {osmReport && <p className="mt-3 text-xs text-slate-600">Piloto: {osmReport.candidates} candidatos · {osmReport.withSite} com site informado · {osmReport.verifiedSites} sites confirmados · {osmReport.withPhone} com telefone · {osmReport.withEmail} com e-mail · {osmReport.imported} importados · API US$ 0 (infraestrutura à parte).</p>}
@@ -1250,7 +1259,7 @@ export function RadarWorkspace() {
                   <Input placeholder="Telefone" value={companyForm.phoneRaw} onChange={event => setCompanyForm({ ...companyForm, phoneRaw: event.target.value })} />
                   <Input placeholder="URL da fonte" value={companyForm.sourceUrl} onChange={event => setCompanyForm({ ...companyForm, sourceUrl: event.target.value })} />
                   <Input className="md:col-span-2" placeholder="Observacao operacional" value={companyForm.notes} onChange={event => setCompanyForm({ ...companyForm, notes: event.target.value })} />
-                  <Button type="submit" disabled={addingCompany}>
+                  <Button type="submit" disabled={!canManage || addingCompany}>
                     {addingCompany ? 'Adicionando...' : 'Adicionar empresa'}
                   </Button>
                 </div>
@@ -1274,7 +1283,7 @@ export function RadarWorkspace() {
                 )}
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <p className="text-xs text-slate-500">Maximo 10 linhas de dados por importacao.</p>
-                  <Button type="submit" disabled={!csvText.trim() || actionLoading === 'csv'}>
+                  <Button type="submit" disabled={!canManage || !csvText.trim() || actionLoading === 'csv'}>
                     {actionLoading === 'csv' ? 'Importando...' : 'Importar CSV'}
                   </Button>
                 </div>
@@ -1293,7 +1302,7 @@ export function RadarWorkspace() {
                 />
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <p className="text-xs text-slate-500">{getSourceBlockedReason(jinaReaderSource) || 'Ate 10 URLs por lote.'}</p>
-                  <Button type="submit" disabled={!urlText.trim() || Boolean(getSourceBlockedReason(jinaReaderSource)) || actionLoading === 'urls'}>
+                  <Button type="submit" disabled={!canManage || !urlText.trim() || Boolean(getSourceBlockedReason(jinaReaderSource)) || actionLoading === 'urls'}>
                     {actionLoading === 'urls' ? 'Processando...' : 'Processar URLs'}
                   </Button>
                 </div>
@@ -1319,7 +1328,7 @@ export function RadarWorkspace() {
                   </select>
                   <div className="md:col-span-3 flex items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">{getSourceBlockedReason(searchSource) || 'Resultados ficam como candidatos em revisao.'}</p>
-                    <Button type="submit" disabled={!searchForm.query.trim() || Boolean(getSourceBlockedReason(searchSource)) || actionLoading === 'search'}>
+                    <Button type="submit" disabled={!canManage || !searchForm.query.trim() || Boolean(getSourceBlockedReason(searchSource)) || actionLoading === 'search'}>
                       {actionLoading === 'search' ? 'Buscando...' : 'Buscar'}
                     </Button>
                   </div>
@@ -1348,7 +1357,7 @@ export function RadarWorkspace() {
                   <div className="md:col-span-3 flex items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">{context.role?.key !== 'yux_admin' ? 'Pesquisa CNPJa reservada ao Admin.'
                       : getSourceBlockedReason(cnpjaSource) || 'Gera candidatos por CNPJ para revisao antes da importacao.'}</p>
-                    <Button type="submit" disabled={context.role?.key !== 'yux_admin' || Boolean(getSourceBlockedReason(cnpjaSource)) || actionLoading === 'cnpja'}>
+                    <Button type="submit" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(getSourceBlockedReason(cnpjaSource)) || actionLoading === 'cnpja'}>
                       {actionLoading === 'cnpja' ? 'Pesquisando...' : 'Pesquisar CNPJa'}
                     </Button>
                   </div>
@@ -1376,7 +1385,7 @@ export function RadarWorkspace() {
                   <div className="md:col-span-6 flex items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">{context.role?.key !== 'yux_admin' ? 'Consulta de fontes pagas reservada ao Admin.' : getSourceBlockedReason(placeSource)
                       || 'Uma consulta pode consumir crédito. Os resultados não serão salvos no Radar ou CRM.'}</p>
-                    <Button type="submit" disabled={!placeForm.query.trim() || !placeForm.city.trim() || !placeForm.state.trim()
+                    <Button type="submit" disabled={!canManage || !placeForm.query.trim() || !placeForm.city.trim() || !placeForm.state.trim()
                       || context.role?.key !== 'yux_admin' || Boolean(getSourceBlockedReason(placeSource)) || Boolean(actionLoading)}>
                       {actionLoading === 'place-preview' ? 'Consultando...' : 'Consultar fonte'}</Button>
                   </div>
@@ -1413,7 +1422,7 @@ export function RadarWorkspace() {
                 )}
               </div>
             )}
-          </section>
+          </fieldset>
 
           <section className="rounded-md border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1451,7 +1460,7 @@ export function RadarWorkspace() {
                               <p>{suggestion.address} · Site: {suggestion.websiteUrl ?? 'não informado'} · Tel.: {suggestion.phone ?? 'não informado'}</p>
                               <a className="text-yux-700 underline" href={suggestion.sourceUrl} target="_blank" rel="noreferrer">Conferir origem</a>
                               <Button type="button" size="sm" variant="outline" className="ml-2"
-                                disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                                disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
                                 onClick={() => confirmBraveSuggestion(candidate.id, suggestion.sourceUrl)}>Associar após conferir</Button>
                             </div>)}
                           <p>Qualificação: {b2bProspectById.get(candidate.id)?.targetStatus ?? 'aguardando verificação'} · Adequação: {b2bProspectById.get(candidate.id)?.productFit ?? 'desconhecida'}</p>
@@ -1475,7 +1484,7 @@ export function RadarWorkspace() {
                                 value={b2bManualReviews[candidate.id]?.note ?? ''}
                                 onChange={event => setB2bManualReviews(current => ({ ...current,
                                   [candidate.id]: { url: current[candidate.id]?.url ?? '', note: event.target.value } }))} />
-                              <Button type="button" size="sm" disabled={Boolean(actionLoading)
+                              <Button type="button" size="sm" disabled={!canManage || Boolean(actionLoading)
                                 || !b2bManualReviews[candidate.id]?.url || (b2bManualReviews[candidate.id]?.note.length ?? 0) < 20}
                                 onClick={() => approveB2bProspect(candidate.id, true)}>Confirmar e aprovar manualmente</Button>
                             </div>)}
@@ -1484,27 +1493,27 @@ export function RadarWorkspace() {
                       </div>
                       <div className="flex shrink-0 gap-2">
                         {candidate.sourceType === 'osm_extract' && typeof candidate.normalizedPayload.websiteUrl === 'string' && (
-                          <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
+                          <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
                         )}
                         {selectedCampaign?.campaignType === 'regional_b2b' && candidate.sourceType === 'cnpja_advanced_search'
                           && candidate.status === 'pending_review' && <Button type="button" size="sm" variant="outline"
-                            disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading) || !braveSource?.enabled
+                            disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || !braveSource?.enabled
                               || selectedCampaign.searchConfiguration?.sources.enrichWithBrave === false}
                             onClick={() => enrichCandidateWithBrave(candidate.id)}>
                             {actionLoading === `brave-${candidate.id}` ? 'Consultando...' : 'Enriquecer com Brave licenciada'}
                           </Button>}
                         {selectedCampaign?.campaignType === 'regional_b2b' && candidate.status === 'pending_review'
-                          && <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)}
+                          && <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading)}
                             onClick={() => inspectBusinessSite(candidate.id)}>
                             {actionLoading === `b2b-site-${candidate.id}` ? 'Verificando...' : 'Verificar site e atividade'}
                           </Button>}
                         {selectedCampaign?.campaignType === 'regional_b2b' && b2bProspectById.get(candidate.id)?.targetStatus === 'confirmed'
                           && candidate.normalizedPayload.websiteStatus === 'verified_present'
                           && !b2bProspectById.get(candidate.id)?.approvedAt
-                          && <Button type="button" size="sm" disabled={context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                          && <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
                             onClick={() => approveB2bProspect(candidate.id)}>Aprovar para lista</Button>}
-                        {selectedCampaign?.campaignType !== 'regional_b2b' && <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>}
-                        <Button type="button" size="sm" variant="outline" disabled={candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => discardCandidate(candidate.id)}>Descartar</Button>
+                        {selectedCampaign?.campaignType !== 'regional_b2b' && <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>}
+                        <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => discardCandidate(candidate.id)}>Descartar</Button>
                       </div>
                     </div>
                   ))}
@@ -1518,10 +1527,10 @@ export function RadarWorkspace() {
                     <p className="text-xs text-slate-500">{selectedOpportunityIds.length} selecionadas para lote</p>
                   </div>
                   <div className="flex gap-2">
-                    <Button type="button" size="sm" variant="outline" disabled={selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('enrich')}>
+                    <Button type="button" size="sm" variant="outline" disabled={!canManage || selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('enrich')}>
                       {actionLoading === 'batch-enrich' ? 'Enriquecendo...' : 'Enriquecer'}
                     </Button>
-                    <Button type="button" size="sm" variant="outline" disabled={selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('analyze')}>
+                    <Button type="button" size="sm" variant="outline" disabled={!canManage || selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('analyze')}>
                       {actionLoading === 'batch-analyze' ? 'Analisando...' : 'Analisar'}
                     </Button>
                   </div>
@@ -1576,9 +1585,9 @@ export function RadarWorkspace() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-start justify-end gap-2">
-                      <Button type="button" size="sm" variant="outline" disabled={duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'confirmed')}>Confirmar</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'dismissed')}>Ignorar</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'merged')}>Mesclar</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={!canManage || duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'confirmed')}>Confirmar</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={!canManage || duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'dismissed')}>Ignorar</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={!canManage || duplicate.status !== 'pending' || Boolean(actionLoading)} onClick={() => updateDuplicate(duplicateId, 'merged')}>Mesclar</Button>
                     </div>
                   </div>
                 )
@@ -1621,6 +1630,8 @@ export function RadarWorkspace() {
       )}
 
       <OpportunityReviewPanel
+        canManage={canManage}
+        canUseCrm={Boolean(canUseCrm)}
         opportunity={selectedOpportunity}
         actionLoading={actionLoading}
         onRunAnalysis={queueOpportunityAnalysis}
@@ -1629,7 +1640,7 @@ export function RadarWorkspace() {
         onOptOut={opportunity => runOpportunityAction('opt-out', () => radarService.optOutOpportunity(opportunity.id), 'Opt-out registrado')}
         onConvert={convertSelectedOpportunity}
       />
-      <ProspectingPlanPanel organizationId={organizationId} opportunity={selectedOpportunity} />
+      {canManage && canUseCrm && <ProspectingPlanPanel organizationId={organizationId} opportunity={selectedOpportunity} />}
     </div>
   )
 }
@@ -1710,6 +1721,8 @@ function mergeCandidates(next: RadarCandidateRecord[], current: RadarCandidateRe
 }
 
 function OpportunityReviewPanel({
+  canManage,
+  canUseCrm,
   opportunity,
   actionLoading,
   onRunAnalysis,
@@ -1718,6 +1731,8 @@ function OpportunityReviewPanel({
   onOptOut,
   onConvert,
 }: {
+  canManage: boolean
+  canUseCrm: boolean
   opportunity: RadarOpportunity | null
   actionLoading: string | null
   onRunAnalysis: (opportunity: RadarOpportunity) => void
@@ -1734,7 +1749,7 @@ function OpportunityReviewPanel({
       : scoreTone === 'low'
         ? 'text-red-700'
         : 'text-slate-500'
-  const canConvert = opportunity ? canConvertRadarOpportunity(opportunity) : false
+  const canConvert = canUseCrm && (opportunity ? canConvertRadarOpportunity(opportunity) : false)
   const isAnalyzing = opportunity?.status === 'diagnosing'
   const canReview = opportunity?.status === 'review_pending'
 
@@ -1760,19 +1775,19 @@ function OpportunityReviewPanel({
             {opportunity.latestMessageSuggestion?.body || 'Mensagem ainda nao gerada.'}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading) || isAnalyzing} onClick={() => onRunAnalysis(opportunity)}>
+            <Button type="button" variant="outline" disabled={!canManage || Boolean(actionLoading) || isAnalyzing} onClick={() => onRunAnalysis(opportunity)}>
               {isAnalyzing ? 'Analise em andamento' : actionLoading === 'analysis' ? 'Enviando...' : 'Rodar analise'}
             </Button>
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading) || !canReview} onClick={() => onApprove(opportunity)}>
+            <Button type="button" variant="outline" disabled={!canManage || Boolean(actionLoading) || !canReview} onClick={() => onApprove(opportunity)}>
               Aprovar
             </Button>
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading) || !canReview} onClick={() => onReject(opportunity)}>
+            <Button type="button" variant="outline" disabled={!canManage || Boolean(actionLoading) || !canReview} onClick={() => onReject(opportunity)}>
               Rejeitar
             </Button>
-            <Button type="button" variant="outline" disabled={Boolean(actionLoading)} onClick={() => onOptOut(opportunity)}>
+            <Button type="button" variant="outline" disabled={!canManage || Boolean(actionLoading)} onClick={() => onOptOut(opportunity)}>
               Opt-out
             </Button>
-            <Button type="button" disabled={!canConvert || Boolean(actionLoading)} onClick={onConvert}>
+            <Button type="button" disabled={!canManage || !canConvert || Boolean(actionLoading)} onClick={onConvert}>
               {actionLoading === 'convert' ? 'Criando...' : 'Criar lead'}
             </Button>
           </div>

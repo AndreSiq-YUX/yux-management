@@ -3,12 +3,29 @@ import {
   buildRadarDedupeKey,
   canConvertRadarOpportunity,
   canShowRadarNavigation,
+  canManageRadar,
   defaultRadarPolicyDecision,
   getRadarCompanyDisplayName,
   getRadarScoreTone,
 } from './radarRules'
 
 describe('radarRules', () => {
+  it('shows contracted client Radar independently of CRM, in portal and workspace', () => {
+    for (const mode of ['portal', 'client_workspace'] as const) {
+      const context = {
+        mode,
+        organization: { id: 'client-org', name: 'Cliente', slug: 'cliente', kind: 'client' as const, createdAt: '', updatedAt: '' },
+        membership: null,
+        role: { key: 'client_admin', name: 'Cliente', scope: 'client' as const, permissions: ['radar.read' as const] },
+        enabledModuleKeys: ['radar'],
+      }
+      expect(canShowRadarNavigation(context)).toBe(true)
+      expect(canManageRadar(context)).toBe(false)
+      expect(canShowRadarNavigation({ ...context, enabledModuleKeys: ['crm'] })).toBe(false)
+      expect(canShowRadarNavigation({ ...context, role: { ...context.role, permissions: [] } })).toBe(false)
+      expect(canManageRadar({ ...context, role: { ...context.role, permissions: ['radar:manage'] } })).toBe(true)
+    }
+  })
   it('shows radar only in the internal YUX growth workspace', () => {
     expect(canShowRadarNavigation({
       mode: 'client_workspace',
