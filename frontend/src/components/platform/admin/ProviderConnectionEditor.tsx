@@ -92,8 +92,6 @@ export function ProviderConnectionEditor({
   const [fallbackProviderId, setFallbackProviderId] = useState(provider?.fallbackProviderId || defaults.fallbackProviderId || '')
   const [publicConfig, setPublicConfig] = useState(initialConfig)
   const [retentionLicensed, setRetentionLicensed] = useState(provider?.publicConfig?.retentionLicensed === true)
-  const [licenseReference, setLicenseReference] = useState(
-    typeof provider?.publicConfig?.licenseReference === 'string' ? provider.publicConfig.licenseReference : '')
   const [clientDeliveryLicensed, setClientDeliveryLicensed] = useState(provider?.publicConfig?.clientDeliveryLicensed === true)
   const [saving, setSaving] = useState(false)
   const [savingCredential, setSavingCredential] = useState(false)
@@ -117,17 +115,13 @@ export function ProviderConnectionEditor({
     try {
       const parsedConfig = JSON.parse(publicConfig) as Record<string, unknown>
       if (showRetentionLicenseControls) {
-        if (retentionLicensed && !licenseReference.trim()) throw new Error('Informe a referência do contrato que permite retenção.')
         parsedConfig.retentionLicensed = retentionLicensed
-        parsedConfig.licenseReference = retentionLicensed ? licenseReference.trim() : ''
         parsedConfig.credentialPurpose = retentionLicensed ? 'licensed_retention' : 'preview'
         parsedConfig.clientDeliveryLicensed = retentionLicensed && clientDeliveryLicensed
         parsedConfig.storagePolicy = retentionLicensed ? 'licensed_persist' : 'transient_only'
       }
       if (showClientDeliveryLicenseControls) {
-        if (clientDeliveryLicensed && !licenseReference.trim()) throw new Error('Informe a referência que permite entregar os dados ao cliente.')
         parsedConfig.clientDeliveryLicensed = clientDeliveryLicensed
-        parsedConfig.licenseReference = clientDeliveryLicensed ? licenseReference.trim() : ''
       }
       if (!isLockedProviderKey && /^api[-_]/i.test(providerKey.trim())) {
         throw new Error('provider_key_looks_like_api_key')
@@ -312,13 +306,9 @@ export function ProviderConnectionEditor({
 
       {showRetentionLicenseControls && <div className="mt-4 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
         <p className="font-medium text-amber-950">Licença especial de retenção Brave</p>
-        <p className="text-amber-900">A chave padrão não autoriza salvar resultados. Ative somente após substituir a chave por uma credencial cujo contrato permita a base própria.</p>
+        <p className="text-amber-900">Confirme que a credencial cadastrada permite armazenar os resultados. Basta marcar a confirmação e salvar o provedor, sem informar referência de contrato ou reenviar a chave.</p>
         <label className="flex items-center gap-2"><input type="checkbox" checked={retentionLicensed}
           onChange={event => setRetentionLicensed(event.target.checked)} /> Confirmo licença de armazenamento dos resultados</label>
-        <label className="block space-y-1">Referência do contrato/licença
-          <input className="w-full rounded-md border px-3 py-2" value={licenseReference} disabled={!retentionLicensed}
-            onChange={event => setLicenseReference(event.target.value)} placeholder="Número ou identificador do contrato" />
-        </label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed} disabled={!retentionLicensed}
           onChange={event => setClientDeliveryLicensed(event.target.checked)} /> O contrato também permite entregar a lista ao cliente</label>
       </div>}
@@ -327,10 +317,6 @@ export function ProviderConnectionEditor({
         <p className="text-amber-900">Confirme essa permissão nos termos do seu plano antes de exportar a lista. O uso interno permanece disponível sem esta confirmação.</p>
         <label className="flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed}
           onChange={event => setClientDeliveryLicensed(event.target.checked)} /> Confirmo permissão de entrega a cliente</label>
-        <label className="block space-y-1">Referência dos termos ou contrato
-          <input className="w-full rounded-md border px-3 py-2" value={licenseReference} disabled={!clientDeliveryLicensed}
-            onChange={event => setLicenseReference(event.target.value)} placeholder="Identificador do plano/contrato" />
-        </label>
       </div>}
 
       {onSaveCredential && (

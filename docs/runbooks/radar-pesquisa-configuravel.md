@@ -18,6 +18,8 @@ Abra uma campanha e use **Editar configuração** para modificar os valores. **D
 
 ## Execução e entrega
 
+Em **Admin → Integrações**, as permissões são confirmadas pelos checkboxes: na CNPJá, **Confirmo permissão de entrega a cliente**; na Brave, **Confirmo licença de armazenamento dos resultados** e, para entrega, **O contrato também permite entregar a lista ao cliente**. Marque as permissões correspondentes e clique em **Salvar provedor**. Não é necessário informar referência de contrato ou reenviar uma API key já cadastrada. A confirmação é uma declaração do administrador sobre os direitos da credencial/plano, não uma verificação independente desses direitos. Desmarcar e salvar revoga a permissão. Ativação de fontes, custos e limites continuam controles separados.
+
 - **Buscar próxima página — região** retoma uma UF/município. **Buscar lote nas regiões configuradas** percorre regiões em rodízio, respeitando limites, orçamento e quotas. Regiões concluídas não ocupam o teto de consultas. Não há três UFs ou três páginas fixas.
 - **Verificar lote configurado** aplica o número salvo na campanha. Brave só é consultada se habilitada, com licença/chave/fonte válidas e candidato sem site. O painel pede confirmação do consumo potencial antes de executar.
 - Revise motivos, URLs, contatos e identidade. A inspeção respeita `robots.txt`, limites de rede/tempo/tamanho e bloqueia rede privada/redirecionamento externo. Site omitido, bloqueado ou inacessível não prova ausência de site.

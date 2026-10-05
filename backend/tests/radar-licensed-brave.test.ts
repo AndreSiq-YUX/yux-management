@@ -22,7 +22,7 @@ class FixturePool {
     if (sql.includes("kind = 'yux'")) return { rows: [{ allowed: true }] }
     if (sql.includes('FROM public.radar_candidate_records candidate')) return { rows: [this.candidate] }
     if (sql.includes('FROM public.platform_provider_connections')) return { rows: [{ id: 'provider', status: 'active',
-      public_config: this.licensed ? { retentionLicensed: true, licenseReference: 'contrato-BR-1',
+      public_config: this.licensed ? { retentionLicensed: true,
         credentialPurpose: 'licensed_retention' } : { storagePolicy: 'transient_only' } }] }
     if (sql.includes('FROM public.radar_data_sources')) return { rows: [{ id: 'source', organization_id: null,
       source_key: 'brave_place_search', source_type: 'brave_place_search', display_name: 'Brave', enabled: true,
@@ -37,13 +37,21 @@ class FixturePool {
 }
 
 describe('licensed Brave business enrichment', () => {
-  it('requires an explicit licensed-retention credential and a contract reference', () => {
+  it('requires explicit licensed retention but no contract reference', () => {
     expect(() => assertLicensedBraveRetention({ storagePolicy: 'transient_only' })).toThrow('radar_brave_retention_license_required')
     expect(() => assertLicensedBraveRetention({ retentionLicensed: true, licenseReference: '' })).toThrow('radar_brave_retention_license_required')
     expect(() => assertLicensedBraveRetention({ retentionLicensed: true, licenseReference: 'contract-1',
       credentialPurpose: 'preview' })).toThrow('radar_brave_retention_license_required')
     expect(() => assertLicensedBraveRetention({ retentionLicensed: true, licenseReference: 'contract-1',
       credentialPurpose: 'licensed_retention' })).not.toThrow()
+    expect(() => assertLicensedBraveRetention({ retentionLicensed: true,
+      credentialPurpose: 'licensed_retention' })).not.toThrow()
+    expect(() => assertLicensedBraveRetention({ retentionLicensed: true, licenseReference: '',
+      credentialPurpose: 'licensed_retention' })).not.toThrow()
+    for (const retentionLicensed of [false, undefined, 'true']) {
+      expect(() => assertLicensedBraveRetention({ retentionLicensed, licenseReference: 'contract-1',
+        credentialPurpose: 'licensed_retention' })).toThrow('radar_brave_retention_license_required')
+    }
   })
 
   it('matches a unique business identity but never an ambiguous or different-city result', () => {

@@ -3,8 +3,7 @@ import type { RadarPlacePreview } from './place-providers.js'
 export type LicensedBraveConfig = Record<string, unknown>
 
 export function assertLicensedBraveRetention(config: LicensedBraveConfig) {
-  if (config.retentionLicensed !== true || config.credentialPurpose !== 'licensed_retention'
-    || typeof config.licenseReference !== 'string' || !config.licenseReference.trim()) {
+  if (config.retentionLicensed !== true || config.credentialPurpose !== 'licensed_retention') {
     throw Object.assign(new Error('radar_brave_retention_license_required'), { statusCode: 409 })
   }
 }

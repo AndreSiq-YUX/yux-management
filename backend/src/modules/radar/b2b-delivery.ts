@@ -6,8 +6,7 @@ export type B2bProspectCsvRow = Partial<Record<RadarExportField, string>> & { na
 export function assertB2bDeliveryRights(
   cnpjaConfig: Record<string, unknown>, braveConfig: LicensedBraveConfig | undefined, hasBraveFacts: boolean,
 ) {
-  if (cnpjaConfig.clientDeliveryLicensed !== true || typeof cnpjaConfig.licenseReference !== 'string'
-    || !cnpjaConfig.licenseReference.trim()) {
+  if (cnpjaConfig.clientDeliveryLicensed !== true) {
     throw Object.assign(new Error('radar_cnpja_client_delivery_not_approved'), { statusCode: 409 })
   }
   if (hasBraveFacts) {

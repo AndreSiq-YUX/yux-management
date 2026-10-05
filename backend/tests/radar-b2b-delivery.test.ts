@@ -29,12 +29,23 @@ describe('B2B prospect delivery', () => {
     expect(csv).not.toContain('12345678000190')
     expect(csv).not.toContain('a@example.test')
   })
-  it('requires documented permission for CNPJa and, when used, Brave client delivery', () => {
+  it('requires checkbox confirmations for CNPJa and, when used, Brave without contract references', () => {
     expect(() => assertB2bDeliveryRights({}, undefined, false)).toThrow('radar_cnpja_client_delivery_not_approved')
-    const cnpja = { clientDeliveryLicensed: true, licenseReference: 'CNPJA-1' }
+    const cnpja = { clientDeliveryLicensed: true }
+    expect(() => assertB2bDeliveryRights(cnpja, undefined, false)).not.toThrow()
+    expect(() => assertB2bDeliveryRights({ ...cnpja, licenseReference: '' }, undefined, false)).not.toThrow()
     expect(() => assertB2bDeliveryRights(cnpja, {}, true)).toThrow('radar_brave_client_delivery_not_approved')
     expect(() => assertB2bDeliveryRights(cnpja, { retentionLicensed: true, clientDeliveryLicensed: true,
-      licenseReference: 'BRAVE-1', credentialPurpose: 'licensed_retention' }, true)).not.toThrow()
+      credentialPurpose: 'licensed_retention' }, true)).not.toThrow()
+    for (const clientDeliveryLicensed of [false, undefined, 'true']) {
+      expect(() => assertB2bDeliveryRights({ clientDeliveryLicensed, licenseReference: 'CNPJA-1' }, undefined, false))
+        .toThrow('radar_cnpja_client_delivery_not_approved')
+      expect(() => assertB2bDeliveryRights(cnpja, { retentionLicensed: true, clientDeliveryLicensed,
+        credentialPurpose: 'licensed_retention', licenseReference: 'BRAVE-1' }, true))
+        .toThrow('radar_brave_client_delivery_not_approved')
+    }
+    expect(() => assertB2bDeliveryRights(cnpja, { retentionLicensed: false, clientDeliveryLicensed: true,
+      credentialPurpose: 'licensed_retention' }, true)).toThrow('radar_brave_client_delivery_not_approved')
   })
 
   it('exports verified facts and neutralizes spreadsheet formula injection', () => {
