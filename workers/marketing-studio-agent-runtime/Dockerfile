@@ -5,10 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Keep the audited security floors without requiring retired Alpine revisions.
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.8-r0 \
-    libssl3=3.5.8-r0 \
-    libuuid=2.42.3-r1
+    'libcrypto3>=3.5.8-r0' \
+    'libssl3>=3.5.8-r0' \
+    'libuuid>=2.42.3-r1'
 
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
