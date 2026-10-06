@@ -6,10 +6,16 @@ export function canUseRadarSource(source: Pick<RadarDataSource, 'sourceType' | '
   return source.sourceType === 'manual' || source.sourceType === 'csv' || source.enabled
 }
 
-export function getRadarSourceBlockedReason(source: Pick<RadarDataSource, 'sourceType' | 'enabled' | 'requiresSecret'>) {
+export function getRadarSourceBlockedReason(source: Pick<RadarDataSource, 'sourceType' | 'enabled' | 'requiresSecret'>
+  & Partial<Pick<RadarDataSource, 'isPaid' | 'defaultCostPerUnit'>>) {
+  if (source.isPaid && (source.defaultCostPerUnit ?? 0) <= 0) {
+    return 'Custo por consulta ainda não definido. Configure em Admin → Integrações e ative a fonte.'
+  }
   if (canUseRadarSource(source)) return undefined
-  if (source.requiresSecret) return 'Configure as credenciais antes de usar esta fonte.'
-  return 'Fonte desabilitada no catalogo do Radar.'
+  if (!['cnpja_advanced_search', 'cnpja_office_lookup', 'brave_place_search', 'serper_places', 'osm_extract'].includes(source.sourceType)) {
+    return 'Fonte fora do catálogo de ativação do Admin. Esta integração permanece desativada.'
+  }
+  return 'Fonte desativada no catálogo. Ativação e limites são configurados em Admin → Integrações.'
 }
 
 export function splitLines(value: string) {

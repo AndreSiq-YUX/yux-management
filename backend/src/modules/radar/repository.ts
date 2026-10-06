@@ -281,6 +281,19 @@ export async function listRadarDataSources(pool: pg.Pool, user: AuthUser, organi
   return result.rows.map(mapDataSource)
 }
 
+export async function listRadarAdminDataSources(pool: pg.Pool, user: AuthUser) {
+  if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
+  const result = await pool.query<RadarDataSourceRow & { organization_name: string | null }>(
+    `SELECT source.*, organization.name AS organization_name
+     FROM public.radar_data_sources source
+     LEFT JOIN public.organizations organization ON organization.id = source.organization_id
+     WHERE source.source_type = ANY($1::text[])
+     ORDER BY source.organization_id NULLS FIRST, source.display_name ASC`,
+    [['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search', 'osm_extract']],
+  )
+  return result.rows.map(row => ({ ...mapDataSource(row), organizationName: row.organization_name ?? undefined }))
+}
+
 export async function updateRadarDataSource(
   pool: pg.Pool,
   user: AuthUser,

@@ -92,6 +92,13 @@ class FakeRadarPool {
     if (sql.includes('SELECT DISTINCT cm.module_key')) return { rows: [] }
 
     if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') return { rows: [] }
+    if (normalized.includes('FROM public.radar_data_sources source')) return { rows: [
+      { ...dataSourceRow(this), source_key: 'cnpja_advanced_search', source_type: 'cnpja_advanced_search',
+        default_cost_per_unit: '0.025', organization_name: null },
+      { ...dataSourceRow(this), id: 'client-source', organization_id: ids.org, organization_name: 'Cliente Alfa',
+        source_key: 'cnpja_advanced_search', source_type: 'cnpja_advanced_search', enabled: true,
+        default_cost_per_unit: '0.03', rate_limit_per_day: 10 },
+    ] }
     if (normalized.includes('FROM public.radar_data_sources')) return { rows: [
       normalized.includes('SELECT source_type, default_cost_per_unit FROM') && this.protectedSourceType
         ? { source_type: this.protectedSourceType, default_cost_per_unit: '0' }
@@ -712,6 +719,48 @@ describe('radar routes', () => {
     expect(list.json()[0]).toMatchObject({ sourceKey: 'jina_reader', enabled: false })
     expect(update.statusCode).toBe(200)
     expect(update.json()).toMatchObject({ sourceKey: 'jina_reader', enabled: true, rateLimitPerDay: 10 })
+  })
+
+  it('lists the central source catalog for an admin without an organization or campaign', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'GET', url: '/api/radar/admin/data-sources',
+      headers: { cookie: sessionCookie(token) } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual([
+      expect.objectContaining({ sourceType: 'cnpja_advanced_search', enabled: false, defaultCostPerUnit: 0.025, rateLimitPerDay: 50 }),
+      expect.objectContaining({ organizationId: ids.org, organizationName: 'Cliente Alfa', enabled: true, defaultCostPerUnit: 0.03, rateLimitPerDay: 10 }),
+    ])
+    const query = pool.queries.find(item => item.sql.includes('FROM public.radar_data_sources source'))
+    expect(query?.sql).toContain('LEFT JOIN public.organizations')
+    expect(query?.params[0]).toEqual(['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search', 'osm_extract'])
+    expect(pool.queries.some(item => item.sql.includes('UPDATE public.radar_data_sources'))).toBe(false)
+    expect(pool.queries.some(item => item.sql.includes('FROM public.platform_provider_connections'))).toBe(false)
+  })
+
+  it.each(['yux_operator', 'client_admin'])('refuses the central catalog to %s before reading sources', async role => {
+    const { authStore, token } = buildAuthStore(role)
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const response = await app.inject({ method: 'GET', url: '/api/radar/admin/data-sources',
+      headers: { cookie: sessionCookie(token) } })
+    expect(response.statusCode).toBe(403)
+    expect(pool.queries.some(item => item.sql.includes('FROM public.radar_data_sources'))).toBe(false)
+  })
+
+  it('requires authentication for the central catalog and rejects invalid source limits before writing', async () => {
+    const { authStore, token } = buildAuthStore()
+    const pool = new FakeRadarPool()
+    app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
+    const anonymous = await app.inject({ method: 'GET', url: '/api/radar/admin/data-sources' })
+    expect(anonymous.statusCode).toBe(401)
+    for (const rateLimitPerDay of [0, 1.5, 1001]) {
+      const update = await app.inject({ method: 'PATCH', url: `/api/radar/data-sources/${ids.dataSource}`,
+        headers: { cookie: sessionCookie(token) }, payload: { rateLimitPerDay } })
+      expect(update.statusCode).toBe(400)
+    }
+    expect(pool.queries.some(item => item.sql.includes('UPDATE public.radar_data_sources'))).toBe(false)
   })
 
   it('prevents operators from enabling CNPJa even when they can manage Radar', async () => {

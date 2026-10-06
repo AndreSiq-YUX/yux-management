@@ -27,6 +27,10 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  async getAdminDataSources() {
+    return apiRequest<Array<RadarDataSource & { organizationName?: string }>>('/radar/admin/data-sources')
+  },
+
   async getDataSources(organizationId: string) {
     return apiRequest<RadarDataSource[]>(`/radar/data-sources${buildQuery({ organizationId })}`)
   },

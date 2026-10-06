@@ -24,6 +24,7 @@ import {
   importRadarUrlsToCampaign,
   inspectRadarCandidateBusinessSite,
   listRadarDataSources,
+  listRadarAdminDataSources,
   listRadarCampaigns,
   listRadarB2bProspects,
   listRadarCandidates,
@@ -186,6 +187,12 @@ async function enqueueRadarAnalysis(app: FastifyInstance, requests: RadarAnalysi
 }
 
 export async function registerRadarRoutes(app: FastifyInstance) {
+  app.get('/admin/data-sources', async (request, reply) => {
+    const user = await getAuthenticatedUser(request, reply)
+    if (!user) return reply
+    return listRadarAdminDataSources(app.pg, user)
+  })
+
   app.get('/data-sources', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply

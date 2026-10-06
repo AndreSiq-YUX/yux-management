@@ -217,8 +217,6 @@ export function RadarWorkspace() {
   const placeRequestSequence = useRef(0)
   const currentPlaceSelection = useRef('')
   currentPlaceSelection.current = `${organizationId ?? ''}:${selectedCampaignId ?? ''}:${placeForm.sourceType}`
-  const [sourceCostDrafts, setSourceCostDrafts] = useState<Record<string, string>>({})
-  const [sourceLimitDrafts, setSourceLimitDrafts] = useState<Record<string, string>>({})
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
   const [lastImportSummary, setLastImportSummary] = useState<RadarImportSummary | null>(null)
   const [analyzeAfterImport, setAnalyzeAfterImport] = useState(false)
@@ -477,36 +475,19 @@ export function RadarWorkspace() {
   const cnpjaSource = findSource(workspaceSources, 'cnpja_advanced_search')
   const braveSource = findSource(workspaceSources, 'brave_place_search')
   const placeSource = findSource(workspaceSources, placeForm.sourceType)
-  const osmSource = findSource(workspaceSources, 'osm_extract')
   const selectedCampaign = campaigns.find(campaign => campaign.id === selectedCampaignId)
   const visibleCandidates = selectedCampaign?.campaignType === 'regional_b2b'
     ? candidates.filter(candidate => Number(candidate.normalizedPayload.discoveryRevision ?? 1) === (selectedCampaign.configurationRevision ?? 1))
     : candidates
 
-  const toggleOsmSource = async () => {
-    if (!osmSource || osmSource.id.startsWith('fallback-') || context.role?.key !== 'yux_admin' || actionLoading) return
+  const refreshDataSources = async () => {
+    if (!organizationId || actionLoading) return
     try {
-      setActionLoading('osm-source')
-      const updated = await radarService.updateDataSource(osmSource.id, { enabled: !osmSource.enabled })
-      setDataSources(current => current.map(source => source.id === updated.id ? updated : source))
-      toast.success(updated.enabled ? 'Fonte OSM habilitada para o piloto' : 'Fonte OSM desabilitada')
-    } catch (error) {
-      console.error('Erro ao alterar fonte OSM:', error)
-      toast.error('Não foi possível alterar a fonte OSM')
-    } finally { setActionLoading(null) }
-  }
-
-  const changeManagedSource = async (source: RadarDataSource, patch: { enabled?: boolean; defaultCostPerUnit?: number; rateLimitPerDay?: number }) => {
-    if (source.id.startsWith('fallback-') || context.role?.key !== 'yux_admin' || actionLoading) return
-    if (patch.enabled === true && source.isPaid && !window.confirm('Esta fonte pode consumir créditos. Confirma a ativação para consultas manuais limitadas?')) return
-    try {
-      setActionLoading(`source-${source.id}`)
-      const updated = await radarService.updateDataSource(source.id, patch)
-      setDataSources(current => current.map(item => item.id === updated.id ? updated : item))
-      toast.success(patch.enabled === undefined ? 'Limites e custo salvos' : updated.enabled ? 'Fonte ativada' : 'Fonte desativada')
-    } catch (error) {
-      console.error('Erro ao configurar fonte Radar:', error)
-      toast.error('Não foi possível alterar a fonte; confira custo e permissões')
+      setActionLoading('refresh-sources')
+      setDataSources(await radarService.getDataSources(organizationId))
+      toast.success('Estado das fontes atualizado; nenhuma consulta foi executada')
+    } catch {
+      toast.error('Não foi possível atualizar o estado das fontes')
     } finally { setActionLoading(null) }
   }
   const csvPreviewRows = getCsvPreviewRows(csvText, 4)
@@ -1157,7 +1138,11 @@ export function RadarWorkspace() {
           </section>}
           <section className="rounded-md border bg-white p-4">
             <h2 className="text-base font-semibold text-slate-950">Fontes da campanha</h2>
-            <p className="mt-1 text-sm text-slate-500">Fontes governadas aparecem bloqueadas ate o catalogo permitir uso operacional.</p>
+            <p className="mt-1 text-sm text-slate-500">Confirmação de licença, conexão do provedor e ativação da fonte são configurações separadas. Custos, limites e ativação ficam em Admin → Integrações.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {context.role?.key === 'yux_admin' && <a className="text-sm text-blue-700 underline" href="/admin/integrations#radar-sources">Configurar fontes no Admin</a>}
+              <Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)} onClick={refreshDataSources}>Atualizar estado das fontes</Button>
+            </div>
             <div className="mt-3 grid gap-3 md:grid-cols-4">
               {workspaceSources.map(source => {
                 const blockedReason = getSourceBlockedReason(source)
@@ -1172,41 +1157,13 @@ export function RadarWorkspace() {
                     <p className="mt-1 text-xs text-slate-600">{source.isPaid && source.defaultCostPerUnit === 0
                       ? 'Custo em R$ ainda não aprovado; fonte bloqueada.'
                       : `Custo estimado por chamada: R$ ${source.defaultCostPerUnit.toFixed(4)}`}</p>
-                    {source.termsNotes && <p className="mt-1 text-xs text-slate-500">{source.termsNotes}</p>}
-                    {context.organization?.isInternalGrowthWorkspace && context.role?.key === 'yux_admin'
-                      && ['cnpja_advanced_search', 'serper_places', 'brave_place_search'].includes(source.sourceType)
-                      && !source.id.startsWith('fallback-') && (
-                        <div className="mt-3 space-y-2 border-t pt-2">
-                          {source.isPaid && <label className="block text-xs text-slate-600">Custo estimado por consulta em R$
-                            <Input type="number" min="0.000001" step="0.000001" value={sourceCostDrafts[source.id] ?? String(source.defaultCostPerUnit)}
-                              onChange={event => setSourceCostDrafts(current => ({ ...current, [source.id]: event.target.value }))} />
-                          </label>}
-                          <label className="block text-xs text-slate-600">Máximo de consultas por dia na organização
-                            <Input type="number" min="1" max="1000" step="1" value={sourceLimitDrafts[source.id] ?? String(source.rateLimitPerDay)}
-                              onChange={event => setSourceLimitDrafts(current => ({ ...current, [source.id]: event.target.value }))} />
-                          </label>
-                          <div className="flex flex-wrap gap-2">
-                            <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading)
-                              || !Number.isInteger(Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay))
-                              || Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay) < 1}
-                              onClick={() => changeManagedSource(source, {
-                                defaultCostPerUnit: Number(sourceCostDrafts[source.id] ?? source.defaultCostPerUnit),
-                                rateLimitPerDay: Number(sourceLimitDrafts[source.id] ?? source.rateLimitPerDay),
-                              })}>Salvar limites e custo</Button>
-                            <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading) || (!source.enabled && source.isPaid && source.defaultCostPerUnit <= 0)}
-                              onClick={() => changeManagedSource(source, { enabled: !source.enabled })}>{source.enabled ? 'Desativar' : 'Ativar'}</Button>
-                          </div>
-                        </div>
-                      )}
+                    {source.termsNotes && <p className="mt-1 text-xs text-slate-500">{source.sourceType === 'brave_place_search'
+                      ? 'Busca local no Brasil. Retenção e entrega dependem das confirmações do Admin para a credencial utilizada. Ativação, custo e limites são configurados em Admin → Integrações.'
+                      : source.termsNotes}</p>}
                   </div>
                 )
               })}
             </div>
-            {osmSource && context.organization?.isInternalGrowthWorkspace && context.role?.key === 'yux_admin' && !osmSource.id.startsWith('fallback-') && (
-              <Button type="button" size="sm" variant="outline" className="mt-3" disabled={!canManage || Boolean(actionLoading)} onClick={toggleOsmSource}>
-                {osmSource.enabled ? 'Desativar piloto OSM' : 'Ativar piloto OSM'}
-              </Button>
-            )}
           </section>
 
           <fieldset disabled={!canManage} className="min-w-0 rounded-md border bg-white p-4">

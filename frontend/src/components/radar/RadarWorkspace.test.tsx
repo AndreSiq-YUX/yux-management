@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PlatformContext } from '@/types/platform'
+import type { RadarCampaign, RadarDataSource } from '@/types/radar'
 import { radarService } from '@/services/radarService'
 import { RadarWorkspace } from './RadarWorkspace'
 
@@ -13,6 +14,10 @@ vi.mock('@/stores/platformStore', () => ({ usePlatformContext: () => state.conte
 vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyContextPanel:() => null}))
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),
+  getOpportunities:vi.fn(async () => []),getMetrics:vi.fn(async () => null),
+  getCandidates:vi.fn(async () => []),getDuplicates:vi.fn(async () => []),getRuns:vi.fn(async () => []),
+  getOsmReadiness:vi.fn(async () => ({ready:false,reason:'Sem extrato',segmentKey:null,snapshot:null})),
+  getOsmReport:vi.fn(async () => null),
 }}))
 
 describe('Radar campaign creation entry point', () => {
@@ -63,6 +68,32 @@ describe('Radar campaign creation entry point', () => {
     expect(local.querySelector('option[value="recently_opened"]')).not.toBeNull()
     act(() => { mode.value = 'regional'; mode.dispatchEvent(new Event('change',{bubbles:true})) })
     expect(container.querySelector('form[aria-label="Configuração da pesquisa"]')).not.toBeNull()
+    act(() => root.unmount())
+  })
+
+  it('links source configuration to the central Admin and refreshes availability without querying providers', async () => {
+    const campaign: RadarCampaign = { id:'campaign',organizationId:'org',name:'Pesquisa',campaignType:'local_niche',
+      targetSegment:'Empresas',targetCity:'Cidade',targetState:'PR',targetStates:[],productFocus:[],targetKeywords:[],
+      targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',
+      strategyProfileKey:'crm_controller',createdAt:'',updatedAt:'' }
+    const source: RadarDataSource = { id:'cnpja',sourceKey:'cnpja_advanced_search',sourceType:'cnpja_advanced_search',
+      displayName:'CNPJá pesquisa',enabled:false,isPaid:true,requiresSecret:true,defaultCostPerUnit:0.025,
+      rateLimitPerDay:50,createdAt:'',updatedAt:'' }
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([campaign])
+    vi.mocked(radarService.getDataSources).mockResolvedValueOnce([source]).mockResolvedValueOnce([{...source,enabled:true}])
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => root.render(<RadarWorkspace />))
+    await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Abrir')!.click())
+    expect(container.querySelector('a[href="/admin/integrations#radar-sources"]')?.textContent).toContain('Configurar fontes no Admin')
+    expect(container.textContent).not.toContain('Configure as credenciais antes')
+    expect(container.textContent).not.toContain('Salvar limites e custo')
+    expect(container.textContent).not.toContain('Ativar piloto OSM')
+    const refresh = [...container.querySelectorAll('button')].find(button => button.textContent === 'Atualizar estado das fontes')!
+    await act(async () => refresh.click())
+    expect(radarService.getDataSources).toHaveBeenCalledTimes(2)
+    const cnpjaTitle = [...container.querySelectorAll('p')].find(element => element.textContent === 'CNPJá pesquisa')!
+    expect(cnpjaTitle.parentElement?.parentElement?.textContent).toContain('Disponivel para esta campanha.')
     act(() => root.unmount())
   })
 })

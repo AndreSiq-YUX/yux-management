@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
+import { RadarSourceManagementPanel } from '@/components/platform/admin/RadarSourceManagementPanel'
 import {
   cnpjaProviderDefaults,
   serperPlacesProviderDefaults,
@@ -74,6 +75,10 @@ export function AdminIntegrationsPage() {
       )}
 
       {!loading && !error && (
+        <RadarSourceManagementPanel providers={providers} />
+      )}
+
+      {!loading && !error && (
         <div className="grid gap-4 xl:grid-cols-2">
           <ProviderConnectionEditor
             title="OpenRouter principal"
@@ -141,7 +146,7 @@ export function AdminIntegrationsPage() {
           />
           <ProviderConnectionEditor
             title="Brave Place Search"
-            description="Busca local no Brasil. Persistência de resultados exige chave contratual específica, confirmação da licença e aprovação de custo da fonte no Radar. O teste de conexão consome uma consulta."
+            description="Busca local no Brasil. Persistência exige licença confirmada. Ativação, custo e limite da fonte ficam no painel Fontes do Radar Comercial nesta página. O teste de conexão consome uma consulta."
             provider={bravePlaceProvider}
             defaults={bravePlaceProviderDefaults}
             onSave={async input => { await adminPlatformService.upsertProviderConnection(input); await loadProviders() }}
