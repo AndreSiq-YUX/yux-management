@@ -52,6 +52,8 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
     global_key = "global_embeddings" if kind == "embedding" else "global_llm"
     function_key = key
     route = _pick(routes, key, tier, context, kind=kind)
+    if key == "radar_business_qualification" and route is None:
+        raise ProviderAuthorizationError("radar_qualification_explicit_route_required")
     if route is None and key in {"automation_lead_classification", "automation_message_generation", "automation_proposal_generation"}:
         inherited_key = str(context.get("profile_key") or (context.get("agent") or {}).get("agent_type") or "ai_sdr_comercial_1")
         route = _pick(routes, inherited_key, tier, context, kind=kind)

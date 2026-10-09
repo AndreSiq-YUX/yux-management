@@ -15,6 +15,7 @@ export const TECHNICAL_LLM_USE_CASES: LlmUseCaseDefinition[] = [
   { key: 'strategy_curator', title: 'Curadoria — Strategy Packs', description: 'Extrai conhecimento reutilizável, exemplos e estratégias dos materiais importados.', kind: 'chat', group: 'Conhecimento' },
   { key: 'knowledge_curator', title: 'Curadoria — inteligência empresarial', description: 'Analisa documentos e sites e extrai o perfil e conhecimento da empresa.', kind: 'chat', group: 'Conhecimento' },
   { key: 'knowledge_embeddings', title: 'Embeddings — ingestão e busca', description: 'Modelo compartilhado para indexar e consultar conhecimento estratégico e empresarial.', kind: 'embedding', group: 'Conhecimento' },
+  { key: 'radar_business_qualification', title: 'Radar — qualificação de empresas pela oferta', description: 'Interpreta evidências públicas coletadas e os critérios da campanha. Exige rota própria ativa; a coleta de contatos funciona sem LLM.', kind: 'chat', group: 'Radar Comercial' },
 ]
 
 const profileTitles: Record<string, string> = {

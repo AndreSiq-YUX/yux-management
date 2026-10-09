@@ -16,6 +16,7 @@ from .strategy_curation import StrategyCurationService
 from .providers import ProviderRequestError
 from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine, build_routed_client
 from .llm_routing import effective_legacy_routes
+from .radar_qualification import qualify_radar_business
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -36,6 +37,20 @@ def provider_http_exception(error: ProviderRequestError) -> HTTPException:
         return HTTPException(status_code=503, detail="openrouter_private_provider_unavailable")
     return HTTPException(status_code=502, detail=message)
 
+
+class RadarQualificationEvidence(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    source_url: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=1, max_length=12000)
+
+class RadarQualificationRequest(BaseModel):
+    organization_id: str
+    client_id: str | None = None
+    contract_id: str | None = None
+    enabled: bool = False
+    request_id: str
+    criteria: dict[str, Any]
+    evidence: list[RadarQualificationEvidence] = Field(min_length=1, max_length=10)
 
 class IngestEventRequest(BaseModel):
     organization_id: str | None = None
@@ -229,6 +244,24 @@ def create_app(
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key="ai_sdr_comercial_1", audience="external_contact")
         payload = {**request.payload, **request.model_dump(exclude={"payload"})}
         return queue.ingest_event(payload)
+
+    @app.post('/radar/qualify', dependencies=[Depends(require_runtime_token)])
+    def radar_qualify(request: RadarQualificationRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key='radar_business_qualification', audience='internal_operator')
+        if len(json.dumps(request.criteria)) > 16000:
+            raise HTTPException(status_code=422, detail='radar_qualification_criteria_too_large')
+        try:
+            def debit():
+                reserve_billable_credits(organization_id=request.organization_id, client_id=request.client_id,
+                    contract_id=request.contract_id, credits=1, action='radar_business_qualification')
+            return qualify_radar_business(runtime_store, enabled=request.enabled, context=request.model_dump(),
+                criteria=request.criteria, evidence=[item.model_dump() for item in request.evidence], before_call=debit)
+        except ProviderRequestError as error:
+            raise provider_http_exception(error) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=402, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/workflows/execute", dependencies=[Depends(require_runtime_token)])
     def execute_workflow(request: ExecuteWorkflowRequest) -> dict[str, Any]:
