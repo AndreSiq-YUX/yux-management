@@ -14,6 +14,7 @@ export type RadarBusinessSiteInspection = {
   checkedAt: string
   finalUrl?: string
   text?: string
+  html?: string
   emails: string[]
   phones: string[]
   reason?: string
@@ -62,8 +63,10 @@ function getHtml(url: URL, address: string): Promise<GetResult> {
   })
 }
 
-function robotsBlocksHomepage(body: string) {
+function robotsBlocksHomepage(body: string, path = '/') {
   let applies = false
+  let disallowed = 0
+  let allowed = 0
   for (const original of body.split(/\r?\n/)) {
     const line = original.split('#', 1)[0].trim()
     if (!line) continue
@@ -72,9 +75,14 @@ function robotsBlocksHomepage(body: string) {
     const key = line.slice(0, separator).trim().toLowerCase()
     const value = line.slice(separator + 1).trim().toLowerCase()
     if (key === 'user-agent') applies = value === '*' || USER_AGENT.toLowerCase().startsWith(value)
-    if (applies && key === 'disallow' && value === '/') return true
+    if (applies && value && (key === 'disallow' || key === 'allow')) {
+      const expression = value.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')
+      const matches = new RegExp(`^${expression}`).test(path)
+      if (matches && key === 'disallow') disallowed = Math.max(disallowed, value.length)
+      if (matches && key === 'allow') allowed = Math.max(allowed, value.length)
+    }
   }
-  return false
+  return disallowed > allowed
 }
 
 export async function inspectRadarBusinessSite(
@@ -111,7 +119,7 @@ export async function inspectRadarBusinessSite(
       }
       if (robots.status >= 500) return { ...empty, status: 'unknown', reason: 'robots_unavailable' }
       if (robots.status === 200 && /text\/plain/i.test(robots.contentType ?? '')
-        && robotsBlocksHomepage(robots.body ?? '')) {
+        && robotsBlocksHomepage(robots.body ?? '', url.pathname + url.search)) {
         return { ...empty, status: 'blocked', reason: 'robots_disallow' }
       }
       checkedRobots.add(url.origin)
@@ -148,7 +156,7 @@ export async function inspectRadarBusinessSite(
       nonTextTags: ['style', 'script', 'textarea', 'noscript'] }).replace(/\s+/g, ' ').trim().slice(0, 20_000)
     const emails = [...new Set(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])].slice(0, 20)
     const phones = [...new Set(text.match(/\(?\d{2}\)?\s?\d{4,5}[-.\s]?\d{4}/g) ?? [])].slice(0, 20)
-    return { ...empty, status: 'verified_present', finalUrl: url.toString(), text, emails, phones }
+    return { ...empty, status: 'verified_present', finalUrl: url.toString(), text, html: response.body, emails, phones }
   }
   return { ...empty, status: 'unknown', reason: 'too_many_redirects' }
 }
