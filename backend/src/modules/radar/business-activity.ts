@@ -4,7 +4,8 @@ export function assessRadarBusinessActivity(evidence: RadarSiteEvidence[]) {
   for (const page of evidence) {
     const closure = /(?:encerramos (?:nossas )?atividades|permanentemente fechad[oa]|permanently closed|empresa encerrada)/i.exec(page.text)
     const operating = /(?:estamos atendendo|inauguramos|nova unidade|novos clientes|inscri[çc][õo]es abertas)/i.exec(page.text)
-    const dated = /\b(20\d{2}-\d{2}-\d{2})\b/.exec(page.text)
+    const nearby=page.text.slice(Math.max(0,(operating??closure)?.index??0)-160,((operating??closure)?.index??0)+220)
+    const dated = /\b(20\d{2}-\d{2}-\d{2})\b/.exec(nearby)
     if (closure) signals.push({ kind: 'closure', sourceUrl: page.url, observedAt: page.observedAt,
       excerpt: page.text.slice(Math.max(0, closure.index - 50), closure.index + 180), publishedDate: dated?.[1] })
     if (operating && dated && Date.parse(dated[1]) <= Date.parse(page.observedAt)

@@ -5,7 +5,7 @@ export const RADAR_BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO'
 export const radarStateSchema = z.enum(RADAR_BRAZIL_STATES)
 export const RADAR_EXPORT_FIELDS = ['name','legalName','cnpj','city','state','address','registrationStatus','cnaes',
   'websiteUrl','websiteStatus','phone','email','instagramUrl','rating','reviewCount','targetStatus','productFit',
-  'evidenceUrl','checkedAt','verificationMethod','reviewNote'] as const
+  'evidenceUrl','checkedAt','verificationMethod','reviewNote','registryPhone','publicPhones','publicEmails','whatsappPublished','socialUrls','activityStatus','contactSources'] as const
 const terms = z.array(z.string().trim().min(1).max(160)).max(50)
 
 export const radarResearchPolicySchema = z.object({

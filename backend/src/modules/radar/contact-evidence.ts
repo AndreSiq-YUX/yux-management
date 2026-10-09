@@ -2,7 +2,7 @@ import type { RadarSiteEvidence } from './site-evidence.js'
 import { radarHtmlLinks } from './site-evidence.js'
 import { isRadarSocialUrl } from './site-discovery.js'
 export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'social' | 'business_person'; value: string;
-  sourceUrl: string; observedAt: string; association: 'confirmed' | 'review'; note?: string }
+  sourceUrl: string; observedAt: string; association: 'confirmed' | 'review'; note?: string; preferred?:boolean }
 export function normalizeRadarPhone(value: string): string | undefined {
   let digits = value.replace(/\D/g, '')
   if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) digits = digits.slice(2)
@@ -16,7 +16,7 @@ export function extractRadarContacts(page: RadarSiteEvidence, association: 'conf
   }
   const email = (value: string) => { for (const match of value.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) add('email', match[0].toLowerCase()) }
   email(page.text)
-  for (const match of page.text.matchAll(/(?:\+?55[\s.-]*)?\(?[1-9]\d\)?[\s.-]*[2-9]\d{3,4}[\s.-]?\d{4}(?!\d)/g)) add('phone', normalizeRadarPhone(match[0]))
+  for (const match of page.text.matchAll(/(?<!\d)(?:\+?55[\s.-]*)?\(?[1-9]\d\)?[\s.-]*[2-9]\d{3,4}[\s.-]?\d{4}(?!\d)/g)) add('phone', normalizeRadarPhone(match[0]))
   for (const link of radarHtmlLinks(page.html ?? '')) {
     if (/^mailto:/i.test(link)) { try { email(decodeURIComponent(link.split('?')[0].slice(7))) } catch { /* malformed link */ } }
     if (/^tel:/i.test(link)) add('phone', normalizeRadarPhone(link.slice(4)))

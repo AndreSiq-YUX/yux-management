@@ -39,6 +39,7 @@ import { triageRadarBusiness } from './business-triage.js'
 import { buildRadarBraveQuery, buildRadarDiscoveryScopes, resolveRadarSearchConfiguration,
   type RadarSearchConfiguration } from './search-configuration.js'
 import { assertB2bDeliveryRights, formatB2bProspectCsv, type B2bProspectCsvRow } from './b2b-delivery.js'
+import type { RadarContactEvidence } from './contact-evidence.js'
 
 type RadarOpportunityWithRelationsRow = RadarOpportunityRow & {
   company: RadarCompanyRecordRow | null
@@ -1725,7 +1726,8 @@ export async function listRadarB2bProspects(pool: pg.Pool, user: AuthUser, organ
        AND review.configuration_revision = campaign.configuration_revision
      WHERE candidate.organization_id = $1 AND candidate.campaign_id = $2
        AND campaign.organization_id = $1 AND campaign.campaign_type = 'regional_b2b'
-       AND COALESCE(candidate.normalized_payload->>'discoveryRevision', '1') = campaign.configuration_revision::text
+       AND (COALESCE(candidate.normalized_payload->>'discoveryRevision', '1') = campaign.configuration_revision::text
+         OR candidate.normalized_payload->>'researchRevision' = campaign.configuration_revision::text)
      ORDER BY candidate.created_at DESC`, [organizationId, campaignId],
   )
   return result.rows.map(row => ({ ...mapCandidate(row), targetStatus: row.target_status,
@@ -1777,7 +1779,8 @@ export async function getRadarB2bProgress(pool: pg.Pool, user: AuthUser,
      LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id = candidate.id AND review.organization_id = $1
        AND review.configuration_revision = $3
      WHERE candidate.organization_id = $1 AND candidate.campaign_id = $2
-       AND COALESCE(candidate.normalized_payload->>'discoveryRevision', '1') = $3::text`, [organizationId, campaignId, campaign.configurationRevision],
+       AND (COALESCE(candidate.normalized_payload->>'discoveryRevision', '1') = $3::text
+         OR candidate.normalized_payload->>'researchRevision' = $3::text)`, [organizationId, campaignId, campaign.configurationRevision],
   )
   const row = counts.rows[0]
   return { scopes: scopes.map(scope => {
@@ -1816,7 +1819,8 @@ export async function approveRadarB2bProspect(
      WHERE review.candidate_id = $1 AND review.organization_id = $2
        AND candidate.organization_id = $2 AND candidate.status = 'pending_review'
        AND review.configuration_revision = campaign.configuration_revision
-       AND COALESCE(candidate.normalized_payload->>'discoveryRevision', '1') = campaign.configuration_revision::text
+       AND (COALESCE(candidate.normalized_payload->>'discoveryRevision', '1') = campaign.configuration_revision::text
+         OR candidate.normalized_payload->>'researchRevision' = campaign.configuration_revision::text)
      LIMIT 1`, [input.candidateId, input.organizationId],
   )
   const row = result.rows[0]
@@ -1879,7 +1883,7 @@ export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
   )
   const cnpja = config.rows.find(row => row.provider_key === 'cnpja')?.public_config ?? {}
   const brave = config.rows.find(row => row.provider_key === 'brave_place')?.public_config
-  const hasBraveFacts = approved.some(item => typeof item.normalizedPayload.braveSourceUrl === 'string')
+  const hasBraveFacts = approved.some(item => typeof item.normalizedPayload.braveSourceUrl === 'string' || item.normalizedPayload.researchUsesBrave === true)
   assertB2bDeliveryRights(cnpja, brave, hasBraveFacts)
   const campaign = await pool.query<RadarCampaignRow>(
     `SELECT * FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`, [campaignId, organizationId],
@@ -1890,6 +1894,8 @@ export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
     const manualEvidence = item.evidence.find(fact => fact.kind === 'manual_confirmation')
     const firstSitePhone = Array.isArray(payload.sitePhones) ? payload.sitePhones.find(value => typeof value === 'string') : undefined
     const firstSiteEmail = Array.isArray(payload.siteEmails) ? payload.siteEmails.find(value => typeof value === 'string') : undefined
+    const contacts = (Array.isArray(payload.publicContacts) ? payload.publicContacts : []) as RadarContactEvidence[]
+    const values = (kind:RadarContactEvidence['kind'])=>contacts.filter(item=>item.kind===kind&&item.association==='confirmed').map(item=>item.value).join(' | ')
     return {
       name: item.title,
       legalName: typeof payload.legalName === 'string' ? payload.legalName : '',
@@ -1914,6 +1920,10 @@ export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
         : typeof payload.siteCheckedAt === 'string' ? payload.siteCheckedAt : '',
       verificationMethod: item.verificationMethod ?? '',
       reviewNote: item.reviewNote ?? '',
+      registryPhone:typeof payload.phoneRaw==='string'?payload.phoneRaw:'',publicPhones:values('phone'),publicEmails:values('email'),
+      whatsappPublished:values('whatsapp'),socialUrls:values('social'),
+      activityStatus:typeof payload.activityAssessment==='object'&&payload.activityAssessment?String((payload.activityAssessment as {status?:string}).status??''):'',
+      contactSources:contacts.map(item=>`${item.kind}: ${item.sourceUrl} (${item.observedAt})`).join(' | '),
     }
   })
   return formatB2bProspectCsv(rows, resolveRadarSearchConfiguration(campaign.rows[0].search_configuration).exportFields)

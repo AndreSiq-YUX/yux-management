@@ -6,7 +6,7 @@ export type RadarPresenceDiscovery = { association: 'confirmed' | 'review' | 'no
 export function matchRadarBusinessIdentity(identity: RadarBusinessIdentity, content: string): 'confirmed' | 'review' {
   const text = normalizeRadarText(content)
   const cnpjs = [...content.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)].map(match => match[0].replace(/\D/g, ''))
-  if (identity.cnpj && cnpjs.includes(identity.cnpj.replace(/\D/g, ''))) return 'confirmed'
+  if (identity.cnpj && cnpjs.length) return cnpjs.every(value=>value===identity.cnpj!.replace(/\D/g,'')) ? 'confirmed' : 'review'
   // A different establishment of the same group is not corroboration for this branch.
   if (identity.cnpj && cnpjs.some(value => value.slice(0, 8) === identity.cnpj!.replace(/\D/g, '').slice(0, 8))) return 'review'
   const names = [identity.name, identity.legalName].filter((name): name is string => !!name)
@@ -20,6 +20,10 @@ export function matchRadarBusinessIdentity(identity: RadarBusinessIdentity, cont
 }
 export function isRadarSocialUrl(value: string) {
   try { return /(^|\.)(instagram\.com|facebook\.com|linkedin\.com|youtube\.com|tiktok\.com|wa\.me|whatsapp\.com)$/.test(new URL(value).hostname) } catch { return false }
+}
+export function isRadarReferenceUrl(value:string) {
+  if(isRadarSocialUrl(value))return true
+  try {return /(^|\.)(google\.[a-z.]+|maps\.apple\.com|econodata\.com\.br|cnpja\.com|cnpj\.biz|casadosdados\.com\.br|solutudo\.com\.br|telelistas\.net)$/.test(new URL(value).hostname)}catch{return true}
 }
 export async function discoverRadarBusinessPresence(identity: RadarBusinessIdentity,
   policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean },
@@ -38,14 +42,14 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
     try { hits.push(...await dependencies.local()) } catch (error) { limitations.push(error instanceof Error ? error.message : 'local_search_failed') }
     await dependencies.checkpoint?.(hits, queries)
   }
-  for (let index = 0; policy.webSearchEnabled && queries < policy.maxSearchQueriesPerCandidate && index < queriesText.length; index++) {
-    if (confirmed().some(hit => !isRadarSocialUrl(hit.url))) break
+  for (let index = Math.max(0,queries-(dependencies.local?1:0)); policy.webSearchEnabled && queries < policy.maxSearchQueriesPerCandidate && index < queriesText.length; index++) {
+    if (confirmed().some(hit => !isRadarReferenceUrl(hit.url))) break
     queries++
     try { hits.push(...await dependencies.search(queriesText[index])) } catch (error) { limitations.push(error instanceof Error ? error.message : 'web_search_failed'); break }
     await dependencies.checkpoint?.(hits, queries)
   }
   const unique = [...new Map(hits.map(hit => [hit.url, hit])).values()]
-  const sites = [...new Map(confirmed().filter(hit => !isRadarSocialUrl(hit.url)).map(hit => [new URL(hit.url).hostname.replace(/^www\./, ''), hit])).values()]
+  const sites = [...new Map(confirmed().filter(hit => !isRadarReferenceUrl(hit.url)).map(hit => [new URL(hit.url).hostname.replace(/^www\./, ''), hit])).values()]
   const websiteUrl = sites.length === 1 ? publicRadarUrl(sites[0].url) : undefined
   return { association: websiteUrl ? 'confirmed' : unique.length ? 'review' : limitations.length ? 'blocked' : 'not_found_in_consulted_sources',
     websiteUrl, hits: unique, suggestions: unique.filter(hit => hit.url !== websiteUrl), limitations, queries }

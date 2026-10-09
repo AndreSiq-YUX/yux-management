@@ -32,6 +32,7 @@ import {
   handleSandboxChannelSimulation,
 } from './handlers/providers.js'
 import { handleRadarOpportunityAnalysis, handleRadarRegionalDiscovery, handleRadarRegionalVerification } from './handlers/radar.js'
+import { executeRadarCandidateResearch } from '../modules/radar/research-service.js'
 import { handleStrategyAdminChat } from './handlers/strategy.js'
 import { handleStrategyIndexKnowledge } from '../modules/strategy-engine/ingestion.js'
 import { createIdempotencyKey, type EnqueueJobOptions, type JobName, type JobQueueClass, type QueueJobData } from './queue.js'
@@ -175,10 +176,11 @@ export const jobRegistry = {
     organizationId: uuid,
   }).passthrough()),
   'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
+  'radar.researchCandidate': registered('external', 300_000, ({pool,env,signal},data) => executeRadarCandidateResearch(pool,env,{runId:String(data.runId),organizationId:String(data.organizationId)},signal), z.object({runId:uuid,organizationId:uuid})),
   'radar.runRegionalDiscovery': registered('external', 300_000, ({ pool, env, signal }, data) =>
       handleRadarRegionalDiscovery(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
-  'radar.verifyRegionalCandidates': registered('external', 300_000, ({ pool, env, signal }, data) =>
-      handleRadarRegionalVerification(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
+  'radar.verifyRegionalCandidates': registered('external', 300_000, ({ pool, env, signal, queue }, data) =>
+      handleRadarRegionalVerification(pool, env, data, signal, {queue}), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
   'company-intelligence.indexKnowledge': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleKnowledgeIndexing(pool, env, data, { signal })),
   'company-intelligence.discoverWebsite': registered('ingestion', 300_000, ({ pool, env, signal }, data) => handleWebsiteOnboarding(pool, env, data, { signal })),
   'proposal.convert': registered('interactive', 120_000, ({ pool }, data) => handleProposalConversion(pool, data.proposalId)),

@@ -25,6 +25,19 @@ class BatchPool {
 }
 
 describe('Radar regional B2B batches', () => {
+  it('queues old inconclusive candidates individually without rediscovery or legacy inspection',async()=>{
+    const pool=new BatchPool()
+    pool.configuration={research:{enabled:true,webSearchEnabled:true}}
+    pool.candidates=[{id:'old',normalized_payload:{discoveryRevision:0,analysisRevision:1}}]
+    const startResearch=vi.fn(async()=>({runId:'run',status:'queued',reused:false})),add=vi.fn(),enrich=vi.fn(),inspect=vi.fn()
+    await handleRadarRegionalVerification(pool as never,env,payload,undefined,{queue:{add} as never,startResearch:startResearch as never,enrich,inspect:inspect as never})
+    expect(startResearch).toHaveBeenCalledWith(pool,expect.anything(),{organizationId:'org',candidateId:'old',configurationRevision:1})
+    expect(add).toHaveBeenCalledWith('radar.researchCandidate',{runId:'run',organizationId:'org'},expect.anything())
+    expect(enrich).not.toHaveBeenCalled();expect(inspect).not.toHaveBeenCalled()
+    const sql=pool.queries.find(item=>item.sql.includes('FROM public.radar_candidate_records'))!.sql
+    expect(sql).not.toContain("AND COALESCE(normalized_payload->>'discoveryRevision'")
+    expect(sql).toContain('researchComplete')
+  })
   it('uses configured cities, page size and query cap rather than fixed states', async () => {
     const pool = new BatchPool()
     pool.states = ['BA']

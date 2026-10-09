@@ -40,8 +40,8 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     'SELECT search_configuration, status FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2', [campaignId, organizationId])
   if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
   const configuration = resolveRadarSearchConfiguration(campaign.rows[0].search_configuration)
-  const provider = await pool.query<{ status: string; secret_reference: string | null; public_config: Record<string, unknown> }>(
-    `SELECT status, secret_reference, public_config FROM public.platform_provider_connections
+  const provider = await pool.query<{ status: string; has_secret: boolean; public_config: Record<string, unknown> }>(
+    `SELECT status, public_config, EXISTS(SELECT 1 FROM public.platform_provider_secrets secret WHERE secret.provider_connection_id=platform_provider_connections.id AND secret.secret_kind='api_key') AS has_secret FROM public.platform_provider_connections
      WHERE provider_key = 'brave_place' AND environment = 'production' ORDER BY is_default DESC, updated_at DESC LIMIT 1`)
   const sources = await Promise.all(['brave_place_search', 'brave_web_search'].map(async key => {
     const source = await findRadarDataSource(pool, organizationId, key)
@@ -52,7 +52,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     canManage: user.role === 'yux_admin' && await isRadarEnabledOrganization(pool, organizationId),
     campaignActive: !['paused','archived','completed'].includes(campaign.rows[0].status),
     localEnabled: configuration.sources.enrichWithBrave,
-    provider: provider.rows[0] ? { status: provider.rows[0].status, hasSecret: !!provider.rows[0].secret_reference, publicConfig: provider.rows[0].public_config ?? {} } : undefined,
+    provider: provider.rows[0] ? { status: provider.rows[0].status, hasSecret: provider.rows[0].has_secret, publicConfig: provider.rows[0].public_config ?? {} } : undefined,
     sources: sources.flatMap(item => item.source ? [item.source] : []) })
   for (const { source, governance } of sources) {
     if (!result.estimates.some(item => item.sourceType === source?.sourceType)) continue

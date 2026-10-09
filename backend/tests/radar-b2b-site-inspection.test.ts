@@ -44,7 +44,7 @@ describe('Radar B2B public website inspection', () => {
   })
 
   it('blocks private addresses and redirects before sending a request', async () => {
-    const get = vi.fn(async () => ({ status: 302, location: 'http://127.0.0.1/internal' }))
+    const get = vi.fn(async (url:URL) => url.pathname==='/robots.txt'?{status:404}:{ status: 302, location: 'http://127.0.0.1/internal' })
     const options = { resolve: async () => ['8.8.8.8'], get }
     expect((await inspectRadarBusinessSite('http://127.0.0.1', options)).status).toBe('blocked')
     expect(get).not.toHaveBeenCalled()
@@ -82,6 +82,11 @@ describe('Radar B2B public website inspection', () => {
       resolve: async () => ['8.8.8.8'], get: async () => ({ status: 503, contentType: 'text/html', body: '' }),
     })
     expect(result.status).toBe('unknown')
+  })
+  it('rechecks_robots_after_a_redirect_to_a_disallowed_path',async()=>{
+    const get=vi.fn(async(url:URL)=>url.pathname==='/robots.txt'?{status:200,contentType:'text/plain',body:'User-agent: *\nDisallow: /private'}:{status:302,location:'/private'})
+    const result=await inspectRadarBusinessSite('https://alfa.example',{resolve:async()=>['8.8.8.8'],get})
+    expect(result.reason).toBe('robots_disallow');expect(get).toHaveBeenCalledTimes(2)
   })
 
   it('persists a review classification and source evidence without contacting anyone', async () => {

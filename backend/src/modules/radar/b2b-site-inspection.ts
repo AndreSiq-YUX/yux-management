@@ -64,19 +64,26 @@ function getHtml(url: URL, address: string): Promise<GetResult> {
 }
 
 function robotsBlocksHomepage(body: string, path = '/') {
-  let applies = false
+  const groups:Array<{agents:string[];rules:Array<{key:string;value:string}>}>=[]
+  let group={agents:[] as string[],rules:[] as Array<{key:string;value:string}>}
+  for(const original of body.split(/\r?\n/)) {
+    const line=original.split('#',1)[0].trim(),separator=line.indexOf(':')
+    if(separator<0)continue
+    const key=line.slice(0,separator).trim().toLowerCase(),value=line.slice(separator+1).trim()
+    if(key==='user-agent') {
+      if(group.rules.length){groups.push(group);group={agents:[],rules:[]}}
+      group.agents.push(value.toLowerCase())
+    } else if(group.agents.length&&(key==='allow'||key==='disallow'))group.rules.push({key,value})
+  }
+  groups.push(group)
+  const matching=groups.filter(item=>item.agents.some(agent=>agent==='*'||USER_AGENT.toLowerCase().startsWith(agent)))
+  const specific=matching.filter(item=>item.agents.some(agent=>agent!=='*'&&USER_AGENT.toLowerCase().startsWith(agent)))
   let disallowed = 0
   let allowed = 0
-  for (const original of body.split(/\r?\n/)) {
-    const line = original.split('#', 1)[0].trim()
-    if (!line) continue
-    const separator = line.indexOf(':')
-    if (separator < 0) continue
-    const key = line.slice(0, separator).trim().toLowerCase()
-    const value = line.slice(separator + 1).trim().toLowerCase()
-    if (key === 'user-agent') applies = value === '*' || USER_AGENT.toLowerCase().startsWith(value)
-    if (applies && value && (key === 'disallow' || key === 'allow')) {
-      const expression = value.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')
+  for (const {key,value} of (specific.length?specific:matching).flatMap(item=>item.rules)) {
+    if (value) {
+      const anchored=value.endsWith('$')
+      const expression = (anchored?value.slice(0,-1):value).replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')+(anchored?'$':'')
       const matches = new RegExp(`^${expression}`).test(path)
       if (matches && key === 'disallow') disallowed = Math.max(disallowed, value.length)
       if (matches && key === 'allow') allowed = Math.max(allowed, value.length)
@@ -96,7 +103,7 @@ export async function inspectRadarBusinessSite(
   try { url = new URL(value) } catch { return { ...empty, status: 'blocked', reason: 'invalid_url' } }
   const resolve = options.resolve ?? resolvePublicIpv4
   const get = options.get ?? getHtml
-  const checkedRobots = new Set<string>()
+  const checkedRobots = new Map<string,string>()
   const originalHost = url.hostname.replace(/^www\./i, '').toLowerCase()
   for (let redirects = 0; redirects <= 2; redirects++) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
@@ -118,12 +125,10 @@ export async function inspectRadarBusinessSite(
         return { ...empty, status: 'blocked', reason: 'robots_access_denied' }
       }
       if (robots.status >= 500) return { ...empty, status: 'unknown', reason: 'robots_unavailable' }
-      if (robots.status === 200 && /text\/plain/i.test(robots.contentType ?? '')
-        && robotsBlocksHomepage(robots.body ?? '', url.pathname + url.search)) {
-        return { ...empty, status: 'blocked', reason: 'robots_disallow' }
-      }
-      checkedRobots.add(url.origin)
+      if (robots.status >= 300 && robots.status < 400) return { ...empty, status:'unknown',reason:'robots_redirect_requires_review' }
+      checkedRobots.set(url.origin,robots.status===200 ? robots.body??'':'')
     }
+    if(robotsBlocksHomepage(checkedRobots.get(url.origin)??'',url.pathname+url.search))return {...empty,status:'blocked',reason:'robots_disallow'}
     let response: GetResult
     try { response = await get(url, addresses[0]) }
     catch { return { ...empty, status: 'unknown', reason: 'request_failed' } }

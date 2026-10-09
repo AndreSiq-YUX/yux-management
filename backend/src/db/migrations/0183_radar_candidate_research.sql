@@ -23,9 +23,17 @@ CREATE TABLE public.radar_candidate_research_runs (
   calls JSONB NOT NULL DEFAULT '{}'::jsonb,
   error_code TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  completed_at TIMESTAMPTZ,
-  UNIQUE (candidate_id, configuration_revision)
+  completed_at TIMESTAMPTZ
 );
+CREATE UNIQUE INDEX radar_candidate_research_active_idx ON public.radar_candidate_research_runs (candidate_id, configuration_revision)
+  WHERE status IN ('queued','running');
+CREATE INDEX radar_candidate_research_history_idx ON public.radar_candidate_research_runs (candidate_id, configuration_revision, created_at DESC);
 CREATE INDEX radar_candidate_research_scope_idx ON public.radar_candidate_research_runs (organization_id, campaign_id, status);
 -- Database tenant boundaries are also checked on every API/worker mutation.
 ALTER TABLE public.radar_candidate_research_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.radar_candidate_research_runs FORCE ROW LEVEL SECURITY;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.radar_candidate_research_runs TO yux_api,yux_worker;
+CREATE POLICY yux_service_tenant_access ON public.radar_candidate_research_runs FOR ALL TO yux_api,yux_worker
+  USING (private.rls_can_access_organization(organization_id)) WITH CHECK (private.rls_can_access_organization(organization_id));
+CREATE POLICY yux_tenant_scope ON public.radar_candidate_research_runs AS RESTRICTIVE FOR ALL
+  USING (private.rls_can_access_organization(organization_id)) WITH CHECK (private.rls_can_access_organization(organization_id));

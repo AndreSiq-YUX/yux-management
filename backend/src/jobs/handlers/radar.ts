@@ -5,6 +5,8 @@ import type { AuthUser } from '../../auth/routes.js'
 import { enrichRadarCandidateWithLicensedBrave, inspectRadarCandidateBusinessSite,
   runRadarCnpjaAdvancedSearch } from '../../modules/radar/repository.js'
 import { buildRadarDiscoveryScopes, resolveRadarSearchConfiguration } from '../../modules/radar/search-configuration.js'
+import { startRadarCandidateResearch } from '../../modules/radar/research-service.js'
+import type { RegisteredJobQueue } from '../registry.js'
 
 export async function handleRadarOpportunityAnalysis(
   pool: pg.Pool,
@@ -92,19 +94,32 @@ export async function handleRadarRegionalDiscovery(pool: pg.Pool, env: AppEnv,
 export async function handleRadarRegionalVerification(pool: pg.Pool, env: AppEnv,
   data: Record<string, unknown>, signal?: AbortSignal,
   dependencies: { enrich?: typeof enrichRadarCandidateWithLicensedBrave;
-    inspect?: typeof inspectRadarCandidateBusinessSite } = {}) {
+    inspect?: typeof inspectRadarCandidateBusinessSite; queue?: RegisteredJobQueue;
+    startResearch?: typeof startRadarCandidateResearch } = {}) {
   const { input, user, configuration, revision } = await authorizedRadarBatch(pool, data)
   const result = await pool.query<{ id: string; normalized_payload: Record<string, unknown> }>(
     `SELECT id, normalized_payload FROM public.radar_candidate_records
      WHERE organization_id = $1 AND campaign_id = $2 AND source_type = 'cnpja_advanced_search'
        AND status = 'pending_review'
-       AND COALESCE(normalized_payload->>'discoveryRevision', '1') = $3::text
-       AND (normalized_payload->>'analysisRevision') IS DISTINCT FROM $3::text
+       ${configuration.research.enabled ? '' : `AND COALESCE(normalized_payload->>'discoveryRevision', '1') = $3::text`}
+       AND ${configuration.research.enabled
+        ? `((normalized_payload->>'researchRevision') IS DISTINCT FROM $3::text OR COALESCE(normalized_payload->>'researchComplete','false') <> 'true')`
+        : `(normalized_payload->>'analysisRevision') IS DISTINCT FROM $3::text`}
+       AND NOT EXISTS (SELECT 1 FROM public.radar_b2b_reviews review WHERE review.candidate_id=radar_candidate_records.id AND review.approved_at IS NOT NULL)
      ORDER BY created_at ASC LIMIT $4`, [input.organizationId, input.campaignId, revision, configuration.batch.verificationLimit],
   )
   const summary = { inspected: 0, matched: 0, needsReview: 0, errors: 0 }
   for (const candidate of result.rows) {
     if (signal?.aborted) return { summary, interrupted: true }
+    if (configuration.research.enabled) {
+      if (!dependencies.queue) throw new Error('radar_research_queue_required')
+      try {
+        const run = await (dependencies.startResearch ?? startRadarCandidateResearch)(pool,user,{organizationId:input.organizationId,candidateId:candidate.id,configurationRevision:revision})
+        if (run.status !== 'succeeded') await dependencies.queue.add('radar.researchCandidate',{runId:run.runId,organizationId:input.organizationId},{jobId:`radar-research-${run.runId}-${Date.now()}`})
+        summary.inspected++
+      } catch {summary.errors++}
+      continue
+    }
     const website = typeof candidate.normalized_payload.websiteUrl === 'string'
       ? candidate.normalized_payload.websiteUrl : ''
     if (configuration.sources.enrichWithBrave && !website
