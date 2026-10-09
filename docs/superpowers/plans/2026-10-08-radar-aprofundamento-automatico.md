@@ -8,7 +8,7 @@
 
 **Tech Stack:** Fastify/TypeScript, PostgreSQL, BullMQ, React, runtime Python existente, Vitest, pytest e validação de navegador com dados simulados.
 
-**Spec:** solicitação do usuário em 08/10/2026 nesta conversa: descobrir automaticamente site/contatos/WhatsApp público e sinais de funcionamento; explicar o bloqueio Brave; preservar dados reais, uso de contatos manuais e configuração reutilizável. Requisitos e decisões propostos estão reunidos abaixo, sujeitos à aprovação.
+**Spec:** solicitação do usuário em 08/10/2026 nesta conversa: descobrir automaticamente site/contatos/WhatsApp público e sinais de funcionamento; explicar o bloqueio Brave; preservar dados reais, uso de contatos manuais e configuração reutilizável. Implementação autorizada pelo usuário: “ok, pode implementar”.
 
 ## Diagnóstico confirmado
 
@@ -57,10 +57,10 @@
 
 **Interfaces:** `RadarResearchPolicy` acrescentada como objeto opcional `research` à configuração existente: `enabled` (default false para campanhas antigas), `webSearchEnabled` (false), `maxSearchQueriesPerCandidate` (default 3, intervalo 1–5), `maxPagesPerCandidate` (default 4, intervalo 1–10), `freshnessDays` (default 7, intervalo 1–30), `semanticQualificationEnabled` (false). `getRadarResearchAvailability(pool,user,organizationId,campaignId)` retorna razões estruturadas e estimativa máxima por fonte, sem chamar provedores. Novo source type/key `brave_web_search`, desativado por padrão e com preço a cadastrar; conexão existente `brave_place` permanece compatível, sem renomear sua chave no banco.
 
-- [ ] Escrever testes `reports_exact_blockers_without_provider_calls`, `preserves_existing_campaign_configuration` e `limits_apply_across_all_search_endpoints`: fonte desligada/custo não definido, chave existente, licença confirmada, quota esgotada, campanha desabilitada e papel sem permissão geram razões distintas. Não afirmar licença ausente em qualquer erro genérico.
-- [ ] Executar `cd backend; npm test -- tests/radar-search-configuration.test.ts tests/radar-routes.test.ts`; confirmar falha nos contratos novos, não em configuração do ambiente.
-- [ ] Implementar disponibilidade e configuração. Novo catálogo web e fonte local usam a mesma conexão, mas custos e contadores por endpoint; um teto total por candidato evita multiplicação silenciosa. Estimativa é calculada com valores aprovados no Admin, sem inventar preço ou alterar a quota atual de 10. O limite inclui retries e detalhes POI se habilitados. Persistir confirmação/ativação não executa consulta.
-- [ ] Reexecutar testes backend e `frontend` dos controles/formulário; verificar preservação de escopo global e específico, erros e custos inválidos. Commit apenas arquivos desta task.
+- [x] Escrever testes `reports_exact_blockers_without_provider_calls`, `preserves_existing_campaign_configuration` e `limits_apply_across_all_search_endpoints`: fonte desligada/custo não definido, chave existente, licença confirmada, quota esgotada, campanha desabilitada e papel sem permissão geram razões distintas. Não afirmar licença ausente em qualquer erro genérico.
+- [x] Executar `cd backend; npm test -- tests/radar-search-configuration.test.ts tests/radar-routes.test.ts`; confirmar falha nos contratos novos, não em configuração do ambiente.
+- [x] Implementar disponibilidade e configuração. Novo catálogo web e fonte local usam a mesma conexão, mas custos e contadores por endpoint; um teto total por candidato evita multiplicação silenciosa. Estimativa é calculada com valores aprovados no Admin, sem inventar preço ou alterar a quota atual de 10. O limite inclui retries e detalhes POI se habilitados. Persistir confirmação/ativação não executa consulta.
+- [x] Reexecutar testes backend e `frontend` dos controles/formulário; verificar preservação de escopo global e específico, erros e custos inválidos. Commit apenas arquivos desta task.
 
 ## Task 2: descoberta automática e associação de identidade
 
@@ -68,10 +68,10 @@
 
 **Interfaces:** `searchRadarWeb(input: {apiKey:string; query:string; limit:number; fetchImpl?:typeof fetch}): Promise<RadarWebHit[]>`, cada hit com `url,title,snippets,observedAt`; `discoverRadarBusinessPresence(identity,policy,dependencies): Promise<RadarPresenceDiscovery>` retorna URLs/canais candidatos, associação `confirmed|review|not_found_in_consulted_sources|blocked`, evidências e chamadas realizadas. Consome disponibilidade e orçamento da Task 1. Busca e coleta não recebem a oferta como filtro de existência.
 
-- [ ] Escrever fixtures `finds_official_site_when_registry_has_no_url`, `rejects_same_name_and_city_without_corroboration`, `distinguishes_group_from_branch`, `returns_search_limit_without_guessing_missing_website` e `preserves_partial_results_on_rate_limit`. Todas as chamadas externas injetadas/simuladas.
-- [ ] Executar `cd backend; npm test -- tests/radar-web-search.test.ts tests/radar-site-discovery.test.ts`; confirmar falha esperada.
-- [ ] Implementar adaptador Brave Web Search com país/idioma Brasil e snippets, sem ativá-lo. Gerar consultas sequenciais com nome/razão/CNPJ/localização, parar ao atingir cobertura ou teto. Associação automática exige CNPJ compatível com estabelecimento ou nome e endereço corroborados; nome+telefone+localidade pode corroborar quando não há conflito. CNPJ-base do grupo não confirma filial sozinho. Ambiguidade não gera associação automática por opinião de LLM.
-- [ ] Reexecutar testes novos e `radar-place-providers.test.ts`, `radar-licensed-brave.test.ts`; registrar que resultados negativos não provam inexistência. Commit desta task.
+- [x] Escrever fixtures `finds_official_site_when_registry_has_no_url`, `rejects_same_name_and_city_without_corroboration`, `distinguishes_group_from_branch`, `returns_search_limit_without_guessing_missing_website` e `preserves_partial_results_on_rate_limit`. Todas as chamadas externas injetadas/simuladas.
+- [x] Executar `cd backend; npm test -- tests/radar-web-search.test.ts tests/radar-site-discovery.test.ts`; confirmar falha esperada.
+- [x] Implementar adaptador Brave Web Search com país/idioma Brasil e snippets, sem ativá-lo. Gerar consultas sequenciais com nome/razão/CNPJ/localização, parar ao atingir cobertura ou teto. Associação automática exige CNPJ compatível com estabelecimento ou nome e endereço corroborados; nome+telefone+localidade pode corroborar quando não há conflito. CNPJ-base do grupo não confirma filial sozinho. Ambiguidade não gera associação automática por opinião de LLM.
+- [x] Reexecutar testes novos e `radar-place-providers.test.ts`, `radar-licensed-brave.test.ts`; registrar que resultados negativos não provam inexistência. Commit desta task.
 
 ## Task 3: leitura multipágina e dossiê de fatos
 
@@ -79,11 +79,11 @@
 
 **Interfaces:** `collectRadarSiteEvidence(url,policy,dependencies): Promise<RadarSiteEvidence[]>` com página, texto, links e data; `extractRadarContacts(page): RadarContactEvidence[]` com `kind:phone|email|whatsapp|social|business_person`, valor, sourceUrl, observedAt e associação; `assessRadarBusinessActivity(evidence): RadarActivityAssessment`. `RadarResearchDossier` reúne identidade, fatos, canais, atividade, limitações e histórico, sem confundir com adequação comercial.
 
-- [ ] Testar `extracts_href_only_contacts`, `normalizes_brazilian_phones_without_inventing_digits`, `keeps_registry_and_website_phone_separate`, `retains_contacts_when_target_fit_is_unknown`, `handles_company_without_website`, `does_not_mark_http200_or_active_cnpj_as_operating`, `keeps_conflicting_closure_signals` e `records_fact_source_per_page`.
-- [ ] Testar SSRF/DNS e redirecionamento em cada página, regras robots por caminho, timeout, limite total de páginas/bytes, HTML sem conteúdo útil e script que tenta instruir a IA. Rodar os três novos testes para confirmar falha.
-- [ ] Implementar leitura HTTP segura limitada e parser de texto/atributos/dados estruturados. Não enviar cookies, segredos ou conteúdo privado. Guardar contatos associados por identidade independentemente da decisão comercial. Exibir contatos diferentes, com preferencial justificado; não substituir o histórico. Link WhatsApp precisa estar observado, não derivado de qualquer celular. Pessoa responsável precisa de nome/cargo profissional publicado e associado; não obter dados pessoais de sócios por padrão.
-- [ ] Persistir evidências no catálogo existente `radar_b2b_evidence` e resumo versionado; ampliar campos de entrega sem remover colunas antigas. Exportar apenas conforme revisão e direitos já existentes; manter uma pendência explícita quando contato/atividade não foi comprovado.
-- [ ] Reexecutar testes novos e regressões de inspeção, triagem e entrega. Commit desta task.
+- [x] Testar `extracts_href_only_contacts`, `normalizes_brazilian_phones_without_inventing_digits`, `keeps_registry_and_website_phone_separate`, `retains_contacts_when_target_fit_is_unknown`, `handles_company_without_website`, `does_not_mark_http200_or_active_cnpj_as_operating`, `keeps_conflicting_closure_signals` e `records_fact_source_per_page`.
+- [x] Testar SSRF/DNS e redirecionamento em cada página, regras robots por caminho, timeout, limite total de páginas/bytes, HTML sem conteúdo útil e script que tenta instruir a IA. Rodar os três novos testes para confirmar falha.
+- [x] Implementar leitura HTTP segura limitada e parser de texto/atributos/dados estruturados. Não enviar cookies, segredos ou conteúdo privado. Guardar contatos associados por identidade independentemente da decisão comercial. Exibir contatos diferentes, com preferencial justificado; não substituir o histórico. Link WhatsApp precisa estar observado, não derivado de qualquer celular. Pessoa responsável precisa de nome/cargo profissional publicado e associado; não obter dados pessoais de sócios por padrão.
+- [x] Persistir evidências no catálogo existente `radar_b2b_evidence` e resumo versionado; ampliar campos de entrega sem remover colunas antigas. Exportar apenas conforme revisão e direitos já existentes; manter uma pendência explícita quando contato/atividade não foi comprovado.
+- [x] Reexecutar testes novos e regressões de inspeção, triagem e entrega. Commit desta task.
 
 ## Task 4: pesquisa retomável dos candidatos existentes
 
@@ -91,10 +91,10 @@
 
 **Interfaces:** `startRadarCandidateResearch(pool,user,{organizationId,candidateId,configurationRevision,requestId})` cria run sem pesquisa síncrona; `executeRadarCandidateResearch(pool,env,{runId},signal,dependencies)` executa etapas das Tasks 2–3; GET `/api/radar/candidates/:id/research` retorna dossiê/status/pendências; POST no mesmo caminho enfileira e retorna 202/runId. Lote de verificação passa a iniciar/retomar essas pesquisas, respeitando a disponibilidade.
 
-- [ ] Escrever testes `reprocesses_previously_inconclusive_candidate_without_cnpja_call`, `does_not_skip_after_source_becomes_available`, `resumes_completed_stages_without_rebilling`, `deduplicates_double_click`, `stops_before_request_when_budget_is_exhausted`, `refuses_cross_tenant_access`, `rejects_changed_campaign` e `does_not_send_outreach`.
-- [ ] Executar `cd backend; npm test -- tests/radar-research-service.test.ts tests/radar-b2b-batches.test.ts tests/radar-routes.test.ts`; confirmar falhas esperadas.
-- [ ] Implementar run por candidato e política/revisão. Estados `queued|running|partial|succeeded|failed|blocked`; etapas de descoberta/identidade/leitura/consolidação/qualificação. Reserva atômica antes de cada chamada, checkpoint por etapa, timeout/cancelamento e auditoria. Resultado sem fonte disponível é `blocked/partial`, não verificação concluída. O antigo `analysisRevision` não exclui candidatos sem pesquisa completa; aprovados não são reescritos silenciosamente.
-- [ ] Reexecutar testes e simular liberação da fonte entre tentativas usando fixtures, não configurações de produção. Commit desta task.
+- [x] Escrever testes `reprocesses_previously_inconclusive_candidate_without_cnpja_call`, `does_not_skip_after_source_becomes_available`, `resumes_completed_stages_without_rebilling`, `deduplicates_double_click`, `stops_before_request_when_budget_is_exhausted`, `refuses_cross_tenant_access`, `rejects_changed_campaign` e `does_not_send_outreach`.
+- [x] Executar `cd backend; npm test -- tests/radar-research-service.test.ts tests/radar-b2b-batches.test.ts tests/radar-routes.test.ts`; confirmar falhas esperadas.
+- [x] Implementar run por candidato e política/revisão. Estados `queued|running|partial|succeeded|failed|blocked`; etapas de descoberta/identidade/leitura/consolidação/qualificação. Reserva atômica antes de cada chamada, checkpoint por etapa, timeout/cancelamento e auditoria. Resultado sem fonte disponível é `blocked/partial`, não verificação concluída. O antigo `analysisRevision` não exclui candidatos sem pesquisa completa; aprovados não são reescritos silenciosamente.
+- [x] Reexecutar testes e simular liberação da fonte entre tentativas usando fixtures, não configurações de produção. Commit desta task.
 
 ## Task 5: qualificação semântica roteável, separada da coleta
 
@@ -102,10 +102,10 @@
 
 **Interfaces:** caso de uso `radar_business_qualification`; endpoint interno autenticado `/radar/qualify`, payload com escopo, critérios/público/oferta configurados e evidências com IDs. Resposta estruturada: `targetStatus,productFit,reasons,evidenceIds,limitations,provider,model`. Cada afirmação precisa apontar evidência fornecida; saída não cria contato, URL ou prova de compra.
 
-- [ ] Testar `uses_admin_route_and_configured_fallbacks`, `does_not_call_llm_when_semantic_stage_disabled_or_unconfigured`, `rejects_invented_evidence_ids`, `classifies_different_segments_from_config`, `ignores_instructions_embedded_in_evidence` e `does_not_infer_purchasing_intent_from_menu`.
-- [ ] Executar `python -m pytest workers/marketing-studio-agent-runtime/tests/test_radar_qualification.py`; confirmar falhas de implementação antes de codificar.
-- [ ] Implementar com `build_routed_client`, rota/fallbacks do Admin e autorização de custo existente. A etapa nova começa desligada; sem rota explicitamente autorizada para o caso, não chamar modelo global/legado silenciosamente. Preservar todas as demais funções e seu fallback global. Espera-se modelo de inteligência média/alta para distinguir atividade, público e aderência a partir de evidências; nenhum modelo será escolhido neste plano.
-- [ ] Reexecutar testes novos e os existentes de roteamento; comprovar que falha de LLM mantém fatos coletados e deixa qualificação pendente. Commit desta task.
+- [x] Testar `uses_admin_route_and_configured_fallbacks`, `does_not_call_llm_when_semantic_stage_disabled_or_unconfigured`, `rejects_invented_evidence_ids`, `classifies_different_segments_from_config`, `ignores_instructions_embedded_in_evidence` e `does_not_infer_purchasing_intent_from_menu`.
+- [x] Executar `python -m pytest workers/marketing-studio-agent-runtime/tests/test_radar_qualification.py`; confirmar falhas de implementação antes de codificar.
+- [x] Implementar com `build_routed_client`, rota/fallbacks do Admin e autorização de custo existente. A etapa nova começa desligada; sem rota explicitamente autorizada para o caso, não chamar modelo global/legado silenciosamente. Preservar todas as demais funções e seu fallback global. Espera-se modelo de inteligência média/alta para distinguir atividade, público e aderência a partir de evidências; nenhum modelo será escolhido neste plano.
+- [x] Reexecutar testes novos e os existentes de roteamento; comprovar que falha de LLM mantém fatos coletados e deixa qualificação pendente. Commit desta task.
 
 ## Task 6: experiência útil, regressão e piloto controlado
 
@@ -113,10 +113,10 @@
 
 **Interfaces:** `RadarCandidateResearchPanel({candidateId,organizationId})` usa endpoints da Task 4, mostra etapas, evidências e contatos por origem, resultado parcial e retentativa. A ação por candidato/lote explica estimativa máxima antes de iniciar. O botão desabilitado sempre expõe o motivo e o caminho de resolução.
 
-- [ ] Testar `starts_without_manual_url`, `shows_brave_disabled_and_cost_reason`, `shows_all_contacts_and_sources_after_completion`, `shows_partial_result_and_resume`, `manual_url_is_optional_correction` e `existing_campaign_criteria_and_candidates_are_preserved`.
-- [ ] Implementar painel e ações, sem remover a revisão/associação humana. Separar erros de chave/licença/ativação/limite/quota/campanha, sem toast genérico que mande reconfirmar direitos já salvos. Atualizar resultados em progresso e após recarregar a página.
-- [ ] Executar todas as suítes backend/frontend/runtime, builds, type-check, lint comparativo sem alterar baseline e navegador desktop/mobile com API simulada. Testar jornada completa candidato → run → evidências → revisão/exportação, sem mensagens ou consultas pagas.
-- [ ] Publicar apenas os commits aprovados em main, conforme autorização de publicação vigente; deploy pelo usuário. Não apresentar código local como disponível em produção.
+- [x] Testar `starts_without_manual_url`, `shows_brave_disabled_and_cost_reason`, `shows_all_contacts_and_sources_after_completion`, `shows_partial_result_and_resume`, `manual_url_is_optional_correction` e `existing_campaign_criteria_and_candidates_are_preserved`.
+- [x] Implementar painel e ações, sem remover a revisão/associação humana. Separar erros de chave/licença/ativação/limite/quota/campanha, sem toast genérico que mande reconfirmar direitos já salvos. Atualizar resultados em progresso e após recarregar a página.
+- [x] Executar todas as suítes backend/frontend/runtime, builds, type-check, lint comparativo sem alterar baseline e navegador desktop/mobile com API simulada. Testar jornada completa candidato → run → evidências → revisão/exportação, sem mensagens ou consultas pagas.
+- [x] Publicar apenas os commits aprovados em main, conforme autorização de publicação vigente; deploy pelo usuário. Não apresentar código local como disponível em produção.
 - [ ] Depois de autorização específica para custos/ativação, piloto inicialmente de **3 candidatos existentes**, com teto total informado por fonte e por LLM. Respeitar a quota atual remanescente, sem aumentá-la automaticamente; se não couber, reduzir lote ou pedir autorização. Comparar sites/identidades e canais com amostra conferida, registrar chamadas/custo real, falsos vínculos, cobertura, limitações e tempo. Só ampliar após qualidade demonstrada.
 
 ## Referências técnicas consultadas
@@ -131,4 +131,13 @@
 - Coleta neutra e interpretação comercial são independentes; sem LLM, fatos continuam úteis. Sem provas suficientes, há pendência explícita, não resposta inventada.
 - Cobre os cinco riscos de revisão com testes nas tasks responsáveis, inclusive candidato antigo inconclusivo, identidade de filial, contatos em atributos e limites de custo.
 - Contratos de policy/run/dossiê estão definidos antes de seus consumidores. Dados, permissões e caminhos existentes permanecem compatíveis.
-- Nenhuma implementação, mudança de produção ou consulta paga foi feita para escrever este plano. Pendentes: aprovação do fluxo/método, configuração/autorização de custo Brave e escolha de modelo/limites da etapa semântica pelo Admin.
+- Na escrita do plano não houve implementação nem mudança de produção. Após aprovação, as Tasks 1–6 foram implementadas e verificadas localmente; configurações e autorizações pagas de produção continuam pendentes. Nenhum modelo foi escolhido nem fornecedor pago consultado. Piloto real não realizado.
+
+## Registro de execução
+
+- Worktree isolado `codex/radar-brave-state-fixes`; checkout primário com alterações de WhatsApp preservado. Migração nova 0183; nenhuma migração anterior aplicada foi editada.
+- Testes de serviço, governança, identidade, extração, retomada, filas, UI e roteamento incluídos. Para Tasks 1–5 houve verificação de falhas dos contratos novos antes da implementação correspondente; os testes do painel da Task 6 foram adicionados junto/depois do componente, não se declara TDD integral.
+- PostgreSQL 17 exclusivamente local: 80 migrações aplicadas; jornada com papel/escopo efetivo de worker, persistência, clique concorrente, isolamento por organização, aprovação e exportação. API, buscas e LLM simulados; nenhuma mensagem ou nova consulta CNPJá.
+- Chrome desktop/mobile com componentes reais e API interceptada: fonte bloqueada, atualização após liberação simulada mesmo com resultado aberto, início sem URL, resultado parcial, contatos/fontes e recarga. Sem console/overlay de erro ou transbordamento horizontal. Ajustada a visibilidade de candidatos antigos e o layout dos cartões.
+- Fontes/licenças/custos/limites de produção não foram alterados. O deploy continua a cargo do usuário; o piloto pago de até 3 candidatos precisa de autorização/configuração separadas.
+- Verificação: 820 testes backend, 623 frontend, 275 runtime (1 skip já existente) e 1 jornada PostgreSQL; builds/type-check de backend/frontend e orçamento de bundle aprovados. Lint comparativo passou com 558 erros/26 avisos preexistentes contra baseline 560/27; não se declara lint limpo. Depois dos ajustes finais, serviços afetados, jornada real, navegador e builds foram reexecutados.
