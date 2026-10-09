@@ -12,7 +12,7 @@ export function getRadarSourceBlockedReason(source: Pick<RadarDataSource, 'sourc
     return 'Custo por consulta ainda não definido. Configure em Admin → Integrações e ative a fonte.'
   }
   if (canUseRadarSource(source)) return undefined
-  if (!['cnpja_advanced_search', 'cnpja_office_lookup', 'brave_place_search', 'serper_places', 'osm_extract'].includes(source.sourceType)) {
+  if (!['cnpja_advanced_search', 'cnpja_office_lookup', 'brave_place_search', 'brave_web_search', 'serper_places', 'osm_extract'].includes(source.sourceType)) {
     return 'Fonte fora do catálogo de ativação do Admin. Esta integração permanece desativada.'
   }
   return 'Fonte desativada no catálogo. Ativação e limites são configurados em Admin → Integrações.'

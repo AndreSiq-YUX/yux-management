@@ -8,7 +8,17 @@ export const RADAR_EXPORT_FIELDS = ['name','legalName','cnpj','city','state','ad
   'evidenceUrl','checkedAt','verificationMethod','reviewNote'] as const
 const terms = z.array(z.string().trim().min(1).max(160)).max(50)
 
+export const radarResearchPolicySchema = z.object({
+  enabled: z.boolean().default(false), webSearchEnabled: z.boolean().default(false),
+  maxSearchQueriesPerCandidate: z.number().int().min(1).max(5).default(3),
+  maxPagesPerCandidate: z.number().int().min(1).max(10).default(4),
+  freshnessDays: z.number().int().min(1).max(30).default(7),
+  semanticQualificationEnabled: z.boolean().default(false),
+}).strict()
+export type RadarResearchPolicy = z.infer<typeof radarResearchPolicySchema>
+
 export const radarSearchConfigurationSchema = z.object({
+  research: radarResearchPolicySchema.default(() => radarResearchPolicySchema.parse({})),
   cities: z.array(z.object({ city: z.string().trim().min(1).max(100), state: radarStateSchema }).strict()).max(200).default([]),
   activityScope: z.enum(['main','main_or_secondary']).default('main_or_secondary'),
   excludedNameTerms: terms.default([]),

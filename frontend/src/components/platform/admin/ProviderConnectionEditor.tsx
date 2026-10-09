@@ -92,6 +92,7 @@ export function ProviderConnectionEditor({
   const [fallbackProviderId, setFallbackProviderId] = useState(provider?.fallbackProviderId || defaults.fallbackProviderId || '')
   const [publicConfig, setPublicConfig] = useState(initialConfig)
   const [retentionLicensed, setRetentionLicensed] = useState(provider?.publicConfig?.retentionLicensed === true)
+  const [webSearchLicensed, setWebSearchLicensed] = useState(provider?.publicConfig?.webSearchLicensed === true)
   const [clientDeliveryLicensed, setClientDeliveryLicensed] = useState(provider?.publicConfig?.clientDeliveryLicensed === true)
   const [saving, setSaving] = useState(false)
   const [savingCredential, setSavingCredential] = useState(false)
@@ -116,6 +117,7 @@ export function ProviderConnectionEditor({
       const parsedConfig = JSON.parse(publicConfig) as Record<string, unknown>
       if (showRetentionLicenseControls) {
         parsedConfig.retentionLicensed = retentionLicensed
+        if (webSearchLicensed || 'webSearchLicensed' in parsedConfig) parsedConfig.webSearchLicensed = retentionLicensed && webSearchLicensed
         parsedConfig.credentialPurpose = retentionLicensed ? 'licensed_retention' : 'preview'
         parsedConfig.clientDeliveryLicensed = retentionLicensed && clientDeliveryLicensed
         parsedConfig.storagePolicy = retentionLicensed ? 'licensed_persist' : 'transient_only'
@@ -311,6 +313,8 @@ export function ProviderConnectionEditor({
           onChange={event => setRetentionLicensed(event.target.checked)} /> Confirmo licença de armazenamento dos resultados</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed} disabled={!retentionLicensed}
           onChange={event => setClientDeliveryLicensed(event.target.checked)} /> O contrato também permite entregar a lista ao cliente</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={webSearchLicensed} disabled={!retentionLicensed}
+          onChange={event => setWebSearchLicensed(event.target.checked)} /> A chave e o plano também permitem busca web com retenção</label>
       </div>}
       {showClientDeliveryLicenseControls && <div className="mt-4 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
         <p className="font-medium text-amber-950">Entrega dos dados CNPJá a clientes</p>

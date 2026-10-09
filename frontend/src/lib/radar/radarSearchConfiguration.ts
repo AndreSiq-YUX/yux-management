@@ -9,6 +9,8 @@ export const radarExportLabels = {
 } as const
 export type RadarExportField = keyof typeof radarExportLabels
 export type RadarSearchConfiguration = {
+  research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
+    maxPagesPerCandidate: number; freshnessDays: number; semanticQualificationEnabled: boolean }
   cities: Array<{ city: string; state: string }>
   activityScope: 'main' | 'main_or_secondary'
   excludedNameTerms: string[]
@@ -26,7 +28,9 @@ export type RadarSearchConfiguration = {
   exportFields: RadarExportField[]
 }
 export function defaultRadarSearchConfiguration(): RadarSearchConfiguration {
-  return { cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
+  return { research: { enabled: false, webSearchEnabled: false, maxSearchQueriesPerCandidate: 3,
+    maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: false },
+    cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
     braveQueryTemplate: '{name}', sources: { enrichWithBrave: true, inspectWebsite: true },
     qualification: { includeAnyTerms: [], includeAllTerms: [], excludeTerms: [], requireCnaeMatch: false,
       missingWebsite: 'review', productTerms: [], productMatch: 'any' },

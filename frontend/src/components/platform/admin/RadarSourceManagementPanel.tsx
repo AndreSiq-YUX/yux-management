@@ -5,7 +5,7 @@ import type { PlatformProviderConnection } from '@/types/adminPlatform'
 
 type AdminSource = Awaited<ReturnType<typeof radarService.getAdminDataSources>>[number]
 const providerKeys: Partial<Record<AdminSource['sourceType'], string>> = {
-  cnpja_advanced_search: 'cnpja', cnpja_office_lookup: 'cnpja', serper_places: 'serper', brave_place_search: 'brave_place',
+  cnpja_advanced_search: 'cnpja', cnpja_office_lookup: 'cnpja', serper_places: 'serper', brave_place_search: 'brave_place', brave_web_search: 'brave_place',
 }
 const buttonClass = 'rounded-md border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -59,7 +59,8 @@ function SourceControl({ source, provider, onUpdated }: {
   const limitValue = Number(limit)
   const validCost = cost.trim() !== '' && Number.isFinite(costValue) && costValue >= 0 && (!source.isPaid || costValue > 0)
   const validLimit = limit.trim() !== '' && Number.isInteger(limitValue) && limitValue >= 1 && limitValue <= 1000
-  const providerReady = !source.requiresSecret || (provider?.status === 'active' && Boolean(provider.secretReference))
+  const providerReady = (!source.requiresSecret || (provider?.status === 'active' && Boolean(provider.secretReference)))
+    && (source.sourceType !== 'brave_web_search' || provider?.publicConfig.webSearchLicensed === true)
   const activationBlocked = getRadarSourceBlockedReason({ ...source, enabled: true })
   const hasUnsavedChanges = costValue !== source.defaultCostPerUnit || limitValue !== source.rateLimitPerDay
   const scope = source.organizationId ? source.organizationName || source.organizationId : 'Todas as organizações com Radar liberado'
@@ -105,6 +106,7 @@ function SourceControl({ source, provider, onUpdated }: {
       {provider?.publicConfig.clientDeliveryLicensed === true ? 'Entrega ao cliente confirmada.' : 'Entrega ao cliente não confirmada. Uso interno não exige essa confirmação.'}
     </p>}
     {activationBlocked && <p className="text-xs text-amber-800">{activationBlocked}</p>}
+    {source.sourceType === 'brave_web_search' && <p className="text-xs text-gray-500">Busca web complementar. Usa a mesma chave Brave; confirme no provedor que o plano permite este endpoint com retenção. Não é necessário reenviar a chave.</p>}
     {source.sourceType === 'serper_places' && <p className="text-xs text-gray-500">Somente pré-visualização transitória; não grava resultados no CRM.</p>}
     {source.sourceType === 'osm_extract' && <p className="text-xs text-gray-500">Índice local de dados abertos. Exige extrato disponível; não comprova ausência de site ou contato.</p>}
     <div className="grid gap-3 sm:grid-cols-2">

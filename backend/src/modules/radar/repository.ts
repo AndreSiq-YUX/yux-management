@@ -289,7 +289,7 @@ export async function listRadarAdminDataSources(pool: pg.Pool, user: AuthUser) {
      LEFT JOIN public.organizations organization ON organization.id = source.organization_id
      WHERE source.source_type = ANY($1::text[])
      ORDER BY source.organization_id NULLS FIRST, source.display_name ASC`,
-    [['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search', 'osm_extract']],
+    [['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search', 'brave_web_search', 'osm_extract']],
   )
   return result.rows.map(row => ({ ...mapDataSource(row), organizationName: row.organization_name ?? undefined }))
 }
@@ -304,12 +304,12 @@ export async function updateRadarDataSource(
   const protectedSource = await pool.query<{ source_type: string; default_cost_per_unit: string | number }>(
     `SELECT source_type, default_cost_per_unit FROM public.radar_data_sources WHERE id = $1 LIMIT 1`, [sourceId],
   )
-  if (['osm_extract', 'cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search'].includes(protectedSource.rows[0]?.source_type ?? '')) {
+  if (['osm_extract', 'cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'brave_place_search', 'brave_web_search'].includes(protectedSource.rows[0]?.source_type ?? '')) {
     if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
     if (protectedSource.rows[0]?.source_type === 'osm_extract' && patch.defaultCostPerUnit !== undefined && patch.defaultCostPerUnit !== 0)
       throw Object.assign(new Error('radar_osm_must_remain_free'), { statusCode: 400 })
   }
-  if (patch.enabled === true && ['serper_places', 'brave_place_search'].includes(protectedSource.rows[0]?.source_type ?? '')
+  if (patch.enabled === true && ['serper_places', 'brave_place_search', 'brave_web_search'].includes(protectedSource.rows[0]?.source_type ?? '')
       && Number(patch.defaultCostPerUnit ?? protectedSource.rows[0]?.default_cost_per_unit ?? 0) <= 0) {
     throw Object.assign(new Error('radar_source_cost_approval_required'), { statusCode: 400 })
   }
@@ -674,7 +674,7 @@ async function findRadarOsmSnapshot(queryable: RadarQueryable, city: string, sta
   return result.rows.length === 1 ? result.rows[0] : null
 }
 
-async function isRadarEnabledOrganization(queryable: RadarQueryable, organizationId: string) {
+export async function isRadarEnabledOrganization(queryable: RadarQueryable, organizationId: string) {
   const result = await queryable.query<{ allowed: boolean }>(
     `SELECT ((kind = 'yux' AND is_internal_growth_workspace = TRUE)
        OR (kind = 'client' AND EXISTS (
@@ -2733,7 +2733,7 @@ function normalizeDomain(value: string) {
   }
 }
 
-async function findRadarDataSource(pool: pg.Pool, organizationId: string, sourceKey: string) {
+export async function findRadarDataSource(pool: pg.Pool, organizationId: string, sourceKey: string) {
   const result = await pool.query<RadarDataSourceRow>(
     `SELECT *
      FROM public.radar_data_sources
@@ -2806,7 +2806,7 @@ async function updateRadarRunCompletion(
   )
 }
 
-async function evaluateRadarSourceGovernance(
+export async function evaluateRadarSourceGovernance(
   queryable: RadarQueryable,
   organizationId: string,
   campaignId: string,
@@ -2885,7 +2885,7 @@ async function evaluateRadarSourceGovernance(
   return { allowed: issues.length === 0, estimatedCost, issues }
 }
 
-async function recordRadarSourceUsage(
+export async function recordRadarSourceUsage(
   queryable: RadarQueryable,
   organizationId: string,
   campaignId: string,

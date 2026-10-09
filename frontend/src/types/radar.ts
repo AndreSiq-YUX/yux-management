@@ -3,7 +3,7 @@ import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfigurat
 export type RadarCampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived'
 export type RadarOpportunityStatus = 'raw' | 'enriching' | 'enriched' | 'diagnosing' | 'diagnosed' | 'message_drafted' | 'review_pending' | 'approved' | 'rejected' | 'discarded' | 'opted_out' | 'converted'
 export type RadarMessageStatus = 'draft' | 'approved' | 'rejected' | 'converted'
-export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'cnpja_advanced_search' | 'cnpja_office_lookup' | 'future_paid_api' | 'osm_extract' | 'serper_places' | 'brave_place_search'
+export type RadarSourceType = 'manual' | 'csv' | 'jina_reader' | 'jina_search' | 'web_search' | 'opencnpj' | 'public_registry' | 'cnpja_advanced_search' | 'cnpja_office_lookup' | 'future_paid_api' | 'osm_extract' | 'serper_places' | 'brave_place_search' | 'brave_web_search'
 
 export interface RadarPlacePreview {
   provider: 'serper_places' | 'brave_place_search'

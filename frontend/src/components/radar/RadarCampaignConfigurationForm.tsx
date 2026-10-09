@@ -31,6 +31,8 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
   const [budget, setBudget] = useState(initialCampaign?.budgetLimit?.toString() ?? '')
   const [error, setError] = useState<string | null>(null)
   const rules = config.qualification
+  const research = config.research ?? defaultRadarSearchConfiguration().research!
+  const changeResearch = (patch: Partial<typeof research>) => setConfig(current => ({ ...current, research: { ...research, ...patch } }))
   const changeRules = (patch: Partial<typeof rules>) => setConfig(current => ({ ...current, qualification: { ...current.qualification, ...patch } }))
 
   const submit = async (event: FormEvent) => {
@@ -99,6 +101,13 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           onChange={e => setConfig(current => ({ ...current, sources: { ...current.sources, [key]: e.target.checked } }))} />{key === 'enrichWithBrave' ? 'Buscar dados com Brave licenciada' : 'Inspecionar site público'}</label>)}</div>
         <div className="mt-3"><Field label="Modelo da consulta Brave"><Input value={config.braveQueryTemplate} maxLength={160} required onChange={e => setConfig(current => ({ ...current, braveQueryTemplate: e.target.value }))} /></Field>
           <p className="text-xs text-slate-500">Use {'{name}'} para o nome da empresa; opcionalmente {'{segment}'} e {'{terms}'}. Cidade e UF são enviadas separadamente.</p></div>
+      </fieldset>
+      <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Aprofundamento automático dos candidatos</legend>
+        <p className="mb-3 text-xs text-slate-500">Descobre presença pública e contatos sem exigir URL manual. Salvar não consulta provedores. Fontes, custos e modelo são liberados separadamente no Admin.</p>
+        <div className="space-y-2">{(['enabled','webSearchEnabled','semanticQualificationEnabled'] as const).map((key, index) => <label key={key} className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={research[key]} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Complementar com Brave Web Search','Qualificar semanticamente pela oferta (LLM configurada no Admin)'][index]}</label>)}</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas totais por empresa',5],['maxPagesPerCandidate','Páginas públicas por empresa',10],['freshnessDays','Validade da pesquisa (dias)',30]] as const).map(([key,label,max]) => <Field key={key} label={label}>
+          <Input type="number" min={1} max={max} required value={research[key]} onChange={e => changeResearch({ [key]: Number(e.target.value) })} /></Field>)}</div>
       </fieldset>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Critérios de qualificação</legend>
         <p className="mb-3 text-xs text-slate-500">Expressões literais verificadas no site identificado da empresa, ignorando acentos. Não é uma análise semântica por LLM. Sem critérios positivos, a empresa vai para revisão manual.</p>
