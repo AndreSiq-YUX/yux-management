@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestText } from '@/lib/apiClient'
+import type { RadarResearchAvailability, RadarResearchResult } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 
@@ -27,6 +28,15 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  getResearchAvailability(campaignId:string,organizationId:string) {
+    return apiRequest<RadarResearchAvailability>(`/radar/campaigns/${campaignId}/research-availability${buildQuery({organizationId})}`)
+  },
+  getCandidateResearch(candidateId:string,organizationId:string) {
+    return apiRequest<RadarResearchResult>(`/radar/candidates/${candidateId}/research${buildQuery({organizationId})}`)
+  },
+  startCandidateResearch(candidateId:string,input:{organizationId:string;configurationRevision:number;requestId:string}) {
+    return apiRequest<{runId:string;status:string;reused:boolean}>(`/radar/candidates/${candidateId}/research`,{method:'POST',body:input})
+  },
   async getAdminDataSources() {
     return apiRequest<Array<RadarDataSource & { organizationName?: string }>>('/radar/admin/data-sources')
   },

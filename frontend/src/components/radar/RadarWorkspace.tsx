@@ -7,6 +7,8 @@ import { StrategyContextPanel } from '@/components/strategy-engine/StrategyConte
 import { ProspectingPlanPanel } from '@/components/radar/ProspectingPlanPanel'
 import { RadarPlacePreviewPanel } from '@/components/radar/RadarPlacePreviewPanel'
 import { RadarCampaignConfigurationForm } from '@/components/radar/RadarCampaignConfigurationForm'
+import { RadarCandidateResearchPanel } from '@/components/radar/RadarCandidateResearchPanel'
+import type { RadarResearchAvailability } from '@/types/radarResearch'
 import { defaultRadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import {
   canConvertRadarOpportunity,
@@ -194,6 +196,8 @@ export function RadarWorkspace() {
     ?? (context.role?.key === 'yux_admin' && creationMode === 'regional' ? 'new' : null)
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
+  const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
+  const [researchAvailabilityRefresh,setResearchAvailabilityRefresh]=useState(0)
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([])
   const [metrics, setMetrics] = useState<RadarMetrics | null>(null)
   const [selectedOpportunity, setSelectedOpportunity] = useState<RadarOpportunity | null>(null)
@@ -233,6 +237,16 @@ export function RadarWorkspace() {
       || (context.role?.scope === 'internal' && context.role.permissions.includes('platform.manage'))))
   const hasPendingAnalysis = opportunities.some(opportunity => opportunity.status === 'diagnosing')
   const osmSourceEnabled = dataSources.find(source => source.sourceType === 'osm_extract')?.enabled
+  const researchConfigurationVersion=campaigns.find(campaign=>campaign.id===selectedCampaignId)?.configurationRevision
+
+  useEffect(()=>{
+    setResearchAvailability(null)
+    if(!organizationId||!selectedCampaignId||!canAccess)return
+    let active=true
+    radarService.getResearchAvailability(selectedCampaignId,organizationId).then(value=>{if(active)setResearchAvailability(value)})
+      .catch(()=>{if(active)setResearchAvailability(null)})
+    return()=>{active=false}
+  },[organizationId,selectedCampaignId,canAccess,researchAvailabilityRefresh,researchConfigurationVersion])
 
   useEffect(() => {
     if (!organizationId || !canAccess) return
@@ -477,7 +491,9 @@ export function RadarWorkspace() {
   const placeSource = findSource(workspaceSources, placeForm.sourceType)
   const selectedCampaign = campaigns.find(campaign => campaign.id === selectedCampaignId)
   const visibleCandidates = selectedCampaign?.campaignType === 'regional_b2b'
-    ? candidates.filter(candidate => Number(candidate.normalizedPayload.discoveryRevision ?? 1) === (selectedCampaign.configurationRevision ?? 1))
+    ? candidates.filter(candidate => selectedCampaign.searchConfiguration?.research?.enabled
+      || Number(candidate.normalizedPayload.discoveryRevision ?? 1) === (selectedCampaign.configurationRevision ?? 1)
+      || Number(candidate.normalizedPayload.researchRevision ?? 0) === (selectedCampaign.configurationRevision ?? 1))
     : candidates
 
   const refreshDataSources = async () => {
@@ -870,9 +886,12 @@ export function RadarWorkspace() {
     const configuration = selectedCampaign?.searchConfiguration ?? defaultRadarSearchConfiguration()
     const scopeCount = configuration.cities.length || selectedCampaign?.targetStates.length || 0
     const queryCount = Math.min(configuration.batch.maxQueriesPerBatch, scopeCount * configuration.batch.maxPagesPerScope)
+    if(kind==='verification'&&configuration.research?.enabled&&!researchAvailability?.allowed)return
     const consent = kind === 'discovery'
       ? `Este lote pode consumir até ${queryCount} consultas da CNPJá conforme a configuração e os limites das fontes. Continuar?`
-      : `Verificar até ${configuration.batch.verificationLimit} empresas.${configuration.sources.enrichWithBrave ? ` Pode consumir até ${configuration.batch.verificationLimit} consultas da Brave licenciada.` : ' Sem consultas Brave.'} Continuar?`
+      : configuration.research?.enabled && researchAvailability
+        ? `Pesquisar até ${configuration.batch.verificationLimit} empresas existentes, sem refazer CNPJá. Máximo de ${configuration.batch.verificationLimit*researchAvailability.maxQueriesPerCandidate} consultas; teto estimado de busca R$ ${(configuration.batch.verificationLimit*researchAvailability.maximumCostPerCandidate).toFixed(4)}. ${researchAvailability.semanticQualificationEnabled?'A IA também poderá consumir créditos conforme a rota e os fallbacks do Admin.':''} Os limites atuais continuam valendo. Continuar?`
+        : `Verificar até ${configuration.batch.verificationLimit} empresas.${configuration.sources.enrichWithBrave ? ` Pode consumir até ${configuration.batch.verificationLimit} consultas da Brave licenciada.` : ' Sem consultas Brave.'} Continuar?`
     if (!window.confirm(consent)) return
     try {
       setActionLoading(`b2b-${kind}`)
@@ -1116,9 +1135,12 @@ export function RadarWorkspace() {
               <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
                 || Boolean(getSourceBlockedReason(cnpjaSource))} onClick={() => runB2bBatch('discovery')}>
                 Buscar lote nas regiões configuradas</Button>
-              <Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
-                onClick={() => runB2bBatch('verification')}>Verificar lote configurado</Button>
+              <Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
+                || (selectedCampaign.searchConfiguration?.research?.enabled && !researchAvailability?.allowed)}
+                onClick={() => runB2bBatch('verification')}>{selectedCampaign.searchConfiguration?.research?.enabled?'Pesquisar e enriquecer lote existente':'Verificar lote configurado'}</Button>
+              <Button type="button" size="sm" variant="outline" onClick={()=>setResearchAvailabilityRefresh(value=>value+1)}>Atualizar disponibilidade da pesquisa</Button>
             </div>
+            {selectedCampaign.searchConfiguration?.research?.enabled && researchAvailability?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="mt-2 text-xs text-amber-800">{reason.message} {reason.resolution}.</p>)}
             {b2bProgress && <p className="mt-2 text-xs text-slate-600">{b2bProgress.candidates} candidatos · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
               {(b2bProgress?.scopes ?? []).map(scope =>
@@ -1400,8 +1422,8 @@ export function RadarWorkspace() {
                   {visibleCandidates.length < candidates.length && <p className="p-3 text-sm text-amber-800">{candidates.length - visibleCandidates.length} empresas de configurações anteriores foram preservadas no histórico. Execute a descoberta com os critérios atuais para incluí-las novamente.</p>}
                   {visibleCandidates.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhum candidato nesta configuração.</p>}
                   {visibleCandidates.map(candidate => (
-                    <div key={candidate.id} className="flex items-start justify-between gap-3 p-3">
-                      <div>
+                    <div key={candidate.id} className="flex min-w-0 flex-col items-start justify-between gap-3 p-3">
+                      <div className="min-w-0 w-full">
                         <p className="text-sm font-medium text-slate-950">{candidate.title}</p>
                         <p className="text-xs text-slate-500">{candidate.sourceType} - {candidateStatusLabels[candidate.status] || candidate.status}</p>
                         {candidate.snippet && <p className="mt-1 text-sm text-slate-600">{candidate.snippet}</p>}
@@ -1409,6 +1431,8 @@ export function RadarWorkspace() {
                         {candidate.sourceType === 'osm_extract' && <p className="mt-1 text-xs text-slate-500">Site: {getOsmSiteCheckLabel(candidate)}</p>}
                         {selectedCampaign?.campaignType === 'regional_b2b' && <div className="mt-1 space-y-1 text-xs text-slate-600">
                           <p>CNPJ: {String(candidate.normalizedPayload.cnpj ?? 'não identificado')} · {String(candidate.normalizedPayload.city ?? '')}/{String(candidate.normalizedPayload.state ?? '')}</p>
+                          {typeof candidate.normalizedPayload.address==='string'&&<p>Endereço cadastral: {candidate.normalizedPayload.address}</p>}
+                          {typeof candidate.normalizedPayload.registrationStatus==='string'&&<p>Situação cadastral: {candidate.normalizedPayload.registrationStatus} — não comprova funcionamento atual.</p>}
                           <p>Site: {typeof candidate.normalizedPayload.websiteUrl === 'string' ? <a className="text-yux-700 underline" href={candidate.normalizedPayload.websiteUrl} target="_blank" rel="noreferrer">{candidate.normalizedPayload.websiteUrl}</a> : 'ainda não encontrado'}</p>
                           <p>Telefone: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} · Fonte complementar: {String(candidate.normalizedPayload.braveSourceUrl ?? 'não consultada')}</p>
                           {getBraveSuggestions(candidate.normalizedPayload).map(suggestion =>
@@ -1430,8 +1454,9 @@ export function RadarWorkspace() {
                             && b2bProspectById.get(candidate.id)?.targetStatus
                             && b2bProspectById.get(candidate.id)?.targetStatus !== 'confirmed'
                             && !b2bProspectById.get(candidate.id)?.approvedAt && (
-                            <div className="mt-2 space-y-2 rounded border border-amber-200 bg-amber-50 p-2">
-                              <p className="font-medium">Confirmação humana quando o site não comprova a atividade</p>
+                            <details className="mt-2 space-y-2 rounded border border-amber-200 bg-amber-50 p-2">
+                              <summary className="cursor-pointer font-medium">Corrigir associação / confirmação humana (opcional)</summary>
+                              <p>Use após conferir uma ambiguidade. A pesquisa automática não exige URL manual.</p>
                               <Input aria-label={`Fonte pública de ${candidate.title}`} placeholder="URL da fonte pública que comprova a atividade"
                                 value={b2bManualReviews[candidate.id]?.url ?? ''}
                                 onChange={event => setB2bManualReviews(current => ({ ...current,
@@ -1444,11 +1469,15 @@ export function RadarWorkspace() {
                               <Button type="button" size="sm" disabled={!canManage || Boolean(actionLoading)
                                 || !b2bManualReviews[candidate.id]?.url || (b2bManualReviews[candidate.id]?.note.length ?? 0) < 20}
                                 onClick={() => approveB2bProspect(candidate.id, true)}>Confirmar e aprovar manualmente</Button>
-                            </div>)}
+                            </details>)}
+                          <RadarCandidateResearchPanel key={`${organizationId}-${candidate.id}-${selectedCampaign.configurationRevision}`}
+                            candidateId={candidate.id} organizationId={organizationId!} configurationRevision={selectedCampaign.configurationRevision??1}
+                            availability={researchAvailability} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
+                            approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
                         </div>}
                         {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{candidate.errorMessage}</p>}
                       </div>
-                      <div className="flex shrink-0 gap-2">
+                      <div className="flex shrink-0 flex-wrap gap-2">
                         {candidate.sourceType === 'osm_extract' && typeof candidate.normalizedPayload.websiteUrl === 'string' && (
                           <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
                         )}

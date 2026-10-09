@@ -14,6 +14,7 @@ vi.mock('@/stores/platformStore', () => ({ usePlatformContext: () => state.conte
 vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyContextPanel:() => null}))
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),
+  getResearchAvailability:vi.fn(async()=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
   getOpportunities:vi.fn(async () => []),getMetrics:vi.fn(async () => null),
   getCandidates:vi.fn(async () => []),getDuplicates:vi.fn(async () => []),getRuns:vi.fn(async () => []),
   getOsmReadiness:vi.fn(async () => ({ready:false,reason:'Sem extrato',segmentKey:null,snapshot:null})),

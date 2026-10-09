@@ -6,6 +6,8 @@ export const radarExportLabels = {
   rating: 'Avaliação', reviewCount: 'Quantidade de avaliações', targetStatus: 'Qualificação',
   productFit: 'Aderência comercial', evidenceUrl: 'Fonte da evidência', checkedAt: 'Verificado em',
   verificationMethod: 'Método de verificação', reviewNote: 'Nota de revisão',
+  registryPhone:'Telefone cadastral',publicPhones:'Telefones públicos',publicEmails:'E-mails públicos',
+  whatsappPublished:'WhatsApp publicado (não validado)',socialUrls:'Redes sociais',activityStatus:'Sinais de atividade',contactSources:'Fontes dos contatos',
 } as const
 export type RadarExportField = keyof typeof radarExportLabels
 export type RadarSearchConfiguration = {
