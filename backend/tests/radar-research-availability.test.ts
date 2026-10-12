@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { evaluateRadarResearchAvailability } from '../src/modules/radar/research-availability.js'
 import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-configuration.js'
 
-const policy = { enabled: true, webSearchEnabled: true, maxSearchQueriesPerCandidate: 3, maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: false }
+const policy = resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true}}).research
 it('reports_exact_blockers_without_provider_calls', () => {
   const result = evaluateRadarResearchAvailability({ policy, canManage: true, provider: { status: 'active', hasSecret: true,
     publicConfig: { retentionLicensed: true, credentialPurpose: 'licensed_retention', webSearchLicensed: true } },

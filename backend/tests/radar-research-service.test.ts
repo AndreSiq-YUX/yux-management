@@ -1,8 +1,18 @@
 import { expect, it, vi } from 'vitest'
 import { runRadarResearchPipeline } from '../src/modules/radar/research-service.js'
 import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-configuration.js'
+import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('recovers failed public reads without repeating completed discovery', async () => {
+  const web = vi.fn(), collect = vi.fn(async (_url:string) => [{url:'https://alfa.example/',observedAt:'2026-10-12',text:'12.345.678/0001-90 contatos públicos'}])
+  const result = await runRadarResearchPipeline(identity, configuration, {readingComplete:true,
+    discovery:{association:'review',hits:[],suggestions:[{url:'https://alfa.example/contato',title:'Alfa',snippets:[],observedAt:'2026-10-12'}],limitations:[],queries:2},
+    pages:[{url:'https://alfa.example/contato',observedAt:'2026-10-12',text:'',limitation:'robots_unavailable'}]},
+  {web,collect,checkpoint:async()=>{}})
+  expect(web).not.toHaveBeenCalled(); expect(collect.mock.calls[0][0]).toBe('https://alfa.example/')
+  expect(result.siteAssociation).toBe('confirmed'); expect(result.pages.some(page=>page.limitation)).toBe(false)
+})
 it('retains_contacts_when_target_fit_is_unknown_and_keeps_registry_phone_separate', async () => {
   const local = vi.fn(async () => [])
   const web = vi.fn(async () => [{ url:'https://alfa.example',title:'Alfa',snippets:['12.345.678/0001-90'],observedAt:'2026-10-08' }])
@@ -31,4 +41,47 @@ it('does_not_confirm_contacts_from_another_branch_on_the_same_domain',async()=>{
   const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,pages,discovery:{association:'confirmed',websiteUrl:'https://alfa.example',hits:[],suggestions:[],limitations:[],queries:1}},
     {web:vi.fn(),checkpoint:async()=>{}})
   expect(result.contacts[0].association).toBe('review')
+})
+it('consolidates a sourced profile and size score in one LLM stage and reuses matching evidence',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{enabled:true,profileEnabled:true,contactPurpose:'suppliers',sizeAssessment:{enabled:true,
+    criteria:[{metric:'units',weight:1,maxAgeDays:3650,bands:[{min:0,points:0},{min:10,points:80}]}]}}})
+  const page={url:'https://alfa.example/',observedAt:'2026-10-12',text:'CNPJ 12.345.678/0001-90. Fornecemos soluções para empresas. Em 2026 contamos com 12 unidades. FORNECEDORES: compras@alfa.example.'}
+  const profile=validateRadarCompanyProfile({summary:{value:'Soluções empresariais',evidenceId:'page-0',excerpt:'Fornecemos soluções para empresas.'},
+    scaleSignals:[{value:'12 unidades',evidenceId:'page-0',excerpt:'Em 2026 contamos com 12 unidades.',metric:'units',amount:12,referenceDate:'2026-01-01',scope:'establishment'}]},[page])
+  const qualify=vi.fn(async()=>({targetStatus:'review' as const,productFit:'unknown' as const,reasons:[],evidenceIds:[],limitations:[],profile}))
+  let saved:Parameters<typeof runRadarResearchPipeline>[2]={readingComplete:true,pages:[page],discovery:{association:'confirmed',websiteUrl:page.url,hits:[],suggestions:[],limitations:[],queries:1}}
+  const dependencies={web:vi.fn(),qualify,checkpoint:async(_stage:string,output:typeof saved)=>{saved={...output}}}
+  const result=await runRadarResearchPipeline(identity,config,saved,dependencies)
+  expect(result.sizeAssessment).toMatchObject({score:80,evidenceCoverage:100})
+  expect(result.profile?.summary?.sourceUrl).toBe(page.url)
+  expect(result.contacts.find(item=>item.kind==='email')).toMatchObject({purpose:'suppliers',preferred:true})
+  await runRadarResearchPipeline(identity,config,saved,dependencies)
+  expect(qualify).toHaveBeenCalledTimes(1);expect(dependencies.web).not.toHaveBeenCalled()
+})
+it('does not persist an unverifiable profile as a valid qualification',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{profileEnabled:true}})
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,pages:[{url:'https://alfa.example',observedAt:'2026-10-12',text:'12.345.678/0001-90'}],
+    discovery:{association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),qualify:async()=>({targetStatus:'confirmed',productFit:'high',limitations:[],reasons:[],evidenceIds:[],profile:{summary:{value:'Fake',evidenceId:'fake',excerpt:'invented text'}}} as never),checkpoint:async()=>{}})
+  expect(result.qualification).toBeUndefined();expect(result.profile).toBeUndefined()
+  expect(result.limitations.join(' ')).toContain('radar_profile_unverifiable')
+})
+it('lists financial PDFs as unread sources and never treats their link as a size measurement',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{sizeAssessment:{enabled:true,criteria:[{metric:'annualRevenue',weight:1,bands:[{min:0,points:0}]}]}}})
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,pages:[{url:'https://alfa.example/',observedAt:'2026-10-12',
+    text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="/relatorio-financeiro-2025.pdf">Balanço anual</a><a href="https://outra.example/balanco.pdf">Outro</a>'}],
+    discovery:{association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{}})
+  expect(result.documents).toEqual([{url:'https://alfa.example/relatorio-financeiro-2025.pdf',sourceUrl:'https://alfa.example/',observedAt:'2026-10-12',status:'not_read'}])
+  expect(result.sizeAssessment).toMatchObject({score:null,evidenceCoverage:0})
+})
+it('keeps profile citation IDs aligned when a failed page precedes the useful evidence',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{profileEnabled:true}})
+  const good={url:'https://alfa.example/empresa',observedAt:'2026-10-12',text:'12.345.678/0001-90. Soluções para empresas.'}
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,
+    pages:[{url:'https://alfa.example/',observedAt:'2026-10-12',text:'',limitation:'robots_disallow'},good],
+    discovery:{association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),qualify:async pages=>({targetStatus:'review',productFit:'unknown',reasons:[],evidenceIds:[],limitations:[],
+      profile:{summary:{value:'Soluções para empresas',evidenceId:'page-0',excerpt:pages[0].text}} as never}),checkpoint:async()=>{}})
+  expect(result.profile?.summary?.sourceUrl).toBe(good.url)
 })

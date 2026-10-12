@@ -7,7 +7,7 @@ import { findRadarDataSource, evaluateRadarSourceGovernance, recordRadarSourceUs
 import { getRadarResearchAvailability } from './research-availability.js'
 import { resolveRadarSearchConfiguration, type RadarSearchConfiguration } from './search-configuration.js'
 import { discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl, type RadarBusinessIdentity, type RadarPresenceDiscovery } from './site-discovery.js'
-import { collectRadarSiteEvidence, type RadarSiteEvidence } from './site-evidence.js'
+import { collectRadarSiteEvidence, radarHtmlLinks, isRetryableRadarPage, RADAR_READER_VERSION, type RadarSiteEvidence } from './site-evidence.js'
 import { extractRadarContacts, type RadarContactEvidence } from './contact-evidence.js'
 import { assessRadarBusinessActivity } from './business-activity.js'
 import { searchRadarWeb, type RadarWebHit } from './web-search.js'
@@ -16,24 +16,39 @@ import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { assertLicensedBraveRetention } from './licensed-brave.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { triageRadarBusiness } from './business-triage.js'
+import { validateRadarCompanyProfile, type RadarCompanyProfile } from './company-profile.js'
+import { assessRadarCompanySize, registryRadarSizeFacts, type RadarSizeFact } from './company-size.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
-  reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string }
+  reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile }
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
   registryPhone?: string; registryEmail?: string; siteAssociation: 'confirmed'|'review'; activity: ReturnType<typeof assessRadarBusinessActivity>;
-  qualification?: RadarQualification; limitations: string[] }
-type Output = Partial<RadarResearchDossier> & { discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean }
+  qualification?: RadarQualification; qualificationEvidenceHash?:string; profile?:RadarCompanyProfile;
+  documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
+  sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
+type Output = Partial<RadarResearchDossier> & { discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string) => Promise<RadarWebHit[]>;
-  collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[]) => Promise<RadarQualification>;
+  collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
+  registrySizeFacts?:RadarSizeFact[];
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
+
+function safeResearchError(cause:unknown) {
+  const code=cause instanceof Error?cause.message:''
+  const runtime=/^agent_runtime_(\d{3})(?::((?:radar_|llm_|credits_)[a-z0-9_]{1,100}))?$/.exec(code)
+  if(runtime)return runtime[2]??`agent_runtime_${runtime[1]}`
+  return /^[a-z][a-z0-9_]{2,100}$/.test(code)?code:'radar_qualification_failed'
+}
 
 // The facts pipeline is deliberately independent of offer fit and has no outreach dependency.
 export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, configuration: RadarSearchConfiguration,
   saved: Output, dependencies: PipelineDependencies): Promise<RadarResearchDossier> {
   const output = { ...saved }
+  if (output.pages?.some(isRetryableRadarPage)) {
+    output.pages=output.pages.filter(page=>!isRetryableRadarPage(page));output.readingComplete=false
+  }
   const limits: string[] = []
   const checkpoint = async (stage: string) => { dependencies.signal?.throwIfAborted(); await dependencies.checkpoint(stage, output) }
-  if (!output.discovery || output.discovery.limitations.length) {
+  if (!output.discovery || !output.discoveryLocked && output.discovery.limitations.length) {
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
       search: dependencies.web, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
       checkpoint: async (hits, queries) => { output.discoveryHits = hits; output.discoveryQueries = queries; await checkpoint('discovery') },
@@ -43,44 +58,54 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const discovery = output.discovery
   let pages = output.pages ?? []
   let website = discovery.websiteUrl ?? identity.websiteUrl
+    ?? discovery.suggestions.find(hit=>!isRadarReferenceUrl(hit.url))?.url
   if (!output.readingComplete) {
-    const urls = [...new Set([website,...discovery.suggestions.map(item=>item.url)].filter((value):value is string => !!value && !isRadarReferenceUrl(value)))]
+    const candidates = [website,...discovery.suggestions.map(item=>item.url)].filter((value):value is string => !!value && !isRadarReferenceUrl(value))
+    const urls = [...new Set(candidates.flatMap(value=>{try{return [new URL('/',value).toString(),value]}catch{return []}}))]
     for (const url of urls) {
-      if (pages.length >= configuration.research.maxPagesPerCandidate || dependencies.signal?.aborted) break
-      const remaining = configuration.research.maxPagesPerCandidate - pages.filter(page=>new URL(page.url).origin!==new URL(url).origin).length
+      if (pages.filter(page=>!page.limitation).length >= configuration.research.maxPagesPerCandidate || pages.length>=configuration.research.maxPagesPerCandidate*2 || dependencies.signal?.aborted) break
+      const other=pages.filter(page=>new URL(page.url).origin!==new URL(url).origin)
+      const remaining = configuration.research.maxPagesPerCandidate - other.filter(page=>!page.limitation).length
+      const maxAttemptsPerCandidate=configuration.research.maxPagesPerCandidate*2-other.length
       const prior=pages.filter(page=>new URL(page.url).origin===new URL(url).origin)
-      let collected = await (dependencies.collect ?? collectRadarSiteEvidence)(url, {maxPagesPerCandidate:Math.min(remaining,prior.length+1)}, {signal:dependencies.signal,
+      let collected = await (dependencies.collect ?? collectRadarSiteEvidence)(url, {maxPagesPerCandidate:Math.min(remaining,prior.filter(page=>!page.limitation).length+1),maxAttemptsPerCandidate}, {signal:dependencies.signal,
         initialPages:pages.filter(page=>new URL(page.url).origin===new URL(url).origin),checkpoint:async value => {
           output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')
         }})
       pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...collected]
       if (collected.some(page=>matchRadarBusinessIdentity(identity,page.text)==='confirmed')) {
         website=url
-        if(collected.length<remaining) {
-          collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining},{signal:dependencies.signal,initialPages:collected,
+        if(collected.filter(page=>!page.limitation).length<remaining) {
+          collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,initialPages:collected,
             checkpoint:async value=>{output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')}})
           pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...collected]
         }
         break
       }
     }
-    output.pages = pages; output.readingComplete = true
+    output.pages = pages; output.readingComplete = !pages.some(isRetryableRadarPage); output.readerVersion=RADAR_READER_VERSION
     await checkpoint('consolidation')
   }
   const associated = pages.some(page => matchRadarBusinessIdentity(identity, page.text) === 'confirmed')
   const associatedOrigin = pages.find(page=>matchRadarBusinessIdentity(identity,page.text)==='confirmed')?.url
   const associatedPages=pages.filter(page=>associatedOrigin && new URL(page.url).origin===new URL(associatedOrigin).origin
     && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||matchRadarBusinessIdentity(identity,page.text)==='confirmed'))
-  const contacts = [...(output.contacts??[]),...pages.flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review'))]
+  // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
+  const contacts = pages.flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review'))
   // Contacts in search snippets remain useful when there is no website; identity must be corroborated independently.
   for (const hit of discovery.hits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`)))
   const uniqueContacts = [...new Map(contacts.map(contact => [`${contact.kind}:${contact.value}:${contact.sourceUrl}`, contact])).values()]
+  for(const contact of uniqueContacts)if(contact.association==='confirmed'&&configuration.research.contactPurpose!=='general'
+    &&contact.purpose===configuration.research.contactPurpose) {
+    contact.preferred=true;contact.note='Canal publicado para a finalidade selecionada nesta campanha; atendimento não validado.'
+  }
   for(const kind of ['phone','email'] as const) {
     const confirmed=uniqueContacts.filter(contact=>contact.kind===kind&&contact.association==='confirmed')
     const counts=new Map<string,Set<string>>()
     for(const contact of confirmed)counts.set(contact.value,new Set([...(counts.get(contact.value)??[]),contact.sourceUrl]))
     const ranked=[...counts].sort((a,b)=>b[1].size-a[1].size)
     if(ranked.length && (ranked.length===1||ranked[0][1].size>ranked[1][1].size))for(const contact of confirmed.filter(item=>item.value===ranked[0][0])) {
+      if(uniqueContacts.some(item=>item.kind===kind&&item.preferred))continue
       contact.preferred=true;contact.note=ranked.length===1?'Preferencial por ser o único canal público corroborado deste tipo; atendimento não validado.':
         `Preferencial por corroboramento em ${ranked[0][1].size} páginas; atendimento não validado.`
     }
@@ -88,20 +113,41 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   uniqueContacts.sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))
   const confirmedSearchPages=discovery.hits.filter(hit=>matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed')
     .map(hit=>({url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`,observedAt:hit.observedAt}))
-  const qualifiedEvidence=[...associatedPages,...confirmedSearchPages].slice(0,10)
+  const qualifiedEvidence=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages].slice(0,10)
   const activity = assessRadarBusinessActivity(qualifiedEvidence)
-  if (!website) limits.push('Site não encontrado nas fontes consultadas; isso não comprova inexistência.')
+  if (!website && !pages.length) limits.push('Site não encontrado nas fontes consultadas; isso não comprova inexistência.')
   if (website && !associated) limits.push('A identidade do site exige revisão; contatos não são tratados como confirmados.')
   limits.push(...discovery.limitations, ...pages.flatMap(page => page.limitation ? [`${page.url}: ${page.limitation}`] : []))
-  let qualification = output.qualification
-  if (configuration.research.semanticQualificationEnabled && !qualification) {
+  const evidenceHash=createHash('sha256').update(JSON.stringify({pages:qualifiedEvidence.map(page=>({url:page.url,text:page.text.slice(0,12000)})),
+    profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled})).digest('hex')
+  let qualification = output.qualificationEvidenceHash===evidenceHash?output.qualification:undefined
+  if ((configuration.research.semanticQualificationEnabled||configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled) && !qualification) {
     if (dependencies.qualify && qualifiedEvidence.length) {
-      try { qualification = await dependencies.qualify(qualifiedEvidence.filter(page => !!page.text)); output.qualification = qualification }
-      catch { limits.push('Qualificação semântica pendente: confira rota, permissões e limite no Admin. Os fatos foram preservados.') }
+      try {
+        qualification = await dependencies.qualify(qualifiedEvidence,evidenceHash)
+        if(qualification.profile)qualification.profile=validateRadarCompanyProfile(qualification.profile,qualifiedEvidence)
+        output.qualification = qualification;output.qualificationEvidenceHash=evidenceHash
+      }
+      catch (cause) { qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
+        limits.push(`Qualificação semântica pendente (${safeResearchError(cause)}). Os fatos foram preservados.`) }
     } else limits.push('Qualificação semântica pendente: é necessária evidência com identidade associada e rota explícita no Admin.')
   }
   limits.push(...(qualification?.limitations??[]))
-  const dossier = { discovery:{...discovery,...(associatedOrigin?{websiteUrl:associatedOrigin,association:'confirmed' as const}:{})}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification, limitations: limits }
+  const profile=qualification?.profile
+  if(configuration.research.profileEnabled&&!profile)limits.push('Perfil da empresa pendente de análise com evidências e modelo autorizado.')
+  if(configuration.research.profileEnabled&&profile&&!profile.summary&&!profile.services.length&&!profile.customerSegments.length&&!profile.operatingRegions.length)
+    limits.push('A análise não encontrou informações suficientes para descrever a empresa nas fontes lidas.')
+  const sizeAssessment=configuration.research.sizeAssessment.enabled?assessRadarCompanySize(configuration.research.sizeAssessment,
+    [...(dependencies.registrySizeFacts??[]),...(profile?.scaleSignals??[])]):undefined
+  const documents=[...new Map([...(output.documents??[]).filter(item=>associatedPages.some(page=>page.url===item.sourceUrl)),...associatedPages.flatMap(page=>radarHtmlLinks(page.html??'').flatMap(link=>{
+    try {
+      const url=new URL(link,page.url)
+      return !url.username&&!url.password&&url.origin===new URL(page.url).origin&&/\.pdf(?:$|\?)/i.test(url.toString())&&/balan[cç]o|demonstra|financ|annual|anual|relatorio/i.test(url.pathname)
+        ?[{url:url.toString(),sourceUrl:page.url,observedAt:page.observedAt,status:'not_read' as const}]:[]
+    }catch{return []}
+  }))].map(item=>[item.url,item])).values()].slice(0,20)
+  const dossier = { discovery:{...discovery,...(associatedOrigin?{websiteUrl:associatedOrigin,association:'confirmed' as const}:{})}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
+    qualificationEvidenceHash:qualification?evidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
   Object.assign(output, dossier); await checkpoint('review')
   return dossier
 }
@@ -110,9 +156,16 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
   normalized_payload: Record<string, unknown>; search_configuration: unknown; configuration_revision: number; campaign_status: string;
   target_segment: string; offer_type: string; product_focus: string[]; target_cnaes: string[] }
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
-  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string }>;
+  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;refreshAuthorized?:boolean;previous?:unknown }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
+function cachedReadAvailability<T extends {allowed:boolean;reasons:Array<{code:string}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number}>(availability:T,run:ResearchRun|undefined,revision:number,freshnessDays:number):T {
+  const recoverable=run&&run.configuration_revision===revision&&['partial','blocked','failed'].includes(run.status)&&run.output.discovery
+    &&Date.now()-Date.parse(run.completed_at||run.created_at)<freshnessDays*86400000
+  if(!availability.allowed&&recoverable&&availability.reasons.every(item=>['source_limit_exceeded','source_budget_exceeded'].includes(item.code)))
+    return {...availability,allowed:true,reasons:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:0}
+  return availability
+}
 async function loadContext(pool: Pick<pg.Pool,'query'>, organizationId:string, candidateId:string) {
   const result = await pool.query<ResearchContext>(`SELECT candidate.*, campaign.search_configuration, campaign.configuration_revision,
     campaign.status AS campaign_status, campaign.target_segment, campaign.offer_type, campaign.product_focus, campaign.target_cnaes
@@ -131,16 +184,16 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
   ])
   const latest = runs.rows[0]
   const expired=latest?.status==='running'&&latest.lease_until&&Date.parse(latest.lease_until)<Date.now()
-  return { availability, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:{...latest.output,pages:latest.output.pages?.map(({html:_html,...page})=>page)}} : null,
+  const available=cachedReadAvailability(availability,latest,context.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.freshnessDays)
+  return { availability:available, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:{...latest.output,pages:latest.output.pages?.map(({html:_html,...page})=>page)}} : null,
     history:runs.rows.slice(1).map(run => ({ id:run.id, status:run.status, updated_at:run.updated_at })) }
 }
-export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number;requestId?:string}) {
+export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number;requestId?:string;allowSemanticRefresh?:boolean}) {
   await requireRadarScope(pool,user,{ organizationId:input.organizationId,candidateId:input.candidateId },true)
   const context = await loadContext(pool,input.organizationId,input.candidateId)
   if (context.configuration_revision !== input.configurationRevision) throw error('radar_campaign_configuration_changed')
   if (context.status !== 'pending_review') throw error('radar_candidate_not_pending')
   const availability = await getRadarResearchAvailability(pool,user,input.organizationId,context.campaign_id)
-  if (!availability.allowed) throw Object.assign(error('radar_research_unavailable'),{ reasons:availability.reasons })
   const configuration = resolveRadarSearchConfiguration(context.search_configuration)
   const client = await pool.connect()
   try {
@@ -153,9 +206,21 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
       WHERE candidate_id = $1 AND organization_id = $2 AND configuration_revision = $3 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision])
     let run = previous.rows[0]
+    const available=cachedReadAvailability(availability,run,input.configurationRevision,configuration.research.freshnessDays)
+    if(!available.allowed)throw Object.assign(error('radar_research_unavailable'),{reasons:available.reasons})
+    if(run&&!availability.allowed&&available.allowed) {
+      run.output={...run.output,discoveryLocked:true}
+      await client.query('UPDATE public.radar_candidate_research_runs SET output = $3::jsonb WHERE id=$1 AND organization_id=$2',
+        [run.id,input.organizationId,JSON.stringify(run.output)])
+    }
     const fresh = run && (['queued','running'].includes(run.status) || Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
     if (fresh) {
       if (!['queued','running','succeeded'].includes(run.status)) {
+        if(input.allowSemanticRefresh&&run.calls.semantic?.status==='completed') {
+          run.calls.semantic.refreshAuthorized=true
+          await client.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND organization_id=$2',
+            [run.id,input.organizationId,JSON.stringify(run.calls)])
+        }
         const updated = await client.query<ResearchRun>(`UPDATE public.radar_candidate_research_runs SET status='queued', error_code=NULL,
           requested_by=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,[run.id,user.id]); run = updated.rows[0]
       }
@@ -248,17 +313,19 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.keys(run.calls).filter(key=>key!=='semantic').length},{
-      signal,checkpoint,collect:configuration.sources.inspectWebsite ? dependencies.collect : async () => [],
+      signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:configuration.sources.inspectWebsite ? dependencies.collect : async () => [],
       local:configuration.sources.enrichWithBrave && identity.city && identity.state ? async () => {
         const places = await paid('brave_place_search',identity.name,key => (dependencies.local ?? searchRadarPlaces)({provider:'brave_place_search',apiKey:key,query:identity.name,city:identity.city!,state:identity.state!,limit:5}))
         return places.flatMap(place => place.sourceUrl ? [{url:place.websiteUrl || place.sourceUrl,title:place.name,
           snippets:[place.address,place.phone,place.email].filter((value):value is string => !!value),observedAt:place.observedAt}] : [])
       } : undefined,
       web: query => paid('brave_web_search',query,key => (dependencies.web ?? searchRadarWeb)({apiKey:key,query,limit:5})),
-      qualify: async pages => {
+      qualify: async (pages,evidenceHash) => {
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
-        if (run.calls.semantic?.status==='completed') return run.calls.semantic.result as RadarQualification
-        if (run.calls.semantic) throw error('radar_qualification_previous_request_uncertain')
+        const previousSemantic=run.calls.semantic
+        if (previousSemantic?.status==='completed'&&previousSemantic.evidenceHash===evidenceHash) return previousSemantic.result as RadarQualification
+        if (previousSemantic&&previousSemantic.status!=='completed') throw error('radar_qualification_previous_request_uncertain')
+        if (previousSemantic&&!previousSemantic.refreshAuthorized) throw error('radar_qualification_refresh_authorization_required')
         const tenant = await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
           WHERE organization.id=$1`,[run.organization_id])
@@ -267,14 +334,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
         [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_qualification_explicit_route_required')
-        run.calls.semantic={status:'reserved',source:'radar_business_qualification'}
+        run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,
+          previous:previousSemantic?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:undefined}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         const result = await (dependencies.runtime ?? invokeAgentRuntime)<RadarQualification>(env,'/radar/qualify',{
-          organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,request_id:run.id,
-          criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,qualification:configuration.qualification},
+          organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,request_id:`${run.id}:${evidenceHash}`,
+          criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,qualification:configuration.qualification,
+            profileEnabled:configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled},
           evidence:pages.map((page,index)=>({id:`page-${index}`,source_url:page.url,text:page.text.slice(0,12000)})),
         })
-        run.calls.semantic={status:'completed',source:'radar_business_qualification',result}
+        if(result.profile)result.profile=validateRadarCompanyProfile(result.profile,pages)
+        run.calls.semantic={status:'completed',source:'radar_business_qualification',result,evidenceHash,previous:run.calls.semantic.previous}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return result
       },
@@ -317,6 +387,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})
     const payload = {...candidate.rows[0].normalized_payload,researchRunId:run.id,researchRevision:run.configuration_revision,
       researchComplete:dossier.limitations.length===0,researchUsesBrave:Object.keys(run.calls).length>0,publicContacts:known,
+      companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),
       ...(verified ? {websiteUrl:associatedPage.url,siteFinalUrl:associatedPage.url,websiteStatus:'verified_present',siteCheckedAt:associatedPage.observedAt}:{}),
@@ -327,7 +398,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       reasons=EXCLUDED.reasons,configuration_revision=EXCLUDED.configuration_revision,updated_at=NOW() WHERE radar_b2b_reviews.approved_at IS NULL`,
     [run.candidate_id,run.organization_id,run.campaign_id,review.targetStatus,review.productFit,review.reasons,run.configuration_revision])
     // HTML is needed for crash-safe crawl checkpoints but is not exposed in the final dossier.
-    const output = {...dossier,pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:true}
+    const output = {...dossier,pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
     await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,stage='review',completed_at=NOW(),updated_at=NOW(),
       lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(output),dossier.limitations.length?'partial':'succeeded'])
     await client.query('COMMIT')

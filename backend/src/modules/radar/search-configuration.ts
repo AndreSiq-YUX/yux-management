@@ -5,8 +5,22 @@ export const RADAR_BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO'
 export const radarStateSchema = z.enum(RADAR_BRAZIL_STATES)
 export const RADAR_EXPORT_FIELDS = ['name','legalName','cnpj','city','state','address','registrationStatus','cnaes',
   'websiteUrl','websiteStatus','phone','email','instagramUrl','rating','reviewCount','targetStatus','productFit',
-  'evidenceUrl','checkedAt','verificationMethod','reviewNote','registryPhone','publicPhones','publicEmails','whatsappPublished','socialUrls','activityStatus','contactSources'] as const
+  'evidenceUrl','checkedAt','verificationMethod','reviewNote','registryPhone','publicPhones','publicEmails','whatsappPublished','socialUrls','activityStatus','contactSources',
+  'companySummary','services','customerSegments','operatingRegions','supplierEmails','sizeScore','sizeCoverage','sizeEvidence'] as const
 const terms = z.array(z.string().trim().min(1).max(160)).max(50)
+export const radarSizeMetrics = ['employees','units','annualRevenue','annualMeals','capital','yearsActive'] as const
+const sizeCriterion = z.object({
+  metric:z.enum(radarSizeMetrics),weight:z.number().positive().max(1000),maxAgeDays:z.number().int().min(1).max(3650).default(365),
+  bands:z.array(z.object({min:z.number().nonnegative(),points:z.number().min(0).max(100)}).strict()).min(1).max(20),
+}).strict().superRefine((value,ctx)=>{
+  if(value.bands.some((band,index)=>index>0&&(band.min<=value.bands[index-1].min||band.points<value.bands[index-1].points)))
+    ctx.addIssue({code:'custom',message:'size_bands_must_increase'})
+})
+export const radarSizePolicySchema = z.object({enabled:z.boolean().default(false),direction:z.enum(['larger','smaller']).default('larger'),
+  criteria:z.array(sizeCriterion).max(6).default([]),
+}).strict().superRefine((value,ctx)=>{
+  if(new Set(value.criteria.map(item=>item.metric)).size!==value.criteria.length)ctx.addIssue({code:'custom',message:'duplicate_size_metric'})
+})
 
 export const radarResearchPolicySchema = z.object({
   enabled: z.boolean().default(false), webSearchEnabled: z.boolean().default(false),
@@ -14,6 +28,9 @@ export const radarResearchPolicySchema = z.object({
   maxPagesPerCandidate: z.number().int().min(1).max(10).default(4),
   freshnessDays: z.number().int().min(1).max(30).default(7),
   semanticQualificationEnabled: z.boolean().default(false),
+  profileEnabled:z.boolean().default(false),
+  contactPurpose:z.enum(['general','suppliers','sales','finance','recruitment']).default('general'),
+  sizeAssessment:radarSizePolicySchema.default(()=>radarSizePolicySchema.parse({})),
 }).strict()
 export type RadarResearchPolicy = z.infer<typeof radarResearchPolicySchema>
 

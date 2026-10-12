@@ -1,6 +1,13 @@
 import { expect, it, vi } from 'vitest'
-import { discoverRadarBusinessPresence, matchRadarBusinessIdentity } from '../src/modules/radar/site-discovery.js'
+import { compareRadarBusinessIdentity, discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl } from '../src/modules/radar/site-discovery.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city: 'Curitiba', state: 'PR', address: 'Rua Azul 123', phone: '4133334444' }
+it('corroborates structured street and number without an obsolete registry phone', () => {
+  expect(compareRadarBusinessIdentity({ ...identity, address:'Avenida das Flores, 11200, Distrito, Curitiba/PR, 80000000' },
+    'Empresa Alfa — Av. das Flores, 11200 - sala 4 — Curitiba/PR. Telefone (41) 99999-0000')).toMatchObject({ association:'confirmed',scope:'establishment' })
+  expect(matchRadarBusinessIdentity(identity, 'Empresa Alfa Curitiba PR Rua Azul 124')).toBe('review')
+  expect(isRadarReferenceUrl('https://cadastroempresa.com.br/fornecedor/alfa')).toBe(true)
+  expect(matchRadarBusinessIdentity({...identity,name:'Alfa Tech Serviços Ltda'},'AlfaTech — Curitiba PR — R. Azul, 123')).toBe('confirmed')
+})
 it('rejects_same_name_and_city_without_corroboration', () => {
   expect(matchRadarBusinessIdentity(identity, 'Empresa Alfa Curitiba PR')).toBe('review')
   expect(matchRadarBusinessIdentity(identity, 'Empresa Alfa Curitiba PR Rua Azul 123')).toBe('confirmed')

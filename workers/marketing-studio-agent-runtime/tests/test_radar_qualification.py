@@ -37,3 +37,25 @@ def test_rejects_invented_evidence_ids_and_unverifiable_claims(evidence_id, exce
             return dict(content=json.dumps(dict(targetStatus='confirmed',productFit='high',claims=[dict(reason='Compra',evidenceId=evidence_id,excerpt=excerpt)])))
     with pytest.raises(ValueError):
         qualify_radar_business(InMemoryAgentRuntimeStore({'model_routing_rules':[ROUTE]}), enabled=True, context={}, criteria={}, evidence=EVIDENCE, llm_client=Client())
+
+def test_profiles_use_the_same_authorized_call_and_require_verifiable_sources():
+    calls = []
+    class Client:
+        def chat_completion(self, **kwargs):
+            calls.append(kwargs)
+            return dict(content=json.dumps(dict(targetStatus='review', productFit='unknown', claims=[],
+                profile=dict(summary=dict(value='Alimentação empresarial', evidenceId='page-0', excerpt='refeições coletivas para empresas')))))
+    result = qualify_radar_business(InMemoryAgentRuntimeStore({'model_routing_rules':[ROUTE]}), enabled=True, context={},
+        criteria={'profileEnabled':True}, evidence=EVIDENCE, llm_client=Client())
+    assert len(calls) == 1
+    assert calls[0]['max_tokens'] == 4000
+    assert result['profile']['summary']['evidenceId'] == 'page-0'
+
+def test_profile_cannot_invent_a_source():
+    class Client:
+        def chat_completion(self, **kwargs):
+            return dict(content=json.dumps(dict(targetStatus='review',productFit='unknown',claims=[],
+                profile=dict(summary=dict(value='Grande empresa', evidenceId='invented', excerpt='refeições coletivas para empresas')))))
+    with pytest.raises(ValueError, match='radar_profile_unverifiable'):
+        qualify_radar_business(InMemoryAgentRuntimeStore({'model_routing_rules':[ROUTE]}), enabled=True, context={},
+            criteria={'profileEnabled':True}, evidence=EVIDENCE, llm_client=Client())

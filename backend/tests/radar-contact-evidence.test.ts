@@ -12,3 +12,17 @@ it('normalizes_brazilian_phones_without_inventing_digits', () => {
   expect(normalizeRadarPhone('99999-8888')).toBeUndefined()
   expect(normalizeRadarPhone('+55 41 99999-8888')).toBe('+5541999998888')
 })
+it('distinguishes supplier, sales and recruitment contexts rather than email names',()=>{
+  const contacts=extractRadarContacts({url:'https://alfa.example',observedAt:'2026-10-12',text:
+    'FORNECEDORES Quero oferecer meus produtos e serviços. Fale por aqui: compras@alfa.example. COMERCIAL Solicite uma proposta: vendas@alfa.example. VAGAS Envie seu currículo: rh@alfa.example.'})
+  expect(contacts.find(item=>item.value==='compras@alfa.example')?.purpose).toBe('suppliers')
+  expect(contacts.find(item=>item.value==='vendas@alfa.example')?.purpose).toBe('sales')
+  expect(contacts.find(item=>item.value==='rh@alfa.example')?.purpose).toBe('recruitment')
+})
+it('uses preceding mailto section, not the next department or a nearby recruitment heading',()=>{
+  const contacts=extractRadarContacts({url:'https://alfa.example/',observedAt:'2026-10-12',text:'',html:
+    '<h2>PROPOSTA</h2><p>Quero uma proposta.</p><a href="mailto:vendas@alfa.example">Fale por aqui</a><h2>FORNECEDORES</h2><a href="mailto:compras@alfa.example">Ofereça produtos</a><h2>VAGAS</h2><a href="https://wa.me/5541999990000">Vagas</a><p>CEP 80000-000</p><a href="tel:4133334444">Telefone geral</a><p>Canal de ética: etica@alfa.example</p>'})
+  expect(contacts.find(item=>item.value==='vendas@alfa.example')?.purpose).toBe('sales')
+  expect(contacts.find(item=>item.value==='+5541999990000')?.purpose).toBe('recruitment')
+  expect(contacts.find(item=>item.value==='+554133334444')?.purpose).not.toBe('recruitment')
+})

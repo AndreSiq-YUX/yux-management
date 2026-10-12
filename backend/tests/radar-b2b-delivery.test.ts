@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertB2bDeliveryRights, formatB2bProspectCsv } from '../src/modules/radar/b2b-delivery.js'
 import { approveRadarB2bProspect } from '../src/modules/radar/repository.js'
 import type { AuthUser } from '../src/auth/routes.js'
+import { radarCompanyExportFields } from '../src/modules/radar/research-export.js'
 
 const admin = { id: '00000000-0000-4000-8000-000000000001', role: 'yux_admin' } as AuthUser
 
@@ -23,6 +24,13 @@ class ReviewPool {
 }
 
 describe('B2B prospect delivery', () => {
+  it('exports sourced profile and supplier contacts without turning unknown size into zero',()=>{
+    const fields=radarCompanyExportFields({companyProfile:{summary:{value:'Soluções B2B',sourceUrl:'https://alfa.example'},services:[],customerSegments:[],operatingRegions:[]},
+      sizeAssessment:{score:null,evidenceCoverage:0,contributions:[]}},[{kind:'email',value:'compras@alfa.example',purpose:'suppliers',sourceUrl:'https://alfa.example',observedAt:'2026-10-12',association:'confirmed'}])
+    expect(fields.sizeScore).toBe('');expect(fields.supplierEmails).toBe('compras@alfa.example')
+    const csv=formatB2bProspectCsv([{name:'Alfa',cnpj:'12345678000190',...fields}],['companySummary','supplierEmails','sizeScore'])
+    expect(csv).toContain('Soluções B2B [https://alfa.example]');expect(csv).toContain('compras@alfa.example')
+  })
   it('exports only the fields selected for the campaign in the selected order', () => {
     const csv = formatB2bProspectCsv([{ name: 'Empresa Alfa', cnpj: '12345678000190', phone: '123', email: 'a@example.test' }], ['phone','name'])
     expect(csv).toBe('\uFEFF"Telefone";"Empresa"\r\n"123";"Empresa Alfa"\r\n')

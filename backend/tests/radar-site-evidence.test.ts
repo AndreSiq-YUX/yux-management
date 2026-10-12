@@ -1,8 +1,14 @@
 import { expect, it, vi } from 'vitest'
 import { collectRadarSiteEvidence } from '../src/modules/radar/site-evidence.js'
 import { inspectRadarBusinessSite } from '../src/modules/radar/b2b-site-inspection.js'
+it('prioritizes supplier and institutional pages rather than recruitment', async () => {
+  const inspect = vi.fn(async (url:string|null) => ({status:'verified_present' as const,checkedAt:'2026-10-12',finalUrl:url!,
+    text:'Informações públicas suficientes da empresa',emails:[],phones:[],html:'<a href="/contato-vagas">Vagas</a><a href="/fornecedores">Fornecedores</a><a href="/a-empresa">A empresa</a><a href="/solucoes">Soluções</a>'}))
+  const result = await collectRadarSiteEvidence('https://alfa.example/',{maxPagesPerCandidate:3},{inspect})
+  expect(result.map(page=>new URL(page.url).pathname)).toEqual(['/','/fornecedores','/a-empresa'])
+})
 it('records_fact_source_per_page_and_respects_page_limit', async () => {
-  const inspect = vi.fn(async (url: string | null) => ({ status: 'verified_present' as const, checkedAt:'2026-10-08', finalUrl:url!, text:'Alfa contatos comerciais', emails:[], phones:[], html: '<a href="/contato">Contato</a><a href="/sobre">Sobre</a>' }))
+  const inspect = vi.fn(async (url: string | null) => ({ status: 'verified_present' as const, checkedAt:'2026-10-08', finalUrl:url!, text:'Empresa Alfa informações e contatos comerciais públicos', emails:[], phones:[], html: '<a href="/contato">Contato</a><a href="/sobre">Sobre</a>' }))
   const pages = await collectRadarSiteEvidence('https://alfa.example', { maxPagesPerCandidate: 2 }, { inspect })
   expect(pages).toHaveLength(2)
   expect(pages[1].url).toBe('https://alfa.example/contato')
@@ -13,4 +19,16 @@ it('checks_robots_per_path_before_reading_contacts', async () => {
   const result = await inspectRadarBusinessSite('https://alfa.example/privado/contato', { resolve: async () => ['93.184.216.34'], get })
   expect(result.reason).toBe('robots_disallow')
   expect(get).toHaveBeenCalledTimes(1)
+})
+it('does not count a failed read as a useful page, but bounds total attempts',async()=>{
+  const inspect=vi.fn(async(url:string|null)=>url!.endsWith('/fornecedores')
+    ?{status:'unknown' as const,checkedAt:'2026-10-12',finalUrl:url!,reason:'timeout',emails:[],phones:[]}
+    :{status:'verified_present' as const,checkedAt:'2026-10-12',finalUrl:url!,text:'Informações institucionais públicas suficientes',emails:[],phones:[],
+      html:'<a href="/fornecedores">Fornecedores</a><a href="/contato">Contato</a><a href="/sobre">Sobre</a>'})
+  const pages=await collectRadarSiteEvidence('https://alfa.example/',{maxPagesPerCandidate:2},{inspect})
+  expect(pages.filter(page=>!page.limitation)).toHaveLength(2)
+  expect(pages).toHaveLength(3)
+  const bounded=await collectRadarSiteEvidence('https://alfa.example/',{maxPagesPerCandidate:2,maxAttemptsPerCandidate:2},{inspect})
+  expect(bounded).toHaveLength(2)
+  expect(bounded.filter(page=>!page.limitation)).toHaveLength(1)
 })

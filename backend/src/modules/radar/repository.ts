@@ -2,6 +2,7 @@ import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
+import { radarCompanyExportFields } from './research-export.js'
 import type {
   RadarCampaign,
   RadarCampaignRow,
@@ -1226,6 +1227,7 @@ export async function runRadarCnpjaAdvancedSearch(
         cnaes: result.cnaes,
         registrationStatus: result.registrationStatus,
         openingDate: result.openingDate,
+        capital:result.capital,legalNature:result.legalNature,registeredSize:result.registeredSize,registryUpdatedAt:result.registryUpdatedAt,
         address: result.address,
         websiteStatus: result.websiteStatus,
         city: result.city,
@@ -1924,6 +1926,7 @@ export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
       whatsappPublished:values('whatsapp'),socialUrls:values('social'),
       activityStatus:typeof payload.activityAssessment==='object'&&payload.activityAssessment?String((payload.activityAssessment as {status?:string}).status??''):'',
       contactSources:contacts.map(item=>`${item.kind}: ${item.sourceUrl} (${item.observedAt})`).join(' | '),
+      ...radarCompanyExportFields(payload,contacts),
     }
   })
   return formatB2bProspectCsv(rows, resolveRadarSearchConfiguration(campaign.rows[0].search_configuration).exportFields)

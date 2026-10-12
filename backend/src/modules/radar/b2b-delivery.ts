@@ -27,7 +27,8 @@ export function formatB2bProspectCsv(rows: B2bProspectCsvRow[], fields: RadarExp
     productFit: 'Aderência comercial', evidenceUrl: 'Fonte da evidência', checkedAt: 'Verificado em',
     verificationMethod: 'Método de verificação', reviewNote: 'Nota da revisão', registryPhone:'Telefone cadastral',
     publicPhones:'Telefones públicos', publicEmails:'E-mails públicos',whatsappPublished:'WhatsApp publicado (não validado)',
-    socialUrls:'Redes sociais',activityStatus:'Sinais de atividade',contactSources:'Fontes dos contatos' }
+    socialUrls:'Redes sociais',activityStatus:'Sinais de atividade',contactSources:'Fontes dos contatos',
+    companySummary:'Resumo da empresa',services:'Soluções e serviços',customerSegments:'Públicos atendidos',operatingRegions:'Regiões de atuação',supplierEmails:'E-mails para fornecedores',sizeScore:'Prioridade por porte',sizeCoverage:'Cobertura das evidências de porte (%)',sizeEvidence:'Evidências de porte' }
   const header = fields.map(field => labels[field])
   const lines = rows.map(row => fields.map(field => csvCell(row[field] ?? '')).join(';'))
   return `\uFEFF${header.map(csvCell).join(';')}\r\n${lines.join('\r\n')}\r\n`

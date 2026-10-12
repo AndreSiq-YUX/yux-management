@@ -71,6 +71,8 @@ export function getRadarPublicPage(url: URL, address: string): Promise<GetResult
       response.on('error', reject)
       response.on('aborted', () => reject(new Error('response_interrupted')))
     })
+    const deadline=setTimeout(()=>request.destroy(new Error('timeout')),8000)
+    request.once('close',()=>clearTimeout(deadline))
     request.on('timeout', () => request.destroy(new Error('timeout')))
     request.on('error', reject)
     request.end()

@@ -12,7 +12,8 @@ describe('radar CNPJa client', () => {
           {
             taxId: '12.345.678/0001-90',
             alias: 'Clinica Nova',
-            company: { name: 'Clinica Nova LTDA' },
+            company: { name: 'Clinica Nova LTDA',equity:50000,nature:{text:'Sociedade Empresária Limitada'},size:{text:'Microempresa'} },
+            updated:'2026-10-01T10:00:00Z',
             founded: '2026-06-10',
             address: { city: 'Londrina', state: 'PR' },
             mainActivity: { text: 'Atividade medica ambulatorial' },
@@ -47,6 +48,7 @@ describe('radar CNPJa client', () => {
         legalName: 'Clinica Nova LTDA',
         city: 'Londrina',
         state: 'PR',
+        capital:50000,legalNature:'Sociedade Empresária Limitada',registeredSize:'Microempresa',registryUpdatedAt:'2026-10-01T10:00:00Z',
       }),
     ])
     expect(buildCnpjaCandidateSnippet(result[0])).toContain('CNPJ 12345678000190')

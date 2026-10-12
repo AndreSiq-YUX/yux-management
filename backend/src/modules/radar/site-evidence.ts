@@ -1,6 +1,28 @@
 import sanitizeHtml from 'sanitize-html'
 import { inspectRadarBusinessSite } from './b2b-site-inspection.js'
 export type RadarSiteEvidence = { url: string; observedAt: string; text: string; html?: string; limitation?: string }
+export const RADAR_READER_VERSION = 2
+export function isRetryableRadarPage(page: RadarSiteEvidence) {
+  return !!page.limitation && /^(robots_unavailable|robots_transport_failed|robots_timeout|request_failed|timeout|response_interrupted|empty_or_oversized_page|page_too_large|http_429|http_5\d\d)$/.test(page.limitation)
+}
+function usefulLinks(html:string, base:string, origin:string) {
+  return radarHtmlLinks(html).flatMap(link=>{
+    try {
+      const target=new URL(link,base);target.hash=''
+      return target.origin===origin && !target.search
+        && /contat|contact|sobre|about|empresa|servic|solu[cç]|fornecedor|supplier|institucional|quem-somos|^\/a-/i.test(target.pathname)
+        && !/\.(pdf|zip|png|jpg|jpeg|svg)$/i.test(target.pathname) ? [target.toString()] : []
+    } catch {return []}
+  }).sort((a,b)=>linkPriority(b)-linkPriority(a))
+}
+function linkPriority(url:string) {
+  const path=new URL(url).pathname
+  if (/vaga|recrut|carreira|trabalhe/i.test(path)) return -1
+  if (/fornecedor|supplier/i.test(path)) return 4
+  if (/contat|contact/i.test(path)) return 3
+  if (/sobre|about|empresa|institucional|quem-somos|^\/a-/i.test(path)) return 2
+  return 1
+}
 export function radarHtmlLinks(html: string) {
   const links: string[] = []
   sanitizeHtml(html, { allowedTags: ['a'], allowedAttributes: { a: ['href'] }, transformTags: { a: (tagName, attribs) => {
@@ -8,17 +30,16 @@ export function radarHtmlLinks(html: string) {
   } } })
   return links.slice(0, 300)
 }
-export async function collectRadarSiteEvidence(url: string, policy: { maxPagesPerCandidate: number },
+export async function collectRadarSiteEvidence(url: string, policy: { maxPagesPerCandidate: number;maxAttemptsPerCandidate?:number },
   dependencies: { inspect?: typeof inspectRadarBusinessSite; signal?: AbortSignal;
     initialPages?: RadarSiteEvidence[]; checkpoint?: (pages: RadarSiteEvidence[]) => Promise<void> } = {}): Promise<RadarSiteEvidence[]> {
   const pages: RadarSiteEvidence[] = [...(dependencies.initialPages ?? [])]
   const origin = new URL(url).origin
-  const pending = [url, ...pages.flatMap(page => radarHtmlLinks(page.html ?? '').flatMap(link => {
-    try { const target = new URL(link, page.url); return target.origin === origin && /contat|contact|sobre|about|empresa|servic/i.test(target.pathname) ? [target.toString()] : [] } catch { return [] }
-  }))]
+  const pending = [url, ...pages.flatMap(page => usefulLinks(page.html ?? '',page.url,origin))]
   const seen = new Set(pages.map(page => page.url))
   const deadline = Date.now() + 110_000
-  for (let index = 0; index < pending.length && pages.length < policy.maxPagesPerCandidate; index++) {
+  const maxAttempts=policy.maxAttemptsPerCandidate??policy.maxPagesPerCandidate*2
+  for (let index = 0; index < pending.length && pages.filter(page=>!page.limitation).length < policy.maxPagesPerCandidate && pages.length<maxAttempts; index++) {
     if (dependencies.signal?.aborted || Date.now() > deadline) break
     const target = pending[index]
     if (seen.has(target)) continue
@@ -29,13 +50,7 @@ export async function collectRadarSiteEvidence(url: string, policy: { maxPagesPe
     pages.push(page)
     await dependencies.checkpoint?.(pages)
     if (result.status !== 'verified_present') continue
-    const links = radarHtmlLinks(result.html ?? '').flatMap(link => {
-      try {
-        const next = new URL(link, page.url); next.hash = ''
-        return next.origin === origin && !next.search && /contat|contact|sobre|about|empresa|servic/i.test(next.pathname)
-          && !/\.(pdf|zip|png|jpg|jpeg|svg)$/i.test(next.pathname) ? [next.toString()] : []
-      } catch { return [] }
-    }).sort((a, b) => Number(/contat|contact/i.test(b)) - Number(/contat|contact/i.test(a)))
+    const links = usefulLinks(result.html ?? '',page.url,origin)
     pending.push(...links)
   }
   return pages

@@ -46,6 +46,10 @@ export type CnpjaCandidate = {
   email?: string
   phone?: string
   openingDate?: string
+  capital?:number
+  legalNature?:string
+  registeredSize?:string
+  registryUpdatedAt?:string
   websiteStatus: 'unknown'
   sourceUrl?: string
   rawPayload: Record<string, unknown>
@@ -269,6 +273,10 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
     [city, state].filter(Boolean).join('/'), stringValue(address.zip) || stringValue(address.zipCode),
   ].filter(Boolean)
   const formattedAddress = addressParts.join(', ') || undefined
+  const capital=typeof company.equity==='number'&&Number.isFinite(company.equity)&&company.equity>=0?company.equity:undefined
+  const legalNature=stringValue(objectValue(company.nature)?.text)
+  const registeredSize=stringValue(objectValue(company.size)?.text)
+  const registryUpdatedAt=stringValue(record.updated)
 
   return {
     taxId: cleanedTaxId,
@@ -283,12 +291,13 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
     email,
     phone,
     openingDate,
+    capital,legalNature,registeredSize,registryUpdatedAt,
     websiteStatus: 'unknown',
     sourceUrl: cleanedTaxId ? `https://cnpja.com/office/${cleanedTaxId}` : undefined,
     rawPayload: {
       taxId: cleanedTaxId, legalName, tradeName, cnaeMain, cnaes,
       registrationStatus, address: formattedAddress, city, state, email, phone,
-      openingDate, websiteStatus: 'unknown',
+      openingDate,capital,legalNature,registeredSize,registryUpdatedAt, websiteStatus: 'unknown',
     },
   }
 }

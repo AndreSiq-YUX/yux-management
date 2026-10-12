@@ -395,7 +395,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   })
   app.post('/candidates/:id/research',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
-    const params=z.object({id:uuid}).safeParse(request.params),body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid.optional()}).strict().safeParse(request.body)
+    const params=z.object({id:uuid}).safeParse(request.params),body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid.optional(),allowSemanticRefresh:z.boolean().optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
     const result=await startRadarCandidateResearch(app.pg,user,{...body.data,candidateId:params.data.id})
     if(result.status!=='succeeded') {

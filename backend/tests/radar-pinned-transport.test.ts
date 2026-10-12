@@ -44,3 +44,7 @@ it('rejects an interrupted response instead of hanging', async () => {
   const url = await serve((_req, res) => { res.writeHead(200); res.write('partial'); res.destroy() })
   await expect(getRadarPublicPage(url, '127.0.0.1')).rejects.toThrow()
 })
+it('bounds a response even when the connection remains open',async()=>{
+  const url=await serve((_req,res)=>{res.writeHead(200);res.write('waiting')})
+  await expect(getRadarPublicPage(url,'127.0.0.1')).rejects.toThrow('timeout')
+},12000)
