@@ -1,6 +1,7 @@
 import dns from 'node:dns/promises'
 import http from 'node:http'
 import https from 'node:https'
+import type { LookupFunction } from 'node:net'
 import { isIP } from 'node:net'
 import sanitizeHtml from 'sanitize-html'
 import { isPublicRadarSiteIp } from './osm-site-check.js'
@@ -20,7 +21,8 @@ export type RadarBusinessSiteInspection = {
   reason?: string
 }
 
-const MAX_HTML_BYTES = 200_000
+const MAX_HTML_BYTES = 2 * 1024 * 1024
+const MAX_ROBOTS_BYTES = 256 * 1024
 const USER_AGENT = 'YUX-Radar-SiteVerification/1.0'
 
 async function resolvePublicIpv4(hostname: string) {
@@ -28,12 +30,23 @@ async function resolvePublicIpv4(hostname: string) {
   return values.map(value => value.address)
 }
 
-function getHtml(url: URL, address: string): Promise<GetResult> {
+export function createRadarPinnedLookup(address: string): LookupFunction {
+  return (_hostname, options, callback) => {
+    const family = isIP(address)
+    if (!family) { callback(new Error('invalid_pinned_address'), '', 0); return }
+    if (options.all) callback(null, [{ address, family }])
+    else callback(null, address, family)
+  }
+}
+
+// Only call after public-IP validation. Exported for native-transport regression tests.
+export function getRadarPublicPage(url: URL, address: string): Promise<GetResult> {
   return new Promise((resolve, reject) => {
+    const maxBytes = url.pathname === '/robots.txt' ? MAX_ROBOTS_BYTES : MAX_HTML_BYTES
     const transport = url.protocol === 'https:' ? https : http
     const request = transport.request(url, {
       method: 'GET', timeout: 8000,
-      lookup: (_hostname, _options, callback) => callback(null, address, 4),
+      lookup: createRadarPinnedLookup(address),
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,text/plain' },
     }, response => {
       const status = response.statusCode ?? 0
@@ -48,7 +61,7 @@ function getHtml(url: URL, address: string): Promise<GetResult> {
       const chunks: Buffer[] = []
       response.on('data', (chunk: Buffer) => {
         size += chunk.length
-        if (size > MAX_HTML_BYTES) {
+        if (size > maxBytes) {
           request.destroy(new Error('page_too_large'))
           return
         }
@@ -56,6 +69,7 @@ function getHtml(url: URL, address: string): Promise<GetResult> {
       })
       response.on('end', () => resolve({ status, location, contentType, body: Buffer.concat(chunks).toString('utf8') }))
       response.on('error', reject)
+      response.on('aborted', () => reject(new Error('response_interrupted')))
     })
     request.on('timeout', () => request.destroy(new Error('timeout')))
     request.on('error', reject)
@@ -102,7 +116,7 @@ export async function inspectRadarBusinessSite(
   let url: URL
   try { url = new URL(value) } catch { return { ...empty, status: 'blocked', reason: 'invalid_url' } }
   const resolve = options.resolve ?? resolvePublicIpv4
-  const get = options.get ?? getHtml
+  const get = options.get ?? getRadarPublicPage
   const checkedRobots = new Map<string,string>()
   const originalHost = url.hostname.replace(/^www\./i, '').toLowerCase()
   for (let redirects = 0; redirects <= 2; redirects++) {
@@ -120,7 +134,7 @@ export async function inspectRadarBusinessSite(
       const robotsUrl = new URL('/robots.txt', url)
       let robots: GetResult
       try { robots = await get(robotsUrl, addresses[0]) }
-      catch { return { ...empty, status: 'unknown', reason: 'robots_unavailable' } }
+      catch (cause) { return { ...empty, status: 'unknown', reason: cause instanceof Error && cause.message === 'timeout' ? 'robots_timeout' : 'robots_transport_failed' } }
       if (robots.status === 403 || robots.status === 401) {
         return { ...empty, status: 'blocked', reason: 'robots_access_denied' }
       }
@@ -131,7 +145,7 @@ export async function inspectRadarBusinessSite(
     if(robotsBlocksHomepage(checkedRobots.get(url.origin)??'',url.pathname+url.search))return {...empty,status:'blocked',reason:'robots_disallow'}
     let response: GetResult
     try { response = await get(url, addresses[0]) }
-    catch { return { ...empty, status: 'unknown', reason: 'request_failed' } }
+    catch (cause) { return { ...empty, status: 'unknown', reason: cause instanceof Error && ['timeout','page_too_large','response_interrupted'].includes(cause.message) ? cause.message : 'request_failed' } }
     if (response.status >= 300 && response.status < 400 && response.location) {
       if (redirects === 2) return { ...empty, status: 'unknown', reason: 'too_many_redirects' }
       try {
