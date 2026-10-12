@@ -13,6 +13,17 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 }
 
 describe('Radar campaign configuration panel', () => {
+  it('keeps size optional and persists editable weights, thresholds, direction and purpose',async()=>{
+    const container=document.createElement('div'),root=createRoot(container),submit=vi.fn(async()=>undefined)
+    const config=defaultRadarSearchConfiguration()
+    config.research!.profileEnabled=true;config.research!.contactPurpose='suppliers'
+    config.research!.sizeAssessment={enabled:true,direction:'smaller',criteria:[{metric:'employees',weight:3,maxAgeDays:730,bands:[{min:0,points:0},{min:50,points:90}]}]}
+    act(()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['BA'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+    expect(container.textContent).toContain('Peso');expect(container.textContent).toContain('Pontos de tamanho')
+    await act(async()=>{container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))})
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({contactPurpose:'suppliers',sizeAssessment:config.research!.sizeAssessment})})}))
+    act(()=>root.unmount())
+  })
   it('starts without a sector preset and offers every Brazilian state', () => {
     const container = document.createElement('div')
     const root = createRoot(container)

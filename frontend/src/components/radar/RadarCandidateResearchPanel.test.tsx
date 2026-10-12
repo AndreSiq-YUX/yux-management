@@ -41,3 +41,23 @@ it('shows_all_contacts_and_sources_and_partial_resume',async()=>{
   expect(view.container.textContent).toContain('Retomar pesquisa automática')
   view.unmount()
 })
+it('shows practical profile, contact purpose, missing size and actionable technical failure',async()=>{
+  const claim={value:'Soluções corporativas',evidenceId:'page-0',excerpt:'Soluções corporativas',sourceUrl:'https://alfa.example/',observedAt:'2026-10-12',scope:'establishment' as const}
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,availability:{...availability,semanticQualificationEnabled:true},run:{
+    id:'run',status:'partial',stage:'review',updated_at:'2026-10-12',configuration_revision:2,output:{
+      contacts:[{kind:'email',value:'compras@alfa.example',purpose:'suppliers',preferred:true,sourceUrl:claim.sourceUrl,observedAt:claim.observedAt,association:'confirmed'}],
+      profile:{summary:claim,services:[claim],customerSegments:[],operatingRegions:[],scaleSignals:[]},
+      sizeAssessment:{score:null,evidenceCoverage:0,direction:'larger',contributions:[],limitations:[]},limitations:['robots_transport_failed']}}})
+  const view=mount();await view.click('Ver resultado e disponibilidade')
+  expect(view.container.textContent).toContain('Soluções corporativas')
+  expect(view.container.textContent).toContain('Trecho, data e escopo da evidência')
+  expect(view.container.textContent).toContain('fornecedores/compras')
+  expect(view.container.textContent).toContain('Sem evidência suficiente para pontuar')
+  expect(view.container.textContent).toContain('Falha de conexão')
+  const refresh=view.container.querySelector('input[type="checkbox"]') as HTMLInputElement
+  expect(refresh.checked).toBe(false)
+  await act(async()=>refresh.click())
+  await view.click('Retomar pesquisa automática')
+  expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({allowSemanticRefresh:true}))
+  view.unmount()
+})

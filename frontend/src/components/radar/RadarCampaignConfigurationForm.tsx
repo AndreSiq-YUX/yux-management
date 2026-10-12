@@ -1,10 +1,11 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { defaultRadarSearchConfiguration, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
+import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, validateRadarSizePolicy, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
   type RadarExportField, type RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import type { RadarCampaignInput } from '@/services/radarService'
 import type { RadarCampaign } from '@/types/radar'
+import { RadarSizeConfiguration } from './RadarSizeConfiguration'
 
 type Props = { organizationId: string; initialCampaign?: RadarCampaign; busy: boolean;
   onSubmit: (input: RadarCampaignInput) => Promise<void>; onCancel: () => void }
@@ -32,7 +33,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
   const [error, setError] = useState<string | null>(null)
   const rules = config.qualification
   const research = config.research ?? defaultRadarSearchConfiguration().research!
-  const changeResearch = (patch: Partial<typeof research>) => setConfig(current => ({ ...current, research: { ...research, ...patch } }))
+  const changeResearch = (patch: Partial<typeof research>) => setConfig(current => ({ ...current, research: { ...defaultRadarSearchConfiguration().research!,...current.research, ...patch } }))
   const changeRules = (patch: Partial<typeof rules>) => setConfig(current => ({ ...current, qualification: { ...current.qualification, ...patch } }))
 
   const submit = async (event: FormEvent) => {
@@ -40,6 +41,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
     setError(null)
     try {
       if (!states.length) throw new Error('Selecione pelo menos uma UF.')
+      if(research.sizeAssessment)validateRadarSizePolicy(research.sizeAssessment)
       if (geographicScope === 'cities' && !cities.trim()) throw new Error('Informe pelo menos uma cidade ou escolha Estados inteiros.')
       if (!config.exportFields.length) throw new Error('Selecione pelo menos um campo de entrega.')
       const codes = splitRadarTerms(cnaes).map(value => value.replace(/\D/g, ''))
@@ -108,7 +110,12 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <input type="checkbox" checked={research[key]} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Complementar com Brave Web Search','Qualificar semanticamente pela oferta (LLM configurada no Admin)'][index]}</label>)}</div>
         <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas totais por empresa',5],['maxPagesPerCandidate','Páginas públicas por empresa',10],['freshnessDays','Validade da pesquisa (dias)',30]] as const).map(([key,label,max]) => <Field key={key} label={label}>
           <Input type="number" min={1} max={max} required value={research[key]} onChange={e => changeResearch({ [key]: Number(e.target.value) })} /></Field>)}</div>
+        <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.profileEnabled??false} onChange={e=>changeResearch({profileEnabled:e.target.checked})}/>Gerar perfil aprofundado da empresa (mesma análise LLM autorizada)</label>
+        <div className="mt-3"><Field label="Finalidade do contato desejado"><select className={selectClass} value={research.contactPurpose??'general'} onChange={e=>changeResearch({contactPurpose:e.target.value as typeof research.contactPurpose})}>
+          <option value="general">Contato geral</option><option value="suppliers">Oferecer produtos ou serviços — fornecedores/compras</option><option value="sales">Comprar da empresa — comercial/vendas</option><option value="finance">Financeiro/fiscal</option><option value="recruitment">Recrutamento</option>
+        </select></Field></div>
       </fieldset>
+      <RadarSizeConfiguration value={research.sizeAssessment??defaultRadarSizePolicy()} onChange={value=>changeResearch({sizeAssessment:value})}/>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Critérios de qualificação</legend>
         <p className="mb-3 text-xs text-slate-500">Expressões literais verificadas no site identificado da empresa, ignorando acentos. Não é uma análise semântica por LLM. Sem critérios positivos, a empresa vai para revisão manual.</p>
         <div className="grid gap-3 md:grid-cols-2">{([

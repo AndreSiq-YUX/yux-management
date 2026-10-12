@@ -34,7 +34,7 @@ export const radarService = {
   getCandidateResearch(candidateId:string,organizationId:string) {
     return apiRequest<RadarResearchResult>(`/radar/candidates/${candidateId}/research${buildQuery({organizationId})}`)
   },
-  startCandidateResearch(candidateId:string,input:{organizationId:string;configurationRevision:number;requestId:string}) {
+  startCandidateResearch(candidateId:string,input:{organizationId:string;configurationRevision:number;requestId:string;allowSemanticRefresh?:boolean}) {
     return apiRequest<{runId:string;status:string;reused:boolean}>(`/radar/candidates/${candidateId}/research`,{method:'POST',body:input})
   },
   async getAdminDataSources() {
