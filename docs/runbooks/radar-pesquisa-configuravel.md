@@ -56,7 +56,7 @@ HTTP 200, CNPJ ativo e copyright não provam funcionamento. Sinais datados de op
 
 Pesquisas persistem em `radar_candidate_research_runs`, fatos confirmados em `radar_b2b_evidence` e resumo versionado no candidato. Respostas de busca concluídas e etapas salvas são reaproveitadas, inclusive após reiniciar o processo. Cliques concorrentes reutilizam o mesmo run. Chamadas reservadas com resposta incerta **não são repetidas automaticamente**, para evitar cobrança duplicada: deixam pendência. Falha de qualificação mantém contatos e fatos; habilitar/liberar uma fonte permite retomar candidatos antes inconclusivos. A pesquisa concluída é reutilizada dentro da validade; expirando, uma nova execução exige confirmação e continua sujeita aos limites.
 
-### Verificação local desta entrega
+### Verificação histórica da entrega inicial de aprofundamento
 
 Testes usam respostas simuladas, sem API/LLM pagos. A jornada com PostgreSQL 17 isolado aplicou as 80 migrações e validou persistência real com papel de worker, clique concorrente, releitura, revisão, exportação, bloqueio entre organizações e reaproveitamento sem nova chamada. O teste opt-in exige `YUX_RADAR_TEST_DATABASE_URL` em `127.0.0.1` e banco exclusivo `yux_radar_research_test`; não aponta para produção.
 
@@ -80,3 +80,35 @@ Testes automatizados usam fornecedores simulados, sem API/LLM pagos. Eles não e
 ## Teste da chave Brave
 
 A requisição usa `search_lang=pt-br`, `ui_lang=pt-BR` e localização no formato cidade/país para o Brasil; a UF também acompanha o texto da consulta. O idioma genérico `pt` não pertence à enumeração da API e pode gerar HTTP 422. Se houver outro erro de validação, o teste informa os nomes dos parâmetros reconhecidos, sem mostrar chave, valores enviados ou mensagens arbitrárias do provedor. Testar a chave no painel consome uma consulta; os testes automatizados não consomem créditos.
+
+## Correção de leitura e dossiê aprofundado — 12/10/2026
+
+O leitor mantém DNS fixado, bloqueio de rede privada, robots por caminho e timeout de 8 segundos. O HTML bruto aceita até 2 MiB; robots até 256 KiB; o texto sanitizado continua limitado a 20.000 caracteres. Falhas de transporte não são tratadas como proibição do site. O limite de páginas conta leituras úteis, com no máximo duas tentativas por página configurada.
+
+### Configuração por campanha
+
+1. Após implantar backend, frontend e runtime, abra **Editar configuração → Aprofundamento automático**. Ative **perfil aprofundado** se desejar resumo, soluções, públicos, regiões e sinais de escala. Isso usa a rota existente **Radar — qualificação de empresas pela oferta**, configurada pelo Admin; não seleciona nem troca um modelo automaticamente.
+2. Escolha a finalidade do contato: geral, fornecedores/compras, comercial/vendas, financeiro ou recrutamento. O sistema usa o contexto publicado junto ao contato, não apenas o nome do e-mail. Sem suporte, a finalidade permanece não identificada. Todos os contatos encontrados continuam no dossiê; os corroborados para a finalidade ficam prioritários.
+3. Opcionalmente, ative **Porte e prioridade**. Configure métricas, pesos, validade e faixas de pontos, escolhendo priorizar maiores ou menores. Não existe preset setorial/geográfico. Sem critérios ou evidência comparável, o resultado é desconhecido, não zero. Cobertura mede o peso dos critérios comprovados, separadamente da pontuação, aderência à oferta e intenção de compra.
+4. Os critérios disponíveis são funcionários, unidades, receita anual em BRL, refeições anuais, capital cadastral em BRL e anos desde a abertura. Capital não é receita; S.A. não gera pontos automaticamente. Métricas antigas, contraditórias, sem data ou relativas apenas ao grupo não pontuam o estabelecimento. Ano sem dia/mês usa o primeiro dia conservadoramente.
+5. Selecione as colunas de entrega desejadas: perfil, soluções, públicos, regiões, e-mail de fornecedores, pontuação, cobertura e fontes de porte. Exportação continua restrita aos aprovados da revisão atual e aos direitos confirmados de entrega. Alterar critérios gera nova revisão; aprovados não são sobrescritos silenciosamente.
+
+O perfil e a qualificação são produzidos na mesma etapa de IA, não em uma chamada extra escondida. O runtime solicita até 4.000 tokens de saída com perfil/porte, sempre limitado pela rota do Admin. A confirmação mostra modelo e limites; a estimativa em R$ das buscas **não inclui IA ou fallbacks**. O orçamento da rota é uma referência administrativa, não uma cotação de tokens.
+
+### Recuperar empresas já pesquisadas
+
+Use **Ver resultado e disponibilidade → Retomar pesquisa automática**. Leituras com erro recuperável são refeitas, mantendo buscas já concluídas. Mesmo com quota/orçamento de busca esgotados, uma execução parcial recente com descoberta salva pode retomar apenas leitura pública, com teto de novas buscas zero. Isso não contorna licença, contratação, chave, fonte desativada ou campanha pausada.
+
+Se novas páginas mudarem as evidências de uma análise por IA já concluída, marque **Autorizo nova análise por IA se as evidências mudaram** antes de retomar. Sem essa autorização, os fatos são preservados e a análise fica pendente. Respostas pagas incertas/reservadas não são repetidas automaticamente nem liberadas por esse checkbox. Uma execução expirada pode exigir nova pesquisa e nova confirmação.
+
+O resultado mostra presença pública acessível sem confundi-la com funcionamento atual, fontes, finalidade dos contatos e pendências acionáveis. Links para balanços/PDFs financeiros são listados como **não analisados**: não há OCR, leitura de PDF nem inferência de faturamento a partir do nome do arquivo. Consultas CNPJá antigas não são refeitas automaticamente para obter capital/natureza jurídica; campos novos são preservados quando retornados em consultas autorizadas.
+
+### Validação desta correção
+
+Teste público do leitor corrigido no Viva Food: homepage de 728.010 bytes lida; nome/endereço corroborados; telefone publicado e e-mail de fornecedores extraídos com a finalidade correta. Não houve chamada Brave, Serper ou LLM, envio de mensagem ou alteração de produção.
+
+A jornada PostgreSQL foi ampliada para perfil, finalidade, porte e exportação, mas **não foi executada nesta correção**: `YUX_RADAR_TEST_DATABASE_URL` não está configurada. O teste permaneceu ignorado e só aceita `127.0.0.1/yux_radar_research_test`. A validação histórica acima não comprova esses campos novos no banco real. Implantação e piloto comercial com consumo autorizado continuam pendentes.
+
+Verificação automatizada desta versão: **844 testes backend, 625 frontend e 277 runtime aprovados**; um teste preexistente do runtime permaneceu ignorado. A regressão específica do Radar passou com 172 testes backend e 34 frontend. Builds backend/frontend e orçamento de bundle aprovados. Lint comparativo: 558 erros/26 avisos preexistentes, abaixo do baseline 560/27; isso não significa ausência de dívida técnica no repositório. Não houve nova validação visual de navegador nesta correção.
+
+Commits funcionais publicados em `main` e `codex/radar-brave-state-fixes`: `46934a5`, `b6a7556`, `090d6c9`. Push confirmado; **não equivale a deploy**. Esta versão não adiciona migração: os novos campos usam os JSONB existentes. Para o perfil aprofundado, atualize também o runtime, além de backend e frontend.
