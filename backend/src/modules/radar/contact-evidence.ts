@@ -2,6 +2,7 @@ import type { RadarSiteEvidence } from './site-evidence.js'
 import { radarHtmlLinks } from './site-evidence.js'
 import { isRadarSocialUrl } from './site-discovery.js'
 import sanitizeHtml from 'sanitize-html'
+import {isRadarInstitutionalSource} from './source-identity.js'
 export type RadarContactPurpose='general'|'suppliers'|'sales'|'finance'|'recruitment'|'unknown'
 export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'social' | 'business_person'; value: string;
   sourceUrl: string; observedAt: string; association: 'confirmed' | 'review'; note?: string; preferred?:boolean;
@@ -27,6 +28,7 @@ export function normalizeRadarPhone(value: string): string | undefined {
   return `+55${digits}`
 }
 export function extractRadarContacts(page: RadarSiteEvidence, association: 'confirmed' | 'review' = 'confirmed'): RadarContactEvidence[] {
+  if(!isRadarInstitutionalSource(page.url,{text:page.text,html:page.html}))return []
   const contacts: RadarContactEvidence[] = []
   // Preserve a link's published position, including mailto contacts absent from visible text.
   // Never use text AFTER a contact: that often belongs to the next department.
@@ -49,6 +51,7 @@ export function extractRadarContacts(page: RadarSiteEvidence, association: 'conf
     if (/^tel:/i.test(link)) add('phone', normalizeRadarPhone(link.slice(4)))
     try {
       const url = new URL(link, page.url)
+      if(/(?:^|\/)(?:sharer(?:\.php)?|share|intent)(?:\/|$)/i.test(url.pathname)||url.searchParams.has('share'))continue
       if (url.hostname === 'wa.me' || url.hostname === 'api.whatsapp.com' && url.pathname === '/send') {
         const phone = normalizeRadarPhone(url.hostname === 'wa.me' ? url.pathname : url.searchParams.get('phone') ?? '')
         if (phone) add('whatsapp', phone, 'Link público observado; conta e consentimento não verificados.',link)

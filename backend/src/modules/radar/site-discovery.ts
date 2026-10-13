@@ -1,5 +1,6 @@
 import { normalizeRadarText } from './search-configuration.js'
 import { publicRadarUrl, type RadarWebHit } from './web-search.js'
+import {classifyRadarSource,isRadarInstitutionalSource} from './source-identity.js'
 export type RadarBusinessIdentity = { name: string; legalName?: string; cnpj?: string; city?: string; state?: string; address?: string; phone?: string; websiteUrl?: string }
 export type RadarPresenceDiscovery = { association: 'confirmed' | 'review' | 'not_found_in_consulted_sources' | 'blocked';
   websiteUrl?: string; hits: RadarWebHit[]; suggestions: RadarWebHit[]; limitations: string[]; queries: number }
@@ -36,8 +37,7 @@ export function isRadarSocialUrl(value: string) {
   try { return /(^|\.)(instagram\.com|facebook\.com|linkedin\.com|youtube\.com|tiktok\.com|wa\.me|whatsapp\.com)$/.test(new URL(value).hostname) } catch { return false }
 }
 export function isRadarReferenceUrl(value:string) {
-  if(isRadarSocialUrl(value))return true
-  try {return /(^|\.)(google\.[a-z.]+|maps\.apple\.com|econodata\.com\.br|cnpja\.com|cnpj\.biz|casadosdados\.com\.br|solutudo\.com\.br|telelistas\.net|cadastroempresa\.com\.br|restaurantepertodemim\.com)$/.test(new URL(value).hostname)}catch{return true}
+  return classifyRadarSource(value).kind!=='institutional_candidate'
 }
 export async function discoverRadarBusinessPresence(identity: RadarBusinessIdentity,
   policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean },
@@ -49,7 +49,7 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
   const queriesText = [...new Set([`"${identity.name}" ${identity.city ?? ''} ${identity.state ?? ''} contato`,
     identity.cnpj ? `"${identity.cnpj}" contato site` : '',
     `"${identity.legalName || identity.name}" ${identity.city ?? ''} telefone email`].filter(Boolean))]
-  const confirmed = () => hits.filter(hit => matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`) === 'confirmed')
+  const confirmed = () => hits.filter(hit => isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')})&&matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`) === 'confirmed')
   // One local query plus complementary web queries share a single cap, including previously reserved attempts.
   if (dependencies.local && queries === 0) {
     queries++

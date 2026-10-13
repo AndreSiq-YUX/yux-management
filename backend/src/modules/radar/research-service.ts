@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import {isRadarInstitutionalSource} from './source-identity.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AppEnv } from '../../config/env.js'
 import type { AuthUser } from '../../auth/routes.js'
@@ -73,7 +74,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
           output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')
         }})
       pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...collected]
-      if (collected.some(page=>matchRadarBusinessIdentity(identity,page.text)==='confirmed')) {
+      if (collected.some(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')) {
         website=url
         if(collected.filter(page=>!page.limitation).length<remaining) {
           collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,initialPages:collected,
@@ -86,14 +87,14 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.pages = pages; output.readingComplete = !pages.some(isRetryableRadarPage); output.readerVersion=RADAR_READER_VERSION
     await checkpoint('consolidation')
   }
-  const associated = pages.some(page => matchRadarBusinessIdentity(identity, page.text) === 'confirmed')
-  const associatedOrigin = pages.find(page=>matchRadarBusinessIdentity(identity,page.text)==='confirmed')?.url
+  const associated = pages.some(page => isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity, page.text) === 'confirmed')
+  const associatedOrigin = pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')?.url
   const associatedPages=pages.filter(page=>associatedOrigin && new URL(page.url).origin===new URL(associatedOrigin).origin
-    && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||matchRadarBusinessIdentity(identity,page.text)==='confirmed'))
+    && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'))
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
   const contacts = pages.flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review'))
   // Link-only contacts are preserved as sourced facts: stored pages intentionally omit raw HTML.
-  if(output.analysisOnly)contacts.push(...(output.contacts??[]).map(contact=>({...contact,
+  if(output.analysisOnly)contacts.push(...(output.contacts??[]).filter(contact=>isRadarInstitutionalSource(contact.sourceUrl)).map(contact=>({...contact,
     association:associatedPages.some(page=>page.url===contact.sourceUrl)?contact.association:'review' as const})))
   // Contacts in search snippets remain useful when there is no website; identity must be corroborated independently.
   for (const hit of discovery.hits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`)))
@@ -114,7 +115,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }
   }
   uniqueContacts.sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))
-  const confirmedSearchPages=discovery.hits.filter(hit=>matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed')
+  const confirmedSearchPages=discovery.hits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')})&&matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed')
     .map(hit=>({url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`,observedAt:hit.observedAt}))
   const qualifiedEvidence=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages].slice(0,10)
   const activity = assessRadarBusinessActivity(qualifiedEvidence)
@@ -416,10 +417,10 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     const identity:RadarBusinessIdentity={name:String(context.normalized_payload.tradeName||context.title),legalName:typeof context.normalized_payload.legalName==='string'?context.normalized_payload.legalName:undefined,
       cnpj:String(context.normalized_payload.cnpj??''),city:String(context.normalized_payload.city??''),state:String(context.normalized_payload.state??''),
       address:String(context.normalized_payload.address??''),phone:String(context.normalized_payload.phoneRaw??'')}
-    const associatedPage=dossier.pages.find(page=>matchRadarBusinessIdentity(identity,page.text)==='confirmed')
+    const associatedPage=dossier.pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')
     const verified = dossier.siteAssociation === 'confirmed' && !!associatedPage
     const associatedPages=associatedPage?dossier.pages.filter(page=>new URL(page.url).origin===new URL(associatedPage.url).origin
-      && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||matchRadarBusinessIdentity(identity,page.text)==='confirmed')):[]
+      && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')):[]
     const review = dossier.qualification ?? triageRadarBusiness({name:context.title,cnpj:String(context.normalized_payload.cnpj ?? ''),
       desiredCnaes:context.target_cnaes,cnaes:Array.isArray(context.normalized_payload.cnaes) ? context.normalized_payload.cnaes as string[]:[],
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})
