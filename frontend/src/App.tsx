@@ -242,6 +242,11 @@ function App() {
             <Route path="portal/comercial/funis" element={<PortalCommercialFunnelsPage />} />
             <Route path="portal/comercial/tarefas" element={<PortalCommercialTasksPage />} />
             <Route path="portal/comercial/scoring" element={<PortalLeadScoringPage />} />
+            <Route path="portal/comercial/radar" element={<PortalCommercialRadarPage />} />
+            <Route path="portal/comercial/radar/nova" element={<PortalCommercialRadarPage />} />
+            <Route path="portal/comercial/radar/:campaignId" element={<PortalCommercialRadarPage />} />
+            <Route path="portal/comercial/radar/:campaignId/configuracoes" element={<PortalCommercialRadarPage />} />
+            <Route path="portal/comercial/radar/:campaignId/historico" element={<PortalCommercialRadarPage />} />
 
             <Route path="portal/atendimento/conversas" element={<PortalServiceConversationsPage />} />
             <Route path="portal/atendimento/agente-ia" element={<PortalAiAgentPage />} />

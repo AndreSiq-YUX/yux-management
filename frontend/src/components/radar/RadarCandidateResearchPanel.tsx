@@ -20,10 +20,10 @@ function SourcedProfileClaim({claim}:{claim:RadarProfileClaim}) {
       <p>Observado em {new Date(claim.observedAt).toLocaleDateString('pt-BR')}; {claim.scope==='establishment'?'estabelecimento':claim.scope==='group'?'grupo — não confirma a filial':'escopo pendente'}.</p>
     </details></div>
 }
-export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,showTechnical=true,canStart=true,approved=false,onCompleted}:{
-  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;showTechnical?:boolean;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
+export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,showTechnical=true,initialOpen=false,canStart=true,approved=false,onCompleted}:{
+  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;showTechnical?:boolean;initialOpen?:boolean;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
 }) {
-  const [open,setOpen]=useState(false),[result,setResult]=useState<RadarResearchResult|null>(null)
+  const [open,setOpen]=useState(initialOpen),[result,setResult]=useState<RadarResearchResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[refresh,setRefresh]=useState(0)
   const [available,setAvailable]=useState(availability)
   const [allowSemanticRefresh,setAllowSemanticRefresh]=useState(false)
@@ -60,12 +60,12 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
   return <section className="mt-3 min-w-0 space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3" aria-label="Pesquisa automática da empresa">
     <div className="flex flex-wrap gap-2">
       <button type="button" className={`${buttonClass} bg-slate-900 text-white`} disabled={!available?.allowed||busy||running||approved||!canStart} onClick={()=>start(result?.run&&['partial','blocked','failed'].includes(result.run.status)?'resume':'complete')}>
-        {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa automática':'Pesquisar e enriquecer automaticamente'}</button>
-      <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar resultado':'Ver resultado e disponibilidade'}</button>
+        {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa desta empresa':'Completar dados desta empresa'}</button>
+      <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar dossiê':'Ver dossiê da empresa'}</button>
       {result?.run&&!running&&<><button type="button" className={buttonClass} disabled={!available?.allowed||busy||approved||!canStart} onClick={()=>start('refresh')}>Atualizar pesquisa</button>
         {available?.semanticQualificationEnabled&&<button type="button" className={buttonClass} disabled={!available.allowed||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button>}</>}
     </div>
-    {!available && !error && !availabilityError && <p className="text-xs text-slate-600">Conferindo disponibilidade. Abra o resultado para atualizar.</p>}
+    {!available && !error && !availabilityError && <p className="text-xs text-slate-600">Conferindo disponibilidade da pesquisa...</p>}
     {availabilityError && !available && !error && <p role="alert" className="text-sm text-red-700">{availabilityError}</p>}
     {(error||availabilityError)&&<button type="button" className={buttonClass} onClick={()=>{setOpen(true);setRefresh(value=>value+1)}}>Tentar novamente</button>}
     {approved && <p className="text-xs text-amber-800">Registro aprovado preservado. A pesquisa não altera silenciosamente uma aprovação.</p>}
@@ -75,14 +75,14 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     {open && <div className="space-y-3 text-sm">
       {showTechnical&&available?.semanticQualificationEnabled&&<p className="text-xs text-slate-600">IA: {available.semantic?.model??'confira a rota no Admin'}; a estimativa de buscas não inclui tokens da IA nem tentativas de fallback. {available.semantic?.budgetReferenceBrl?`Referência de orçamento no Admin: ${money(available.semantic.budgetReferenceBrl)} — não é cotação do consumo.`:''}</p>}
       {result?.run&&available?.semanticQualificationEnabled&&['partial','blocked','failed'].includes(result.run.status)&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} onChange={e=>setAllowSemanticRefresh(e.target.checked)}/>Autorizo nova análise por IA se as evidências mudaram (pode consumir créditos; buscas concluídas serão reaproveitadas).</label>}
-      <button type="button" className={buttonClass} onClick={()=>setRefresh(value=>value+1)}>Atualizar resultado</button>
+      <button type="button" className={buttonClass} onClick={()=>setRefresh(value=>value+1)}>Atualizar dossiê</button>
       {result?.run ? <><p role="status" className="font-semibold">{statusLabel[result.run.status]??result.run.status}</p>
         <ol className="grid gap-2 sm:grid-cols-2">{stages.map(([key,label],index)=><li key={key} className="rounded border bg-white p-2">{index+1}. {label}{result.run?.stage===key?' — etapa atual':''}</li>)}</ol>
         {result.run.error_code && <p className="text-amber-900">Pendência: {radarResearchMessage(result.run.error_code)}. Nenhum contato foi realizado.</p>}
         {output?.discovery && <p>Associação da presença pública: {output.siteAssociation==='confirmed'?'corroborada':'site encontrado ou sugerido, confirmação pendente'}. {output.discovery.websiteUrl&&<SafeSource url={output.discovery.websiteUrl} label="Ver site encontrado"/>}</p>}
         {output?.pages?.some(page=>!!page.text&&!page.limitation)&&<p className="text-xs text-slate-600">Presença pública acessível: {output.pages.filter(page=>!!page.text&&!page.limitation).length} página(s) lida(s). Isso não confirma atendimento ou operação atual.</p>}
         <div className="rounded border bg-white p-3"><h4 className="font-medium">Contatos e canais encontrados</h4>
-          {output?.registryPhone&&<p className="mt-2 break-all">Telefone cadastral CNPJá: {output.registryPhone} — não validado por atendimento.</p>}
+          {output?.registryPhone&&<p className="mt-2 break-all">Telefone cadastral: {output.registryPhone} — não validado por atendimento.</p>}
           {!output?.contacts?.length&&<p className="mt-2 text-slate-600">Nenhum contato público encontrado até esta etapa.</p>}
           <ul className="space-y-2">{output?.contacts?.map((contact,index)=><li key={`${contact.kind}-${index}`} className="mt-2 break-words rounded border p-2">
             <p className="break-all font-medium">{({phone:'Telefone público',email:'E-mail',whatsapp:'WhatsApp publicado',social:'Rede social',business_person:'Contato profissional'})[contact.kind]}: {contact.value}</p>
@@ -109,10 +109,10 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
           <p className="text-xs text-slate-500">Não usamos o conteúdo desses PDFs como evidência de faturamento ou porte sem leitura e validação.</p></div>}
         {output?.activity&&<div className="rounded border bg-white p-3"><h4 className="font-medium">{activityLabel[output.activity.status]??output.activity.status}</h4><p className="text-xs text-slate-600">{output.activity.limitation}</p>
           {output.activity.signals.map((item,index)=><p key={index} className="mt-2">{item.excerpt} <SafeSource url={item.sourceUrl}/> {item.publishedDate?`Data publicada: ${item.publishedDate}`:'Sem data publicada comprovada'}</p>)}</div>}
-        {output?.qualification&&<div className="rounded border bg-white p-3"><h4 className="font-medium">Avaliação para a oferta: {output.qualification.targetStatus} · {output.qualification.productFit}</h4>
+        {output?.qualification&&<div className="rounded border bg-white p-3"><h4 className="font-medium">Avaliação para a oferta: {({confirmed:'Público confirmado',review:'Requer revisão',not_target:'Fora do público',insufficient:'Evidência insuficiente'} as Record<string,string>)[output.qualification.targetStatus]??'Requer revisão'} · {({high:'Boa aderência',possible:'Possível aderência',low:'Baixa aderência',unknown:'Adequação não confirmada'} as Record<string,string>)[output.qualification.productFit]??'Requer revisão'}</h4>
           {output.qualification.reasons.map((reason,index)=><p key={index}>{reason}</p>)}
           {output.qualification.evidenceSources?.map(source=><p key={source.id}><SafeSource url={source.sourceUrl} label={`Evidência ${source.id}`}/></p>)}
-          <p className="text-xs">Modelo configurado pelo Admin: {output.qualification.model??'não informado'}</p></div>}
+          {showTechnical&&<p className="text-xs">Modelo configurado pelo Admin: {output.qualification.model??'não informado'}</p>}</div>}
         {output?.limitations?.length ? <div className="rounded border border-amber-200 bg-amber-50 p-3"><h4 className="font-medium">O que ainda precisa de conferência</h4>{output.limitations.map((item,index)=><p key={index}>{radarResearchMessage(item)}</p>)}</div>:null}
         {output?.pages?.length ? <details><summary className="cursor-pointer">Páginas e evidências consultadas</summary>{output.pages.map(page=><div key={page.url} className="mt-2 rounded border bg-white p-2"><SafeSource url={page.url} label={page.url}/><p className="mt-1">{page.text.slice(0,1000)}</p>{page.limitation&&<p>{radarResearchMessage(page.limitation)}</p>}</div>)}</details>:null}
       </>:<p className="text-slate-600">Ainda não há pesquisa automática registrada. Não é necessário informar URL para iniciar.</p>}

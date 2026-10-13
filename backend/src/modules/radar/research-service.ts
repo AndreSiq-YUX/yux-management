@@ -192,6 +192,25 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
   return { availability:available, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:{...latest.output,pages:latest.output.pages?.map(({html:_html,...page})=>page)}} : null,
     history:runs.rows.slice(1).map(run => ({ id:run.id, status:run.status, updated_at:run.updated_at })) }
 }
+export async function listRadarResearchHistory(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){
+  await requireRadarScope(pool,user,{organizationId,campaignId})
+  const result=await pool.query<{id:string;candidateId:string;companyName:string;configurationRevision:number;operation:string;status:string;updatedAt:string}>(`SELECT run.id,run.candidate_id AS "candidateId",candidate.title AS "companyName",run.configuration_revision AS "configurationRevision",run.operation,run.status,run.updated_at AS "updatedAt"
+    FROM public.radar_candidate_research_runs run JOIN public.radar_candidate_records candidate ON candidate.id=run.candidate_id AND candidate.organization_id=run.organization_id
+    WHERE run.organization_id=$1 AND run.campaign_id=$2 ORDER BY run.created_at DESC,run.id DESC LIMIT 100`,[organizationId,campaignId])
+  return result.rows
+}
+export async function reopenRadarResearchReview(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number}){
+  await requireRadarScope(pool,user,{organizationId:input.organizationId,candidateId:input.candidateId},true)
+  if(user.role!=='yux_admin'||!await isRadarEnabledOrganization(pool,input.organizationId))throw error('radar_source_admin_required',403)
+  const client=await pool.connect()
+  try{
+    await client.query('BEGIN')
+    const row=(await client.query(`SELECT campaign.configuration_revision FROM public.radar_campaigns campaign JOIN public.radar_candidate_records candidate ON candidate.campaign_id=campaign.id AND candidate.organization_id=campaign.organization_id WHERE candidate.id=$1 AND candidate.organization_id=$2 FOR UPDATE OF campaign`,[input.candidateId,input.organizationId])).rows[0]
+    if(row?.configuration_revision!==input.configurationRevision)throw error('radar_campaign_configuration_changed')
+    await client.query(`UPDATE public.radar_b2b_reviews SET approved_at=NULL,approved_by=NULL,updated_at=NOW() WHERE candidate_id=$1 AND organization_id=$2`,[input.candidateId,input.organizationId])
+    await client.query('COMMIT');return{candidateId:input.candidateId,approved:false}
+  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+}
 export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number;requestId?:string;allowSemanticRefresh?:boolean;operation?:'complete'|'resume'|'refresh'|'reanalyze'}) {
   await requireRadarScope(pool,user,{ organizationId:input.organizationId,candidateId:input.candidateId },true)
   const context = await loadContext(pool,input.organizationId,input.candidateId)

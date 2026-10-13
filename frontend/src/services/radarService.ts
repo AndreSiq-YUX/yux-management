@@ -28,6 +28,12 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  getResearchHistory(campaignId:string,organizationId:string){return apiRequest<Array<{id:string;candidateId:string;companyName:string;configurationRevision:number;operation:string;status:string;updatedAt:string}>>(`/radar/campaigns/${campaignId}/research-history${buildQuery({organizationId})}`)},
+  reopenResearchReview(candidateId:string,organizationId:string,configurationRevision:number){return apiRequest(`/radar/candidates/${candidateId}/reopen-review`,{method:'POST',body:{organizationId,configurationRevision}})},
+  getCrmDestinations(organizationId:string){return apiRequest<Array<{crmInstanceId:string;pipelineId:string;stageId:string;pipelineName:string;stageName:string}>>(`/radar/crm-destinations${buildQuery({organizationId})}`)},
+  deliverToCrm(campaignId:string,input:{organizationId:string;configurationRevision:number;candidateIds:string[];destination:{crmInstanceId:string;pipelineId:string;stageId:string};requestId:string}){
+    return apiRequest<{items:Array<{candidateId:string;status:'created'|'already_linked'|'blocked';leadId?:string;pipelineId?:string;reason?:string}>}>(`/radar/campaigns/${campaignId}/deliver-to-crm`,{method:'POST',body:input})
+  },
   getResearchAvailability(campaignId:string,organizationId:string) {
     return apiRequest<RadarResearchAvailability>(`/radar/campaigns/${campaignId}/research-availability${buildQuery({organizationId})}`)
   },

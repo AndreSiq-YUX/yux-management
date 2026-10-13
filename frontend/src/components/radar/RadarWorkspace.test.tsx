@@ -15,6 +15,9 @@ vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyCon
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),
   getResearchAvailability:vi.fn(async()=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
+  getCrmDestinations:vi.fn(async()=>[]),
+  getResearchHistory:vi.fn(async()=>[{id:'run',candidateId:'candidate',companyName:'Empresa pesquisada',configurationRevision:2,operation:'reanalyze',status:'succeeded',updatedAt:'2026-10-13T12:00:00Z'}]),
+  getB2bProspects:vi.fn(async()=>[]),getB2bProgress:vi.fn(async()=>({candidates:0,checked:0,confirmed:0,approved:0,scopes:[]})),runB2bBatch:vi.fn(async()=>({status:'queued'})),
   getOpportunities:vi.fn(async () => []),getMetrics:vi.fn(async () => null),
   getCandidates:vi.fn(async () => []),getDuplicates:vi.fn(async () => []),getRuns:vi.fn(async () => []),
   getOsmReadiness:vi.fn(async () => ({ready:false,reason:'Sem extrato',segmentKey:null,snapshot:null})),
@@ -82,6 +85,29 @@ describe('Radar campaign creation entry point', () => {
     await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Abrir')!.click())
     expect(navigate).toHaveBeenCalledWith('campaign')
     act(()=>root.unmount())
+  })
+  it('shows commercial research history to a client without exposing providers or configuration forms',async()=>{
+    state.context={mode:'portal',organization:{id:'org',kind:'client'},role:{key:'client_admin',scope:'client',permissions:['radar.read']},enabledModuleKeys:['radar']} as unknown as PlatformContext
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'local_niche',targetSegment:'Empresas',targetCity:'Cidade',targetState:'PR',targetStates:[],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'',createdAt:'',updatedAt:''}])
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="history" campaignId="campaign"/>))
+    expect(container.textContent).toContain('Empresa pesquisada')
+    expect(container.textContent).toContain('Reavaliação dos dados salvos')
+    expect(container.textContent).not.toContain('Metricas por fonte')
+    expect(container.querySelector('form')).toBeNull()
+    act(()=>root.unmount())
+  })
+  it('refreshes results automatically when discovery was queued rather than leaving the empty list stale',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetCity:'',targetState:'',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'',createdAt:'',updatedAt:''}])
+    vi.mocked(radarService.getDataSources).mockResolvedValueOnce([{id:'source',sourceType:'cnpja_advanced_search',sourceKey:'cnpja_advanced_search',displayName:'Cadastro empresarial',enabled:true,isPaid:true,requiresSecret:false,defaultCostPerUnit:.01,rateLimitPerDay:100,createdAt:'',updatedAt:''}])
+    vi.spyOn(window,'confirm').mockReturnValue(true)
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'new',organizationId:'org',campaignId:'campaign',title:'Nova empresa encontrada',sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{city:'Cidade',state:'PR'},dedupeKey:'new',createdAt:'',updatedAt:''}])
+    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Buscar mais empresas')!.click())
+    expect(container.querySelector('tbody')?.textContent).toContain('Nova empresa encontrada')
+    act(()=>root.unmount())
+    vi.mocked(radarService.getCandidates).mockResolvedValue([])
   })
 
   it('links source configuration to the central Admin and refreshes availability without querying providers', async () => {

@@ -13,6 +13,22 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 }
 
 describe('Radar campaign configuration panel', () => {
+  it('renders saved configuration as read-only without offering or submitting changes',async()=>{
+    const container=document.createElement('div'),root=createRoot(container),submit=vi.fn(async()=>undefined)
+    await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE']})} busy={false} readOnly onSubmit={submit} onCancel={vi.fn()}/>))
+    expect(container.querySelector('fieldset')?.disabled).toBe(true)
+    expect(container.querySelector('button[type="submit"]')).toBeNull()
+    await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    expect(submit).not.toHaveBeenCalled()
+    act(()=>root.unmount())
+  })
+  it('preserves a local campaign type and city when editing without converting it to regional',async()=>{
+    const container=document.createElement('div'),root=createRoot(container),submit=vi.fn(async()=>undefined)
+    await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({campaignType:'recently_opened',targetCity:'Recife',targetState:'PE'})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+    await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({campaignType:'recently_opened',targetCity:'Recife',targetState:'PE'}))
+    act(()=>root.unmount())
+  })
   it('keeps size optional and persists editable weights, thresholds, direction and purpose',async()=>{
     const container=document.createElement('div'),root=createRoot(container),submit=vi.fn(async()=>undefined)
     const config=defaultRadarSearchConfiguration()

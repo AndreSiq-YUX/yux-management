@@ -35,6 +35,7 @@ export const radarResearchPolicySchema = z.object({
 export type RadarResearchPolicy = z.infer<typeof radarResearchPolicySchema>
 
 export const radarSearchConfigurationSchema = z.object({
+  crmDestination:z.object({crmInstanceId:z.string().uuid(),pipelineId:z.string().uuid(),stageId:z.string().uuid()}).strict().optional(),
   research: radarResearchPolicySchema.default(() => radarResearchPolicySchema.parse({})),
   cities: z.array(z.object({ city: z.string().trim().min(1).max(100), state: radarStateSchema }).strict()).max(200).default([]),
   activityScope: z.enum(['main','main_or_secondary']).default('main_or_secondary'),

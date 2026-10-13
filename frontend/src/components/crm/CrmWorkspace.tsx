@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef,useState } from 'react'
 import { AlertCircle, Pause, Play, Plus, RefreshCw, Upload, UserRoundCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
@@ -34,13 +34,14 @@ import type { LeadSourceRollup } from '@/types/crmAttribution'
 
 const initialLeadForm = { name: '', email: '', phone: '', company: '', source: 'Manual', score: 0, value: '' }
 
-export function CrmWorkspace() {
+export function CrmWorkspace({initialPipelineId,initialLeadId}:{initialPipelineId?:string;initialLeadId?:string}={}) {
+  const openedDeepLink=useRef<string>()
   const organization = usePlatformStore(state => state.organization)
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
   const platformLoading = usePlatformStore(state => state.isLoading)
   const platformError = usePlatformStore(state => state.error)
   const [pipelines, setPipelines] = useState<CrmPipeline[]>([])
-  const [pipelineId, setPipelineId] = useState<string>()
+  const [pipelineId, setPipelineId] = useState<string|undefined>(initialPipelineId)
   const [leads, setLeads] = useState<CrmLead[]>([])
   const [governance, setGovernance] = useState<CrmGovernanceContext | null>(null)
   const [crmUnavailable, setCrmUnavailable] = useState(false)
@@ -139,6 +140,11 @@ export function CrmWorkspace() {
 
   useEffect(() => { loadPipelines() }, [loadPipelines])
   useEffect(() => { loadLeads() }, [loadLeads])
+  useEffect(()=>{
+    if(!initialLeadId||openedDeepLink.current===initialLeadId)return
+    const found=leads.find(lead=>lead.id===initialLeadId)
+    if(found){setSelectedLead(found);openedDeepLink.current=initialLeadId}
+  },[initialLeadId,leads])
 
   const createLead = async (event: FormEvent) => {
     event.preventDefault()

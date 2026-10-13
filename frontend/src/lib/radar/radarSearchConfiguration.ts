@@ -25,6 +25,7 @@ export function validateRadarSizePolicy(value:RadarSizePolicy) {
   }
 }
 export type RadarSearchConfiguration = {
+  crmDestination?:{crmInstanceId:string;pipelineId:string;stageId:string}
   research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
     maxPagesPerCandidate: number; freshnessDays: number; semanticQualificationEnabled: boolean;
     profileEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }

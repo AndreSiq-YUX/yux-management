@@ -8,7 +8,7 @@ import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { seedIntegrationFixtures, fixtureIds, fixtureUsers } from './support/fixtures.js'
 import { storePlatformProviderSecret } from '../../src/modules/platform/adminRepository.js'
 import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv } from '../../src/modules/radar/repository.js'
-import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch } from '../../src/modules/radar/research-service.js'
+import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from '../../src/modules/radar/research-service.js'
 import { getRadarResearchAvailability } from '../../src/modules/radar/research-availability.js'
 
 // Intentionally separate from production/container suites: never accept a remote or shared database.
@@ -108,6 +108,11 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     expect(csv).toContain('Empresa Alfa')
     expect(csv).toContain('compras@alfa.example');expect(csv).toContain('Soluções de automação para empresas')
     await expect(scoped(()=>startRadarCandidateResearch(worker,admin,input))).rejects.toThrow('radar_research_approved_candidate_requires_review')
+    const history=await scoped(()=>listRadarResearchHistory(worker,admin,organizationId,campaignId))
+    expect(history).toHaveLength(3)
+    expect(history.map(item=>item.operation).sort()).toEqual(['complete','reanalyze','refresh'])
+    await scoped(()=>reopenRadarResearchReview(worker,admin,{organizationId,candidateId,configurationRevision:2}))
+    expect((await pool.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1',[candidateId])).rows[0].approved_at).toBeNull()
     const hidden=await runWithDatabaseRequestContext({role:'client_admin',organizationIds:[fixtureIds.organizationB],serviceRole:'worker'},
       ()=>worker.query('SELECT id FROM public.radar_candidate_research_runs WHERE id=$1',[starts[0].runId]))
     expect(hidden.rows).toHaveLength(0)

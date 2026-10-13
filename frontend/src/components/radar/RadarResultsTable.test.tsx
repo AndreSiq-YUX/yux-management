@@ -18,3 +18,13 @@ it('selects company IDs for refinement and opens details separately from a compa
   expect(container.textContent).toContain('Empresa 21')
   act(()=>root.unmount())
 })
+it('shows corroborated email and phone and current approval without falling back to an unverified registry phone',async()=>{
+  const candidate:RadarCandidateRecord={id:'c',organizationId:'org',campaignId:'campaign',sourceType:'cnpja_advanced_search',dedupeKey:'c',createdAt:'',updatedAt:'',title:'Empresa aprovada',status:'pending_review',normalizedPayload:{phoneRaw:'telefone antigo',researchRevision:2,publicContacts:[{kind:'email',value:'compras@empresa.example',association:'confirmed'},{kind:'phone',value:'+5541999998888',association:'confirmed'}]}}
+  const container=document.createElement('div'),root=createRoot(container)
+  await act(async()=>root.render(<RadarResultsTable candidates={[candidate]} revision={2} approvedIds={['c']} selectedIds={[]} onSelect={vi.fn()} onOpen={vi.fn()}/>))
+  expect(container.querySelector('tbody')?.textContent).toContain('compras@empresa.example')
+  expect(container.querySelector('tbody')?.textContent).toContain('+5541999998888')
+  expect(container.querySelector('tbody')?.textContent).toContain('Aprovada')
+  expect(container.querySelector('tbody')?.textContent).not.toContain('telefone antigo')
+  act(()=>root.unmount())
+})

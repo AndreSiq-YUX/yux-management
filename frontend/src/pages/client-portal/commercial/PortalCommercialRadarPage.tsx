@@ -6,5 +6,6 @@ export function PortalCommercialRadarPage() {
   const {campaignId}=useParams(),location=useLocation(),navigate=useNavigate(),workspacePath=usePortalWorkspacePath()
   const screen=location.pathname.endsWith('/nova')?'new':!campaignId?'list':location.pathname.endsWith('/configuracoes')?'configuration':location.pathname.endsWith('/historico')?'history':'results'
   return <RadarWorkspace key={`${campaignId??'list'}-${screen}`} screen={screen} campaignId={campaignId}
+    leadPath={(id,pipelineId)=>workspacePath(`/portal/comercial/leads?leadId=${encodeURIComponent(id)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`)}
     onNavigate={path=>navigate(workspacePath(`/portal/comercial/radar${path?`/${path}`:''}`))}/>
 }

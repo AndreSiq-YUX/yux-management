@@ -223,7 +223,7 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
     if (type !== row.campaign_type) throw Object.assign(new Error('radar_campaign_type_change_requires_duplicate'), { statusCode: 400 })
     const configuration = resolveRadarSearchConfiguration(input.searchConfiguration)
     const criteria = (config: RadarSearchConfiguration) => {
-      const { batch: _batch, exportFields: _fields, ...searchCriteria } = config
+      const { batch: _batch, exportFields: _fields, crmDestination:_destination, ...searchCriteria } = config
       return searchCriteria
     }
     const oldSearch = JSON.stringify([row.target_city, row.target_state, row.target_segment, row.target_states, row.target_keywords, row.target_cnaes,

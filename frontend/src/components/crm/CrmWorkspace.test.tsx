@@ -91,6 +91,16 @@ const leads: CrmLead[] = [
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe('CrmWorkspace', () => {
+  it('opens the requested lead from a Radar deep link in its selected pipeline',async()=>{
+    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
+    vi.mocked(crmService.getLeads).mockResolvedValue(leads)
+    for(const method of [crmService.getInteractions,crmService.getTasks,crmService.getSequences,crmService.getEnrollments,crmService.getExecutions])vi.mocked(method).mockResolvedValue([])
+    const container=document.createElement('div');document.body.appendChild(container);const root=createRoot(container)
+    await act(async()=>{root.render(<MemoryRouter><CrmWorkspace initialPipelineId="pipeline-1" initialLeadId="lead-1"/></MemoryRouter>);await flush();await flush();await flush()})
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Ana Lead')
+    act(()=>root.unmount());container.remove()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     usePlatformStore.setState({

@@ -12,7 +12,7 @@ it('shows a recoverable availability failure instead of permanent loading',async
   vi.mocked(radarService.getCandidateResearch).mockRejectedValue(new Error('HTTP 500'))
   const container=document.createElement('div'),root=createRoot(container)
   await act(async()=>root.render(<RadarCandidateResearchPanel candidateId="candidate" organizationId="org" configurationRevision={2} availability={null}/>))
-  await act(async()=>Array.from(container.querySelectorAll('button')).find(button=>button.textContent==='Ver resultado e disponibilidade')!.click())
+  await act(async()=>Array.from(container.querySelectorAll('button')).find(button=>button.textContent==='Ver dossiê da empresa')!.click())
   expect(container.textContent).toContain('Não foi possível verificar a disponibilidade')
   expect(container.textContent).not.toContain('Conferindo disponibilidade')
   expect(container.querySelector('button')!.disabled).toBe(true)
@@ -31,14 +31,14 @@ it('starts_without_manual_url_and_deduplicates_clicks',async()=>{
   vi.mocked(radarService.startCandidateResearch).mockResolvedValue({runId:'run',status:'queued',reused:false})
   const view=mount()
   expect(view.container.querySelector('input')).toBeNull()
-  await view.click('Pesquisar e enriquecer automaticamente')
+  await view.click('Completar dados desta empresa')
   expect(radarService.startCandidateResearch).toHaveBeenCalledExactlyOnceWith('candidate',expect.objectContaining({organizationId:'org',configurationRevision:2}))
   expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('0,0300'))
   view.unmount()
 })
 it('requests an explicit new research generation after confirmation',async()=>{
   vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,run:{id:'done',status:'succeeded',stage:'review',updated_at:'2026-10-13',configuration_revision:2,output:{}}})
-  const view=mount();await view.click('Ver resultado e disponibilidade')
+  const view=mount();await view.click('Ver dossiê da empresa')
   await view.click('Atualizar pesquisa')
   expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'refresh',requestId:expect.any(String)}))
   view.unmount()
@@ -53,12 +53,12 @@ it('shows_brave_disabled_and_cost_reason_without_asking_for_license_again',()=>{
 })
 it('shows_all_contacts_and_sources_and_partial_resume',async()=>{
   vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,run:{id:'run',status:'partial',stage:'review',updated_at:'2026-10-08',configuration_revision:2,output:{registryPhone:'4133334444',contacts:[{kind:'whatsapp',value:'+5541999998888',sourceUrl:'https://alfa.example/contato',observedAt:'2026-10-08',association:'confirmed'}],limitations:['Funcionamento ainda inconclusivo.']}}})
-  const view=mount();await view.click('Ver resultado e disponibilidade')
+  const view=mount();await view.click('Ver dossiê da empresa')
   expect(view.container.textContent).toContain('Resultado parcial')
   expect(view.container.textContent).toContain('WhatsApp publicado')
   expect(view.container.textContent).toContain('4133334444')
   expect(view.container.querySelector('a')!.href).toBe('https://alfa.example/contato')
-  expect(view.container.textContent).toContain('Retomar pesquisa automática')
+  expect(view.container.textContent).toContain('Retomar pesquisa desta empresa')
   view.unmount()
 })
 it('shows practical profile, contact purpose, missing size and actionable technical failure',async()=>{
@@ -68,7 +68,7 @@ it('shows practical profile, contact purpose, missing size and actionable techni
       contacts:[{kind:'email',value:'compras@alfa.example',purpose:'suppliers',preferred:true,sourceUrl:claim.sourceUrl,observedAt:claim.observedAt,association:'confirmed'}],
       profile:{summary:claim,services:[claim],customerSegments:[],operatingRegions:[],scaleSignals:[]},
       sizeAssessment:{score:null,evidenceCoverage:0,direction:'larger',contributions:[],limitations:[]},limitations:['robots_transport_failed']}}})
-  const view=mount();await view.click('Ver resultado e disponibilidade')
+  const view=mount();await view.click('Ver dossiê da empresa')
   expect(view.container.textContent).toContain('Soluções corporativas')
   expect(view.container.textContent).toContain('Trecho, data e escopo da evidência')
   expect(view.container.textContent).toContain('fornecedores/compras')
@@ -77,7 +77,7 @@ it('shows practical profile, contact purpose, missing size and actionable techni
   const refresh=view.container.querySelector('input[type="checkbox"]') as HTMLInputElement
   expect(refresh.checked).toBe(false)
   await act(async()=>refresh.click())
-  await view.click('Retomar pesquisa automática')
+  await view.click('Retomar pesquisa desta empresa')
   expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({allowSemanticRefresh:true}))
   view.unmount()
 })
