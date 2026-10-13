@@ -1459,7 +1459,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
 
             <div className="my-4 flex flex-wrap items-center gap-2">
               {context.role?.key==='yux_admin'&&selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
-                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!(operation==='reanalyze'?researchAvailability?.operations?.reanalyze.allowed??researchAvailability?.allowed:researchAvailability?.allowed)||(operation==='reanalyze'&&!researchAvailability?.semanticQualificationEnabled)}
+                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!(operation==='reanalyze'?researchAvailability?.operations?.reanalyze.allowed??researchAvailability?.allowed:researchAvailability?.allowed)}
                 onClick={()=>researchSelected(operation)}>{({complete:'Completar dados',resume:'Retomar pesquisa',refresh:'Atualizar pesquisa',reanalyze:'Reavaliar dados salvos'})[operation]}</Button>)}
               {selectedCampaign.campaignType==='regional_b2b'&&<Button size="sm" disabled={!canManage||!canUseCrm||!selectedCandidateIds.length||selectedCandidateIds.length>25||!!actionLoading} onClick={()=>setCrmDialogOpen(true)}>Enviar ao CRM</Button>}
               <Button size="sm" variant="outline" onClick={()=>{refreshCampaignSidebars();setResearchAvailabilityRefresh(value=>value+1)}}>Atualizar resultados</Button>

@@ -4,6 +4,32 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+// Synthetic evidence scenarios, not claims that these exact excerpts were scraped live.
+it.each([
+  ['Empresa Brasileira de Refeições','Emb rare','01128426000198','Poá','SP','https://embrare.com.br/'],
+  ['Viva Food','Viva Food','23244434000132','São Paulo','SP','https://vivafood.com.br/'],
+  ['Oficina Nordeste Serviços','Marca Nordeste','23456789000190','Recife','PE','https://oficina.example/'],
+])('keeps plain-name discovery generic for %s and isolates directory-owned channels',async(name,brand,cnpj,city,state,url)=>{
+  const entity={name,cnpj,city,state},text=`${brand}. ${name} é nossa razão social.`
+  const web=vi.fn(async()=>[{url:`https://serasaexperian.com.br/consulta-gratis/${cnpj}`,title:name,snippets:[cnpj],observedAt:'2026-10-13'},
+    {url,title:brand,snippets:[name],observedAt:'2026-10-13'}])
+  const result=await runRadarResearchPipeline(entity,resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,presenceResolutionEnabled:true}}),{},
+    {web,collect:async()=>[{url,text,observedAt:'2026-10-13',html:`<a href="https://instagram.com/official-fixture">Instagram</a>`}],
+      resolvePresence:async()=>({candidateId:'page-0',scope:'group',reason:'A fonte vincula marca e razão social.',claims:[{evidenceId:'page-0',excerpt:`${name} é nossa razão social.`}]}),checkpoint:async()=>{}})
+  expect(web).toHaveBeenCalledExactlyOnceWith(name)
+  expect(result.discovery.websiteUrl).toBe(url)
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'https://instagram.com/official-fixture',scope:'group',sourceUrl:url}))
+})
+it('reads the plain-name institutional result before spending complementary searches and explores contact pages',async()=>{
+  const web=vi.fn(async()=>[{url:'https://brand.example/',title:'Marca Beta — Empresa Alfa',snippets:['Empresa Alfa é nossa razão social.'],observedAt:'2026-10-13'}])
+  const collect=vi.fn(async(_url:string,policy:{maxPagesPerCandidate:number})=>[
+    {url:'https://brand.example/',text:'Marca Beta. Empresa Alfa é nossa razão social.',observedAt:'2026-10-13',html:'<a href="/sobre">Sobre</a><a href="/contato">Contato</a>'},
+    ...(policy.maxPagesPerCandidate>1?[{url:'https://brand.example/contato',text:'Fornecedores — compras@brand.example',observedAt:'2026-10-13'}]:[])])
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,presenceResolutionEnabled:true}}),{},
+    {web,collect,resolvePresence:async()=>({candidateId:'page-0',scope:'group',reason:'A página identifica a razão social e a marca.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]}),checkpoint:async()=>{}})
+  expect(web).toHaveBeenCalledTimes(1)
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',scope:'group',association:'confirmed'}))
+})
 it('associates a differently named institutional brand through verified evidence instead of a directory footer',async()=>{
   const config=resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}})
   const page={url:'https://brand.example/',text:'Marca Beta. Soluções empresariais em Curitiba. Empresa Alfa é nossa razão social.',observedAt:'2026-10-13',html:'<a href="mailto:compras@brand.example">Fornecedores</a>'}
@@ -42,6 +68,20 @@ it('handles_company_without_website_without_inventing_missing_data', async () =>
   expect(result.contacts).toEqual([])
   expect(result.activity.status).toBe('inconclusive')
   expect(result.discovery.association).toBe('not_found_in_consulted_sources')
+})
+it('keeps unrelated institutional homonym contacts out of company channels while preserving source pages',async()=>{
+  const page={url:'https://homonym.example/',text:'Empresa Alfa de outro estado. CNPJ 99.999.999/0001-99. contato@homonym.example',observedAt:'2026-10-13'}
+  const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,pages:[page],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:3}},
+    {web:vi.fn(),checkpoint:async()=>{}})
+  expect(result.contacts).toEqual([]);expect(result.pages).toContain(page)
+})
+it('recomputes scope of saved link-only contacts after group association instead of preserving an obsolete establishment claim',async()=>{
+  const page={url:'https://brand.example/',text:'Marca Beta. Empresa Alfa é nossa razão social.',observedAt:'2026-09-01'}
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}}),{
+    analysisOnly:true,readingComplete:true,discoveryLocked:true,pages:[page],contacts:[{kind:'email',value:'compras@brand.example',sourceUrl:page.url,observedAt:page.observedAt,association:'confirmed',scope:'establishment'}],
+    discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),resolvePresence:async()=>({candidateId:'page-0',scope:'group',reason:'A página comprova marca e grupo, não a filial.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]}),checkpoint:async()=>{}})
+  expect(result.contacts[0]).toMatchObject({scope:'group',observedAt:'2026-09-01'})
 })
 it('does_not_confirm_contacts_from_another_branch_on_the_same_domain',async()=>{
   const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa 12.345.678/0001-90'},

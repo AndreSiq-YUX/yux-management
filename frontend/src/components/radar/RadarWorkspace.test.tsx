@@ -30,7 +30,7 @@ describe('Radar campaign creation entry point', () => {
   it('enables selected-company reanalysis independently of disabled web searches',async()=>{
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetCity:'',targetState:'',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'',createdAt:'',updatedAt:''}])
     vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'candidate',organizationId:'org',campaignId:'campaign',title:'Empresa',sourceType:'manual',status:'pending_review',normalizedPayload:{},dedupeKey:'key',createdAt:'',updatedAt:''}])
-    vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:true,operations:{reanalyze:{allowed:true,reasons:[]}}})
+    vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false,operations:{reanalyze:{allowed:true,reasons:[]}}})
     const container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
     await act(async()=>(container.querySelector('tbody input') as HTMLInputElement).click())

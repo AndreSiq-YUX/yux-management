@@ -47,7 +47,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     return()=>{active=false;clearTimeout(timer)}
   },[open,candidateId,organizationId,refresh])
   async function start(operation:'complete'|'resume'|'refresh'|'reanalyze'='complete') {
-    if(!available||submitted.current||!(operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
+    if(!available||submitted.current||!(operation==='refresh'?available.operations?.refresh?.allowed??available.allowed:operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
     const route=available.semantic??available.presence
     const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${showTechnical&&route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
     if(!window.confirm(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
@@ -62,8 +62,8 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
       <button type="button" className={`${buttonClass} bg-slate-900 text-white`} disabled={!available?.allowed||busy||running||approved||!canStart} onClick={()=>start(result?.run&&['partial','blocked','failed'].includes(result.run.status)?'resume':'complete')}>
         {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa desta empresa':'Completar dados desta empresa'}</button>
       <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar dossiê':'Ver dossiê da empresa'}</button>
-      {result?.run&&!running&&<><button type="button" className={buttonClass} disabled={!available?.allowed||busy||approved||!canStart} onClick={()=>start('refresh')}>Atualizar pesquisa</button>
-        {available?.semanticQualificationEnabled&&<button type="button" className={buttonClass} disabled={!(available.operations?.reanalyze.allowed??available.allowed)||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button>}</>}
+      {result?.run&&!running&&<><button type="button" className={buttonClass} disabled={!(available?.operations?.refresh?.allowed??available?.allowed)||busy||approved||!canStart} onClick={()=>start('refresh')}>Atualizar pesquisa</button>
+        <button type="button" className={buttonClass} disabled={!(available?.operations?.reanalyze.allowed??available?.allowed)||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button></>}
     </div>
     {!available && !error && !availabilityError && <p className="text-xs text-slate-600">Conferindo disponibilidade da pesquisa...</p>}
     {availabilityError && !available && !error && <p role="alert" className="text-sm text-red-700">{availabilityError}</p>}
@@ -78,6 +78,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
       {result?.run&&available?.semanticQualificationEnabled&&['partial','blocked','failed'].includes(result.run.status)&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} onChange={e=>setAllowSemanticRefresh(e.target.checked)}/>Autorizo nova análise por IA se as evidências mudaram (pode consumir créditos; buscas concluídas serão reaproveitadas).</label>}
       <button type="button" className={buttonClass} onClick={()=>setRefresh(value=>value+1)}>Atualizar dossiê</button>
       {result?.run ? <><p role="status" className="font-semibold">{statusLabel[result.run.status]??result.run.status}</p>
+        {(result.run.output.methodVersion??0)<(result.methodVersion??0)&&<p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">Esta pesquisa foi feita pelo método anterior. Retomar não refaz as buscas nem reinicia o limite de consultas. Use Atualizar pesquisa para aplicar a nova descoberta com confirmação de custo, ou Reavaliar com os dados salvos para rever somente as evidências existentes. Canais de diretórios não são exibidos como contatos da empresa; o histórico foi preservado.</p>}
         <ol className="grid gap-2 sm:grid-cols-2">{stages.map(([key,label],index)=><li key={key} className="rounded border bg-white p-2">{index+1}. {label}{result.run?.stage===key?' — etapa atual':''}</li>)}</ol>
         {result.run.error_code && <p className="text-amber-900">Pendência: {radarResearchMessage(result.run.error_code)}. Nenhum contato foi realizado.</p>}
         {output?.discovery && <p>Associação da presença pública: {output.siteAssociation==='confirmed'?'corroborada':'site encontrado ou sugerido, confirmação pendente'}. {output.discovery.websiteUrl&&<SafeSource url={output.discovery.websiteUrl} label="Ver site encontrado"/>}</p>}

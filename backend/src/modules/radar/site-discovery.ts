@@ -42,6 +42,7 @@ export function isRadarReferenceUrl(value:string) {
 export async function discoverRadarBusinessPresence(identity: RadarBusinessIdentity,
   policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean },
   dependencies: { search: (query: string) => Promise<RadarWebHit[]>; local?: () => Promise<RadarWebHit[]>;
+    inspectCandidates?:(hits:RadarWebHit[])=>Promise<boolean>;
     checkpoint?: (hits: RadarWebHit[], queries: number) => Promise<void>; initialHits?: RadarWebHit[]; initialQueries?: number }): Promise<RadarPresenceDiscovery> {
   const hits = [...(dependencies.initialHits ?? [])]
   const limitations: string[] = []
@@ -62,6 +63,7 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
     queries++
     try { hits.push(...await dependencies.search(queriesText[index])) } catch (error) { limitations.push(error instanceof Error ? error.message : 'web_search_failed'); break }
     await dependencies.checkpoint?.(hits, queries)
+    if(await dependencies.inspectCandidates?.(hits))break
   }
   const unique = [...new Map(hits.map(hit => [hit.url, hit])).values()].sort((a,b)=>Number(isRadarInstitutionalSource(b.url,{title:b.title,text:b.snippets.join(' ')}))-Number(isRadarInstitutionalSource(a.url,{title:a.title,text:a.snippets.join(' ')})))
   const sites = [...new Map(confirmed().filter(hit => !isRadarReferenceUrl(hit.url)).map(hit => [new URL(hit.url).hostname.replace(/^www\./, ''), hit])).values()]

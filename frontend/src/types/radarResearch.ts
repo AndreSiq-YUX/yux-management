@@ -4,13 +4,14 @@ export type RadarCompanyProfile={summary?:RadarProfileClaim;services:RadarProfil
 export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:string;message:string;sourceType?:string;resolution:string}>;
   presenceResolutionEnabled?:boolean;
   presence?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number};
-  operations?:{reanalyze:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>}};
+  operations?:{reanalyze:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>};refresh?:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>}};
   estimates:Array<{sourceType:string;costPerQuery:number;maximumQueries:number}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number;semanticQualificationEnabled:boolean;
   semantic?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number} }
 export type RadarResearchContact = {kind:'phone'|'email'|'whatsapp'|'social'|'business_person';value:string;sourceUrl:string;observedAt:string;association:'confirmed'|'review';note?:string;
   purpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment'|'unknown';purposeEvidence?:string;scope?:string;preferred?:boolean}
-export type RadarResearchResult = {configurationRevision:number;availability:RadarResearchAvailability;
+export type RadarResearchResult = {methodVersion?:number;configurationRevision:number;availability:RadarResearchAvailability;
   run:null|{id:string;status:string;stage:string;error_code?:string;updated_at:string;configuration_revision:number;output:{
+    methodVersion?:number;associationVersion?:number;
     discovery?:{association:string;websiteUrl?:string;suggestions:Array<{url:string;title:string}>;limitations:string[]};
     contacts?:RadarResearchContact[];registryPhone?:string;registryEmail?:string;siteAssociation?:string;
     profile?:RadarCompanyProfile;

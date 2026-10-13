@@ -28,7 +28,7 @@ class ResearchPool {
     if(sql.includes('INSERT INTO public.radar_source_usage_counters')){this.quota++;return{rows:[]}}
     if(sql.includes('FROM public.radar_b2b_reviews'))return{rows:this.approved?[{approved_at:'2026-10-08'}]:[]}
     if(sql.includes('INSERT INTO public.radar_candidate_research_runs')){this.run={id:'run',organization_id:'org',campaign_id:'campaign',candidate_id:'candidate',requested_by:'admin',configuration_revision:this.revision,status:'queued',stage:'discovery',output:{},calls:{},created_at:new Date().toISOString()};return{rows:[this.run]}}
-    if(sql.includes('FROM public.radar_candidate_research_runs'))return{rows:this.run&&(!sql.includes("status IN ('queued','running')")||['queued','running'].includes(this.run.status))?[this.run]:[]}
+    if(sql.includes('FROM public.radar_candidate_research_runs'))return{rows:this.run&&(!sql.includes('request_id=$3')||this.run.request_id===params[2])&&(!sql.includes("status IN ('queued','running')")||['queued','running'].includes(this.run.status))?[this.run]:[]}
     if(sql.includes('UPDATE public.radar_candidate_research_runs')) {
       if(!this.run)return{rows:[]}
       if(sql.includes("status='running'")){if(this.run.lease_id||this.run.status==='succeeded'||params[2]!=='org')return{rows:[]};this.run.status='running';this.run.lease_id=params[1]}
@@ -48,6 +48,31 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('hides legacy directory contacts from the current dossier without changing stored history',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  pool.run!.status='partial';pool.run!.output={contacts:[{kind:'social',value:'https://instagram.com/serasa',sourceUrl:'https://serasaexperian.com.br/consulta-gratis/123',observedAt:'2026-09-01',association:'review'}],
+    discovery:{websiteUrl:'https://empresadois.com.br/cnpj/12345678000190',association:'confirmed',hits:[],suggestions:[],limitations:[],queries:3}}
+  const result=await getRadarCandidateResearch(pool as never,admin,'org','candidate')
+  expect(result.run!.output.contacts).toEqual([])
+  expect(result.run!.output.discovery!.websiteUrl).toBeUndefined()
+  expect(pool.run!.output.contacts).toHaveLength(1)
+  expect(result).toHaveProperty('methodVersion',2)
+})
+it('reanalysis removes a directory website and stale contacts from projection while retaining historical evidence',async()=>{
+  const pool=new ResearchPool(),run=await start(pool)
+  pool.payload.websiteUrl='https://empresadois.com.br/cnpj/12345678000190'
+  pool.payload.publicContacts=[{kind:'phone',value:'+551145047000',sourceUrl:pool.payload.websiteUrl}]
+  pool.run!.operation='reanalyze'
+  pool.run!.output={analysisOnly:true,discoveryLocked:true,readingComplete:true,contacts:pool.payload.publicContacts,pages:[{url:String(pool.payload.websiteUrl),text:'CNPJ 12.345.678/0001-90. Rodapé',observedAt:'2026-09-01'}],
+    discovery:{websiteUrl:pool.payload.websiteUrl,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:3}}
+  const web=vi.fn(),collect=vi.fn()
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{web,collect})
+  expect(pool.payload.websiteUrl).toBeUndefined();expect(pool.payload.publicContacts).toEqual([])
+  expect(pool.run!.output.methodVersion).toBe(2)
+  expect(pool.run!.output.pages[0].observedAt).toBe('2026-09-01')
+  expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled()
+  expect(pool.queries.some(item=>/DELETE FROM public.radar_b2b_evidence/.test(item.sql))).toBe(false)
+})
 it('persists evidence-bound brand identity and does not replay an uncertain presence call',async()=>{
   for(const uncertain of [false,true]){
     const pool=new ResearchPool()
@@ -166,6 +191,12 @@ it('allows recovery from saved discovery when search quota is exhausted, without
   await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{web,collect:async()=>pages})
   expect(web).not.toHaveBeenCalled();expect(pool.quota).toBe(10)
   expect(pool.payload.websiteStatus).toBe('verified_present')
+})
+it('does not reuse the cached-read quota exemption to authorize a fresh paid generation',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  pool.quota=10;pool.run!.status='partial';pool.run!.output={readingComplete:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],queries:1,limitations:[]}}
+  expect((await getRadarCandidateResearch(pool as never,admin,'org','candidate')).availability.allowed).toBe(true)
+  await expect(startRadarCandidateResearch(pool as never,admin,{organizationId:'org',candidateId:'candidate',configurationRevision:2,operation:'refresh',requestId:'fresh'})).rejects.toThrow('radar_research_unavailable')
 })
 it('refreshes completed semantic analysis only with explicit permission and never replays uncertain calls',async()=>{
   const pool=new ResearchPool()

@@ -1,5 +1,10 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_presence_explicit_route_required:'Configure Radar — identificação de site e canais oficiais em Admin → Modelos de IA.',
+  radar_presence_previous_request_uncertain:'A resposta da identificação anterior é incerta; não repetimos a chamada para evitar cobrança duplicada. O administrador precisa conferir a execução.',
+  radar_presence_refresh_authorization_required:'As evidências mudaram; autorize uma nova identificação por IA no controle abaixo.',
+  radar_presence_unverifiable:'A identificação por IA não apresentou evidências válidas; o site e os contatos não foram confirmados.',
+  radar_presence_scope_conflict:'A fonte aponta outro estabelecimento ou empresa; o vínculo continua pendente.',
   robots_unavailable:'Não foi possível obter as regras públicas do site; a leitura poderá ser retomada.',
   robots_transport_failed:'Falha de conexão ao consultar as regras do site. Não significa proibição de leitura.',
   robots_timeout:'O site demorou a responder à consulta das regras públicas.',robots_disallow:'O site não permite a leitura automática desta página.',

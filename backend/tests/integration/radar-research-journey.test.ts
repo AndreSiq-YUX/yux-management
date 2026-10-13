@@ -24,7 +24,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
   const fixtureKey=Buffer.alloc(32,7).toString('base64')
   const scoped=<T>(fn:()=>Promise<T>)=>runWithDatabaseRequestContext({role:'yux_admin',organizationIds:[organizationId],serviceRole:'worker'},fn)
   const jobScope=<T>(fn:()=>Promise<T>)=>runWithDatabaseRequestContext({role:'client_member',organizationIds:[organizationId],serviceRole:'worker'},fn)
-  let campaignId:string,candidateId:string,routeId:string
+  let campaignId:string,candidateId:string,routeId:string,presenceRouteId:string
   beforeAll(async()=>{
     await seedIntegrationFixtures(pool)
     await pool.query('UPDATE public.organizations SET is_internal_growth_workspace=TRUE WHERE id=$1',[organizationId])
@@ -40,6 +40,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     const route=await pool.query(`INSERT INTO public.model_routing_rules (agent_type,organization_id,provider,model_name,max_input_tokens,max_output_tokens)
       VALUES ('radar_business_qualification',$1,'openrouter','fixture-not-a-real-model',16000,4000) RETURNING id`,[organizationId])
     routeId=route.rows[0].id
+    presenceRouteId=(await pool.query(`INSERT INTO public.model_routing_rules (agent_type,organization_id,provider,model_name) VALUES ('radar_presence_resolution',$1,'openrouter','fixture-presence') RETURNING id`,[organizationId])).rows[0].id
     const campaign=await createRadarCampaign(pool,admin,{organizationId,name:`Isolated research ${randomUUID()}`,campaignType:'regional_b2b',
       targetSegment:'Empresas de serviços',targetStates:['PR'],offerType:'Automação',dailyLimit:10,budgetLimit:1,
       searchConfiguration:{sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,profileEnabled:true,contactPurpose:'suppliers',
@@ -54,6 +55,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
   afterAll(async()=>{
     if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId])
     if(routeId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId])
+    if(presenceRouteId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[presenceRouteId])
     await Promise.all([pool.end(),rawWorker.end()])
   })
   it('loads availability with a real routing row and profile enabled on the migrated schema',async()=>{
@@ -118,5 +120,28 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     expect(hidden.rows).toHaveLength(0)
     const usage=await pool.query('SELECT SUM(units)::integer AS units FROM public.radar_source_usage_counters WHERE campaign_id=$1',[campaignId])
     expect(usage.rows[0].units).toBe(2)
+  })
+  it('reclassifies legacy facts without searches then explicitly refreshes brand identity while preserving history',async()=>{
+    await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research}', '{"enabled":true,"webSearchEnabled":true,"presenceResolutionEnabled":true,"maxSearchQueriesPerCandidate":1}'::jsonb) WHERE id=$1`,[campaignId])
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Gama',$3,'{"cnpj":"23456789000190","city":"Recife","state":"PE","websiteUrl":"https://empresadois.com.br/cnpj/23456789000190"}') RETURNING id`,[organizationId,campaignId,randomUUID()])).rows[0].id
+    const oldContact={kind:'social',value:'https://instagram.com/serasa',sourceUrl:'https://serasaexperian.com.br/consulta-gratis/23456789000190',observedAt:'2026-09-01',association:'review'}
+    const oldOutput={discovery:{association:'confirmed',websiteUrl:oldContact.sourceUrl,hits:[],suggestions:[],limitations:[],queries:3},contacts:[oldContact],pages:[{url:oldContact.sourceUrl,text:'CNPJ 23.456.789/0001-90. Consulta cadastral.',observedAt:oldContact.observedAt}],readingComplete:true}
+    const old=(await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output) VALUES($1,$2,$3,$4,2,'partial',$5) RETURNING id`,[organizationId,campaignId,id,admin.id,JSON.stringify(oldOutput)])).rows[0].id
+    expect((await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))).run?.output.contacts).toEqual([])
+    const reanalysis=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'reanalyze',requestId:randomUUID()}))
+    const web=vi.fn(),collect=vi.fn(),runtime=vi.fn()
+    await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{runId:reanalysis.runId,organizationId},undefined,{web,collect,runtime}))
+    expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled()
+    expect((await pool.query('SELECT output FROM public.radar_candidate_research_runs WHERE id=$1',[old])).rows[0].output.contacts).toEqual([oldContact])
+    const fresh=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'refresh',requestId:randomUUID()}))
+    const source={url:'https://marca-gama.example/',text:'Marca Delta. Empresa Gama é nossa razão social. Fornecedores: compras@marca-gama.example.',observedAt:'2026-10-13'}
+    web.mockResolvedValue([{url:source.url,title:'Marca Delta',snippets:['Empresa Gama'],observedAt:source.observedAt}]);collect.mockResolvedValue([source])
+    runtime.mockResolvedValue({candidateId:'page-0',scope:'group',reason:'A marca apresenta a razão social procurada.',claims:[{evidenceId:'page-0',excerpt:'Empresa Gama é nossa razão social.'}]})
+    await jobScope(()=>executeRadarCandidateResearch(worker,{PROVIDER_SECRET_ENCRYPTION_KEY_B64:fixtureKey} as AppEnv,{runId:fresh.runId,organizationId},undefined,{web,collect,runtime}))
+    expect(web).toHaveBeenCalledTimes(1);expect(runtime).toHaveBeenCalledTimes(1)
+    const dossier=await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))
+    expect(dossier.run?.output).toMatchObject({methodVersion:2,presenceResolution:{scope:'group'},discovery:{websiteUrl:source.url}})
+    expect(dossier.run?.output.contacts).toContainEqual(expect.objectContaining({value:'compras@marca-gama.example',scope:'group'}))
+    expect(dossier.history).toHaveLength(2)
   })
 })

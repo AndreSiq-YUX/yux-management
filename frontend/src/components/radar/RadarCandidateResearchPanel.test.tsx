@@ -7,6 +7,15 @@ import type { RadarResearchAvailability, RadarResearchResult } from '@/types/rad
 vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
+it('explains legacy research and offers explicit factual reanalysis even without a model',async()=>{
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,methodVersion:2,run:{id:'old',status:'partial',stage:'review',updated_at:'2026-09-01',configuration_revision:2,output:{}}} as RadarResearchResult)
+  const view=mount();await view.click('Ver dossiê da empresa')
+  expect(view.container.textContent).toContain('método anterior')
+  expect(view.container.textContent).toContain('Retomar não refaz as buscas')
+  await view.click('Reavaliar com os dados salvos')
+  expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'reanalyze'}))
+  view.unmount()
+})
 it('allows reanalysis with saved evidence despite search restrictions, without enabling new searches',async()=>{
   const restricted={...availability,allowed:false,semanticQualificationEnabled:true,operations:{reanalyze:{allowed:true,reasons:[]}},reasons:[{code:'source_disabled',message:'Busca desativada',resolution:'Admin'}]}
   vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,availability:restricted,run:{id:'saved',status:'succeeded',stage:'review',updated_at:'2026-10-13',configuration_revision:2,output:{}}})
