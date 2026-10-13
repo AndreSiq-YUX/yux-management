@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
+import {projectRadarCompanyFacts} from './company-projection.js'
 import type {
   RadarCampaign,
   RadarCampaignRow,
@@ -1829,7 +1830,8 @@ export async function approveRadarB2bProspect(
   if (!row) {
     throw Object.assign(new Error('radar_b2b_prospect_not_verified'), { statusCode: 409 })
   }
-  const automated = row.target_status === 'confirmed' && row.normalized_payload?.websiteStatus === 'verified_present'
+  const projection=projectRadarCompanyFacts(row.normalized_payload??{})
+  const automated = row.target_status === 'confirmed' && projection.websiteStatus === 'verified_present' && projection.researchAssociationNeedsReview!==true
   if (!automated) {
     const url = input.manualEvidenceUrl?.trim() ?? ''
     const note = input.manualReviewNote?.trim() ?? ''
@@ -2617,7 +2619,7 @@ export function mapCandidate(row: RadarCandidateRecordRow): RadarCandidateRecord
     title: row.title,
     snippet: row.snippet ?? undefined,
     rawPayload: row.raw_payload ?? {},
-    normalizedPayload: row.normalized_payload ?? {},
+    normalizedPayload: projectRadarCompanyFacts(row.normalized_payload ?? {}),
     dedupeKey: row.dedupe_key,
     status: row.status,
     importedCompanyRecordId: row.imported_company_record_id ?? undefined,

@@ -51,4 +51,10 @@ describe.skipIf(!url)('Radar regional delivery to real CRM',()=>{
     expect((await pool.query('SELECT count(*)::int AS n FROM public.domain_events WHERE aggregate_id=$1',[leadId])).rows[0].n).toBe(0)
     expect((await pool.query('SELECT count(*)::int AS n FROM public.automation_executions WHERE lead_id=$1',[leadId])).rows[0].n).toBe(0)
   })
+  it('blocks new delivery of legacy directory facts without changing a previously delivered lead',async()=>{
+    const bad=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Legado inválido',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({researchRevision:1,websiteStatus:'verified_present',websiteUrl:'https://empresadois.com.br/cnpj/99999999000199',publicContacts:[{kind:'phone',value:'+551145047000',association:'confirmed',sourceUrl:'https://empresadois.com.br/cnpj/99999999000199'}]})])).rows[0].id
+    await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision,approved_by,approved_at) VALUES($1,$2,$3,'confirmed','high',1,$4,NOW())`,[bad,organizationId,campaignId,admin.id])
+    expect((await deliverRadarCompaniesToCrm(pool,admin,{...input(),candidateIds:[bad]})).items).toEqual([{candidateId:bad,status:'blocked',reason:'radar_crm_review_required'}])
+    expect((await pool.query('SELECT phone FROM public.leads WHERE id=$1',[leadId])).rows[0].phone).toBe('+5541999998888')
+  })
 })

@@ -4,6 +4,7 @@ import {requireRadarScope} from './access.js'
 import {isRadarEnabledOrganization} from './repository.js'
 import {assertB2bDeliveryRights} from './b2b-delivery.js'
 import type {RadarContactEvidence} from './contact-evidence.js'
+import {projectRadarCompanyFacts} from './company-projection.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
 type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
@@ -11,7 +12,7 @@ type DeliveryItem={candidateId:string;status:'created'|'already_linked'|'blocked
 const failure=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 
 export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload:Record<string,unknown>},offer:string){
-  const data=candidate.normalizedPayload
+  const data=projectRadarCompanyFacts(candidate.normalizedPayload)
   const contacts=(Array.isArray(data.publicContacts)?data.publicContacts:[]).filter((item):item is RadarContactEvidence=>
     !!item&&typeof item==='object'&&item.association==='confirmed'&&typeof item.value==='string'&&typeof item.sourceUrl==='string')
   const first=(kind:string)=>contacts.filter(item=>item.kind===kind).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
@@ -69,7 +70,8 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
       const block=(reason:string,leadId?:string,pipelineId?:string)=>items.push({candidateId,status:'blocked',reason,...(leadId?{leadId,pipelineId}:{})})
       if(!candidate){block('radar_candidate_not_found');continue}
       if(candidate.crm_lead_id){const linked=(await client.query('SELECT pipeline_id FROM public.leads WHERE id=$1 AND organization_id=$2',[candidate.crm_lead_id,input.organizationId])).rows[0];items.push({candidateId,status:'already_linked',leadId:candidate.crm_lead_id,pipelineId:linked?.pipeline_id});continue}
-      const data=candidate.normalized_payload as Record<string,unknown>
+      const data=projectRadarCompanyFacts(candidate.normalized_payload as Record<string,unknown>)
+      if(data.researchAssociationNeedsReview===true&&candidate.verification_method!=='manual'){block('radar_crm_review_required');continue}
       if(candidate.status!=='pending_review'||!candidate.approved_at||candidate.target_status!=='confirmed'||candidate.review_revision!==input.configurationRevision
         ||![Number(data.researchRevision??0),Number(data.discoveryRevision??1)].includes(input.configurationRevision)){
         block('radar_crm_review_required');continue

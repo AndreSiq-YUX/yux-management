@@ -7,7 +7,7 @@ import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { seedIntegrationFixtures, fixtureIds, fixtureUsers } from './support/fixtures.js'
 import { storePlatformProviderSecret } from '../../src/modules/platform/adminRepository.js'
-import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv } from '../../src/modules/radar/repository.js'
+import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv,listRadarCandidates } from '../../src/modules/radar/repository.js'
 import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from '../../src/modules/radar/research-service.js'
 import { getRadarResearchAvailability } from '../../src/modules/radar/research-availability.js'
 
@@ -125,6 +125,11 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research}', '{"enabled":true,"webSearchEnabled":true,"presenceResolutionEnabled":true,"maxSearchQueriesPerCandidate":1}'::jsonb) WHERE id=$1`,[campaignId])
     const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Gama',$3,'{"cnpj":"23456789000190","city":"Recife","state":"PE","websiteUrl":"https://empresadois.com.br/cnpj/23456789000190"}') RETURNING id`,[organizationId,campaignId,randomUUID()])).rows[0].id
     const oldContact={kind:'social',value:'https://instagram.com/serasa',sourceUrl:'https://serasaexperian.com.br/consulta-gratis/23456789000190',observedAt:'2026-09-01',association:'review'}
+    await pool.query(`UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$2::jsonb WHERE id=$1`,[id,JSON.stringify({websiteStatus:'verified_present',researchRevision:2,publicContacts:[{...oldContact,association:'confirmed'}]})])
+    await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision) VALUES($1,$2,$3,'confirmed','high',2)`,[id,organizationId,campaignId])
+    const listed=(await scoped(()=>listRadarCandidates(worker,admin,campaignId))).find(item=>item.id===id)!
+    expect(listed.normalizedPayload).toMatchObject({websiteStatus:'unknown',publicContacts:[],researchAssociationNeedsReview:true})
+    await expect(scoped(()=>approveRadarB2bProspect(worker,admin,{organizationId,candidateId:id}))).rejects.toThrow('radar_b2b_manual_evidence_required')
     const oldOutput={discovery:{association:'confirmed',websiteUrl:oldContact.sourceUrl,hits:[],suggestions:[],limitations:[],queries:3},contacts:[oldContact],pages:[{url:oldContact.sourceUrl,text:'CNPJ 23.456.789/0001-90. Consulta cadastral.',observedAt:oldContact.observedAt}],readingComplete:true}
     const old=(await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output) VALUES($1,$2,$3,$4,2,'partial',$5) RETURNING id`,[organizationId,campaignId,id,admin.id,JSON.stringify(oldOutput)])).rows[0].id
     expect((await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))).run?.output.contacts).toEqual([])
@@ -134,7 +139,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled()
     expect((await pool.query('SELECT output FROM public.radar_candidate_research_runs WHERE id=$1',[old])).rows[0].output.contacts).toEqual([oldContact])
     const fresh=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'refresh',requestId:randomUUID()}))
-    const source={url:'https://marca-gama.example/',text:'Marca Delta. Empresa Gama é nossa razão social. Fornecedores: compras@marca-gama.example.',observedAt:'2026-10-13'}
+    const source={url:'https://marca-gama.example/',text:'Marca Delta. Empresa Gama é nossa razão social.',html:'<h2>Fornecedores</h2><a href="mailto:compras@marca-gama.example">Entrar em contato</a>',observedAt:'2026-10-13'}
     web.mockResolvedValue([{url:source.url,title:'Marca Delta',snippets:['Empresa Gama'],observedAt:source.observedAt}]);collect.mockResolvedValue([source])
     runtime.mockResolvedValue({candidateId:'page-0',scope:'group',reason:'A marca apresenta a razão social procurada.',claims:[{evidenceId:'page-0',excerpt:'Empresa Gama é nossa razão social.'}]})
     await jobScope(()=>executeRadarCandidateResearch(worker,{PROVIDER_SECRET_ENCRYPTION_KEY_B64:fixtureKey} as AppEnv,{runId:fresh.runId,organizationId},undefined,{web,collect,runtime}))
@@ -143,5 +148,9 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     expect(dossier.run?.output).toMatchObject({methodVersion:2,presenceResolution:{scope:'group'},discovery:{websiteUrl:source.url}})
     expect(dossier.run?.output.contacts).toContainEqual(expect.objectContaining({value:'compras@marca-gama.example',scope:'group'}))
     expect(dossier.history).toHaveLength(2)
+    await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'resume'}))
+    await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{runId:fresh.runId,organizationId},undefined,{web,collect,runtime}))
+    expect(runtime).toHaveBeenCalledTimes(1);expect(web).toHaveBeenCalledTimes(1)
+    expect((await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))).run?.output.contacts).toContainEqual(expect.objectContaining({value:'compras@marca-gama.example',scope:'group'}))
   })
 })

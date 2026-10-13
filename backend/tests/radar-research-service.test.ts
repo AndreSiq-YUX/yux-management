@@ -4,6 +4,63 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('does not let a conflicting homonym consume all reading capacity before the official candidate',async()=>{
+  const web=vi.fn(async()=>[
+    {url:'https://homonym.example/',title:'Empresa Alfa',snippets:['Empresa Alfa'],observedAt:'2026-10-13'},
+    {url:'https://official.example/',title:'Marca Alfa',snippets:['Empresa Alfa'],observedAt:'2026-10-13'}])
+  const collect=vi.fn(async(url:string,policy:{maxPagesPerCandidate:number})=>url.includes('homonym')?
+    Array.from({length:policy.maxPagesPerCandidate},(_,index)=>({url:`https://homonym.example/${index||''}`,text:'Empresa Alfa CNPJ 99.999.999/0001-99 em Salvador/BA. contato@homonym.example',observedAt:'2026-10-13'})):
+    [{url:'https://official.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Curitiba/PR. compras@official.example',observedAt:'2026-10-13'}])
+  const result=await runRadarResearchPipeline(identity,configuration,{}, {web,collect,checkpoint:async()=>{}})
+  expect(collect.mock.calls.some(([url])=>url.includes('official'))).toBe(true)
+  expect(result.discovery.websiteUrl).toBe('https://official.example/')
+  expect(result.contacts.every(contact=>contact.sourceUrl.includes('official'))).toBe(true)
+})
+it('reserves depth for the evidence-selected brand when a name-only homonym appears first',async()=>{
+  const web=vi.fn(async()=>[
+    {url:'https://homonym.example/',title:'Empresa Alfa',snippets:['Empresa Alfa'],observedAt:'2026-10-13'},
+    {url:'https://brand.example/',title:'Marca Beta — Empresa Alfa',snippets:['Marca institucional'],observedAt:'2026-10-13'}])
+  const collect=vi.fn(async(url:string,policy:{maxPagesPerCandidate:number})=>url.includes('homonym')?
+    Array.from({length:policy.maxPagesPerCandidate},(_,index)=>({url:`https://homonym.example/${index||''}`,text:'Empresa Alfa. Outra empresa de serviços.',observedAt:'2026-10-13'})):
+    [{url:'https://brand.example/',text:'Marca Beta. Atendimento corporativo.',observedAt:'2026-10-13'},
+      ...(policy.maxPagesPerCandidate>1?[{url:'https://brand.example/contato',text:'Fornecedores compras@brand.example.',observedAt:'2026-10-13'}]:[])])
+  const resolvePresence=vi.fn(async(evidence:Array<{id:string;url:string;text:string}>)=>{
+    const page=evidence.find(item=>item.url==='https://brand.example/'&&item.id.startsWith('page-'))!
+    return{candidateId:page.id,scope:'group',reason:'Marca associada à razão social pelos resultados e página institucional.',claims:[{evidenceId:page.id,excerpt:page.text}]}
+  })
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,presenceResolutionEnabled:true}}),{},
+    {web,collect,resolvePresence,checkpoint:async()=>{}})
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',association:'confirmed',scope:'group'}))
+  expect(resolvePresence.mock.calls[0][0].some(item=>item.id.startsWith('search-')&&item.text.includes('Empresa Alfa'))).toBe(true)
+  expect(result.pages.length).toBeLessThanOrEqual(4)
+})
+it('can recover navigation after a missing-route result persisted pages without HTML',async()=>{
+  const first={url:'https://homonym.example/',text:'Empresa Alfa. Serviços.',observedAt:'2026-09-01'}
+  const official={url:'https://brand.example/',text:'Marca Beta. Soluções empresariais.',observedAt:'2026-09-01'}
+  const collect=vi.fn(async(_url:string,_policy:unknown,options:{initialPages?:Array<{url:string}>}={})=>{
+    expect(options.initialPages?.some(page=>page.url===official.url)).toBe(false)
+    return[{...official,observedAt:'2026-10-13',html:'<a href="/contato">Contato</a>'},{url:'https://brand.example/contato',text:'Fornecedores compras@brand.example.',observedAt:'2026-10-13'}]
+  })
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}}),{
+    readingComplete:true,discoveryLocked:true,pages:[first,official],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:3}},
+    {web:vi.fn(),collect:collect as never,resolvePresence:async()=>({candidateId:'page-1',scope:'group',reason:'A marca é associada ao grupo pelas evidências.',claims:[{evidenceId:'page-1',excerpt:official.text}]}),checkpoint:async()=>{}})
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',scope:'group'}))
+})
+it('a stale search snippet cannot restore contacts contradicted by the subsequently read page',async()=>{
+  const url='https://alfa.example/',old={url,title:'Empresa Alfa',snippets:['CNPJ 12.345.678/0001-90. Telefone 41 3333-4444'],observedAt:'2026-09-01'}
+  const result=await runRadarResearchPipeline(identity,configuration,{analysisOnly:true,readingComplete:true,discoveryLocked:true,
+    discovery:{association:'confirmed',websiteUrl:url,hits:[old],suggestions:[],limitations:[],queries:1},
+    pages:[{url,text:'Empresa Beta CNPJ 99.999.999/0001-99 em Salvador/BA.',observedAt:'2026-10-13'}]},
+    {web:vi.fn(),checkpoint:async()=>{}})
+  expect(result.siteAssociation).toBe('review');expect(result.contacts).toEqual([])
+})
+it('keeps proven sibling-CNPJ group channels as group contacts rather than discarding their association',async()=>{
+  const page={url:'https://brand.example/',text:'Grupo Alfa CNPJ 12.345.678/0002-71. Marca Beta. compras@brand.example',observedAt:'2026-10-13'}
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}}),{
+    readingComplete:true,pages:[page],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),resolvePresence:async()=>({candidateId:'page-0',scope:'group',reason:'O CNPJ identifica a matriz do mesmo grupo.',claims:[{evidenceId:'page-0',excerpt:'Grupo Alfa CNPJ 12.345.678/0002-71.'}]}),checkpoint:async()=>{}})
+  expect(result.contacts[0]).toMatchObject({value:'compras@brand.example',association:'confirmed',scope:'group'})
+})
 // Synthetic evidence scenarios, not claims that these exact excerpts were scraped live.
 it.each([
   ['Empresa Brasileira de Refeições','Emb rare','01128426000198','Poá','SP','https://embrare.com.br/'],

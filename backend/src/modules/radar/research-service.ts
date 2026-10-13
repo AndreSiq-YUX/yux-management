@@ -38,6 +38,11 @@ type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query:
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
 export const RADAR_RESEARCH_METHOD_VERSION=2
 const RADAR_ASSOCIATION_VERSION=2
+function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
+  const expected=identity.cnpj?.replace(/\D/g,'')
+  return !!expected&&[...text.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)]
+    .some(match=>{const value=match[0].replace(/\D/g,'');return group?value.slice(0,8)!==expected.slice(0,8):value!==expected})
+}
 function currentDossierProjection(output:Output):Output{
   const contacts=output.contacts?.filter(contact=>{
     const page=output.pages?.find(item=>item.url===contact.sourceUrl)
@@ -65,34 +70,40 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   }
   const limits: string[] = []
   const checkpoint = async (stage: string) => { dependencies.signal?.throwIfAborted(); await dependencies.checkpoint(stage, output) }
-  let pages = output.pages ?? []
-  const mentionsIdentity=(text:string)=>[identity.name,identity.legalName].some(name=>!!name&&normalizeRadarText(name).length>=5&&normalizeRadarText(text).includes(normalizeRadarText(name)))
+  let pages = [...(output.pages ?? [])]
+  const mentionsIdentity=(text:string)=>!cnpjConflict(identity,text,true)&&[identity.name,identity.legalName].some(name=>!!name&&normalizeRadarText(name).length>=5&&normalizeRadarText(text).includes(normalizeRadarText(name)))
   if (!output.discovery || !output.discoveryLocked && output.discovery.limitations.length) {
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
       search: dependencies.web, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
       checkpoint: async (hits, queries) => { output.discoveryHits = hits; output.discoveryQueries = queries; await checkpoint('discovery') },
       inspectCandidates:output.analysisOnly||output.readingComplete?undefined:async hits=>{
+        let plausible=false
         for(const hit of hits.filter(item=>isRadarInstitutionalSource(item.url,{title:item.title,text:item.snippets.join(' ')}))){
           const root=new URL('/',hit.url).toString()
-          if(!pages.some(page=>new URL(page.url).origin===new URL(root).origin)&&pages.length<configuration.research.maxPagesPerCandidate){
+          if(!pages.some(page=>new URL(page.url).origin===new URL(root).origin)&&pages.length<Math.max(1,configuration.research.maxPagesPerCandidate-1)){
             const collected=await (dependencies.collect??collectRadarSiteEvidence)(root,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal})
             pages.push(...collected);output.pages=pages;await checkpoint('discovery')
           }
-          if(pages.some(page=>new URL(page.url).origin===new URL(root).origin&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})
-            &&(matchRadarBusinessIdentity(identity,page.text)==='confirmed'||mentionsIdentity(page.text))))return true
+          const readable=pages.filter(page=>new URL(page.url).origin===new URL(root).origin&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
+          if(readable.some(page=>matchRadarBusinessIdentity(identity,page.text)==='confirmed'))return true
+          if(readable.some(page=>mentionsIdentity(page.text)))plausible=true
         }
-        return false
+        return plausible
       },
     })
     await checkpoint('identity')
   }
   const discovery = output.discovery
-  let website = discovery.websiteUrl ?? identity.websiteUrl
+  let website = pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')?.url??discovery.websiteUrl ?? identity.websiteUrl
     ?? discovery.suggestions.find(hit=>!isRadarReferenceUrl(hit.url))?.url
+  const deferAmbiguousDepth=configuration.research.presenceResolutionEnabled
+    &&!pages.some(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')
+    &&new Set(pages.filter(page=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,true)).map(page=>new URL(page.url).origin)).size>1
   if (!output.readingComplete) {
     const candidates = [website,...discovery.suggestions.map(item=>item.url)].filter((value):value is string => !!value && !isRadarReferenceUrl(value))
     const urls = [...new Set(candidates.flatMap(value=>{try{return [new URL('/',value).toString(),value]}catch{return []}}))]
     for (const url of urls) {
+      if(deferAmbiguousDepth)break
       if (pages.filter(page=>!page.limitation).length >= configuration.research.maxPagesPerCandidate || pages.length>=configuration.research.maxPagesPerCandidate*2 || dependencies.signal?.aborted) break
       const other=pages.filter(page=>new URL(page.url).origin!==new URL(url).origin)
       const remaining = configuration.research.maxPagesPerCandidate - other.filter(page=>!page.limitation).length
@@ -116,8 +127,15 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.pages = pages; output.readingComplete = !pages.some(isRetryableRadarPage); output.readerVersion=RADAR_READER_VERSION
     await checkpoint('consolidation')
   }
-  const presenceEvidence:RadarPresenceEvidence[]=pages.filter(page=>!!page.text&&!page.limitation).map((page,index)=>({id:`page-${index}`,url:page.url,text:page.text.slice(0,12000),observedAt:page.observedAt,kind:classifyRadarSource(page.url,{text:page.text}).kind})).slice(0,10)
-  const presenceEvidenceHash=createHash('sha256').update(JSON.stringify({identity,evidence:presenceEvidence})).digest('hex')
+  const buildPresenceEvidence=():RadarPresenceEvidence[]=>{
+    const pageEvidence=pages.filter(page=>!!page.text&&!page.limitation).map((page,index)=>({id:`page-${index}`,url:page.url,text:page.text.slice(0,12000),observedAt:page.observedAt,kind:classifyRadarSource(page.url,{text:page.text}).kind})).slice(0,8)
+    // A search snippet reports a third party's observation, not ownership of the linked page.
+    return[...pageEvidence,...discovery.hits.slice(0,10-pageEvidence.length).map((hit,index)=>({id:`search-${index}`,url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`.slice(0,12000),observedAt:hit.observedAt,kind:'third_party' as const}))]
+  }
+  let presenceEvidence=buildPresenceEvidence()
+  const {websiteUrl:_inferredWebsite,...stableIdentity}=identity
+  const hashPresence=()=>createHash('sha256').update(JSON.stringify({identity:stableIdentity,evidence:presenceEvidence})).digest('hex')
+  let presenceEvidenceHash=hashPresence()
   let presenceResolution=output.presenceEvidenceHash===presenceEvidenceHash?output.presenceResolution:undefined
   const directlyAssociated=pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')
   if(configuration.research.presenceResolutionEnabled&&!directlyAssociated&&!presenceResolution){
@@ -129,20 +147,43 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       }catch(cause){limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
     }else limits.push('Identificação do site pendente: configure a rota de identificação de presença no Admin e obtenha páginas públicas legíveis.')
   }
+  if(deferAmbiguousDepth&&presenceResolution?.websiteUrl&&!output.analysisOnly){
+    const origin=new URL(presenceResolution.websiteUrl).origin,prior=pages.filter(page=>new URL(page.url).origin===origin)
+    const other=pages.filter(page=>new URL(page.url).origin!==origin)
+    const maximum=configuration.research.maxPagesPerCandidate-other.filter(page=>!page.limitation).length
+    if(prior.filter(page=>!page.limitation).length<maximum){
+      const selected=await(dependencies.collect??collectRadarSiteEvidence)(presenceResolution.websiteUrl,
+        {maxPagesPerCandidate:maximum,maxAttemptsPerCandidate:configuration.research.maxPagesPerCandidate*2-other.length},{signal:dependencies.signal,
+          initialPages:prior.filter(page=>page.url!==presenceResolution?.websiteUrl||!!page.html)})
+      const byUrl=new Map(selected.map(page=>[page.url,page]))
+      pages=[...pages.map(page=>byUrl.get(page.url)??page),...selected.filter(page=>!pages.some(old=>old.url===page.url))]
+      output.pages=pages;output.readingComplete=!pages.some(isRetryableRadarPage)
+      presenceEvidence=buildPresenceEvidence();presenceEvidenceHash=hashPresence()
+      if(selected.some(page=>!page.limitation&&(cnpjConflict(identity,page.text,presenceResolution?.scope==='group')
+        ||page.url===presenceResolution?.websiteUrl&&!isRadarInstitutionalSource(page.url,{text:page.text})))){
+        presenceResolution=undefined;limits.push('As páginas adicionais contradizem a identidade procurada. Site e contatos exigem revisão.')
+      }
+      output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceResolution?presenceEvidenceHash:undefined
+      await checkpoint('consolidation')
+    }
+  }
   const associatedOrigin=directlyAssociated?.url??presenceResolution?.websiteUrl
   const associated=!!associatedOrigin
   const associatedPages=pages.filter(page=>associatedOrigin && new URL(page.url).origin===new URL(associatedOrigin).origin
-    && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'))
+    &&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,presenceResolution?.scope==='group'))
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
   const sameInstitutionalOrigin=(url:string)=>!!associatedOrigin&&isRadarInstitutionalSource(url)&&new URL(url).origin===new URL(associatedOrigin).origin
   const contacts:RadarContactEvidence[] = pages.filter(page=>sameInstitutionalOrigin(page.url)).flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review').map(contact=>({...contact,
     scope:associatedPages.includes(page)?presenceResolution?.scope??'establishment': 'unresolved' as const})))
   // Link-only contacts are preserved as sourced facts: stored pages intentionally omit raw HTML.
-  if(output.analysisOnly)contacts.push(...(output.contacts??[]).filter(contact=>sameInstitutionalOrigin(contact.sourceUrl)).map(contact=>({...contact,
+  contacts.push(...(output.contacts??[]).filter(contact=>sameInstitutionalOrigin(contact.sourceUrl)&&(output.analysisOnly||saved.pages?.some(old=>old.url===contact.sourceUrl&&pages.some(page=>page.url===old.url&&!page.html&&page.text===old.text&&page.observedAt===old.observedAt)))).map(contact=>({...contact,
     association:associatedPages.some(page=>page.url===contact.sourceUrl)?contact.association:'review' as const,
     scope:associatedPages.some(page=>page.url===contact.sourceUrl)?presenceResolution?.scope??'establishment':'unresolved' as const})))
   // Contacts in search snippets remain useful when there is no website; identity must be corroborated independently.
-  for (const hit of discovery.hits.filter(hit=>matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed')) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, 'confirmed'))
+  const trustedSearchHits=discovery.hits.filter(hit=>sameInstitutionalOrigin(hit.url)&&matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed'
+    &&!pages.some(page=>page.url===hit.url&&!page.limitation&&cnpjConflict(identity,page.text,presenceResolution?.scope==='group')))
+  for (const hit of trustedSearchHits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, 'confirmed')
+    .map(contact=>({...contact,scope:presenceResolution?.scope??'establishment' as const})))
   const uniqueContacts = [...new Map(contacts.map(contact => [`${contact.kind}:${contact.value}:${contact.sourceUrl}`, contact])).values()]
   for(const contact of uniqueContacts)if(contact.association==='confirmed'&&configuration.research.contactPurpose!=='general'
     &&contact.purpose===configuration.research.contactPurpose) {
@@ -160,7 +201,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }
   }
   uniqueContacts.sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))
-  const confirmedSearchPages=discovery.hits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')})&&matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed')
+  const confirmedSearchPages=trustedSearchHits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')}))
     .map(hit=>({url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`,observedAt:hit.observedAt}))
   const qualifiedEvidence=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages].slice(0,10)
   const activity = assessRadarBusinessActivity(qualifiedEvidence)
@@ -506,7 +547,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       ||dossier.presenceResolution?.websiteUrl===page.url))
     const verified = dossier.siteAssociation === 'confirmed' && !!associatedPage
     const associatedPages=associatedPage?dossier.pages.filter(page=>new URL(page.url).origin===new URL(associatedPage.url).origin
-      && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')):[]
+      &&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,dossier.presenceResolution?.scope==='group')):[]
     const review = dossier.qualification ?? triageRadarBusiness({name:context.title,cnpj:String(context.normalized_payload.cnpj ?? ''),
       desiredCnaes:context.target_cnaes,cnaes:Array.isArray(context.normalized_payload.cnaes) ? context.normalized_payload.cnaes as string[]:[],
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})

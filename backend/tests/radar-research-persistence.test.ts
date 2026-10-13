@@ -84,7 +84,14 @@ it('persists evidence-bound brand identity and does not replay an uncertain pres
     const runtime=vi.fn().mockResolvedValue({candidateId:'page-0',scope:'group',reason:'A razão social é apresentada pela marca.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]})
     await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web:vi.fn()})
     expect(runtime).toHaveBeenCalledTimes(uncertain?0:1)
-    if(!uncertain){expect(pool.payload.websiteUrl).toBe('https://brand.example/');expect(pool.payload.publicContacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',scope:'group'}))}
+    if(!uncertain){
+      expect(pool.payload.websiteUrl).toBe('https://brand.example/');expect(pool.payload.publicContacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',scope:'group'}))
+      await start(pool)
+      await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web:vi.fn()})
+      expect(runtime).toHaveBeenCalledTimes(1)
+      expect(pool.run!.output.limitations.join(' ')).not.toContain('radar_presence_refresh_authorization_required')
+      expect(pool.payload.publicContacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',scope:'group'}))
+    }
     else expect(pool.run!.output.limitations).toContainEqual(expect.stringContaining('radar_presence_previous_request_uncertain'))
   }
 })
