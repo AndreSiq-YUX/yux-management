@@ -27,7 +27,7 @@ class ResearchPool {
     if(sql.includes('INSERT INTO public.radar_source_usage_counters')){this.quota++;return{rows:[]}}
     if(sql.includes('FROM public.radar_b2b_reviews'))return{rows:this.approved?[{approved_at:'2026-10-08'}]:[]}
     if(sql.includes('INSERT INTO public.radar_candidate_research_runs')){this.run={id:'run',organization_id:'org',campaign_id:'campaign',candidate_id:'candidate',requested_by:'admin',configuration_revision:this.revision,status:'queued',stage:'discovery',output:{},calls:{},created_at:new Date().toISOString()};return{rows:[this.run]}}
-    if(sql.includes('FROM public.radar_candidate_research_runs'))return{rows:this.run?[this.run]:[]}
+    if(sql.includes('FROM public.radar_candidate_research_runs'))return{rows:this.run&&(!sql.includes("status IN ('queued','running')")||['queued','running'].includes(this.run.status))?[this.run]:[]}
     if(sql.includes('UPDATE public.radar_candidate_research_runs')) {
       if(!this.run)return{rows:[]}
       if(sql.includes("status='running'")){if(this.run.lease_id||this.run.status==='succeeded'||params[2]!=='org')return{rows:[]};this.run.status='running';this.run.lease_id=params[1]}

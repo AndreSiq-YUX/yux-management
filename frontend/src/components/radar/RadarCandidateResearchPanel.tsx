@@ -20,8 +20,8 @@ function SourcedProfileClaim({claim}:{claim:RadarProfileClaim}) {
       <p>Observado em {new Date(claim.observedAt).toLocaleDateString('pt-BR')}; {claim.scope==='establishment'?'estabelecimento':claim.scope==='group'?'grupo — não confirma a filial':'escopo pendente'}.</p>
     </details></div>
 }
-export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,canStart=true,approved=false,onCompleted}:{
-  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
+export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,showTechnical=true,canStart=true,approved=false,onCompleted}:{
+  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;showTechnical?:boolean;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
 }) {
   const [open,setOpen]=useState(false),[result,setResult]=useState<RadarResearchResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[refresh,setRefresh]=useState(0)
@@ -46,32 +46,34 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     void load()
     return()=>{active=false;clearTimeout(timer)}
   },[open,candidateId,organizationId,refresh])
-  async function start() {
+  async function start(operation:'complete'|'resume'|'refresh'|'reanalyze'='complete') {
     if(submitted.current||!available?.allowed||approved||!canStart)return
     const route=available.semantic
-    const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
-    if(!window.confirm(`Pesquisar esta empresa sem enviar mensagens? Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
+    const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${showTechnical&&route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
+    if(!window.confirm(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
     submitted.current=true;setBusy(true);setError(null);setOpen(true)
-    try {await radarService.startCandidateResearch(candidateId,{organizationId,configurationRevision,requestId:crypto.randomUUID(),allowSemanticRefresh});setAllowSemanticRefresh(false);setRefresh(value=>value+1)}
+    try {await radarService.startCandidateResearch(candidateId,{organizationId,configurationRevision,requestId:crypto.randomUUID(),allowSemanticRefresh,operation});setAllowSemanticRefresh(false);setRefresh(value=>value+1)}
     catch {setError('Não foi possível iniciar. Atualize a disponibilidade; confira configuração, quota e orçamento. Seus dados foram preservados.');setRefresh(value=>value+1)}
     finally {submitted.current=false;setBusy(false)}
   }
   const output=result?.run?.output
   return <section className="mt-3 min-w-0 space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3" aria-label="Pesquisa automática da empresa">
     <div className="flex flex-wrap gap-2">
-      <button type="button" className={`${buttonClass} bg-slate-900 text-white`} disabled={!available?.allowed||busy||running||approved||!canStart} onClick={start}>
+      <button type="button" className={`${buttonClass} bg-slate-900 text-white`} disabled={!available?.allowed||busy||running||approved||!canStart} onClick={()=>start(result?.run&&['partial','blocked','failed'].includes(result.run.status)?'resume':'complete')}>
         {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa automática':'Pesquisar e enriquecer automaticamente'}</button>
       <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar resultado':'Ver resultado e disponibilidade'}</button>
+      {result?.run&&!running&&<><button type="button" className={buttonClass} disabled={!available?.allowed||busy||approved||!canStart} onClick={()=>start('refresh')}>Atualizar pesquisa</button>
+        {available?.semanticQualificationEnabled&&<button type="button" className={buttonClass} disabled={!available.allowed||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button>}</>}
     </div>
     {!available && !error && !availabilityError && <p className="text-xs text-slate-600">Conferindo disponibilidade. Abra o resultado para atualizar.</p>}
     {availabilityError && !available && !error && <p role="alert" className="text-sm text-red-700">{availabilityError}</p>}
     {(error||availabilityError)&&<button type="button" className={buttonClass} onClick={()=>{setOpen(true);setRefresh(value=>value+1)}}>Tentar novamente</button>}
     {approved && <p className="text-xs text-amber-800">Registro aprovado preservado. A pesquisa não altera silenciosamente uma aprovação.</p>}
     {!canStart && <p className="text-xs text-slate-600">Somente um administrador autorizado pode iniciar pesquisas pagas.</p>}
-    {available?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="text-xs text-amber-900">{reason.message} Caminho: {reason.resolution}.</p>)}
+    {available?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="text-xs text-amber-900">{showTechnical?`${reason.message} Caminho: ${reason.resolution}.`:'Pesquisa indisponível: solicite ao responsável a revisão da configuração ou dos limites da campanha.'}</p>)}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {open && <div className="space-y-3 text-sm">
-      {available?.semanticQualificationEnabled&&<p className="text-xs text-slate-600">IA: {available.semantic?.model??'confira a rota no Admin'}; a estimativa de buscas não inclui tokens da IA nem tentativas de fallback. {available.semantic?.budgetReferenceBrl?`Referência de orçamento no Admin: ${money(available.semantic.budgetReferenceBrl)} — não é cotação do consumo.`:''}</p>}
+      {showTechnical&&available?.semanticQualificationEnabled&&<p className="text-xs text-slate-600">IA: {available.semantic?.model??'confira a rota no Admin'}; a estimativa de buscas não inclui tokens da IA nem tentativas de fallback. {available.semantic?.budgetReferenceBrl?`Referência de orçamento no Admin: ${money(available.semantic.budgetReferenceBrl)} — não é cotação do consumo.`:''}</p>}
       {result?.run&&available?.semanticQualificationEnabled&&['partial','blocked','failed'].includes(result.run.status)&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} onChange={e=>setAllowSemanticRefresh(e.target.checked)}/>Autorizo nova análise por IA se as evidências mudaram (pode consumir créditos; buscas concluídas serão reaproveitadas).</label>}
       <button type="button" className={buttonClass} onClick={()=>setRefresh(value=>value+1)}>Atualizar resultado</button>
       {result?.run ? <><p role="status" className="font-semibold">{statusLabel[result.run.status]??result.run.status}</p>

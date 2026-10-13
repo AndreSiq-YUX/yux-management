@@ -26,7 +26,7 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   qualification?: RadarQualification; qualificationEvidenceHash?:string; profile?:RadarCompanyProfile;
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
-type Output = Partial<RadarResearchDossier> & { discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
+type Output = Partial<RadarResearchDossier> & { analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string) => Promise<RadarWebHit[]>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
   registrySizeFacts?:RadarSizeFact[];
@@ -92,6 +92,9 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||matchRadarBusinessIdentity(identity,page.text)==='confirmed'))
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
   const contacts = pages.flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review'))
+  // Link-only contacts are preserved as sourced facts: stored pages intentionally omit raw HTML.
+  if(output.analysisOnly)contacts.push(...(output.contacts??[]).map(contact=>({...contact,
+    association:associatedPages.some(page=>page.url===contact.sourceUrl)?contact.association:'review' as const})))
   // Contacts in search snippets remain useful when there is no website; identity must be corroborated independently.
   for (const hit of discovery.hits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`)))
   const uniqueContacts = [...new Map(contacts.map(contact => [`${contact.kind}:${contact.value}:${contact.sourceUrl}`, contact])).values()]
@@ -156,6 +159,7 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
   normalized_payload: Record<string, unknown>; search_configuration: unknown; configuration_revision: number; campaign_status: string;
   target_segment: string; offer_type: string; product_focus: string[]; target_cnaes: string[] }
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
+  operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
   configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;refreshAuthorized?:boolean;previous?:unknown }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
@@ -188,7 +192,7 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
   return { availability:available, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:{...latest.output,pages:latest.output.pages?.map(({html:_html,...page})=>page)}} : null,
     history:runs.rows.slice(1).map(run => ({ id:run.id, status:run.status, updated_at:run.updated_at })) }
 }
-export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number;requestId?:string;allowSemanticRefresh?:boolean}) {
+export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number;requestId?:string;allowSemanticRefresh?:boolean;operation?:'complete'|'resume'|'refresh'|'reanalyze'}) {
   await requireRadarScope(pool,user,{ organizationId:input.organizationId,candidateId:input.candidateId },true)
   const context = await loadContext(pool,input.organizationId,input.candidateId)
   if (context.configuration_revision !== input.configurationRevision) throw error('radar_campaign_configuration_changed')
@@ -203,17 +207,28 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     if (campaign.rows[0]?.configuration_revision !== input.configurationRevision) throw error('radar_campaign_configuration_changed')
     const approval = await client.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id = $1 FOR UPDATE',[input.candidateId])
     if (approval.rows[0]?.approved_at) throw error('radar_research_approved_candidate_requires_review')
+    const operation=input.operation??'complete'
+    if(['refresh','reanalyze'].includes(operation)&&!input.requestId)throw error('radar_research_request_id_required',400)
+    if(input.requestId){
+      const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
+      if(duplicate.rows[0]){await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
+    }
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
-      WHERE candidate_id = $1 AND organization_id = $2 AND configuration_revision = $3 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision])
+      WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation])
     let run = previous.rows[0]
-    const available=cachedReadAvailability(availability,run,input.configurationRevision,configuration.research.freshnessDays)
+    const activeRun=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND status IN ('queued','running') AND configuration_revision=$3 ORDER BY created_at DESC LIMIT 1`,[input.candidateId,input.organizationId,input.configurationRevision])
+    if(activeRun.rows[0]){await client.query('COMMIT');return{runId:activeRun.rows[0].id,status:activeRun.rows[0].status,reused:true}}
+    if(operation==='reanalyze'&&(!run?.output.discovery||!run.output.pages?.some(page=>!!page.text&&!page.limitation)))throw error('radar_research_saved_evidence_required')
+    const available=operation==='reanalyze'?{...availability,allowed:availability.reasons.filter(reason=>!['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing','retention_license_required','web_license_required','source_disabled','source_cost_required','search_not_selected'].includes(reason.code)).length===0}
+      :cachedReadAvailability(availability,run,input.configurationRevision,configuration.research.freshnessDays)
     if(!available.allowed)throw Object.assign(error('radar_research_unavailable'),{reasons:available.reasons})
     if(run&&!availability.allowed&&available.allowed) {
       run.output={...run.output,discoveryLocked:true}
       await client.query('UPDATE public.radar_candidate_research_runs SET output = $3::jsonb WHERE id=$1 AND organization_id=$2',
         [run.id,input.organizationId,JSON.stringify(run.output)])
     }
-    const fresh = run && (['queued','running'].includes(run.status) || Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
+    const fresh = !['refresh','reanalyze'].includes(operation)&&run&&run.configuration_revision===input.configurationRevision
+      &&(['queued','running'].includes(run.status) || operation==='resume'||Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
     if (fresh) {
       if (!['queued','running','succeeded'].includes(run.status)) {
         if(input.allowSemanticRefresh&&run.calls.semantic?.status==='completed') {
@@ -225,9 +240,11 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
           requested_by=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,[run.id,user.id]); run = updated.rows[0]
       }
     } else {
+      const inherited:Output=operation==='reanalyze'&&run?{...run.output,pages:run.output.pages?.filter(page=>!!page.text&&!page.limitation),readingComplete:true,
+        discoveryLocked:true,analysisOnly:true,qualification:undefined,qualificationEvidenceHash:undefined,profile:undefined,sizeAssessment:undefined}:{}
       const inserted = await client.query<ResearchRun>(`INSERT INTO public.radar_candidate_research_runs
-        (organization_id,campaign_id,candidate_id,requested_by,configuration_revision) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [input.organizationId,context.campaign_id,input.candidateId,user.id,input.configurationRevision]); run = inserted.rows[0]
+        (organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,operation,output) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING *`,
+      [input.organizationId,context.campaign_id,input.candidateId,user.id,input.configurationRevision,input.requestId??null,operation,JSON.stringify(inherited)]); run = inserted.rows[0]
     }
     await client.query('COMMIT')
     return { runId:run.id,status:run.status,reused:!!fresh }
@@ -263,6 +280,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const identity:RadarBusinessIdentity = {name:str('tradeName') || context.title,legalName:str('legalName'),cnpj:str('cnpj'),
       city:str('city'),state:str('state'),address:str('address'),phone:str('phoneRaw'),websiteUrl:str('websiteUrl')}
     const paid = async <T>(sourceKey:string,queryKey:string,request:(apiKey:string)=>Promise<T>):Promise<T> => {
+      if(run.operation==='reanalyze')throw error('radar_reanalysis_does_not_search')
       signal?.throwIfAborted()
       const key = createHash('sha256').update(`${sourceKey}:${queryKey}`).digest('hex')
       const previous = run.calls[key]
@@ -313,7 +331,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.keys(run.calls).filter(key=>key!=='semantic').length},{
-      signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:configuration.sources.inspectWebsite ? dependencies.collect : async () => [],
+      signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
       local:configuration.sources.enrichWithBrave && identity.city && identity.state ? async () => {
         const places = await paid('brave_place_search',identity.name,key => (dependencies.local ?? searchRadarPlaces)({provider:'brave_place_search',apiKey:key,query:identity.name,city:identity.city!,state:identity.state!,limit:5}))
         return places.flatMap(place => place.sourceUrl ? [{url:place.websiteUrl || place.sourceUrl,title:place.name,

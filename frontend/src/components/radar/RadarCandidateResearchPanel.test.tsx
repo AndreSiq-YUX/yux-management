@@ -36,6 +36,13 @@ it('starts_without_manual_url_and_deduplicates_clicks',async()=>{
   expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('0,0300'))
   view.unmount()
 })
+it('requests an explicit new research generation after confirmation',async()=>{
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,run:{id:'done',status:'succeeded',stage:'review',updated_at:'2026-10-13',configuration_revision:2,output:{}}})
+  const view=mount();await view.click('Ver resultado e disponibilidade')
+  await view.click('Atualizar pesquisa')
+  expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'refresh',requestId:expect.any(String)}))
+  view.unmount()
+})
 it('shows_brave_disabled_and_cost_reason_without_asking_for_license_again',()=>{
   const view=mount({...availability,allowed:false,reasons:[{code:'source_disabled',message:'Fonte Brave desativada.',resolution:'Admin → Integrações'},{code:'source_cost_required',message:'Custo não definido.',resolution:'Admin → Integrações'}]})
   expect(view.container.textContent).toContain('Fonte Brave desativada')

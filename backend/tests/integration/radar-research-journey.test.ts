@@ -88,6 +88,21 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     const payload=(await pool.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1',[candidateId])).rows[0].normalized_payload
     expect(payload).toMatchObject({phoneRaw:'4133334444',discoveryRevision:1,researchRevision:2,websiteUrl:'https://alfa.example/'})
     expect(payload.sitePhones).toContain('+5541999998888')
+    const readsBeforeReanalysis=collect.mock.calls.length
+    const reanalysisInput={...input,operation:'reanalyze' as const,requestId:randomUUID()}
+    const reanalysis=await scoped(()=>startRadarCandidateResearch(worker,admin,reanalysisInput))
+    expect(reanalysis.runId).not.toBe(starts[0].runId)
+    expect((await scoped(()=>startRadarCandidateResearch(worker,admin,reanalysisInput))).runId).toBe(reanalysis.runId)
+    await jobScope(()=>executeRadarCandidateResearch(worker,{PROVIDER_SECRET_ENCRYPTION_KEY_B64:fixtureKey} as AppEnv,
+      {runId:reanalysis.runId,organizationId},undefined,{web,collect,runtime:runtime as never}))
+    expect(web).toHaveBeenCalledTimes(1);expect(collect).toHaveBeenCalledTimes(readsBeforeReanalysis);expect(runtime).toHaveBeenCalledTimes(2)
+    const reanalyzed=await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,candidateId))
+    expect(reanalyzed.run?.output.contacts).toContainEqual(expect.objectContaining({value:'compras@alfa.example',purpose:'suppliers'}))
+    const refreshed=await scoped(()=>startRadarCandidateResearch(worker,admin,{...input,operation:'refresh',requestId:randomUUID()}))
+    expect(refreshed.runId).not.toBe(reanalysis.runId)
+    await jobScope(()=>executeRadarCandidateResearch(worker,{PROVIDER_SECRET_ENCRYPTION_KEY_B64:fixtureKey} as AppEnv,
+      {runId:refreshed.runId,organizationId},undefined,{web,collect,runtime:runtime as never}))
+    expect(web).toHaveBeenCalledTimes(2)
     await scoped(()=>approveRadarB2bProspect(worker,admin,{organizationId,candidateId,manualEvidenceUrl:'https://alfa.example/',manualReviewNote:'Identidade e público conferidos na evidência pública de teste.'}))
     const csv=await scoped(()=>exportRadarB2bProspectsCsv(worker,admin,organizationId,campaignId))
     expect(csv).toContain('Empresa Alfa')
@@ -97,6 +112,6 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
       ()=>worker.query('SELECT id FROM public.radar_candidate_research_runs WHERE id=$1',[starts[0].runId]))
     expect(hidden.rows).toHaveLength(0)
     const usage=await pool.query('SELECT SUM(units)::integer AS units FROM public.radar_source_usage_counters WHERE campaign_id=$1',[campaignId])
-    expect(usage.rows[0].units).toBe(1)
+    expect(usage.rows[0].units).toBe(2)
   })
 })

@@ -3,6 +3,7 @@ import { Building2, CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus,
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { RadarResultsTable } from './RadarResultsTable'
 import { RadarCampaignList } from './RadarCampaignList'
 import { RadarCampaignPage, type RadarScreen } from './RadarCampaignPage'
 import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
@@ -205,6 +206,10 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
   const [newCampaignVersion, setNewCampaignVersion] = useState(0)
   const activeConfigurationEditor = screen==='configuration' ? campaigns.find(item=>item.id===(campaignId??selectedCampaignId))??null : configurationEditor
     ?? (screen==='new' && creationMode === 'regional' ? 'new' : null)
+  const [selectedCandidateIds,setSelectedCandidateIds]=useState<string[]>([])
+  const [expandedCandidateId,setExpandedCandidateId]=useState<string|null>(null)
+  const [researchBatchStatus,setResearchBatchStatus]=useState<string[]>([])
+  const [trackedResearchCandidates,setTrackedResearchCandidates]=useState<string[]>([])
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(campaignId??null)
   const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
@@ -340,9 +345,9 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
         .catch(error => console.error('Erro ao atualizar candidatos B2B:', error))
     }
     refresh()
-    const interval = window.setInterval(refresh, 8_000)
+    const interval = trackedResearchCandidates.length?window.setInterval(refresh, 8_000):undefined
     return () => { active = false; window.clearInterval(interval) }
-  }, [selectedCampaignId, organizationId, campaigns, canAccess])
+  }, [selectedCampaignId, organizationId, campaigns, canAccess, trackedResearchCandidates.length])
 
   useEffect(() => {
     if (!selectedCampaignId || !organizationId || !canAccess) { setOsmReadiness(null); return }
@@ -510,6 +515,40 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
       || Number(candidate.normalizedPayload.researchRevision ?? 0) === (selectedCampaign.configurationRevision ?? 1))
     : candidates
 
+  useEffect(()=>{
+    if(!organizationId||!trackedResearchCandidates.length)return
+    let active=true,timer:ReturnType<typeof setTimeout>
+    const poll=async()=>{
+      const results=await Promise.allSettled(trackedResearchCandidates.map(id=>radarService.getCandidateResearch(id,organizationId)))
+      if(!active)return
+      const running=trackedResearchCandidates.filter((_,index)=>{const value=results[index];return value.status==='fulfilled'&&value.value.run&&['queued','running'].includes(value.value.run.status)})
+      setTrackedResearchCandidates(running)
+      refreshCampaignSidebars()
+      if(running.length)timer=setTimeout(poll,4000)
+    }
+    timer=setTimeout(poll,4000)
+    return()=>{active=false;clearTimeout(timer)}
+  },[organizationId,trackedResearchCandidates])
+
+  const researchSelected=async(operation:'complete'|'resume'|'refresh'|'reanalyze')=>{
+    if(!organizationId||!selectedCampaign||actionLoading||context.role?.key!=='yux_admin')return
+    const selected=candidates.filter(candidate=>selectedCandidateIds.includes(candidate.id)&&candidate.status==='pending_review')
+    if(!selected.length||!researchAvailability?.allowed)return
+    const cost=operation==='reanalyze'?0:selected.length*researchAvailability.maximumCostPerCandidate
+    if(!window.confirm(`${selected.length} empresas selecionadas. ${operation==='reanalyze'?'Reavaliar somente os dados salvos, sem novas buscas.':'Consultas de busca até '+cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4})+'.'} ${researchAvailability.semanticQualificationEnabled?'A análise por IA pode consumir créditos adicionais.':''} Nenhum contato será iniciado. Continuar?`))return
+    setActionLoading('research-selected');setResearchBatchStatus([])
+    const queued:string[]=[]
+    for(const candidate of selected){
+      try{
+        const result=await radarService.startCandidateResearch(candidate.id,{organizationId,configurationRevision:selectedCampaign.configurationRevision??1,requestId:crypto.randomUUID(),operation})
+        if(['queued','running'].includes(result.status))queued.push(candidate.id)
+        setResearchBatchStatus(current=>[...current,`${candidate.title}: ${result.reused?'execução existente reaproveitada':'pesquisa solicitada'}`])
+      }catch{setResearchBatchStatus(current=>[...current,`${candidate.title}: não foi possível iniciar; confira aprovação, disponibilidade e limites.`])}
+    }
+    setTrackedResearchCandidates(current=>[...new Set([...current,...queued])])
+    setActionLoading(null);refreshCampaignSidebars()
+  }
+
   const refreshDataSources = async () => {
     if (!organizationId || actionLoading) return
     try {
@@ -524,6 +563,10 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
 
   const refreshCampaignSidebars = () => {
     if (!selectedCampaignId) return
+    if(organizationId && selectedCampaign?.campaignType==='regional_b2b'){
+      radarService.getB2bProspects(selectedCampaignId,organizationId).then(setB2bProspects).catch(()=>undefined)
+      radarService.getB2bProgress(selectedCampaignId,organizationId).then(setB2bProgress).catch(()=>undefined)
+    }
     radarService.getMetrics(selectedCampaignId).then(setMetrics).catch(() => undefined)
     radarService.getCandidates(selectedCampaignId).then(setCandidates).catch(() => undefined)
     radarService.getDuplicates(selectedCampaignId).then(setDuplicates).catch(() => undefined)
@@ -1111,14 +1154,14 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
             <div className="mt-3 flex flex-wrap gap-2">
               <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
                 || Boolean(getSourceBlockedReason(cnpjaSource))} onClick={() => runB2bBatch('discovery')}>
-                Buscar lote nas regiões configuradas</Button>
+                Buscar mais empresas</Button>
               <Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
                 || (selectedCampaign.searchConfiguration?.research?.enabled && !researchAvailability?.allowed)}
-                onClick={() => runB2bBatch('verification')}>{selectedCampaign.searchConfiguration?.research?.enabled?'Pesquisar e enriquecer lote existente':'Verificar lote configurado'}</Button>
+                onClick={() => runB2bBatch('verification')}>{selectedCampaign.searchConfiguration?.research?.enabled?'Completar dados do próximo lote':'Verificar próximo lote'}</Button>
               <Button type="button" size="sm" variant="outline" onClick={()=>setResearchAvailabilityRefresh(value=>value+1)}>Atualizar disponibilidade da pesquisa</Button>
             </div>
             {selectedCampaign.searchConfiguration?.research?.enabled && researchAvailability?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="mt-2 text-xs text-amber-800">{reason.message} {reason.resolution}.</p>)}
-            {b2bProgress && <p className="mt-2 text-xs text-slate-600">{b2bProgress.candidates} candidatos · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
+            {b2bProgress && <p className="mt-2 text-xs text-slate-600">{candidates.length} empresas encontradas · {b2bProgress.candidates} nesta configuração · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
               {(b2bProgress?.scopes ?? []).map(scope =>
                 <Button key={scope.key} type="button" size="sm" variant="outline"
@@ -1385,26 +1428,36 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
           {screen==='results' && <section className="rounded-md border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-950">Candidatos e oportunidades</h2>
+                <h2 className="text-base font-semibold text-slate-950">Empresas encontradas</h2>
                 <p className="text-sm text-slate-500">
                   {metrics ? `${metrics.opportunities} oportunidades, ${metrics.reviewPending} em revisao, custo estimado R$ ${metrics.estimatedCost.toFixed(2)}` : 'Selecione fontes para captar candidatos e empresas.'}
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+            <div className="my-4 flex flex-wrap items-center gap-2">
+              {selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
+                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!researchAvailability?.allowed||(operation==='reanalyze'&&!researchAvailability?.semanticQualificationEnabled)}
+                onClick={()=>researchSelected(operation)}>{({complete:'Completar dados',resume:'Retomar pesquisa',refresh:'Atualizar pesquisa',reanalyze:'Reavaliar dados salvos'})[operation]}</Button>)}
+              <Button size="sm" variant="outline" onClick={()=>{refreshCampaignSidebars();setResearchAvailabilityRefresh(value=>value+1)}}>Atualizar resultados</Button>
+            </div>
+            {researchAvailabilityError&&<p role="alert" className="mb-3 text-sm text-red-700">{researchAvailabilityError}</p>}
+            {researchBatchStatus.length>0&&<div role="status" className="mb-3 rounded border bg-slate-50 p-3 text-xs">{researchBatchStatus.map((message,index)=><p key={index}>{message}</p>)}</div>}
+            <RadarResultsTable candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} onSelect={setSelectedCandidateIds} onOpen={setExpandedCandidateId}/>
+            <div className="mt-4 space-y-4">
               <div className="rounded-md border">
                 <div className="border-b p-3">
-                  <h3 className="text-sm font-semibold text-slate-950">Candidatos</h3>
+                  <h3 className="text-sm font-semibold text-slate-950">Detalhes da empresa</h3>
+                  {expandedCandidateId?<Button size="sm" variant="ghost" onClick={()=>setExpandedCandidateId(null)}>Fechar detalhes</Button>:<p className="text-xs text-slate-500">Selecione “Ver detalhes” em uma empresa para consultar dados, fontes e ações.</p>}
                 </div>
                 <div className="divide-y">
                   {visibleCandidates.length < candidates.length && <p className="p-3 text-sm text-amber-800">{candidates.length - visibleCandidates.length} empresas de configurações anteriores foram preservadas no histórico. Execute a descoberta com os critérios atuais para incluí-las novamente.</p>}
                   {visibleCandidates.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhum candidato nesta configuração.</p>}
-                  {visibleCandidates.map(candidate => (
+                  {candidates.filter(candidate=>candidate.id===expandedCandidateId).map(candidate => (
                     <div key={candidate.id} className="flex min-w-0 flex-col items-start justify-between gap-3 p-3">
                       <div className="min-w-0 w-full">
                         <p className="text-sm font-medium text-slate-950">{candidate.title}</p>
-                        <p className="text-xs text-slate-500">{candidate.sourceType} - {candidateStatusLabels[candidate.status] || candidate.status}</p>
+                        <p className="text-xs text-slate-500">{context.role?.key==='yux_admin'?`${candidate.sourceType} - `:''}{candidateStatusLabels[candidate.status] || 'Revisão necessária'}</p>
                         {candidate.snippet && <p className="mt-1 text-sm text-slate-600">{candidate.snippet}</p>}
                         {candidate.sourceType === 'osm_extract' && candidate.sourceUrl && <a className="mt-1 block text-xs text-yux-700 underline" href={candidate.sourceUrl} target="_blank" rel="noreferrer">Ver elemento no OpenStreetMap</a>}
                         {candidate.sourceType === 'osm_extract' && <p className="mt-1 text-xs text-slate-500">Site: {getOsmSiteCheckLabel(candidate)}</p>}
@@ -1416,7 +1469,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
                           <p>Telefone: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} · Fonte complementar: {String(candidate.normalizedPayload.braveSourceUrl ?? 'não consultada')}</p>
                           {getBraveSuggestions(candidate.normalizedPayload).map(suggestion =>
                             <div key={suggestion.sourceUrl} className="mt-2 rounded border border-sky-200 bg-sky-50 p-2">
-                              <p className="font-medium">Sugestão Brave não associada: {suggestion.name}</p>
+                              <p className="font-medium">Presença pública a conferir: {suggestion.name}</p>
                               <p>{suggestion.address} · Site: {suggestion.websiteUrl ?? 'não informado'} · Tel.: {suggestion.phone ?? 'não informado'}</p>
                               <a className="text-yux-700 underline" href={suggestion.sourceUrl} target="_blank" rel="noreferrer">Conferir origem</a>
                               <Button type="button" size="sm" variant="outline" className="ml-2"
@@ -1451,7 +1504,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
                             </details>)}
                           <RadarCandidateResearchPanel key={`${organizationId}-${candidate.id}-${selectedCampaign.configurationRevision}`}
                             candidateId={candidate.id} organizationId={organizationId!} configurationRevision={selectedCampaign.configurationRevision??1}
-                            availability={researchAvailability} availabilityError={researchAvailabilityError} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
+                            availability={researchAvailability} availabilityError={researchAvailabilityError} showTechnical={context.role?.key==='yux_admin'} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
                             approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
                         </div>}
                         {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{candidate.errorMessage}</p>}
@@ -1465,7 +1518,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
                             disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || !braveSource?.enabled
                               || selectedCampaign.searchConfiguration?.sources.enrichWithBrave === false}
                             onClick={() => enrichCandidateWithBrave(candidate.id)}>
-                            {actionLoading === `brave-${candidate.id}` ? 'Consultando...' : 'Enriquecer com Brave licenciada'}
+                            {actionLoading === `brave-${candidate.id}` ? 'Consultando...' : 'Completar presença pública'}
                           </Button>}
                         {selectedCampaign?.campaignType === 'regional_b2b' && candidate.status === 'pending_review'
                           && <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading)}
@@ -1485,7 +1538,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
                 </div>
               </div>
 
-              <div className="rounded-md border">
+              {(opportunities.length>0||selectedCampaign.campaignType!=='regional_b2b')&&<details className="rounded-md border"><summary className="cursor-pointer p-3 text-sm font-medium">Acompanhamento comercial</summary>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-950">Oportunidades</h3>
@@ -1525,7 +1578,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{scree
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>}
             </div>
           </section>}
 
