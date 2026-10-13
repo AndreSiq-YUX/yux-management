@@ -3,6 +3,8 @@ import { Building2, CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus,
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { RadarCampaignList } from './RadarCampaignList'
+import { RadarCampaignPage, type RadarScreen } from './RadarCampaignPage'
 import { StrategyContextPanel } from '@/components/strategy-engine/StrategyContextPanel'
 import { ProspectingPlanPanel } from '@/components/radar/ProspectingPlanPanel'
 import { RadarPlacePreviewPanel } from '@/components/radar/RadarPlacePreviewPanel'
@@ -184,7 +186,16 @@ const duplicateStatusLabels: Record<string, string> = {
   merged: 'Mesclada',
 }
 
-export function RadarWorkspace() {
+export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate}:{screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void}={}) {
+  const [localScreen,setLocalScreen]=useState<RadarScreen>('list')
+  const screen=routeScreen??localScreen
+  const [configurationDirty,setConfigurationDirty]=useState(false)
+  const navigateTo=(path:string,force=false)=>{
+    if(configurationDirty&&!force&&!window.confirm('Há alterações não salvas. Sair sem salvar?'))return
+    setConfigurationDirty(false)
+    if(onNavigate)onNavigate(path)
+    else {setSelectedCampaignId(path&&path!=='nova'?path.split('/')[0]:null);setLocalScreen(path==='nova'?'new':!path?'list':path.endsWith('/configuracoes')?'configuration':path.endsWith('/historico')?'history':'results')}
+  }
   const context = usePlatformContext()
   const organizationId = context.organization?.id
   const [campaigns, setCampaigns] = useState<RadarCampaign[]>([])
@@ -192,10 +203,10 @@ export function RadarWorkspace() {
   const [configurationEditor, setConfigurationEditor] = useState<'new' | RadarCampaign | null>(null)
   const [creationMode, setCreationMode] = useState<'regional' | 'local'>('regional')
   const [newCampaignVersion, setNewCampaignVersion] = useState(0)
-  const activeConfigurationEditor = configurationEditor
-    ?? (context.role?.key === 'yux_admin' && creationMode === 'regional' ? 'new' : null)
+  const activeConfigurationEditor = screen==='configuration' ? campaigns.find(item=>item.id===(campaignId??selectedCampaignId))??null : configurationEditor
+    ?? (screen==='new' && creationMode === 'regional' ? 'new' : null)
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(campaignId??null)
   const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
   const [researchAvailabilityError,setResearchAvailabilityError]=useState<string|null>(null)
   const [researchAvailabilityRefresh,setResearchAvailabilityRefresh]=useState(0)
@@ -392,6 +403,7 @@ export function RadarWorkspace() {
 
       setCampaigns(current => [campaign, ...current])
       setSelectedCampaignId(campaign.id)
+      navigateTo(campaign.id,true)
       setOpportunities([])
       setMetrics(null)
       setSelectedOpportunity(null)
@@ -719,6 +731,7 @@ export function RadarWorkspace() {
         : (await radarService.updateCampaign(activeConfigurationEditor.id, input)).campaign
       setCampaigns(current => [campaign, ...current.filter(item => item.id !== campaign.id)])
       setSelectedCampaignId(campaign.id)
+      navigateTo(campaign.id,true)
       setRegionalProgress({})
       setB2bProgress(null)
       if (activeConfigurationEditor === 'new') setNewCampaignVersion(current => current + 1)
@@ -737,9 +750,10 @@ export function RadarWorkspace() {
       const campaign = await radarService.duplicateCampaign(selectedCampaignId, organizationId)
       setCampaigns(current => [campaign, ...current])
       setSelectedCampaignId(campaign.id)
+      navigateTo(campaign.id,true)
       setRegionalProgress({})
       setConfigurationEditor(campaign)
-      document.getElementById('radar-search-configuration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      navigateTo(`${campaign.id}/configuracoes`,true)
       toast.success('Configuração duplicada, sem copiar resultados ou aprovações')
     } catch { toast.error('Não foi possível duplicar a campanha') }
     finally { setActionLoading(null) }
@@ -1022,11 +1036,11 @@ export function RadarWorkspace() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Radar Comercial</h1>
-          <p className="text-sm text-gray-600">Captacao ativa consultiva integrada ao Strategy Engine, harness, RAG e CRM.</p>
+          <p className="text-sm text-gray-600">Encontre empresas, complete os dados e organize seus próximos contatos no CRM.</p>
         </div>
       </div>
 
-      {canManage && <StrategyContextPanel
+      {screen==='configuration' && context.role?.key==='yux_admin' && <StrategyContextPanel
         organizationId={organizationId || ''}
         moduleKey="crm"
         recordType="radar"
@@ -1038,7 +1052,10 @@ export function RadarWorkspace() {
         Acesso de consulta: acompanhe as campanhas, os dados e as análises. A operação das campanhas fica com a equipe YUX.
       </p>}
 
-      {canManage && <section id="radar-search-configuration" className="rounded-md border bg-white p-4">
+      {screen!=='list' && selectedCampaign && <RadarCampaignPage campaign={selectedCampaign} screen={screen} canManage={canManage} onNavigate={navigateTo}/>}
+      {screen!=='list' && screen!=='new' && !loading && !selectedCampaign && <p role="alert">Campanha não encontrada ou acesso indisponível.</p>}
+      {screen==='new' && <Button variant="outline" onClick={()=>navigateTo('')}>Voltar às campanhas</Button>}
+      {(screen==='new'||screen==='configuration') && canManage && <section onChangeCapture={()=>setConfigurationDirty(true)} id="radar-search-configuration" className="rounded-md border bg-white p-4">
         <h2 className="text-base font-semibold text-slate-950">Configuração de campanhas</h2>
         {context.role?.key === 'yux_admin' && <label className="mt-3 block text-sm font-medium">Tipo de criação
           <select className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={creationMode}
@@ -1053,7 +1070,7 @@ export function RadarWorkspace() {
         {activeConfigurationEditor && <RadarCampaignConfigurationForm
           key={activeConfigurationEditor === 'new' ? `new-${newCampaignVersion}` : `${activeConfigurationEditor.id}-${activeConfigurationEditor.configurationRevision}`}
           organizationId={organizationId || ''} initialCampaign={activeConfigurationEditor === 'new' ? undefined : activeConfigurationEditor}
-          busy={creating} onSubmit={saveCampaignConfiguration} onCancel={() => { setConfigurationEditor(null); setCreationMode('local') }} />}
+          busy={creating} onSubmit={saveCampaignConfiguration} onCancel={() => navigateTo(selectedCampaignId??'')} />}
         {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
           <select
             className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
@@ -1077,59 +1094,17 @@ export function RadarWorkspace() {
         </form>}
       </section>}
 
-      <section className="rounded-md border bg-white">
-        <div className="border-b p-4">
-          <h2 className="font-semibold text-slate-950">Campanhas</h2>
-          <p className="text-sm text-slate-500">Mensagens continuam em revisao humana obrigatoria; nenhum envio automatico e permitido no MVP.</p>
-        </div>
-        {loading && <p className="p-4 text-sm text-slate-500">Carregando campanhas...</p>}
-        {!loading && campaigns.length === 0 && <p className="p-4 text-sm text-slate-500">Nenhuma campanha criada.</p>}
-        {campaigns.map(campaign => (
-          <div key={campaign.id} className="grid gap-3 border-b p-4 last:border-b-0 md:grid-cols-[1.2fr_1fr_1fr_120px]">
-            <div className="flex items-start gap-2">
-              <Radar className="mt-0.5 h-4 w-4 text-yux-700" />
-              <div>
-                <p className="font-medium text-slate-950">{campaign.name}</p>
-                <p className="text-sm text-slate-500">{campaign.targetSegment} em {campaign.campaignType === 'regional_b2b'
-                  ? campaign.targetStates.join(', ') : `${campaign.targetCity}/${campaign.targetState}`}</p>
-              </div>
-            </div>
-            <div className="text-sm text-slate-600">
-              <Building2 className="mr-1 inline h-4 w-4" />
-              Oferta: {campaign.offerType}
-            </div>
-            <div className="text-sm text-slate-600">Limite diario: {campaign.dailyLimit}</div>
-            <div className="flex items-center justify-between gap-2 text-sm font-medium text-slate-700">
-              <span>{getRadarCampaignStatusLabel(campaign.status)}</span>
-              <Button type="button" size="sm" variant={selectedCampaignId === campaign.id ? 'default' : 'outline'} onClick={() => {
-                placeRequestSequence.current += 1
-                setSelectedCampaignId(campaign.id)
-                setRegionalProgress({})
-                setB2bManualReviews({})
-                setCnpjaForm(current => ({ ...current, city: campaign.targetCity, state: campaign.targetState }))
-                setPlaceForm(buildRadarPlaceSearchDefaults(campaign))
-                setPlacePreview(null)
-                setSelectedOpportunity(null)
-                setSelectedOpportunityIds([])
-                setLastImportSummary(null)
-              }}>
-                Abrir
-              </Button>
-            </div>
-          </div>
-        ))}
-      </section>
+      {screen==='list' && <RadarCampaignList campaigns={campaigns} loading={loading} canCreate={canManage} onCreate={()=>navigateTo('nova')} onOpen={id=>navigateTo(id)}/>}
 
-      {selectedCampaignId && (
+      {selectedCampaign && (screen==='results'||screen==='history') && (
         <>
-          {selectedCampaign?.campaignType === 'regional_b2b' && <section className="rounded-md border bg-white p-4">
+          {screen==='results' && selectedCampaign?.campaignType === 'regional_b2b' && <section className="rounded-md border bg-white p-4">
             <h2 className="font-semibold text-slate-950">Pesquisa configurável — descoberta e qualificação</h2>
             <p className="mt-1 text-sm text-slate-600">Público: {selectedCampaign.targetSegment}. Oferta: {selectedCampaign.offerType}. CNAEs: {selectedCampaign.targetCnaes.join(', ') || 'sem filtro'}. A coleta não inicia contatos automáticos.</p>
             <p className="mt-1 text-xs text-slate-500">Produtos e serviços: {selectedCampaign.productFocus.join(', ') || 'não informados'}. Os critérios completos podem ser editados antes de executar a pesquisa.</p>
             {context.role?.key === 'yux_admin' && <div className="mt-3 flex gap-2">
               <Button type="button" size="sm" variant="outline" disabled={!canManage || creating || Boolean(actionLoading)} onClick={() => {
-                setConfigurationEditor(selectedCampaign)
-                document.getElementById('radar-search-configuration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                navigateTo(`${selectedCampaign.id}/configuracoes`)
               }}>Editar configuração</Button>
               <Button type="button" size="sm" variant="outline" disabled={!canManage || creating || Boolean(actionLoading)} onClick={duplicateCampaign}>Duplicar pesquisa</Button>
             </div>}
@@ -1160,7 +1135,8 @@ export function RadarWorkspace() {
                 onClick={exportB2bProspects}>Exportar lista verificada</Button>
             </div>
           </section>}
-          <section className="rounded-md border bg-white p-4">
+          {screen==='results' && <details className="rounded-md border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">Outras formas de adicionar empresas e opções avançadas</summary>
+          {context.role?.key==='yux_admin' && <section className="mt-4">
             <h2 className="text-base font-semibold text-slate-950">Fontes da campanha</h2>
             <p className="mt-1 text-sm text-slate-500">Confirmação de licença, conexão do provedor e ativação da fonte são configurações separadas. Custos, limites e ativação ficam em Admin → Integrações.</p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -1188,7 +1164,7 @@ export function RadarWorkspace() {
                 )
               })}
             </div>
-          </section>
+          </section>}
 
           <fieldset disabled={!canManage} className="min-w-0 rounded-md border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1404,8 +1380,9 @@ export function RadarWorkspace() {
               </div>
             )}
           </fieldset>
+          </details>}
 
-          <section className="rounded-md border bg-white p-4">
+          {screen==='results' && <section className="rounded-md border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-slate-950">Candidatos e oportunidades</h2>
@@ -1550,9 +1527,9 @@ export function RadarWorkspace() {
                 </div>
               </div>
             </div>
-          </section>
+          </section>}
 
-          <section className="rounded-md border bg-white p-4">
+          {screen==='history' && <><section className="rounded-md border bg-white p-4">
             <div className="flex items-center gap-2">
               <CheckSquare className="h-4 w-4 text-yux-700" />
               <h2 className="text-base font-semibold text-slate-950">Duplicatas para revisao</h2>
@@ -1613,11 +1590,11 @@ export function RadarWorkspace() {
                 ))}
               </div>
             </div>
-          </section>
+          </section></>}
         </>
       )}
 
-      <OpportunityReviewPanel
+      {screen==='results' && <OpportunityReviewPanel
         canManage={canManage}
         canUseCrm={Boolean(canUseCrm)}
         opportunity={selectedOpportunity}
@@ -1627,8 +1604,8 @@ export function RadarWorkspace() {
         onReject={opportunity => runOpportunityAction('reject', () => radarService.reviewOpportunity(opportunity.id, 'rejected'), 'Oportunidade rejeitada')}
         onOptOut={opportunity => runOpportunityAction('opt-out', () => radarService.optOutOpportunity(opportunity.id), 'Opt-out registrado')}
         onConvert={convertSelectedOpportunity}
-      />
-      {canManage && canUseCrm && <ProspectingPlanPanel organizationId={organizationId} opportunity={selectedOpportunity} />}
+      />}
+      {screen==='results' && canManage && canUseCrm && <ProspectingPlanPanel organizationId={organizationId} opportunity={selectedOpportunity} />}
     </div>
   )
 }

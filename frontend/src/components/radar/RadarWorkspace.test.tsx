@@ -58,6 +58,8 @@ describe('Radar campaign creation entry point', () => {
     const container = document.createElement('div')
     const root = createRoot(container)
     await act(async () => root.render(<RadarWorkspace />))
+    expect(container.querySelector('form')).toBeNull()
+    await act(async () => [...container.querySelectorAll('button')].find(button=>button.textContent==='Nova campanha')!.click())
     expect(container.querySelector('form[aria-label="Configuração da pesquisa"]')).not.toBeNull()
     expect(container.querySelector('form[aria-label="Criação rápida local"]')).toBeNull()
     expect(container.querySelector('textarea[required]')).toBeNull()
@@ -70,6 +72,16 @@ describe('Radar campaign creation entry point', () => {
     act(() => { mode.value = 'regional'; mode.dispatchEvent(new Event('change',{bubbles:true})) })
     expect(container.querySelector('form[aria-label="Configuração da pesquisa"]')).not.toBeNull()
     act(() => root.unmount())
+  })
+
+  it('opens a campaign through dedicated navigation instead of expanding below the list',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Pesquisa dedicada',campaignType:'local_niche',targetSegment:'Empresas',targetCity:'Cidade',targetState:'PR',targetStates:[],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'crm_controller',createdAt:'',updatedAt:''}])
+    const container=document.createElement('div'),root=createRoot(container),navigate=vi.fn()
+    await act(async()=>root.render(<RadarWorkspace onNavigate={navigate}/>))
+    expect(container.textContent).not.toContain('Fontes da campanha')
+    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Abrir')!.click())
+    expect(navigate).toHaveBeenCalledWith('campaign')
+    act(()=>root.unmount())
   })
 
   it('links source configuration to the central Admin and refreshes availability without querying providers', async () => {

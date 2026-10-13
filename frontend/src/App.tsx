@@ -188,6 +188,10 @@ function App() {
               <Route path="comercial/tarefas" element={<PortalCommercialTasksPage />} />
               <Route path="comercial/scoring" element={<PortalLeadScoringPage />} />
               <Route path="comercial/radar" element={<PortalCommercialRadarPage />} />
+              <Route path="comercial/radar/nova" element={<PortalCommercialRadarPage />} />
+              <Route path="comercial/radar/:campaignId" element={<PortalCommercialRadarPage />} />
+              <Route path="comercial/radar/:campaignId/configuracoes" element={<PortalCommercialRadarPage />} />
+              <Route path="comercial/radar/:campaignId/historico" element={<PortalCommercialRadarPage />} />
 
               <Route path="atendimento/conversas" element={<PortalServiceConversationsPage />} />
               <Route path="atendimento/agente-ia" element={<PortalAiAgentPage />} />
