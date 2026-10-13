@@ -1,6 +1,6 @@
 # Radar: campanhas, refinamento e CRM — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Tornar o Radar compreensível e operacional desde a criação de uma campanha até o refinamento de empresas e envio ao CRM, corrigindo primeiro o bloqueio de disponibilidade.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 18, React Router, componentes visuais existentes, TypeScript, Fastify, PostgreSQL, Vitest e testes de jornada.
 
-**Spec:** Seção “Especificação de experiência” deste documento, derivada da solicitação do usuário de 12/10/2026. Proposta pendente de revisão do usuário; execução nesta sessão, sem delegação não autorizada.
+**Spec:** Seção “Especificação de experiência” deste documento, derivada da solicitação do usuário de 12/10/2026. Aprovada pelo usuário em 13/10/2026; executada nesta sessão, com uma revisão final independente prevista pela skill de execução.
 
 ## Global Constraints
 
@@ -100,52 +100,52 @@ Mostrar “Enviado ao CRM” e link para o lead. Repetir envio deve retornar o v
 
 **Interfaces:** Manter o retorno atual de `getRadarResearchAvailability(pool, user, organizationId, campaignId)`. A interface deve distinguir `{status:'loading'}`, `{status:'ready', availability}` e `{status:'error', message}`, não usar null para todos os estados.
 
-- [ ] Escrever regressão: com perfil/porte habilitados e regra válida, disponibilidade responde sem referenciar coluna inexistente; ausência de regra retorna diagnóstico e não erro SQL. Acrescentar teste de interface em que GET falha e aparece “Não foi possível verificar a disponibilidade” com “Tentar novamente”, sem texto de carregamento.
-- [ ] Executar `npm test -- tests/radar-research-availability.test.ts` em backend e o teste do painel em frontend; confirmar falha anterior à correção.
-- [ ] Remover referência inválida e alinhar seleção/prioridade com o roteamento efetivo existente; distinguir falha técnica de bloqueio de configuração. Nunca usar disponibilidade desconhecida para autorizar cobrança.
-- [ ] Executar teste com PostgreSQL isolado migrado, perfil/porte ligados e rota real simulada apenas na chamada externa. A jornada deve executar, não ficar SKIPPED. Se banco não estiver disponível, reportar o gate pendente explicitamente.
-- [ ] Executar regressões do painel e registrar commit `fix(radar): restore research availability and expose recoverable errors`.
+- [x] Escrever regressão: com perfil/porte habilitados e regra válida, disponibilidade responde sem referenciar coluna inexistente; ausência de regra retorna diagnóstico e não erro SQL. Acrescentar teste de interface em que GET falha e aparece “Não foi possível verificar a disponibilidade” com “Tentar novamente”, sem texto de carregamento.
+- [x] Executar `npm test -- tests/radar-research-availability.test.ts` em backend e o teste do painel em frontend; confirmar falha anterior à correção.
+- [x] Remover referência inválida e alinhar seleção/prioridade com o roteamento efetivo existente; distinguir falha técnica de bloqueio de configuração. Nunca usar disponibilidade desconhecida para autorizar cobrança.
+- [x] Executar teste com PostgreSQL isolado migrado, perfil/porte ligados e rota real simulada apenas na chamada externa. A jornada deve executar, não ficar SKIPPED. Se banco não estiver disponível, reportar o gate pendente explicitamente.
+- [x] Executar regressões do painel e registrar commit `fix(radar): restore research availability and expose recoverable errors`.
 
 ## Task 2: Página dedicada e configuração no lugar correto
 
 **Interfaces:** `PortalCommercialRadarPage` deriva modo e campaignId das rotas; `RadarCampaignList` recebe campanhas e callbacks de navegação; `RadarCampaignPage` recebe campaignId e aba ativa. O identificador da organização sempre vem do contexto autenticado.
 
-- [ ] Criar testes de navegação: entrada mostra campanhas sem formulário vazio; Abrir muda URL; recarregar mantém campanha; Editar abre somente configuração dessa campanha; voltar restaura lista; ID de outra organização não exibe dados.
-- [ ] Executar `npm test -- src/components/radar/RadarWorkspace.test.tsx` no frontend e confirmar falhas dos novos cenários.
-- [ ] Implementar rotas e componentes, mantendo carregamento, salvamento, duplicação, campos avançados e histórico. Impedir perda silenciosa de formulário alterado ao navegar.
-- [ ] Executar testes e build do frontend; verificar rota direta, retorno e layout responsivo no navegador. Registrar commit `feat(radar): add dedicated campaign navigation and configuration`.
+- [x] Criar testes de navegação: entrada mostra campanhas sem formulário vazio; Abrir muda URL; recarregar mantém campanha; Editar abre somente configuração dessa campanha; voltar restaura lista; ID de outra organização não exibe dados.
+- [x] Executar `npm test -- src/components/radar/RadarWorkspace.test.tsx` no frontend e confirmar falhas dos novos cenários.
+- [x] Implementar rotas e componentes, mantendo carregamento, salvamento, duplicação, campos avançados e histórico. Impedir perda silenciosa de formulário alterado ao navegar.
+- [x] Executar testes e build do frontend; verificar rota direta, retorno e layout responsivo no navegador. Registrar commit `feat(radar): add dedicated campaign navigation and configuration`.
 
 ## Task 3: Ações inequívocas e refinamento em lote
 
 **Interfaces:** Adicionar `operation: 'complete' | 'resume' | 'refresh' | 'reanalyze'` ao início de pesquisa, preservando clientes antigos com padrão compatível. `requestId` identifica operação intencional; repetir a mesma requisição não cria nova execução. Atualização cria nova geração; reanálise herda fatos/evidências e não executa descoberta. Revisão da campanha continua obrigatória.
 
-- [ ] Escrever testes: seleção de empresas, custos antes da confirmação, nenhuma chamada ao abrir página, refresh de execução concluída recente, resume sem chamadas duplicadas, reanálise sem busca web, duplo clique, conflito de revisão, aprovado exigindo reabertura explícita de revisão e ausência de permissão.
-- [ ] Executar `npm test -- tests/radar-research-service.test.ts tests/radar-routes.test.ts` em backend e testes do painel em frontend; confirmar falhas específicas.
-- [ ] Implementar contratos nas rotas/serviço/tipos e operações explícitas; manter locks, registro de chamadas, orçamento e aprovação. Caso o esquema imponha unicidade por revisão, evoluir geração em migração nova e garantir uma só execução ativa por empresa.
-- [ ] Implementar tabela paginada, seleção por IDs e painel único de detalhes. Resultados antigos permanecem acessíveis com rótulo da revisão; contadores distinguem total de empresas e análises atuais. Limitar polling a trabalhos ativos.
-- [ ] Restringir fornecedor/modelo/licença/logs ao Admin, traduzindo os estados do cliente sem ocultar o motivo operacional. Preservar filtros de matriz/filiais com explicação e acessibilidade.
-- [ ] Executar testes backend/frontend e jornada PostgreSQL de concorrência e nova geração. Registrar commit `feat(radar): clarify research actions and selected-company refinement`.
+- [x] Escrever testes: seleção de empresas, custos antes da confirmação, nenhuma chamada ao abrir página, refresh de execução concluída recente, resume sem chamadas duplicadas, reanálise sem busca web, duplo clique, conflito de revisão, aprovado exigindo reabertura explícita de revisão e ausência de permissão.
+- [x] Executar `npm test -- tests/radar-research-service.test.ts tests/radar-routes.test.ts` em backend e testes do painel em frontend; confirmar falhas específicas.
+- [x] Implementar contratos nas rotas/serviço/tipos e operações explícitas; manter locks, registro de chamadas, orçamento e aprovação. Caso o esquema imponha unicidade por revisão, evoluir geração em migração nova e garantir uma só execução ativa por empresa.
+- [x] Implementar tabela paginada, seleção por IDs e painel único de detalhes. Resultados antigos permanecem acessíveis com rótulo da revisão; contadores distinguem total de empresas e análises atuais. Limitar polling a trabalhos ativos.
+- [x] Restringir fornecedor/modelo/licença/logs ao Admin, traduzindo os estados do cliente sem ocultar o motivo operacional. Preservar filtros de matriz/filiais com explicação e acessibilidade.
+- [x] Executar testes backend/frontend e jornada PostgreSQL de concorrência e nova geração. Registrar commit `feat(radar): clarify research actions and selected-company refinement`.
 
 ## Task 4: Entrega regional ao CRM configurado
 
 **Interfaces:** `RadarCrmDestination = { crmInstanceId: string; pipelineId: string; stageId: string }`; destino opcional da campanha. Novo POST `/campaigns/:id/deliver-to-crm` recebe `{organizationId, configurationRevision, candidateIds, destination, requestId}` e devolve `{items: Array<{candidateId, status:'created'|'already_linked'|'blocked', leadId?:string, reason?:string}>}`. IDs recebidos não substituem verificação de escopo.
 
-- [ ] Escrever testes: regional aprovado sem mensagem pode virar lead; destino de outra organização/instância é rejeitado; etapa fora do funil é rejeitada; módulo ou permissão ausentes não escrevem; identidade pendente bloqueia; reenvio concorrente não duplica lead; dados sem e-mail não geram endereço falso; nenhuma mensagem ou automação é disparada.
-- [ ] Executar `npm test -- tests/radar-crm-delivery.test.ts tests/radar-client-access.test.ts` e confirmar as falhas de contrato novo.
-- [ ] Implementar entrega transacional em `crm-delivery.ts` usando as verificações do CRM nativo, preenchendo `crm_instance_id`, funil e etapa, preservando atribuição e evidências. Vínculo empresa/campanha→lead possui unicidade no banco; bloqueios são por empresa, não descartam o restante do lote.
-- [ ] Implementar destino padrão na configuração e diálogo de revisão de envio, com resultado por empresa e link para lead. Não converter empresa pendente silenciosamente nem usar a oferta fixa da conversão antiga.
-- [ ] Validar ida até CRM no banco isolado, acesso por instância e concorrência; verificar dados salvos através da API normal do CRM. Registrar commit `feat(radar): deliver reviewed regional companies to configured crm`.
+- [x] Escrever testes: regional aprovado sem mensagem pode virar lead; destino de outra organização/instância é rejeitado; etapa fora do funil é rejeitada; módulo ou permissão ausentes não escrevem; identidade pendente bloqueia; reenvio concorrente não duplica lead; dados sem e-mail não geram endereço falso; nenhuma mensagem ou automação é disparada.
+- [x] Executar `npm test -- tests/radar-crm-delivery.test.ts tests/radar-client-access.test.ts` e confirmar as falhas de contrato novo.
+- [x] Implementar entrega transacional em `crm-delivery.ts` usando as verificações do CRM nativo, preenchendo `crm_instance_id`, funil e etapa, preservando atribuição e evidências. Vínculo empresa/campanha→lead possui unicidade no banco; bloqueios são por empresa, não descartam o restante do lote.
+- [x] Implementar destino padrão na configuração e diálogo de revisão de envio, com resultado por empresa e link para lead. Não converter empresa pendente silenciosamente nem usar a oferta fixa da conversão antiga.
+- [x] Validar ida até CRM no banco isolado, acesso por instância e concorrência; verificar dados salvos através da API normal do CRM. Registrar commit `feat(radar): deliver reviewed regional companies to configured crm`.
 
 ## Task 5: Verificação completa e publicação
 
 **Interfaces:** Fluxo existente e novo continuam suportados; nenhum caminho antigo é apagado antes de ter equivalente testado.
 
-- [ ] Executar suites backend/frontend, type-check e build de ambos. Executar integrações com banco isolado e registrar contagens reais, incluindo qualquer skip ou limitação.
-- [ ] No navegador de teste com provedores simulados: criar campanha genérica, buscar lote, abrir página dedicada, selecionar empresas, completar dados, editar critérios, reanalisar, retomar falha, atualizar pesquisa e enviar ao CRM. Verificar persistência após reload e link do lead.
-- [ ] Repetir como Admin e cliente com/sem permissões. Confirmar ausência de termos de infraestrutura na experiência do cliente e preservação dos controles de Admin.
-- [ ] Inspecionar screenshots desktop/mobile, console e requisições. Registrar evidências; não chamar modelos ou busca pagos nessa validação.
-- [ ] Revisar diff, publicar commits em main conforme autorização anterior e informar SHA. Não afirmar que produção foi corrigida só porque houve push; validar após deploy, primeiro apenas com GETs. Qualquer busca real paga depende de autorização e lote definido.
+- [x] Executar suites backend/frontend, type-check e build de ambos. Executar integrações com banco isolado e registrar contagens reais, incluindo qualquer skip ou limitação.
+- [x] No navegador de teste com provedores simulados: criar campanha genérica, buscar lote, abrir página dedicada, selecionar empresas, completar dados, editar critérios, reanalisar, retomar falha, atualizar pesquisa e enviar ao CRM. Verificar persistência após reload e link do lead.
+- [x] Repetir como Admin e cliente com/sem permissões. Confirmar ausência de termos de infraestrutura na experiência do cliente e preservação dos controles de Admin.
+- [x] Inspecionar screenshots desktop/mobile, console e requisições. Registrar evidências; não chamar modelos ou busca pagos nessa validação.
+- [x] Revisar diff, publicar commits em main conforme autorização anterior e informar SHA. Não afirmar que produção foi corrigida só porque houve push; validar após deploy, primeiro apenas com GETs. Qualquer busca real paga depende de autorização e lote definido.
 
 ## Revisão do plano
 
-Cobertura: bloqueio (T1), página/edição (T2), seleção e refinamento (T3), termos Admin/cliente (T3), resultados regionais e CRM (T4), regressões e publicação (T5). Os cinco riscos de Review Focus têm cenários nas respectivas tarefas. Não inclui nova fonte, troca de modelo, WhatsApp ou envio automático. Antes da execução, revisar esta proposta com o usuário; não houve alteração funcional nesta etapa de diagnóstico.
+Cobertura: bloqueio (T1), página/edição (T2), seleção e refinamento (T3), termos Admin/cliente (T3), resultados regionais e CRM (T4), regressões e publicação (T5). Os cinco riscos de Review Focus têm cenários nas respectivas tarefas. Não inclui nova fonte, troca de modelo, WhatsApp ou envio automático. Implementação, revisão e testes concluídos em 13/10/2026; código funcional publicado em main no commit 06895ea. Evidências e limites em [Verificação do Radar Comercial](../../releases/2026-10-13-radar-campanhas-verificacao.md). Deploy em produção é uma etapa separada.
