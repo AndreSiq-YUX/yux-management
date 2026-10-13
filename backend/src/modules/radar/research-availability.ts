@@ -70,7 +70,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
       AND (rule.contract_id IS NULL OR rule.contract_id=contract.id) AND rule.agent_id IS NULL
     WHERE organization.id=$1
     ORDER BY ((rule.organization_id IS NOT NULL)::int+(rule.client_id IS NOT NULL)::int+(rule.contract_id IS NOT NULL)::int) DESC,
-      rule.version DESC,rule.updated_at DESC LIMIT 1`,[organizationId])
+      rule.updated_at DESC,rule.id DESC LIMIT 1`,[organizationId])
   const selected=route.rows[0],profile=configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled
   return {...result,semantic:{routeConfigured:!!selected,model:selected?.model_name,provider:selected?.provider,
     maxInputTokens:selected?.max_input_tokens||16000,maxOutputTokens:Math.min(selected?.max_output_tokens||4000,profile?4000:1800),

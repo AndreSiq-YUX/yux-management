@@ -8,6 +8,19 @@ vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
 beforeEach(()=>{vi.clearAllMocks();vi.mocked(radarService.getCandidateResearch).mockResolvedValue(initial);vi.spyOn(window,'confirm').mockReturnValue(true)})
+it('shows a recoverable availability failure instead of permanent loading',async()=>{
+  vi.mocked(radarService.getCandidateResearch).mockRejectedValue(new Error('HTTP 500'))
+  const container=document.createElement('div'),root=createRoot(container)
+  await act(async()=>root.render(<RadarCandidateResearchPanel candidateId="candidate" organizationId="org" configurationRevision={2} availability={null}/>))
+  await act(async()=>Array.from(container.querySelectorAll('button')).find(button=>button.textContent==='Ver resultado e disponibilidade')!.click())
+  expect(container.textContent).toContain('Não foi possível verificar a disponibilidade')
+  expect(container.textContent).not.toContain('Conferindo disponibilidade')
+  expect(container.querySelector('button')!.disabled).toBe(true)
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue(initial)
+  await act(async()=>Array.from(container.querySelectorAll('button')).find(button=>button.textContent==='Tentar novamente')!.click())
+  expect(container.querySelector('button')!.disabled).toBe(false)
+  act(()=>root.unmount())
+})
 function mount(value:RadarResearchAvailability=availability) {
   const container=document.createElement('div'),root=createRoot(container)
   act(()=>root.render(<RadarCandidateResearchPanel candidateId="candidate" organizationId="org" configurationRevision={2} availability={value}/>))

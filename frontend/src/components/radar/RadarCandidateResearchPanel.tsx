@@ -20,8 +20,8 @@ function SourcedProfileClaim({claim}:{claim:RadarProfileClaim}) {
       <p>Observado em {new Date(claim.observedAt).toLocaleDateString('pt-BR')}; {claim.scope==='establishment'?'estabelecimento':claim.scope==='group'?'grupo — não confirma a filial':'escopo pendente'}.</p>
     </details></div>
 }
-export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,canStart=true,approved=false,onCompleted}:{
-  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
+export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,canStart=true,approved=false,onCompleted}:{
+  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
 }) {
   const [open,setOpen]=useState(false),[result,setResult]=useState<RadarResearchResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[refresh,setRefresh]=useState(0)
@@ -41,7 +41,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
         setResult(value);setAvailable(value.availability);setError(null)
         if(value.run && ['queued','running'].includes(value.run.status))timer=setTimeout(load,4000)
         else if(value.run && value.run.id!==completedId.current) {completedId.current=value.run.id;onCompletedRef.current?.()}
-      } catch {if(active)setError('Não foi possível carregar o resultado. Use Atualizar resultado para tentar novamente.')}
+      } catch {if(active){setAvailable(null);setError('Não foi possível verificar a disponibilidade ou carregar o resultado. Tente novamente; seus dados foram preservados.')}}
     }
     void load()
     return()=>{active=false;clearTimeout(timer)}
@@ -63,7 +63,9 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
         {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa automática':'Pesquisar e enriquecer automaticamente'}</button>
       <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar resultado':'Ver resultado e disponibilidade'}</button>
     </div>
-    {!available && <p className="text-xs text-slate-600">Conferindo disponibilidade. Abra o resultado para atualizar.</p>}
+    {!available && !error && !availabilityError && <p className="text-xs text-slate-600">Conferindo disponibilidade. Abra o resultado para atualizar.</p>}
+    {availabilityError && !available && !error && <p role="alert" className="text-sm text-red-700">{availabilityError}</p>}
+    {(error||availabilityError)&&<button type="button" className={buttonClass} onClick={()=>{setOpen(true);setRefresh(value=>value+1)}}>Tentar novamente</button>}
     {approved && <p className="text-xs text-amber-800">Registro aprovado preservado. A pesquisa não altera silenciosamente uma aprovação.</p>}
     {!canStart && <p className="text-xs text-slate-600">Somente um administrador autorizado pode iniciar pesquisas pagas.</p>}
     {available?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="text-xs text-amber-900">{reason.message} Caminho: {reason.resolution}.</p>)}

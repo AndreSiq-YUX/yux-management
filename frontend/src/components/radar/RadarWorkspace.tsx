@@ -197,6 +197,7 @@ export function RadarWorkspace() {
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
   const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
+  const [researchAvailabilityError,setResearchAvailabilityError]=useState<string|null>(null)
   const [researchAvailabilityRefresh,setResearchAvailabilityRefresh]=useState(0)
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([])
   const [metrics, setMetrics] = useState<RadarMetrics | null>(null)
@@ -241,10 +242,11 @@ export function RadarWorkspace() {
 
   useEffect(()=>{
     setResearchAvailability(null)
+    setResearchAvailabilityError(null)
     if(!organizationId||!selectedCampaignId||!canAccess)return
     let active=true
     radarService.getResearchAvailability(selectedCampaignId,organizationId).then(value=>{if(active)setResearchAvailability(value)})
-      .catch(()=>{if(active)setResearchAvailability(null)})
+      .catch(()=>{if(active)setResearchAvailabilityError('Não foi possível verificar a disponibilidade da pesquisa. Tente novamente; seus dados foram preservados.')})
     return()=>{active=false}
   },[organizationId,selectedCampaignId,canAccess,researchAvailabilityRefresh,researchConfigurationVersion])
 
@@ -1472,7 +1474,7 @@ export function RadarWorkspace() {
                             </details>)}
                           <RadarCandidateResearchPanel key={`${organizationId}-${candidate.id}-${selectedCampaign.configurationRevision}`}
                             candidateId={candidate.id} organizationId={organizationId!} configurationRevision={selectedCampaign.configurationRevision??1}
-                            availability={researchAvailability} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
+                            availability={researchAvailability} availabilityError={researchAvailabilityError} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
                             approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
                         </div>}
                         {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{candidate.errorMessage}</p>}

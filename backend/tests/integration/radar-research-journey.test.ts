@@ -9,6 +9,7 @@ import { seedIntegrationFixtures, fixtureIds, fixtureUsers } from './support/fix
 import { storePlatformProviderSecret } from '../../src/modules/platform/adminRepository.js'
 import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv } from '../../src/modules/radar/repository.js'
 import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch } from '../../src/modules/radar/research-service.js'
+import { getRadarResearchAvailability } from '../../src/modules/radar/research-availability.js'
 
 // Intentionally separate from production/container suites: never accept a remote or shared database.
 const connectionString=process.env.YUX_RADAR_TEST_DATABASE_URL
@@ -54,6 +55,12 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId])
     if(routeId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId])
     await Promise.all([pool.end(),rawWorker.end()])
+  })
+  it('loads availability with a real routing row and profile enabled on the migrated schema',async()=>{
+    const result=await scoped(()=>getRadarResearchAvailability(worker,admin,organizationId,campaignId))
+    expect(result.allowed).toBe(true)
+    expect(result.semanticQualificationEnabled).toBe(true)
+    expect('semantic' in result&&result.semantic?.routeConfigured).toBe(true)
   })
   it('queues once, persists worker evidence, reloads, reviews and exports without provider calls or outreach',async()=>{
     const input={organizationId,candidateId,configurationRevision:2}
