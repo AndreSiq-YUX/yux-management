@@ -24,6 +24,10 @@ class ReviewPool {
 }
 
 describe('B2B prospect delivery', () => {
+  it('requires separate Serper web delivery permission only when those facts were used',()=>{
+    expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{},true)).toThrow('radar_serper_client_delivery_not_approved')
+    expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{webSearchLicensed:true,clientDeliveryLicensed:true},true)).not.toThrow()
+  })
   it('exports sourced profile and supplier contacts without turning unknown size into zero',()=>{
     const fields=radarCompanyExportFields({companyProfile:{summary:{value:'Soluções B2B',sourceUrl:'https://alfa.example'},services:[],customerSegments:[],operatingRegions:[]},
       sizeAssessment:{score:null,evidenceCoverage:0,contributions:[]}},[{kind:'email',value:'compras@alfa.example',purpose:'suppliers',sourceUrl:'https://alfa.example',observedAt:'2026-10-12',association:'confirmed'}])

@@ -323,12 +323,12 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const spent = await reservation.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[run.organization_id,run.campaign_id])
         const budget = currentCampaign.rows[0]?.budget_limit
         if (budget !== null && budget !== undefined && Number(spent.rows[0]?.cost ?? 0) + source.defaultCostPerUnit > Number(budget)) throw error('source_budget_exceeded')
-        const provider = await reservation.query<{id:string;status:string;public_config:Record<string,unknown>}>(`SELECT id,status,public_config FROM public.platform_provider_connections WHERE provider_key='brave_place'
-          AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)
+        const provider = await reservation.query<{id:string;status:string;public_config:Record<string,unknown>}>(`SELECT id,status,public_config FROM public.platform_provider_connections WHERE provider_key=$1
+          AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`,[sourceKey==='serper_web_search'?'serper':'brave_place'])
         const connection = provider.rows[0]
         if (connection?.status !== 'active') throw error('provider_inactive')
-        assertLicensedBraveRetention(connection.public_config)
-        if (sourceKey === 'brave_web_search' && connection.public_config.webSearchLicensed !== true) throw error('web_license_required')
+        if(sourceKey!=='serper_web_search')assertLicensedBraveRetention(connection.public_config)
+        if (['brave_web_search','serper_web_search'].includes(sourceKey) && connection.public_config.webSearchLicensed !== true) throw error('web_license_required')
         const material = env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 ? `provider-key:${env.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : env.SESSION_SECRET
         const secret = await (dependencies.loadSecret ?? loadPlatformProviderSecret)(reservation as unknown as pg.Pool,connection.id,'api_key',material)
         if (!secret) throw error('provider_secret_missing')
@@ -344,7 +344,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       finally { await pool.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(run.calls)]) }
     }
     // Recover a completed provider response even if the process stopped before the discovery checkpoint.
-    const cachedHits=Object.values(run.calls).flatMap(call=>call.status==='completed' && call.source==='brave_web_search' && Array.isArray(call.result)?call.result as RadarWebHit[]:[])
+    const cachedHits=Object.values(run.calls).flatMap(call=>call.status==='completed' && ['brave_web_search','serper_web_search'].includes(call.source) && Array.isArray(call.result)?call.result as RadarWebHit[]:[])
     const cachedLocal=Object.values(run.calls).flatMap(call=>call.status==='completed'&&call.source==='brave_place_search'&&Array.isArray(call.result)
       ? (call.result as Awaited<ReturnType<typeof searchRadarPlaces>>).flatMap(place=>place.sourceUrl?[{url:place.websiteUrl||place.sourceUrl,title:place.name,
         snippets:[place.address,place.phone,place.email].filter((value):value is string=>!!value),observedAt:place.observedAt}]:[]):[])
@@ -358,7 +358,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         return places.flatMap(place => place.sourceUrl ? [{url:place.websiteUrl || place.sourceUrl,title:place.name,
           snippets:[place.address,place.phone,place.email].filter((value):value is string => !!value),observedAt:place.observedAt}] : [])
       } : undefined,
-      web: query => paid('brave_web_search',query,key => (dependencies.web ?? searchRadarWeb)({apiKey:key,query,limit:5})),
+      web: async query => {
+        let failure:unknown
+        for(const source of configuration.research.webSearchProviders){
+          try{
+            const hits=await paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5}))
+            if(hits.length)return hits
+          }catch(cause){failure=cause}
+        }
+        if(failure)throw failure
+        return []
+      },
       qualify: async (pages,evidenceHash) => {
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
         const previousSemantic=run.calls.semantic
@@ -427,6 +437,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     const payload = {...candidate.rows[0].normalized_payload,researchRunId:run.id,researchRevision:run.configuration_revision,
       researchComplete:dossier.limitations.length===0,researchUsesBrave:run.operation==='reanalyze'
         ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
+      researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),

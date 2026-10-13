@@ -1136,6 +1136,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
           key={activeConfigurationEditor === 'new' ? `new-${newCampaignVersion}` : `${activeConfigurationEditor.id}-${activeConfigurationEditor.configurationRevision}`}
           organizationId={organizationId || ''} initialCampaign={activeConfigurationEditor === 'new' ? undefined : activeConfigurationEditor}
           draftKey={draftOwner?`${draftOwner}:${organizationId}:${activeConfigurationEditor==='new'?'new':activeConfigurationEditor.id}`:undefined}
+          canConfigureProviders={context.role?.key==='yux_admin'}
           busy={creating} readOnly={!canEditConfiguration&&screen==='configuration'} canUseCrm={canEditConfiguration&&Boolean(canUseCrm)} onSubmit={saveCampaignConfiguration} onCancel={() => navigateTo(selectedCampaignId??'')} />}
         {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
           <select

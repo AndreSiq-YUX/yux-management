@@ -125,6 +125,10 @@ export function ProviderConnectionEditor({
       if (showClientDeliveryLicenseControls) {
         parsedConfig.clientDeliveryLicensed = clientDeliveryLicensed
       }
+      if(providerKeyValue==='serper'){
+        parsedConfig.webSearchLicensed=webSearchLicensed
+        parsedConfig.clientDeliveryLicensed=webSearchLicensed&&clientDeliveryLicensed
+      }
       if (!isLockedProviderKey && /^api[-_]/i.test(providerKey.trim())) {
         throw new Error('provider_key_looks_like_api_key')
       }
@@ -322,6 +326,11 @@ export function ProviderConnectionEditor({
         <label className="flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed}
           onChange={event => setClientDeliveryLicensed(event.target.checked)} /> Confirmo permissão de entrega a cliente</label>
       </div>}
+      {providerKeyValue==='serper'&&<fieldset className="mt-4 rounded-md border p-3 text-sm"><legend className="px-1 font-medium">Google via Serper — pesquisa web</legend>
+        <p className="text-muted-foreground">Confirme as permissões do seu plano para pesquisa orgânica. Esta confirmação não muda a política transitória de Places nem exige reenviar a chave.</p>
+        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={webSearchLicensed} onChange={event=>setWebSearchLicensed(event.target.checked)}/>Confirmo uso da pesquisa web com armazenamento dos resultados</label>
+        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed} disabled={!webSearchLicensed} onChange={event=>setClientDeliveryLicensed(event.target.checked)}/>Confirmo permissão de entrega dos resultados web a clientes</label>
+      </fieldset>}
 
       {onSaveCredential && (
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">

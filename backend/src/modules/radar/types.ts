@@ -15,6 +15,7 @@ export type RadarSourceType =
   | 'future_paid_api'
   | 'osm_extract'
   | 'serper_places'
+  | 'serper_web_search'
   | 'brave_place_search'
   | 'brave_web_search'
 

@@ -46,9 +46,10 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
   const hits = [...(dependencies.initialHits ?? [])]
   const limitations: string[] = []
   let queries = dependencies.initialQueries ?? 0
-  const queriesText = [...new Set([`"${identity.name}" ${identity.city ?? ''} ${identity.state ?? ''} contato`,
-    identity.cnpj ? `"${identity.cnpj}" contato site` : '',
-    `"${identity.legalName || identity.name}" ${identity.city ?? ''} telefone email`].filter(Boolean))]
+  const queriesText = [...new Set([identity.name.trim(),
+    (identity.legalName??'').replace(/\b(?:LTDA|LIMITADA|EIRELI|S\.?A\.?)\b/gi,'').trim(),
+    `${identity.name} ${identity.city??''} ${identity.state??''}`.trim(),
+    identity.cnpj ? `"${identity.cnpj}" site` : ''].filter(Boolean))]
   const confirmed = () => hits.filter(hit => isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')})&&matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`) === 'confirmed')
   // One local query plus complementary web queries share a single cap, including previously reserved attempts.
   if (dependencies.local && queries === 0) {
@@ -57,12 +58,12 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
     await dependencies.checkpoint?.(hits, queries)
   }
   for (let index = Math.max(0,queries-(dependencies.local?1:0)); policy.webSearchEnabled && queries < policy.maxSearchQueriesPerCandidate && index < queriesText.length; index++) {
-    if (confirmed().some(hit => !isRadarReferenceUrl(hit.url))) break
+    if (confirmed().length) break
     queries++
     try { hits.push(...await dependencies.search(queriesText[index])) } catch (error) { limitations.push(error instanceof Error ? error.message : 'web_search_failed'); break }
     await dependencies.checkpoint?.(hits, queries)
   }
-  const unique = [...new Map(hits.map(hit => [hit.url, hit])).values()]
+  const unique = [...new Map(hits.map(hit => [hit.url, hit])).values()].sort((a,b)=>Number(isRadarInstitutionalSource(b.url,{title:b.title,text:b.snippets.join(' ')}))-Number(isRadarInstitutionalSource(a.url,{title:a.title,text:a.snippets.join(' ')})))
   const sites = [...new Map(confirmed().filter(hit => !isRadarReferenceUrl(hit.url)).map(hit => [new URL(hit.url).hostname.replace(/^www\./, ''), hit])).values()]
   const websiteUrl = sites.length === 1 ? publicRadarUrl(sites[0].url) : undefined
   return { association: websiteUrl ? 'confirmed' : unique.length ? 'review' : limitations.length ? 'blocked' : 'not_found_in_consulted_sources',

@@ -60,7 +60,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
     // Revalidate the full destination inside this transaction; client-provided IDs are not authorization.
     const destinations=await listRadarCrmDestinations(client as unknown as pg.Pool,user,input.organizationId)
     if(!destinations.some(item=>item.crmInstanceId===input.destination.crmInstanceId&&item.pipelineId===input.destination.pipelineId&&item.stageId===input.destination.stageId))throw failure('radar_crm_destination_invalid',403)
-    const providers=(await client.query(`SELECT provider_key,public_config FROM public.platform_provider_connections WHERE environment='production' AND is_default=TRUE AND provider_key IN ('cnpja','brave_place')`)).rows
+    const providers=(await client.query(`SELECT provider_key,public_config FROM public.platform_provider_connections WHERE environment='production' AND is_default=TRUE AND provider_key IN ('cnpja','brave_place','serper')`)).rows
     for(const candidateId of [...new Set(input.candidateIds)].sort()){
       const candidate=(await client.query(`SELECT candidate.*,review.approved_at,review.configuration_revision AS review_revision,
         review.target_status,review.verification_method
@@ -75,7 +75,8 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
         block('radar_crm_review_required');continue
       }
       try{assertB2bDeliveryRights(candidate.source_type.startsWith('cnpja')?providers.find(row=>row.provider_key==='cnpja')?.public_config??{}:{clientDeliveryLicensed:true},
-        providers.find(row=>row.provider_key==='brave_place')?.public_config,!!data.braveSourceUrl||data.researchUsesBrave===true)}
+        providers.find(row=>row.provider_key==='brave_place')?.public_config,!!data.braveSourceUrl||data.researchUsesBrave===true,
+        providers.find(row=>row.provider_key==='serper')?.public_config,data.researchUsesSerper===true)}
       catch(cause){block(cause instanceof Error?cause.message:'radar_crm_delivery_rights_required');continue}
       const facts=buildRadarCrmLeadFacts({title:candidate.title,normalizedPayload:data},campaign.offer_type)
       const companyKey=facts.attribution.radarCnpj??candidateId

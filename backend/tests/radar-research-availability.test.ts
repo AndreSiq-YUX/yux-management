@@ -3,6 +3,14 @@ import { evaluateRadarResearchAvailability } from '../src/modules/radar/research
 import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-configuration.js'
 
 const policy = resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true}}).research
+it('evaluates Serper credentials and retention separately and permits only explicitly selected available fallbacks',()=>{
+  const configured=resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,webSearchProviders:['brave_web_search','serper_web_search']}}).research
+  const result=evaluateRadarResearchAvailability({policy:configured,canManage:true,sources:[{sourceType:'brave_web_search',enabled:false,defaultCostPerUnit:.01},{sourceType:'serper_web_search',enabled:true,defaultCostPerUnit:.02}],
+    providers:{serper:{status:'active',hasSecret:true,publicConfig:{webSearchLicensed:true}}}})
+  expect(result.allowed).toBe(true)
+  expect(result.availableSearchSources).toEqual(['serper_web_search'])
+  expect(result.maximumCostPerCandidate).toBeCloseTo(.06)
+})
 it('exposes saved-evidence reanalysis independently of search restrictions but preserves authorization gates',()=>{
   const input={policy,canManage:true,sources:[{sourceType:'brave_web_search',enabled:false,defaultCostPerUnit:0,remaining:0}]}
   const result=evaluateRadarResearchAvailability(input)

@@ -21,7 +21,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function renderEditor(providerKey: 'cnpja' | 'brave_place', config: Record<string, unknown> = {}) {
+async function renderEditor(providerKey: 'cnpja' | 'brave_place'|'serper', config: Record<string, unknown> = {}) {
   const provider: PlatformProviderConnection = {
     id: 'existing-provider', providerType: 'internal_service', providerKey,
     displayName: providerKey, environment: 'production', status: 'active',
@@ -48,6 +48,14 @@ async function save() {
 }
 
 describe('provider permission confirmations', () => {
+  it('confirms Serper web storage independently from Places without requiring another key or contract text',async()=>{
+    const {onSave,onSaveCredential}=await renderEditor('serper')
+    await toggle('Confirmo uso da pesquisa web com armazenamento dos resultados')
+    await toggle('Confirmo permissão de entrega dos resultados web a clientes')
+    await save()
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({publicConfig:{webSearchLicensed:true,clientDeliveryLicensed:true},secretReference:'stored-key-reference'}))
+    expect(onSaveCredential).not.toHaveBeenCalled()
+  })
   it('saves CNPJa client delivery using only the checkbox and preserves the existing key', async () => {
     const { onSave, onSaveCredential } = await renderEditor('cnpja')
     await toggle('Confirmo permissão de entrega a cliente')

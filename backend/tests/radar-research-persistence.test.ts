@@ -47,6 +47,19 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('uses the selected Serper key, preserves provenance and respects the shared fallback cap',async()=>{
+  for(const cap of [1,2]){
+    const pool=new ResearchPool()
+    pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search','brave_web_search'],maxSearchQueriesPerCandidate:cap}}
+    const run=await start(pool),attempts:string[]=[]
+    await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{loadSecret:async()=> 'fixture',collect:async()=>pages,
+      web:async input=>{attempts.push(input.provider!);if(input.provider==='serper_web_search')throw Error('radar_serper_web_http_503');return[{url:pages[0].url,title:'Empresa Alfa',snippets:['12.345.678/0001-90'],observedAt:'2026-10-13'}]}})
+    expect(attempts).toEqual(cap===1?['serper_web_search']:['serper_web_search','brave_web_search'])
+    expect(pool.quota).toBe(cap)
+    expect(pool.queries.some(item=>item.sql.includes('WHERE provider_key=$1')&&item.params[0]==='serper')).toBe(true)
+    if(cap===2)expect(pool.payload.websiteUrl).toBe('https://alfa.example')
+  }
+})
 it('retains Brave provenance when reanalysis reuses facts without making provider calls',async()=>{
   const pool=new ResearchPool(),run=await start(pool)
   pool.payload.researchUsesBrave=true;pool.run!.operation='reanalyze'

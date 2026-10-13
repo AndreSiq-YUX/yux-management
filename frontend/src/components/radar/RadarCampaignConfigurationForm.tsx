@@ -9,7 +9,7 @@ import { RadarSizeConfiguration } from './RadarSizeConfiguration'
 import {radarService} from '@/services/radarService'
 import {Select,SelectContent,SelectGroup,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select'
 
-type Props = { organizationId: string; initialCampaign?: RadarCampaign; busy: boolean;canUseCrm?:boolean;readOnly?:boolean;draftKey?:string;
+type Props = { organizationId: string; initialCampaign?: RadarCampaign; busy: boolean;canUseCrm?:boolean;readOnly?:boolean;draftKey?:string;canConfigureProviders?:boolean;
   onSubmit: (input: RadarCampaignInput) => Promise<void>; onCancel: () => void }
 const selectClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm'
 
@@ -17,7 +17,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="space-y-1 text-sm text-slate-700"><span className="block font-medium">{label}</span>{children}</label>
 }
 
-export function RadarCampaignConfigurationForm({ organizationId, initialCampaign, busy,canUseCrm=false,readOnly=false,draftKey, onSubmit, onCancel }: Props) {
+export function RadarCampaignConfigurationForm({ organizationId, initialCampaign, busy,canUseCrm=false,readOnly=false,draftKey,canConfigureProviders=false, onSubmit, onCancel }: Props) {
   const local=!!initialCampaign&&initialCampaign.campaignType!=='regional_b2b'
   const [destinations,setDestinations]=useState<Awaited<ReturnType<typeof radarService.getCrmDestinations>>>([])
   const [destinationError,setDestinationError]=useState(false)
@@ -145,6 +145,13 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <p className="text-xs text-slate-500">Use {'{name}'} para o nome da empresa; opcionalmente {'{segment}'} e {'{terms}'}. Cidade e UF são enviadas separadamente.</p></details>
       </fieldset>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Aprofundamento automático dos candidatos</legend>
+        {canConfigureProviders&&!readOnly&&<details className="mb-3"><summary className="cursor-pointer text-sm">Admin — fonte e fallback da pesquisa web</summary>
+          <Field label="Fonte principal da pesquisa web"><select aria-label="Fonte principal da pesquisa web" className={selectClass} value={research.webSearchProviders?.[0]??'brave_web_search'}
+            onChange={event=>changeResearch({webSearchProviders:[event.target.value as 'brave_web_search'|'serper_web_search']})}>
+            <option value="brave_web_search">Brave Web Search</option><option value="serper_web_search">Google via Serper</option></select></Field>
+          <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={(research.webSearchProviders?.length??1)>1} onChange={event=>{const primary=research.webSearchProviders?.[0]??'brave_web_search';changeResearch({webSearchProviders:event.target.checked?[primary,primary==='serper_web_search'?'brave_web_search':'serper_web_search']:[primary]})}}/>Autorizar a outra fonte como fallback</label>
+          <p className="mt-2 text-xs text-muted-foreground">A fonte precisa estar liberada em Admin → Integrações. Fallback consome o mesmo limite total de consultas e só executa quando a fonte anterior falha ou não traz resultados. Salvar não pesquisa.</p>
+        </details>}
         <p className="mb-3 text-xs text-slate-500">Descobre presença pública e contatos sem exigir URL manual. Salvar não consulta provedores. Fontes, custos e modelo são liberados separadamente no Admin.</p>
         <div className="space-y-2">{(['enabled','webSearchEnabled','semanticQualificationEnabled'] as const).map((key, index) => <label key={key} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={research[key]} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Aprofundar a busca na internet','Analisar adequação ao objetivo comercial'][index]}</label>)}</div>

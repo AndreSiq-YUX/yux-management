@@ -27,6 +27,7 @@ export function validateRadarSizePolicy(value:RadarSizePolicy) {
 export type RadarSearchConfiguration = {
   crmDestination?:{crmInstanceId:string;pipelineId:string;stageId:string}
   research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
+    webSearchProviders?:Array<'brave_web_search'|'serper_web_search'>;
     maxPagesPerCandidate: number; freshnessDays: number; semanticQualificationEnabled: boolean;
     profileEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }
   cities: Array<{ city: string; state: string }>
@@ -46,7 +47,7 @@ export type RadarSearchConfiguration = {
   exportFields: RadarExportField[]
 }
 export function defaultRadarSearchConfiguration(): RadarSearchConfiguration {
-  return { research: { enabled: false, webSearchEnabled: false, maxSearchQueriesPerCandidate: 3,
+  return { research: { enabled: false, webSearchEnabled: false,webSearchProviders:['brave_web_search'], maxSearchQueriesPerCandidate: 3,
     maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: false,profileEnabled:false,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
     cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
     braveQueryTemplate: '{name}', sources: { enrichWithBrave: true, inspectWebsite: true },
