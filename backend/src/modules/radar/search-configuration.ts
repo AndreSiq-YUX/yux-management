@@ -29,6 +29,7 @@ export const radarResearchPolicySchema = z.object({
   maxPagesPerCandidate: z.number().int().min(1).max(10).default(4),
   freshnessDays: z.number().int().min(1).max(30).default(7),
   semanticQualificationEnabled: z.boolean().default(false),
+  presenceResolutionEnabled:z.boolean().default(false),
   profileEnabled:z.boolean().default(false),
   contactPurpose:z.enum(['general','suppliers','sales','finance','recruitment']).default('general'),
   sizeAssessment:radarSizePolicySchema.default(()=>radarSizePolicySchema.parse({})),

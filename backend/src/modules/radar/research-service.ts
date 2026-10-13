@@ -1,5 +1,6 @@
 import type pg from 'pg'
-import {isRadarInstitutionalSource} from './source-identity.js'
+import {classifyRadarSource,isRadarInstitutionalSource} from './source-identity.js'
+import {validateRadarPresenceResolution,type RadarPresenceEvidence,type RadarPresenceResolution} from './presence-resolution.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AppEnv } from '../../config/env.js'
 import type { AuthUser } from '../../auth/routes.js'
@@ -25,10 +26,12 @@ export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_targe
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
   registryPhone?: string; registryEmail?: string; siteAssociation: 'confirmed'|'review'; activity: ReturnType<typeof assessRadarBusinessActivity>;
   qualification?: RadarQualification; qualificationEvidenceHash?:string; profile?:RadarCompanyProfile;
+  presenceResolution?:RadarPresenceResolution; presenceEvidenceHash?:string;
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
 type Output = Partial<RadarResearchDossier> & { analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string) => Promise<RadarWebHit[]>;
+  resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
   registrySizeFacts?:RadarSizeFact[];
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
@@ -87,12 +90,26 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.pages = pages; output.readingComplete = !pages.some(isRetryableRadarPage); output.readerVersion=RADAR_READER_VERSION
     await checkpoint('consolidation')
   }
-  const associated = pages.some(page => isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity, page.text) === 'confirmed')
-  const associatedOrigin = pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')?.url
+  const presenceEvidence:RadarPresenceEvidence[]=pages.filter(page=>!!page.text&&!page.limitation).map((page,index)=>({id:`page-${index}`,url:page.url,text:page.text.slice(0,12000),observedAt:page.observedAt,kind:classifyRadarSource(page.url,{text:page.text}).kind})).slice(0,10)
+  const presenceEvidenceHash=createHash('sha256').update(JSON.stringify({identity,evidence:presenceEvidence})).digest('hex')
+  let presenceResolution=output.presenceEvidenceHash===presenceEvidenceHash?output.presenceResolution:undefined
+  const directlyAssociated=pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')
+  if(configuration.research.presenceResolutionEnabled&&!directlyAssociated&&!presenceResolution){
+    if(dependencies.resolvePresence&&presenceEvidence.length){
+      try{
+        presenceResolution=validateRadarPresenceResolution(await dependencies.resolvePresence(presenceEvidence,presenceEvidenceHash),identity,presenceEvidence)
+        output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceEvidenceHash
+        await checkpoint('identity')
+      }catch(cause){limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
+    }else limits.push('Identificação do site pendente: configure a rota de identificação de presença no Admin e obtenha páginas públicas legíveis.')
+  }
+  const associatedOrigin=directlyAssociated?.url??presenceResolution?.websiteUrl
+  const associated=!!associatedOrigin
   const associatedPages=pages.filter(page=>associatedOrigin && new URL(page.url).origin===new URL(associatedOrigin).origin
     && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'))
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
-  const contacts = pages.flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review'))
+  const contacts:RadarContactEvidence[] = pages.flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review').map(contact=>({...contact,
+    scope:associatedPages.includes(page)?presenceResolution?.scope??'establishment': 'unresolved' as const})))
   // Link-only contacts are preserved as sourced facts: stored pages intentionally omit raw HTML.
   if(output.analysisOnly)contacts.push(...(output.contacts??[]).filter(contact=>isRadarInstitutionalSource(contact.sourceUrl)).map(contact=>({...contact,
     association:associatedPages.some(page=>page.url===contact.sourceUrl)?contact.association:'review' as const})))
@@ -121,6 +138,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const activity = assessRadarBusinessActivity(qualifiedEvidence)
   if (!website && !pages.length) limits.push('Site não encontrado nas fontes consultadas; isso não comprova inexistência.')
   if (website && !associated) limits.push('A identidade do site exige revisão; contatos não são tratados como confirmados.')
+  if(presenceResolution?.scope==='group')limits.push('Presença e canais associados ao grupo; vínculo com este estabelecimento ainda requer conferência.')
   limits.push(...discovery.limitations, ...pages.flatMap(page => page.limitation ? [`${page.url}: ${page.limitation}`] : []))
   const evidenceHash=createHash('sha256').update(JSON.stringify({pages:qualifiedEvidence.map(page=>({url:page.url,text:page.text.slice(0,12000)})),
     profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled})).digest('hex')
@@ -151,7 +169,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }catch{return []}
   }))].map(item=>[item.url,item])).values()].slice(0,20)
   const dossier = { discovery:{...discovery,...(associatedOrigin?{websiteUrl:associatedOrigin,association:'confirmed' as const}:{})}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
-    qualificationEvidenceHash:qualification?evidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
+    qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
   Object.assign(output, dossier); await checkpoint('review')
   return dossier
 }
@@ -251,8 +269,9 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
       &&(['queued','running'].includes(run.status) || operation==='resume'||Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
     if (fresh) {
       if (!['queued','running','succeeded'].includes(run.status)) {
-        if(input.allowSemanticRefresh&&run.calls.semantic?.status==='completed') {
-          run.calls.semantic.refreshAuthorized=true
+        if(input.allowSemanticRefresh&&run.calls.presence?.status==='completed')run.calls.presence.refreshAuthorized=true
+        if(input.allowSemanticRefresh&&(run.calls.presence?.status==='completed'||run.calls.semantic?.status==='completed')) {
+          if(run.calls.semantic?.status==='completed')run.calls.semantic.refreshAuthorized=true
           await client.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND organization_id=$2',
             [run.id,input.organizationId,JSON.stringify(run.calls)])
         }
@@ -319,7 +338,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         if (!source || source.defaultCostPerUnit <= 0) throw error('source_cost_required')
         const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1)
         if (!governance.allowed) throw error(governance.issues[0].code)
-        if (Object.keys(run.calls).filter(key=>key!=='semantic').length >= configuration.research.maxSearchQueriesPerCandidate) throw error('candidate_search_limit_reached')
+        if (Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length >= configuration.research.maxSearchQueriesPerCandidate) throw error('candidate_search_limit_reached')
         const spent = await reservation.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[run.organization_id,run.campaign_id])
         const budget = currentCampaign.rows[0]?.budget_limit
         if (budget !== null && budget !== undefined && Number(spent.rows[0]?.cost ?? 0) + source.defaultCostPerUnit > Number(budget)) throw error('source_budget_exceeded')
@@ -351,7 +370,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
-      discoveryQueries:Object.keys(run.calls).filter(key=>key!=='semantic').length},{
+      discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length},{
       signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
       local:configuration.sources.enrichWithBrave && identity.city && identity.state ? async () => {
         const places = await paid('brave_place_search',identity.name,key => (dependencies.local ?? searchRadarPlaces)({provider:'brave_place_search',apiKey:key,query:identity.name,city:identity.city!,state:identity.state!,limit:5}))
@@ -368,6 +387,33 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         }
         if(failure)throw failure
         return []
+      },
+      resolvePresence:async(evidence,evidenceHash)=>{
+        const previous=run.calls.presence
+        if(previous?.status==='completed'&&previous.evidenceHash===evidenceHash)return previous.result
+        if(previous&&previous.status!=='completed')throw error('radar_presence_previous_request_uncertain')
+        if(previous&&!previous.refreshAuthorized)throw error('radar_presence_refresh_authorization_required')
+        const tenant=await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
+          LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
+          WHERE organization.id=$1`,[run.organization_id])
+        const route=await pool.query(`SELECT id FROM public.model_routing_rules WHERE agent_type='radar_presence_resolution' AND status='active'
+          AND routing_tier='default' AND (organization_id IS NULL OR organization_id=$1)
+          AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
+          [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
+        if(!route.rows[0])throw error('radar_presence_explicit_route_required')
+        run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash}
+        const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
+        if(!reserved.rows[0])throw error('radar_research_lease_lost')
+        signal?.throwIfAborted()
+        const result=await (dependencies.runtime??invokeAgentRuntime)<unknown>(env,'/radar/resolve-presence',{
+          organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,
+          request_id:`${run.id}:presence:${evidenceHash}`,identity,
+          evidence:evidence.map(item=>({id:item.id,source_url:item.url,text:item.text,kind:item.kind})),
+        })
+        validateRadarPresenceResolution(result,identity,evidence)
+        run.calls.presence={status:'completed',source:'radar_presence_resolution',evidenceHash,result}
+        await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
+        return result
       },
       qualify: async (pages,evidenceHash) => {
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
@@ -427,7 +473,8 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     const identity:RadarBusinessIdentity={name:String(context.normalized_payload.tradeName||context.title),legalName:typeof context.normalized_payload.legalName==='string'?context.normalized_payload.legalName:undefined,
       cnpj:String(context.normalized_payload.cnpj??''),city:String(context.normalized_payload.city??''),state:String(context.normalized_payload.state??''),
       address:String(context.normalized_payload.address??''),phone:String(context.normalized_payload.phoneRaw??'')}
-    const associatedPage=dossier.pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')
+    const associatedPage=dossier.pages.find(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&(matchRadarBusinessIdentity(identity,page.text)==='confirmed'
+      ||dossier.presenceResolution?.websiteUrl===page.url))
     const verified = dossier.siteAssociation === 'confirmed' && !!associatedPage
     const associatedPages=associatedPage?dossier.pages.filter(page=>new URL(page.url).origin===new URL(associatedPage.url).origin
       && (!/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/.test(page.text)||isRadarInstitutionalSource(page.url,{text:page.text})&&matchRadarBusinessIdentity(identity,page.text)==='confirmed')):[]
@@ -438,7 +485,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       researchComplete:dossier.limitations.length===0,researchUsesBrave:run.operation==='reanalyze'
         ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
-      companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,
+      companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),
       ...(verified ? {websiteUrl:associatedPage.url,siteFinalUrl:associatedPage.url,websiteStatus:'verified_present',siteCheckedAt:associatedPage.observedAt}:{}),

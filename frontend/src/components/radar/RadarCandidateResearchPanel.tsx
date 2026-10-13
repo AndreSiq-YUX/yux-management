@@ -48,7 +48,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
   },[open,candidateId,organizationId,refresh])
   async function start(operation:'complete'|'resume'|'refresh'|'reanalyze'='complete') {
     if(!available||submitted.current||!(operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
-    const route=available.semantic
+    const route=available.semantic??available.presence
     const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${showTechnical&&route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
     if(!window.confirm(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
     submitted.current=true;setBusy(true);setError(null);setOpen(true)
@@ -74,12 +74,15 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {open && <div className="space-y-3 text-sm">
       {showTechnical&&available?.semanticQualificationEnabled&&<p className="text-xs text-slate-600">IA: {available.semantic?.model??'confira a rota no Admin'}; a estimativa de buscas não inclui tokens da IA nem tentativas de fallback. {available.semantic?.budgetReferenceBrl?`Referência de orçamento no Admin: ${money(available.semantic.budgetReferenceBrl)} — não é cotação do consumo.`:''}</p>}
+      {showTechnical&&available?.presenceResolutionEnabled&&<p className="text-xs text-slate-600">Identificação de presença: {available.presence?.model??'configure a rota Radar — identificação de site e canais oficiais no Admin'}. Não inventa páginas nem contatos; usa as evidências coletadas.</p>}
       {result?.run&&available?.semanticQualificationEnabled&&['partial','blocked','failed'].includes(result.run.status)&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} onChange={e=>setAllowSemanticRefresh(e.target.checked)}/>Autorizo nova análise por IA se as evidências mudaram (pode consumir créditos; buscas concluídas serão reaproveitadas).</label>}
       <button type="button" className={buttonClass} onClick={()=>setRefresh(value=>value+1)}>Atualizar dossiê</button>
       {result?.run ? <><p role="status" className="font-semibold">{statusLabel[result.run.status]??result.run.status}</p>
         <ol className="grid gap-2 sm:grid-cols-2">{stages.map(([key,label],index)=><li key={key} className="rounded border bg-white p-2">{index+1}. {label}{result.run?.stage===key?' — etapa atual':''}</li>)}</ol>
         {result.run.error_code && <p className="text-amber-900">Pendência: {radarResearchMessage(result.run.error_code)}. Nenhum contato foi realizado.</p>}
         {output?.discovery && <p>Associação da presença pública: {output.siteAssociation==='confirmed'?'corroborada':'site encontrado ou sugerido, confirmação pendente'}. {output.discovery.websiteUrl&&<SafeSource url={output.discovery.websiteUrl} label="Ver site encontrado"/>}</p>}
+        {output?.presenceResolution&&<div className="rounded border bg-white p-3"><p>{output.presenceResolution.scope==='group'?'Presença institucional do grupo — não confirma a filial':output.presenceResolution.scope==='establishment'?'Presença associada ao estabelecimento':'Identificação ainda inconclusiva'}</p><p>{output.presenceResolution.reason}</p>
+          <details><summary>Por que o site foi associado</summary>{output.presenceResolution.claims.map((claim,index)=><blockquote key={index} className="mt-2 border-l-2 pl-2">{claim.excerpt} <SafeSource url={claim.sourceUrl}/> · {new Date(claim.observedAt).toLocaleDateString('pt-BR')}</blockquote>)}</details></div>}
         {output?.pages?.some(page=>!!page.text&&!page.limitation)&&<p className="text-xs text-slate-600">Presença pública acessível: {output.pages.filter(page=>!!page.text&&!page.limitation).length} página(s) lida(s). Isso não confirma atendimento ou operação atual.</p>}
         <div className="rounded border bg-white p-3"><h4 className="font-medium">Contatos e canais encontrados</h4>
           {output?.registryPhone&&<p className="mt-2 break-all">Telefone cadastral: {output.registryPhone} — não validado por atendimento.</p>}

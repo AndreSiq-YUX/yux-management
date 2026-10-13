@@ -2,6 +2,8 @@ export type RadarProfileClaim={value:string;evidenceId:string;excerpt:string;sou
 export type RadarCompanyProfile={summary?:RadarProfileClaim;services:RadarProfileClaim[];customerSegments:RadarProfileClaim[];operatingRegions:RadarProfileClaim[];
   scaleSignals:Array<RadarProfileClaim&{metric:string;amount:number;referenceDate?:string;currency?:string}>}
 export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:string;message:string;sourceType?:string;resolution:string}>;
+  presenceResolutionEnabled?:boolean;
+  presence?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number};
   operations?:{reanalyze:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>}};
   estimates:Array<{sourceType:string;costPerQuery:number;maximumQueries:number}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number;semanticQualificationEnabled:boolean;
   semantic?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number} }
@@ -12,6 +14,7 @@ export type RadarResearchResult = {configurationRevision:number;availability:Rad
     discovery?:{association:string;websiteUrl?:string;suggestions:Array<{url:string;title:string}>;limitations:string[]};
     contacts?:RadarResearchContact[];registryPhone?:string;registryEmail?:string;siteAssociation?:string;
     profile?:RadarCompanyProfile;
+    presenceResolution?:{websiteUrl?:string;scope:'establishment'|'group'|'unresolved';reason:string;claims:Array<{evidenceId:string;excerpt:string;sourceUrl:string;observedAt:string}>;model?:string};
     documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
     sizeAssessment?:{score:number|null;evidenceCoverage:number;direction:'larger'|'smaller';contributions:Array<{metric:string;amount:number;points:number;weight:number;sourceUrl:string;referenceDate?:string}>;limitations:string[]};
     pages?:Array<{url:string;text:string;observedAt:string;limitation?:string}>;

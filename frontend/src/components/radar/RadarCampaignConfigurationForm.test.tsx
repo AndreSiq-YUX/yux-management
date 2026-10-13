@@ -17,10 +17,12 @@ describe('Radar campaign configuration panel', () => {
   it('persists the explicit primary web provider and fallback without querying either provider',async()=>{
     const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
     config.research!.webSearchProviders=['serper_web_search','brave_web_search']
+    config.research!.presenceResolutionEnabled=true
     await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" canConfigureProviders initialCampaign={campaignFixture({targetStates:['PE'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
     expect(container.querySelector<HTMLSelectElement>('select[aria-label="Fonte principal da pesquisa web"]')?.value).toBe('serper_web_search')
     await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
-    expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({webSearchProviders:['serper_web_search','brave_web_search']})})}))
+    expect(container.textContent).toContain('Identificar site e canais oficiais por IA')
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({webSearchProviders:['serper_web_search','brave_web_search'],presenceResolutionEnabled:true})})}))
     act(()=>root.unmount())
   })
   it('restores unsaved edits after route unmount, isolates campaign drafts and clears after saving',async()=>{

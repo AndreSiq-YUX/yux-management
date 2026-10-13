@@ -4,6 +4,14 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('associates a differently named institutional brand through verified evidence instead of a directory footer',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}})
+  const page={url:'https://brand.example/',text:'Marca Beta. Soluções empresariais em Curitiba. Empresa Alfa é nossa razão social.',observedAt:'2026-10-13',html:'<a href="mailto:compras@brand.example">Fornecedores</a>'}
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,pages:[page],discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},resolvePresence:async()=>({candidateId:'page-0',scope:'establishment',reason:'A página identifica a razão social e a marca.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]})})
+  expect(result.discovery.websiteUrl).toBe('https://brand.example/')
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',association:'confirmed'}))
+})
 it('recovers failed public reads without repeating completed discovery', async () => {
   const web = vi.fn(), collect = vi.fn(async (_url:string) => [{url:'https://alfa.example/',observedAt:'2026-10-12',text:'12.345.678/0001-90 contatos públicos'}])
   const result = await runRadarResearchPipeline(identity, configuration, {readingComplete:true,

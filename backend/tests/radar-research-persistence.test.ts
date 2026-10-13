@@ -18,6 +18,7 @@ class ResearchPool {
     if(sql.includes('JOIN public.model_routing_rules rule'))return{rows:[{model_name:'fixture-admin-model',provider:'openrouter',max_input_tokens:16000,max_output_tokens:4000,fallback_routes:[]}]}
     if(sql.includes('SELECT organization.client_id'))return{rows:[{client_id:'client',contract_id:'contract'}]}
     if(sql.includes("agent_type='radar_business_qualification'"))return{rows:[{id:'route'}]}
+    if(sql.includes("agent_type='radar_presence_resolution'"))return{rows:[{id:'route'}]}
     if(sql.includes("kind = 'yux'"))return{rows:[{allowed:true}]}
     if(sql.includes('FROM public.app_users'))return{rows:[admin]}
     if(sql.includes('FROM public.radar_campaigns'))return{rows:[{search_configuration:this.researchConfiguration,configuration_revision:this.revision,status:'draft',daily_limit:10,budget_limit:1}]}
@@ -47,6 +48,21 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('persists evidence-bound brand identity and does not replay an uncertain presence call',async()=>{
+  for(const uncertain of [false,true]){
+    const pool=new ResearchPool()
+    pool.researchConfiguration={research:{enabled:true,presenceResolutionEnabled:true,webSearchEnabled:true,maxSearchQueriesPerCandidate:1}}
+    const run=await start(pool)
+    pool.run!.output={readingComplete:true,discoveryLocked:true,discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1},
+      pages:[{url:'https://brand.example/',observedAt:'2026-10-13',text:'Marca Beta. Empresa Alfa é nossa razão social.',html:'<a href="mailto:compras@brand.example">Fornecedores</a>'}]}
+    if(uncertain)pool.run!.calls.presence={source:'radar_presence_resolution',status:'reserved'}
+    const runtime=vi.fn().mockResolvedValue({candidateId:'page-0',scope:'group',reason:'A razão social é apresentada pela marca.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]})
+    await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web:vi.fn()})
+    expect(runtime).toHaveBeenCalledTimes(uncertain?0:1)
+    if(!uncertain){expect(pool.payload.websiteUrl).toBe('https://brand.example/');expect(pool.payload.publicContacts).toContainEqual(expect.objectContaining({value:'compras@brand.example',scope:'group'}))}
+    else expect(pool.run!.output.limitations).toContainEqual(expect.stringContaining('radar_presence_previous_request_uncertain'))
+  }
+})
 it('uses the selected Serper key, preserves provenance and respects the shared fallback cap',async()=>{
   for(const cap of [1,2]){
     const pool=new ResearchPool()

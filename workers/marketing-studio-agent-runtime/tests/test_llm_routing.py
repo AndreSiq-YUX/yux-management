@@ -1,5 +1,11 @@
 import pytest
 
+def test_radar_presence_requires_its_own_admin_route_not_global_or_environment():
+    from yux_agent_runtime.llm_routing import resolve_route
+    from yux_agent_runtime.providers import ProviderAuthorizationError
+    with pytest.raises(ProviderAuthorizationError, match='radar_presence_explicit_route_required'):
+        resolve_route([dict(agent_type='global_llm',provider='openrouter',model_name='fixture')], 'radar_presence_resolution')
+
 from yux_agent_runtime.llm_routing import RoutedLlmClient, resolve_route
 from yux_agent_runtime.providers import ProviderRequestError, ProviderAuthorizationError, ProviderAvailabilityError
 

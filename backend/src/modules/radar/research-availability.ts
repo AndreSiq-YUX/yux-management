@@ -43,7 +43,8 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
   return{allowed:reasons.length===0,reasons,warnings,availableSearchSources,operations:{reanalyze:radarReanalysisAvailability(reasons)},
     estimates,maxQueriesPerCandidate:input.policy.maxSearchQueriesPerCandidate,
     maximumCostPerCandidate:Math.max(0,...estimates.map(item=>item.costPerQuery))*input.policy.maxSearchQueriesPerCandidate,
-    semanticQualificationEnabled:input.policy.semanticQualificationEnabled||input.policy.profileEnabled||input.policy.sizeAssessment.enabled}
+    presenceResolutionEnabled:input.policy.presenceResolutionEnabled,
+    semanticQualificationEnabled:input.policy.semanticQualificationEnabled||input.policy.profileEnabled||input.policy.sizeAssessment.enabled||input.policy.presenceResolutionEnabled}
 }
 
 export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
@@ -71,11 +72,12 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     localEnabled:configuration.sources.enrichWithBrave,providers,sources:sources.flatMap(item=>item.source?[item.source]:[]),
     sourceIssues:Object.fromEntries(sources.map(item=>[item.key,item.governance.issues.filter(issue=>issue.code!=='source_disabled').map(issue=>({...issue,resolution:'Admin → Integrações → Limites e orçamento'}))]))})
   if(!result.semanticQualificationEnabled)return result
+  const routeFor=async(agentType:'radar_business_qualification'|'radar_presence_resolution')=>{
   const route=await pool.query<{model_name:string;provider:string;max_input_tokens:number;max_output_tokens:number;max_cost_per_run:string;fallback_routes:unknown[];fallback_model_name?:string}>(`
     SELECT rule.model_name,rule.provider,rule.max_input_tokens,rule.max_output_tokens,rule.max_cost_per_run,rule.fallback_routes,rule.fallback_model_name
     FROM public.organizations organization
     LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
-    JOIN public.model_routing_rules rule ON rule.agent_type='radar_business_qualification' AND rule.status='active' AND rule.routing_tier='default'
+    JOIN public.model_routing_rules rule ON rule.agent_type='${agentType}' AND rule.status='active' AND rule.routing_tier='default'
       AND (rule.organization_id IS NULL OR rule.organization_id=organization.id)
       AND (rule.client_id IS NULL OR rule.client_id=organization.client_id)
       AND (rule.contract_id IS NULL OR rule.contract_id=contract.id) AND rule.agent_id IS NULL
@@ -83,8 +85,12 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     ORDER BY ((rule.organization_id IS NOT NULL)::int+(rule.client_id IS NOT NULL)::int+(rule.contract_id IS NOT NULL)::int) DESC,
       rule.updated_at DESC,rule.id DESC LIMIT 1`,[organizationId])
   const selected=route.rows[0],profile=configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled
-  return {...result,semantic:{routeConfigured:!!selected,model:selected?.model_name,provider:selected?.provider,
+  return {routeConfigured:!!selected,model:selected?.model_name,provider:selected?.provider,
     maxInputTokens:selected?.max_input_tokens||16000,maxOutputTokens:Math.min(selected?.max_output_tokens||4000,profile?4000:1800),
     budgetReferenceBrl:Number(selected?.max_cost_per_run)>0?Number(selected.max_cost_per_run):undefined,
-    fallbackCount:Array.isArray(selected?.fallback_routes)?selected.fallback_routes.length:selected?.fallback_model_name?1:0}}
+    fallbackCount:Array.isArray(selected?.fallback_routes)?selected.fallback_routes.length:selected?.fallback_model_name?1:0}
+  }
+  return {...result,
+    semantic:configuration.research.semanticQualificationEnabled||configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled?await routeFor('radar_business_qualification'):undefined,
+    presence:configuration.research.presenceResolutionEnabled?await routeFor('radar_presence_resolution'):undefined}
 }

@@ -23,7 +23,7 @@ describe('central LLM configuration', () => {
       : [{ agent_type: 'legacy_service' }] }))
     const cases = await getAdminLlmUseCases({ query } as unknown as pg.Pool)
     expect(cases.map(item => item.key)).toEqual(expect.arrayContaining(['global_llm', 'global_embeddings',
-      'strategy_curator', 'knowledge_curator', 'knowledge_embeddings', 'campaign_launch_specialist',
+      'strategy_curator', 'knowledge_curator', 'knowledge_embeddings', 'radar_presence_resolution', 'campaign_launch_specialist',
       'funnel_nurture_specialist', 'automation_lead_classification', 'automation_message_generation',
       'automation_proposal_generation', 'new_profile', 'writer', 'legacy_service']))
     expect(new Set(cases.map(item => item.key)).size).toBe(cases.length)
