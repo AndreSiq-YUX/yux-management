@@ -238,7 +238,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     const activeRun=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND status IN ('queued','running') AND configuration_revision=$3 ORDER BY created_at DESC LIMIT 1`,[input.candidateId,input.organizationId,input.configurationRevision])
     if(activeRun.rows[0]){await client.query('COMMIT');return{runId:activeRun.rows[0].id,status:activeRun.rows[0].status,reused:true}}
     if(operation==='reanalyze'&&(!run?.output.discovery||!run.output.pages?.some(page=>!!page.text&&!page.limitation)))throw error('radar_research_saved_evidence_required')
-    const available=operation==='reanalyze'?{...availability,allowed:availability.reasons.filter(reason=>!['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing','retention_license_required','web_license_required','source_disabled','source_cost_required','search_not_selected'].includes(reason.code)).length===0}
+    const available=operation==='reanalyze'?{...availability,allowed:availability.operations.reanalyze.allowed}
       :cachedReadAvailability(availability,run,input.configurationRevision,configuration.research.freshnessDays)
     if(!available.allowed)throw Object.assign(error('radar_research_unavailable'),{reasons:available.reasons})
     if(run&&!availability.allowed&&available.allowed) {
@@ -348,6 +348,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       ? (call.result as Awaited<ReturnType<typeof searchRadarPlaces>>).flatMap(place=>place.sourceUrl?[{url:place.websiteUrl||place.sourceUrl,title:place.name,
         snippets:[place.address,place.phone,place.email].filter((value):value is string=>!!value),observedAt:place.observedAt}]:[]):[])
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
+      ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.keys(run.calls).filter(key=>key!=='semantic').length},{
       signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
@@ -423,7 +424,8 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       desiredCnaes:context.target_cnaes,cnaes:Array.isArray(context.normalized_payload.cnaes) ? context.normalized_payload.cnaes as string[]:[],
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})
     const payload = {...candidate.rows[0].normalized_payload,researchRunId:run.id,researchRevision:run.configuration_revision,
-      researchComplete:dossier.limitations.length===0,researchUsesBrave:Object.keys(run.calls).length>0,publicContacts:known,
+      researchComplete:dossier.limitations.length===0,researchUsesBrave:run.operation==='reanalyze'
+        ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),
@@ -435,7 +437,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       reasons=EXCLUDED.reasons,configuration_revision=EXCLUDED.configuration_revision,updated_at=NOW() WHERE radar_b2b_reviews.approved_at IS NULL`,
     [run.candidate_id,run.organization_id,run.campaign_id,review.targetStatus,review.productFit,review.reasons,run.configuration_revision])
     // HTML is needed for crash-safe crawl checkpoints but is not exposed in the final dossier.
-    const output = {...dossier,pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
+    const output = {...dossier,...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true}:{}),pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
     await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,stage='review',completed_at=NOW(),updated_at=NOW(),
       lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(output),dossier.limitations.length?'partial':'succeeded'])
     await client.query('COMMIT')

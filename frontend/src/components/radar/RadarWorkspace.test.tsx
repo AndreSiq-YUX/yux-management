@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RadarResearchAvailability } from '@/types/radarResearch'
 import type { PlatformContext } from '@/types/platform'
 import type { RadarCampaign, RadarDataSource } from '@/types/radar'
 import { radarService } from '@/services/radarService'
@@ -14,8 +15,9 @@ vi.mock('@/stores/platformStore', () => ({ usePlatformContext: () => state.conte
 vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyContextPanel:() => null}))
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),
-  getResearchAvailability:vi.fn(async()=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
+  getResearchAvailability:vi.fn(async():Promise<RadarResearchAvailability>=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
   getCrmDestinations:vi.fn(async()=>[]),
+  startCandidateResearch:vi.fn(async()=>({runId:'run',status:'queued',reused:false})),
   getResearchHistory:vi.fn(async()=>[{id:'run',candidateId:'candidate',companyName:'Empresa pesquisada',configurationRevision:2,operation:'reanalyze',status:'succeeded',updatedAt:'2026-10-13T12:00:00Z'}]),
   getB2bProspects:vi.fn(async()=>[]),getB2bProgress:vi.fn(async()=>({candidates:0,checked:0,confirmed:0,approved:0,scopes:[]})),runB2bBatch:vi.fn(async()=>({status:'queued'})),
   getOpportunities:vi.fn(async () => []),getMetrics:vi.fn(async () => null),
@@ -25,6 +27,23 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('enables selected-company reanalysis independently of disabled web searches',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetCity:'',targetState:'',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'',createdAt:'',updatedAt:''}])
+    vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'candidate',organizationId:'org',campaignId:'campaign',title:'Empresa',sourceType:'manual',status:'pending_review',normalizedPayload:{},dedupeKey:'key',createdAt:'',updatedAt:''}])
+    vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:true,operations:{reanalyze:{allowed:true,reasons:[]}}})
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    await act(async()=>(container.querySelector('tbody input') as HTMLInputElement).click())
+    const button=[...container.querySelectorAll('button')].find(button=>button.textContent==='Reavaliar dados salvos')!
+    expect(button.disabled).toBe(false)
+    expect([...container.querySelectorAll('button')].find(button=>button.textContent==='Atualizar pesquisa')!.disabled).toBe(true)
+    vi.spyOn(window,'confirm').mockReturnValue(true)
+    await act(async()=>button.click())
+    expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'reanalyze'}))
+    act(()=>root.unmount())
+    vi.mocked(radarService.getCandidates).mockResolvedValue([])
+    vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     state.context = { mode:'client_workspace', organization:{id:'org',isInternalGrowthWorkspace:true},

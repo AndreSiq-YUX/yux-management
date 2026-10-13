@@ -47,6 +47,31 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('retains Brave provenance when reanalysis reuses facts without making provider calls',async()=>{
+  const pool=new ResearchPool(),run=await start(pool)
+  pool.payload.researchUsesBrave=true;pool.run!.operation='reanalyze'
+  pool.run!.output={analysisOnly:true,discoveryLocked:true,readingComplete:true,pages,
+    discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{web:vi.fn()})
+  expect(pool.payload.researchUsesBrave).toBe(true)
+})
+it('preserves link-only contacts across partial reanalysis and resume without web or reader calls',async()=>{
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
+  const run=await start(pool)
+  pool.run!.operation='reanalyze'
+  pool.run!.output={analysisOnly:true,discoveryLocked:true,readingComplete:true,pages:pages.map(({html:_html,...page})=>page),
+    contacts:[{kind:'email',value:'compras@alfa.example',association:'confirmed',sourceUrl:pages[0].url,observedAt:'2026-10-08'}],
+    discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+  const web=vi.fn(),collect=vi.fn(),runtime=vi.fn().mockResolvedValue({targetStatus:'review',productFit:'unknown',reasons:[],evidenceIds:[],limitations:['Conferência da atividade ainda pendente.']})
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{web,collect,runtime})
+  expect(pool.run!.status).toBe('partial')
+  expect(pool.run!.output.contacts).toContainEqual(expect.objectContaining({value:'compras@alfa.example'}))
+  await start(pool)
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{web,collect,runtime})
+  expect(pool.payload.publicContacts).toContainEqual(expect.objectContaining({value:'compras@alfa.example'}))
+  expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled()
+})
 it('deduplicates_double_click_and_reprocesses_previously_inconclusive_candidate_without_cnpja_call',async()=>{
   const pool=new ResearchPool()
   const first=await start(pool),second=await start(pool)

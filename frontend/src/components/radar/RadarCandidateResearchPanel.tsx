@@ -47,7 +47,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     return()=>{active=false;clearTimeout(timer)}
   },[open,candidateId,organizationId,refresh])
   async function start(operation:'complete'|'resume'|'refresh'|'reanalyze'='complete') {
-    if(submitted.current||!available?.allowed||approved||!canStart)return
+    if(!available||submitted.current||!(operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
     const route=available.semantic
     const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${showTechnical&&route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
     if(!window.confirm(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
@@ -63,7 +63,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
         {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa desta empresa':'Completar dados desta empresa'}</button>
       <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar dossiê':'Ver dossiê da empresa'}</button>
       {result?.run&&!running&&<><button type="button" className={buttonClass} disabled={!available?.allowed||busy||approved||!canStart} onClick={()=>start('refresh')}>Atualizar pesquisa</button>
-        {available?.semanticQualificationEnabled&&<button type="button" className={buttonClass} disabled={!available.allowed||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button>}</>}
+        {available?.semanticQualificationEnabled&&<button type="button" className={buttonClass} disabled={!(available.operations?.reanalyze.allowed??available.allowed)||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button>}</>}
     </div>
     {!available && !error && !availabilityError && <p className="text-xs text-slate-600">Conferindo disponibilidade da pesquisa...</p>}
     {availabilityError && !available && !error && <p role="alert" className="text-sm text-red-700">{availabilityError}</p>}

@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RadarCampaignConfigurationForm } from './RadarCampaignConfigurationForm'
 import { defaultRadarSearchConfiguration, radarBrazilStates } from '@/lib/radar/radarSearchConfiguration'
 import type { RadarCampaign } from '@/types/radar'
@@ -13,6 +13,28 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 }
 
 describe('Radar campaign configuration panel', () => {
+  beforeEach(()=>sessionStorage.clear())
+  it('restores unsaved edits after route unmount, isolates campaign drafts and clears after saving',async()=>{
+    const container=document.createElement('div'),submit=vi.fn(async()=>undefined),campaign=campaignFixture({targetStates:['PE']})
+    let root=createRoot(container)
+    const render=(key='user-org-campaign')=><RadarCampaignConfigurationForm organizationId="org" draftKey={key} initialCampaign={campaign} busy={false} onSubmit={submit} onCancel={vi.fn()}/>
+    await act(async()=>root.render(render()))
+    const input=container.querySelector('input')!
+    await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Rascunho não salvo');input.dispatchEvent(new Event('input',{bubbles:true}))})
+    act(()=>root.unmount());root=createRoot(container)
+    await act(async()=>root.render(render('other-user-org-campaign')))
+    expect(container.querySelector('input')!.value).toBe('Pesquisa')
+    act(()=>root.unmount());root=createRoot(container)
+    await act(async()=>root.render(render()))
+    expect(container.querySelector('input')!.value).toBe('Rascunho não salvo')
+    expect(container.textContent).toContain('Rascunho recuperado')
+    await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({name:'Rascunho não salvo'}))
+    act(()=>root.unmount());root=createRoot(container)
+    await act(async()=>root.render(render()))
+    expect(container.querySelector('input')!.value).toBe('Pesquisa')
+    act(()=>root.unmount())
+  })
   it('renders saved configuration as read-only without offering or submitting changes',async()=>{
     const container=document.createElement('div'),root=createRoot(container),submit=vi.fn(async()=>undefined)
     await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE']})} busy={false} readOnly onSubmit={submit} onCancel={vi.fn()}/>))

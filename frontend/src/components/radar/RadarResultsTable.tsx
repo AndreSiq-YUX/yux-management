@@ -10,7 +10,7 @@ export function RadarResultsTable({candidates,revision,selectedIds,approvedIds=[
   const selected=new Set(selectedIds),all=rows.length>0&&rows.every(item=>selected.has(item.id))
   return <div className="space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-3"><Input aria-label="Filtrar empresas" placeholder="Nome, CNPJ ou cidade" value={query} onChange={event=>{setQuery(event.target.value);setPage(0)}} className="sm:max-w-sm"/><p className="text-sm text-slate-600">{filtered.length} empresas · {selectedIds.length} selecionadas</p></div>
-    <div className="overflow-x-auto rounded-md border"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr>
+    <div className="relative overflow-x-auto rounded-md border"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr>
       <th className="p-3"><input type="checkbox" aria-label="Selecionar empresas desta página" checked={all} onChange={()=>onSelect(all?selectedIds.filter(id=>!rows.some(item=>item.id===id)):[...new Set([...selectedIds,...rows.map(item=>item.id)])])}/></th>
       <th className="p-3">Empresa</th><th className="p-3">Localização</th><th className="p-3">Site e contatos</th><th className="p-3">Situação</th><th className="p-3"><span className="sr-only">Detalhes</span></th>
     </tr></thead><tbody className="divide-y">{rows.map(item=>{const data=item.normalizedPayload,current=Number(data.researchRevision??0)===revision

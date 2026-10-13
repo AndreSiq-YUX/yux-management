@@ -3,6 +3,14 @@ import { evaluateRadarResearchAvailability } from '../src/modules/radar/research
 import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-configuration.js'
 
 const policy = resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true}}).research
+it('exposes saved-evidence reanalysis independently of search restrictions but preserves authorization gates',()=>{
+  const input={policy,canManage:true,sources:[{sourceType:'brave_web_search',enabled:false,defaultCostPerUnit:0,remaining:0}]}
+  const result=evaluateRadarResearchAvailability(input)
+  expect(result.allowed).toBe(false)
+  expect(result).toMatchObject({operations:{reanalyze:{allowed:true,reasons:[]}}})
+  expect(evaluateRadarResearchAvailability({...input,canManage:false})).toMatchObject({operations:{reanalyze:{allowed:false}}})
+  expect(evaluateRadarResearchAvailability({...input,campaignActive:false})).toMatchObject({operations:{reanalyze:{allowed:false}}})
+})
 it('reports_exact_blockers_without_provider_calls', () => {
   const result = evaluateRadarResearchAvailability({ policy, canManage: true, provider: { status: 'active', hasSecret: true,
     publicConfig: { retentionLicensed: true, credentialPurpose: 'licensed_retention', webSearchLicensed: true } },

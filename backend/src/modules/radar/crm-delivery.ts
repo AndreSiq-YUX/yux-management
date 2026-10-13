@@ -15,10 +15,19 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
   const contacts=(Array.isArray(data.publicContacts)?data.publicContacts:[]).filter((item):item is RadarContactEvidence=>
     !!item&&typeof item==='object'&&item.association==='confirmed'&&typeof item.value==='string'&&typeof item.sourceUrl==='string')
   const first=(kind:string)=>contacts.filter(item=>item.kind===kind).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
+  const reasons=(Array.isArray(data.triageReasons)?data.triageReasons:[]).filter((value):value is string=>typeof value==='string')
+  const activity=data.activityAssessment??data.activity
+  const notes=[`Oferta da campanha: ${offer}`,
+    `Público: ${({confirmed:'Confirmado',review:'Requer revisão',not_target:'Fora do público',insufficient:'Evidência insuficiente'} as Record<string,string>)[String(data.targetStatus)]??'Não avaliado'}`,
+    `Adequação: ${({high:'Boa aderência',possible:'Possível aderência',low:'Baixa aderência',unknown:'Não confirmada'} as Record<string,string>)[String(data.productFit)]??'Não avaliada'}`,
+    ...reasons, data.companyProfile?`Perfil e fontes: ${JSON.stringify(data.companyProfile)}`:'',
+    activity?`Atividade e evidências: ${JSON.stringify(activity)}`:'',
+    'Contatos públicos não comprovam consentimento nem atendimento. Contato comercial manual.'].filter(Boolean).join('\n')
   return {name:candidate.title,email:first('email')??'',phone:first('phone')??first('whatsapp')??null,
-    notes:typeof data.companyProfile==='object'&&data.companyProfile?JSON.stringify(data.companyProfile):'Empresa pesquisada pelo Radar; consulte as evidências antes do contato.',
+    notes,
     attribution:{radarCnpj:typeof data.cnpj==='string'?data.cnpj:undefined,recommendedOffer:offer,websiteUrl:data.websiteUrl,
-      contacts,registryPhone:data.phoneRaw,companyProfile:data.companyProfile,sizeAssessment:data.sizeAssessment,activity:data.activity,
+      contacts,registryPhone:data.phoneRaw,companyProfile:data.companyProfile,sizeAssessment:data.sizeAssessment,activity,
+      targetStatus:data.targetStatus,productFit:data.productFit,triageReasons:reasons,
       collectionRevision:data.researchRevision,consent:'not_established',outreach:'manual_only',acquisitionKind:'outbound'}}
 }
 

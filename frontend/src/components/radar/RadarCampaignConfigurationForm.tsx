@@ -1,4 +1,4 @@
-import { useEffect,useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect,useRef,useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, validateRadarSizePolicy, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
@@ -9,7 +9,7 @@ import { RadarSizeConfiguration } from './RadarSizeConfiguration'
 import {radarService} from '@/services/radarService'
 import {Select,SelectContent,SelectGroup,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select'
 
-type Props = { organizationId: string; initialCampaign?: RadarCampaign; busy: boolean;canUseCrm?:boolean;readOnly?:boolean;
+type Props = { organizationId: string; initialCampaign?: RadarCampaign; busy: boolean;canUseCrm?:boolean;readOnly?:boolean;draftKey?:string;
   onSubmit: (input: RadarCampaignInput) => Promise<void>; onCancel: () => void }
 const selectClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm'
 
@@ -17,25 +17,48 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="space-y-1 text-sm text-slate-700"><span className="block font-medium">{label}</span>{children}</label>
 }
 
-export function RadarCampaignConfigurationForm({ organizationId, initialCampaign, busy,canUseCrm=false,readOnly=false, onSubmit, onCancel }: Props) {
+export function RadarCampaignConfigurationForm({ organizationId, initialCampaign, busy,canUseCrm=false,readOnly=false,draftKey, onSubmit, onCancel }: Props) {
   const local=!!initialCampaign&&initialCampaign.campaignType!=='regional_b2b'
   const [destinations,setDestinations]=useState<Awaited<ReturnType<typeof radarService.getCrmDestinations>>>([])
   const [destinationError,setDestinationError]=useState(false)
   useEffect(()=>{if(!canUseCrm)return;let active=true;radarService.getCrmDestinations(organizationId).then(value=>{if(active)setDestinations(value)}).catch(()=>{if(active)setDestinationError(true)});return()=>{active=false}},[organizationId,canUseCrm])
-  const [config, setConfig] = useState<RadarSearchConfiguration>(() => initialCampaign?.searchConfiguration ?? defaultRadarSearchConfiguration())
-  const [name, setName] = useState(initialCampaign?.name ?? '')
-  const [segment, setSegment] = useState(initialCampaign?.targetSegment ?? '')
-  const [states, setStates] = useState<string[]>(local?[initialCampaign.targetState]:initialCampaign?.targetStates ?? [])
-  const [cities, setCities] = useState(() => local?`${initialCampaign.targetCity}/${initialCampaign.targetState}`:(initialCampaign?.searchConfiguration?.cities ?? []).map(item => `${item.city}/${item.state}`).join('\n'))
-  const [geographicScope, setGeographicScope] = useState<'states' | 'cities'>(() =>
-    local||initialCampaign?.searchConfiguration?.cities.length ? 'cities' : 'states')
-  const [keywords, setKeywords] = useState(initialCampaign?.targetKeywords.join(', ') ?? '')
-  const [cnaes, setCnaes] = useState(initialCampaign?.targetCnaes.join(', ') ?? '')
-  const [products, setProducts] = useState(initialCampaign?.productFocus.join(', ') ?? '')
-  const [excludedNames, setExcludedNames] = useState(initialCampaign?.searchConfiguration?.excludedNameTerms.join(', ') ?? '')
-  const [offer, setOffer] = useState(initialCampaign?.offerType ?? '')
-  const [dailyLimit, setDailyLimit] = useState(initialCampaign?.dailyLimit ?? 10)
-  const [budget, setBudget] = useState(initialCampaign?.budgetLimit?.toString() ?? '')
+  const defaults={config:initialCampaign?.searchConfiguration??defaultRadarSearchConfiguration(),name:initialCampaign?.name??'',
+    segment:initialCampaign?.targetSegment??'',states:local?[initialCampaign.targetState]:initialCampaign?.targetStates??[],
+    cities:local?`${initialCampaign.targetCity}/${initialCampaign.targetState}`:(initialCampaign?.searchConfiguration?.cities??[]).map(item=>`${item.city}/${item.state}`).join('\n'),
+    geographicScope:(local||initialCampaign?.searchConfiguration?.cities.length?'cities':'states') as 'states'|'cities',
+    keywords:initialCampaign?.targetKeywords.join(', ')??'',cnaes:initialCampaign?.targetCnaes.join(', ')??'',products:initialCampaign?.productFocus.join(', ')??'',
+    excludedNames:initialCampaign?.searchConfiguration?.excludedNameTerms.join(', ')??'',offer:initialCampaign?.offerType??'',
+    dailyLimit:initialCampaign?.dailyLimit??10,budget:initialCampaign?.budgetLimit?.toString()??''}
+  const original=useRef(JSON.stringify(defaults))
+  const storageKey=draftKey&&!readOnly?`yux-radar-draft:${draftKey}`:undefined
+  const [restored]=useState<typeof defaults|undefined>(()=>{
+    if(!storageKey)return
+    try{
+      const stored=JSON.parse(sessionStorage.getItem(storageKey)??'null')
+      if(stored?.original===original.current&&Date.now()-stored.savedAt<86400000&&stored.value
+        &&Object.keys(defaults).every(key=>typeof stored.value[key]===typeof defaults[key as keyof typeof defaults]))return stored.value
+    }catch{/* An unavailable/corrupt local draft must not prevent opening the saved configuration. */}
+  })
+  const initial=restored??defaults
+  const [config,setConfig]=useState(initial.config),[name,setName]=useState(initial.name),[segment,setSegment]=useState(initial.segment)
+  const [states,setStates]=useState(initial.states),[cities,setCities]=useState(initial.cities),[geographicScope,setGeographicScope]=useState(initial.geographicScope)
+  const [keywords,setKeywords]=useState(initial.keywords),[cnaes,setCnaes]=useState(initial.cnaes),[products,setProducts]=useState(initial.products)
+  const [excludedNames,setExcludedNames]=useState(initial.excludedNames),[offer,setOffer]=useState(initial.offer)
+  const [dailyLimit,setDailyLimit]=useState(initial.dailyLimit),[budget,setBudget]=useState(initial.budget)
+  const [draftNotice,setDraftNotice]=useState(!!restored),[draftError,setDraftError]=useState(false)
+  useEffect(()=>{
+    if(!storageKey)return
+    const value={config,name,segment,states,cities,geographicScope,keywords,cnaes,products,excludedNames,offer,dailyLimit,budget}
+    try{
+      if(JSON.stringify(value)!==original.current)sessionStorage.setItem(storageKey,JSON.stringify({original:original.current,value,savedAt:Date.now()}))
+      else sessionStorage.removeItem(storageKey)
+    }catch{setDraftError(true)}
+  },[storageKey,config,name,segment,states,cities,geographicScope,keywords,cnaes,products,excludedNames,offer,dailyLimit,budget])
+  const discardDraft=()=>{
+    setConfig(defaults.config);setName(defaults.name);setSegment(defaults.segment);setStates(defaults.states);setCities(defaults.cities)
+    setGeographicScope(defaults.geographicScope);setKeywords(defaults.keywords);setCnaes(defaults.cnaes);setProducts(defaults.products)
+    setExcludedNames(defaults.excludedNames);setOffer(defaults.offer);setDailyLimit(defaults.dailyLimit);setBudget(defaults.budget);setDraftNotice(false)
+  }
   const [error, setError] = useState<string | null>(null)
   const rules = config.qualification
   const research = config.research ?? defaultRadarSearchConfiguration().research!
@@ -68,11 +91,15 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           qualification: { ...rules, includeAnyTerms: splitRadarTerms(rules.includeAnyTerms.join('\n')),
             includeAllTerms: splitRadarTerms(rules.includeAllTerms.join('\n')), excludeTerms: splitRadarTerms(rules.excludeTerms.join('\n')),
             productTerms: splitRadarTerms(rules.productTerms.join('\n')) } } })
+      if(storageKey)try{sessionStorage.removeItem(storageKey)}catch{/* Saved remotely; no draft is required. */}
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível salvar a configuração.') }
   }
 
   return <form onSubmit={submit} className="mt-4 space-y-5" aria-label="Configuração da pesquisa">
     <p className="text-sm text-slate-600">Os critérios pertencem a esta campanha. Nenhum segmento, cidade ou produto é imposto pelo sistema. Salvar não executa consultas.</p>
+    {storageKey&&<p className="text-xs text-slate-600">As edições ficam como rascunho nesta aba por até 24 horas. Sair não altera a campanha salva nem inicia buscas.</p>}
+    {draftNotice&&<div role="status" className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">Rascunho recuperado — revise e salve para aplicar.<Button type="button" variant="ghost" onClick={discardDraft}>Descartar rascunho</Button></div>}
+    {draftError&&<p role="alert" className="text-sm text-amber-800">Não foi possível preservar o rascunho nesta aba. Salve antes de sair.</p>}
     {readOnly&&<p className="text-sm text-slate-600">Configuração disponível para consulta. Alterações são feitas pelo responsável autorizado pela campanha.</p>}
     <fieldset disabled={busy||readOnly} className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2">

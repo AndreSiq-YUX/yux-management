@@ -2,6 +2,7 @@ export type RadarProfileClaim={value:string;evidenceId:string;excerpt:string;sou
 export type RadarCompanyProfile={summary?:RadarProfileClaim;services:RadarProfileClaim[];customerSegments:RadarProfileClaim[];operatingRegions:RadarProfileClaim[];
   scaleSignals:Array<RadarProfileClaim&{metric:string;amount:number;referenceDate?:string;currency?:string}>}
 export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:string;message:string;sourceType?:string;resolution:string}>;
+  operations?:{reanalyze:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>}};
   estimates:Array<{sourceType:string;costPerQuery:number;maximumQueries:number}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number;semanticQualificationEnabled:boolean;
   semantic?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number} }
 export type RadarResearchContact = {kind:'phone'|'email'|'whatsapp'|'social'|'business_person';value:string;sourceUrl:string;observedAt:string;association:'confirmed'|'review';note?:string;

@@ -7,6 +7,16 @@ import type { RadarResearchAvailability, RadarResearchResult } from '@/types/rad
 vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
+it('allows reanalysis with saved evidence despite search restrictions, without enabling new searches',async()=>{
+  const restricted={...availability,allowed:false,semanticQualificationEnabled:true,operations:{reanalyze:{allowed:true,reasons:[]}},reasons:[{code:'source_disabled',message:'Busca desativada',resolution:'Admin'}]}
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,availability:restricted,run:{id:'saved',status:'succeeded',stage:'review',updated_at:'2026-10-13',configuration_revision:2,output:{}}})
+  const view=mount(restricted);await view.click('Ver dossiê da empresa')
+  expect([...view.container.querySelectorAll('button')].find(button=>button.textContent==='Atualizar pesquisa')!.disabled).toBe(true)
+  expect([...view.container.querySelectorAll('button')].find(button=>button.textContent==='Reavaliar com os dados salvos')!.disabled).toBe(false)
+  await view.click('Reavaliar com os dados salvos')
+  expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'reanalyze'}))
+  view.unmount()
+})
 beforeEach(()=>{vi.clearAllMocks();vi.mocked(radarService.getCandidateResearch).mockResolvedValue(initial);vi.spyOn(window,'confirm').mockReturnValue(true)})
 it('shows a recoverable availability failure instead of permanent loading',async()=>{
   vi.mocked(radarService.getCandidateResearch).mockRejectedValue(new Error('HTTP 500'))

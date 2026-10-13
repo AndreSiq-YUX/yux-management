@@ -27,6 +27,7 @@ import { buildRadarPlaceSearchDefaults, getCsvPreviewRows, getRadarSourceBlocked
 import { awaitCurrentRadarPlacePreview } from '@/lib/radar/radarPlacePreviewGuard'
 import { radarService, type RadarCampaignInput } from '@/services/radarService'
 import { usePlatformContext } from '@/stores/platformStore'
+import { useAuthStore } from '@/stores/authStore'
 import type { RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportSummary, RadarMetrics, RadarOpportunity, RadarPlacePreview, RadarSourceType } from '@/types/radar'
 
 const initialForm = {
@@ -189,6 +190,7 @@ const duplicateStatusLabels: Record<string, string> = {
 }
 
 export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=(id,pipelineId)=>`/portal/comercial/leads?leadId=${encodeURIComponent(id)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`}:{screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void;leadPath?:(id:string,pipelineId?:string)=>string}={}) {
+  const draftOwner=useAuthStore(state=>state.user?.id)
   const [crmDialogOpen,setCrmDialogOpen]=useState(false)
   const [localScreen,setLocalScreen]=useState<RadarScreen>('list')
   const screen=routeScreen??localScreen
@@ -202,7 +204,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
     return()=>window.removeEventListener('beforeunload',prevent)
   },[configurationDirty])
   const navigateTo=(path:string,force=false)=>{
-    if(configurationDirty&&!force&&!window.confirm('Há alterações não salvas. Sair sem salvar?'))return
+    if(configurationDirty&&!force&&!window.confirm('Há alterações não salvas. Sair agora? O rascunho da configuração fica preservado nesta aba.'))return
     setConfigurationDirty(false)
     if(onNavigate)onNavigate(path)
     else {setSelectedCampaignId(path&&path!=='nova'?path.split('/')[0]:null);setLocalScreen(path==='nova'?'new':!path?'list':path.endsWith('/configuracoes')?'configuration':path.endsWith('/historico')?'history':'results')}
@@ -552,7 +554,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
   const researchSelected=async(operation:'complete'|'resume'|'refresh'|'reanalyze')=>{
     if(!organizationId||!selectedCampaign||actionLoading||context.role?.key!=='yux_admin')return
     const selected=candidates.filter(candidate=>selectedCandidateIds.includes(candidate.id)&&candidate.status==='pending_review')
-    if(!selected.length||!researchAvailability?.allowed)return
+    if(!selected.length||!researchAvailability||!(operation==='reanalyze'?researchAvailability.operations?.reanalyze.allowed??researchAvailability.allowed:researchAvailability.allowed))return
     const cost=operation==='reanalyze'?0:selected.length*researchAvailability.maximumCostPerCandidate
     if(!window.confirm(`${selected.length} empresas selecionadas. ${operation==='reanalyze'?'Reavaliar somente os dados salvos, sem novas buscas.':'Consultas de busca até '+cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4})+'.'} ${researchAvailability.semanticQualificationEnabled?'A análise por IA pode consumir créditos adicionais.':''} Nenhum contato será iniciado. Continuar?`))return
     setActionLoading('research-selected');setResearchBatchStatus([])
@@ -1095,7 +1097,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 max-w-full space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Radar Comercial</h1>
@@ -1133,6 +1135,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
         {activeConfigurationEditor && <RadarCampaignConfigurationForm
           key={activeConfigurationEditor === 'new' ? `new-${newCampaignVersion}` : `${activeConfigurationEditor.id}-${activeConfigurationEditor.configurationRevision}`}
           organizationId={organizationId || ''} initialCampaign={activeConfigurationEditor === 'new' ? undefined : activeConfigurationEditor}
+          draftKey={draftOwner?`${draftOwner}:${organizationId}:${activeConfigurationEditor==='new'?'new':activeConfigurationEditor.id}`:undefined}
           busy={creating} readOnly={!canEditConfiguration&&screen==='configuration'} canUseCrm={canEditConfiguration&&Boolean(canUseCrm)} onSubmit={saveCampaignConfiguration} onCancel={() => navigateTo(selectedCampaignId??'')} />}
         {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
           <select
@@ -1455,7 +1458,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
 
             <div className="my-4 flex flex-wrap items-center gap-2">
               {context.role?.key==='yux_admin'&&selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
-                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!researchAvailability?.allowed||(operation==='reanalyze'&&!researchAvailability?.semanticQualificationEnabled)}
+                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!(operation==='reanalyze'?researchAvailability?.operations?.reanalyze.allowed??researchAvailability?.allowed:researchAvailability?.allowed)||(operation==='reanalyze'&&!researchAvailability?.semanticQualificationEnabled)}
                 onClick={()=>researchSelected(operation)}>{({complete:'Completar dados',resume:'Retomar pesquisa',refresh:'Atualizar pesquisa',reanalyze:'Reavaliar dados salvos'})[operation]}</Button>)}
               {selectedCampaign.campaignType==='regional_b2b'&&<Button size="sm" disabled={!canManage||!canUseCrm||!selectedCandidateIds.length||selectedCandidateIds.length>25||!!actionLoading} onClick={()=>setCrmDialogOpen(true)}>Enviar ao CRM</Button>}
               <Button size="sm" variant="outline" onClick={()=>{refreshCampaignSidebars();setResearchAvailabilityRefresh(value=>value+1)}}>Atualizar resultados</Button>

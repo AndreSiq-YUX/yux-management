@@ -7,6 +7,12 @@ import { resolveRadarSearchConfiguration, type RadarResearchPolicy } from './sea
 export type ResearchBlocker = { code: string; message: string; sourceType?: string; resolution: string }
 type Source = { sourceType: string; enabled: boolean; defaultCostPerUnit: number; remaining?: number }
 type Provider = { status: string; hasSecret: boolean; publicConfig: Record<string, unknown> }
+const searchOnlyBlockers=new Set(['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing',
+  'retention_license_required','web_license_required','source_disabled','source_cost_required','search_not_selected'])
+export function radarReanalysisAvailability(reasons:ResearchBlocker[]) {
+  const blocking=reasons.filter(reason=>!searchOnlyBlockers.has(reason.code))
+  return {allowed:blocking.length===0,reasons:blocking}
+}
 export function evaluateRadarResearchAvailability(input: { policy: RadarResearchPolicy; canManage: boolean;
   sources: Source[]; provider?: Provider; localEnabled?: boolean; campaignActive?: boolean }) {
   const reasons: ResearchBlocker[] = []
@@ -29,7 +35,7 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
     if (source?.remaining !== undefined && source.remaining < 1) add('source_limit_exceeded', `Quota diária esgotada para ${sourceType}.`, sourceType)
     return { sourceType, costPerQuery: source?.defaultCostPerUnit ?? 0, maximumQueries: input.policy.maxSearchQueriesPerCandidate }
   })
-  return { allowed: reasons.length === 0, reasons, estimates, maxQueriesPerCandidate: input.policy.maxSearchQueriesPerCandidate,
+  return { allowed: reasons.length === 0, reasons, operations:{reanalyze:radarReanalysisAvailability(reasons)}, estimates, maxQueriesPerCandidate: input.policy.maxSearchQueriesPerCandidate,
     maximumCostPerCandidate: Math.max(0, ...estimates.map(item => item.costPerQuery)) * input.policy.maxSearchQueriesPerCandidate,
     semanticQualificationEnabled: input.policy.semanticQualificationEnabled||input.policy.profileEnabled||input.policy.sizeAssessment.enabled }
 }
@@ -59,6 +65,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     for (const issue of governance.issues.filter(item => item.code !== 'source_disabled')) result.reasons.push({ ...issue, resolution: 'Admin → Integrações → Limites e orçamento' })
   }
   result.allowed = result.reasons.length === 0
+  result.operations.reanalyze=radarReanalysisAvailability(result.reasons)
   if(!result.semanticQualificationEnabled)return result
   const route=await pool.query<{model_name:string;provider:string;max_input_tokens:number;max_output_tokens:number;max_cost_per_run:string;fallback_routes:unknown[];fallback_model_name?:string}>(`
     SELECT rule.model_name,rule.provider,rule.max_input_tokens,rule.max_output_tokens,rule.max_cost_per_run,rule.fallback_routes,rule.fallback_model_name
