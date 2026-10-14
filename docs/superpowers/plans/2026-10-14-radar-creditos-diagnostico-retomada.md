@@ -50,12 +50,12 @@
 - Consumes: `reserve_credits(..., credits, action)` e rotas `/radar/resolve-presence`, `/radar/qualify`.
 - Produces: erros próprios de reserva interna, derivados de `RuntimeError` para compatibilidade; respostas Radar HTTP 402 com detalhes `radar_ai_wallet_missing` ou `radar_ai_credits_insufficient`, exclusivamente antes da chamada ao provedor.
 
-- [ ] Escrever testes RED: carteira ausente gera erro próprio; carteira existente sem saldo gera erro distinto; carteira ilimitada continua contabilizando uso; contexto de outro tenant não debita; runtime não chama o provedor em ambas as recusas.
-- [ ] Rodar `python -m unittest discover -s tests -p "test_*credit*.py" -v` no diretório do runtime e verificar as novas falhas esperadas.
-- [ ] Implementar classificação de reserva sem mudar autorização ou criar saldo: após UPDATE sem linha, consulta tenant-scoped da carteira distingue ausência de insuficiência. Mapear apenas erros próprios de reserva nas rotas Radar; exceções inesperadas não viram falsos erros de crédito.
-- [ ] Registrar diagnóstico estruturado seguro da falha com estágio e request_id, sem prompts, conteúdo das páginas, respostas do provedor ou credenciais.
-- [ ] Rodar testes de crédito e API do runtime; verificar compatibilidade dos demais endpoints e que recusa real OpenRouter mantém `openrouter_credit_required`.
-- [ ] Commit: `fix(radar): distinguish internal credit rejection from provider failures`.
+- [x] Escrever testes RED: carteira ausente gera erro próprio; carteira existente sem saldo gera erro distinto; carteira ilimitada continua contabilizando uso; contexto de outro tenant não debita; runtime não chama o provedor em ambas as recusas.
+- [x] Rodar `python -m unittest discover -s tests -p "test_*credit*.py" -v` no diretório do runtime e verificar as novas falhas esperadas.
+- [x] Implementar classificação de reserva sem mudar autorização ou criar saldo: após UPDATE sem linha, consulta tenant-scoped da carteira distingue ausência de insuficiência. Mapear apenas erros próprios de reserva nas rotas Radar; exceções inesperadas não viram falsos erros de crédito.
+- [x] Registrar diagnóstico estruturado seguro da falha com estágio e request_id, sem prompts, conteúdo das páginas, respostas do provedor ou credenciais.
+- [x] Rodar testes de crédito e API do runtime; verificar compatibilidade dos demais endpoints e que recusa real OpenRouter mantém `openrouter_credit_required`.
+- [x] Commit: `fix(radar): distinguish internal credit rejection from provider failures`.
 
 ### Task 2: Persistir recusa comprovada e permitir retomada segura
 
@@ -70,13 +70,13 @@
 - Consumes: códigos explícitos anteriores ao provedor produzidos na Task 1.
 - Produces: `calls.presence/semantic.status='rejected_before_provider'` com erro seguro e hash; retomada solicitada pelo usuário pode refazer somente essas etapas. Timeout, 402 genérico e chamadas antigas reservadas continuam incertos.
 
-- [ ] Escrever testes RED para ambos os callbacks: recusa interna preserva páginas e persiste estado específico; nova solicitação de retomada conclui após disponibilidade; buscas já concluídas não se repetem; respostas incertas permanecem bloqueadas.
-- [ ] Escrever teste RED de mensagens: carteira ausente menciona créditos internos YUX e não recomenda trocar modelo ou recarregar OpenRouter; insuficiência interna e crédito externo têm explicações distintas.
-- [ ] Rodar testes focados de backend e frontend e conferir as falhas esperadas.
-- [ ] Implementar captura limitada aos dois códigos comprovados, persistência com lease e retomada explícita. Manter histórico anterior de falha no registro da chamada; não liberar um `reserved` legado automaticamente.
-- [ ] Corrigir sanitização: preservar códigos conhecidos de crédito; para detalhe não permitido preservar ao menos o status HTTP seguro, nunca ecoar texto arbitrário do provedor.
-- [ ] Rodar suítes completas de backend/frontend e testes do runtime; compilar backend/frontend e verificar release manifest. Não iniciar pesquisa real.
-- [ ] Commit: `fix(radar): preserve credit diagnostics and safely resume rejected analysis`.
+- [x] Escrever testes RED para ambos os callbacks: recusa interna preserva páginas e persiste estado específico; nova solicitação de retomada conclui após disponibilidade; buscas já concluídas não se repetem; respostas incertas permanecem bloqueadas.
+- [x] Escrever teste RED de mensagens: carteira ausente menciona créditos internos YUX e não recomenda trocar modelo ou recarregar OpenRouter; insuficiência interna e crédito externo têm explicações distintas.
+- [x] Rodar testes focados de backend e frontend e conferir as falhas esperadas.
+- [x] Implementar captura limitada aos dois códigos comprovados, persistência com lease e retomada explícita. Manter histórico anterior de falha no registro da chamada; não liberar um `reserved` legado automaticamente.
+- [x] Corrigir sanitização: preservar códigos conhecidos de crédito; para detalhe não permitido preservar ao menos o status HTTP seguro, nunca ecoar texto arbitrário do provedor.
+- [x] Rodar suítes completas de backend/frontend e testes do runtime; compilar backend/frontend e verificar release manifest. Não iniciar pesquisa real.
+- [x] Commit: `fix(radar): preserve credit diagnostics and safely resume rejected analysis`.
 
 ### Task 3: Reparo pontual autorizado e entrega
 
@@ -87,12 +87,12 @@
 - Consumes: decisão humana sobre cota inicial ou uso ilimitado do contrato identificado, sem inferir autorização para outros contratos.
 - Produces: carteira do contrato atual provisionada com valor autorizado, auditoria da operação e execução antiga preservada com reparo pontual documentado quando comprovado seguro.
 
-- [ ] Obter decisão do usuário sobre créditos internos e aprovação deste plano/método de execução. Não conceder saldo antes disso.
-- [ ] Verificar novamente vínculo organização/cliente/contrato, ausência da carteira e estado da execução, usando consultas somente de leitura.
-- [ ] Provisionar somente a carteira autorizada em transação com auditoria antes/depois; não usar upsert que substitua uma carteira criada concorrentemente. Não alterar `marketing_studio_settings` para forçar saldo.
-- [ ] Para a execução antiga específica, verificar ausência de débito/uso de IA e as evidências da recusa antes do provedor. Reparar somente o marcador `presence` em transação auditada, com compare-and-set do estado e hash observados; se houver ambiguidade, preservar `reserved` e pedir conferência, sem replay.
-- [ ] Confirmar carteira e marcador com nova leitura; fechar console. Não retomar nem enfileirar IA automaticamente.
-- [ ] Registrar resultados, publicar commits em `main`, confirmar SHA remoto e informar necessidade de deploy e retomada manual.
+- [x] Obter decisão do usuário sobre créditos internos e aprovação deste plano/método de execução. Não conceder saldo antes disso.
+- [x] Verificar novamente vínculo organização/cliente/contrato, ausência da carteira e estado da execução, usando consultas somente de leitura.
+- [x] Provisionar somente a carteira autorizada em transação com auditoria antes/depois; não usar upsert que substitua uma carteira criada concorrentemente. Não alterar `marketing_studio_settings` para forçar saldo.
+- [x] Para a execução antiga específica, verificar ausência de débito/uso de IA e as evidências da recusa antes do provedor. Reparar somente o marcador `presence` em transação auditada, com compare-and-set do estado e hash observados; se houver ambiguidade, preservar `reserved` e pedir conferência, sem replay.
+- [x] Confirmar carteira e marcador com nova leitura; fechar console. Não retomar nem enfileirar IA automaticamente.
+- [x] Registrar resultados, publicar commits em `main`, confirmar SHA remoto e informar necessidade de deploy e retomada manual.
 
 ## Verificação
 
@@ -105,3 +105,8 @@
 - As duas alterações de produção têm registros em `platform_admin_audit_events`, com ator, escopo, estado anterior/posterior e motivo.
 - Admin: verificação de tela e código confirmou que `/admin/limits` só edita tamanho de uploads. `/admin/ai` configura modelos/provedores, mas não carteiras. Não existe formulário/endpoint administrativo funcional para editar `ai_credit_wallets`; limites de fontes/campanhas e `maxCostPerRun` não substituem essa carteira. Implementar a gestão de créditos por contrato será uma etapa separada, com permissão administrativa e auditoria, sem concessão automática de saldo.
 - Nenhum modelo, fallback, chave, licença, controle de outros clientes ou política geral de cobrança foi alterado. Nenhuma chamada paga foi feita; somente testes locais com dependências falsas.
+- Confirmação final de produção: 4 páginas preservadas, 2 registros de auditoria, uso de IA 0. Console encerrado; comprovante local salvo fora do repositório.
+- Integração com PostgreSQL local isolado: 8/8 aprovados. Único teste Python ignorado: aceitação opt-in do provedor real, deliberadamente não executada para não consumir créditos.
+- Revisão independente gpt-6-astra do intervalo de código: nenhum problema crítico, importante ou menor; aprovado para merge. Não substitui validação com chamada real após deploy.
+- Código publicado e SHA confirmado em origin/main: c8f4e7f926173018b8408be21257a6ca2bd42dea; atualização final deste relatório é somente documentação.
+- Decisões: execução inline com revisão independente ao final, sem revisores por tarefa; a verificação do editor de créditos não foi expandida em nova implementação. Custo dessas decisões: não há revisão independente por tarefa e ainda será necessária implementação autorizada para editar carteiras pelo painel. Nenhum achado menor foi adiado.
