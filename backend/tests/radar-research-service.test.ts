@@ -4,6 +4,48 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('invalidates direct identity when a legacy reader refresh contradicts the old CNPJ',async()=>{
+  const url='https://alfa.example/',old={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-09-01'}
+  const result=await runRadarResearchPipeline(identity,configuration,{readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[old],
+    discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},collect:async()=>[
+      {url,text:'Empresa Beta CNPJ 99.999.999/0001-99',observedAt:'2026-10-14'},
+      {url:url+'contato/',text:'Empresa Beta vendas@beta.example',observedAt:'2026-10-14'}]})
+  expect(result.siteAssociation).toBe('review')
+  expect(result.contacts.filter(contact=>contact.association==='confirmed')).toEqual([])
+})
+it('invalidates model identity when refreshed pages no longer contain its supporting claims',async()=>{
+  const url='https://brand.example/',old={url,text:'Marca Beta. Empresa Alfa é nossa razão social.',observedAt:'2026-09-01'}
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}}),
+    {readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[old],discovery:{websiteUrl:url,association:'review',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},resolvePresence:async()=>({candidateId:'page-0',scope:'establishment',reason:'A página informa a razão social.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]}),
+      collect:async()=>[{url,text:'Outra marca. vendas@outra.example',observedAt:'2026-10-14'}]})
+  expect(result.siteAssociation).toBe('review')
+  expect(result.presenceResolution?.websiteUrl).toBeUndefined()
+  expect(result.contacts.some(contact=>contact.association==='confirmed')).toBe(false)
+})
+it('preserves prior text and link-only channels as history when a reader upgrade fails',async()=>{
+  const url='https://alfa.example/',old={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-09-01'}
+  const result=await runRadarResearchPipeline(identity,configuration,{readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[old],
+    contacts:[{kind:'email',value:'compras@alfa.example',association:'confirmed',sourceUrl:url,observedAt:old.observedAt}],
+    discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},collect:async()=>[{url,text:'',observedAt:'2026-10-14',limitation:'timeout'}]})
+  expect(result.siteAssociation).toBe('review')
+  expect(result.contacts.filter(contact=>contact.association==='confirmed')).toEqual([])
+  expect(result).toMatchObject({historicalEvidence:{pages:[expect.objectContaining({text:old.text,observedAt:old.observedAt})],
+    contacts:[expect.objectContaining({value:'compras@alfa.example',observedAt:old.observedAt})]}})
+})
+it('deduplicates legacy URLs before reserving official-site reading capacity',async()=>{
+  const url='https://alfa.example/',old={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-09-01'}
+  const association={url:'https://association.example/',text:'Associação setorial.',observedAt:'2026-09-01'}
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{maxPagesPerCandidate:4}}),
+    {readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[association,association,association,old],
+      discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},collect:async(_url,policy)=>[old,...(policy.maxPagesPerCandidate>1?
+      [{url:url+'fornecedor/',text:'Seja fornecedor. compras@alfa.example',observedAt:'2026-10-14'}]:[])]})
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@alfa.example',association:'confirmed'}))
+  expect(result.pages.filter(page=>page.url===association.url)).toHaveLength(1)
+})
 it('recovers newly supported contact facts on resume of an older text-only reader without repeating searches',async()=>{
   const official={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Fornecedores.',observedAt:'2026-10-14'}
   const result=await runRadarResearchPipeline(identity,configuration,{readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[official],
