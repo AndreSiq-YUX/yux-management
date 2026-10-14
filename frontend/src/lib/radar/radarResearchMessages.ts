@@ -1,5 +1,17 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  source_limit_exceeded:'O limite diário desta fonte foi atingido. Confira os limites no Admin.',
+  source_budget_exceeded:'O orçamento desta campanha foi atingido. Confira os limites no Admin.',
+  radar_candidate_requires_current_discovery:'Retome a pesquisa desta empresa na configuração atual antes de completar os dados.',
+  radar_brave_retention_license_required:'Confirme a licença de armazenamento desta fonte no Admin.',
+  radar_place_provider_not_active:'A conexão da fonte está desativada. Confira as integrações no Admin.',
+  radar_place_provider_secret_missing:'A chave de acesso desta fonte não está cadastrada no Admin.',
+  radar_brave_source_not_approved:'Ative a fonte e configure seu custo aprovado no Admin.',
+  radar_brave_candidate_not_eligible:'Esta empresa não pode receber este complemento no estado atual.',
+  radar_brave_disabled_for_campaign:'O complemento de presença está desativado nesta campanha.',
+  radar_brave_candidate_location_missing:'A empresa precisa de cidade e estado identificados para esta busca local.',
+  radar_campaign_configuration_changed:'A configuração da campanha mudou. Atualize os resultados antes de continuar.',
+  radar_candidate_no_longer_pending:'Esta empresa já passou por revisão. Reabra a revisão antes de alterar os dados.',
   robots_tls_expired:'O site apresentou certificado vencido ao consultar suas regras públicas. O Admin pode autorizar uma leitura pública excepcional quando o vencimento for o único defeito.',
   tls_expired:'A página apresentou certificado vencido; a leitura aguarda regularização ou autorização excepcional do Admin.',
   robots_tls_invalid:'O site apresentou certificado inválido ao consultar suas regras públicas. Essa falha não pode ser liberada pela exceção de vencimento.',
@@ -44,4 +56,8 @@ const explanations:Record<string,string>={
 export function radarResearchMessage(value:string) {
   return value.replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g,code=>explanations[code]??code)
     .replace(/\b(employees|units|annualRevenue|annualMeals|capital|yearsActive)\b/g,metric=>radarSizeMetricLabels[metric as RadarSizeMetric])
+}
+export function radarComplementError(error:unknown) {
+  const code=error instanceof Error?error.message:''
+  return explanations[code]??'Não foi possível completar a presença pública. Confira a disponibilidade da fonte e tente novamente.'
 }

@@ -6,6 +6,9 @@ import type { PlatformContext } from '@/types/platform'
 import type { RadarCampaign, RadarDataSource } from '@/types/radar'
 import { radarService } from '@/services/radarService'
 import { RadarWorkspace } from './RadarWorkspace'
+import toast from 'react-hot-toast'
+vi.mock('react-hot-toast',()=>({default:Object.assign(vi.fn(),{success:vi.fn(),error:vi.fn()})}))
+vi.mock('./RadarCandidateResearchPanel',()=>({RadarCandidateResearchPanel:()=>null}))
 
 const state = vi.hoisted(() => ({ context: {
   mode:'client_workspace', organization:{id:'org',isInternalGrowthWorkspace:true},
@@ -24,9 +27,25 @@ vi.mock('@/services/radarService', () => ({radarService:{
   getCandidates:vi.fn(async () => []),getDuplicates:vi.fn(async () => []),getRuns:vi.fn(async () => []),
   getOsmReadiness:vi.fn(async () => ({ready:false,reason:'Sem extrato',segmentKey:null,snapshot:null})),
   getOsmReport:vi.fn(async () => null),
+  getBraveCandidateAvailability:vi.fn(async()=>({allowed:true,reasons:[]})),
+  enrichCandidateWithBrave:vi.fn(async()=>({matched:true,placesCount:1})),
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it.each(['radar_candidate_requires_current_discovery','radar_brave_retention_license_required','source_limit_exceeded'])('reports the real complement failure %s',async(code)=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    vi.mocked(radarService.getDataSources).mockResolvedValueOnce([{id:'brave',sourceKey:'brave_place_search',sourceType:'brave_place_search',enabled:true,defaultCostPerUnit:.01} as RadarDataSource])
+    vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'candidate',organizationId:'org',campaignId:'campaign',title:'Empresa',sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{},dedupeKey:'key',createdAt:'',updatedAt:''}])
+    vi.mocked(radarService.enrichCandidateWithBrave).mockRejectedValueOnce(new Error(code))
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Completar presença pública')!.click())
+    const message=vi.mocked(toast.error).mock.calls.at(-1)?.[0]
+    expect(message).toEqual(expect.stringMatching(code==='source_limit_exceeded'?/limite/i:code.includes('license')?/licença/i:/configuração atual/i))
+    expect(message).not.toContain('indisponível ou licença')
+    act(()=>root.unmount());vi.mocked(radarService.getCandidates).mockResolvedValue([])
+  })
   it('enables selected-company reanalysis independently of disabled web searches',async()=>{
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetCity:'',targetState:'',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'',createdAt:'',updatedAt:''}])
     vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'candidate',organizationId:'org',campaignId:'campaign',title:'Empresa',sourceType:'manual',status:'pending_review',normalizedPayload:{},dedupeKey:'key',createdAt:'',updatedAt:''}])

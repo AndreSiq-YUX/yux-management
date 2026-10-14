@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RadarResultsTable } from './RadarResultsTable'
+import {radarComplementError} from '@/lib/radar/radarResearchMessages'
 import {RadarCrmDeliveryDialog} from './RadarCrmDeliveryDialog'
 import { RadarCampaignList } from './RadarCampaignList'
 import { RadarCampaignPage, type RadarScreen } from './RadarCampaignPage'
@@ -905,15 +906,19 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
     if (!organizationId || actionLoading) return
     try {
       setActionLoading(`brave-${candidateId}`)
-      const result = await radarService.enrichCandidateWithBrave(candidateId, organizationId)
+      const availability=await radarService.getBraveCandidateAvailability(candidateId,organizationId)
+      if(!availability.allowed)throw new Error(availability.reasons[0]?.code??'radar_brave_unavailable')
+      const result = await radarService.enrichCandidateWithBrave(candidateId, organizationId,selectedCampaign?.configurationRevision??1)
       if (result.candidate) setCandidates(current => current.map(item => item.id === candidateId ? result.candidate! : item))
-      else if (selectedCampaignId) setCandidates(await radarService.getCandidates(selectedCampaignId))
-      if (selectedCampaignId) setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
-      if (result.matched) toast.success('Dados da Brave vinculados com evidência à empresa')
+      if (result.matched) toast.success('Presença pública complementada com evidências')
       else toast('Nenhuma correspondência segura; revise as sugestões antes de associar')
+      try {
+        if (!result.candidate&&selectedCampaignId) setCandidates(await radarService.getCandidates(selectedCampaignId))
+        if (selectedCampaignId) setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
+      } catch {toast.error('A pesquisa foi registrada, mas a tela não atualizou. Use Atualizar resultados; não repita a busca.')}
     } catch (error) {
       console.error('Erro no enriquecimento Brave:', error)
-      toast.error('Brave indisponível ou licença/chave de retenção ainda não confirmada no Admin')
+      toast.error(radarComplementError(error))
     } finally { setActionLoading(null) }
   }
 

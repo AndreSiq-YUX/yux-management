@@ -168,9 +168,12 @@ export const radarService = {
     return apiRequest<RadarCandidateRecord>(`/radar/candidates/${candidateId}/check-osm-site`, { method: 'POST' })
   },
 
-  async enrichCandidateWithBrave(candidateId: string, organizationId: string) {
+  getBraveCandidateAvailability(candidateId:string,organizationId:string) {
+    return apiRequest<{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>}>(`/radar/candidates/${candidateId}/brave-availability${buildQuery({organizationId})}`)
+  },
+  async enrichCandidateWithBrave(candidateId: string, organizationId: string,expectedRevision?:number) {
     return apiRequest<{ matched: boolean; candidate?: RadarCandidateRecord; placesCount: number; reason?: string }>(
-      `/radar/candidates/${candidateId}/enrich-brave`, { method: 'POST', body: { organizationId } })
+      `/radar/candidates/${candidateId}/enrich-brave`, { method: 'POST', body: { organizationId,...(expectedRevision!==undefined?{expectedRevision}:{}) } })
   },
 
   async confirmBraveSuggestion(candidateId: string, organizationId: string, sourceUrl: string) {

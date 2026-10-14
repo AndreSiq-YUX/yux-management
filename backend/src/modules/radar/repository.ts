@@ -4,6 +4,7 @@ import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
+import {isRadarCandidateCurrentRevision} from './candidate-revision.js'
 import type {
   RadarCampaign,
   RadarCampaignRow,
@@ -1360,14 +1361,10 @@ export async function runRadarPlacePreview(
     attribution: input.sourceType === 'serper_places' ? 'Serper Places / Google' : 'Brave Place Search' }
 }
 
-export async function enrichRadarCandidateWithLicensedBrave(
+async function prepareRadarBraveCandidate(
   pool: pg.Pool,
   user: AuthUser,
-  input: { organizationId: string; candidateId: string; secretKeyMaterial: string; expectedRevision?: number },
-  dependencies: {
-    search?: typeof searchRadarPlaces
-    loadSecret?: (pool: pg.Pool, providerId: string, keyMaterial: string) => Promise<string | null>
-  } = {},
+  input: { organizationId: string; candidateId: string; expectedRevision?: number },
 ) {
   await requireRadarScope(pool, user, { organizationId: input.organizationId, candidateId: input.candidateId }, true)
   if (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId)) {
@@ -1393,7 +1390,7 @@ export async function enrichRadarCandidateWithLicensedBrave(
   const configuration = resolveRadarSearchConfiguration(candidate.search_configuration)
   if (!configuration.sources.enrichWithBrave) throw Object.assign(new Error('radar_brave_disabled_for_campaign'), { statusCode: 409 })
   const normalized = candidate.normalized_payload ?? {}
-  if (Number(normalized.discoveryRevision ?? 1) !== (candidate.configuration_revision ?? 1)) {
+  if (!isRadarCandidateCurrentRevision(normalized, candidate.configuration_revision ?? 1)) {
     throw Object.assign(new Error('radar_candidate_requires_current_discovery'), { statusCode: 409 })
   }
   const name = typeof normalized.tradeName === 'string' ? normalized.tradeName : candidate.title
@@ -1415,6 +1412,31 @@ export async function enrichRadarCandidateWithLicensedBrave(
   if (!source?.enabled || source.defaultCostPerUnit <= 0) {
     throw Object.assign(new Error('radar_brave_source_not_approved'), { statusCode: 409 })
   }
+  const review = await pool.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 AND organization_id=$2 AND approved_at IS NOT NULL', [input.candidateId,input.organizationId])
+  if (review.rows.length) throw Object.assign(new Error('radar_candidate_no_longer_pending'),{statusCode:409})
+  return {candidate,configuration,normalized,name,city,state,connection,source}
+}
+
+export async function getRadarBraveCandidateAvailability(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string}) {
+  try {
+    const {candidate,connection,source}=await prepareRadarBraveCandidate(pool,user,input)
+    const secret=await pool.query(`SELECT EXISTS(SELECT 1 FROM public.platform_provider_secrets WHERE provider_connection_id=$1 AND secret_kind='api_key') AS has_secret`,[connection.id])
+    if(!secret.rows[0]?.has_secret) throw Object.assign(new Error('radar_place_provider_secret_missing'),{statusCode:409})
+    const governance=await evaluateRadarSourceGovernance(pool,input.organizationId,candidate.campaign_id,source,1)
+    return {allowed:governance.allowed,reasons:governance.issues.map(issue=>({...issue,resolution:'Admin → Integrações → Limites e orçamento'}))}
+  } catch(cause) {
+    if((cause as {statusCode?:number}).statusCode!==409)throw cause
+    const code=cause instanceof Error?cause.message:'radar_brave_unavailable'
+    return {allowed:false,reasons:[{code,message:code,resolution:code==='radar_candidate_requires_current_discovery'?'Retome a pesquisa desta empresa na configuração atual.':'Confira a campanha e as fontes no Admin.'}]}
+  }
+}
+
+export async function enrichRadarCandidateWithLicensedBrave(
+  pool:pg.Pool,user:AuthUser,
+  input:{organizationId:string;candidateId:string;secretKeyMaterial:string;expectedRevision?:number},
+  dependencies:{search?:typeof searchRadarPlaces;loadSecret?:(pool:pg.Pool,providerId:string,keyMaterial:string)=>Promise<string|null>}={},
+) {
+  const {candidate,configuration,normalized,name,city,state,connection,source}=await prepareRadarBraveCandidate(pool,user,input)
   const apiKey = dependencies.loadSecret
     ? await dependencies.loadSecret(pool, connection.id, input.secretKeyMaterial)
     : await loadPlatformProviderSecret(pool, connection.id, 'api_key', input.secretKeyMaterial)
@@ -1425,6 +1447,13 @@ export async function enrichRadarCandidateWithLicensedBrave(
     await reservation.query('BEGIN')
     await reservation.query('SELECT pg_advisory_xact_lock(hashtext($1))',
       [`radar:${input.organizationId}:brave_place_search`])
+    const currentCampaign=await reservation.query('SELECT configuration_revision,status FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[candidate.campaign_id,input.organizationId])
+    if(currentCampaign.rows[0]?.configuration_revision!==(candidate.configuration_revision??1))throw Object.assign(new Error('radar_campaign_configuration_changed'),{statusCode:409})
+    if(['paused','archived','completed'].includes(currentCampaign.rows[0]?.status))throw Object.assign(new Error('campaign_inactive'),{statusCode:409})
+    const current=await reservation.query<RadarCandidateRecordRow>('SELECT * FROM public.radar_candidate_records WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.candidateId,input.organizationId])
+    const review=await reservation.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 AND organization_id=$2 AND approved_at IS NOT NULL',[input.candidateId,input.organizationId])
+    if(current.rows[0]?.status!=='pending_review'||review.rows.length)throw Object.assign(new Error('radar_candidate_no_longer_pending'),{statusCode:409})
+    if(!isRadarCandidateCurrentRevision(current.rows[0].normalized_payload??{},candidate.configuration_revision??1))throw Object.assign(new Error('radar_candidate_requires_current_discovery'),{statusCode:409})
     const governance = await evaluateRadarSourceGovernance(reservation, input.organizationId, candidate.campaign_id, source, 1)
     if (!governance.allowed) throw Object.assign(new Error(governance.issues[0]?.code ?? 'radar_source_governance_blocked'), { statusCode: 409 })
     await recordRadarSourceUsage(reservation, input.organizationId, candidate.campaign_id, source, 1, governance.estimatedCost)
@@ -1619,7 +1648,7 @@ export async function inspectRadarCandidateBusinessSite(
   }
   const payload = candidate.normalized_payload ?? {}
   const configuration = resolveRadarSearchConfiguration(candidate.search_configuration)
-  if (Number(payload.discoveryRevision ?? 1) !== (candidate.configuration_revision ?? 1)) {
+  if (!isRadarCandidateCurrentRevision(payload, candidate.configuration_revision ?? 1)) {
     throw Object.assign(new Error('radar_candidate_requires_current_discovery'), { statusCode: 409 })
   }
   const websiteUrl = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null

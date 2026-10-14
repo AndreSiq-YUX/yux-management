@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { assertLicensedBraveRetention, selectBraveBusinessMatch } from '../src/modules/radar/licensed-brave.js'
-import { confirmRadarBraveSuggestion, enrichRadarCandidateWithLicensedBrave } from '../src/modules/radar/repository.js'
+import { confirmRadarBraveSuggestion, enrichRadarCandidateWithLicensedBrave,getRadarBraveCandidateAvailability } from '../src/modules/radar/repository.js'
+import {isRadarCandidateCurrentRevision} from '../src/modules/radar/candidate-revision.js'
 import type { AuthUser } from '../src/auth/routes.js'
 
 const admin = { id: '00000000-0000-4000-8000-000000000001', role: 'yux_admin' } as AuthUser
@@ -17,7 +18,7 @@ class FixturePool {
     raw_payload: {}, dedupe_key: 'cnpj:12345678000190', source_url: null, snippet: null,
     created_at: '2026-09-30T00:00:00.000Z', updated_at: '2026-09-30T00:00:00.000Z' }
   async connect() { return { query: this.query.bind(this), release() {} } }
-  async query(sql: string, params: unknown[] = []) {
+  async query(sql: string, params: unknown[] = []):Promise<{rows:any[]}> {
     this.queries.push(sql)
     if (sql.includes("kind = 'yux'")) return { rows: [{ allowed: true }] }
     if (sql.includes('FROM public.radar_candidate_records candidate')) return { rows: [this.candidate] }
@@ -37,6 +38,39 @@ class FixturePool {
 }
 
 describe('licensed Brave business enrichment', () => {
+  it('validates positive revisions and recognizes current research independently of discovery',()=>{
+    expect(isRadarCandidateCurrentRevision({discoveryRevision:1,researchRevision:5},5)).toBe(true)
+    expect(isRadarCandidateCurrentRevision({discoveryRevision:1,researchRevision:4},5)).toBe(false)
+    for(const value of ['5',0,-1,5.1,null])expect(isRadarCandidateCurrentRevision({discoveryRevision:value,researchRevision:value},5)).toBe(false)
+  })
+  it('availability returns the real revision blocker without credentials or provider usage',async()=>{
+    const pool=new FixturePool();pool.licensed=true
+    pool.candidate.normalized_payload={...pool.candidate.normalized_payload,discoveryRevision:2} as typeof pool.candidate.normalized_payload
+    const availability=await getRadarBraveCandidateAvailability(pool as never,admin,{organizationId:org,candidateId})
+    expect(availability).toMatchObject({allowed:false,reasons:[{code:'radar_candidate_requires_current_discovery'}]})
+    expect(pool.queries.some(sql=>sql.includes('INSERT INTO public.radar_source_usage_counters'))).toBe(false)
+  })
+  it('allows current research to complement an older discovery without rewriting discovery history', async () => {
+    const pool = new FixturePool(); pool.licensed = true
+    pool.candidate.normalized_payload = {...pool.candidate.normalized_payload, discoveryRevision: 0, researchRevision: 1} as typeof pool.candidate.normalized_payload
+    const result = await enrichRadarCandidateWithLicensedBrave(pool as never, admin,
+      {organizationId:org,candidateId,secretKeyMaterial:'fixture',expectedRevision:1},
+      {loadSecret:async()=> 'key',search:async()=>[]})
+    expect(result.matched).toBe(false)
+    expect(pool.candidate.normalized_payload).toHaveProperty('discoveryRevision',0)
+  })
+  it('rechecks campaign revision before reserving a provider call', async () => {
+    const pool = new FixturePool(); pool.licensed = true
+    const original=pool.query.bind(pool)
+    pool.query=async(sql,params=[])=>sql.includes('FROM public.radar_campaigns')&&sql.includes('FOR UPDATE')
+      ?{rows:[{configuration_revision:2}]}:original(sql,params)
+    const search=vi.fn(async()=>[])
+    await expect(enrichRadarCandidateWithLicensedBrave(pool as never,admin,
+      {organizationId:org,candidateId,secretKeyMaterial:'fixture'}, {loadSecret:async()=> 'key',search}))
+      .rejects.toThrow('radar_campaign_configuration_changed')
+    expect(search).not.toHaveBeenCalled()
+    expect(pool.queries.some(sql=>sql.includes('INSERT INTO public.radar_source_usage_counters'))).toBe(false)
+  })
   it('requires explicit licensed retention but no contract reference', () => {
     expect(() => assertLicensedBraveRetention({ storagePolicy: 'transient_only' })).toThrow('radar_brave_retention_license_required')
     expect(() => assertLicensedBraveRetention({ retentionLicensed: true, licenseReference: '' })).toThrow('radar_brave_retention_license_required')

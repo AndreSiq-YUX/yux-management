@@ -14,6 +14,7 @@ import {
   discardRadarCandidate,
   duplicateRadarCampaign,
   enrichRadarCandidateWithLicensedBrave,
+  getRadarBraveCandidateAvailability,
   exportRadarB2bProspectsCsv,
   getRadarCampaignMetrics,
   getRadarB2bProgress,
@@ -500,15 +501,22 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     return checkRadarOsmCandidateSite(app.pg, user, params.data.id)
   })
 
+  app.get('/candidates/:id/brave-availability',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),query=campaignQuerySchema.safeParse(request.query)
+    if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_candidate_query'})
+    return getRadarBraveCandidateAvailability(app.pg,user,{candidateId:params.data.id,organizationId:query.data.organizationId})
+  })
   app.post('/candidates/:id/enrich-brave', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
     const params = z.object({ id: uuid }).safeParse(request.params)
-    const parsed = campaignQuerySchema.safeParse(request.body)
+    const parsed = campaignQuerySchema.extend({expectedRevision:z.number().int().positive().optional()}).safeParse(request.body)
     if (!params.success || !parsed.success) return reply.code(400).send({ error: 'invalid_radar_brave_enrichment_payload' })
     return enrichRadarCandidateWithLicensedBrave(app.pg, user, {
       candidateId: params.data.id,
       organizationId: parsed.data.organizationId,
+      expectedRevision:parsed.data.expectedRevision,
       secretKeyMaterial: app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64
         ? `provider-key:${app.config.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : app.config.SESSION_SECRET,
     })
