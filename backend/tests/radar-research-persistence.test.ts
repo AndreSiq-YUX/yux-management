@@ -49,6 +49,49 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it.each([
+  ['presence','radar_ai_wallet_missing'],['semantic','radar_ai_wallet_missing'],
+  ['presence','radar_ai_credits_insufficient'],['semantic','radar_ai_credits_insufficient'],
+] as const)('persists %s %s pre-provider rejection and resumes only the missing analysis',async(key,code)=>{
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,
+    presenceResolutionEnabled:key==='presence',semanticQualificationEnabled:key==='semantic'}}
+  const run=await start(pool)
+  const savedPages=key==='presence'?[{url:'https://brand.example/',observedAt:'2026-10-14',text:'Marca Beta. Empresa Alfa é nossa razão social.'}]:pages
+  pool.run!.output={readingComplete:true,discoveryLocked:true,pages:savedPages,
+    discovery:{association:'review',websiteUrl:savedPages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+  const result=key==='presence'?{candidateId:'page-0',scope:'group',reason:'A razão social consta na página institucional.',claims:[{evidenceId:'page-0',excerpt:'Empresa Alfa é nossa razão social.'}]}:
+    {targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]}
+  const runtime=vi.fn().mockRejectedValueOnce(Error(`agent_runtime_402:${code}`)).mockResolvedValue(result)
+  const web=vi.fn(),collect=vi.fn()
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web,collect})
+  expect(pool.run!.calls[key]).toMatchObject({status:'rejected_before_provider',error:code})
+  expect(JSON.stringify(pool.run!.output.limitations)).toContain(code)
+  expect(pool.run!.output.pages).toHaveLength(1)
+  await start(pool)
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web,collect})
+  expect(pool.run!.calls[key]).toMatchObject({status:'completed',rejections:[expect.objectContaining({error:code})]})
+  expect(runtime).toHaveBeenCalledTimes(2)
+  expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled()
+})
+it.each(['agent_runtime_402:openrouter_credit_required','agent_runtime_402','agent_runtime_402:private_detail.with-punctuation','request timed out'])(
+  'does not replay uncertain or external presence failure %s',async failure=>{
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,presenceResolutionEnabled:true}}
+  const run=await start(pool)
+  pool.run!.output={readingComplete:true,discoveryLocked:true,pages:[{url:'https://brand.example/',observedAt:'2026-10-14',text:'Marca Beta. Empresa Alfa é nossa razão social.'}],
+    discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1}}
+  const runtime=vi.fn().mockRejectedValue(Error(failure))
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web:vi.fn()})
+  expect(pool.run!.calls.presence.status).toBe('reserved')
+  const warnings=JSON.stringify(pool.run!.output.limitations)
+  if(failure.includes('private_detail')){expect(warnings).toContain('agent_runtime_402');expect(warnings).not.toContain('private_detail')}
+  if(failure.includes('openrouter_credit_required'))expect(warnings).toContain('openrouter_credit_required')
+  await start(pool)
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web:vi.fn()})
+  expect(runtime).toHaveBeenCalledTimes(1)
+  expect(JSON.stringify(pool.run!.output.limitations)).toContain('radar_presence_previous_request_uncertain')
+})
 it('hides legacy directory contacts from the current dossier without changing stored history',async()=>{
   const pool=new ResearchPool();await start(pool)
   pool.run!.status='partial';pool.run!.output={contacts:[{kind:'social',value:'https://instagram.com/serasa',sourceUrl:'https://serasaexperian.com.br/consulta-gratis/123',observedAt:'2026-09-01',association:'review'}],

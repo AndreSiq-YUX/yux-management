@@ -67,9 +67,17 @@ function currentDossierProjection(output:Output,currentRevision?:number,dossierR
 
 function safeResearchError(cause:unknown) {
   const code=cause instanceof Error?cause.message:''
-  const runtime=/^agent_runtime_(\d{3})(?::((?:radar_|llm_|credits_)[a-z0-9_]{1,100}))?$/.exec(code)
-  if(runtime)return runtime[2]??`agent_runtime_${runtime[1]}`
+  const runtime=/^agent_runtime_(\d{3})(?::(.*))?$/.exec(code)
+  if(runtime){
+    const detail=runtime[2]??''
+    return /^(?:(?:radar_|llm_|credits_)[a-z0-9_]{1,100}|openrouter_credit_required|insufficient_ai_credits_or_invalid_wallet)$/.test(detail)
+      ?detail:`agent_runtime_${runtime[1]}`
+  }
   return /^[a-z][a-z0-9_]{2,100}$/.test(code)?code:'radar_qualification_failed'
+}
+const preProviderCreditErrors=new Set(['radar_ai_wallet_missing','radar_ai_credits_insufficient'])
+function canRetryCreditRejection(call:ResearchRun['calls'][string]){
+  return call.status==='rejected_before_provider'&&!!call.error&&preProviderCreditErrors.has(call.error)
 }
 
 // The facts pipeline is deliberately independent of offer fit and has no outreach dependency.
@@ -286,7 +294,8 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
   target_segment: string; offer_type: string; product_focus: string[]; target_cnaes: string[] }
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
   operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
-  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;refreshAuthorized?:boolean;previous?:unknown }>;
+  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;refreshAuthorized?:boolean;previous?:unknown;
+    rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
 function cachedReadAvailability<T extends {allowed:boolean;reasons:Array<{code:string}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number}>(availability:T,run:ResearchRun|undefined,revision:number,freshnessDays:number):T {
@@ -478,6 +487,22 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const cachedLocal=Object.values(run.calls).flatMap(call=>call.status==='completed'&&call.source==='brave_place_search'&&Array.isArray(call.result)
       ? (call.result as Awaited<ReturnType<typeof searchRadarPlaces>>).flatMap(place=>place.sourceUrl?[{url:place.websiteUrl||place.sourceUrl,title:place.name,
         snippets:[place.address,place.phone,place.email].filter((value):value is string=>!!value),observedAt:place.observedAt}]:[]):[])
+    const invokeAnalysis=async<T>(key:'presence'|'semantic',path:string,body:Record<string,unknown>):Promise<T>=>{
+      try{return await(dependencies.runtime??invokeAgentRuntime)<T>(env,path,body)}
+      catch(cause){
+        const message=cause instanceof Error?cause.message:''
+        // Only the runtime's explicit pre-provider reservation denial proves a safe retry.
+        const rejection=/^agent_runtime_402:(radar_ai_wallet_missing|radar_ai_credits_insufficient)$/.exec(message)?.[1]
+        if(rejection){
+          const call=run.calls[key]
+          run.calls[key]={...call,status:'rejected_before_provider',error:rejection,
+            rejections:[...(call.rejections??[]),{error:rejection,evidenceHash:call.evidenceHash,observedAt:new Date().toISOString()}]}
+          const updated=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
+          if(!updated.rows[0])throw error('radar_research_lease_lost')
+        }
+        throw cause
+      }
+    }
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
@@ -503,8 +528,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       resolvePresence:async(evidence,evidenceHash)=>{
         const previous=run.calls.presence
         if(previous?.status==='completed'&&previous.evidenceHash===evidenceHash)return previous.result
-        if(previous&&previous.status!=='completed')throw error('radar_presence_previous_request_uncertain')
-        if(previous&&!previous.refreshAuthorized)throw error('radar_presence_refresh_authorization_required')
+        if(previous&&previous.status!=='completed'&&!canRetryCreditRejection(previous))throw error('radar_presence_previous_request_uncertain')
+        if(previous?.status==='completed'&&!previous.refreshAuthorized)throw error('radar_presence_refresh_authorization_required')
         const tenant=await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
           WHERE organization.id=$1`,[run.organization_id])
@@ -513,17 +538,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
           [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_presence_explicit_route_required')
-        run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash}
+        run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash,rejections:previous?.rejections}
         const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
         if(!reserved.rows[0])throw error('radar_research_lease_lost')
         signal?.throwIfAborted()
-        const result=await (dependencies.runtime??invokeAgentRuntime)<unknown>(env,'/radar/resolve-presence',{
+        const result=await invokeAnalysis<unknown>('presence','/radar/resolve-presence',{
           organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,
           request_id:`${run.id}:presence:${evidenceHash}`,identity,
           evidence:evidence.map(item=>({id:item.id,source_url:item.url,text:item.text,kind:item.kind})),
         })
         validateRadarPresenceResolution(result,identity,evidence)
-        run.calls.presence={status:'completed',source:'radar_presence_resolution',evidenceHash,result}
+        run.calls.presence={status:'completed',source:'radar_presence_resolution',evidenceHash,result,rejections:run.calls.presence.rejections}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return result
       },
@@ -531,8 +556,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
         const previousSemantic=run.calls.semantic
         if (previousSemantic?.status==='completed'&&previousSemantic.evidenceHash===evidenceHash) return previousSemantic.result as RadarQualification
-        if (previousSemantic&&previousSemantic.status!=='completed') throw error('radar_qualification_previous_request_uncertain')
-        if (previousSemantic&&!previousSemantic.refreshAuthorized) throw error('radar_qualification_refresh_authorization_required')
+        if (previousSemantic&&previousSemantic.status!=='completed'&&!canRetryCreditRejection(previousSemantic)) throw error('radar_qualification_previous_request_uncertain')
+        if (previousSemantic?.status==='completed'&&!previousSemantic.refreshAuthorized) throw error('radar_qualification_refresh_authorization_required')
         const tenant = await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
           WHERE organization.id=$1`,[run.organization_id])
@@ -541,17 +566,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
         [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_qualification_explicit_route_required')
-        run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,
-          previous:previousSemantic?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:undefined}
+        run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,rejections:previousSemantic?.rejections,
+          previous:previousSemantic?.status==='completed'?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:previousSemantic?.previous}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
-        const result = await (dependencies.runtime ?? invokeAgentRuntime)<RadarQualification>(env,'/radar/qualify',{
+        const result = await invokeAnalysis<RadarQualification>('semantic','/radar/qualify',{
           organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,request_id:`${run.id}:${evidenceHash}`,
           criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,qualification:configuration.qualification,
             profileEnabled:configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled},
           evidence:pages.map((page,index)=>({id:`page-${index}`,source_url:page.url,text:page.text.slice(0,12000)})),
         })
         if(result.profile)result.profile=validateRadarCompanyProfile(result.profile,pages)
-        run.calls.semantic={status:'completed',source:'radar_business_qualification',result,evidenceHash,previous:run.calls.semantic.previous}
+        run.calls.semantic={status:'completed',source:'radar_business_qualification',result,evidenceHash,previous:run.calls.semantic.previous,rejections:run.calls.semantic.rejections}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return result
       },
