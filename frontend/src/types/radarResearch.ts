@@ -9,7 +9,10 @@ export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:s
   semantic?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number} }
 export type RadarResearchContact = {kind:'phone'|'email'|'whatsapp'|'social'|'business_person';value:string;sourceUrl:string;observedAt:string;association:'confirmed'|'review';note?:string;
   purpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment'|'unknown';purposeEvidence?:string;scope?:string;preferred?:boolean}
+export type RadarTlsExceptionEvidence={grantId:string;hostname:string;fingerprint256:string;observedAt:string}
+export type RadarTlsExceptionGrant={id:string;hostname:string;fingerprint256:string;approvedBy:string;approvedAt:string;expiresAt:string;revokedAt?:string}
 export type RadarResearchResult = {methodVersion?:number;configurationRevision:number;availability:RadarResearchAvailability;
+  tlsCanAuthorize?:boolean;tlsDiagnostics?:Array<{diagnosticId:string;hostname:string;fingerprint256:string;validTo:string}>;tlsExceptions?:RadarTlsExceptionGrant[];
   run:null|{id:string;status:string;stage:string;error_code?:string;updated_at:string;configuration_revision:number;output:{
     methodVersion?:number;associationVersion?:number;
     discovery?:{association:string;websiteUrl?:string;suggestions:Array<{url:string;title:string}>;limitations:string[]};
@@ -18,7 +21,7 @@ export type RadarResearchResult = {methodVersion?:number;configurationRevision:n
     presenceResolution?:{websiteUrl?:string;scope:'establishment'|'group'|'unresolved';reason:string;claims:Array<{evidenceId:string;excerpt:string;sourceUrl:string;observedAt:string}>;model?:string};
     documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
     sizeAssessment?:{score:number|null;evidenceCoverage:number;direction:'larger'|'smaller';contributions:Array<{metric:string;amount:number;points:number;weight:number;sourceUrl:string;referenceDate?:string}>;limitations:string[]};
-    pages?:Array<{url:string;text:string;observedAt:string;limitation?:string}>;
+    pages?:Array<{url:string;text:string;observedAt:string;limitation?:string;diagnostic?:{stage:string;kind:string;code:string};tlsException?:RadarTlsExceptionEvidence}>;
     activity?:{status:string;signals:Array<{kind:string;sourceUrl:string;excerpt:string;observedAt:string;publishedDate?:string}>;limitation:string};
     qualification?:{targetStatus:string;productFit:string;reasons:string[];evidenceIds:string[];evidenceSources?:Array<{id:string;sourceUrl:string}>;provider?:string;model?:string};limitations?:string[];
   }};history:Array<{id:string;status:string;updated_at:string}>}

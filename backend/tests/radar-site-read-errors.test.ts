@@ -3,6 +3,14 @@ import { inspectRadarBusinessSite } from '../src/modules/radar/b2b-site-inspecti
 import { collectRadarSiteEvidence, isRetryableRadarPage } from '../src/modules/radar/site-evidence.js'
 
 describe('public reader diagnostics', () => {
+  it('never downgrades an HTTPS site to plaintext after a redirect',async()=>{
+    const requested:string[]=[]
+    const result=await inspectRadarBusinessSite('https://public.example/',{resolve:async()=>['8.8.8.8'],get:async url=>{
+      requested.push(url.toString());return url.pathname==='/robots.txt'?{status:404}:{status:301,location:'http://public.example/'}
+    }})
+    expect(result).toMatchObject({status:'blocked',reason:'https_downgrade_blocked'})
+    expect(requested).toEqual(['https://public.example/robots.txt','https://public.example/'])
+  })
   it.each([
     ['CERT_HAS_EXPIRED','robots_tls_expired','tls_expired'],
     ['ERR_TLS_CERT_ALTNAME_INVALID','robots_tls_invalid','tls_invalid'],

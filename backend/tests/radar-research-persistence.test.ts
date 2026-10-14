@@ -43,6 +43,7 @@ class ResearchPool {
     if(sql.includes('SELECT status,normalized_payload FROM public.radar_candidate_records'))return{rows:[{status:'pending_review',normalized_payload:this.payload}]}
     if(sql.includes('UPDATE public.radar_candidate_records')){this.payload=JSON.parse(String(params[2]));return{rows:[]}}
     if(sql.includes('INSERT INTO public.radar_b2b_'))return{rows:[]}
+    if(sql.includes('FROM public.radar_site_tls_exceptions'))return{rows:[]}
     throw new Error(`Unexpected fixture query: ${sql}`)
   }
 }

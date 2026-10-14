@@ -45,7 +45,16 @@ export function createRadarPinnedLookup(address: string): LookupFunction {
 }
 
 // Only call after public-IP validation. Exported for native-transport regression tests.
-export function getRadarPublicPage(url: URL, address: string, options:RadarTlsReadOptions={}): Promise<GetResult> {
+export async function getRadarPublicPage(url: URL, address: string, options:RadarTlsReadOptions={}): Promise<GetResult> {
+  const deadline=Date.now()+8000
+  try {return await requestRadarPublicPage(url,address,{},8000)}
+  catch(cause) {
+    if(url.protocol!=='https:'||!options.tlsException||(cause as NodeJS.ErrnoException)?.code!=='CERT_HAS_EXPIRED')throw cause
+    const remaining=deadline-Date.now();if(remaining<=0)throw new Error('timeout')
+    return requestRadarPublicPage(url,address,options,remaining)
+  }
+}
+function requestRadarPublicPage(url:URL,address:string,options:RadarTlsReadOptions,timeout:number):Promise<GetResult> {
   return new Promise((resolve, reject) => {
     const agent=options.tlsException?createRadarExpiredCertificateAgent(url,address,options):undefined
     const tlsException=options.tlsException?{grantId:options.tlsException.id,hostname:options.tlsException.hostname,
@@ -53,7 +62,7 @@ export function getRadarPublicPage(url: URL, address: string, options:RadarTlsRe
     const maxBytes = url.pathname === '/robots.txt' ? MAX_ROBOTS_BYTES : MAX_HTML_BYTES
     const transport = url.protocol === 'https:' ? https : http
     const request = transport.request(url, {
-      method: 'GET', timeout: 8000,
+      method: 'GET', timeout,
       lookup: createRadarPinnedLookup(address),
       ...(url.protocol==='https:'?{rejectUnauthorized:true,agent}:{}),
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,text/plain' },
@@ -80,7 +89,7 @@ export function getRadarPublicPage(url: URL, address: string, options:RadarTlsRe
       response.on('error', reject)
       response.on('aborted', () => reject(new Error('response_interrupted')))
     })
-    const deadline=setTimeout(()=>request.destroy(new Error('timeout')),8000)
+    const deadline=setTimeout(()=>request.destroy(new Error('timeout')),timeout)
     request.once('close',()=>{clearTimeout(deadline);agent?.destroy()})
     request.on('timeout', () => request.destroy(new Error('timeout')))
     request.on('error', reject)
@@ -171,6 +180,7 @@ export async function inspectRadarBusinessSite(
       if (redirects === 2) return { ...empty, status: 'unknown', reason: 'too_many_redirects' }
       try {
         const redirected = new URL(response.location, url)
+        if(url.protocol==='https:'&&redirected.protocol==='http:')return {...empty,status:'blocked',reason:'https_downgrade_blocked'}
         if (redirected.hostname === 'localhost' || redirected.hostname.endsWith('.localhost')
           || (isIP(redirected.hostname) && !isPublicRadarSiteIp(redirected.hostname))) {
           return { ...empty, status: 'blocked', reason: 'private_or_reserved_address' }

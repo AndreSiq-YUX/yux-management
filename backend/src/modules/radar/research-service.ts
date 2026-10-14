@@ -20,6 +20,8 @@ import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { triageRadarBusiness } from './business-triage.js'
 import { validateRadarCompanyProfile, type RadarCompanyProfile } from './company-profile.js'
 import { assessRadarCompanySize, registryRadarSizeFacts, type RadarSizeFact } from './company-size.js'
+import {getRadarTlsReadOptions,listRadarTlsExceptions,radarTlsDiagnosticId} from './tls-exception-service.js'
+import type {RadarTlsReadOptions} from './site-tls-exception.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile }
@@ -35,6 +37,7 @@ type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query:
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
   registrySizeFacts?:RadarSizeFact[];
+  tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined>;
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
 export const RADAR_RESEARCH_METHOD_VERSION=2
 const RADAR_ASSOCIATION_VERSION=2
@@ -81,7 +84,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         for(const hit of hits.filter(item=>isRadarInstitutionalSource(item.url,{title:item.title,text:item.snippets.join(' ')}))){
           const root=new URL('/',hit.url).toString()
           if(!pages.some(page=>new URL(page.url).origin===new URL(root).origin)&&pages.length<Math.max(1,configuration.research.maxPagesPerCandidate-1)){
-            const collected=await (dependencies.collect??collectRadarSiteEvidence)(root,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal})
+            const collected=await (dependencies.collect??collectRadarSiteEvidence)(root,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions})
             pages.push(...collected);output.pages=pages;await checkpoint('discovery')
           }
           const readable=pages.filter(page=>new URL(page.url).origin===new URL(root).origin&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
@@ -109,7 +112,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       const remaining = configuration.research.maxPagesPerCandidate - other.filter(page=>!page.limitation).length
       const maxAttemptsPerCandidate=configuration.research.maxPagesPerCandidate*2-other.length
       const prior=pages.filter(page=>new URL(page.url).origin===new URL(url).origin)
-      let collected = await (dependencies.collect ?? collectRadarSiteEvidence)(url, {maxPagesPerCandidate:Math.min(remaining,prior.filter(page=>!page.limitation).length+1),maxAttemptsPerCandidate}, {signal:dependencies.signal,
+      let collected = await (dependencies.collect ?? collectRadarSiteEvidence)(url, {maxPagesPerCandidate:Math.min(remaining,prior.filter(page=>!page.limitation).length+1),maxAttemptsPerCandidate}, {signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,
         initialPages:pages.filter(page=>new URL(page.url).origin===new URL(url).origin),checkpoint:async value => {
           output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')
         }})
@@ -117,7 +120,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       if (collected.some(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&(matchRadarBusinessIdentity(identity,page.text)==='confirmed'||mentionsIdentity(page.text)))) {
         website=url
         if(collected.filter(page=>!page.limitation).length<remaining) {
-          collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,initialPages:collected,
+          collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,initialPages:collected,
             checkpoint:async value=>{output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')}})
           pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...collected]
         }
@@ -153,7 +156,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     const maximum=configuration.research.maxPagesPerCandidate-other.filter(page=>!page.limitation).length
     if(prior.filter(page=>!page.limitation).length<maximum){
       const selected=await(dependencies.collect??collectRadarSiteEvidence)(presenceResolution.websiteUrl,
-        {maxPagesPerCandidate:maximum,maxAttemptsPerCandidate:configuration.research.maxPagesPerCandidate*2-other.length},{signal:dependencies.signal,
+        {maxPagesPerCandidate:maximum,maxAttemptsPerCandidate:configuration.research.maxPagesPerCandidate*2-other.length},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,
           initialPages:prior.filter(page=>page.url!==presenceResolution?.websiteUrl||!!page.html)})
       const byUrl=new Map(selected.map(page=>[page.url,page]))
       pages=[...pages.map(page=>byUrl.get(page.url)??page),...selected.filter(page=>!pages.some(old=>old.url===page.url))]
@@ -276,9 +279,13 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
     getRadarResearchAvailability(pool,user,organizationId,context.campaign_id),
   ])
   const latest = runs.rows[0]
+  const tlsExceptions=latest?await listRadarTlsExceptions(pool,{organizationId,candidateId,runId:latest.id,configurationRevision:latest.configuration_revision}):[]
+  const tlsDiagnostics=latest?.output.pages?.filter(page=>page.diagnostic?.kind==='tls_expired'&&page.certificate)
+    .map(page=>({diagnosticId:radarTlsDiagnosticId(latest.id,page),...page.certificate!}))??[]
   const expired=latest?.status==='running'&&latest.lease_until&&Date.parse(latest.lease_until)<Date.now()
   const available=cachedReadAvailability(availability,latest,context.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.freshnessDays)
   return { methodVersion:RADAR_RESEARCH_METHOD_VERSION,availability:{...available,operations:{...available.operations,refresh:{allowed:availability.allowed,reasons:availability.reasons}}}, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:currentDossierProjection(latest.output)} : null,
+    tlsExceptions,tlsDiagnostics,tlsCanAuthorize:user.role==='yux_admin'&&context.status==='pending_review',
     history:runs.rows.slice(1).map(run => ({ id:run.id, status:run.status, updated_at:run.updated_at })) }
 }
 export async function listRadarResearchHistory(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){
@@ -442,6 +449,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length},{
       signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
+      tlsOptions:hostname=>getRadarTlsReadOptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision},hostname),
       local:configuration.sources.enrichWithBrave && identity.city && identity.state ? async () => {
         const places = await paid('brave_place_search',identity.name,key => (dependencies.local ?? searchRadarPlaces)({provider:'brave_place_search',apiKey:key,query:identity.name,city:identity.city!,state:identity.state!,limit:5}))
         return places.flatMap(place => place.sourceUrl ? [{url:place.websiteUrl || place.sourceUrl,title:place.name,
@@ -556,6 +564,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
         ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
+      researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),
       ...(verified ? {websiteUrl:associatedPage.url,siteFinalUrl:associatedPage.url,siteCheckedAt:associatedPage.observedAt}:

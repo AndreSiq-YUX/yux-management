@@ -1,4 +1,4 @@
-import {beforeAll,afterAll,afterEach,it,expect} from 'vitest'
+import {beforeAll,afterAll,afterEach,it,expect,vi} from 'vitest'
 import https from 'node:https'
 import {X509Certificate} from 'node:crypto'
 import {rmSync} from 'node:fs'
@@ -10,7 +10,7 @@ let fixture:ReturnType<typeof createRadarTlsFixtures>
 beforeAll(()=>{fixture=createRadarTlsFixtures()},20000)
 afterAll(()=>rmSync(fixture.dir,{recursive:true,force:true}))
 const servers:https.Server[]=[]
-afterEach(async()=>{await Promise.all(servers.splice(0).map(server=>new Promise<void>(r=>{server.closeAllConnections();server.close(()=>r())})))})
+afterEach(async()=>{vi.restoreAllMocks();await Promise.all(servers.splice(0).map(server=>new Promise<void>(r=>{server.closeAllConnections();server.close(()=>r())})))})
 const grant=()=>{const now=Date.now();return {id:'grant',organizationId:'org',candidateId:'candidate',runId:'run',configurationRevision:1,hostname:'public.example',
   fingerprint256:new X509Certificate(fixture.expired).fingerprint256,approvedBy:'admin',approvedAt:new Date(now).toISOString(),expiresAt:new Date(now+3600000).toISOString()}}
 async function serve(cert=fixture.expired,hostname='public.example') {
@@ -50,4 +50,16 @@ it('does not send HTTP when an approved expired certificate also has the wrong h
   const {url,requests}=await serve(fixture.expired,'wrong.example')
   await expect(getRadarPublicPage(url,'127.0.0.1',{tlsException:{...grant(),hostname:'wrong.example'},verifyCertificate:verify})).rejects.toThrow()
   expect(requests).toEqual([])
+})
+it('uses normal TLS without an exception when the owner has renewed the certificate',async()=>{
+  const {url,requests}=await serve(fixture.valid)
+  const request=https.request
+  vi.spyOn(https,'request').mockImplementation(((target:URL,options:https.RequestOptions,callback:Parameters<typeof https.request>[1])=>request(target,{...options,ca:fixture.root},callback as never)) as unknown as typeof https.request)
+  const result=await getRadarPublicPage(url,'127.0.0.1',{tlsException:grant(),verifyCertificate:verify})
+  expect(result.body).toContain('supplier contact');expect(result.tlsException).toBeUndefined();expect(requests).toHaveLength(1)
+})
+it('rechecks revocation after the TLS handshake before sending HTTP',async()=>{
+  const {url,requests}=await serve();let checks=0
+  await expect(getRadarPublicPage(url,'127.0.0.1',{tlsException:grant(),verifyCertificate:verify,validateGrant:async()=>++checks===1})).rejects.toThrow()
+  expect(requests).toEqual([]);expect(checks).toBe(2)
 })

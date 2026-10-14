@@ -47,6 +47,7 @@ import { radarSearchConfigurationSchema, radarStateSchema } from './search-confi
 import { getRadarCandidateResearch, startRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
 import { getRadarResearchAvailability } from './research-availability.js'
 import {deliverRadarCompaniesToCrm,listRadarCrmDestinations} from './crm-delivery.js'
+import {authorizeRadarTlsException,revokeRadarTlsException} from './tls-exception-service.js'
 
 const uuid = z.string().uuid()
 
@@ -419,6 +420,20 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params=z.object({id:uuid}).safeParse(request.params),query=campaignQuerySchema.safeParse(request.query)
     if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
     return getRadarCandidateResearch(app.pg,user,query.data.organizationId,params.data.id)
+  })
+  app.post('/candidates/:id/research/tls-exceptions',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params)
+    const body=z.object({organizationId:uuid,runId:uuid,configurationRevision:z.number().int().positive(),diagnosticId:z.string().regex(/^[a-f0-9]{64}$/),confirmed:z.literal(true)}).strict().safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_tls_payload'})
+    return authorizeRadarTlsException(app.pg,user,{...body.data,candidateId:params.data.id})
+  })
+  app.post('/candidates/:id/research/tls-exceptions/:grantId/revoke',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid,grantId:uuid}).safeParse(request.params),body=z.object({organizationId:uuid}).strict().safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_tls_payload'})
+    await revokeRadarTlsException(app.pg,user,{organizationId:body.data.organizationId,candidateId:params.data.id,grantId:params.data.grantId})
+    return {revoked:true}
   })
   app.post('/candidates/:id/research',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

@@ -18,16 +18,18 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
   const first=(kind:string)=>contacts.filter(item=>item.kind===kind).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
   const reasons=(Array.isArray(data.triageReasons)?data.triageReasons:[]).filter((value):value is string=>typeof value==='string')
   const activity=data.activityAssessment??data.activity
+  const tlsExceptions=Array.isArray(data.researchTlsExceptions)?data.researchTlsExceptions:[]
   const notes=[`Oferta da campanha: ${offer}`,
     `Público: ${({confirmed:'Confirmado',review:'Requer revisão',not_target:'Fora do público',insufficient:'Evidência insuficiente'} as Record<string,string>)[String(data.targetStatus)]??'Não avaliado'}`,
     `Adequação: ${({high:'Boa aderência',possible:'Possível aderência',low:'Baixa aderência',unknown:'Não confirmada'} as Record<string,string>)[String(data.productFit)]??'Não avaliada'}`,
     ...reasons, data.companyProfile?`Perfil e fontes: ${JSON.stringify(data.companyProfile)}`:'',
     activity?`Atividade e evidências: ${JSON.stringify(activity)}`:'',
+    tlsExceptions.length?`Leitura pública com certificado vencido, autorizada pelo Admin: ${JSON.stringify(tlsExceptions)}`:'',
     'Contatos públicos não comprovam consentimento nem atendimento. Contato comercial manual.'].filter(Boolean).join('\n')
   return {name:candidate.title,email:first('email')??'',phone:first('phone')??first('whatsapp')??null,
     notes,
     attribution:{radarCnpj:typeof data.cnpj==='string'?data.cnpj:undefined,recommendedOffer:offer,websiteUrl:data.websiteUrl,
-      contacts,registryPhone:data.phoneRaw,companyProfile:data.companyProfile,sizeAssessment:data.sizeAssessment,activity,
+      contacts,registryPhone:data.phoneRaw,companyProfile:data.companyProfile,sizeAssessment:data.sizeAssessment,activity,tlsExceptions,
       targetStatus:data.targetStatus,productFit:data.productFit,triageReasons:reasons,
       collectionRevision:data.researchRevision,consent:'not_established',outreach:'manual_only',acquisitionKind:'outbound'}}
 }

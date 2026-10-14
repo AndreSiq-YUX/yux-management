@@ -3,6 +3,7 @@ import { radarService } from '@/services/radarService'
 import type { RadarProfileClaim, RadarResearchAvailability, RadarResearchResult } from '@/types/radarResearch'
 import { radarSizeMetricLabels, type RadarSizeMetric } from '@/lib/radar/radarSearchConfiguration'
 import { radarResearchMessage } from '@/lib/radar/radarResearchMessages'
+import {Button} from '@/components/ui/button'
 
 const stages = [['discovery','Presença pública'],['identity','Identidade'],['reading','Páginas e contatos'],['consolidation','Atividade e fontes'],['review','Qualificação e revisão']] as const
 const statusLabel:Record<string,string> = {queued:'Na fila',running:'Pesquisando',partial:'Resultado parcial',succeeded:'Pesquisa concluída',blocked:'Pesquisa bloqueada',failed:'Falha na pesquisa'}
@@ -27,6 +28,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[refresh,setRefresh]=useState(0)
   const [available,setAvailable]=useState(availability)
   const [allowSemanticRefresh,setAllowSemanticRefresh]=useState(false)
+  const [tlsConsent,setTlsConsent]=useState(''),[tlsMessage,setTlsMessage]=useState<string|null>(null)
   const submitted=useRef(false),onCompletedRef=useRef(onCompleted),completedId=useRef('')
   onCompletedRef.current=onCompleted
   useEffect(()=>setAvailable(availability),[availability])
@@ -56,6 +58,19 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     catch {setError('Não foi possível iniciar. Atualize a disponibilidade; confira configuração, quota e orçamento. Seus dados foram preservados.');setRefresh(value=>value+1)}
     finally {submitted.current=false;setBusy(false)}
   }
+  async function changeTls(diagnosticId?:string,grantId?:string) {
+    if(!result?.run||!result.tlsCanAuthorize||submitted.current||running&&!grantId||!canStart)return
+    if(diagnosticId&&(approved||tlsConsent!==`${result.run.id}:${diagnosticId}`))return
+    submitted.current=true;setBusy(true);setError(null);setTlsMessage(null)
+    try {
+      if(grantId)await radarService.revokeTlsException(candidateId,organizationId,grantId)
+      else if(diagnosticId)await radarService.authorizeTlsException(candidateId,{organizationId,runId:result.run.id,
+        configurationRevision,diagnosticId,confirmed:true})
+      setTlsConsent('');setTlsMessage(grantId?'Autorização revogada. Novas leituras excepcionais estão bloqueadas.':'Autorização registrada. Use Retomar pesquisa desta empresa para continuar; nenhuma busca ou análise foi iniciada por esta autorização.')
+      setRefresh(value=>value+1)
+    }catch{setError('Não foi possível atualizar a autorização. Atualize o dossiê: o certificado, as permissões ou a pesquisa podem ter mudado.')}
+    finally{submitted.current=false;setBusy(false)}
+  }
   const output=result?.run?.output
   return <section className="mt-3 min-w-0 space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3" aria-label="Pesquisa automática da empresa">
     <div className="flex flex-wrap gap-2">
@@ -73,6 +88,28 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     {available?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="text-xs text-amber-900">{showTechnical?`${reason.message} Caminho: ${reason.resolution}.`:'Pesquisa indisponível: solicite ao responsável a revisão da configuração ou dos limites da campanha.'}</p>)}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {open && <div className="space-y-3 text-sm">
+      {tlsMessage&&<p role="status">{tlsMessage}</p>}
+      {result?.tlsDiagnostics?.map(diagnostic=>{
+        const active=result.tlsExceptions?.find(grant=>grant.hostname===diagnostic.hostname&&grant.fingerprint256===diagnostic.fingerprint256&&!grant.revokedAt&&Date.parse(grant.expiresAt)>Date.now())
+        const consentKey=`${result.run?.id}:${diagnostic.diagnosticId}`
+        return <fieldset key={diagnostic.diagnosticId} className="flex min-w-0 flex-col gap-3 rounded border border-amber-200 bg-amber-50 p-3">
+          <legend className="px-1 font-medium">Leitura pendente: certificado vencido</legend>
+          <p className="break-all">{diagnostic.hostname} — certificado vencido em {new Date(diagnostic.validTo).toLocaleDateString('pt-BR')}.</p>
+          <p>Não foi possível garantir a autenticidade da conexão. A exceção permite apenas leitura pública deste site e desta pesquisa por uma hora, sem login ou envio de dados.</p>
+          {active?<p>Leitura excepcional autorizada até {new Date(active.expiresAt).toLocaleString('pt-BR')}. Retome a pesquisa para continuar.</p>
+            :result.tlsCanAuthorize&&canStart&&!approved?<>
+              <label className="flex items-start gap-2"><input type="checkbox" checked={tlsConsent===consentKey} disabled={busy||running} onChange={event=>setTlsConsent(event.target.checked?consentKey:'')}/>Autorizo a leitura pública deste site apesar do certificado vencido.</label>
+              <Button type="button" className="h-auto self-start whitespace-normal" disabled={tlsConsent!==consentKey||busy||running} onClick={()=>changeTls(diagnostic.diagnosticId)}>Autorizar leitura deste site</Button>
+            </>:<p>Solicite a autorização ao administrador YUX para retomar a leitura.</p>}
+        </fieldset>
+      })}
+      {!!result?.tlsExceptions?.length&&<div className="flex flex-col gap-2 rounded border bg-white p-3"><h4 className="font-medium">Histórico de autorizações de leitura</h4>
+        {result.tlsExceptions.map(grant=><div key={grant.id} className="flex flex-col gap-2"><p className="break-all">{grant.hostname}: autorizada em {new Date(grant.approvedAt).toLocaleString('pt-BR')}; {grant.revokedAt?'revogada':Date.parse(grant.expiresAt)<=Date.now()?'expirada':`válida até ${new Date(grant.expiresAt).toLocaleString('pt-BR')}`}.</p>
+          {showTechnical&&<p className="text-xs">Admin responsável: {grant.approvedBy}</p>}
+          {result.tlsCanAuthorize&&canStart&&!grant.revokedAt&&Date.parse(grant.expiresAt)>Date.now()&&<Button type="button" variant="outline" className="self-start" disabled={busy} onClick={()=>changeTls(undefined,grant.id)}>Revogar autorização deste site</Button>}
+        </div>)}
+      </div>}
+      {output?.pages?.some(page=>page.tlsException)&&<p className="rounded border border-amber-200 bg-amber-50 p-3">Este dossiê contém páginas lidas com certificado vencido, mediante autorização do Admin. A ressalva permanece nas evidências e no CRM; não confirma titularidade de contatos nem funcionamento da empresa.</p>}
       {showTechnical&&available?.semanticQualificationEnabled&&<p className="text-xs text-slate-600">IA: {available.semantic?.model??'confira a rota no Admin'}; a estimativa de buscas não inclui tokens da IA nem tentativas de fallback. {available.semantic?.budgetReferenceBrl?`Referência de orçamento no Admin: ${money(available.semantic.budgetReferenceBrl)} — não é cotação do consumo.`:''}</p>}
       {showTechnical&&available?.presenceResolutionEnabled&&<p className="text-xs text-slate-600">Identificação de presença: {available.presence?.model??'configure a rota Radar — identificação de site e canais oficiais no Admin'}. Não inventa páginas nem contatos; usa as evidências coletadas.</p>}
       {result?.run&&available?.semanticQualificationEnabled&&['partial','blocked','failed'].includes(result.run.status)&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} onChange={e=>setAllowSemanticRefresh(e.target.checked)}/>Autorizo nova análise por IA se as evidências mudaram (pode consumir créditos; buscas concluídas serão reaproveitadas).</label>}

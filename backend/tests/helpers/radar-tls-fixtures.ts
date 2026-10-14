@@ -13,6 +13,7 @@ export function createRadarTlsFixtures() {
   for(const [name,start,end,extension] of [
     ['expired','20200101000000Z','20200102000000Z','leaf'],
     ['future','20990101000000Z','20990102000000Z','leaf'],
+    ['valid','20200101000000Z','20990102000000Z','leaf'],
     ['intermediate','20200101000000Z','20200102000000Z','intermediate'],
   ])run('ca','-batch','-config','ca.cnf','-in','leaf.csr','-out',`${name}.pem`,'-startdate',start,'-enddate',end,'-extensions',extension,'-notext')
   writeFileSync(join(dir,'index2.txt'),'');writeFileSync(join(dir,'serial2'),'2000\n')
@@ -20,6 +21,6 @@ export function createRadarTlsFixtures() {
   writeFileSync(join(dir,'intermediate.cnf'),config)
   run('ca','-batch','-config','intermediate.cnf','-in','leaf.csr','-out','expired-chain-leaf.pem','-startdate','20200101000000Z','-enddate','20200102000000Z','-extensions','leaf','-notext')
   return {dir,root:readFileSync(join(dir,'root.pem'),'utf8'),key:readFileSync(join(dir,'leaf.key')),
-    expired:readFileSync(join(dir,'expired.pem')),future:readFileSync(join(dir,'future.pem')),
+    expired:readFileSync(join(dir,'expired.pem')),future:readFileSync(join(dir,'future.pem')),valid:readFileSync(join(dir,'valid.pem')),
     intermediate:readFileSync(join(dir,'intermediate.pem')),chainLeaf:readFileSync(join(dir,'expired-chain-leaf.pem'))}
 }

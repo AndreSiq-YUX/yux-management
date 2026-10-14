@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestText } from '@/lib/apiClient'
-import type { RadarResearchAvailability, RadarResearchResult } from '@/types/radarResearch'
+import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 
@@ -39,6 +39,12 @@ export const radarService = {
   },
   getCandidateResearch(candidateId:string,organizationId:string) {
     return apiRequest<RadarResearchResult>(`/radar/candidates/${candidateId}/research${buildQuery({organizationId})}`)
+  },
+  authorizeTlsException(candidateId:string,input:{organizationId:string;runId:string;configurationRevision:number;diagnosticId:string;confirmed:true}) {
+    return apiRequest<RadarTlsExceptionGrant>(`/radar/candidates/${candidateId}/research/tls-exceptions`,{method:'POST',body:input})
+  },
+  revokeTlsException(candidateId:string,organizationId:string,grantId:string) {
+    return apiRequest<{revoked:true}>(`/radar/candidates/${candidateId}/research/tls-exceptions/${grantId}/revoke`,{method:'POST',body:{organizationId}})
   },
   startCandidateResearch(candidateId:string,input:{organizationId:string;configurationRevision:number;requestId:string;allowSemanticRefresh?:boolean;operation?:'complete'|'resume'|'refresh'|'reanalyze'}) {
     return apiRequest<{runId:string;status:string;reused:boolean}>(`/radar/candidates/${candidateId}/research`,{method:'POST',body:input})

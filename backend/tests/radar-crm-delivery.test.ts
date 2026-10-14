@@ -18,3 +18,10 @@ it('transfers only corroborated contacts and leaves missing email empty rather t
   expect(facts.attribution.recommendedOffer).toBe('Oferta da campanha')
   expect(facts.attribution.contacts).toHaveLength(1)
 })
+
+it('preserves expired-certificate read provenance in the delivered CRM record',()=>{
+  const provenance=[{grantId:'grant',hostname:'empresa.example',fingerprint256:'AA',observedAt:'2026-10-14',sourceUrl:'https://empresa.example/'}]
+  const facts=buildRadarCrmLeadFacts({title:'Empresa',normalizedPayload:{researchTlsExceptions:provenance}},'Oferta')
+  expect(facts.attribution).toMatchObject({tlsExceptions:provenance})
+  expect(facts.notes).toContain('certificado vencido')
+})

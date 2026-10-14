@@ -4,9 +4,32 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { RadarCandidateResearchPanel } from './RadarCandidateResearchPanel'
 import { radarService } from '@/services/radarService'
 import type { RadarResearchAvailability, RadarResearchResult } from '@/types/radarResearch'
-vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn()}}))
+vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn(),authorizeTlsException:vi.fn(),revokeTlsException:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
+it('requires a single explicit certificate consent, saves without launching paid research, and offers resume',async()=>{
+  const diagnostic={diagnosticId:'a'.repeat(64),hostname:'public.example',fingerprint256:'AB',validTo:'2020-01-02T00:00:00Z'}
+  const saved={...initial,tlsCanAuthorize:true,tlsDiagnostics:[diagnostic],tlsExceptions:[],run:{id:'run',status:'partial',stage:'review',updated_at:'2026-10-14',configuration_revision:2,output:{}}}
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue(saved)
+  vi.mocked(radarService.authorizeTlsException).mockResolvedValue({} as never)
+  const view=mount();await view.click('Ver dossiê da empresa')
+  const button=()=>Array.from(view.container.querySelectorAll('button')).find(b=>b.textContent==='Autorizar leitura deste site')!
+  expect(button().disabled).toBe(true)
+  const checkbox=view.container.querySelector('[role="checkbox"],input[type="checkbox"]') as HTMLElement
+  await act(async()=>checkbox.click());expect(button().disabled).toBe(false)
+  await view.click('Autorizar leitura deste site')
+  expect(radarService.authorizeTlsException).toHaveBeenCalledWith('candidate',{organizationId:'org',runId:'run',configurationRevision:2,diagnosticId:diagnostic.diagnosticId,confirmed:true})
+  expect(radarService.startCandidateResearch).not.toHaveBeenCalled()
+  expect(view.container.textContent).toContain('Retomar pesquisa desta empresa')
+  view.unmount()
+})
+it('shows certificate read provenance to clients but never offers the approval control',async()=>{
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,tlsCanAuthorize:false,tlsDiagnostics:[{diagnosticId:'a',hostname:'public.example',fingerprint256:'AB',validTo:'2020-01-02'}],run:{id:'run',status:'partial',stage:'review',updated_at:'2026-10-14',configuration_revision:2,output:{pages:[{url:'https://public.example/',text:'Dados públicos',observedAt:'2026-10-14',tlsException:{grantId:'grant',hostname:'public.example',fingerprint256:'AB',observedAt:'2026-10-14'}}]}}})
+  const view=mount();await view.click('Ver dossiê da empresa')
+  expect(view.container.textContent).toContain('certificado vencido')
+  expect(view.container.textContent).not.toContain('Autorizar leitura deste site')
+  view.unmount()
+})
 it('explains legacy research and offers explicit factual reanalysis even without a model',async()=>{
   vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,methodVersion:2,run:{id:'old',status:'partial',stage:'review',updated_at:'2026-09-01',configuration_revision:2,output:{}}} as RadarResearchResult)
   const view=mount();await view.click('Ver dossiê da empresa')
