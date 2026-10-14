@@ -1,8 +1,17 @@
 import {expect,it,vi} from 'vitest'
-import {mapCandidate,approveRadarB2bProspect} from '../src/modules/radar/repository.js'
+import {mapCandidate,approveRadarB2bProspect,listRadarCandidates} from '../src/modules/radar/repository.js'
 import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 const payload={websiteUrl:'https://empresadois.com.br/cnpj/12345678000190',websiteStatus:'verified_present',sitePhones:['+551145047000'],
   publicContacts:[{kind:'phone',value:'+551145047000',sourceUrl:'https://empresadois.com.br/cnpj/12345678000190',association:'confirmed',observedAt:'2026-09-01'}]}
+it('projects a current old dossier into the list using one batch read and no writes',async()=>{
+  const original={id:'candidate',normalized_payload:{researchRevision:5}}
+  const query=vi.fn(async(sql:string)=>({rows:sql.includes('FROM public.radar_candidate_records')?[original]:[{candidate_id:'candidate',configuration_revision:5,output:{discovery:{websiteUrl:'https://alfa.example/',association:'review',hits:[]},pages:[{url:'https://alfa.example/',text:'Alfa empresa',observedAt:'2026-10-14'}],contacts:[],siteAssociation:'review'}}]}))
+  const results=await listRadarCandidates({query} as never,{role:'yux_admin'} as never,'campaign')
+  expect(results[0].normalizedPayload.publicPresence).toMatchObject({website:{url:'https://alfa.example/',association:'review'}})
+  expect(original.normalized_payload).not.toHaveProperty('publicPresence')
+  expect(query).toHaveBeenCalledTimes(2)
+  expect(query.mock.calls.every(([sql])=>!/(UPDATE|INSERT|DELETE)/.test(sql))).toBe(true)
+})
 it('filters directory facts consistently for candidate lists and new CRM deliveries without mutating history',()=>{
   const candidate=mapCandidate({normalized_payload:payload} as never)
   expect(candidate.normalizedPayload).toMatchObject({websiteStatus:'unknown',publicContacts:[],sitePhones:[]})

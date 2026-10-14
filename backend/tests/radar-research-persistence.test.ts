@@ -59,6 +59,16 @@ it('hides legacy directory contacts from the current dossier without changing st
   expect(pool.run!.output.contacts).toHaveLength(1)
   expect(result).toHaveProperty('methodVersion',2)
 })
+it('persists a readable discovered site as pending rather than losing it when identity is unresolved',async()=>{
+  const pool=new ResearchPool(),run=await start(pool)
+  pool.run!.operation='reanalyze';pool.run!.output={analysisOnly:true,discoveryLocked:true,readingComplete:true,
+    pages:[{url:'https://alfa.example/',text:'Alfa soluções empresariais. Fale com a equipe.',observedAt:'2026-10-14'}],
+    discovery:{websiteUrl:'https://alfa.example/',association:'review',hits:[],suggestions:[],limitations:[],queries:1}}
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{web:vi.fn(),collect:vi.fn()})
+  expect(pool.payload.publicPresence).toMatchObject({configurationRevision:2,website:{url:'https://alfa.example/',association:'review',readable:true}})
+  expect(pool.payload.websiteUrl).toBeUndefined()
+  expect(pool.payload.publicContacts).toEqual([])
+})
 it('reanalysis removes a directory website and stale contacts from projection while retaining historical evidence',async()=>{
   const pool=new ResearchPool(),run=await start(pool)
   pool.payload.websiteUrl='https://empresadois.com.br/cnpj/12345678000190'

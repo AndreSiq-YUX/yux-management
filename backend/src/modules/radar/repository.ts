@@ -5,6 +5,7 @@ import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
 import {isRadarCandidateCurrentRevision} from './candidate-revision.js'
+import {radarPublicPresenceFromDossier} from './public-presence.js'
 import type {
   RadarCampaign,
   RadarCampaignRow,
@@ -1762,7 +1763,8 @@ export async function listRadarB2bProspects(pool: pg.Pool, user: AuthUser, organ
          OR candidate.normalized_payload->>'researchRevision' = campaign.configuration_revision::text)
      ORDER BY candidate.created_at DESC`, [organizationId, campaignId],
   )
-  return result.rows.map(row => ({ ...mapCandidate(row), targetStatus: row.target_status,
+  const projected=await attachRadarPublicPresence(pool,result.rows)
+  return projected.map(row => ({ ...mapCandidate(row), targetStatus: row.target_status,
     productFit: row.product_fit, reasons: row.reasons ?? [], approvedAt: row.approved_at,
     verificationMethod: row.verification_method, reviewNote: row.review_note,
     evidence: row.evidence ?? [] }))
@@ -1972,7 +1974,21 @@ export async function listRadarCandidates(pool: pg.Pool, user: AuthUser, campaig
      ORDER BY created_at DESC`,
     [campaignId],
   )
-  return result.rows.map(mapCandidate)
+  return (await attachRadarPublicPresence(pool,result.rows)).map(mapCandidate)
+}
+
+async function attachRadarPublicPresence<T extends RadarCandidateRecordRow>(pool:pg.Pool,rows:T[]):Promise<T[]> {
+  if(!rows.length)return rows
+  const saved=await pool.query<{candidate_id:string;configuration_revision:number;output:unknown}>(`SELECT DISTINCT ON (run.candidate_id) run.candidate_id,run.configuration_revision,run.output
+    FROM public.radar_candidate_research_runs run
+    JOIN public.radar_campaigns campaign ON campaign.id=run.campaign_id AND campaign.organization_id=run.organization_id
+    WHERE run.candidate_id=ANY($1::uuid[]) AND run.configuration_revision=campaign.configuration_revision
+      AND run.status IN ('succeeded','partial') ORDER BY run.candidate_id,run.created_at DESC,run.id DESC`,[rows.map(row=>row.id)])
+  const byId=new Map(saved.rows.map(run=>[run.candidate_id,run]))
+  return rows.map(row=>{
+    const run=byId.get(row.id),presence=run&&radarPublicPresenceFromDossier(run.output,run.configuration_revision)
+    return presence?{...row,normalized_payload:{...row.normalized_payload,publicPresence:presence}}:row
+  })
 }
 
 export async function importRadarCandidate(

@@ -22,6 +22,7 @@ import { validateRadarCompanyProfile, type RadarCompanyProfile } from './company
 import { assessRadarCompanySize, registryRadarSizeFacts, type RadarSizeFact } from './company-size.js'
 import {getRadarTlsReadOptions,listRadarTlsExceptions,radarTlsDiagnosticId} from './tls-exception-service.js'
 import type {RadarTlsReadOptions} from './site-tls-exception.js'
+import {projectRadarPublicPresence} from './public-presence.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile }
@@ -563,6 +564,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       desiredCnaes:context.target_cnaes,cnaes:Array.isArray(context.normalized_payload.cnaes) ? context.normalized_payload.cnaes as string[]:[],
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})
     const payload = {...candidate.rows[0].normalized_payload,researchRunId:run.id,researchRevision:run.configuration_revision,
+      publicPresence:projectRadarPublicPresence({configurationRevision:run.configuration_revision,...dossier}),
       researchComplete:dossier.limitations.length===0,researchUsesBrave:run.operation==='reanalyze'
         ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
