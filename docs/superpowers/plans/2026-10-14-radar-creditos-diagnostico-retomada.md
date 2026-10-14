@@ -97,4 +97,11 @@
 ## Verificação
 
 - Diagnóstico de produção: confirmado em consultas somente de leitura; nenhuma chamada paga, concessão de créditos ou alteração de configuração executada durante a investigação.
-- Implementação: aguardando revisão do plano e decisão de cota do contrato.
+- Autorização recebida: inicialmente sem limite interno para Villeman e Massas; nenhum outro contrato foi alterado. O usuário também pediu verificar a edição manual no Admin.
+- Task 1: RED com 7 falhas esperadas; GREEN, suíte Python com 290 testes aprovados e 1 teste de integração externa previamente ignorado. Commit `37296ac`.
+- Task 2: RED backend com 4 falhas esperadas e frontend com 1 falha; GREEN backend 944/944, frontend 659/659. Builds de ambos, orçamento de bundle e manifesto de release aprovados. Commit `8423dea`.
+- Produção: carteira `05adb60e-cca3-460a-8048-97bc5cb24f2a` criada somente para o contrato autorizado, `is_unlimited=true`, saldo numérico 0, uso inicial 0. Saldo numérico zero não bloqueia carteira ilimitada; as chamadas futuras continuam contabilizando uso.
+- Produção: marcador `presence` da execução histórica específica reparado com compare-and-set de revisão, hash, timestamp, lease vazio e status. Recusa antes do provedor comprovada pela ausência da carteira, HTTP 402 registrado e ledger vazio. Páginas/output não alterados, sem replay ou nova pesquisa.
+- As duas alterações de produção têm registros em `platform_admin_audit_events`, com ator, escopo, estado anterior/posterior e motivo.
+- Admin: verificação de tela e código confirmou que `/admin/limits` só edita tamanho de uploads. `/admin/ai` configura modelos/provedores, mas não carteiras. Não existe formulário/endpoint administrativo funcional para editar `ai_credit_wallets`; limites de fontes/campanhas e `maxCostPerRun` não substituem essa carteira. Implementar a gestão de créditos por contrato será uma etapa separada, com permissão administrativa e auditoria, sem concessão automática de saldo.
+- Nenhum modelo, fallback, chave, licença, controle de outros clientes ou política geral de cobrança foi alterado. Nenhuma chamada paga foi feita; somente testes locais com dependências falsas.
