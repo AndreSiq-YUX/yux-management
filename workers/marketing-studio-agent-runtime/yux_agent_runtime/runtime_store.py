@@ -10,6 +10,15 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 
+class CreditReservationError(RuntimeError):
+    """A wallet rejection proven to occur before any provider request."""
+
+    def __init__(self, reason: str):
+        # Keep the legacy message for non-Radar callers that already handle it.
+        super().__init__('insufficient_ai_credits_or_invalid_wallet')
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class RuntimeDatabaseScope:
     role: str
@@ -391,7 +400,12 @@ class PostgresAgentRuntimeStore:
             )
             wallet = cursor.fetchone()
             if not wallet:
-                raise RuntimeError("insufficient_ai_credits_or_invalid_wallet")
+                cursor.execute(
+                    """SELECT id FROM public.ai_credit_wallets
+                       WHERE organization_id = %s AND client_id = %s AND contract_id = %s""",
+                    [organization_id, client_id, contract_id],
+                )
+                raise CreditReservationError('credits_insufficient' if cursor.fetchone() else 'wallet_missing')
             cursor.execute(
                 """INSERT INTO public.ai_usage_ledger (
                      organization_id, client_id, contract_id, wallet_id, workflow_run_id,

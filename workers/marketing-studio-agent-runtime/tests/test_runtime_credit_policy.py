@@ -43,6 +43,21 @@ class FakeConnection:
 
 
 class RuntimeCreditPolicyTest(unittest.TestCase):
+    def test_rejected_reservation_distinguishes_missing_wallet_from_empty_balance(self):
+        for wallet, reason in [(None, 'wallet_missing'), ({'id': 'wallet-1'}, 'credits_insufficient')]:
+            with self.subTest(reason=reason):
+                cursor = FakeCursor()
+                cursor.rows = [None, wallet]
+                store = PostgresAgentRuntimeStore('postgresql://test')
+                store._connection = lambda: FakeConnection(cursor)
+                store._row_factory = lambda: None
+                with self.assertRaises(RuntimeError) as caught:
+                    store.reserve_credits(organization_id='org', client_id='client', contract_id='contract', credits=1, action='radar_presence_resolution')
+                self.assertEqual(type(caught.exception).__name__, 'CreditReservationError')
+                self.assertEqual(caught.exception.reason, reason)
+                self.assertEqual(cursor.calls[1][1], ['org', 'client', 'contract'])
+                self.assertNotIn('INSERT', cursor.calls[1][0])
+
     def test_postgres_rows_are_normalized_for_json_prompts_and_traces(self):
         store = PostgresAgentRuntimeStore("postgresql://test")
         row = store._row({

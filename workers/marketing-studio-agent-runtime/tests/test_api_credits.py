@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 from typing import Any
 
 os.environ.setdefault("YUX_AGENT_RUNTIME_TOKEN", "test-runtime-token")
@@ -52,6 +53,44 @@ class EstimateWorkflowCreditsTest(unittest.TestCase):
 
 
 class ApiCreditsTest(unittest.TestCase):
+    def test_radar_does_not_mislabel_unexpected_processing_error_as_insufficient_credits(self):
+        store = BillingStore()
+        payload = dict(organization_id='org', client_id='client', contract_id='contract', enabled=True,
+                       request_id='run:presence:hash', identity={}, evidence=[dict(id='p', source_url='https://example.test', text='Empresa teste', kind='institutional_candidate')])
+        with patch('yux_agent_runtime.api.resolve_radar_presence', side_effect=RuntimeError('unexpected_private_detail')):
+            response = TestClient(create_app(store), raise_server_exceptions=False).post('/radar/resolve-presence', headers=AUTH, json=payload)
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn('unexpected_private_detail', response.text)
+
+    def test_radar_keeps_provider_credit_error_distinct_from_internal_wallet_rejection(self):
+        payload = dict(organization_id='org', enabled=True, request_id='request', identity={},
+                       evidence=[dict(id='p', source_url='https://example.test', text='Empresa teste', kind='institutional_candidate')])
+        with patch('yux_agent_runtime.api.resolve_radar_presence', side_effect=ProviderRequestError('provider_http_402')):
+            response = self._client(BillingStore()).post('/radar/resolve-presence', headers=AUTH, json=payload)
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(response.json()['detail'], 'openrouter_credit_required')
+
+    def test_radar_credit_rejection_is_explicit_and_prevents_provider_call(self):
+        from yux_agent_runtime.runtime_store import PostgresAgentRuntimeStore
+        from test_runtime_credit_policy import FakeCursor, FakeConnection
+        for endpoint, body in [('/radar/resolve-presence', {'identity': {}, 'evidence': [dict(id='p', source_url='https://example.test', text='Empresa teste', kind='institutional_candidate')]}),
+                               ('/radar/qualify', {'criteria': {}, 'evidence': [dict(id='p', source_url='https://example.test', text='Empresa teste')]})]:
+            for wallet, code in [(None, 'radar_ai_wallet_missing'), ({'id': 'wallet'}, 'radar_ai_credits_insufficient')]:
+                with self.subTest(endpoint=endpoint, code=code):
+                    cursor = FakeCursor(); cursor.rows = [None, wallet]
+                    durable = PostgresAgentRuntimeStore('postgresql://test')
+                    durable._connection = lambda: FakeConnection(cursor)
+                    durable._row_factory = lambda: None
+                    store = BillingStore(); store.reserve_credits = durable.reserve_credits
+                    def process(_store, **kwargs):
+                        kwargs['before_call']()
+                        self.fail('A rejected reservation must never reach the provider')
+                    name = 'resolve_radar_presence' if endpoint.endswith('resolve-presence') else 'qualify_radar_business'
+                    with patch('yux_agent_runtime.api.' + name, side_effect=process):
+                        response = self._client(store).post(endpoint, headers=AUTH, json={**body, 'organization_id': 'org', 'client_id': 'client', 'contract_id': 'contract', 'enabled': True, 'request_id': 'request'})
+                    self.assertEqual(response.status_code, 402)
+                    self.assertEqual(response.json()['detail'], code)
+
     def _client(self, store: BillingStore, conversation_workflow=None) -> TestClient:
         return TestClient(create_app(store, mission_conversation_workflow=conversation_workflow))
 

@@ -18,7 +18,7 @@ from .runtime_factory import build_mission_supervisor, build_strategy_workflow_e
 from .llm_routing import effective_legacy_routes
 from .radar_qualification import qualify_radar_business
 from .radar_presence import resolve_radar_presence
-from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore
+from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
 from .mission_contracts import MissionConversationTurnRequestWire
@@ -258,6 +258,16 @@ def create_app(
         payload = {**request.payload, **request.model_dump(exclude={"payload"})}
         return queue.ingest_event(payload)
 
+    def reserve_radar_credits(request, action: str) -> None:
+        try:
+            reserve_billable_credits(organization_id=request.organization_id, client_id=request.client_id,
+                                     contract_id=request.contract_id, credits=1, action=action)
+        except CreditReservationError as error:
+            code = 'radar_ai_wallet_missing' if error.reason == 'wallet_missing' else 'radar_ai_credits_insufficient'
+            logger.warning('%s', json.dumps(dict(event='radar_credit_reservation_rejected', stage='before_provider',
+                                                 request_id=request.request_id[:200], code=code)))
+            raise HTTPException(status_code=402, detail=code) from error
+
     @app.post('/radar/resolve-presence', dependencies=[Depends(require_runtime_token)])
     def radar_resolve_presence(request: RadarPresenceRequest) -> dict[str,Any]:
         validate_tenant(request.organization_id,request.client_id,request.contract_id,profile_key='radar_presence_resolution',audience='internal_operator')
@@ -265,12 +275,10 @@ def create_app(
             raise HTTPException(status_code=422,detail='radar_presence_identity_too_large')
         try:
             def debit():
-                reserve_billable_credits(organization_id=request.organization_id,client_id=request.client_id,contract_id=request.contract_id,credits=1,action='radar_presence_resolution')
+                reserve_radar_credits(request, 'radar_presence_resolution')
             return resolve_radar_presence(runtime_store,enabled=request.enabled,context=request.model_dump(),identity=request.identity,evidence=[item.model_dump() for item in request.evidence],before_call=debit)
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
-        except RuntimeError as error:
-            raise HTTPException(status_code=402,detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422,detail=str(error)) from error
 
@@ -281,14 +289,11 @@ def create_app(
             raise HTTPException(status_code=422, detail='radar_qualification_criteria_too_large')
         try:
             def debit():
-                reserve_billable_credits(organization_id=request.organization_id, client_id=request.client_id,
-                    contract_id=request.contract_id, credits=1, action='radar_business_qualification')
+                reserve_radar_credits(request, 'radar_business_qualification')
             return qualify_radar_business(runtime_store, enabled=request.enabled, context=request.model_dump(),
                 criteria=request.criteria, evidence=[item.model_dump() for item in request.evidence], before_call=debit)
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
-        except RuntimeError as error:
-            raise HTTPException(status_code=402, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
