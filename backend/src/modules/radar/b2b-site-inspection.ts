@@ -6,8 +6,9 @@ import { isIP } from 'node:net'
 import sanitizeHtml from 'sanitize-html'
 import { isPublicRadarSiteIp } from './osm-site-check.js'
 import { classifyRadarReadError, type RadarReadDiagnostic } from './site-read-errors.js'
+import {createRadarExpiredCertificateAgent,probeRadarExpiredCertificate,type RadarTlsReadOptions,type RadarTlsExceptionEvidence,type RadarExpiredCertificate} from './site-tls-exception.js'
 
-type GetResult = { status: number; location?: string; contentType?: string; body?: string }
+type GetResult = { status: number; location?: string; contentType?: string; body?: string; tlsException?:RadarTlsExceptionEvidence }
 type Resolve = (hostname: string) => Promise<string[]>
 type Get = (url: URL, address: string) => Promise<GetResult>
 
@@ -21,6 +22,8 @@ export type RadarBusinessSiteInspection = {
   phones: string[]
   reason?: string
   diagnostic?: RadarReadDiagnostic
+  certificate?:RadarExpiredCertificate
+  tlsException?:RadarTlsExceptionEvidence
 }
 
 const MAX_HTML_BYTES = 2 * 1024 * 1024
@@ -42,13 +45,17 @@ export function createRadarPinnedLookup(address: string): LookupFunction {
 }
 
 // Only call after public-IP validation. Exported for native-transport regression tests.
-export function getRadarPublicPage(url: URL, address: string): Promise<GetResult> {
+export function getRadarPublicPage(url: URL, address: string, options:RadarTlsReadOptions={}): Promise<GetResult> {
   return new Promise((resolve, reject) => {
+    const agent=options.tlsException?createRadarExpiredCertificateAgent(url,address,options):undefined
+    const tlsException=options.tlsException?{grantId:options.tlsException.id,hostname:options.tlsException.hostname,
+      fingerprint256:options.tlsException.fingerprint256,observedAt:new Date().toISOString()}:undefined
     const maxBytes = url.pathname === '/robots.txt' ? MAX_ROBOTS_BYTES : MAX_HTML_BYTES
     const transport = url.protocol === 'https:' ? https : http
     const request = transport.request(url, {
       method: 'GET', timeout: 8000,
       lookup: createRadarPinnedLookup(address),
+      ...(url.protocol==='https:'?{rejectUnauthorized:true,agent}:{}),
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,text/plain' },
     }, response => {
       const status = response.statusCode ?? 0
@@ -56,7 +63,7 @@ export function getRadarPublicPage(url: URL, address: string): Promise<GetResult
       const contentType = response.headers['content-type']
       if (status >= 300 && status < 400 || status < 200 || status >= 400) {
         response.resume()
-        resolve({ status, location, contentType })
+        resolve({ status, location, contentType, tlsException })
         return
       }
       let size = 0
@@ -69,12 +76,12 @@ export function getRadarPublicPage(url: URL, address: string): Promise<GetResult
         }
         chunks.push(chunk)
       })
-      response.on('end', () => resolve({ status, location, contentType, body: Buffer.concat(chunks).toString('utf8') }))
+      response.on('end', () => resolve({ status, location, contentType, tlsException, body: Buffer.concat(chunks).toString('utf8') }))
       response.on('error', reject)
       response.on('aborted', () => reject(new Error('response_interrupted')))
     })
     const deadline=setTimeout(()=>request.destroy(new Error('timeout')),8000)
-    request.once('close',()=>clearTimeout(deadline))
+    request.once('close',()=>{clearTimeout(deadline);agent?.destroy()})
     request.on('timeout', () => request.destroy(new Error('timeout')))
     request.on('error', reject)
     request.end()
@@ -112,7 +119,7 @@ function robotsBlocksHomepage(body: string, path = '/') {
 
 export async function inspectRadarBusinessSite(
   value: string | null,
-  options: { resolve?: Resolve; get?: Get } = {},
+  options: { resolve?: Resolve; get?: Get; tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined> } = {},
 ): Promise<RadarBusinessSiteInspection> {
   const checkedAt = new Date().toISOString()
   const empty = { checkedAt, emails: [], phones: [] }
@@ -120,7 +127,15 @@ export async function inspectRadarBusinessSite(
   let url: URL
   try { url = new URL(value) } catch { return { ...empty, status: 'blocked', reason: 'invalid_url' } }
   const resolve = options.resolve ?? resolvePublicIpv4
-  const get = options.get ?? getRadarPublicPage
+  const get = options.get ?? (async(url:URL,address:string)=>getRadarPublicPage(url,address,await options.tlsOptions?.(url.hostname)))
+  const failure=async(cause:unknown,stage:'robots'|'page',target:URL,address:string):Promise<RadarBusinessSiteInspection>=>{
+    const result:RadarBusinessSiteInspection={...empty,status:'unknown',...classifyRadarReadError(cause,stage)}
+    if(result.diagnostic?.kind==='tls_expired'&&!options.get) {
+      try {result.certificate=await probeRadarExpiredCertificate(target,address)}catch{/* Other TLS defects never receive approval. */}
+    }
+    return result
+  }
+  let tlsException:RadarTlsExceptionEvidence|undefined
   const checkedRobots = new Map<string,string>()
   const originalHost = url.hostname.replace(/^www\./i, '').toLowerCase()
   for (let redirects = 0; redirects <= 2; redirects++) {
@@ -138,7 +153,8 @@ export async function inspectRadarBusinessSite(
       const robotsUrl = new URL('/robots.txt', url)
       let robots: GetResult
       try { robots = await get(robotsUrl, addresses[0]) }
-      catch (cause) { return { ...empty, status: 'unknown', ...classifyRadarReadError(cause,'robots') } }
+      catch (cause) { return failure(cause,'robots',robotsUrl,addresses[0]) }
+      tlsException=robots.tlsException??tlsException
       if (robots.status === 403 || robots.status === 401) {
         return { ...empty, status: 'blocked', reason: 'robots_access_denied' }
       }
@@ -149,7 +165,8 @@ export async function inspectRadarBusinessSite(
     if(robotsBlocksHomepage(checkedRobots.get(url.origin)??'',url.pathname+url.search))return {...empty,status:'blocked',reason:'robots_disallow'}
     let response: GetResult
     try { response = await get(url, addresses[0]) }
-    catch (cause) { return { ...empty, status: 'unknown', ...classifyRadarReadError(cause,'page') } }
+    catch (cause) { return failure(cause,'page',url,addresses[0]) }
+    tlsException=response.tlsException??tlsException
     if (response.status >= 300 && response.status < 400 && response.location) {
       if (redirects === 2) return { ...empty, status: 'unknown', reason: 'too_many_redirects' }
       try {
@@ -179,7 +196,7 @@ export async function inspectRadarBusinessSite(
       nonTextTags: ['style', 'script', 'textarea', 'noscript'] }).replace(/\s+/g, ' ').trim().slice(0, 20_000)
     const emails = [...new Set(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])].slice(0, 20)
     const phones = [...new Set(text.match(/\(?\d{2}\)?\s?\d{4,5}[-.\s]?\d{4}/g) ?? [])].slice(0, 20)
-    return { ...empty, status: 'verified_present', finalUrl: url.toString(), text, html: response.body, emails, phones }
+    return { ...empty, status: 'verified_present', finalUrl: url.toString(), text, html: response.body, emails, phones, tlsException }
   }
   return { ...empty, status: 'unknown', reason: 'too_many_redirects' }
 }
