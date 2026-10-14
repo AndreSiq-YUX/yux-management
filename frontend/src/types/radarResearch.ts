@@ -22,6 +22,6 @@ export type RadarResearchResult = {methodVersion?:number;configurationRevision:n
     documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
     sizeAssessment?:{score:number|null;evidenceCoverage:number;direction:'larger'|'smaller';contributions:Array<{metric:string;amount:number;points:number;weight:number;sourceUrl:string;referenceDate?:string}>;limitations:string[]};
     pages?:Array<{url:string;text:string;observedAt:string;limitation?:string;diagnostic?:{stage:string;kind:string;code:string};tlsException?:RadarTlsExceptionEvidence}>;
-    activity?:{status:string;signals:Array<{kind:string;sourceUrl:string;excerpt:string;observedAt:string;publishedDate?:string}>;limitation:string};
+    activity?:{status:string;signals:Array<{kind:string;sourceUrl:string;excerpt:string;observedAt:string;publishedDate?:string}>;presenceSignals?:Array<{kind:string;sourceUrl:string;excerpt:string;observedAt:string;association:'confirmed'|'review';scope?:string}>;limitation:string};
     qualification?:{targetStatus:string;productFit:string;reasons:string[];evidenceIds:string[];evidenceSources?:Array<{id:string;sourceUrl:string}>;provider?:string;model?:string};limitations?:string[];
   }};history:Array<{id:string;status:string;updated_at:string}>}

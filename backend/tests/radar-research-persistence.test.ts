@@ -69,6 +69,13 @@ it('persists a readable discovered site as pending rather than losing it when id
   expect(pool.payload.websiteUrl).toBeUndefined()
   expect(pool.payload.publicContacts).toEqual([])
 })
+it('retains saved contradictory activity evidence while adding read-only presence signals',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  pool.run!.status='partial';pool.run!.output={siteAssociation:'review',pages:[{url:'https://alfa.example/',text:'Alfa contato público',observedAt:'2026-10-14'}],discovery:{websiteUrl:'https://alfa.example/',association:'review',hits:[],suggestions:[],limitations:[],queries:1},activity:{status:'possible_closure',signals:[{kind:'closure',sourceUrl:'https://alfa.example/noticia',excerpt:'Encerramos nossas atividades.',observedAt:'2026-10-14'}],limitation:'Conferir sinal anterior'}}
+  const result=await getRadarCandidateResearch(pool as never,admin,'org','candidate')
+  expect(result.run!.output.activity?.status).toBe('possible_closure')
+  expect(result.run!.output.activity?.signals).toHaveLength(1)
+})
 it('reanalysis removes a directory website and stale contacts from projection while retaining historical evidence',async()=>{
   const pool=new ResearchPool(),run=await start(pool)
   pool.payload.websiteUrl='https://empresadois.com.br/cnpj/12345678000190'

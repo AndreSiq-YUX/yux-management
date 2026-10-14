@@ -55,7 +55,11 @@ function currentDossierProjection(output:Output):Output{
     return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})||!!page?.linkedFromUrl&&page.linkedFromUrl===contact.linkedFromUrl&&isRadarContactSource(contact,output.discovery?.websiteUrl)
   })
   const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl)
+  const readable=(output.pages??[]).filter(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
+  const associated=output.siteAssociation==='confirmed'&&!invalid?readable.filter(page=>output.discovery?.websiteUrl&&new URL(page.url).origin===new URL(output.discovery.websiteUrl).origin):[]
+  const activity=assessRadarBusinessActivity(associated,contacts??[],{pages:readable,scope:output.presenceResolution?.scope})
   return{...output,contacts,siteAssociation:invalid?'review':output.siteAssociation,
+    activity:output.activity&&!invalid?{...output.activity,presenceSignals:activity.presenceSignals}:activity,
     discovery:output.discovery?{...output.discovery,...(invalid?{websiteUrl:undefined,association:'review' as const}:{})}:undefined,
     pages:output.pages?.map(({html:_html,...page})=>page)}
 }
@@ -233,7 +237,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const confirmedSearchPages=trustedSearchHits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')}))
     .map(hit=>({url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`,observedAt:hit.observedAt}))
   const qualifiedEvidence=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages].slice(0,10)
-  const activity = assessRadarBusinessActivity(qualifiedEvidence)
+  const activity = assessRadarBusinessActivity(qualifiedEvidence,uniqueContacts,{pages:pages.filter(candidatePage),scope:presenceResolution?.scope})
   if (!website && !pages.length) limits.push('Site não encontrado nas fontes consultadas; isso não comprova inexistência.')
   if (website && !associated) limits.push('A identidade do site exige revisão; contatos não são tratados como confirmados.')
   if(presenceResolution?.scope==='group')limits.push('Presença e canais associados ao grupo; vínculo com este estabelecimento ainda requer conferência.')

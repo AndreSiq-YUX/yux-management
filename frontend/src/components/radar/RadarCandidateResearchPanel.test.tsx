@@ -7,6 +7,14 @@ import type { RadarResearchAvailability, RadarResearchResult } from '@/types/rad
 vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn(),authorizeTlsException:vi.fn(),revokeTlsException:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
+it('shows an Admin configuration link without hiding public evidence or invoking paid analysis',async()=>{
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,availability:{...availability,presenceResolutionEnabled:true,presence:{routeConfigured:false,maxInputTokens:16000,maxOutputTokens:1600,fallbackCount:0}},run:{id:'run',status:'partial',stage:'review',updated_at:'2026-10-14',configuration_revision:2,output:{pages:[{url:'https://alfa.example/',text:'Alfa institucional',observedAt:'2026-10-14'}],limitations:['radar_presence_explicit_route_required']}}})
+  const view=mount();await view.click('Ver dossiê da empresa')
+  expect(view.container.querySelector('a[href="/admin/ai"]')).not.toBeNull()
+  expect(view.container.textContent).toContain('Alfa institucional')
+  expect(radarService.startCandidateResearch).not.toHaveBeenCalled()
+  view.unmount()
+})
 it('requires a single explicit certificate consent, saves without launching paid research, and offers resume',async()=>{
   const diagnostic={diagnosticId:'a'.repeat(64),hostname:'public.example',fingerprint256:'AB',validTo:'2020-01-02T00:00:00Z'}
   const saved={...initial,tlsCanAuthorize:true,tlsDiagnostics:[diagnostic],tlsExceptions:[],run:{id:'run',status:'partial',stage:'review',updated_at:'2026-10-14',configuration_revision:2,output:{}}}
