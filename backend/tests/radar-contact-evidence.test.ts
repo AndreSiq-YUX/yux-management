@@ -1,5 +1,12 @@
 import { expect, it } from 'vitest'
 import { extractRadarContacts, normalizeRadarPhone } from '../src/modules/radar/contact-evidence.js'
+it('records a supplier contact form as a channel, not its submission endpoint',()=>{
+  const contacts=extractRadarContacts({url:'https://alfa.example/fornecedor/',observedAt:'2026-10-14',text:'Seja fornecedor. Ofereça produtos para nossa empresa.',html:'<form action="https://external.example/submit"><label>E-mail<input type="email"/></label><textarea name="mensagem"></textarea><button>Enviar</button></form>'},'review')
+  expect(contacts).toContainEqual(expect.objectContaining({kind:'contact_form',value:'https://alfa.example/fornecedor/',purpose:'suppliers',association:'review'}))
+})
+it.each(['<form role="search"><input type="search"/></form>','<form><input type="email"/><button>Assinar newsletter</button></form>','<form><input type="password"/><button>Entrar</button></form>'])('does not promote search, newsletter or login forms to business channels',html=>{
+  expect(extractRadarContacts({url:'https://alfa.example/',observedAt:'2026-10-14',text:'Seja nosso fornecedor. Fale conosco.',html}).filter(contact=>contact.kind==='contact_form')).toEqual([])
+})
 it('extracts_href_only_contacts_with_sources_and_no_whatsapp_guess', () => {
   const page = { url: 'https://alfa.example/contato', observedAt: '2026-10-08', text: '', html: '<a href="mailto:comercial@alfa.example">Escreva</a><a href="tel:+554133334444">Ligue</a><a href="https://wa.me/5541999998888">WhatsApp</a><a href="https://instagram.com/alfa">Instagram</a>' }
   const contacts = extractRadarContacts(page)

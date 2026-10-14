@@ -4,6 +4,19 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('retains public channels as pending when site identity still needs configuration',async()=>{
+  const page={url:'https://alfa.example/',observedAt:'2026-10-14',text:'Marca Alfa. Contatos corporativos.',html:'<a href="mailto:contato@alfa.example">Contato</a><a href="https://facebook.com/alfa">Facebook</a>'}
+  const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'review',websiteUrl:page.url,hits:[],suggestions:[],limitations:[],queries:1}},{web:vi.fn(),checkpoint:async()=>{}})
+  expect(result.contacts).toContainEqual(expect.objectContaining({kind:'email',value:'contato@alfa.example',association:'review'}))
+  expect(result.contacts).toContainEqual(expect.objectContaining({kind:'social',value:'https://facebook.com/alfa',association:'review'}))
+})
+it('reads only opted-in linked profiles and retains source-linked public contacts',async()=>{
+  const page={url:'https://alfa.example/',observedAt:'2026-10-14',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="https://facebook.com/alfa">Facebook</a>'}
+  const collectSocial=vi.fn(async()=>[{url:'https://facebook.com/alfa',linkedFromUrl:page.url,text:'Alfa - contato@alfa.example',observedAt:'2026-10-14'}])
+  const config=resolveRadarSearchConfiguration({research:{enabled:true,inspectLinkedSocialProfiles:true,maxPagesPerCandidate:6}})
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'confirmed',websiteUrl:page.url,hits:[],suggestions:[],limitations:[],queries:1}},{web:vi.fn(),collectSocial,checkpoint:async()=>{}} as never)
+  expect(result.contacts).toContainEqual(expect.objectContaining({kind:'email',value:'contato@alfa.example',sourceUrl:'https://facebook.com/alfa',linkedFromUrl:page.url,association:'confirmed'}))
+})
 it('does not blame model configuration or invoke AI when institutional pages cannot be read',async()=>{
   const config=resolveRadarSearchConfiguration({research:{enabled:true,presenceResolutionEnabled:true,semanticQualificationEnabled:true,profileEnabled:true}})
   const url='https://alfa.example/',failed={url,text:'',observedAt:'2026-10-14',limitation:'robots_tls_expired',diagnostic:{stage:'robots',kind:'tls_expired',code:'CERT_HAS_EXPIRED'}}

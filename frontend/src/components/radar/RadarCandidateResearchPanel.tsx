@@ -126,7 +126,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
           {output?.registryPhone&&<p className="mt-2 break-all">Telefone cadastral: {output.registryPhone} — não validado por atendimento.</p>}
           {!output?.contacts?.length&&<p className="mt-2 text-slate-600">Nenhum contato público encontrado até esta etapa.</p>}
           <ul className="space-y-2">{output?.contacts?.map((contact,index)=><li key={`${contact.kind}-${index}`} className="mt-2 break-words rounded border p-2">
-            <p className="break-all font-medium">{({phone:'Telefone público',email:'E-mail',whatsapp:'WhatsApp publicado',social:'Rede social',business_person:'Contato profissional'})[contact.kind]}: {contact.value}</p>
+            <p className="break-all font-medium">{({phone:'Telefone público',email:'E-mail',whatsapp:'WhatsApp publicado',social:'Rede social',business_person:'Contato profissional',contact_form:'Formulário de contato'})[contact.kind]}: {contact.value}</p>
             <p className="text-xs">{contact.association==='confirmed'?'Identidade corroborada':'Associação pendente'} · <SafeSource url={contact.sourceUrl}/> · Observado em {new Date(contact.observedAt).toLocaleDateString('pt-BR')}</p>
             <p className="text-xs">Finalidade: {({general:'geral',suppliers:'fornecedores/compras',sales:'comercial/vendas',finance:'financeiro',recruitment:'recrutamento',unknown:'não identificada'})[contact.purpose??'unknown']}{contact.preferred?' — prioritário para esta pesquisa':''}. {contact.scope==='group'?'Contato do grupo; não confirma a filial.':''}</p>
             {contact.purposeEvidence&&<details className="text-xs"><summary>Contexto da finalidade</summary>{contact.purposeEvidence}</details>}

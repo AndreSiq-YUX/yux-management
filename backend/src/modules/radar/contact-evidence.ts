@@ -4,9 +4,14 @@ import { isRadarSocialUrl } from './site-discovery.js'
 import sanitizeHtml from 'sanitize-html'
 import {isRadarInstitutionalSource} from './source-identity.js'
 export type RadarContactPurpose='general'|'suppliers'|'sales'|'finance'|'recruitment'|'unknown'
-export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'social' | 'business_person'; value: string;
+export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'social' | 'business_person' | 'contact_form'; value: string;
   sourceUrl: string; observedAt: string; association: 'confirmed' | 'review'; note?: string; preferred?:boolean;
-  purpose?:RadarContactPurpose;purposeEvidence?:string;scope?:'establishment'|'group'|'unresolved' }
+  purpose?:RadarContactPurpose;purposeEvidence?:string;scope?:'establishment'|'group'|'unresolved';linkedFromUrl?:string }
+export function isRadarContactSource(contact:Pick<RadarContactEvidence,'sourceUrl'|'linkedFromUrl'>,websiteUrl?:string) {
+  if(isRadarInstitutionalSource(contact.sourceUrl))return true
+  if(!websiteUrl||!contact.linkedFromUrl||!isRadarSocialUrl(contact.sourceUrl)||!isRadarInstitutionalSource(contact.linkedFromUrl))return false
+  try{return new URL(contact.linkedFromUrl).origin===new URL(websiteUrl).origin}catch{return false}
+}
 function contactContext(text:string,value:string) {
   const index=text.toLowerCase().indexOf(value.toLowerCase())
   return index>=0?text.slice(Math.max(0,index-180),index):''
@@ -27,8 +32,9 @@ export function normalizeRadarPhone(value: string): string | undefined {
   if (!/^[1-9]\d[2-9]\d{7,8}$/.test(digits)) return
   return `+55${digits}`
 }
-export function extractRadarContacts(page: RadarSiteEvidence, association: 'confirmed' | 'review' = 'confirmed'): RadarContactEvidence[] {
-  if(!isRadarInstitutionalSource(page.url,{text:page.text,html:page.html}))return []
+export function extractRadarContacts(page: RadarSiteEvidence, association: 'confirmed' | 'review' = 'confirmed', context?:{linkedFromUrl:string}): RadarContactEvidence[] {
+  const linkedSocial=!!context&&isRadarSocialUrl(page.url)&&isRadarInstitutionalSource(context.linkedFromUrl)
+  if(!isRadarInstitutionalSource(page.url,{text:page.text,html:page.html})&&!linkedSocial)return []
   const contacts: RadarContactEvidence[] = []
   // Preserve a link's published position, including mailto contacts absent from visible text.
   // Never use text AFTER a contact: that often belongs to the next department.
@@ -74,5 +80,19 @@ export function extractRadarContacts(page: RadarSiteEvidence, association: 'conf
       visit(parsed)
     } catch { /* Invalid structured data is not evidence. */ }
   }
-  return contacts.slice(0, 60)
+  for(const match of (page.html??'').matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/gi)) {
+    const form=match[0],text=sanitizeHtml(form,{allowedTags:[],allowedAttributes:{}}).replace(/\s+/g,' ')
+    if(/type\s*=\s*["']?(?:password|search)|role\s*=\s*["']search|newsletter|news-letter|assinar|subscribe|curr[ií]culo|candidatur|vagas/i.test(form))continue
+    if(!/<textarea\b|name\s*=\s*["'][^"']*(?:mensagem|message|produto|assunto)/i.test(form))continue
+    const context=`${page.text.slice(0,1200)} ${text}`
+    const purpose=purposeFromContext(context)
+    if(!['suppliers','sales','general','finance'].includes(purpose))continue
+    contacts.push({kind:'contact_form',value:page.url,sourceUrl:page.url,observedAt:page.observedAt,association,
+      purpose,purposeEvidence:text||page.text.slice(0,240),scope:association==='confirmed'?'establishment':'unresolved',
+      note:'Formulário público observado. Nenhuma informação foi enviada.'})
+    break
+  }
+  return contacts.filter(contact=>!linkedSocial||!['social','contact_form','business_person'].includes(contact.kind)
+    &&!(contact.kind==='email'&&/@(?:[^@.]+\.)?(?:facebook|instagram|linkedin|meta|youtube|google|tiktok)\.com$/i.test(contact.value)))
+    .slice(0,60).map(contact=>({...contact,...(linkedSocial?{linkedFromUrl:context!.linkedFromUrl}:{})}))
 }

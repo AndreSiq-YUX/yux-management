@@ -10,7 +10,7 @@ import { getRadarResearchAvailability } from './research-availability.js'
 import { normalizeRadarText,resolveRadarSearchConfiguration, type RadarSearchConfiguration } from './search-configuration.js'
 import { discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl, type RadarBusinessIdentity, type RadarPresenceDiscovery } from './site-discovery.js'
 import { collectRadarSiteEvidence, radarHtmlLinks, isRetryableRadarPage, RADAR_READER_VERSION, type RadarSiteEvidence } from './site-evidence.js'
-import { extractRadarContacts, type RadarContactEvidence } from './contact-evidence.js'
+import { extractRadarContacts,isRadarContactSource, type RadarContactEvidence } from './contact-evidence.js'
 import { assessRadarBusinessActivity } from './business-activity.js'
 import { searchRadarWeb, type RadarWebHit } from './web-search.js'
 import { searchRadarPlaces } from './place-providers.js'
@@ -23,6 +23,7 @@ import { assessRadarCompanySize, registryRadarSizeFacts, type RadarSizeFact } fr
 import {getRadarTlsReadOptions,listRadarTlsExceptions,radarTlsDiagnosticId} from './tls-exception-service.js'
 import type {RadarTlsReadOptions} from './site-tls-exception.js'
 import {projectRadarPublicPresence} from './public-presence.js'
+import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile }
@@ -38,6 +39,7 @@ type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query:
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
   registrySizeFacts?:RadarSizeFact[];
+  collectSocial?:typeof collectRadarPublicSocialEvidence;
   tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined>;
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
 export const RADAR_RESEARCH_METHOD_VERSION=2
@@ -50,7 +52,7 @@ function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
 function currentDossierProjection(output:Output):Output{
   const contacts=output.contacts?.filter(contact=>{
     const page=output.pages?.find(item=>item.url===contact.sourceUrl)
-    return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})
+    return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})||!!page?.linkedFromUrl&&page.linkedFromUrl===contact.linkedFromUrl&&isRadarContactSource(contact,output.discovery?.websiteUrl)
   })
   const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl)
   return{...output,contacts,siteAssociation:invalid?'review':output.siteAssociation,
@@ -69,6 +71,7 @@ function safeResearchError(cause:unknown) {
 export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, configuration: RadarSearchConfiguration,
   saved: Output, dependencies: PipelineDependencies): Promise<RadarResearchDossier> {
   const output = { ...saved }
+  const readingDeadline=Date.now()+110_000
   if (output.pages?.some(isRetryableRadarPage)) {
     output.pages=output.pages.filter(page=>!isRetryableRadarPage(page));output.readingComplete=false
   }
@@ -85,7 +88,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         for(const hit of hits.filter(item=>isRadarInstitutionalSource(item.url,{title:item.title,text:item.snippets.join(' ')}))){
           const root=new URL('/',hit.url).toString()
           if(!pages.some(page=>new URL(page.url).origin===new URL(root).origin)&&pages.length<Math.max(1,configuration.research.maxPagesPerCandidate-1)){
-            const collected=await (dependencies.collect??collectRadarSiteEvidence)(root,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions})
+            const collected=await (dependencies.collect??collectRadarSiteEvidence)(root,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline})
             pages.push(...collected);output.pages=pages;await checkpoint('discovery')
           }
           const readable=pages.filter(page=>new URL(page.url).origin===new URL(root).origin&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
@@ -113,7 +116,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       const remaining = configuration.research.maxPagesPerCandidate - other.filter(page=>!page.limitation).length
       const maxAttemptsPerCandidate=configuration.research.maxPagesPerCandidate*2-other.length
       const prior=pages.filter(page=>new URL(page.url).origin===new URL(url).origin)
-      let collected = await (dependencies.collect ?? collectRadarSiteEvidence)(url, {maxPagesPerCandidate:Math.min(remaining,prior.filter(page=>!page.limitation).length+1),maxAttemptsPerCandidate}, {signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,
+      let collected = await (dependencies.collect ?? collectRadarSiteEvidence)(url, {maxPagesPerCandidate:Math.min(remaining,prior.filter(page=>!page.limitation).length+1),maxAttemptsPerCandidate}, {signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,
         initialPages:pages.filter(page=>new URL(page.url).origin===new URL(url).origin),checkpoint:async value => {
           output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')
         }})
@@ -121,7 +124,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       if (collected.some(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&(matchRadarBusinessIdentity(identity,page.text)==='confirmed'||mentionsIdentity(page.text)))) {
         website=url
         if(collected.filter(page=>!page.limitation).length<remaining) {
-          collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,initialPages:collected,
+          collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,initialPages:collected,
             checkpoint:async value=>{output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')}})
           pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...collected]
         }
@@ -157,7 +160,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     const maximum=configuration.research.maxPagesPerCandidate-other.filter(page=>!page.limitation).length
     if(prior.filter(page=>!page.limitation).length<maximum){
       const selected=await(dependencies.collect??collectRadarSiteEvidence)(presenceResolution.websiteUrl,
-        {maxPagesPerCandidate:maximum,maxAttemptsPerCandidate:configuration.research.maxPagesPerCandidate*2-other.length},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,
+        {maxPagesPerCandidate:maximum,maxAttemptsPerCandidate:configuration.research.maxPagesPerCandidate*2-other.length},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,
           initialPages:prior.filter(page=>page.url!==presenceResolution?.websiteUrl||!!page.html)})
       const byUrl=new Map(selected.map(page=>[page.url,page]))
       pages=[...pages.map(page=>byUrl.get(page.url)??page),...selected.filter(page=>!pages.some(old=>old.url===page.url))]
@@ -177,12 +180,32 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     &&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,presenceResolution?.scope==='group'))
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
   const sameInstitutionalOrigin=(url:string)=>!!associatedOrigin&&isRadarInstitutionalSource(url)&&new URL(url).origin===new URL(associatedOrigin).origin
-  const contacts:RadarContactEvidence[] = pages.filter(page=>sameInstitutionalOrigin(page.url)).flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review').map(contact=>({...contact,
+  const candidatePage=(page:RadarSiteEvidence)=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,true)
+  if(configuration.research.inspectLinkedSocialProfiles&&!output.analysisOnly) {
+    const social=await(dependencies.collectSocial??collectRadarPublicSocialEvidence)({linkedPages:pages.filter(candidatePage),
+      remainingPages:Math.max(0,configuration.research.maxPagesPerCandidate-pages.filter(page=>!page.limitation).length),
+      remainingAttempts:Math.max(0,configuration.research.maxPagesPerCandidate*2-pages.length),deadlineAt:readingDeadline,existingPages:pages},
+      {signal:dependencies.signal,checkpoint:async page=>{output.pages=[...pages,page];await checkpoint('reading');pages.push(page)}})
+    for(const page of social)if(!pages.some(old=>old.url===page.url))pages.push(page)
+    output.pages=pages
+  }
+  const contacts:RadarContactEvidence[] = pages.filter(candidatePage).flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review').map(contact=>({...contact,
     scope:associatedPages.includes(page)?presenceResolution?.scope??'establishment': 'unresolved' as const})))
   // Link-only contacts are preserved as sourced facts: stored pages intentionally omit raw HTML.
-  contacts.push(...(output.contacts??[]).filter(contact=>sameInstitutionalOrigin(contact.sourceUrl)&&(output.analysisOnly||saved.pages?.some(old=>old.url===contact.sourceUrl&&pages.some(page=>page.url===old.url&&!page.html&&page.text===old.text&&page.observedAt===old.observedAt)))).map(contact=>({...contact,
-    association:associatedPages.some(page=>page.url===contact.sourceUrl)?contact.association:'review' as const,
+  contacts.push(...(output.contacts??[]).filter(contact=>pages.some(page=>page.url===contact.sourceUrl&&candidatePage(page))&&(output.analysisOnly||saved.pages?.some(old=>old.url===contact.sourceUrl&&pages.some(page=>page.url===old.url&&!page.html&&page.text===old.text&&page.observedAt===old.observedAt)))).map(contact=>({...contact,
+    association:associatedPages.some(page=>page.url===contact.sourceUrl)?'confirmed' as const:'review' as const,
     scope:associatedPages.some(page=>page.url===contact.sourceUrl)?presenceResolution?.scope??'establishment':'unresolved' as const})))
+  for(const page of pages.filter(page=>!page.limitation&&!!page.linkedFromUrl&&isRadarPublicProfile(page.url))) {
+    const parent=pages.find(parent=>parent.url===page.linkedFromUrl&&candidatePage(parent))
+    if(!parent)continue
+    const parentLinks=extractRadarContacts(parent,'review').some(contact=>contact.kind==='social'&&contact.value===page.url)
+    const priorLinks=(saved.contacts??[]).some(contact=>contact.kind==='social'&&contact.value===page.url&&contact.sourceUrl===parent.url)
+    if(!parentLinks&&!priorLinks)continue
+    const association=associatedPages.includes(parent)?'confirmed' as const:'review' as const
+    const extracted=extractRadarContacts(page,association,{linkedFromUrl:parent.url})
+    const prior=page.html?[]:(saved.contacts??[]).filter(contact=>contact.sourceUrl===page.url&&contact.linkedFromUrl===parent.url)
+    contacts.push(...[...extracted,...prior].map(contact=>({...contact,association,scope:association==='confirmed'?presenceResolution?.scope??'establishment':'unresolved' as const})))
+  }
   // Contacts in search snippets remain useful when there is no website; identity must be corroborated independently.
   const trustedSearchHits=discovery.hits.filter(hit=>sameInstitutionalOrigin(hit.url)&&matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed'
     &&!pages.some(page=>page.url===hit.url&&!page.limitation&&cnpjConflict(identity,page.text,presenceResolution?.scope==='group')))
@@ -205,6 +228,8 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }
   }
   uniqueContacts.sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))
+  output.contacts=uniqueContacts
+  await checkpoint('consolidation')
   const confirmedSearchPages=trustedSearchHits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')}))
     .map(hit=>({url:hit.url,text:`${hit.title} ${hit.snippets.join(' ')}`,observedAt:hit.observedAt}))
   const qualifiedEvidence=[...associatedPages.filter(page=>!page.limitation&&!!page.text),...confirmedSearchPages].slice(0,10)

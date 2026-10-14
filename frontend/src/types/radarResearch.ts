@@ -7,7 +7,7 @@ export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:s
   operations?:{reanalyze:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>};refresh?:{allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>}};
   estimates:Array<{sourceType:string;costPerQuery:number;maximumQueries:number}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number;semanticQualificationEnabled:boolean;
   semantic?:{routeConfigured:boolean;model?:string;provider?:string;maxInputTokens:number;maxOutputTokens:number;budgetReferenceBrl?:number;fallbackCount:number} }
-export type RadarResearchContact = {kind:'phone'|'email'|'whatsapp'|'social'|'business_person';value:string;sourceUrl:string;observedAt:string;association:'confirmed'|'review';note?:string;
+export type RadarResearchContact = {kind:'phone'|'email'|'whatsapp'|'social'|'business_person'|'contact_form';value:string;sourceUrl:string;observedAt:string;association:'confirmed'|'review';note?:string;linkedFromUrl?:string;
   purpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment'|'unknown';purposeEvidence?:string;scope?:string;preferred?:boolean}
 export type RadarTlsExceptionEvidence={grantId:string;hostname:string;fingerprint256:string;observedAt:string}
 export type RadarTlsExceptionGrant={id:string;hostname:string;fingerprint256:string;approvedBy:string;approvedAt:string;expiresAt:string;revokedAt?:string}

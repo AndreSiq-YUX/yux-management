@@ -12,6 +12,12 @@ it('projects a current old dossier into the list using one batch read and no wri
   expect(query).toHaveBeenCalledTimes(2)
   expect(query.mock.calls.every(([sql])=>!/(UPDATE|INSERT|DELETE)/.test(sql))).toBe(true)
 })
+it('keeps a linked official-profile email for CRM but rejects one with foreign provenance',()=>{
+  const contact={kind:'email',value:'contato@alfa.example',sourceUrl:'https://facebook.com/alfa',linkedFromUrl:'https://alfa.example/',observedAt:'2026-10-14',association:'confirmed',scope:'establishment'}
+  const facts=buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{websiteUrl:'https://alfa.example/',publicContacts:[contact]}},'Oferta')
+  expect(facts.email).toBe('contato@alfa.example')
+  expect(buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{websiteUrl:'https://alfa.example/',publicContacts:[{...contact,linkedFromUrl:'https://serasaexperian.com.br/'}]}},'Oferta').email).toBe('')
+})
 it('filters directory facts consistently for candidate lists and new CRM deliveries without mutating history',()=>{
   const candidate=mapCandidate({normalized_payload:payload} as never)
   expect(candidate.normalizedPayload).toMatchObject({websiteStatus:'unknown',publicContacts:[],sitePhones:[]})

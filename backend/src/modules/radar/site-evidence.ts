@@ -2,7 +2,7 @@ import sanitizeHtml from 'sanitize-html'
 import { inspectRadarBusinessSite } from './b2b-site-inspection.js'
 import type { RadarReadDiagnostic } from './site-read-errors.js'
 import type {RadarExpiredCertificate,RadarTlsExceptionEvidence,RadarTlsReadOptions} from './site-tls-exception.js'
-export type RadarSiteEvidence = { url: string; observedAt: string; text: string; html?: string; limitation?: string; diagnostic?:RadarReadDiagnostic; certificate?:RadarExpiredCertificate; tlsException?:RadarTlsExceptionEvidence }
+export type RadarSiteEvidence = { url: string; observedAt: string; text: string; html?: string; limitation?: string; diagnostic?:RadarReadDiagnostic; certificate?:RadarExpiredCertificate; tlsException?:RadarTlsExceptionEvidence;linkedFromUrl?:string }
 export const RADAR_READER_VERSION = 3
 export function isRetryableRadarPage(page: RadarSiteEvidence) {
   return !!page.limitation && /^(robots_unavailable|robots_transport_failed|robots_timeout|(?:robots_)?tls_(?:expired|invalid)|(?:robots_)?connection_(?:reset|refused)|dns_(?:failed|dns)|request_failed|timeout|response_interrupted|empty_or_oversized_page|page_too_large|http_429|http_5\d\d)$/.test(page.limitation)
@@ -35,12 +35,12 @@ export function radarHtmlLinks(html: string) {
 export async function collectRadarSiteEvidence(url: string, policy: { maxPagesPerCandidate: number;maxAttemptsPerCandidate?:number },
   dependencies: { inspect?: typeof inspectRadarBusinessSite; signal?: AbortSignal;
     tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined>;
-    initialPages?: RadarSiteEvidence[]; checkpoint?: (pages: RadarSiteEvidence[]) => Promise<void> } = {}): Promise<RadarSiteEvidence[]> {
+    initialPages?: RadarSiteEvidence[]; checkpoint?: (pages: RadarSiteEvidence[]) => Promise<void>;deadlineAt?:number } = {}): Promise<RadarSiteEvidence[]> {
   const pages: RadarSiteEvidence[] = [...(dependencies.initialPages ?? [])]
   const origin = new URL(url).origin
   const pending = [url, ...pages.flatMap(page => usefulLinks(page.html ?? '',page.url,origin))]
   const seen = new Set(pages.map(page => page.url))
-  const deadline = Date.now() + 110_000
+  const deadline = dependencies.deadlineAt??Date.now() + 110_000
   const maxAttempts=policy.maxAttemptsPerCandidate??policy.maxPagesPerCandidate*2
   for (let index = 0; index < pending.length && pages.filter(page=>!page.limitation).length < policy.maxPagesPerCandidate && pages.length<maxAttempts; index++) {
     if (dependencies.signal?.aborted || Date.now() > deadline) break

@@ -3,6 +3,7 @@ import {publicRadarUrl} from './web-search.js'
 import type {RadarPresenceDiscovery} from './site-discovery.js'
 import type {RadarSiteEvidence} from './site-evidence.js'
 import type {RadarContactEvidence} from './contact-evidence.js'
+import {isRadarContactSource} from './contact-evidence.js'
 import type {RadarPresenceResolution} from './presence-resolution.js'
 
 export type RadarPublicPresence={version:1;configurationRevision:number;website?:{url:string;association:'confirmed'|'review';scope:'establishment'|'group'|'unresolved';readable:boolean;sourceUrl:string;observedAt:string};contacts:RadarContactEvidence[]}
@@ -19,7 +20,7 @@ export function projectRadarPublicPresence(input:{configurationRevision:number;d
   const association=input.siteAssociation==='confirmed'?'confirmed' as const:'review' as const
   const scope=association==='confirmed'?input.presenceResolution?.scope??'establishment':'unresolved'
   const contacts=input.contacts.filter(contact=>typeof contact.sourceUrl==='string'&&typeof contact.value==='string'
-    &&isRadarInstitutionalSource(contact.sourceUrl)&&origin(contact.sourceUrl)===origin(url))
+    &&isRadarContactSource(contact,url)&&(origin(contact.sourceUrl)===origin(url)||origin(contact.linkedFromUrl??'')===origin(url)))
     .map(contact=>({...contact,association:association==='confirmed'?contact.association:'review' as const,scope:association==='confirmed'?contact.scope??scope:'unresolved' as const}))
   return {version:1,configurationRevision:input.configurationRevision,website:{url,association,scope,readable:!!page?.text&&!page.limitation,sourceUrl:page?.url??hit!.url,observedAt:page?.observedAt??hit!.observedAt},contacts}
 }
