@@ -7,7 +7,8 @@ import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { seedIntegrationFixtures, fixtureIds, fixtureUsers } from './support/fixtures.js'
 import { storePlatformProviderSecret } from '../../src/modules/platform/adminRepository.js'
-import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv,listRadarCandidates } from '../../src/modules/radar/repository.js'
+import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv,listRadarCandidates,getRadarBraveCandidateAvailability } from '../../src/modules/radar/repository.js'
+import {buildRadarCrmLeadFacts} from '../../src/modules/radar/crm-delivery.js'
 import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from '../../src/modules/radar/research-service.js'
 import { getRadarResearchAvailability } from '../../src/modules/radar/research-availability.js'
 
@@ -57,6 +58,38 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     if(routeId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId])
     if(presenceRouteId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[presenceRouteId])
     await Promise.all([pool.end(),rawWorker.end()])
+  })
+  it('consolidates pending and confirmed presence across SQL reads without new discovery or leaking tentative CRM contacts',async()=>{
+    const previousConfiguration=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[campaignId])).rows[0].search_configuration
+    let candidateForCleanup:string|undefined
+    try {
+    await pool.query(`UPDATE public.radar_campaigns SET search_configuration='{"sources":{"enrichWithBrave":true},"research":{"enabled":true,"webSearchEnabled":true,"presenceResolutionEnabled":false}}'::jsonb WHERE id=$1`,[campaignId])
+    await pool.query(`UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.01,rate_limit_per_day=100 WHERE source_key='brave_place_search'`)
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Omega',$3,'{"discoveryRevision":1,"city":"Curitiba","state":"PR"}') RETURNING id`,[organizationId,campaignId,randomUUID()])).rows[0].id
+    candidateForCleanup=id
+    const url='https://omega.example/',observedAt='2026-10-14T10:00:00Z'
+    const page={url,observedAt,text:'Marca Omega. Empresa Omega é nossa razão social. Seja nosso fornecedor.',html:'<a href="mailto:contato@omega.example">Contato</a><a href="https://facebook.com/omega">Facebook</a><form><textarea name="mensagem"></textarea><button>Enviar</button></form>'}
+    await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output) VALUES($1,$2,$3,$4,2,'partial',$5)`,[organizationId,campaignId,id,admin.id,JSON.stringify({readingComplete:true,discovery:{websiteUrl:url,association:'review',hits:[],suggestions:[],limitations:[],queries:1},pages:[page],contacts:[],siteAssociation:'review'})])
+    const start=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'reanalyze',requestId:randomUUID()}))
+    const web=vi.fn(),collect=vi.fn(),runtime=vi.fn()
+    await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{organizationId,runId:start.runId},undefined,{web,collect,runtime}))
+    const pending=(await scoped(()=>listRadarCandidates(worker,admin,campaignId))).find(candidate=>candidate.id===id)!
+    expect(pending.normalizedPayload.publicPresence).toMatchObject({configurationRevision:2,website:{url,association:'review',readable:true},contacts:expect.arrayContaining([expect.objectContaining({kind:'contact_form',association:'review'})])})
+    expect(pending.normalizedPayload.websiteUrl).toBeUndefined()
+    expect(buildRadarCrmLeadFacts(pending,'Oferta').email).toBe('')
+    const availability=await scoped(()=>getRadarBraveCandidateAvailability(worker,admin,{organizationId,candidateId:id}))
+    expect(availability.allowed).toBe(true)
+    await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research,presenceResolutionEnabled}','true') WHERE id=$1`,[campaignId])
+    runtime.mockResolvedValue({candidateId:'page-0',scope:'establishment',reason:'A página associa explicitamente a marca à razão social.',claims:[{evidenceId:'page-0',excerpt:'Empresa Omega é nossa razão social.'}]})
+    const next=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'reanalyze',requestId:randomUUID(),allowSemanticRefresh:true}))
+    await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{organizationId,runId:next.runId},undefined,{web,collect,runtime}))
+    const confirmed=(await scoped(()=>listRadarCandidates(worker,admin,campaignId))).find(candidate=>candidate.id===id)!
+    expect(confirmed.normalizedPayload.websiteUrl).toBe(url)
+    expect(confirmed.normalizedPayload.publicPresence).toMatchObject({website:{association:'confirmed'}})
+    expect(buildRadarCrmLeadFacts(confirmed,'Oferta').email).toBe('contato@omega.example')
+    expect(confirmed.normalizedPayload.discoveryRevision).toBe(1)
+    expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled();expect(runtime).toHaveBeenCalledTimes(1)
+    }finally{if(candidateForCleanup)await pool.query('DELETE FROM public.radar_candidate_records WHERE id=$1 AND campaign_id=$2',[candidateForCleanup,campaignId]);await pool.query('UPDATE public.radar_campaigns SET search_configuration=$2::jsonb WHERE id=$1',[campaignId,JSON.stringify(previousConfiguration)])}
   })
   it('loads availability with a real routing row and profile enabled on the migrated schema',async()=>{
     const result=await scoped(()=>getRadarResearchAvailability(worker,admin,organizationId,campaignId))
