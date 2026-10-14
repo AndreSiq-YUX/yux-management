@@ -205,6 +205,7 @@ class FakeRadarPool {
     if (normalized.includes('SELECT dedupe_key FROM public.radar_candidate_records')) return { rows: this.osmSeenKeys.map(dedupe_key => ({ dedupe_key })) }
     if (normalized.includes('SELECT * FROM public.radar_candidate_records WHERE id = $1')) return { rows: [candidateRow({ status: this.candidateStatus })] }
     if (normalized.includes('FROM public.radar_candidate_records')) return { rows: [candidateRow({ status: this.candidateStatus })] }
+    if (normalized.includes('SELECT DISTINCT ON (run.candidate_id)')) return {rows:[]}
     if (normalized.includes("SET status = 'imported'")) {
       this.candidateStatus = 'imported'
       return { rows: [candidateRow({ status: 'imported', importedCompanyRecordId: params[1] as string, importedOpportunityId: params[2] as string })] }
