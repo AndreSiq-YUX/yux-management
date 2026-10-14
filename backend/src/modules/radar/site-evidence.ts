@@ -1,9 +1,10 @@
 import sanitizeHtml from 'sanitize-html'
 import { inspectRadarBusinessSite } from './b2b-site-inspection.js'
-export type RadarSiteEvidence = { url: string; observedAt: string; text: string; html?: string; limitation?: string }
-export const RADAR_READER_VERSION = 2
+import type { RadarReadDiagnostic } from './site-read-errors.js'
+export type RadarSiteEvidence = { url: string; observedAt: string; text: string; html?: string; limitation?: string; diagnostic?:RadarReadDiagnostic }
+export const RADAR_READER_VERSION = 3
 export function isRetryableRadarPage(page: RadarSiteEvidence) {
-  return !!page.limitation && /^(robots_unavailable|robots_transport_failed|robots_timeout|request_failed|timeout|response_interrupted|empty_or_oversized_page|page_too_large|http_429|http_5\d\d)$/.test(page.limitation)
+  return !!page.limitation && /^(robots_unavailable|robots_transport_failed|robots_timeout|(?:robots_)?tls_(?:expired|invalid)|(?:robots_)?connection_(?:reset|refused)|dns_(?:failed|dns)|request_failed|timeout|response_interrupted|empty_or_oversized_page|page_too_large|http_429|http_5\d\d)$/.test(page.limitation)
 }
 function usefulLinks(html:string, base:string, origin:string) {
   return radarHtmlLinks(html).flatMap(link=>{
@@ -46,7 +47,7 @@ export async function collectRadarSiteEvidence(url: string, policy: { maxPagesPe
     seen.add(target)
     const result = await (dependencies.inspect ?? inspectRadarBusinessSite)(target)
     const page = { url: result.finalUrl ?? target, observedAt: result.checkedAt, text: result.text ?? '', html: result.html,
-      limitation: result.status === 'verified_present' && (result.text?.length ?? 0) > 30 ? undefined : result.reason ?? 'limited_public_content' }
+      diagnostic:result.diagnostic, limitation: result.status === 'verified_present' && (result.text?.length ?? 0) > 30 ? undefined : result.reason ?? 'limited_public_content' }
     pages.push(page)
     await dependencies.checkpoint?.(pages)
     if (result.status !== 'verified_present') continue

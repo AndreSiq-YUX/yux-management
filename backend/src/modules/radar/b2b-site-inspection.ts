@@ -5,6 +5,7 @@ import type { LookupFunction } from 'node:net'
 import { isIP } from 'node:net'
 import sanitizeHtml from 'sanitize-html'
 import { isPublicRadarSiteIp } from './osm-site-check.js'
+import { classifyRadarReadError, type RadarReadDiagnostic } from './site-read-errors.js'
 
 type GetResult = { status: number; location?: string; contentType?: string; body?: string }
 type Resolve = (hostname: string) => Promise<string[]>
@@ -19,6 +20,7 @@ export type RadarBusinessSiteInspection = {
   emails: string[]
   phones: string[]
   reason?: string
+  diagnostic?: RadarReadDiagnostic
 }
 
 const MAX_HTML_BYTES = 2 * 1024 * 1024
@@ -129,14 +131,14 @@ export async function inspectRadarBusinessSite(
     }
     let addresses: string[]
     try { addresses = isIP(url.hostname) ? [url.hostname] : await resolve(url.hostname) }
-    catch { return { ...empty, status: 'unknown', reason: 'dns_failed' } }
+    catch(cause) { return { ...empty, status: 'unknown', ...classifyRadarReadError(cause,'dns') } }
     if (!addresses.length) return { ...empty, status: 'unknown', reason: 'dns_empty' }
     if (!addresses.every(isPublicRadarSiteIp)) return { ...empty, status: 'blocked', reason: 'private_or_reserved_address' }
     if (!checkedRobots.has(url.origin)) {
       const robotsUrl = new URL('/robots.txt', url)
       let robots: GetResult
       try { robots = await get(robotsUrl, addresses[0]) }
-      catch (cause) { return { ...empty, status: 'unknown', reason: cause instanceof Error && cause.message === 'timeout' ? 'robots_timeout' : 'robots_transport_failed' } }
+      catch (cause) { return { ...empty, status: 'unknown', ...classifyRadarReadError(cause,'robots') } }
       if (robots.status === 403 || robots.status === 401) {
         return { ...empty, status: 'blocked', reason: 'robots_access_denied' }
       }
@@ -147,7 +149,7 @@ export async function inspectRadarBusinessSite(
     if(robotsBlocksHomepage(checkedRobots.get(url.origin)??'',url.pathname+url.search))return {...empty,status:'blocked',reason:'robots_disallow'}
     let response: GetResult
     try { response = await get(url, addresses[0]) }
-    catch (cause) { return { ...empty, status: 'unknown', reason: cause instanceof Error && ['timeout','page_too_large','response_interrupted'].includes(cause.message) ? cause.message : 'request_failed' } }
+    catch (cause) { return { ...empty, status: 'unknown', ...classifyRadarReadError(cause,'page') } }
     if (response.status >= 300 && response.status < 400 && response.location) {
       if (redirects === 2) return { ...empty, status: 'unknown', reason: 'too_many_redirects' }
       try {
