@@ -7,6 +7,7 @@ import type { RadarCampaign, RadarDataSource } from '@/types/radar'
 import { radarService } from '@/services/radarService'
 import { RadarWorkspace } from './RadarWorkspace'
 import toast from 'react-hot-toast'
+const campaignDefaults={targetCity:'',targetState:'',automationLevel:'human_review_required' as const,strategyProfileKey:''}
 vi.mock('react-hot-toast',()=>({default:Object.assign(vi.fn(),{success:vi.fn(),error:vi.fn()})}))
 vi.mock('./RadarCandidateResearchPanel',()=>({RadarCandidateResearchPanel:()=>null}))
 
@@ -32,14 +33,48 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('ignores a late company response after switching to another campaign',async()=>{
+    const campaigns=['a','b'].map(id=>({...campaignDefaults,id,organizationId:'org',name:`Campanha ${id}`,campaignType:'local_niche',targetSegment:'Empresas',targetStates:[],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign))
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce(campaigns)
+    let resolveA!:(value:Awaited<ReturnType<typeof radarService.getCandidates>>)=>void
+    const a=new Promise<Awaited<ReturnType<typeof radarService.getCandidates>>>(resolve=>{resolveA=resolve})
+    const company=(id:string)=>({id,organizationId:'org',campaignId:id,title:`Empresa ${id}`,sourceType:'manual',status:'pending_review' as const,normalizedPayload:{},dedupeKey:id,createdAt:'',updatedAt:''})
+    vi.mocked(radarService.getCandidates).mockImplementation(id=>id==='a'?a:Promise.resolve([company('b')]))
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace/>))
+    await act(async()=>[...container.querySelectorAll('button')].filter(b=>b.textContent==='Abrir')[0].click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Voltar às campanhas')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].filter(b=>b.textContent==='Abrir')[1].click())
+    await act(async()=>resolveA([company('a')]))
+    expect(container.querySelector('tbody')?.textContent).toContain('Empresa b')
+    expect(container.querySelector('tbody')?.textContent).not.toContain('Empresa a')
+    act(()=>root.unmount());vi.mocked(radarService.getCandidates).mockResolvedValue([])
+  })
+  it('focuses complete details only on explicit request and restores focus on close',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'candidate',organizationId:'org',campaignId:'campaign',title:'Empresa',sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{},dedupeKey:'key',createdAt:'',updatedAt:''}])
+    const container=document.createElement('div');document.body.append(container)
+    const root=createRoot(container),scroll=vi.fn();HTMLElement.prototype.scrollIntoView=scroll
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes')!.click())
+    expect(scroll).not.toHaveBeenCalled()
+    const full=[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes completos')!
+    full.focus();await act(async()=>full.click())
+    expect(document.activeElement?.textContent).toBe('Detalhes da empresa')
+    expect(scroll).toHaveBeenCalledTimes(1)
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Fechar detalhes')!.click())
+    expect(document.activeElement).toBe(full)
+    act(()=>root.unmount());container.remove();vi.mocked(radarService.getCandidates).mockResolvedValue([])
+  })
   it.each(['radar_candidate_requires_current_discovery','radar_brave_retention_license_required','source_limit_exceeded'])('reports the real complement failure %s',async(code)=>{
-    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
     vi.mocked(radarService.getDataSources).mockResolvedValueOnce([{id:'brave',sourceKey:'brave_place_search',sourceType:'brave_place_search',enabled:true,defaultCostPerUnit:.01} as RadarDataSource])
     vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'candidate',organizationId:'org',campaignId:'campaign',title:'Empresa',sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{},dedupeKey:'key',createdAt:'',updatedAt:''}])
     vi.mocked(radarService.enrichCandidateWithBrave).mockRejectedValueOnce(new Error(code))
     const container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
     await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes completos')!.click())
     await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Completar presença pública')!.click())
     const message=vi.mocked(toast.error).mock.calls.at(-1)?.[0]
     expect(message).toEqual(expect.stringMatching(code==='source_limit_exceeded'?/limite/i:code.includes('license')?/licença/i:/configuração atual/i))

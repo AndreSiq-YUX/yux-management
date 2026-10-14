@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RadarResultsTable } from './RadarResultsTable'
 import {radarComplementError} from '@/lib/radar/radarResearchMessages'
+import {buildRadarPresenceSummary} from '@/lib/radar/radarPresenceSummary'
 import {RadarCrmDeliveryDialog} from './RadarCrmDeliveryDialog'
 import { RadarCampaignList } from './RadarCampaignList'
 import { RadarCampaignPage, type RadarScreen } from './RadarCampaignPage'
@@ -221,11 +222,23 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
     ?? (screen==='new' && creationMode === 'regional' ? 'new' : null)
   const [selectedCandidateIds,setSelectedCandidateIds]=useState<string[]>([])
   const [expandedCandidateId,setExpandedCandidateId]=useState<string|null>(null)
+  const detailsHeading=useRef<HTMLHeadingElement|null>(null),detailsReturnFocus=useRef<HTMLElement|null>(null)
+  const [detailsOpenRequest,setDetailsOpenRequest]=useState(0)
+  const openCandidateDetails=(id:string)=>{detailsReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setExpandedCandidateId(id);setDetailsOpenRequest(value=>value+1)}
+  const closeCandidateDetails=()=>{setExpandedCandidateId(null);if(detailsReturnFocus.current?.isConnected)detailsReturnFocus.current.focus()}
+  useEffect(()=>{
+    if(!expandedCandidateId||!detailsOpenRequest)return
+    detailsHeading.current?.focus({preventScroll:true})
+    detailsHeading.current?.scrollIntoView?.({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})
+  },[expandedCandidateId,detailsOpenRequest])
   const [researchBatchStatus,setResearchBatchStatus]=useState<string[]>([])
   const [trackedResearchCandidates,setTrackedResearchCandidates]=useState<string[]>([])
   const [batchRequestedAt,setBatchRequestedAt]=useState(0)
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(campaignId??null)
+  const sidebarScope=useRef(''),sidebarSequence=useRef(0)
+  sidebarScope.current=`${organizationId??''}:${selectedCampaignId??''}`
+  useEffect(()=>{setExpandedCandidateId(null);setSelectedCandidateIds([])},[organizationId,selectedCampaignId])
   const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
   const [researchAvailabilityError,setResearchAvailabilityError]=useState<string|null>(null)
   const [researchAvailabilityRefresh,setResearchAvailabilityRefresh]=useState(0)
@@ -291,20 +304,24 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
     if (!organizationId || !canAccess) return
 
     setLoading(true)
+    let active=true
     radarService.getCampaigns(organizationId)
-      .then(setCampaigns)
+      .then(value=>{if(active)setCampaigns(value)})
       .catch(error => {
+        if(!active)return
         console.error('Erro ao carregar Radar:', error)
         toast.error('Erro ao carregar Radar Comercial')
       })
-      .finally(() => setLoading(false))
+      .finally(() => {if(active)setLoading(false)})
 
     radarService.getDataSources(organizationId)
-      .then(setDataSources)
+      .then(value=>{if(active)setDataSources(value)})
       .catch(error => {
+        if(!active)return
         console.error('Erro ao carregar fontes Radar:', error)
         setDataSources([])
       })
+    return()=>{active=false}
   }, [organizationId, canAccess])
 
   useEffect(() => {
@@ -314,7 +331,8 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
 
   useEffect(() => {
     if (!selectedCampaignId || !canAccess) return
-
+    let active=true
+    setCandidates([])
     Promise.allSettled([
       radarService.getOpportunities(selectedCampaignId),
       radarService.getMetrics(selectedCampaignId),
@@ -323,6 +341,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
       radarService.getRuns(selectedCampaignId),
     ])
       .then(([opportunitiesResult, metricsResult, candidatesResult, duplicatesResult, runsResult]) => {
+        if(!active)return
         if (opportunitiesResult.status === 'fulfilled') {
           setOpportunities(opportunitiesResult.value)
           setSelectedOpportunity(current => current ?? opportunitiesResult.value[0] ?? null)
@@ -347,7 +366,8 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
           setRuns(runsResult.value)
         }
       })
-  }, [selectedCampaignId, canAccess])
+    return()=>{active=false}
+  }, [selectedCampaignId, organizationId, canAccess])
 
   useEffect(() => {
     const campaign = campaigns.find(item => item.id === selectedCampaignId)
@@ -585,14 +605,16 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
 
   const refreshCampaignSidebars = () => {
     if (!selectedCampaignId) return
+    const scope=`${organizationId??''}:${selectedCampaignId}`,sequence=++sidebarSequence.current
+    const apply=<T,>(setter:(value:T)=>void)=>(value:T)=>{if(sidebarScope.current===scope&&sidebarSequence.current===sequence)setter(value)}
     if(organizationId && selectedCampaign?.campaignType==='regional_b2b'){
-      radarService.getB2bProspects(selectedCampaignId,organizationId).then(setB2bProspects).catch(()=>undefined)
-      radarService.getB2bProgress(selectedCampaignId,organizationId).then(setB2bProgress).catch(()=>undefined)
+      radarService.getB2bProspects(selectedCampaignId,organizationId).then(apply(setB2bProspects)).catch(()=>undefined)
+      radarService.getB2bProgress(selectedCampaignId,organizationId).then(apply(setB2bProgress)).catch(()=>undefined)
     }
-    radarService.getMetrics(selectedCampaignId).then(setMetrics).catch(() => undefined)
-    radarService.getCandidates(selectedCampaignId).then(setCandidates).catch(() => undefined)
-    radarService.getDuplicates(selectedCampaignId).then(setDuplicates).catch(() => undefined)
-    radarService.getRuns(selectedCampaignId).then(setRuns).catch(() => undefined)
+    radarService.getMetrics(selectedCampaignId).then(apply(setMetrics)).catch(() => undefined)
+    radarService.getCandidates(selectedCampaignId).then(apply(setCandidates)).catch(() => undefined)
+    radarService.getDuplicates(selectedCampaignId).then(apply(setDuplicates)).catch(() => undefined)
+    radarService.getRuns(selectedCampaignId).then(apply(setRuns)).catch(() => undefined)
   }
 
   const importCsv = async (event: FormEvent) => {
@@ -1474,12 +1496,12 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
             {crmDialogOpen&&organizationId&&<RadarCrmDeliveryDialog organizationId={organizationId} campaignId={selectedCampaign.id} revision={selectedCampaign.configurationRevision??1} candidateIds={selectedCandidateIds} initialDestination={selectedCampaign.searchConfiguration?.crmDestination} onClose={()=>setCrmDialogOpen(false)} onCompleted={refreshCampaignSidebars} leadPath={leadPath}/>}
             {researchAvailabilityError&&<p role="alert" className="mb-3 text-sm text-red-700">{researchAvailabilityError}</p>}
             {researchBatchStatus.length>0&&<div role="status" className="mb-3 rounded border bg-slate-50 p-3 text-xs">{researchBatchStatus.map((message,index)=><p key={index}>{message}</p>)}</div>}
-            <RadarResultsTable candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} approvedIds={b2bProspects.filter(item=>item.approvedAt).map(item=>item.id)} onSelect={setSelectedCandidateIds} onOpen={setExpandedCandidateId}/>
+            <RadarResultsTable candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} approvedIds={b2bProspects.filter(item=>item.approvedAt).map(item=>item.id)} onSelect={setSelectedCandidateIds} onOpen={openCandidateDetails}/>
             <div className="mt-4 space-y-4">
               {expandedCandidateId&&<div className="rounded-md border">
                 <div className="border-b p-3">
-                  <h3 className="text-sm font-semibold text-slate-950">Detalhes da empresa</h3>
-                  {expandedCandidateId?<Button size="sm" variant="ghost" onClick={()=>setExpandedCandidateId(null)}>Fechar detalhes</Button>:<p className="text-xs text-slate-500">Selecione “Ver detalhes” em uma empresa para consultar dados, fontes e ações.</p>}
+                  <h3 id="radar-company-full-details" ref={detailsHeading} tabIndex={-1} className="scroll-mt-6 text-sm font-semibold text-slate-950">Detalhes da empresa</h3>
+                  {expandedCandidateId?<Button size="sm" variant="ghost" onClick={closeCandidateDetails}>Fechar detalhes</Button>:<p className="text-xs text-slate-500">Selecione “Ver detalhes” em uma empresa para consultar dados, fontes e ações.</p>}
                 </div>
                 <div className="divide-y">
                   {visibleCandidates.length < candidates.length && <p className="p-3 text-sm text-amber-800">{candidates.length - visibleCandidates.length} empresas de configurações anteriores foram preservadas no histórico. Execute a descoberta com os critérios atuais para incluí-las novamente.</p>}
@@ -1496,8 +1518,9 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
                           <p>CNPJ: {String(candidate.normalizedPayload.cnpj ?? 'não identificado')} · {String(candidate.normalizedPayload.city ?? '')}/{String(candidate.normalizedPayload.state ?? '')}</p>
                           {typeof candidate.normalizedPayload.address==='string'&&<p>Endereço cadastral: {candidate.normalizedPayload.address}</p>}
                           {typeof candidate.normalizedPayload.registrationStatus==='string'&&<p>Situação cadastral: {candidate.normalizedPayload.registrationStatus} — não comprova funcionamento atual.</p>}
-                          <p>Site: {typeof candidate.normalizedPayload.websiteUrl === 'string' ? <a className="text-yux-700 underline" href={candidate.normalizedPayload.websiteUrl} target="_blank" rel="noreferrer">{candidate.normalizedPayload.websiteUrl}</a> : 'ainda não encontrado'}</p>
-                          <p>Telefone: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} · Fonte complementar: {String(candidate.normalizedPayload.braveSourceUrl ?? 'não consultada')}</p>
+                          <p>Site: {buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website?.url??'não encontrado nas fontes consultadas'}</p>
+                          {buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website&&<p>{buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website?.label}</p>}
+                          <p>Telefone cadastral: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} — atendimento não verificado.</p>
                           {getBraveSuggestions(candidate.normalizedPayload).map(suggestion =>
                             <div key={suggestion.sourceUrl} className="mt-2 rounded border border-sky-200 bg-sky-50 p-2">
                               <p className="font-medium">Presença pública a conferir: {suggestion.name}</p>
@@ -1509,8 +1532,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
                             </div>)}
                           <p>Qualificação: {b2bProspectById.get(candidate.id)?.targetStatus ?? 'aguardando verificação'} · Adequação: {b2bProspectById.get(candidate.id)?.productFit ?? 'desconhecida'}</p>
                           {Array.isArray(candidate.normalizedPayload.triageReasons) && candidate.normalizedPayload.triageReasons.map((reason, index) => <p key={index}>{String(reason)}</p>)}
-                          {b2bProspectById.get(candidate.id)?.evidence.map((fact, index) =>
-                            <p key={index}>{fact.kind}: {fact.value.slice(0, 180)} · <a className="text-yux-700 underline" href={fact.sourceUrl} target="_blank" rel="noreferrer">fonte</a></p>)}
+                          {context.role?.key==='yux_admin'&&!!b2bProspectById.get(candidate.id)?.evidence.length&&<details><summary className="cursor-pointer">Histórico de evidências técnicas — não confirma contatos da empresa</summary>{b2bProspectById.get(candidate.id)?.evidence.map((fact,index)=><p key={index}>{fact.kind}: {fact.value.slice(0,180)} · <a className="text-primary underline" href={fact.sourceUrl} target="_blank" rel="noreferrer">fonte</a></p>)}</details>}
                           {b2bProspectById.get(candidate.id)?.approvedAt &&
                             <p className="font-medium text-emerald-700">Aprovada por verificação {b2bProspectById.get(candidate.id)?.verificationMethod === 'manual' ? 'humana' : 'automatizada'}.</p>}
                           {b2bProspectById.get(candidate.id)?.approvedAt&&context.role?.key==='yux_admin'&&<Button size="sm" variant="outline" disabled={!!actionLoading} onClick={async()=>{
