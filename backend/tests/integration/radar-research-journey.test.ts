@@ -122,6 +122,27 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     expect(web).not.toHaveBeenCalled();expect(collect).not.toHaveBeenCalled();expect(runtime).toHaveBeenCalledTimes(1)
     }finally{if(candidateForCleanup)await pool.query('DELETE FROM public.radar_candidate_records WHERE id=$1 AND campaign_id=$2',[candidateForCleanup,campaignId]);await pool.query('UPDATE public.radar_campaigns SET search_configuration=$2::jsonb WHERE id=$1',[campaignId,JSON.stringify(previousConfiguration)])}
   })
+  it('keeps association evidence historical without exposing its contacts in dossier or CRM facts',async()=>{
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload)
+      VALUES($1,$2,'cnpja_advanced_search','Empresa Alfa',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),
+      JSON.stringify({cnpj:'12345678000190',tradeName:'Empresa Alfa',city:'Curitiba',state:'PR'})])).rows[0].id
+    const observedAt='2026-10-14T10:00:00Z',url='https://alfa.example/'
+    const official={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90. compras@alfa.example',observedAt}
+    const association={url:'https://association.example/',text:'Empresa Alfa é associada. secretaria@association.example',observedAt}
+    try{
+      await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output)
+        VALUES($1,$2,$3,$4,2,'partial',$5::jsonb)`,[organizationId,campaignId,id,admin.id,JSON.stringify({readingComplete:true,
+        discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1},siteAssociation:'confirmed',pages:[official,association],
+        contacts:[{kind:'email',value:'secretaria@association.example',sourceUrl:association.url,observedAt,association:'review'}]})])
+      expect((await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))).run?.output.contacts).toEqual([])
+      const run=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'reanalyze',requestId:randomUUID()}))
+      await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{organizationId,runId:run.runId},undefined,{web:vi.fn(),collect:vi.fn(),runtime:async()=>({targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]})}))
+      const candidate=(await scoped(()=>listRadarCandidates(worker,admin,campaignId))).find(item=>item.id===id)!
+      expect(candidate.normalizedPayload.publicContacts).toEqual([expect.objectContaining({value:'compras@alfa.example'})])
+      expect(buildRadarCrmLeadFacts(candidate,'Oferta').email).toBe('compras@alfa.example')
+      expect((await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))).run?.output.pages?.some(page=>page.url===association.url)).toBe(true)
+    }finally{await pool.query('DELETE FROM public.radar_candidate_records WHERE id=$1 AND campaign_id=$2',[id,campaignId])}
+  })
   it('loads availability with a real routing row and profile enabled on the migrated schema',async()=>{
     const result=await scoped(()=>getRadarResearchAvailability(worker,admin,organizationId,campaignId))
     expect(result.allowed).toBe(true)

@@ -44,6 +44,9 @@ type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query:
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
 export const RADAR_RESEARCH_METHOD_VERSION=2
 const RADAR_ASSOCIATION_VERSION=2
+function sameRadarOrigin(left:string,right:string){
+  try{return new URL(left).origin===new URL(right).origin}catch{return false}
+}
 function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
   const expected=identity.cnpj?.replace(/\D/g,'')
   return !!expected&&[...text.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)]
@@ -53,6 +56,8 @@ function currentDossierProjection(output:Output,currentRevision?:number,dossierR
   const historical=currentRevision!==undefined&&dossierRevision!==currentRevision
   const contacts=output.contacts?.filter(contact=>{
     const page=output.pages?.find(item=>item.url===contact.sourceUrl)
+    const official=output.siteAssociation==='confirmed'?output.discovery?.websiteUrl:undefined
+    if(official&&!sameRadarOrigin(contact.sourceUrl,official)&&!(contact.linkedFromUrl&&sameRadarOrigin(contact.linkedFromUrl,official)))return false
     return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})||!!page?.linkedFromUrl&&page.linkedFromUrl===contact.linkedFromUrl&&isRadarContactSource(contact,output.discovery?.websiteUrl)
   }).map(contact=>historical?{...contact,association:'review' as const,scope:'unresolved' as const,preferred:false}:contact)
   const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl)
@@ -194,6 +199,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   // Recompute from preserved facts; do not retain an obsolete identity association from a previous run.
   const sameInstitutionalOrigin=(url:string)=>!!associatedOrigin&&isRadarInstitutionalSource(url)&&new URL(url).origin===new URL(associatedOrigin).origin
   const candidatePage=(page:RadarSiteEvidence)=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,true)
+    &&(!associatedOrigin||sameRadarOrigin(page.url,associatedOrigin))
   if(configuration.research.inspectLinkedSocialProfiles&&!output.analysisOnly) {
     const social=await(dependencies.collectSocial??collectRadarPublicSocialEvidence)({linkedPages:pages.filter(candidatePage),
       remainingPages:Math.max(0,configuration.research.maxPagesPerCandidate-pages.filter(page=>!page.limitation).length),

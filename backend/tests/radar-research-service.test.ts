@@ -4,6 +4,24 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it.each([false,true])('isolates association-owned channels after official identity resolves (saved=%s)',async saved=>{
+  const association={url:'https://association.example/',text:'Associação setorial. Empresa Alfa está entre as associadas. secretaria@association.example',observedAt:'2026-10-14',
+    html:'<a href="https://facebook.com/association">Facebook</a>'}
+  const official={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. compras@alfa.example',observedAt:'2026-10-14',
+    html:'<a href="https://facebook.com/alfa">Facebook</a>'}
+  const config=resolveRadarSearchConfiguration({research:{inspectLinkedSocialProfiles:true,maxPagesPerCandidate:6}})
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,discoveryLocked:true,
+    pages:saved?[{...association,html:undefined},{...official,html:undefined}]:[association,official],
+    contacts:saved?[{kind:'email',value:'secretaria@association.example',sourceUrl:association.url,association:'review',observedAt:association.observedAt}]:[],
+    discovery:{websiteUrl:official.url,association:'review',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},collectSocial:async input=>{
+      expect(input.linkedPages.map(page=>page.url)).toEqual([official.url])
+      return[]
+    }})
+  expect(result.contacts.some(contact=>contact.sourceUrl.includes('association.example'))).toBe(false)
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@alfa.example',association:'confirmed'}))
+  expect(result.pages.some(page=>page.url===association.url)).toBe(true)
+})
 it('retains public channels as pending when site identity still needs configuration',async()=>{
   const page={url:'https://alfa.example/',observedAt:'2026-10-14',text:'Marca Alfa. Contatos corporativos.',html:'<a href="mailto:contato@alfa.example">Contato</a><a href="https://facebook.com/alfa">Facebook</a>'}
   const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'review',websiteUrl:page.url,hits:[],suggestions:[],limitations:[],queries:1}},{web:vi.fn(),checkpoint:async()=>{}})

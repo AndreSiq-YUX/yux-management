@@ -49,6 +49,20 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('filters association-owned contacts from the current dossier without rewriting historical evidence',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  const official={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-10-14'}
+  const association={url:'https://association.example/',text:'Associação. Empresa Alfa é associada.',observedAt:'2026-10-14'}
+  pool.run!.status='partial';pool.run!.output={siteAssociation:'confirmed',pages:[official,association],
+    discovery:{websiteUrl:official.url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1},contacts:[
+      {kind:'email',value:'compras@alfa.example',sourceUrl:official.url,observedAt:official.observedAt,association:'confirmed'},
+      {kind:'email',value:'secretaria@association.example',sourceUrl:association.url,observedAt:association.observedAt,association:'review'},
+      {kind:'email',value:'social@association.example',sourceUrl:'https://facebook.com/association',linkedFromUrl:association.url,observedAt:association.observedAt,association:'review'}]}
+  const dossier=await getRadarCandidateResearch(pool as never,admin,'org','candidate')
+  expect(dossier.run!.output.contacts!.map(contact=>contact.value)).toEqual(['compras@alfa.example'])
+  expect(dossier.run!.output.pages).toHaveLength(2)
+  expect(pool.run!.output.contacts).toHaveLength(3)
+})
 it.each([
   ['presence','radar_ai_wallet_missing'],['semantic','radar_ai_wallet_missing'],
   ['presence','radar_ai_credits_insufficient'],['semantic','radar_ai_credits_insufficient'],
