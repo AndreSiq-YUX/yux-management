@@ -4,6 +4,24 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('recovers newly supported contact facts on resume of an older text-only reader without repeating searches',async()=>{
+  const official={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Fornecedores.',observedAt:'2026-10-14'}
+  const result=await runRadarResearchPipeline(identity,configuration,{readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[official],
+    discovery:{websiteUrl:official.url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:async()=>{throw Error('completed_search_must_not_repeat')},checkpoint:async()=>{},collect:async()=>[
+      {...official,html:'<a href="/fornecedor/">Fornecedores</a>'},
+      {url:'https://alfa.example/fornecedor/',text:'Seja nosso fornecedor.',observedAt:'2026-10-14',html:'<form><textarea name="mensagem"></textarea></form>'}]})
+  expect(result.contacts).toContainEqual(expect.objectContaining({kind:'contact_form',purpose:'suppliers',association:'confirmed'}))
+})
+it('does not deepen a name-mentioning association before the identity model selects a domain',async()=>{
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true,maxPagesPerCandidate:4}}),
+    {discoveryLocked:true,discovery:{websiteUrl:'https://association.example/',association:'review',hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),checkpoint:async()=>{},resolvePresence:async()=>({scope:'unresolved',reason:'Associação não é o site da empresa.',claims:[]}),
+      collect:async(_url,policy)=>Array.from({length:policy.maxPagesPerCandidate},(_,index)=>({url:`https://association.example/${index||''}`,
+        text:'Associação setorial. Empresa Alfa consta como associada.',observedAt:'2026-10-14'}))})
+  expect(result.pages).toHaveLength(1)
+  expect(result.siteAssociation).toBe('review')
+})
 it.each([false,true])('isolates association-owned channels after official identity resolves (saved=%s)',async saved=>{
   const association={url:'https://association.example/',text:'Associação setorial. Empresa Alfa está entre as associadas. secretaria@association.example',observedAt:'2026-10-14',
     html:'<a href="https://facebook.com/association">Facebook</a>'}

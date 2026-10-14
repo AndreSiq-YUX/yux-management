@@ -1,6 +1,17 @@
 import { expect, it, vi } from 'vitest'
 import { collectRadarSiteEvidence } from '../src/modules/radar/site-evidence.js'
 import { inspectRadarBusinessSite } from '../src/modules/radar/b2b-site-inspection.js'
+it('deduplicates redirected contact pages while reserving a slot for another useful page',async()=>{
+  const requests:string[]=[]
+  const pages=await collectRadarSiteEvidence('https://alfa.example/',{maxPagesPerCandidate:3,maxAttemptsPerCandidate:5},{inspect:async target=>{
+    requests.push(target!)
+    return{status:'verified_present',checkedAt:'2026-10-14',finalUrl:target!.endsWith('/contato')?'https://alfa.example/contato/':target!,
+      text:'Informações institucionais públicas suficientes para contato.',emails:[],phones:[],
+      html:'<a href="/contato">Contato</a><a href="/contato/">Contato</a><a href="/sobre">Sobre</a>'}
+  }})
+  expect(pages.map(page=>page.url)).toEqual(['https://alfa.example/','https://alfa.example/contato/','https://alfa.example/sobre'])
+  expect(requests).toEqual(['https://alfa.example/','https://alfa.example/contato','https://alfa.example/sobre'])
+})
 it.each(['http://alfa.example/','https://alfa.example/'])('continues public contact-page reading on the validated HTTPS redirect destination from %s',async original=>{
   const requests:string[]=[]
   const pages=await collectRadarSiteEvidence(original,{maxPagesPerCandidate:2},{inspect:async target=>{

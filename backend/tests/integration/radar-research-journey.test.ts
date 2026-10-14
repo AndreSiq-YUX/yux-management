@@ -136,7 +136,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
         contacts:[{kind:'email',value:'secretaria@association.example',sourceUrl:association.url,observedAt,association:'review'}]})])
       expect((await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))).run?.output.contacts).toEqual([])
       const run=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'reanalyze',requestId:randomUUID()}))
-      await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{organizationId,runId:run.runId},undefined,{web:vi.fn(),collect:vi.fn(),runtime:async()=>({targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]})}))
+      await jobScope(()=>executeRadarCandidateResearch(worker,{} as AppEnv,{organizationId,runId:run.runId},undefined,{web:vi.fn(),collect:vi.fn(),runtime:vi.fn().mockResolvedValue({targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]})}))
       const candidate=(await scoped(()=>listRadarCandidates(worker,admin,campaignId))).find(item=>item.id===id)!
       expect(candidate.normalizedPayload.publicContacts).toEqual([expect.objectContaining({value:'compras@alfa.example'})])
       expect(buildRadarCrmLeadFacts(candidate,'Oferta').email).toBe('compras@alfa.example')

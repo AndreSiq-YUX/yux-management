@@ -1,5 +1,13 @@
 import { expect, it } from 'vitest'
 import { extractRadarContacts, normalizeRadarPhone } from '../src/modules/radar/contact-evidence.js'
+it('recognizes a supplier form whose purpose is published in select options rather than a footer',()=>{
+  // Reduced public Contact Form 7 structure: option text is visible, scripts are not evidence.
+  const contacts=extractRadarContacts({url:'https://alfa.example/fornecedor/',observedAt:'2026-10-14',
+    text:'Seja nosso fornecedor. Preencha o formulário abaixo. AssuntoQuero ser fornecedor Produto OferecidoInsumosAlimentos. Nossa política de privacidade.',
+    html:'<form><input type="hidden" name="_wpcf7" value="238"/><select name="assunto"><option>Quero ser fornecedor</option></select><select name="produtoOferecido"><option>Alimentos</option></select><textarea name="mensagem"></textarea><script>document.getElementById("ak_js_1").setAttribute("value",Date.now())</script></form>'})
+  expect(contacts).toContainEqual(expect.objectContaining({kind:'contact_form',purpose:'suppliers',value:'https://alfa.example/fornecedor/'}))
+  expect(contacts.find(contact=>contact.kind==='contact_form')?.purposeEvidence).not.toContain('document.getElementById')
+})
 it('records a supplier contact form as a channel, not its submission endpoint',()=>{
   const contacts=extractRadarContacts({url:'https://alfa.example/fornecedor/',observedAt:'2026-10-14',text:'Seja fornecedor. Ofereça produtos para nossa empresa.',html:'<form action="https://external.example/submit"><label>E-mail<input type="email"/></label><textarea name="mensagem"></textarea><button>Enviar</button></form>'},'review')
   expect(contacts).toContainEqual(expect.objectContaining({kind:'contact_form',value:'https://alfa.example/fornecedor/',purpose:'suppliers',association:'review'}))

@@ -81,7 +81,7 @@ export function extractRadarContacts(page: RadarSiteEvidence, association: 'conf
     } catch { /* Invalid structured data is not evidence. */ }
   }
   for(const match of (page.html??'').matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/gi)) {
-    const form=match[0],text=sanitizeHtml(form,{allowedTags:[],allowedAttributes:{}}).replace(/\s+/g,' ')
+    const form=match[0],text=sanitizeHtml(form,{allowedTags:[],allowedAttributes:{},nonTextTags:['script','style','noscript']}).replace(/\s+/g,' ')
     if(/type\s*=\s*["']?(?:password|search)|role\s*=\s*["']search|newsletter|news-letter|assinar|subscribe|curr[ií]culo|candidatur|vagas/i.test(form))continue
     if(!/<textarea\b|name\s*=\s*["'][^"']*(?:mensagem|message|produto|assunto)/i.test(form))continue
     const context=`${page.text.slice(0,1200)} ${text}`

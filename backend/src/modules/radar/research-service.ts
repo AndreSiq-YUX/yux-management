@@ -139,7 +139,8 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
           output.pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...value];await checkpoint('reading')
         }})
       pages=[...pages.filter(page=>new URL(page.url).origin!==new URL(url).origin),...collected]
-      if (collected.some(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&(matchRadarBusinessIdentity(identity,page.text)==='confirmed'||mentionsIdentity(page.text)))) {
+      if (collected.some(page=>isRadarInstitutionalSource(page.url,{text:page.text})&&(matchRadarBusinessIdentity(identity,page.text)==='confirmed'
+        ||!configuration.research.presenceResolutionEnabled&&mentionsIdentity(page.text)))) {
         website=url
         if(collected.filter(page=>!page.limitation).length<remaining) {
           collected=await (dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:remaining,maxAttemptsPerCandidate},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,initialPages:collected,
@@ -172,20 +173,22 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       }catch(cause){limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
     }else limits.push(presenceEvidence.some(item=>item.kind==='institutional_candidate')?'radar_presence_service_unavailable':'radar_presence_waiting_public_read')
   }
-  if(deferAmbiguousDepth&&presenceResolution?.websiteUrl&&!output.analysisOnly){
-    const origin=new URL(presenceResolution.websiteUrl).origin,prior=pages.filter(page=>new URL(page.url).origin===origin)
+  const readerUpgrade=typeof saved.readerVersion==='number'&&saved.readerVersion<RADAR_READER_VERSION
+  const selectedWebsite=directlyAssociated?.url??presenceResolution?.websiteUrl
+  if((deferAmbiguousDepth||configuration.research.presenceResolutionEnabled&&!saved.readingComplete||readerUpgrade)&&selectedWebsite&&!output.analysisOnly){
+    const origin=new URL(selectedWebsite).origin,prior=pages.filter(page=>new URL(page.url).origin===origin)
     const other=pages.filter(page=>new URL(page.url).origin!==origin)
     const maximum=configuration.research.maxPagesPerCandidate-other.filter(page=>!page.limitation).length
-    if(prior.filter(page=>!page.limitation).length<maximum){
-      const selected=await(dependencies.collect??collectRadarSiteEvidence)(presenceResolution.websiteUrl,
+    if(maximum>0&&(readerUpgrade||prior.filter(page=>!page.limitation).length<maximum)){
+      const selected=await(dependencies.collect??collectRadarSiteEvidence)(selectedWebsite,
         {maxPagesPerCandidate:maximum,maxAttemptsPerCandidate:configuration.research.maxPagesPerCandidate*2-other.length},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,
-          initialPages:prior.filter(page=>page.url!==presenceResolution?.websiteUrl||!!page.html)})
+          initialPages:prior.filter(page=>readerUpgrade?!!page.html:page.url!==selectedWebsite||!!page.html)})
       const byUrl=new Map(selected.map(page=>[page.url,page]))
-      pages=[...pages.map(page=>byUrl.get(page.url)??page),...selected.filter(page=>!pages.some(old=>old.url===page.url))]
-      output.pages=pages;output.readingComplete=!pages.some(isRetryableRadarPage)
+      pages=[...new Map([...pages.map(page=>byUrl.get(page.url)??page),...selected.filter(page=>!pages.some(old=>old.url===page.url))].map(page=>[page.url,page])).values()]
+      output.pages=pages;output.readingComplete=!pages.some(isRetryableRadarPage);output.readerVersion=RADAR_READER_VERSION
       presenceEvidence=buildPresenceEvidence();presenceEvidenceHash=hashPresence()
       if(selected.some(page=>!page.limitation&&(cnpjConflict(identity,page.text,presenceResolution?.scope==='group')
-        ||page.url===presenceResolution?.websiteUrl&&!isRadarInstitutionalSource(page.url,{text:page.text})))){
+        ||page.url===selectedWebsite&&!isRadarInstitutionalSource(page.url,{text:page.text})))){
         presenceResolution=undefined;limits.push('As páginas adicionais contradizem a identidade procurada. Site e contatos exigem revisão.')
       }
       output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceResolution?presenceEvidenceHash:undefined
@@ -201,7 +204,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const candidatePage=(page:RadarSiteEvidence)=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})&&!cnpjConflict(identity,page.text,true)
     &&(!associatedOrigin||sameRadarOrigin(page.url,associatedOrigin))
   if(configuration.research.inspectLinkedSocialProfiles&&!output.analysisOnly) {
-    const social=await(dependencies.collectSocial??collectRadarPublicSocialEvidence)({linkedPages:pages.filter(candidatePage),
+    const social=await(dependencies.collectSocial??collectRadarPublicSocialEvidence)({linkedPages:associated?pages.filter(candidatePage):[],
       remainingPages:Math.max(0,configuration.research.maxPagesPerCandidate-pages.filter(page=>!page.limitation).length),
       remainingAttempts:Math.max(0,configuration.research.maxPagesPerCandidate*2-pages.length),deadlineAt:readingDeadline,existingPages:pages},
       {signal:dependencies.signal,checkpoint:async page=>{output.pages=[...pages,page];await checkpoint('reading');pages.push(page)}})
