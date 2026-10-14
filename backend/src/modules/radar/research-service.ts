@@ -148,7 +148,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceEvidenceHash
         await checkpoint('identity')
       }catch(cause){limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
-    }else limits.push('Identificação do site pendente: configure a rota de identificação de presença no Admin e obtenha páginas públicas legíveis.')
+    }else limits.push(presenceEvidence.some(item=>item.kind==='institutional_candidate')?'radar_presence_service_unavailable':'radar_presence_waiting_public_read')
   }
   if(deferAmbiguousDepth&&presenceResolution?.websiteUrl&&!output.analysisOnly){
     const origin=new URL(presenceResolution.websiteUrl).origin,prior=pages.filter(page=>new URL(page.url).origin===origin)
@@ -215,8 +215,11 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const evidenceHash=createHash('sha256').update(JSON.stringify({pages:qualifiedEvidence.map(page=>({url:page.url,text:page.text.slice(0,12000)})),
     profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled})).digest('hex')
   let qualification = output.qualificationEvidenceHash===evidenceHash?output.qualification:undefined
+  const readableInstitutional=pages.some(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
   if ((configuration.research.semanticQualificationEnabled||configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled) && !qualification) {
-    if (dependencies.qualify && qualifiedEvidence.length) {
+    if(!readableInstitutional)limits.push('radar_qualification_waiting_public_read')
+    else if(!qualifiedEvidence.length)limits.push('radar_qualification_waiting_identity')
+    else if (dependencies.qualify) {
       try {
         qualification = await dependencies.qualify(qualifiedEvidence,evidenceHash)
         if(qualification.profile)qualification.profile=validateRadarCompanyProfile(qualification.profile,qualifiedEvidence)
@@ -224,11 +227,11 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       }
       catch (cause) { qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
         limits.push(`Qualificação semântica pendente (${safeResearchError(cause)}). Os fatos foram preservados.`) }
-    } else limits.push('Qualificação semântica pendente: é necessária evidência com identidade associada e rota explícita no Admin.')
+    } else limits.push('radar_qualification_service_unavailable')
   }
   limits.push(...(qualification?.limitations??[]))
   const profile=qualification?.profile
-  if(configuration.research.profileEnabled&&!profile)limits.push('Perfil da empresa pendente de análise com evidências e modelo autorizado.')
+  if(configuration.research.profileEnabled&&!profile)limits.push(!readableInstitutional?'radar_profile_waiting_public_read':!qualifiedEvidence.length?'radar_profile_waiting_identity':'radar_profile_waiting_analysis')
   if(configuration.research.profileEnabled&&profile&&!profile.summary&&!profile.services.length&&!profile.customerSegments.length&&!profile.operatingRegions.length)
     limits.push('A análise não encontrou informações suficientes para descrever a empresa nas fontes lidas.')
   const sizeAssessment=configuration.research.sizeAssessment.enabled?assessRadarCompanySize(configuration.research.sizeAssessment,

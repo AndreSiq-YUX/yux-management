@@ -4,6 +4,28 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('does not blame model configuration or invoke AI when institutional pages cannot be read',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{enabled:true,presenceResolutionEnabled:true,semanticQualificationEnabled:true,profileEnabled:true}})
+  const url='https://alfa.example/',failed={url,text:'',observedAt:'2026-10-14',limitation:'robots_tls_expired',diagnostic:{stage:'robots',kind:'tls_expired',code:'CERT_HAS_EXPIRED'}}
+  const resolvePresence=vi.fn(),qualify=vi.fn()
+  const result=await runRadarResearchPipeline(identity,config,{discoveryLocked:true,pages:[failed] as never,discovery:{association:'review',websiteUrl:url,hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),collect:async()=>[failed] as never,resolvePresence,qualify,checkpoint:async()=>{}})
+  expect(resolvePresence).not.toHaveBeenCalled();expect(qualify).not.toHaveBeenCalled()
+  expect(result.limitations).toContain('radar_presence_waiting_public_read')
+  expect(result.limitations).toContain('radar_qualification_waiting_public_read')
+  expect(result.limitations).toContain('radar_profile_waiting_public_read')
+  expect(result.limitations.join(' ')).not.toMatch(/configure|rota explícita|modelo autorizado/i)
+  expect(result.pages[0].diagnostic).toMatchObject({kind:'tls_expired'})
+})
+it('distinguishes an actual absent route after readable evidence from pending identity',async()=>{
+  const config=resolveRadarSearchConfiguration({research:{enabled:true,presenceResolutionEnabled:true,profileEnabled:true}})
+  const page={url:'https://alfa.example/',text:'Marca Alfa. Soluções para empresas e contatos corporativos.',observedAt:'2026-10-14'}
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'review',websiteUrl:page.url,hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:vi.fn(),resolvePresence:async()=>{throw Error('radar_presence_explicit_route_required')},checkpoint:async()=>{}})
+  expect(result.limitations.join(' ')).toContain('radar_presence_explicit_route_required')
+  expect(result.limitations).toContain('radar_qualification_waiting_identity')
+  expect(result.limitations).toContain('radar_profile_waiting_identity')
+})
 it('does not let a conflicting homonym consume all reading capacity before the official candidate',async()=>{
   const web=vi.fn(async()=>[
     {url:'https://homonym.example/',title:'Empresa Alfa',snippets:['Empresa Alfa'],observedAt:'2026-10-13'},

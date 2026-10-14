@@ -155,7 +155,11 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
           {output.qualification.evidenceSources?.map(source=><p key={source.id}><SafeSource url={source.sourceUrl} label={`Evidência ${source.id}`}/></p>)}
           {showTechnical&&<p className="text-xs">Modelo configurado pelo Admin: {output.qualification.model??'não informado'}</p>}</div>}
         {output?.limitations?.length ? <div className="rounded border border-amber-200 bg-amber-50 p-3"><h4 className="font-medium">O que ainda precisa de conferência</h4>{output.limitations.map((item,index)=><p key={index}>{radarResearchMessage(item)}</p>)}</div>:null}
-        {output?.pages?.length ? <details><summary className="cursor-pointer">Páginas e evidências consultadas</summary>{output.pages.map(page=><div key={page.url} className="mt-2 rounded border bg-white p-2"><SafeSource url={page.url} label={page.url}/><p className="mt-1">{page.text.slice(0,1000)}</p>{page.limitation&&<p>{radarResearchMessage(page.limitation)}</p>}</div>)}</details>:null}
+        {output?.pages?.length ? <details><summary className="cursor-pointer">Páginas e evidências consultadas</summary>{output.pages.map(page=><div key={page.url} className="mt-2 rounded border bg-white p-2">
+          <SafeSource url={page.url} label={page.url}/><p className="mt-1">{page.text.slice(0,1000)}</p>
+          {page.limitation&&<p>{radarResearchMessage(page.limitation)}</p>}
+          {page.tlsException&&<p className="text-xs text-amber-800">Página lida sob autorização excepcional por certificado vencido em {new Date(page.tlsException.observedAt).toLocaleString('pt-BR')}.</p>}
+        </div>)}</details>:null}
       </>:<p className="text-slate-600">Ainda não há pesquisa automática registrada. Não é necessário informar URL para iniciar.</p>}
       <p className="text-xs text-slate-500">Dados públicos observados não comprovam consentimento, número atendido ou intenção de compra. Nenhuma mensagem é enviada.</p>
     </div>}

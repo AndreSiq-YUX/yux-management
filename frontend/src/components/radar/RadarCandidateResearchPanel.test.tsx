@@ -27,6 +27,7 @@ it('shows certificate read provenance to clients but never offers the approval c
   vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,tlsCanAuthorize:false,tlsDiagnostics:[{diagnosticId:'a',hostname:'public.example',fingerprint256:'AB',validTo:'2020-01-02'}],run:{id:'run',status:'partial',stage:'review',updated_at:'2026-10-14',configuration_revision:2,output:{pages:[{url:'https://public.example/',text:'Dados públicos',observedAt:'2026-10-14',tlsException:{grantId:'grant',hostname:'public.example',fingerprint256:'AB',observedAt:'2026-10-14'}}]}}})
   const view=mount();await view.click('Ver dossiê da empresa')
   expect(view.container.textContent).toContain('certificado vencido')
+  expect(view.container.textContent).toContain('Página lida sob autorização excepcional')
   expect(view.container.textContent).not.toContain('Autorizar leitura deste site')
   view.unmount()
 })
