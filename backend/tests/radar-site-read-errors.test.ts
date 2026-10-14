@@ -3,6 +3,19 @@ import { inspectRadarBusinessSite } from '../src/modules/radar/b2b-site-inspecti
 import { collectRadarSiteEvidence, isRetryableRadarPage } from '../src/modules/radar/site-evidence.js'
 
 describe('public reader diagnostics', () => {
+  it.each(['https://public.example/','http://public.example/'])('persists actual HTTPS destination for certificate approval after redirect from %s',async original=>{
+    const final='https://www.public.example/empresa',requested:string[]=[]
+    const pages=await collectRadarSiteEvidence(original,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{inspect:target=>inspectRadarBusinessSite(target,{
+      resolve:async()=>['8.8.8.8'],get:async url=>{
+        requested.push(url.toString())
+        if(url.hostname==='www.public.example')throw Object.assign(Error('expired'),{code:'CERT_HAS_EXPIRED'})
+        return url.pathname==='/robots.txt'?{status:404}:{status:301,location:final}
+      },probe:async url=>({hostname:url.hostname,fingerprint256:'AB',validTo:'2020-01-02T00:00:00Z'}),
+    })})
+    expect(pages[0]).toMatchObject({url:final,limitation:'robots_tls_expired',certificate:{hostname:'www.public.example'}})
+    expect(requested).toContain('https://www.public.example/robots.txt')
+    expect(pages[0].url).not.toContain('/robots.txt')
+  })
   it('never downgrades an HTTPS site to plaintext after a redirect',async()=>{
     const requested:string[]=[]
     const result=await inspectRadarBusinessSite('https://public.example/',{resolve:async()=>['8.8.8.8'],get:async url=>{

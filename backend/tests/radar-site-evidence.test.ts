@@ -1,6 +1,16 @@
 import { expect, it, vi } from 'vitest'
 import { collectRadarSiteEvidence } from '../src/modules/radar/site-evidence.js'
 import { inspectRadarBusinessSite } from '../src/modules/radar/b2b-site-inspection.js'
+it.each(['http://alfa.example/','https://alfa.example/'])('continues public contact-page reading on the validated HTTPS redirect destination from %s',async original=>{
+  const requests:string[]=[]
+  const pages=await collectRadarSiteEvidence(original,{maxPagesPerCandidate:2},{inspect:async target=>{
+    requests.push(target!);return {status:'verified_present',checkedAt:'2026-10-14',finalUrl:target===original?'https://www.alfa.example/':target!,
+      text:'Informações institucionais suficientes sobre fornecedores.',emails:[],phones:[],
+      html:'<a href="/fornecedores">Fornecedores</a><a href="https://unrelated.example/contato">Outra empresa</a>'}
+  }})
+  expect(pages.map(page=>page.url)).toEqual(['https://www.alfa.example/','https://www.alfa.example/fornecedores'])
+  expect(requests).toEqual([original,'https://www.alfa.example/fornecedores'])
+})
 it('prioritizes supplier and institutional pages rather than recruitment', async () => {
   const inspect = vi.fn(async (url:string|null) => ({status:'verified_present' as const,checkedAt:'2026-10-12',finalUrl:url!,
     text:'Informações públicas suficientes da empresa',emails:[],phones:[],html:'<a href="/contato-vagas">Vagas</a><a href="/fornecedores">Fornecedores</a><a href="/a-empresa">A empresa</a><a href="/solucoes">Soluções</a>'}))

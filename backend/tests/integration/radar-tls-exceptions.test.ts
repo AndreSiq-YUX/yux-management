@@ -89,4 +89,15 @@ describe.skipIf(!connectionString)('scoped TLS grants with real PostgreSQL',()=>
     expect(await scoped(()=>getRadarTlsReadOptions(worker,scope,'public.example'))).toBeUndefined()
     await expect(scoped(()=>worker.query('UPDATE public.radar_site_tls_exceptions SET fingerprint256=$2 WHERE id=$1',[options!.tlsException!.id,fingerprint]))).rejects.toThrow(/permission denied/)
   })
+  it.each(['http://public.example/','https://public.example/'])('authorizes only the actual failed HTTPS destination after redirect from %s',async original=>{
+    const redirected={...page,url:'https://www.public.example/empresa',certificate:{...page.certificate,hostname:'www.public.example'}}
+    await pool.query(`UPDATE public.radar_candidate_research_runs SET status='partial',output=$2 WHERE id=$1`,[run,JSON.stringify({pages:[redirected],discovery:{websiteUrl:original}})])
+    const grant=await scoped(()=>authorizeRadarTlsException(worker,admin,{...input(),diagnosticId:radarTlsDiagnosticId(run,redirected)},{resolve,probe:async url=>{
+      expect(url.toString()).toBe('https://www.public.example/empresa');return redirected.certificate
+    }}))
+    expect(grant.hostname).toBe('www.public.example')
+    const scope={organizationId:org,candidateId:candidate,runId:run,configurationRevision:1}
+    expect((await scoped(()=>getRadarTlsReadOptions(worker,scope,'www.public.example')))?.tlsException?.id).toBe(grant.id)
+    expect(await scoped(()=>getRadarTlsReadOptions(worker,scope,'public.example'))).toBeUndefined()
+  })
 })

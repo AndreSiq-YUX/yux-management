@@ -54,7 +54,7 @@ export async function collectRadarSiteEvidence(url: string, policy: { maxPagesPe
     pages.push(page)
     await dependencies.checkpoint?.(pages)
     if (result.status !== 'verified_present') continue
-    const links = usefulLinks(result.html ?? '',page.url,origin)
+    const links = usefulLinks(result.html ?? '',page.url,new URL(page.url).origin)
     pending.push(...links)
   }
   return pages

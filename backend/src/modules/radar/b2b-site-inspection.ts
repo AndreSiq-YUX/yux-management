@@ -128,7 +128,7 @@ function robotsBlocksHomepage(body: string, path = '/') {
 
 export async function inspectRadarBusinessSite(
   value: string | null,
-  options: { resolve?: Resolve; get?: Get; tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined> } = {},
+  options: { resolve?: Resolve; get?: Get; probe?:typeof probeRadarExpiredCertificate; tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined> } = {},
 ): Promise<RadarBusinessSiteInspection> {
   const checkedAt = new Date().toISOString()
   const empty = { checkedAt, emails: [], phones: [] }
@@ -138,9 +138,9 @@ export async function inspectRadarBusinessSite(
   const resolve = options.resolve ?? resolvePublicIpv4
   const get = options.get ?? (async(url:URL,address:string)=>getRadarPublicPage(url,address,await options.tlsOptions?.(url.hostname)))
   const failure=async(cause:unknown,stage:'robots'|'page',target:URL,address:string):Promise<RadarBusinessSiteInspection>=>{
-    const result:RadarBusinessSiteInspection={...empty,status:'unknown',...classifyRadarReadError(cause,stage)}
-    if(result.diagnostic?.kind==='tls_expired'&&!options.get) {
-      try {result.certificate=await probeRadarExpiredCertificate(target,address)}catch{/* Other TLS defects never receive approval. */}
+    const result:RadarBusinessSiteInspection={...empty,status:'unknown',finalUrl:target.toString(),...classifyRadarReadError(cause,stage)}
+    if(result.diagnostic?.kind==='tls_expired'&&(options.probe||!options.get)) {
+      try {result.certificate=await (options.probe??probeRadarExpiredCertificate)(target,address)}catch{/* Other TLS defects never receive approval. */}
     }
     return result
   }
@@ -162,7 +162,7 @@ export async function inspectRadarBusinessSite(
       const robotsUrl = new URL('/robots.txt', url)
       let robots: GetResult
       try { robots = await get(robotsUrl, addresses[0]) }
-      catch (cause) { return failure(cause,'robots',robotsUrl,addresses[0]) }
+      catch (cause) { return failure(cause,'robots',url,addresses[0]) }
       tlsException=robots.tlsException??tlsException
       if (robots.status === 403 || robots.status === 401) {
         return { ...empty, status: 'blocked', reason: 'robots_access_denied' }
