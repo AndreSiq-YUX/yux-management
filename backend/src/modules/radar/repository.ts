@@ -1468,48 +1468,22 @@ export async function enrichRadarCandidateWithLicensedBrave(
     query: buildRadarBraveQuery(configuration.braveQueryTemplate, { name, segment: candidate.target_segment ?? '',
       terms: candidate.target_keywords ?? [] }), city, state, limit: 5 })
   const match = selectBraveBusinessMatch({ name, city, state }, places)
-  if (!match) {
-    const suggestions = places.filter(place => place.sourceUrl && place.address).slice(0, 5).map(place => ({
+  const suggestions = places.filter(place => place.sourceUrl && place.address).slice(0, 5).map(place => ({
       name: place.name, address: place.address, websiteUrl: place.websiteUrl,
       phone: place.phone, instagramUrl: place.instagramUrl, rating: place.rating,
       reviewCount: place.reviewCount, sourceUrl: place.sourceUrl, observedAt: place.observedAt,
     }))
-    await pool.query(
-      `UPDATE public.radar_candidate_records
-       SET normalized_payload = normalized_payload || $3::jsonb, updated_at = NOW()
-       WHERE id = $1 AND organization_id = $2 AND status = 'pending_review'`,
-      [input.candidateId, input.organizationId, JSON.stringify({ braveAttemptedAt: new Date().toISOString(),
-        braveMatchStatus: 'review', braveSuggestions: suggestions,
-        braveAttemptRevision: candidate.configuration_revision ?? 1 })],
-    )
-    return { matched: false, placesCount: places.length, suggestions, reason: 'identity_needs_review' as const }
-  }
-
-  const updatedPayload = {
-    ...normalized,
-    braveSourceUrl: match.sourceUrl,
-    braveObservedAt: match.observedAt,
-    braveAttemptedAt: new Date().toISOString(),
-    braveMatchStatus: 'matched',
-    braveAttemptRevision: candidate.configuration_revision ?? 1,
-    websiteUrl: normalized.websiteUrl || match.websiteUrl,
-    websiteStatus: normalized.websiteUrl ? normalized.websiteStatus : match.websiteStatus,
-    phoneRaw: normalized.phoneRaw || match.phone,
-    address: normalized.address || match.address,
-    instagramUrl: match.instagramUrl,
-    rating: match.rating,
-    reviewCount: match.reviewCount,
-  }
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const currentCampaign = await client.query<{ configuration_revision: number }>(
-      `SELECT configuration_revision FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+    const currentCampaign = await client.query<{ configuration_revision: number;status:string }>(
+      `SELECT configuration_revision,status FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
       [candidate.campaign_id, input.organizationId],
     )
     if (currentCampaign.rows[0]?.configuration_revision !== (candidate.configuration_revision ?? 1)) {
       throw Object.assign(new Error('radar_campaign_configuration_changed'), { statusCode: 409 })
     }
+    if(['paused','archived','completed'].includes(currentCampaign.rows[0]?.status))throw Object.assign(new Error('campaign_inactive'),{statusCode:409})
     const locked = await client.query<RadarCandidateRecordRow>(
       `SELECT * FROM public.radar_candidate_records WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
       [input.candidateId, input.organizationId],
@@ -1517,6 +1491,21 @@ export async function enrichRadarCandidateWithLicensedBrave(
     if (!locked.rows[0] || locked.rows[0].status !== 'pending_review') {
       throw Object.assign(new Error('radar_candidate_no_longer_pending'), { statusCode: 409 })
     }
+    const approval=await client.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 AND organization_id=$2 FOR UPDATE',[input.candidateId,input.organizationId])
+    if(approval.rows[0]?.approved_at)throw Object.assign(new Error('radar_candidate_no_longer_pending'),{statusCode:409})
+    const current=locked.rows[0].normalized_payload??{}
+    if(!isRadarCandidateCurrentRevision(current,candidate.configuration_revision??1))throw Object.assign(new Error('radar_candidate_requires_current_discovery'),{statusCode:409})
+    if(!match) {
+      await client.query(`UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2`,
+        [input.candidateId,input.organizationId,JSON.stringify({braveAttemptedAt:new Date().toISOString(),braveMatchStatus:'review',braveSuggestions:suggestions,braveAttemptRevision:candidate.configuration_revision??1})])
+      await client.query('COMMIT')
+      return{matched:false,placesCount:places.length,suggestions,reason:'identity_needs_review' as const}
+    }
+    const updatedPayload={...current,braveSourceUrl:match.sourceUrl,braveObservedAt:match.observedAt,braveAttemptedAt:new Date().toISOString(),
+      braveMatchStatus:'matched',braveAttemptRevision:candidate.configuration_revision??1,
+      websiteUrl:current.websiteUrl||match.websiteUrl,websiteStatus:current.websiteUrl?current.websiteStatus:match.websiteStatus,
+      phoneRaw:current.phoneRaw||match.phone,address:current.address||match.address,instagramUrl:current.instagramUrl||match.instagramUrl,
+      rating:match.rating??current.rating,reviewCount:match.reviewCount??current.reviewCount}
     const fields = [
       ['brave_match', match.name], ['website', match.websiteUrl], ['phone', match.phone],
       ['address', match.address], ['instagram', match.instagramUrl],

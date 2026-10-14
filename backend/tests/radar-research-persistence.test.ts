@@ -76,6 +76,14 @@ it('retains saved contradictory activity evidence while adding read-only presenc
   expect(result.run!.output.activity?.status).toBe('possible_closure')
   expect(result.run!.output.activity?.signals).toHaveLength(1)
 })
+it('returns an older dossier as historical evidence rather than current identity confirmation',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  pool.run!.configuration_revision=1;pool.run!.status='succeeded';pool.run!.output={siteAssociation:'confirmed',discovery:{websiteUrl:'https://alfa.example/',association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1},pages:[{url:'https://alfa.example/',text:'Empresa Alfa',observedAt:'2026-10-14'}],contacts:[{kind:'email',value:'old@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-14',association:'confirmed',scope:'establishment'}]}
+  const result=await getRadarCandidateResearch(pool as never,admin,'org','candidate')
+  expect(result.run!.output.siteAssociation).toBe('review')
+  expect(result.run!.output.contacts![0].association).toBe('review')
+  expect(pool.run!.output.siteAssociation).toBe('confirmed')
+})
 it('reanalysis removes a directory website and stale contacts from projection while retaining historical evidence',async()=>{
   const pool=new ResearchPool(),run=await start(pool)
   pool.payload.websiteUrl='https://empresadois.com.br/cnpj/12345678000190'

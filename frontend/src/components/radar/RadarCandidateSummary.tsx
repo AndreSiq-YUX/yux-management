@@ -1,7 +1,7 @@
 import {Button} from '@/components/ui/button'
 import {buildRadarPresenceSummary,radarPublicLink} from '@/lib/radar/radarPresenceSummary'
 import type {RadarCandidateRecord} from '@/types/radar'
-export const radarChannelLabels={phone:'Telefone público',email:'E-mail',whatsapp:'WhatsApp publicado',social:'Rede social',business_person:'Contato profissional',contact_form:'Formulário de contato'} as const
+const radarChannelLabels={phone:'Telefone público',email:'E-mail',whatsapp:'WhatsApp publicado',social:'Rede social',business_person:'Contato profissional',contact_form:'Formulário de contato'} as const
 export function RadarCandidateSummary({candidate,revision,onOpenFull}:{candidate:RadarCandidateRecord;revision:number;onOpenFull:(id:string)=>void}) {
   const summary=buildRadarPresenceSummary(candidate,revision)
   return <section aria-label={`Resumo de ${candidate.title}`} className="flex flex-col gap-3 p-4">

@@ -34,7 +34,7 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   presenceResolution?:RadarPresenceResolution; presenceEvidenceHash?:string;
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
-type Output = Partial<RadarResearchDossier> & { analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
+type Output = Partial<RadarResearchDossier> & { historicalRevision?:number;analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string) => Promise<RadarWebHit[]>;
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
@@ -49,18 +49,19 @@ function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
   return !!expected&&[...text.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)]
     .some(match=>{const value=match[0].replace(/\D/g,'');return group?value.slice(0,8)!==expected.slice(0,8):value!==expected})
 }
-function currentDossierProjection(output:Output):Output{
+function currentDossierProjection(output:Output,currentRevision?:number,dossierRevision?:number):Output{
+  const historical=currentRevision!==undefined&&dossierRevision!==currentRevision
   const contacts=output.contacts?.filter(contact=>{
     const page=output.pages?.find(item=>item.url===contact.sourceUrl)
     return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})||!!page?.linkedFromUrl&&page.linkedFromUrl===contact.linkedFromUrl&&isRadarContactSource(contact,output.discovery?.websiteUrl)
-  })
+  }).map(contact=>historical?{...contact,association:'review' as const,scope:'unresolved' as const,preferred:false}:contact)
   const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl)
   const readable=(output.pages??[]).filter(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
-  const associated=output.siteAssociation==='confirmed'&&!invalid?readable.filter(page=>output.discovery?.websiteUrl&&new URL(page.url).origin===new URL(output.discovery.websiteUrl).origin):[]
+  const associated=!historical&&output.siteAssociation==='confirmed'&&!invalid?readable.filter(page=>output.discovery?.websiteUrl&&new URL(page.url).origin===new URL(output.discovery.websiteUrl).origin):[]
   const activity=assessRadarBusinessActivity(associated,contacts??[],{pages:readable,scope:output.presenceResolution?.scope})
-  return{...output,contacts,siteAssociation:invalid?'review':output.siteAssociation,
+  return{...output,contacts,...(historical?{historicalRevision:dossierRevision}:{}),siteAssociation:invalid||historical?'review':output.siteAssociation,
     activity:output.activity&&!invalid?{...output.activity,presenceSignals:activity.presenceSignals}:activity,
-    discovery:output.discovery?{...output.discovery,...(invalid?{websiteUrl:undefined,association:'review' as const}:{})}:undefined,
+    discovery:output.discovery?{...output.discovery,...(invalid?{websiteUrl:undefined,association:'review' as const}:historical?{association:'review' as const}:{})}:undefined,
     pages:output.pages?.map(({html:_html,...page})=>page)}
 }
 
@@ -317,8 +318,8 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
     .map(page=>({diagnosticId:radarTlsDiagnosticId(latest.id,page),...page.certificate!}))??[]
   const expired=latest?.status==='running'&&latest.lease_until&&Date.parse(latest.lease_until)<Date.now()
   const available=cachedReadAvailability(availability,latest,context.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.freshnessDays)
-  return { methodVersion:RADAR_RESEARCH_METHOD_VERSION,availability:{...available,operations:{...available.operations,refresh:{allowed:availability.allowed,reasons:availability.reasons}}}, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:currentDossierProjection(latest.output)} : null,
-    tlsExceptions,tlsDiagnostics,tlsCanAuthorize:user.role==='yux_admin'&&context.status==='pending_review',
+  return { methodVersion:RADAR_RESEARCH_METHOD_VERSION,availability:{...available,operations:{...available.operations,refresh:{allowed:availability.allowed,reasons:availability.reasons}}}, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:currentDossierProjection(latest.output,context.configuration_revision,latest.configuration_revision)} : null,
+    tlsExceptions,tlsDiagnostics,tlsCanAuthorize:user.role==='yux_admin'&&context.status==='pending_review'&&latest?.configuration_revision===context.configuration_revision,
     history:runs.rows.slice(1).map(run => ({ id:run.id, status:run.status, updated_at:run.updated_at })) }
 }
 export async function listRadarResearchHistory(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){

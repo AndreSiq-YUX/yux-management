@@ -10,3 +10,8 @@ it('marks old projections as requiring an update rather than applying their conf
   const result=buildRadarPresenceSummary({...candidateBase,normalizedPayload:{publicPresence:{version:1,configurationRevision:4,website:{url:'https://alfa.example/',association:'confirmed'}}}} as RadarCandidateRecord,5)
   expect(result.website).toBeUndefined();expect(result.pending.join(' ')).toContain('configuração anterior')
 })
+it('does not recover a stale confirmed identity from legacy fields behind a stale projection',()=>{
+  const result=buildRadarPresenceSummary({...candidateBase,normalizedPayload:{researchRevision:4,websiteUrl:'https://alfa.example/',websiteStatus:'verified_present',publicPresence:{version:1,configurationRevision:4},publicContacts:[{kind:'email',value:'old@alfa.example',sourceUrl:'https://alfa.example/',association:'confirmed'}]}} as RadarCandidateRecord,5)
+  expect(result.website?.label).not.toContain('associado')
+  expect(result.contacts[0]?.association).toBe('review')
+})

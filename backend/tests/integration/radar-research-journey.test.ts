@@ -7,7 +7,7 @@ import { createContextAwarePool } from '../../src/db/client.js'
 import { runWithDatabaseRequestContext } from '../../src/db/request-context.js'
 import { seedIntegrationFixtures, fixtureIds, fixtureUsers } from './support/fixtures.js'
 import { storePlatformProviderSecret } from '../../src/modules/platform/adminRepository.js'
-import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv,listRadarCandidates,getRadarBraveCandidateAvailability } from '../../src/modules/radar/repository.js'
+import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCsv,listRadarCandidates,getRadarBraveCandidateAvailability,enrichRadarCandidateWithLicensedBrave } from '../../src/modules/radar/repository.js'
 import {buildRadarCrmLeadFacts} from '../../src/modules/radar/crm-delivery.js'
 import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from '../../src/modules/radar/research-service.js'
 import { getRadarResearchAvailability } from '../../src/modules/radar/research-availability.js'
@@ -58,6 +58,37 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     if(routeId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId])
     if(presenceRouteId)await pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[presenceRouteId])
     await Promise.all([pool.end(),rawWorker.end()])
+  })
+  it('rejects a no-match enrichment if the campaign changes during the provider call',async()=>{
+    const campaign=await createRadarCampaign(pool,admin,{organizationId,name:'Race fixture',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:10,budgetLimit:1,searchConfiguration:{sources:{enrichWithBrave:true}}} as never)
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Race',$3,'{"discoveryRevision":1,"city":"Curitiba","state":"PR"}') RETURNING id`,[organizationId,campaign.id,randomUUID()])).rows[0].id
+    try {
+      await expect(scoped(()=>enrichRadarCandidateWithLicensedBrave(worker,admin,{organizationId,candidateId:id,expectedRevision:1,secretKeyMaterial:`provider-key:${fixtureKey}`},
+        {search:async()=>{await pool.query('UPDATE public.radar_campaigns SET configuration_revision=2 WHERE id=$1',[campaign.id]);return[]}})))
+        .rejects.toThrow('radar_campaign_configuration_changed')
+      expect((await pool.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1',[id])).rows[0].normalized_payload).not.toHaveProperty('braveAttemptedAt')
+    }finally{await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id])}
+  })
+  it('preserves research facts and the confirmed site written during a matching provider call',async()=>{
+    const campaign=await createRadarCampaign(pool,admin,{organizationId,name:'Payload race fixture',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:10,budgetLimit:1,searchConfiguration:{sources:{enrichWithBrave:true}}} as never)
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Race',$3,'{"discoveryRevision":1,"city":"Curitiba","state":"PR"}') RETURNING id`,[organizationId,campaign.id,randomUUID()])).rows[0].id
+    const fresh={researchRevision:1,websiteUrl:'https://verified.example/',websiteStatus:'verified_present',publicContacts:[{kind:'email',value:'real@verified.example',sourceUrl:'https://verified.example/',observedAt:'2026-10-14',association:'confirmed'}],publicPresence:{version:1,configurationRevision:1,website:{url:'https://verified.example/',association:'confirmed'}}}
+    try {
+      await scoped(()=>enrichRadarCandidateWithLicensedBrave(worker,admin,{organizationId,candidateId:id,expectedRevision:1,secretKeyMaterial:`provider-key:${fixtureKey}`},
+        {search:async()=>{await pool.query('UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$2::jsonb WHERE id=$1',[id,JSON.stringify(fresh)]);return[{provider:'brave_place_search',name:'Empresa Race',address:'Rua Alfa, Curitiba - PR',websiteUrl:'https://suggestion.example/',websiteStatus:'unverified',sourceUrl:'https://provider.example/place/1',observedAt:'2026-10-14',storagePolicy:'transient_only'}]}}))
+      expect((await pool.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1',[id])).rows[0].normalized_payload).toMatchObject(fresh)
+    }finally{await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id])}
+  })
+  it.each([false,true])('does not write enrichment after concurrent approval (match=%s)',async matching=>{
+    const campaign=await createRadarCampaign(pool,admin,{organizationId,name:'Approval race fixture',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:10,budgetLimit:1,searchConfiguration:{sources:{enrichWithBrave:true}}} as never)
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Race',$3,'{"discoveryRevision":1,"city":"Curitiba","state":"PR"}') RETURNING id`,[organizationId,campaign.id,randomUUID()])).rows[0].id
+    try {
+      await expect(scoped(()=>enrichRadarCandidateWithLicensedBrave(worker,admin,{organizationId,candidateId:id,expectedRevision:1,secretKeyMaterial:`provider-key:${fixtureKey}`},{search:async()=>{
+        await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision,approved_at,approved_by) VALUES($1,$2,$3,'confirmed','high',1,NOW(),$4)`,[id,organizationId,campaign.id,admin.id])
+        return matching?[{provider:'brave_place_search',name:'Empresa Race',address:'Rua Alfa, Curitiba - PR',websiteUrl:'https://suggestion.example/',websiteStatus:'unverified',sourceUrl:'https://provider.example/place/1',observedAt:'2026-10-14',storagePolicy:'transient_only'}]:[]
+      }}))).rejects.toThrow('radar_candidate_no_longer_pending')
+      expect((await pool.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1',[id])).rows[0].normalized_payload).not.toHaveProperty('braveAttemptedAt')
+    }finally{await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id])}
   })
   it('consolidates pending and confirmed presence across SQL reads without new discovery or leaking tentative CRM contacts',async()=>{
     const previousConfiguration=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[campaignId])).rows[0].search_configuration

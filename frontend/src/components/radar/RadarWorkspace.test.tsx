@@ -33,6 +33,26 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('ignores the paid-action refresh after navigating to a different campaign',async()=>{
+    const campaigns=['a','b'].map(id=>({...campaignDefaults,id,organizationId:'org',name:`Campanha ${id}`,campaignType:id==='a'?'regional_b2b':'local_niche',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign))
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce(campaigns)
+    vi.mocked(radarService.getDataSources).mockResolvedValueOnce([{id:'brave',sourceKey:'brave_place_search',sourceType:'brave_place_search',enabled:true,defaultCostPerUnit:.01} as RadarDataSource])
+    vi.mocked(radarService.getCandidates).mockImplementation(async id=>[{id,organizationId:'org',campaignId:id,title:`Empresa ${id}`,sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{},dedupeKey:id,createdAt:'',updatedAt:''}])
+    let resolveAction!:(value:{matched:boolean;placesCount:number})=>void
+    vi.mocked(radarService.enrichCandidateWithBrave).mockReturnValueOnce(new Promise(resolve=>{resolveAction=resolve}))
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace/>))
+    await act(async()=>[...container.querySelectorAll('button')].filter(b=>b.textContent==='Abrir')[0].click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Ver detalhes completos')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Completar presença pública')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Voltar às campanhas')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].filter(b=>b.textContent==='Abrir')[1].click())
+    await act(async()=>resolveAction({matched:false,placesCount:0}))
+    expect(container.querySelector('tbody')?.textContent).toContain('Empresa b')
+    expect(container.querySelector('tbody')?.textContent).not.toContain('Empresa a')
+    act(()=>root.unmount());vi.mocked(radarService.getCandidates).mockResolvedValue([])
+  })
   it('ignores a late company response after switching to another campaign',async()=>{
     const campaigns=['a','b'].map(id=>({...campaignDefaults,id,organizationId:'org',name:`Campanha ${id}`,campaignType:'local_niche',targetSegment:'Empresas',targetStates:[],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign))
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce(campaigns)

@@ -16,10 +16,12 @@ export function projectRadarPublicPresence(input:{configurationRevision:number;d
   const page=pages.find(page=>origin(page.url)===origin(selected??'')&&!page.limitation)??pages.find(page=>page.url===selected)
   const hit=hits.find(hit=>origin(hit.url)===origin(selected??''))
   const url=selected&&publicRadarUrl(selected)
-  if(!url||!isRadarInstitutionalSource(url)||!page&&!hit)return {version:1,configurationRevision:input.configurationRevision,contacts:[]}
+  const rejected=input.pages.some(page=>page.url===selected&&!isRadarInstitutionalSource(page.url,{text:page.text}))
+  if(!url||rejected||!isRadarInstitutionalSource(url)||!page&&!hit)return {version:1,configurationRevision:input.configurationRevision,contacts:[]}
   const association=input.siteAssociation==='confirmed'?'confirmed' as const:'review' as const
   const scope=association==='confirmed'?input.presenceResolution?.scope??'establishment':'unresolved'
   const contacts=input.contacts.filter(contact=>typeof contact.sourceUrl==='string'&&typeof contact.value==='string'
+    &&!input.pages.some(page=>page.url===contact.sourceUrl&&!page.linkedFromUrl&&!isRadarInstitutionalSource(page.url,{text:page.text}))
     &&isRadarContactSource(contact,url)&&(origin(contact.sourceUrl)===origin(url)||origin(contact.linkedFromUrl??'')===origin(url)))
     .map(contact=>({...contact,association:association==='confirmed'?contact.association:'review' as const,scope:association==='confirmed'?contact.scope??scope:'unresolved' as const}))
   return {version:1,configurationRevision:input.configurationRevision,website:{url,association,scope,readable:!!page?.text&&!page.limitation,sourceUrl:page?.url??hit!.url,observedAt:page?.observedAt??hit!.observedAt},contacts}

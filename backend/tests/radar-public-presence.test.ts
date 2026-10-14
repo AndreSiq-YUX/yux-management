@@ -16,3 +16,8 @@ it('handles incomplete legacy dossiers without fabricating links',()=>{
   expect(radarPublicPresenceFromDossier({},5)).toBeUndefined()
   expect(radarPublicPresenceFromDossier({...dossier,contacts:undefined},5)?.contacts).toEqual([])
 })
+it('a generic search snippet cannot override a page identified as a directory',()=>{
+  const url='https://cadastro.example/alfa'
+  const result=projectRadarPublicPresence({configurationRevision:5,...dossier,siteAssociation:'confirmed',discovery:{...dossier.discovery,websiteUrl:url,hits:[{url,title:'Alfa CNPJ 12345678000190',snippets:[],observedAt:'2026-10-14'}]},pages:[{url,text:'Dados cadastrais da empresa Alfa. Contato do editor: editor@cadastro.example',observedAt:'2026-10-14'}],contacts:[{kind:'email',value:'editor@cadastro.example',sourceUrl:url,observedAt:'2026-10-14',association:'confirmed'}]})
+  expect(result.website).toBeUndefined();expect(result.contacts).toEqual([])
+})

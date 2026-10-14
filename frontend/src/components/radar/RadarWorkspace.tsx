@@ -926,22 +926,25 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
 
   const enrichCandidateWithBrave = async (candidateId: string) => {
     if (!organizationId || actionLoading) return
+    const scope=sidebarScope.current,isCurrent=()=>sidebarScope.current===scope
     try {
       setActionLoading(`brave-${candidateId}`)
       const availability=await radarService.getBraveCandidateAvailability(candidateId,organizationId)
+      if(!isCurrent())return
       if(!availability.allowed)throw new Error(availability.reasons[0]?.code??'radar_brave_unavailable')
       const result = await radarService.enrichCandidateWithBrave(candidateId, organizationId,selectedCampaign?.configurationRevision??1)
+      if(!isCurrent())return
       if (result.candidate) setCandidates(current => current.map(item => item.id === candidateId ? result.candidate! : item))
       if (result.matched) toast.success('Presença pública complementada com evidências')
       else toast('Nenhuma correspondência segura; revise as sugestões antes de associar')
       try {
-        if (!result.candidate&&selectedCampaignId) setCandidates(await radarService.getCandidates(selectedCampaignId))
-        if (selectedCampaignId) setB2bProspects(await radarService.getB2bProspects(selectedCampaignId, organizationId))
-      } catch {toast.error('A pesquisa foi registrada, mas a tela não atualizou. Use Atualizar resultados; não repita a busca.')}
+        if (!result.candidate&&selectedCampaignId) {const next=await radarService.getCandidates(selectedCampaignId);if(isCurrent())setCandidates(next)}
+        if (selectedCampaignId&&isCurrent()) {const next=await radarService.getB2bProspects(selectedCampaignId, organizationId);if(isCurrent())setB2bProspects(next)}
+      } catch {if(isCurrent())toast.error('A pesquisa foi registrada, mas a tela não atualizou. Use Atualizar resultados; não repita a busca.')}
     } catch (error) {
       console.error('Erro no enriquecimento Brave:', error)
-      toast.error(radarComplementError(error))
-    } finally { setActionLoading(null) }
+      if(isCurrent())toast.error(radarComplementError(error))
+    } finally { setActionLoading(current=>current===`brave-${candidateId}`?null:current) }
   }
 
   const confirmBraveSuggestion = async (candidateId: string, sourceUrl: string) => {
