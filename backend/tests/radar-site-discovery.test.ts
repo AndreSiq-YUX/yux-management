@@ -1,6 +1,25 @@
 import { expect, it, vi } from 'vitest'
 import { compareRadarBusinessIdentity, discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl } from '../src/modules/radar/site-discovery.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city: 'Curitiba', state: 'PR', address: 'Rua Azul 123', phone: '4133334444' }
+it('can defer local research until web research fails to find a credible website',async()=>{
+  const local=vi.fn(async()=>[])
+  const result=await discoverRadarBusinessPresence(identity,{maxSearchQueriesPerCandidate:3,webSearchEnabled:true,localSearchOrder:'after_web_if_needed'} as never,
+    {local,search:async()=>[{url:'https://alfa.example/',title:'Empresa Alfa',snippets:['12.345.678/0001-90'],observedAt:'2026-10-15'}]})
+  expect(result.websiteUrl).toBe('https://alfa.example/')
+  expect(local).not.toHaveBeenCalled()
+})
+it('can disable local research without disabling web research',async()=>{
+  const local=vi.fn(async()=>[])
+  await discoverRadarBusinessPresence(identity,{maxSearchQueriesPerCandidate:3,webSearchEnabled:true,localSearchOrder:'disabled'} as never,{local,search:async()=>[]})
+  expect(local).not.toHaveBeenCalled()
+})
+it('reserves room for a complementary local query when web results are exhausted',async()=>{
+  const local=vi.fn(async()=>[{url:'https://alfa.example/',title:'Empresa Alfa',snippets:['12.345.678/0001-90'],observedAt:'2026-10-15'}]),search=vi.fn(async()=>[])
+  const result=await discoverRadarBusinessPresence(identity,{maxSearchQueriesPerCandidate:3,webSearchEnabled:true,localSearchOrder:'after_web_if_needed'},{local,search})
+  expect(local).toHaveBeenCalledTimes(1)
+  expect(search).toHaveBeenCalledTimes(2)
+  expect(result.queries).toBe(3)
+})
 it('starts with the plain business name and prioritizes an institutional brand candidate before directories',async()=>{
   const search=vi.fn(async(_query:string)=>[{url:'https://unknown.example/cnpj/12345678000190',title:'Empresa Alfa',snippets:[identity.cnpj],observedAt:'2026-10-13'},
     {url:'https://brand.example/',title:'Marca Beta — Empresa Alfa',snippets:['Soluções empresariais'],observedAt:'2026-10-13'}])

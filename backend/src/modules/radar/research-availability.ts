@@ -20,7 +20,7 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
   if(!input.canManage)reasons.push(issue('research_admin_required','A pesquisa paga exige um administrador YUX.'))
   if(!input.policy.enabled)reasons.push(issue('campaign_research_disabled','Aprofundamento automático desativado nesta campanha.',undefined,'Campanha → Editar configuração'))
   if(input.campaignActive===false)reasons.push(issue('campaign_inactive','Campanha arquivada, concluída ou pausada.'))
-  const wanted=[...(input.localEnabled?['brave_place_search']:[]),...(input.policy.webSearchEnabled?input.policy.webSearchProviders:[])]
+  const wanted=[...(input.localEnabled&&input.policy.localSearchOrder!=='disabled'?['brave_place_search']:[]),...(input.policy.webSearchEnabled?input.policy.webSearchProviders:[])]
   if(!wanted.length)reasons.push(issue('search_not_selected','Selecione uma busca para descobrir a presença pública.'))
   const availableSearchSources:string[]=[],blocked:ResearchBlocker[]=[]
   const estimates=wanted.map(sourceType=>{
@@ -60,7 +60,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
       FROM public.platform_provider_connections WHERE provider_key = '${key}' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)
     const row=provider.rows[0];providers[key]=row?{status:row.status,hasSecret:row.has_secret,publicConfig:row.public_config??{}}:undefined
   }
-  const wanted=[...(configuration.sources.enrichWithBrave?['brave_place_search']:[]),...(configuration.research.webSearchEnabled?configuration.research.webSearchProviders:[])]
+  const wanted=[...(configuration.sources.enrichWithBrave&&configuration.research.localSearchOrder!=='disabled'?['brave_place_search']:[]),...(configuration.research.webSearchEnabled?configuration.research.webSearchProviders:[])]
   const sources=await Promise.all([...new Set(wanted)].map(async key=>{
     const source=await findRadarDataSource(pool,organizationId,key)
     const governance=await evaluateRadarSourceGovernance(pool,organizationId,campaignId,source,1)

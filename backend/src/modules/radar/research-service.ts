@@ -25,6 +25,7 @@ import type {RadarTlsReadOptions} from './site-tls-exception.js'
 import {projectRadarPublicPresence} from './public-presence.js'
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls} from './research-checkpoint.js'
+import {hasUsefulRadarHits} from './research-planner.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile;usage?:RadarPresenceResolution['usage'] }
@@ -41,6 +42,7 @@ type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query:
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
   registrySizeFacts?:RadarSizeFact[];
+  queriesUsed?:()=>number;
   collectSocial?:typeof collectRadarPublicSocialEvidence;
   tlsOptions?:(hostname:string)=>Promise<RadarTlsReadOptions|undefined>;
   checkpoint: (stage: string, output: Output) => Promise<void>; signal?: AbortSignal }
@@ -118,6 +120,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   if (!output.discovery || !output.discoveryLocked && output.discovery.limitations.length) {
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
       search: dependencies.web, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
+      queriesUsed:dependencies.queriesUsed,
       checkpoint: async (hits, queries) => { output.discoveryHits = hits; output.discoveryQueries = queries; await checkpoint('discovery') },
       inspectCandidates:output.analysisOnly?undefined:async hits=>{
         if(pendingRadarReadUrls(hits,pages,configuration.research.maxPagesPerCandidate).length)output.readingComplete=false
@@ -555,22 +558,25 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length},{
       signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
+      queriesUsed:()=>Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length,
       tlsOptions:hostname=>getRadarTlsReadOptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision},hostname),
-      local:configuration.sources.enrichWithBrave && identity.city && identity.state ? async () => {
+      local:configuration.sources.enrichWithBrave && configuration.research.localSearchOrder!=='disabled' && identity.city && identity.state ? async () => {
         const places = await paid('brave_place_search',identity.name,key => (dependencies.local ?? searchRadarPlaces)({provider:'brave_place_search',apiKey:key,query:identity.name,city:identity.city!,state:identity.state!,limit:5}))
         return places.flatMap(place => place.sourceUrl ? [{url:place.websiteUrl || place.sourceUrl,title:place.name,
           snippets:[place.address,place.phone,place.email].filter((value):value is string => !!value),observedAt:place.observedAt}] : [])
       } : undefined,
       web: async query => {
         let failure:unknown
+        const collected:RadarWebHit[]=[]
         for(const source of configuration.research.webSearchProviders){
           try{
             const hits=await paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5}))
-            if(hits.length)return hits
+            collected.push(...hits)
+            if(hasUsefulRadarHits(identity,hits))return collected
           }catch(cause){failure=cause}
         }
-        if(failure)throw failure
-        return []
+        if(failure&&!collected.length)throw failure
+        return collected
       },
       resolvePresence:async(evidence,evidenceHash)=>{
         await recoverAnalysis('presence',evidenceHash)

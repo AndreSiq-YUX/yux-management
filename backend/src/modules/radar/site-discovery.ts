@@ -1,6 +1,7 @@
 import { normalizeRadarText } from './search-configuration.js'
 import { publicRadarUrl, type RadarWebHit } from './web-search.js'
 import {classifyRadarSource,isRadarInstitutionalSource} from './source-identity.js'
+import {radarResearchQueries} from './research-planner.js'
 export type RadarBusinessIdentity = { name: string; legalName?: string; cnpj?: string; city?: string; state?: string; address?: string; phone?: string; websiteUrl?: string }
 export type RadarPresenceDiscovery = { association: 'confirmed' | 'review' | 'not_found_in_consulted_sources' | 'blocked';
   websiteUrl?: string; hits: RadarWebHit[]; suggestions: RadarWebHit[]; limitations: string[]; queries: number }
@@ -40,30 +41,38 @@ export function isRadarReferenceUrl(value:string) {
   return classifyRadarSource(value).kind!=='institutional_candidate'
 }
 export async function discoverRadarBusinessPresence(identity: RadarBusinessIdentity,
-  policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean },
+  policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean;localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled' },
   dependencies: { search: (query: string) => Promise<RadarWebHit[]>; local?: () => Promise<RadarWebHit[]>;
     inspectCandidates?:(hits:RadarWebHit[])=>Promise<boolean>;
-    checkpoint?: (hits: RadarWebHit[], queries: number) => Promise<void>; initialHits?: RadarWebHit[]; initialQueries?: number }): Promise<RadarPresenceDiscovery> {
+    checkpoint?: (hits: RadarWebHit[], queries: number) => Promise<void>; initialHits?: RadarWebHit[]; initialQueries?: number;queriesUsed?:()=>number }): Promise<RadarPresenceDiscovery> {
   const hits = [...(dependencies.initialHits ?? [])]
   const limitations: string[] = []
   let queries = dependencies.initialQueries ?? 0
-  const queriesText = [...new Set([identity.name.trim(),
-    (identity.legalName??'').replace(/\b(?:LTDA|LIMITADA|EIRELI|S\.?A\.?)\b/gi,'').trim(),
-    `${identity.name} ${identity.city??''} ${identity.state??''}`.trim(),
-    identity.cnpj ? `"${identity.cnpj}" site` : ''].filter(Boolean))]
+  const queriesText = radarResearchQueries(identity)
+  const order=policy.localSearchOrder??'before_web'
+  const webBudget=order==='after_web_if_needed'&&dependencies.local?Math.max(1,policy.maxSearchQueriesPerCandidate-1):policy.maxSearchQueriesPerCandidate
+  let plausible=false
   const confirmed = () => hits.filter(hit => isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')})&&matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`) === 'confirmed')
   // One local query plus complementary web queries share a single cap, including previously reserved attempts.
-  if (dependencies.local && queries === 0) {
+  if (dependencies.local && order==='before_web' && queries === 0) {
     queries++
     try { hits.push(...await dependencies.local()) } catch (error) { limitations.push(error instanceof Error ? error.message : 'local_search_failed') }
+    queries=dependencies.queriesUsed?.()??queries
     await dependencies.checkpoint?.(hits, queries)
   }
-  for (let index = Math.max(0,queries-(dependencies.local?1:0)); policy.webSearchEnabled && queries < policy.maxSearchQueriesPerCandidate && index < queriesText.length; index++) {
+  for (let index = Math.max(0,queries-(dependencies.local&&order==='before_web'?1:0)); policy.webSearchEnabled && queries < webBudget && index < queriesText.length; index++) {
     if (confirmed().length) break
     queries++
     try { hits.push(...await dependencies.search(queriesText[index])) } catch (error) { limitations.push(error instanceof Error ? error.message : 'web_search_failed'); break }
+    queries=dependencies.queriesUsed?.()??queries
     await dependencies.checkpoint?.(hits, queries)
-    if(await dependencies.inspectCandidates?.(hits))break
+    if(await dependencies.inspectCandidates?.(hits)){plausible=true;break}
+  }
+  if(dependencies.local&&order==='after_web_if_needed'&&!plausible&&!confirmed().length&&queries<policy.maxSearchQueriesPerCandidate){
+    queries++
+    try{hits.push(...await dependencies.local())}catch(error){limitations.push(error instanceof Error?error.message:'local_search_failed')}
+    queries=dependencies.queriesUsed?.()??queries
+    await dependencies.checkpoint?.(hits,queries)
   }
   const unique = [...new Map(hits.map(hit => [hit.url, hit])).values()].sort((a,b)=>Number(isRadarInstitutionalSource(b.url,{title:b.title,text:b.snippets.join(' ')}))-Number(isRadarInstitutionalSource(a.url,{title:a.title,text:a.snippets.join(' ')})))
   const sites = [...new Map(confirmed().filter(hit => !isRadarReferenceUrl(hit.url)).map(hit => [new URL(hit.url).hostname.replace(/^www\./, ''), hit])).values()]

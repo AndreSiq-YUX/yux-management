@@ -150,9 +150,13 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
             onChange={event=>changeResearch({webSearchProviders:[event.target.value as 'brave_web_search'|'serper_web_search']})}>
             <option value="brave_web_search">Brave Web Search</option><option value="serper_web_search">Google via Serper</option></select></Field>
           <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={(research.webSearchProviders?.length??1)>1} onChange={event=>{const primary=research.webSearchProviders?.[0]??'brave_web_search';changeResearch({webSearchProviders:event.target.checked?[primary,primary==='serper_web_search'?'brave_web_search':'serper_web_search']:[primary]})}}/>Autorizar a outra fonte como fallback</label>
-          <p className="mt-2 text-xs text-muted-foreground">A fonte precisa estar liberada em Admin → Integrações. Fallback consome o mesmo limite total de consultas e só executa quando a fonte anterior falha ou não traz resultados. Salvar não pesquisa.</p>
+          <p className="mt-2 text-xs text-muted-foreground">A fonte precisa estar liberada em Admin → Integrações. Fallback compartilha o limite total e pode complementar resultados que não ajudam a identificar a empresa. Salvar não pesquisa.</p>
         </details>}
         <p className="mb-3 text-xs text-slate-500">Descobre presença pública e contatos sem exigir URL manual. Salvar não consulta provedores. Fontes, custos e modelo são liberados separadamente no Admin.</p>
+        <Field label="Quando complementar com busca local"><select aria-label="Quando complementar com busca local" className={selectClass} value={research.localSearchOrder??'before_web'}
+          onChange={event=>changeResearch({localSearchOrder:event.target.value as 'before_web'|'after_web_if_needed'|'disabled'})}>
+          <option value="before_web">Antes da busca na internet (padrão atual)</option><option value="after_web_if_needed">Depois, somente se necessário</option><option value="disabled">Não usar busca local no aprofundamento</option>
+        </select></Field>
         <div className="space-y-2">{(['enabled','webSearchEnabled','presenceResolutionEnabled','semanticQualificationEnabled'] as const).map((key, index) => <label key={key} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={research[key]??false} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Aprofundar a busca na internet','Identificar site e canais oficiais por IA','Analisar adequação ao objetivo comercial'][index]}</label>)}</div>
         <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas totais por empresa',5],['maxPagesPerCandidate','Páginas públicas por empresa',10],['freshnessDays','Validade da pesquisa (dias)',30]] as const).map(([key,label,max]) => <Field key={key} label={label}>

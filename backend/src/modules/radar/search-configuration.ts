@@ -24,6 +24,7 @@ export const radarSizePolicySchema = z.object({enabled:z.boolean().default(false
 
 export const radarResearchPolicySchema = z.object({
   enabled: z.boolean().default(false), webSearchEnabled: z.boolean().default(false),
+  localSearchOrder:z.enum(['before_web','after_web_if_needed','disabled']).default('before_web'),
   webSearchProviders:z.array(z.enum(['brave_web_search','serper_web_search'])).min(1).max(2).refine(value=>new Set(value).size===value.length,'duplicate_search_provider').default(['brave_web_search']),
   maxSearchQueriesPerCandidate: z.number().int().min(1).max(5).default(3),
   maxPagesPerCandidate: z.number().int().min(1).max(10).default(4),

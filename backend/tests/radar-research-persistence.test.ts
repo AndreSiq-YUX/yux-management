@@ -67,6 +67,17 @@ it('recovers a completed durable analysis receipt after a lost runtime response 
   expect(pool.run!.output.qualification).toMatchObject({productFit:'possible'})
   expect(runtime).not.toHaveBeenCalled()
 })
+it('tries the authorized fallback when the first source only returns external references, preserving both sources',async()=>{
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search','brave_web_search'],maxSearchQueriesPerCandidate:3}}
+  const run=await start(pool)
+  const result=await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{loadSecret:async()=> 'test-only',
+    web:async input=>input.provider==='serper_web_search'?[{url:'https://unknown.example/guia/alfa',title:'Empresa Alfa',snippets:['CNPJ 12345678000190'],observedAt:'2026-10-15'}]:[{url:'https://alfa.example/',title:'Empresa Alfa',snippets:['CNPJ 12345678000190'],observedAt:'2026-10-15'}],
+    collect:async()=>pages})
+  expect(pool.quota).toBe(2)
+  expect(pool.run!.output.discovery.hits.map((hit:{url:string})=>hit.url)).toContain('https://alfa.example/')
+  expect(pool.run!.output.discovery.hits.map((hit:{url:string})=>hit.url)).toContain('https://unknown.example/guia/alfa')
+})
 it('filters association-owned contacts from the current dossier without rewriting historical evidence',async()=>{
   const pool=new ResearchPool();await start(pool)
   const official={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-10-14'}

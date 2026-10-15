@@ -14,6 +14,16 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 
 describe('Radar campaign configuration panel', () => {
   beforeEach(()=>sessionStorage.clear())
+  it('offers editable local research ordering and saves without running research',async()=>{
+    const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+    const choice=container.querySelector<HTMLSelectElement>('select[aria-label="Quando complementar com busca local"]')
+    expect(choice).not.toBeNull()
+    await act(async()=>{choice!.value='after_web_if_needed';choice!.dispatchEvent(new Event('change',{bubbles:true}))})
+    await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({localSearchOrder:'after_web_if_needed'})})}))
+    act(()=>root.unmount())
+  })
   it('persists the explicit primary web provider and fallback without querying either provider',async()=>{
     const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
     config.research!.webSearchProviders=['serper_web_search','brave_web_search']
