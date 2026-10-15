@@ -7,6 +7,30 @@ import {classifyRadarSource,isRadarInstitutionalSource} from '../src/modules/rad
 const identity={name:'Empresa Brasileira de Refeicoes',legalName:'Embrare Empresa Brasileira de Refeicoes LTDA',cnpj:'01128426000198'}
 const directory={url:'https://empresas.serasaexperian.com.br/consulta-gratis/EMBRARE-01128426000198',title:identity.legalName,snippets:[identity.cnpj],observedAt:'2026-10-13'}
 it.each([
+  ['https://associacao.example/associados/alfa','Associação Comercial. Conheça nossa associada'],
+  ['https://agencia.example/clientes/alfa','Conheça nosso cliente'],
+  ['https://portal.example.gov.br/registro/alfa','Fornecedor contratado pelo município'],
+])('does not use an exact CNPJ citation on another publisher as ownership: %s',async(url,publisher)=>{
+  const text=`${publisher} ${identity.legalName}. CNPJ ${identity.cnpj}. Contato do editor: secretaria@editor.example`
+  const page={url,text,observedAt:'2026-10-15'}
+  const resolvePresence=async()=>{throw Error('external_reference_must_not_be_associated')}
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}}),{readingComplete:true,pages:[page],discovery:{association:'confirmed',websiteUrl:url,hits:[],suggestions:[],queries:1,limitations:[]}}, {web:async()=>[],checkpoint:async()=>{},resolvePresence,collect:async()=>[page]})
+  expect(result.siteAssociation).toBe('review');expect(result.contacts).toEqual([])
+  expect(result.discovery.websiteUrl).toBeUndefined()
+})
+it('keeps government homepages eligible despite transparency and gazette navigation labels',()=>{
+  expect(isRadarInstitutionalSource('https://prefeitura.example.gov.br/',{text:'Prefeitura Municipal de Alfa. CNPJ 12.345.678/0001-90. Serviços ao cidadão. Portal da Transparência. Diário Oficial. Fale conosco.'})).toBe(true)
+})
+it('does not mistake a company homepage customer-navigation label for a third-party profile',()=>{
+  expect(isRadarInstitutionalSource('https://alfa.example/',{text:'Empresa Alfa CNPJ 12.345.678/0001-90. Conheça nossos clientes. Contato.'})).toBe(true)
+})
+it('requires separate ownership evidence on an unknown publisher even with an exact CNPJ and company name',async()=>{
+  const url='https://publisher.example/pagina',page={url,text:`${identity.legalName} CNPJ ${identity.cnpj}. secretaria@publisher.example`,observedAt:'2026-10-15'}
+  const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{presenceResolutionEnabled:true}}),{readingComplete:true,readerVersion:4,pages:[page],discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],queries:1,limitations:[]}}, {web:async()=>[],checkpoint:async()=>{},resolvePresence:async()=>({candidateId:null,scope:'unresolved',reason:'Não há evidência de titularidade.',claims:[]})})
+  expect(result.siteAssociation).toBe('review')
+  expect(result.contacts.every(contact=>contact.association==='review')).toBe(true)
+})
+it.each([
   ['https://compras.example.gov.br/ata/empresa','government_reference'],
   ['https://www.bec.sp.gov.br/bec_pregao_UI/Ata/becprp17001.aspx','government_reference'],
   ['https://www.escavador.com/diarios/927547/empresa','editorial_reference'],

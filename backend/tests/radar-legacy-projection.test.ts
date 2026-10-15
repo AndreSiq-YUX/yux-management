@@ -3,6 +3,23 @@ import {mapCandidate,approveRadarB2bProspect,listRadarCandidates} from '../src/m
 import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 const payload={websiteUrl:'https://empresadois.com.br/cnpj/12345678000190',websiteStatus:'verified_present',sitePhones:['+551145047000'],
   publicContacts:[{kind:'phone',value:'+551145047000',sourceUrl:'https://empresadois.com.br/cnpj/12345678000190',association:'confirmed',observedAt:'2026-09-01'}]}
+it('never delivers a legacy confirmed channel from an unrelated ordinary domain',()=>{
+  const original={websiteUrl:'https://alfa.example/',publicContacts:[{kind:'email',value:'secretaria@association.example',sourceUrl:'https://association.example/',association:'confirmed',observedAt:'2026-10-15'}]}
+  expect(buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:original},'Oferta').email).toBe('')
+  expect(mapCandidate({normalized_payload:original} as never).normalizedPayload.publicContacts).toEqual([])
+  expect(original.publicContacts).toHaveLength(1)
+})
+it('invalidating the old website also invalidates unsupported derived ratings and contacts for new delivery',()=>{
+  const original={websiteUrl:'https://cnpj.biz/12345678000190',targetStatus:'confirmed',productFit:'high',publicContacts:[{kind:'email',value:'secretaria@association.example',sourceUrl:'https://association.example/',association:'confirmed',observedAt:'2026-10-15'}]}
+  expect(buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:original},'Oferta').email).toBe('')
+  expect(mapCandidate({normalized_payload:original} as never).normalizedPayload).toMatchObject({targetStatus:'review',productFit:'unknown'})
+  expect(original.productFit).toBe('high')
+})
+it('uses a current pending ownership projection instead of legacy verified flags in CRM contacts',()=>{
+  const url='https://publisher.example/',contact={kind:'email',value:'editor@publisher.example',sourceUrl:url,association:'confirmed',observedAt:'2026-10-15'}
+  const data={websiteUrl:url,websiteStatus:'verified_present',publicContacts:[contact],publicPresence:{version:1,website:{url,association:'review'},contacts:[{...contact,association:'review'}]}}
+  expect(buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:data},'Oferta').email).toBe('')
+})
 it('sanitizes nested historical publicPresence as well as registry website fields',()=>{
   const url='https://www.bec.sp.gov.br/bec_pregao_UI/Ata/becprp17001.aspx'
   const original={websiteUrl:url,websiteStatus:'verified_present',publicPresence:{version:1,configurationRevision:6,website:{url,association:'confirmed'},contacts:[{kind:'phone',value:'+551145047000',sourceUrl:url,association:'confirmed'}]}}

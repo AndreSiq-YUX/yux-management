@@ -9,6 +9,7 @@ import {consolidateRadarContacts,isUsefulRadarContact} from './contact-consolida
 import type {RadarContactPurpose} from './contact-evidence.js'
 import {radarQualityFromPayload} from './research-quality.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
+import {radarPublicPresenceFromDossier} from './public-presence.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
 type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
@@ -72,13 +73,16 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
     const providers=(await client.query(`SELECT provider_key,public_config FROM public.platform_provider_connections WHERE environment='production' AND is_default=TRUE AND provider_key IN ('cnpja','brave_place','serper')`)).rows
     for(const candidateId of [...new Set(input.candidateIds)].sort()){
       const candidate=(await client.query(`SELECT candidate.*,review.approved_at,review.configuration_revision AS review_revision,
-        review.target_status,review.verification_method
+        review.target_status,review.verification_method,research.output AS research_output
         FROM public.radar_candidate_records candidate LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id=candidate.id AND review.organization_id=candidate.organization_id AND review.campaign_id=candidate.campaign_id
-        WHERE candidate.id=$1 AND candidate.organization_id=$2 AND candidate.campaign_id=$3 FOR UPDATE OF candidate`,[candidateId,input.organizationId,input.campaignId])).rows[0]
+        LEFT JOIN LATERAL(SELECT output FROM public.radar_candidate_research_runs run WHERE run.candidate_id=candidate.id AND run.organization_id=candidate.organization_id AND run.campaign_id=candidate.campaign_id AND run.configuration_revision=$4 AND run.status IN ('succeeded','partial') ORDER BY run.created_at DESC,run.id DESC LIMIT 1) research ON TRUE
+        WHERE candidate.id=$1 AND candidate.organization_id=$2 AND candidate.campaign_id=$3 FOR UPDATE OF candidate`,[candidateId,input.organizationId,input.campaignId,input.configurationRevision])).rows[0]
       const block=(reason:string,leadId?:string,pipelineId?:string)=>items.push({candidateId,status:'blocked',reason,...(leadId?{leadId,pipelineId}:{})})
       if(!candidate){block('radar_candidate_not_found');continue}
       if(candidate.crm_lead_id){const linked=(await client.query('SELECT pipeline_id FROM public.leads WHERE id=$1 AND organization_id=$2',[candidate.crm_lead_id,input.organizationId])).rows[0];items.push({candidateId,status:'already_linked',leadId:candidate.crm_lead_id,pipelineId:linked?.pipeline_id});continue}
-      const data=projectRadarCompanyFacts(candidate.normalized_payload as Record<string,unknown>)
+      const payload=candidate.normalized_payload as Record<string,unknown>
+      const presence=candidate.research_output&&radarPublicPresenceFromDossier(candidate.research_output,input.configurationRevision,{name:String(payload.tradeName||candidate.title),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,cnpj:typeof payload.cnpj==='string'?payload.cnpj:undefined})
+      const data=projectRadarCompanyFacts({...payload,...(presence?{publicPresence:presence}: {})})
       const research=resolveRadarSearchConfiguration(campaign.search_configuration).research
       if(research.completion.enabled&&!radarQualityFromPayload(data,research,input.configurationRevision).readyForReview){block('radar_crm_completion_requirements_missing');continue}
       if(data.researchAssociationNeedsReview===true&&candidate.verification_method!=='manual'){block('radar_crm_review_required');continue}

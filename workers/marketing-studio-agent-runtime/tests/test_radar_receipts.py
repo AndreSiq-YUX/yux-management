@@ -66,3 +66,21 @@ def test_uncertain_wallet_commit_cannot_debit_again():
     with pytest.raises(HTTPException) as cause:
         execute_radar_receipt(store, action='radar_presence_resolution', request=request(), compute=compute, debit=debit)
     assert cause.value.status_code == 409
+
+
+def test_rejected_receipt_cannot_reclaim_a_changed_input_before_debit():
+    store = InMemoryAgentRuntimeStore()
+    def reject():
+        raise HTTPException(status_code=402, detail='radar_ai_wallet_missing')
+    def compute(before_call):
+        before_call()
+        return dict(scope='unresolved')
+    with pytest.raises(HTTPException):
+        execute_radar_receipt(store, action='radar_presence_resolution', request=request(), compute=compute, debit=reject)
+    changed = request()
+    changed.model_dump = lambda: dict(organization_id='org', request_id='request', evidence='changed')
+    with pytest.raises(HTTPException) as cause:
+        execute_radar_receipt(store, action='radar_presence_resolution', request=changed,
+                              compute=lambda before_call: pytest.fail('must not call'),
+                              debit=lambda: pytest.fail('must not debit'))
+    assert cause.value.status_code == 409

@@ -18,11 +18,16 @@ export function consolidateRadarContacts(contacts:RadarContactEvidence[],purpose
   const byKey=new Map<string,RadarContactEvidence>()
   const rank=(contact:RadarContactEvidence)=>Number(isUsefulRadarContact(contact,purpose))*100+Number(contact.purpose===purpose)*40+Number(contact.purpose==='general')*10
   for(const input of contacts){
+    if(!input||typeof input!=='object'||typeof input.value!=='string'||typeof input.sourceUrl!=='string'
+      ||typeof input.observedAt!=='string'||!['phone','email','whatsapp','social','business_person','contact_form'].includes(input.kind)
+      ||!['confirmed','review'].includes(input.association))continue
     const value=normalizedValue(input),scope=input.scope??(input.association==='confirmed'?'establishment':'unresolved')
     const key=JSON.stringify([input.kind,value,scope,input.association,identityOrigin(input)])
     const previous=byKey.get(key)
     const source={sourceUrl:input.sourceUrl,observedAt:input.observedAt,purpose:input.purpose}
-    const sources=[...new Map([...(previous?.sources??[]),...(input.sources??[]),source].map(item=>[`${item.sourceUrl}:${item.observedAt}:${item.purpose??''}`,{...item}])).values()]
+    const sources=[...new Map([...(previous?.sources??[]),...(Array.isArray(input.sources)?input.sources:[]),source]
+      .filter(item=>!!item&&typeof item==='object'&&typeof item.sourceUrl==='string'&&typeof item.observedAt==='string')
+      .map(item=>[`${item.sourceUrl}:${item.observedAt}:${item.purpose??''}`,{...item}])).values()]
     const selected=!previous||rank(input)>rank(previous)||rank(input)===rank(previous)&&(Date.parse(input.observedAt)||0)>(Date.parse(previous.observedAt)||0)?input:previous
     byKey.set(key,{...selected,value,scope,sources,preferred:false})
   }

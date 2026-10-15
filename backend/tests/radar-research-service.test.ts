@@ -4,6 +4,14 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('reads canonical pending cached hits even when the old discovery has no limitations',async()=>{
+  const old={url:'https://alfa.example/',text:'Marca Alfa',observedAt:'2026-10-15'},fresh='https://new.example/'
+  const collect=vi.fn(async(url:string)=>[{url,text:'Marca Alfa',observedAt:old.observedAt}])
+  const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,readerVersion:4,pages:[old],discoveryHits:[{url:fresh,title:'Empresa Alfa',snippets:[],observedAt:old.observedAt}],discovery:{websiteUrl:old.url,association:'review',hits:[],suggestions:[],limitations:[],queries:1}}, {web:vi.fn(),checkpoint:async()=>{},collect})
+  expect(collect.mock.calls.some(([url])=>url===fresh)).toBe(true)
+  expect(collect.mock.calls.some(([url])=>url===old.url)).toBe(false)
+  expect(result.pages.some(page=>page.url===fresh)).toBe(true)
+})
 it('searches only the missing supplier contact on the associated domain before analysis and stops when sufficient',async()=>{
   const url='https://alfa.example/',page={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-10-15'}
   const config=resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,contactPurpose:'suppliers',completion:{enabled:true,contactPurposes:['suppliers']}}})
@@ -150,7 +158,7 @@ it('does not let a conflicting homonym consume all reading capacity before the o
     {url:'https://official.example/',title:'Marca Alfa',snippets:['Empresa Alfa'],observedAt:'2026-10-13'}])
   const collect=vi.fn(async(url:string,policy:{maxPagesPerCandidate:number})=>url.includes('homonym')?
     Array.from({length:policy.maxPagesPerCandidate},(_,index)=>({url:`https://homonym.example/${index||''}`,text:'Empresa Alfa CNPJ 99.999.999/0001-99 em Salvador/BA. contato@homonym.example',observedAt:'2026-10-13'})):
-    [{url:'https://official.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Curitiba/PR. compras@official.example',observedAt:'2026-10-13'}])
+    [{url:'https://official.example/',text:'Somos Empresa Alfa CNPJ 12.345.678/0001-90. Curitiba/PR. compras@official.example',observedAt:'2026-10-13'}])
   const result=await runRadarResearchPipeline(identity,configuration,{}, {web,collect,checkpoint:async()=>{}})
   expect(collect.mock.calls.some(([url])=>url.includes('official'))).toBe(true)
   expect(result.discovery.websiteUrl).toBe('https://official.example/')

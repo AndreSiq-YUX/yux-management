@@ -26,7 +26,7 @@ export async function getRadarResearchMetrics(pool:pg.Pool,user:AuthUser,input:{
   if(!campaign)throw Object.assign(Error('radar_campaign_not_found'),{statusCode:404})
   const params=[input.organizationId,input.campaignId,input.from,input.to]
   const [runRows,usageRows,receiptRows,analysisRows]=await Promise.all([
-    pool.query(`SELECT DISTINCT ON(run.candidate_id) run.id,run.candidate_id,run.calls,run.configuration_revision,run.output,candidate.normalized_payload
+    pool.query(`SELECT DISTINCT ON(run.candidate_id) run.id,run.candidate_id,run.calls,run.configuration_revision,run.output,candidate.normalized_payload,candidate.title AS company_name
       FROM public.radar_candidate_research_runs run JOIN public.radar_candidate_records candidate ON candidate.id=run.candidate_id AND candidate.organization_id=run.organization_id
       WHERE run.organization_id=$1 AND run.campaign_id=$2 AND run.completed_at >= ($3::date::timestamp AT TIME ZONE 'UTC') AND run.completed_at < (($4::date+1)::timestamp AT TIME ZONE 'UTC')
       ORDER BY run.candidate_id,run.completed_at DESC,run.id DESC`,params),
@@ -40,7 +40,7 @@ export async function getRadarResearchMetrics(pool:pg.Pool,user:AuthUser,input:{
   ])
   const policy=resolveRadarSearchConfiguration(campaign.search_configuration).research
   const receiptIds=new Set(receiptRows.rows.map(row=>row.request_id))
-  const analyses=receiptRows.rows.map(row=>({id:row.request_id,costUsd:typeof row.usage?.costUsd==='number'?row.usage.costUsd:null}))
+  const analyses=receiptRows.rows.filter(row=>row.status!=='rejected_before_provider').map(row=>({id:row.request_id,costUsd:typeof row.usage?.costUsd==='number'?row.usage.costUsd:null}))
   for(const run of analysisRows.rows)for(const key of ['presence','semantic']){
     const call=run.calls?.[key]
     if(!call||call.status==='rejected_before_provider')continue
@@ -48,7 +48,8 @@ export async function getRadarResearchMetrics(pool:pg.Pool,user:AuthUser,input:{
     if(!receiptIds.has(id))analyses.push({id,costUsd:null})
   }
   const result=summarizeRadarResearchMetrics({companies:runRows.rows.map(run=>{
-    const presence=radarPublicPresenceFromDossier(run.output,run.configuration_revision)
+    const name=String(run.normalized_payload?.tradeName||run.company_name||'')
+    const presence=radarPublicPresenceFromDossier(run.output,run.configuration_revision,name?{name,legalName:typeof run.normalized_payload?.legalName==='string'?run.normalized_payload.legalName:undefined,cnpj:typeof run.normalized_payload?.cnpj==='string'?run.normalized_payload.cnpj:undefined}:undefined)
     const snapshot={...run.normalized_payload,researchRevision:run.configuration_revision,publicPresence:presence,externalReferences:presence?.externalReferences??[],
       websiteUrl:run.output?.discovery?.websiteUrl,siteFinalUrl:run.output?.discovery?.websiteUrl,websiteStatus:run.output?.siteAssociation==='confirmed'?'verified_present':'unknown',
       publicContacts:run.output?.contacts??[],sizeAssessment:run.output?.sizeAssessment,

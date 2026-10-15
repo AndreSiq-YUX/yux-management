@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto'
+import {randomUUID,randomInt} from 'node:crypto'
 import pg from 'pg'
 import {beforeAll,afterAll,describe,it,expect} from 'vitest'
 import {fixtureIds,fixtureUsers,seedIntegrationFixtures} from './support/fixtures.js'
@@ -12,6 +12,8 @@ describe.skipIf(!url)('Radar regional delivery to real CRM',()=>{
   const pool=new pg.Pool({connectionString:url}),admin=fixtureUsers.yux_admin as AuthUser
   const organizationId=fixtureIds.organizationA
   let campaignId:string,candidateId:string,instanceId:string,pipelineId:string,stageId:string,leadId:string
+  const syntheticCnpj=String(randomInt(10_000_000_000_000,99_999_999_999_999))
+  const extraLeadIds:string[]=[]
   beforeAll(async()=>{
     await seedIntegrationFixtures(pool)
     await pool.query(`INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES($1,'radar',TRUE) ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`,[fixtureIds.contractA])
@@ -19,16 +21,28 @@ describe.skipIf(!url)('Radar regional delivery to real CRM',()=>{
     pipelineId=(await pool.query(`INSERT INTO public.crm_pipelines(organization_id,crm_instance_id,name,is_active) VALUES($1,$2,$3,TRUE) RETURNING id`,[organizationId,instanceId,`Teste Radar ${randomUUID()}`])).rows[0].id
     stageId=(await pool.query(`INSERT INTO public.crm_pipeline_stages(pipeline_id,key,name,order_index,is_active) VALUES($1,'radar','Contato manual',0,TRUE) RETURNING id`,[pipelineId])).rows[0].id
     campaignId=(await createRadarCampaign(pool,admin,{organizationId,name:'Teste entrega',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Produtos da campanha'})).id
-    candidateId=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa revisada',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({cnpj:'12345678000190',researchRevision:1,websiteStatus:'verified_present',publicContacts:[{kind:'phone',value:'+5541999998888',association:'confirmed',sourceUrl:'https://empresa.example/',observedAt:'2026-10-13'}]})])).rows[0].id
+    candidateId=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa revisada',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({cnpj:syntheticCnpj,researchRevision:1,websiteStatus:'verified_present',publicContacts:[{kind:'phone',value:'+5541999998888',association:'confirmed',sourceUrl:'https://empresa.example/',observedAt:'2026-10-13'}]})])).rows[0].id
     await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision,verification_method,approved_by,approved_at) VALUES($1,$2,$3,'confirmed','high',1,'manual',$4,NOW())`,[candidateId,organizationId,campaignId,admin.id])
   })
   afterAll(async()=>{
     if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId])
     if(leadId)await pool.query('DELETE FROM public.leads WHERE id=$1',[leadId])
+    if(extraLeadIds.length)await pool.query('DELETE FROM public.leads WHERE id=ANY($1::uuid[])',[extraLeadIds])
     if(pipelineId)await pool.query('DELETE FROM public.crm_pipelines WHERE id=$1',[pipelineId])
     await pool.end()
   })
   const input=()=>({organizationId,campaignId,configurationRevision:1,candidateIds:[candidateId],destination:{crmInstanceId:instanceId,pipelineId,stageId},requestId:randomUUID()})
+  it('reprojects historical dossier ownership before a new manually approved CRM delivery',async()=>{
+    const cnpj=String(randomInt(10_000_000_000_000,99_999_999_999_999)),url='https://publisher.example/pagina'
+    const contact={kind:'email',value:'editor@publisher.example',sourceUrl:url,association:'confirmed',observedAt:'2026-10-15'}
+    const old=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Gama',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({cnpj,researchRevision:1,websiteStatus:'verified_present',websiteUrl:url,publicContacts:[contact]})])).rows[0].id
+    await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision,verification_method,approved_by,approved_at) VALUES($1,$2,$3,'confirmed','high',1,'manual',$4,NOW())`,[old,organizationId,campaignId,admin.id])
+    await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,configuration_revision,requested_by,status,output,completed_at) VALUES($1,$2,$3,1,$4,'partial',$5::jsonb,NOW())`,[organizationId,campaignId,old,admin.id,JSON.stringify({siteAssociation:'confirmed',discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1},contacts:[contact],pages:[{url,text:`Empresa Gama CNPJ ${cnpj}`,observedAt:'2026-10-15'}]})])
+    const delivered=await deliverRadarCompaniesToCrm(pool,admin,{...input(),candidateIds:[old]})
+    expect(delivered.items[0].status).toBe('created') // Existing manual approval is preserved.
+    const id=delivered.items[0].leadId!;extraLeadIds.push(id)
+    expect((await pool.query('SELECT email FROM public.leads WHERE id=$1',[id])).rows[0].email).toBe('')
+  })
   it('enforces active campaign sufficiency requirements without changing approval or legacy defaults',async()=>{
     const original=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[campaignId])).rows[0].search_configuration
     try{

@@ -16,25 +16,29 @@ export function projectRadarCompanyFacts(payload:Record<string,unknown>):Record<
   result.externalReferences=externalReferences
   const externalUrls=new Set(externalReferences.map(item=>item.url))
   const invalidSite=urls.some(url=>!isRadarInstitutionalSource(url)||externalUrls.has(url))
+  const pendingOwnership=website?.association==='review'
   const raw=Array.isArray(payload.publicContacts)?payload.publicContacts:undefined
   const contacts=raw?.filter((value):value is RadarContactEvidence=>!!value&&typeof value==='object'
     &&typeof value.sourceUrl==='string'&&!externalUrls.has(value.sourceUrl)&&isRadarContactSource(value,invalidSite?undefined:urls[0]))
+    .map(contact=>invalidSite||pendingOwnership?{...contact,association:'review' as const,scope:'unresolved' as const,preferred:false}:contact)
   if(contacts)result.publicContacts=contacts
   if(presence){
     const {website:_website,...rest}=presence
     const presenceContacts=(Array.isArray(presence.contacts)?presence.contacts:[]).filter((item):item is RadarContactEvidence=>!!item&&typeof item==='object'
       &&typeof item.sourceUrl==='string'&&!externalUrls.has(item.sourceUrl)&&isRadarContactSource(item,invalidSite?undefined:urls[0]))
-    result.publicPresence={...rest,...(!invalidSite&&website?{website}:{}),contacts:presenceContacts,externalReferences}
+    result.publicPresence={...rest,...(!invalidSite&&website?{website}:{}),contacts:presenceContacts.map(contact=>invalidSite?{...contact,association:'review' as const,scope:'unresolved' as const,preferred:false}:contact),externalReferences}
   }
-  if(invalidSite||raw&&contacts?.length!==raw.length){
+  if(invalidSite||pendingOwnership||raw&&contacts?.length!==raw.length){
     result.siteEmails=(contacts??[]).filter(item=>item.kind==='email'&&item.association==='confirmed').map(item=>item.value)
     result.sitePhones=(contacts??[]).filter(item=>item.kind==='phone'&&item.association==='confirmed').map(item=>item.value)
     result.researchAssociationNeedsReview=true
   }
+  if(pendingOwnership){result.websiteStatus='unverified';result.researchQuality=undefined;result.targetStatus='review';result.productFit='unknown'}
   if(invalidSite){
     result.websiteUrl=undefined;result.siteFinalUrl=undefined;result.websiteStatus='unknown';result.siteCheckedAt=undefined
     result.companyProfile=undefined;result.sizeAssessment=undefined
     result.researchQuality=undefined
+    result.targetStatus='review';result.productFit='unknown'
   }
   return result
 }

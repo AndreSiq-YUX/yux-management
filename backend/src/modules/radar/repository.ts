@@ -1975,7 +1975,8 @@ async function attachRadarPublicPresence<T extends RadarCandidateRecordRow>(pool
       AND run.status IN ('succeeded','partial') ORDER BY run.candidate_id,run.created_at DESC,run.id DESC`,[rows.map(row=>row.id)])
   const byId=new Map(saved.rows.map(run=>[run.candidate_id,run]))
   return rows.map(row=>{
-    const run=byId.get(row.id),presence=run&&radarPublicPresenceFromDossier(run.output,run.configuration_revision)
+    const run=byId.get(row.id),name=String(row.normalized_payload?.tradeName||row.title||'')
+    const presence=run&&radarPublicPresenceFromDossier(run.output,run.configuration_revision,name?{name,legalName:typeof row.normalized_payload?.legalName==='string'?row.normalized_payload.legalName:undefined,cnpj:typeof row.normalized_payload?.cnpj==='string'?row.normalized_payload.cnpj:undefined}:undefined)
     return presence?{...row,normalized_payload:{...row.normalized_payload,publicPresence:presence}}:row
   })
 }

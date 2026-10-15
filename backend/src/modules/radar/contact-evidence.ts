@@ -9,7 +9,10 @@ export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'soc
   purpose?:RadarContactPurpose;purposeEvidence?:string;scope?:'establishment'|'group'|'unresolved';linkedFromUrl?:string;
   sources?:Array<{sourceUrl:string;observedAt:string;purpose?:RadarContactPurpose}> }
 export function isRadarContactSource(contact:Pick<RadarContactEvidence,'sourceUrl'|'linkedFromUrl'>,websiteUrl?:string) {
-  if(isRadarInstitutionalSource(contact.sourceUrl))return true
+  if(isRadarInstitutionalSource(contact.sourceUrl)){
+    if(!websiteUrl)return true // Independently corroborated no-site contacts keep their existing policy.
+    try{return new URL(contact.sourceUrl).origin===new URL(websiteUrl).origin}catch{return false}
+  }
   if(!websiteUrl||!contact.linkedFromUrl||!isRadarSocialUrl(contact.sourceUrl)||!isRadarInstitutionalSource(contact.linkedFromUrl))return false
   try{return new URL(contact.linkedFromUrl).origin===new URL(websiteUrl).origin}catch{return false}
 }
