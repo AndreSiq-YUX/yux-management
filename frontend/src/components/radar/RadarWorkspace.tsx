@@ -675,7 +675,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
     captureResumeSending.current=true;setCaptureBusy(true);setCaptureError('')
     try{
       const operation=await radarService.resumeCaptureOperation(captureOperation.id,{organizationId,configurationRevision:captureOperation.configurationRevision,requestId:captureResumeRequest.current.requestId})
-      if(scope===sidebarScope.current){setCaptureOperation(operation);refreshCampaignSidebars()}
+      if(scope===sidebarScope.current){captureResumeRequest.current=null;setCaptureOperation(operation);refreshCampaignSidebars()}
     }catch(cause){if(scope===sidebarScope.current){const message=cause instanceof Error?radarResearchMessage(cause.message):'';setCaptureError(message&&!/^[a-z0-9_]+$/.test(message)?message:'Não foi possível retomar. Confira as pendências e tente novamente sem iniciar outro lote.')}}
     finally{captureResumeSending.current=false;if(scope===sidebarScope.current)setCaptureBusy(false)}
   }

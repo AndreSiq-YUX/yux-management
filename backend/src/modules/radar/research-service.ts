@@ -428,6 +428,8 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     const approval = await client.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id = $1 FOR UPDATE',[input.candidateId])
     if (approval.rows[0]?.approved_at) throw error('radar_research_approved_candidate_requires_review')
     const operation=input.operation??'complete'
+    if(operation==='resume')await client.query(`UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='radar_research_worker_interrupted_retry_available',lease_id=NULL,lease_until=NULL,updated_at=NOW()
+      WHERE organization_id=$1 AND candidate_id=$2 AND configuration_revision=$3 AND status='running' AND lease_until<NOW()`,[input.organizationId,input.candidateId,input.configurationRevision])
     if(['refresh','reanalyze'].includes(operation)&&!input.requestId)throw error('radar_research_request_id_required',400)
     if(input.requestId){
       const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
@@ -477,7 +479,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     loadSecret?:typeof loadPlatformProviderSecret; runtime?:typeof invokeAgentRuntime } = {}) {
   const lease = randomUUID()
   const acquired = await pool.query<ResearchRun>(`UPDATE public.radar_candidate_research_runs SET status='running',lease_id=$2,
-    lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW() WHERE id=$1 AND status <> 'succeeded'
+    lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW() WHERE id=$1 AND status IN ('queued','running')
     AND organization_id=$3 AND (lease_until IS NULL OR lease_until < NOW()) RETURNING *`,[input.runId,lease,input.organizationId])
   const run = acquired.rows[0]
   if (!run) return { status:'already_running_or_completed' }
@@ -500,6 +502,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const str = (key:string) => typeof payload[key] === 'string' ? payload[key] as string : undefined
     const identity:RadarBusinessIdentity = {name:str('tradeName') || context.title,legalName:str('legalName'),cnpj:str('cnpj'),
       city:str('city'),state:str('state'),address:str('address'),phone:str('phoneRaw'),websiteUrl:str('websiteUrl')}
+    const assertEffectAuthorization=async(queryable:Pick<pg.Pool,'query'>=pool)=>{
+      signal?.throwIfAborted()
+      const requester=(await queryable.query('SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE',[run.requested_by])).rows[0]
+      if(requester?.role!=='yux_admin'||!await isRadarEnabledOrganization(queryable,run.organization_id))throw error('research_admin_required',403)
+      const current=await loadContext(queryable,run.organization_id,run.candidate_id)
+      if(current.configuration_revision!==run.configuration_revision)throw error('radar_campaign_configuration_changed')
+      if(current.status!=='pending_review'||['paused','archived','completed'].includes(current.campaign_status))throw error('radar_campaign_or_candidate_inactive')
+      if(!resolveRadarSearchConfiguration(current.search_configuration).research.enabled)throw error('campaign_research_disabled')
+      const approval=(await queryable.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 AND organization_id=$2',[run.candidate_id,run.organization_id])).rows[0]
+      if(approval?.approved_at)throw error('radar_research_approved_candidate_requires_review')
+    }
     const paid = async <T>(sourceKey:string,queryKey:string,request:(apiKey:string)=>Promise<T>):Promise<T> => {
       if(run.operation==='reanalyze')throw error('radar_reanalysis_does_not_search')
       signal?.throwIfAborted()
@@ -516,6 +529,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const currentCampaign = await reservation.query('SELECT configuration_revision, budget_limit, status FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[run.campaign_id,run.organization_id])
         if (currentCampaign.rows[0]?.configuration_revision !== run.configuration_revision) throw error('radar_campaign_configuration_changed')
         if (['paused','archived','completed'].includes(currentCampaign.rows[0]?.status)) throw error('campaign_inactive')
+        await assertEffectAuthorization(reservation)
         const source = await findRadarDataSource(reservation as unknown as pg.Pool,run.organization_id,sourceKey)
         if (!source || source.defaultCostPerUnit <= 0) throw error('source_cost_required')
         const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1)
@@ -617,6 +631,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
           [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_presence_explicit_route_required')
+        await assertEffectAuthorization()
         run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash,rejections:previous?.rejections}
         const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
         if(!reserved.rows[0])throw error('radar_research_lease_lost')
@@ -646,6 +661,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
         [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_qualification_explicit_route_required')
+        await assertEffectAuthorization()
         run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,rejections:previousSemantic?.rejections,
           previous:previousSemantic?.status==='completed'?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:previousSemantic?.previous}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])

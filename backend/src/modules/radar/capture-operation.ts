@@ -18,24 +18,27 @@ export async function assertCaptureAvailability(pool:pg.Pool,user:AuthUser,organ
 }
 export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;campaignId:string;configurationRevision:number;requestId:string;requestedCount:number},dependencies:{availability?:AvailabilityLoader}={}){
  const count=parseRadarCaptureCount(input.requestedCount);z.uuid().parse(input.requestId)
- const revision=await assertRadarRegionalBatchAccess(pool,user,input.organizationId,input.campaignId)
- if(revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
+ await assertRadarRegionalBatchAccess(pool,user,input.organizationId,input.campaignId)
  const client=await pool.connect()
  try{
   await client.query('BEGIN')
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`radar-capture-request:${input.organizationId}:${input.requestId}`])
   const campaign=(await client.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.campaignId,input.organizationId])).rows[0]
-  if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
-  const duplicate=(await client.query('SELECT * FROM public.radar_capture_operations WHERE organization_id=$1 AND request_id=$2',[input.organizationId,input.requestId])).rows[0]
+  const duplicate=(await client.query(`SELECT request.*,operation.status FROM public.radar_capture_requests request JOIN public.radar_capture_operations operation ON operation.id=request.operation_id AND operation.organization_id=request.organization_id WHERE request.organization_id=$1 AND request.request_id=$2`,[input.organizationId,input.requestId])).rows[0]
   if(duplicate){
    if(duplicate.campaign_id!==input.campaignId||duplicate.configuration_revision!==input.configurationRevision||duplicate.requested_count!==count)throw captureError('radar_capture_request_conflict')
-   await client.query('COMMIT');return{operationId:duplicate.id,reused:true,status:duplicate.status}
+   await client.query('COMMIT');return{operationId:duplicate.operation_id,reused:true,status:duplicate.status}
   }
+  if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
+  const revision=campaign.configuration_revision
+  const saveRequest=async(operationId:string)=>client.query(`INSERT INTO public.radar_capture_requests(organization_id,request_id,operation_id,campaign_id,configuration_revision,requested_count) VALUES($1,$2,$3,$4,$5,$6)`,[input.organizationId,input.requestId,operationId,input.campaignId,revision,count])
   const active=(await client.query(`SELECT id,status FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked')`,[input.organizationId,input.campaignId,revision])).rows[0]
-  if(active){await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
-  await assertCaptureAvailability(pool,user,input.organizationId,input.campaignId,dependencies.availability)
+  if(active){await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
+  await assertCaptureAvailability(client as unknown as pg.Pool,user,input.organizationId,input.campaignId,dependencies.availability)
   const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot)
    VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify(campaign)])).rows[0]
   await client.query('INSERT INTO public.radar_capture_outbox(operation_id,organization_id,campaign_id) VALUES($1,$2,$3)',[row.id,input.organizationId,input.campaignId])
+  await saveRequest(row.id)
   await client.query('COMMIT');return{operationId:row.id,reused:false,status:row.status}
  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
 }

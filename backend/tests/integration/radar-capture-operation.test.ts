@@ -1,7 +1,7 @@
 import pg from 'pg'
 import {describe,it,expect,vi} from 'vitest'
 import {randomUUID} from 'node:crypto'
-import {captureFixture,connectionString,admin,organizationId,available,company} from '../support/radar-capture-fixture.js'
+import {captureFixture,connectionString,admin,organizationId,available,company,activateCaptureSearch} from '../support/radar-capture-fixture.js'
 import {createContextAwarePool} from '../../src/db/client.js'
 import {runWithDatabaseRequestContext} from '../../src/db/request-context.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js'
@@ -12,6 +12,55 @@ import {storePlatformProviderSecret} from '../../src/modules/platform/adminRepos
 import {fixtureIds} from './support/fixtures.js'
 
 describe.skipIf(!connectionString)('capture journey with isolated PostgreSQL',()=>{
+ it('does not execute a terminal blocked child when a late duplicate queue job arrives',async()=>{
+  const f=await captureFixture()
+  try{
+   await activateCaptureSearch(f.pool)
+   const candidate=(await f.pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa sintética',$3,'{"city":"Curitiba","state":"PR","discoveryRevision":1}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0]
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status) VALUES($1,$2,$3,$4,1,'blocked') RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id])).rows[0]
+   const web=vi.fn(async()=>[])
+   expect(await executeRadarCandidateResearch(f.pool,{} as never,{organizationId,runId:run.id},undefined,{web,loadSecret:async()=>'fixture'})).toMatchObject({status:'already_running_or_completed'})
+   expect(web).not.toHaveBeenCalled()
+  }finally{await f.close()}
+ })
+ it.each(['admin','module'])('stops subsequent paid searches after %s authorization is revoked mid-search',async kind=>{
+  const f=await captureFixture(),userId=randomUUID(),record=company()
+  try{
+   await activateCaptureSearch(f.pool)
+   await f.pool.query("INSERT INTO public.users(id,name,role) VALUES($1,'Revocation fixture','ADMIN')",[userId])
+   await f.pool.query("INSERT INTO public.app_users(id,email,password_hash,display_name,role,is_active) VALUES($1,$2,'unused-fixture','Revocation fixture','yux_admin',TRUE)",[userId,`${userId}@example.test`])
+   const candidate=(await f.pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa sintética',$3,$4) RETURNING id`,[organizationId,f.campaign.id,randomUUID(),JSON.stringify({cnpj:record.taxId,legalName:record.legalName,city:'Curitiba',state:'PR',discoveryRevision:1})])).rows[0]
+   const run=(await f.pool.query('INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision) VALUES($1,$2,$3,$4,1) RETURNING id',[organizationId,f.campaign.id,candidate.id,userId])).rows[0]
+   const web=vi.fn(async()=>{
+    if(kind==='admin')await f.pool.query('UPDATE public.app_users SET is_active=FALSE WHERE id=$1',[userId])
+    else await f.pool.query('UPDATE public.organizations SET is_internal_growth_workspace=FALSE WHERE id=$1',[organizationId])
+    return[]
+   })
+   await executeRadarCandidateResearch(f.pool,{} as never,{organizationId,runId:run.id},undefined,{loadSecret:async()=>'fixture',web,collect:async()=>[],runtime:async()=>{throw new Error('unexpected_model')}} as never)
+   expect(web).toHaveBeenCalledTimes(1)
+  }finally{
+   await f.pool.query('UPDATE public.organizations SET is_internal_growth_workspace=TRUE WHERE id=$1',[organizationId])
+   await f.pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[f.campaign.id])
+   await f.pool.query('DELETE FROM public.app_users WHERE id=$1',[userId]);await f.pool.query('DELETE FROM public.users WHERE id=$1',[userId]);await f.close()
+  }
+ })
+ it.each(['presence','semantic'])('does not purchase %s AI after the configuration changes during reading',async kind=>{
+  const f=await captureFixture(),record=company();let routeId:string|undefined
+  try{
+   await f.pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,$2::text[],'true') WHERE id=$1`,[f.campaign.id,['research',kind==='presence'?'presenceResolutionEnabled':'semanticQualificationEnabled']])
+   routeId=(await f.pool.query(`INSERT INTO public.model_routing_rules(agent_type,organization_id,provider,model_name) VALUES($1,$2,'openrouter','fixture-not-real') RETURNING id`,[kind==='presence'?'radar_presence_resolution':'radar_business_qualification',organizationId])).rows[0].id
+   const candidate=(await f.pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa sintética',$3,$4) RETURNING id`,[organizationId,f.campaign.id,randomUUID(),JSON.stringify({cnpj:record.taxId,legalName:record.legalName,city:'Curitiba',state:'PR',discoveryRevision:1})])).rows[0]
+   const output={discoveryLocked:true,readingComplete:false,discovery:{websiteUrl:'https://marca.example/',association:'review',hits:[],suggestions:[],limitations:[],queries:0}}
+   const run=(await f.pool.query('INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,output) VALUES($1,$2,$3,$4,1,$5) RETURNING id',[organizationId,f.campaign.id,candidate.id,admin.id,JSON.stringify(output)])).rows[0]
+   const runtime=vi.fn(async()=>({targetStatus:'confirmed',productFit:'high',reasons:[],evidenceIds:['page-0'],limitations:[]}))
+   const collect=async()=>{
+    await f.pool.query('UPDATE public.radar_campaigns SET configuration_revision=2 WHERE id=$1',[f.campaign.id])
+    return[{url:'https://marca.example/',text:kind==='presence'?'Marca Exemplo. Empresa sintética LTDA é nossa razão social.':`${record.legalName}. CNPJ ${record.taxId}. Compras compras@marca.example`,html:`<footer>${record.legalName} — CNPJ ${record.taxId}</footer><a href="mailto:compras@marca.example">Compras</a>`,observedAt:new Date().toISOString()}]
+   }
+   await executeRadarCandidateResearch(f.pool,{} as never,{organizationId,runId:run.id},undefined,{loadSecret:async()=>'fixture',web:async()=>[],collect,runtime} as never)
+   expect(runtime).not.toHaveBeenCalled()
+  }finally{if(routeId)await f.pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId]);await f.close()}
+ })
  it('exposes dispatch metadata but no company, items or operation data to an unscoped worker',async()=>{
   const f=await captureFixture(),url=new URL(connectionString!);url.username='yux_worker'
   const raw=new pg.Pool({connectionString:url.toString()}),worker=createContextAwarePool(raw,'worker')

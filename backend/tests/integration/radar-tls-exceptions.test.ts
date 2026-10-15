@@ -61,6 +61,9 @@ describe.skipIf(!connectionString)('scoped TLS grants with real PostgreSQL',()=>
     const saved={pages:[page],discoveryLocked:true,discovery:{association:'review',websiteUrl:page.url,suggestions:[],hits:[],limitations:[]}}
     await pool.query(`UPDATE public.radar_candidate_research_runs SET status='partial',output=$2,lease_id=NULL,lease_until=NULL WHERE id=$1`,[run,JSON.stringify(saved)])
     const grant=await scoped(()=>authorizeRadarTlsException(worker,admin,input(),{probe,resolve}))
+    // Represent the separate, explicit resume action. A certificate grant alone
+    // must not let a late duplicate job execute a terminal partial/blocked run.
+    await pool.query("UPDATE public.radar_candidate_research_runs SET status='queued' WHERE id=$1",[run])
     const result=await scoped(()=>executeRadarCandidateResearch(worker,{} as never,{runId:run,organizationId:org},undefined,{
       web:async()=>{throw Error('paid search must never run')},runtime:async()=>{throw Error('paid model must never run')},
       collect:async(url,_policy,dependencies)=>{

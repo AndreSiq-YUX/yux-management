@@ -1,11 +1,14 @@
 import {describe,it,expect,vi} from 'vitest'
 import {randomUUID} from 'node:crypto'
-import {captureFixture,connectionString,admin,organizationId,available,company} from './support/radar-capture-fixture.js'
+import {captureFixture,connectionString,admin,organizationId,available,company,activateCaptureSearch} from './support/radar-capture-fixture.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
-import {advanceRadarCaptureDiscovery} from '../src/modules/radar/capture-discovery.js'
+import {advanceRadarCaptureDiscovery,blockRadarCapture} from '../src/modules/radar/capture-discovery.js'
 const modulePath='../src/modules/radar/capture-dispatch.js'
 const api=await import(modulePath).catch(()=>({}))
 describe('capture outcomes',()=>{
+ it.each(['source_limit_exceeded','source_budget_exceeded','provider_inactive'])('keeps structured provider blocker %s resumable',code=>{
+   expect(api.classifyRadarCaptureResearch({status:'partial',output:{discovery:{association:'blocked',limitations:[code]},limitations:[code]},calls:{}})).toBe('blocked')
+ })
  it('distinguishes missing facts from uncertain paid calls and pending TLS approval',()=>{
   expect(api.classifyRadarCaptureResearch).toBeTypeOf('function')
   expect(api.classifyRadarCaptureResearch({status:'partial',output:{siteAssociation:'review',limitations:['no site']},calls:{}})).toBe('insufficient')
@@ -15,6 +18,56 @@ describe('capture outcomes',()=>{
  })
 })
 describe.skipIf(!connectionString)('durable capture dispatch',()=>{
+ it('redelivers a stale queued child with a new durable queue generation while preserving its run',async()=>{
+  const f=await captureFixture()
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   const input={organizationId,operationId:start.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:[company()]}),loadSecret:async()=>'fixture'})
+   const item=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items[0]
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,updated_at) VALUES($1,$2,$3,$4,1,'queued',NOW()-INTERVAL '10 minutes') RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id])).rows[0]
+   await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='researching' WHERE id=$1",[item.id,run.id])
+   const queue={add:vi.fn(async()=>({id:'job'}))}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,queue,undefined,{availability:available})
+   expect(queue.add).toHaveBeenCalledWith('radar.researchCandidate',{organizationId,runId:run.id},{jobId:`radar-capture-item-${item.id}-1`})
+  }finally{await f.close()}
+ })
+ it('recovers an expired running child using the same run and stored receipts',async()=>{
+  const f=await captureFixture()
+  try{
+   await activateCaptureSearch(f.pool)
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,{organizationId,operationId:start.operationId},{availability:available,searchPage:async()=>({candidates:[company()]}),loadSecret:async()=>'fixture'})
+   const item=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items[0]
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,status,lease_until,calls) VALUES($1,$2,$3,$4,1,$5,'running',NOW()-INTERVAL '1 minute','{"saved":{"status":"completed","source":"brave_web_search","result":[]}}') RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id,item.id])).rows[0]
+   await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='researching' WHERE id=$1",[item.id,run.id])
+   const queue={add:vi.fn(async()=>({id:'queued'}))},input={organizationId,operationId:start.operationId}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,queue,undefined,{availability:available})
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).status).toBe('blocked')
+   await api.resumeRadarCaptureOperation(f.pool,admin,{...input,configurationRevision:1,requestId:randomUUID()},{availability:available})
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,queue,undefined,{availability:available})
+   expect(queue.add).toHaveBeenCalledWith('radar.researchCandidate',{organizationId,runId:run.id},expect.any(Object))
+   expect((await f.pool.query('SELECT status,calls FROM public.radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0]).toMatchObject({status:'queued',calls:{saved:{status:'completed'}}})
+  }finally{await f.close()}
+ })
+ it('aggregates finished children when a subsequent discovery page is blocked and retires its outbox',async()=>{
+  const f=await captureFixture()
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:2},{availability:available})
+   const input={organizationId,operationId:start.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:[company()],nextToken:'page-2'}),loadSecret:async()=>'fixture'})
+   const item=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items[0]
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output) VALUES($1,$2,$3,$4,1,'succeeded','{"siteAssociation":"confirmed","quality":{"readyForReview":true}}') RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id])).rows[0]
+   await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='researching' WHERE id=$1",[item.id,run.id])
+   const discover=async()=>{await blockRadarCapture(f.pool,organizationId,start.operationId,new Error('source_limit_exceeded'));return getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)}
+   const queue={add:vi.fn()}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,queue,undefined,{availability:available,discover})
+   const state=await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)
+   expect(state).toMatchObject({status:'blocked',counts:{completed:1,researching:0}})
+   expect((await f.pool.query('SELECT * FROM public.radar_capture_outbox WHERE operation_id=$1',[start.operationId])).rows).toHaveLength(0)
+   expect(queue.add).not.toHaveBeenCalled()
+  }finally{await f.close()}
+ })
  it('finishes already completed child work even when no search quota remains',async()=>{
   const f=await captureFixture()
   try{

@@ -42,6 +42,7 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
   }else{
    const runId=String(data.runId)
    if(!failedOnce){failedOnce=true;blocked.add(runId);await workerPool.query("UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='radar_ai_credits_insufficient' WHERE id=$1",[runId]);return}
+   if(blocked.has(runId)){blocked.delete(runId);await workerPool.query("UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='provider_inactive' WHERE id=$1",[runId]);return}
    const candidate=(await workerPool.query('SELECT candidate.* FROM public.radar_candidate_research_runs run JOIN public.radar_candidate_records candidate ON candidate.id=run.candidate_id WHERE run.id=$1 AND run.organization_id=$2',[runId,org])).rows[0]
    const site=`https://qa-${candidate.id}.example/`,text=`${candidate.normalized_payload.legalName}. CNPJ ${candidate.normalized_payload.cnpj}. Curitiba PR. Contato para fornecedores: compras@empresa.example`
    await executeRadarCandidateResearch(workerPool,env,{organizationId:org,runId},undefined,{loadSecret:async()=>'fixture',web:async()=>[{url:site,title:candidate.title,snippets:[text],observedAt:new Date().toISOString()}],local:async()=>{throw Error('qa_unexpected_local_search')},collect:async()=>[{url:site,text,html:'<a href="mailto:compras@empresa.example">Fornecedores</a>',observedAt:new Date().toISOString()}],collectSocial:undefined,runtime:async()=>{throw Error('qa_unexpected_model')}} as never)

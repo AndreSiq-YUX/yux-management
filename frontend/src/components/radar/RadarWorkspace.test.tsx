@@ -35,6 +35,22 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('uses a new resume request after an acknowledged resume encounters a second blocker',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    const operation={id:'op',campaignId:'campaign',configurationRevision:2,status:'blocked' as const,discoveryStopped:true,queries:1,blockers:['radar_ai_credits_insufficient'],counts:{requested:7,admitted:7,researching:0,completed:6,insufficient:0,blocked:1},items:[]}
+    vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation})
+    vi.mocked(radarService.resumeCaptureOperation).mockResolvedValue({...operation,status:'queued'})
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    const resume=()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Retomar pesquisa deste lote')!
+    await act(async()=>resume().click())
+    vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation})
+    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Atualizar acompanhamento')!.click())
+    await act(async()=>resume().click())
+    const calls=vi.mocked(radarService.resumeCaptureOperation).mock.calls
+    expect(calls).toHaveLength(2);expect(calls[1][1].requestId).not.toBe(calls[0][1].requestId)
+    act(()=>root.unmount())
+  })
   it('recovers an active capture operation on reload and prevents a competing batch',async()=>{
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
     vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation:{id:'operation',campaignId:'campaign',configurationRevision:2,status:'researching',discoveryStopped:true,queries:1,blockers:[],counts:{requested:7,admitted:7,researching:7,completed:0,insufficient:0,blocked:0},items:[]}})
