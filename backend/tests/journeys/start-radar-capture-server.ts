@@ -1,0 +1,62 @@
+// Opt-in local UI QA. Every search/read/model dependency is simulated; no Redis or real provider request.
+import pg from 'pg'
+import {randomInt} from 'node:crypto'
+import {buildServer} from '../../src/server.js'
+import {loadEnv} from '../../src/config/env.js'
+import {createContextAwarePool} from '../../src/db/client.js'
+import {runWithDatabaseRequestContext} from '../../src/db/request-context.js'
+import {fixtureIds,fixtureUsers,seedIntegrationFixtures} from '../integration/support/fixtures.js'
+import {createRadarCampaign} from '../../src/modules/radar/repository.js'
+import {advanceRadarCaptureDiscovery} from '../../src/modules/radar/capture-discovery.js'
+import {dispatchRadarCaptureOperation,reconcileRadarCaptureOutbox} from '../../src/modules/radar/capture-dispatch.js'
+import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
+import {storePlatformProviderSecret} from '../../src/modules/platform/adminRepository.js'
+import type {AuthUser} from '../../src/auth/routes.js'
+import type {AppJobQueue} from '../../src/server.js'
+const databaseUrl=process.env.YUX_RADAR_TEST_DATABASE_URL??'',target=new URL(databaseUrl)
+if(target.hostname!=='127.0.0.1'||target.port!=='55439'||target.pathname!=='/yux_radar_research_test')throw Error('isolated_radar_test_database_required')
+const pool=new pg.Pool({connectionString:databaseUrl});await seedIntegrationFixtures(pool)
+const org=fixtureIds.organizationA,key=Buffer.alloc(32,7).toString('base64')
+await pool.query(`INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES($1,'radar',TRUE) ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`,[fixtureIds.contractA])
+for(const providerKey of ['brave_place','cnpja']){
+ const provider=(await pool.query(`INSERT INTO public.platform_provider_connections(provider_type,provider_key,display_name,status,public_config,is_default) VALUES('internal_service',$1,'QA — Simulado','active','{"retentionLicensed":true,"credentialPurpose":"licensed_retention","webSearchLicensed":true}',TRUE) ON CONFLICT(provider_type,provider_key,environment) DO UPDATE SET status='active',public_config=EXCLUDED.public_config RETURNING id`,[providerKey])).rows[0]
+ await storePlatformProviderSecret(pool,{providerConnectionId:provider.id,secretKind:'api_key',value:'fixture-not-a-real-key'},`provider-key:${key}`)
+}
+await pool.query("UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.025,rate_limit_per_day=10000 WHERE source_key='cnpja_advanced_search'")
+await pool.query("UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.01,rate_limit_per_day=10000 WHERE source_key='brave_web_search'")
+const campaign=await createRadarCampaign(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,name:'QA — Captação completa',campaignType:'regional_b2b',targetStates:['PR'],targetSegment:'Empresas B2B sintéticas',offerType:'Produtos e serviços configuráveis',dailyLimit:100,budgetLimit:10,searchConfiguration:{sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:2,maxQueriesPerBatch:2},research:{enabled:true,webSearchEnabled:true}}} as never)
+const apiUrl=new URL(databaseUrl);apiUrl.username='yux_api'
+const apiPool=createContextAwarePool(new pg.Pool({connectionString:apiUrl.toString()}),'api')
+const workerUrl=new URL(databaseUrl);workerUrl.username='yux_worker'
+const workerPool=createContextAwarePool(new pg.Pool({connectionString:workerUrl.toString()}),'worker')
+const env=loadEnv({NODE_ENV:'test',DATABASE_URL:databaseUrl,REDIS_URL:'redis://127.0.0.1:1',PROVIDER_SECRET_ENCRYPTION_KEY_B64:key,SESSION_SECRET:'local-radar-capture-fixture-session-secret',CORS_ORIGIN:'http://127.0.0.1:4174',GLOBAL_RATE_LIMIT_MAX:'5000'})
+const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=false
+const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
+ const id=options?.jobId??`${name}-${Date.now()}`
+ if(queued.has(id))return{id};queued.add(id)
+ if(!['radar.advanceCaptureOperation','radar.researchCandidate'].includes(name))throw Error('qa_external_effects_disabled')
+ setTimeout(()=>void runWithDatabaseRequestContext({role:'client_member',organizationIds:[org],serviceRole:'worker'},async()=>{
+  if(name==='radar.advanceCaptureOperation'){
+   const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>({candidates:Array.from({length:input.limit??1},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa Sintética ${i+1} LTDA`,tradeName:`Empresa Sintética ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))})})
+   await dispatchRadarCaptureOperation(workerPool,env,{organizationId:org,operationId:String(data.operationId)},queue,undefined,{discover})
+  }else{
+   const runId=String(data.runId)
+   if(!failedOnce){failedOnce=true;blocked.add(runId);await workerPool.query("UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='radar_ai_credits_insufficient' WHERE id=$1",[runId]);return}
+   const candidate=(await workerPool.query('SELECT candidate.* FROM public.radar_candidate_research_runs run JOIN public.radar_candidate_records candidate ON candidate.id=run.candidate_id WHERE run.id=$1 AND run.organization_id=$2',[runId,org])).rows[0]
+   const site=`https://qa-${candidate.id}.example/`,text=`${candidate.normalized_payload.legalName}. CNPJ ${candidate.normalized_payload.cnpj}. Curitiba PR. Contato para fornecedores: compras@empresa.example`
+   await executeRadarCandidateResearch(workerPool,env,{organizationId:org,runId},undefined,{loadSecret:async()=>'fixture',web:async()=>[{url:site,title:candidate.title,snippets:[text],observedAt:new Date().toISOString()}],local:async()=>{throw Error('qa_unexpected_local_search')},collect:async()=>[{url:site,text,html:'<a href="mailto:compras@empresa.example">Fornecedores</a>',observedAt:new Date().toISOString()}],collectSocial:undefined,runtime:async()=>{throw Error('qa_unexpected_model')}} as never)
+   blocked.delete(runId)
+  }
+ }).catch(error=>console.error('[QA simulated worker]',error)),500)
+ return{id}
+}}
+const app=await buildServer(env,{pool:apiPool,jobQueue:queue,redisPing:async()=>'PONG'})
+app.addHook('onRequest',async(request,reply)=>{
+ if(request.method==='GET')return
+ if(request.url==='/api/auth/login'||request.url==='/api/auth/logout'||request.url.includes(`/campaigns/${campaign.id}/capture-operations`)||/\/capture-operations\/[0-9a-f-]+\/resume$/.test(request.url))return
+ return reply.code(403).send({error:'qa_external_effects_disabled'})
+})
+await app.listen({host:'127.0.0.1',port:4182})
+const timer=setInterval(()=>void runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[],serviceRole:'worker'},()=>reconcileRadarCaptureOutbox(workerPool,queue,Math.floor(Date.now()/1000))).catch(error=>console.error('[QA reconciler]',error)),1000)
+console.log(JSON.stringify({campaignId:campaign.id,url:`http://127.0.0.1:4174/client-workspaces/${org}/comercial/radar/${campaign.id}`}))
+for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{clearInterval(timer);void app.close().then(()=>Promise.all([apiPool.end(),workerPool.end(),pool.end()])).then(()=>process.exit(0))})

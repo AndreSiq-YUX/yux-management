@@ -4,7 +4,9 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RadarResultsTable } from './RadarResultsTable'
-import {radarComplementError} from '@/lib/radar/radarResearchMessages'
+import {radarComplementError,radarResearchMessage} from '@/lib/radar/radarResearchMessages'
+import {RadarCaptureDialog} from './RadarCaptureDialog'
+import {RadarCaptureProgress} from './RadarCaptureProgress'
 import {buildRadarPresenceSummary} from '@/lib/radar/radarPresenceSummary'
 import {RadarCrmDeliveryDialog} from './RadarCrmDeliveryDialog'
 import { RadarCampaignList } from './RadarCampaignList'
@@ -14,7 +16,7 @@ import { ProspectingPlanPanel } from '@/components/radar/ProspectingPlanPanel'
 import { RadarPlacePreviewPanel } from '@/components/radar/RadarPlacePreviewPanel'
 import { RadarCampaignConfigurationForm } from '@/components/radar/RadarCampaignConfigurationForm'
 import { RadarCandidateResearchPanel } from '@/components/radar/RadarCandidateResearchPanel'
-import type { RadarResearchAvailability } from '@/types/radarResearch'
+import type { RadarResearchAvailability,RadarCaptureOperation } from '@/types/radarResearch'
 import { defaultRadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import {
   canConvertRadarOpportunity,
@@ -242,6 +244,13 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
   const [researchAvailability,setResearchAvailability]=useState<RadarResearchAvailability|null>(null)
   const [researchAvailabilityError,setResearchAvailabilityError]=useState<string|null>(null)
   const [researchAvailabilityRefresh,setResearchAvailabilityRefresh]=useState(0)
+  const [captureDialogOpen,setCaptureDialogOpen]=useState(false)
+  const [captureOperation,setCaptureOperation]=useState<RadarCaptureOperation|null>(null)
+  const [captureLoading,setCaptureLoading]=useState(false),[captureError,setCaptureError]=useState('')
+  const [captureRefresh,setCaptureRefresh]=useState(0),[captureBusy,setCaptureBusy]=useState(false)
+  const captureResumeRequest=useRef<{operationId:string;requestId:string}|null>(null)
+  const captureResumeSending=useRef(false),refreshCaptureResults=useRef(()=>{})
+  const captureLoadedScope=useRef('')
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([])
   const [metrics, setMetrics] = useState<RadarMetrics | null>(null)
   const [selectedOpportunity, setSelectedOpportunity] = useState<RadarOpportunity | null>(null)
@@ -289,6 +298,39 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
   const hasPendingAnalysis = opportunities.some(opportunity => opportunity.status === 'diagnosing')
   const osmSourceEnabled = dataSources.find(source => source.sourceType === 'osm_extract')?.enabled
   const researchConfigurationVersion=campaigns.find(campaign=>campaign.id===selectedCampaignId)?.configurationRevision
+  const captureCampaignType=campaigns.find(campaign=>campaign.id===selectedCampaignId)?.campaignType
+
+  useEffect(()=>{
+    const scope=`${organizationId??''}:${selectedCampaignId??''}:${researchConfigurationVersion??1}`
+    if(captureLoadedScope.current!==scope){
+      captureLoadedScope.current=scope;setCaptureDialogOpen(false);setCaptureOperation(null);setCaptureBusy(false);captureResumeRequest.current=null
+    }
+    setCaptureError('')
+    if(!organizationId||!selectedCampaignId||!canAccess||captureCampaignType!=='regional_b2b')return
+    let active=true;setCaptureLoading(true)
+    radarService.getLatestCaptureOperation(selectedCampaignId,organizationId).then(value=>{if(active)setCaptureOperation(value.operation)})
+      .catch(()=>{if(active)setCaptureError('Não foi possível recuperar o acompanhamento. Atualize antes de iniciar outro lote.')})
+      .finally(()=>{if(active)setCaptureLoading(false)})
+    return()=>{active=false}
+  },[organizationId,selectedCampaignId,canAccess,researchConfigurationVersion,captureCampaignType,captureRefresh])
+
+  const captureActive=!!captureOperation&&captureOperation.campaignId===selectedCampaignId&&captureOperation.configurationRevision===(researchConfigurationVersion??1)&&['queued','discovering','researching','blocked'].includes(captureOperation.status)
+  const captureOperationId=captureOperation?.id,captureOperationStatus=captureOperation?.status
+  useEffect(()=>{
+    if(!captureOperationId||!organizationId||!captureOperationStatus||!['queued','discovering','researching'].includes(captureOperationStatus))return
+    let active=true,timer:ReturnType<typeof setTimeout>
+    const operationId=captureOperationId,scope=sidebarScope.current
+    const poll=async()=>{
+      try{
+        const operation=await radarService.getCaptureOperation(operationId,organizationId)
+        if(!active||scope!==sidebarScope.current)return
+        setCaptureOperation(operation);setCaptureError('');refreshCaptureResults.current()
+        if(['queued','discovering','researching'].includes(operation.status))timer=setTimeout(poll,4_000)
+      }catch{if(active){setCaptureError('O acompanhamento não pôde ser atualizado. O lote continua salvo; tente atualizar.');timer=setTimeout(poll,8_000)}}
+    }
+    timer=setTimeout(poll,4_000)
+    return()=>{active=false;clearTimeout(timer)}
+  },[captureOperationId,captureOperationStatus,organizationId])
 
   useEffect(()=>{
     setResearchAvailability(null)
@@ -615,6 +657,27 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
     radarService.getCandidates(selectedCampaignId).then(apply(setCandidates)).catch(() => undefined)
     radarService.getDuplicates(selectedCampaignId).then(apply(setDuplicates)).catch(() => undefined)
     radarService.getRuns(selectedCampaignId).then(apply(setRuns)).catch(() => undefined)
+  }
+  refreshCaptureResults.current=refreshCampaignSidebars
+
+  const startCapture=async(input:{requestedCount:number;requestId:string})=>{
+    if(!organizationId||!selectedCampaign)throw new Error('radar_campaign_not_found')
+    const scope=sidebarScope.current
+    const started=await radarService.startCaptureOperation(selectedCampaign.id,{...input,organizationId,configurationRevision:selectedCampaign.configurationRevision??1})
+    const operation=await radarService.getCaptureOperation(started.operationId,organizationId)
+    if(scope!==sidebarScope.current)return
+    setCaptureOperation(operation);setCaptureDialogOpen(false);setCaptureError('');refreshCampaignSidebars()
+  }
+  const resumeCapture=async()=>{
+    if(!captureOperation||!organizationId||captureResumeSending.current)return
+    const scope=sidebarScope.current
+    if(captureResumeRequest.current?.operationId!==captureOperation.id)captureResumeRequest.current={operationId:captureOperation.id,requestId:crypto.randomUUID()}
+    captureResumeSending.current=true;setCaptureBusy(true);setCaptureError('')
+    try{
+      const operation=await radarService.resumeCaptureOperation(captureOperation.id,{organizationId,configurationRevision:captureOperation.configurationRevision,requestId:captureResumeRequest.current.requestId})
+      if(scope===sidebarScope.current){setCaptureOperation(operation);refreshCampaignSidebars()}
+    }catch(cause){if(scope===sidebarScope.current){const message=cause instanceof Error?radarResearchMessage(cause.message):'';setCaptureError(message&&!/^[a-z0-9_]+$/.test(message)?message:'Não foi possível retomar. Confira as pendências e tente novamente sem iniciar outro lote.')}}
+    finally{captureResumeSending.current=false;if(scope===sidebarScope.current)setCaptureBusy(false)}
   }
 
   const importCsv = async (event: FormEvent) => {
@@ -1128,6 +1191,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
 
   return (
     <div className="min-w-0 max-w-full space-y-5">
+      {captureDialogOpen&&selectedCampaign&&<RadarCaptureDialog campaign={selectedCampaign} availability={researchAvailability} discoveryCostPerQuery={cnpjaSource?.defaultCostPerUnit??0} discoveryBlocker={getSourceBlockedReason(cnpjaSource)} onStart={startCapture} onClose={()=>setCaptureDialogOpen(false)} onConfigure={()=>{setCaptureDialogOpen(false);navigateTo(`${selectedCampaign.id}/configuracoes`)}}/>}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Radar Comercial</h1>
@@ -1203,21 +1267,24 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
               <Button type="button" size="sm" variant="outline" disabled={!canManage || creating || Boolean(actionLoading)} onClick={duplicateCampaign}>Duplicar pesquisa</Button>
             </div>}
             {context.role?.key==='yux_admin'&&<div className="mt-3 flex flex-wrap gap-2">
-              <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
-                || Boolean(getSourceBlockedReason(cnpjaSource))} onClick={() => runB2bBatch('discovery')}>
-                Buscar mais empresas</Button>
-              <details className="self-center"><summary className="cursor-pointer text-sm text-slate-600">Opções de pesquisa em lote</summary><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)
+              <Button type="button" size="sm" disabled={!canManage || Boolean(actionLoading)||captureLoading||captureActive||Boolean(captureError)} onClick={() => setCaptureDialogOpen(true)}>
+                Buscar e pesquisar empresas</Button>
+              <details className="self-center"><summary className="cursor-pointer text-sm text-slate-600">Opções avançadas do Admin</summary><div className="mt-2 flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={!canManage||Boolean(actionLoading)||captureActive||Boolean(getSourceBlockedReason(cnpjaSource))} onClick={()=>runB2bBatch('discovery')}>Somente descobrir empresas — sem aprofundamento</Button>
+              <Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)||captureActive
                 || (selectedCampaign.searchConfiguration?.research?.enabled && !researchAvailability?.allowed)}
                 onClick={() => runB2bBatch('verification')}>{selectedCampaign.searchConfiguration?.research?.enabled?'Completar dados do próximo lote':'Verificar próximo lote'}</Button>
               <Button type="button" size="sm" variant="outline" onClick={()=>setResearchAvailabilityRefresh(value=>value+1)}>Atualizar disponibilidade da pesquisa</Button></div></details>
             </div>}
+            {captureOperation&&<div className="mt-4"><RadarCaptureProgress operation={captureOperation} onResume={canEditConfiguration?resumeCapture:undefined} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy} error={captureError}/></div>}
+            {!captureOperation&&captureError&&<div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-sm"><p>{captureError}</p><Button type="button" size="sm" variant="outline" onClick={()=>setCaptureRefresh(value=>value+1)}>Atualizar acompanhamento</Button></div>}
             {selectedCampaign.searchConfiguration?.research?.enabled && researchAvailability?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="mt-2 text-xs text-amber-800">{context.role?.key==='yux_admin'?`${reason.message} ${reason.resolution}.`:'A operação da pesquisa é realizada pelo responsável autorizado pela campanha.'}</p>)}
             {batchRequestedAt>0&&<p role="status" className="mt-2 text-xs text-slate-600">Busca solicitada. Os resultados serão atualizados automaticamente durante o acompanhamento; a consulta continua em segundo plano.</p>}
             {b2bProgress && <p className="mt-2 text-xs text-slate-600">{candidates.length} empresas encontradas · {b2bProgress.candidates} nesta configuração · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <details className="mt-3"><summary className="cursor-pointer text-sm text-slate-600">Acompanhar ou avançar a busca por região</summary><div className="mt-3 flex flex-wrap gap-2">
               {(b2bProgress?.scopes ?? []).map(scope =>
                 <Button key={scope.key} type="button" size="sm" variant="outline"
-                  disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || scope.completed || regionalProgress[scope.label] === 'Busca concluída'
+                  disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || captureActive || scope.completed || regionalProgress[scope.label] === 'Busca concluída'
                     || Boolean(getSourceBlockedReason(cnpjaSource))}
                   onClick={() => searchRegionalCnpja(scope.state, scope.city)}>
                   {actionLoading === `regional-${scope.label}` ? `Buscando ${scope.label}...` : `Buscar próxima página — ${scope.label}`}

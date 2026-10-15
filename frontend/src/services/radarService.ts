@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestText } from '@/lib/apiClient'
-import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant,RadarResearchFeedback,RadarResearchMetrics } from '@/types/radarResearch'
+import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant,RadarResearchFeedback,RadarResearchMetrics,RadarCaptureOperation } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 
@@ -28,6 +28,10 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  startCaptureOperation(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;requestedCount:number}){return apiRequest<{operationId:string;status:RadarCaptureOperation['status'];reused:boolean}>(`/radar/campaigns/${campaignId}/capture-operations`,{method:'POST',body:input})},
+  getCaptureOperation(operationId:string,organizationId:string){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}${buildQuery({organizationId})}`)},
+  getLatestCaptureOperation(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCaptureOperation|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},
+  resumeCaptureOperation(operationId:string,input:{organizationId:string;configurationRevision:number;requestId:string}){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}/resume`,{method:'POST',body:input})},
   getResearchMetrics(campaignId:string,organizationId:string,from:string,to:string){return apiRequest<RadarResearchMetrics>(`/radar/campaigns/${campaignId}/research-metrics${buildQuery({organizationId,from,to})}`)},
   getResearchFeedback(candidateId:string,organizationId:string){return apiRequest<RadarResearchFeedback[]>(`/radar/candidates/${candidateId}/feedback${buildQuery({organizationId})}`)},
   saveResearchFeedback(candidateId:string,input:{organizationId:string;requestId:string;configurationRevision:number;kind:RadarResearchFeedback['kind'];contact?:{kind:string;value:string};note?:string}){return apiRequest<RadarResearchFeedback>(`/radar/candidates/${candidateId}/feedback`,{method:'POST',body:input})},

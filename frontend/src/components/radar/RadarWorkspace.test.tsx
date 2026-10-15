@@ -22,6 +22,7 @@ vi.mock('@/services/radarService', () => ({radarService:{
   getResearchMetrics:vi.fn(async()=>({companies:0,identified:0,withUsefulContact:0,readyForReview:0,searchEstimatedBrl:0,searchQueries:0,searchCostPerCompanyBrl:null,searchCostPerIdentityBrl:null,searchCostPerUsefulContactBrl:null,searchCostPerReadyForReviewBrl:null,aiReportedUsd:null,aiCostUnknown:0,aiAnalyses:0,aiCostKnown:0,period:{from:'2026-10-15',to:'2026-10-15',timeZone:'UTC'},currencyNote:'Estimativas, IA separada',sources:[]})),
   getResearchAvailability:vi.fn(async():Promise<RadarResearchAvailability>=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
   getCrmDestinations:vi.fn(async()=>[]),
+  getLatestCaptureOperation:vi.fn(async()=>({operation:null})),getCaptureOperation:vi.fn(),startCaptureOperation:vi.fn(),resumeCaptureOperation:vi.fn(),
   startCandidateResearch:vi.fn(async()=>({runId:'run',status:'queued',reused:false})),
   getResearchHistory:vi.fn(async()=>[{id:'run',candidateId:'candidate',companyName:'Empresa pesquisada',configurationRevision:2,operation:'reanalyze',status:'succeeded',updatedAt:'2026-10-13T12:00:00Z'}]),
   getB2bProspects:vi.fn(async()=>[]),getB2bProgress:vi.fn(async()=>({candidates:0,checked:0,confirmed:0,approved:0,scopes:[]})),runB2bBatch:vi.fn(async()=>({status:'queued'})),
@@ -34,6 +35,30 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('recovers an active capture operation on reload and prevents a competing batch',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation:{id:'operation',campaignId:'campaign',configurationRevision:2,status:'researching',discoveryStopped:true,queries:1,blockers:[],counts:{requested:7,admitted:7,researching:7,completed:0,insufficient:0,blocked:0},items:[]}})
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    const button=[...container.querySelectorAll('button')].find(b=>b.textContent==='Buscar e pesquisar empresas')
+    expect(button).toBeDefined();expect(button!.disabled).toBe(true)
+    expect(container.textContent).toContain('Solicitadas')
+    expect(radarService.runB2bBatch).not.toHaveBeenCalled()
+    act(()=>root.unmount())
+  })
+  it('keeps the persisted progress visible while a manual refresh is pending',async()=>{
+    const campaign={...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([campaign])
+    const operation={id:'op',campaignId:'campaign',configurationRevision:2,status:'partial' as const,discoveryStopped:true,queries:1,blockers:[],counts:{requested:7,admitted:7,researching:0,completed:0,insufficient:7,blocked:0},items:[]}
+    vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation})
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    let resolve!:(value:{operation:typeof operation})=>void
+    vi.mocked(radarService.getLatestCaptureOperation).mockReturnValueOnce(new Promise(done=>{resolve=done}))
+    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Atualizar acompanhamento')!.click())
+    expect(container.textContent).toContain('Solicitadas')
+    await act(async()=>resolve({operation}));act(()=>root.unmount())
+  })
   it('ignores the paid-action refresh after navigating to a different campaign',async()=>{
     const campaigns=['a','b'].map(id=>({...campaignDefaults,id,organizationId:'org',name:`Campanha ${id}`,campaignType:id==='a'?'regional_b2b':'local_niche',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign))
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce(campaigns)
@@ -198,7 +223,7 @@ describe('Radar campaign creation entry point', () => {
     const container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
     vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'new',organizationId:'org',campaignId:'campaign',title:'Nova empresa encontrada',sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{city:'Cidade',state:'PR'},dedupeKey:'new',createdAt:'',updatedAt:''}])
-    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Buscar mais empresas')!.click())
+    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Somente descobrir empresas — sem aprofundamento')!.click())
     expect(container.querySelector('tbody')?.textContent).toContain('Nova empresa encontrada')
     act(()=>root.unmount())
     vi.mocked(radarService.getCandidates).mockResolvedValue([])

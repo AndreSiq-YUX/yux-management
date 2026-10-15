@@ -4,6 +4,24 @@ O Radar não impõe setor, CNAE, produto ou região. Cozinhas industriais são u
 
 ## Qualidade e entrega — 15/10/2026
 
+### Nova captação com pesquisa completa
+
+Na página de resultados, **Buscar e pesquisar empresas** permite escolher de 1 a 1.000 novas empresas únicas (padrão 10). A quantidade é deste lote; não altera a campanha e não garante empresas qualificadas/aprovadas. Duplicatas da campanha, empresas e leads existentes não consomem o alvo. Excedentes de uma página são guardados para o próximo lote antes de novas consultas.
+
+A confirmação mostra as etapas salvas, teto estimado de descoberta CNPJá e de aprofundamento separadamente. IA usa exclusivamente rotas já autorizadas e créditos próprios, fora desses valores. Nenhuma opção, fonte, licença, modelo, quota ou orçamento é ampliado pelo clique. Aprofundamento desativado ou fonte/modelo indisponível impede iniciar o percurso completo. Os limites de consultas/páginas podem encerrar a descoberta antes da quantidade solicitada.
+
+O lote é persistido com sua revisão, itens e pendências. A fila do servidor passa somente as novas empresas admitidas ao pipeline individual; não seleciona as empresas antigas da lista. O acompanhamento distingue solicitadas, encontradas, em pesquisa, concluídas, dados insuficientes e bloqueadas. “Encontrada” não significa “pesquisada”. Fechar/recarregar a página não coordena nem interrompe os jobs; ao voltar, o último lote é recuperado sem nova pesquisa.
+
+**Retomar pesquisa deste lote** conserva quantidade, itens, runs e recibos. Corrija a pendência indicada antes de retomar. Certificado vencido continua exigindo autorização própria nos detalhes. Uma resposta paga incerta nunca é repetida automaticamente: exige conferência. Mudança de configuração pausa a operação antiga; inicie uma operação na nova revisão somente após conferir o histórico. Aprovação, exportação, entrega ao CRM e contato continuam separados e humanos. Pesquisas pagas continuam restritas ao Admin YUX.
+
+**Opções avançadas do Admin** preserva descoberta sem aprofundamento e verificação do próximo lote existente; não são a ação principal. A paginação manual por região continua disponível. Durante uma operação ativa na mesma revisão, a interface impede iniciar um lote concorrente e o servidor retorna a operação existente sem trocar sua quantidade.
+
+Implantação requer backend, worker, frontend e migrações aditivas **0190/0191**. O worker agenda reconciliação a cada 20 segundos, restrita a metadados de operações já autorizadas; antes de novos efeitos o job verifica revisão, Admin, módulo e disponibilidade. Recuperar fatos/contadores de pesquisas terminadas não exige mais quota de busca.
+
+Verificação local desta entrega: testes backend/frontend/runtime, builds/bundle e cinco arquivos PostgreSQL Radar com provedores simulados. Jornada Chrome desktop e 430×920: quantidade inválida bloqueada, sete empresas admitidas automaticamente, reload preservando o lote, bloqueio simulado e retomada sem nova descoberta, resultado parcial verdadeiro e atualização sem desmontar o cartão. Nenhuma chamada paga ou alteração de produção. Lint global mantém a dívida anterior (562 erros/27 avisos, baseline 560/27), sem novas ocorrências neste fluxo. Integrações externas aos cinco arquivos Radar e execução BullMQ/Redis real não são comprovadas pelo simulador local.
+
+Para repetir: `backend/tests/journeys/start-radar-capture-server.ts` aceita apenas o banco local dedicado `127.0.0.1:55439/yux_radar_research_test`, inicia API em 4182 e imprime a campanha. Vite em 4174 usa `VITE_API_BASE_URL=http://127.0.0.1:4182/api` e `VITE_API_URL=http://127.0.0.1:4182`. Ele usa banco/API/pipeline reais, fila e provedores simulados e bloqueia as demais mutações; não usar esse servidor em produção. O primeiro child simula crédito insuficiente para testar a retomada, mesmo sem IA ligada no fixture.
+
 - Documentos de governo, notícias e cadastros de terceiros são referências externas, não sites oficiais. A projeção de dados antigos aplica essa separação sem apagar a história nem alterar leads já entregues. Um domínio candidato ainda exige comprovação de identidade; busca limitada não comprova ausência de site.
 - Em **Editar configuração**, escolha quando complementar com busca local: antes da web (compatibilidade), depois somente se necessário ou nunca. A primeira consulta usa o nome simples; marca, razão social e CNPJ são alternativas delimitadas. Se uma fonte só retorna referências inúteis, o fallback autorizado pode ser utilizado dentro do mesmo teto de consultas.
 - Em **Quando a pesquisa está suficiente**, configure identidade, segmento, site opcional, tipos/finalidades e mínimo de canais úteis. Fica desligado nas campanhas antigas até edição explícita. Suficiência indica prontidão para revisão, não aprovação. CRM mantém revisão humana, versão, permissões e direitos de entrega, além dos critérios ativos.
