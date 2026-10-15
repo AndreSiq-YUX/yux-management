@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { RadarCandidateResearchPanel } from './RadarCandidateResearchPanel'
 import { radarService } from '@/services/radarService'
 import type { RadarResearchAvailability, RadarResearchResult } from '@/types/radarResearch'
-vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn(),authorizeTlsException:vi.fn(),revokeTlsException:vi.fn()}}))
+vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn(),authorizeTlsException:vi.fn(),revokeTlsException:vi.fn(),getResearchFeedback:vi.fn(async()=>[]),saveResearchFeedback:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
 it('labels historical dossier confirmations with their revision instead of current corroboration',async()=>{

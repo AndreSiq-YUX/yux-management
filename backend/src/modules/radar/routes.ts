@@ -49,6 +49,8 @@ import { getRadarCandidateResearch, startRadarCandidateResearch,reopenRadarResea
 import { getRadarResearchAvailability } from './research-availability.js'
 import {deliverRadarCompaniesToCrm,listRadarCrmDestinations} from './crm-delivery.js'
 import {authorizeRadarTlsException,revokeRadarTlsException} from './tls-exception-service.js'
+import {recordRadarResearchFeedback,listRadarResearchFeedback} from './research-feedback.js'
+import {getRadarResearchMetrics} from './research-metrics.js'
 
 const uuid = z.string().uuid()
 
@@ -389,6 +391,25 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params=z.object({id:uuid}).safeParse(request.params), query=campaignQuerySchema.safeParse(request.query)
     if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
     return getRadarResearchAvailability(app.pg,user,query.data.organizationId,params.data.id)
+  })
+  app.get('/campaigns/:id/research-metrics',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),query=z.object({organizationId:uuid,from:z.iso.date(),to:z.iso.date()}).strict().safeParse(request.query)
+    if(!params.success||!query.success||query.data.from>query.data.to||Date.parse(query.data.to)-Date.parse(query.data.from)>366*86400000)return reply.code(400).send({error:'invalid_radar_metrics_period'})
+    return getRadarResearchMetrics(app.pg,user,{...query.data,campaignId:params.data.id})
+  })
+  app.get('/candidates/:id/feedback',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),query=campaignQuerySchema.safeParse(request.query)
+    if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_feedback_payload'})
+    return listRadarResearchFeedback(app.pg,user,query.data.organizationId,params.data.id)
+  })
+  app.post('/candidates/:id/feedback',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),body=z.object({organizationId:uuid,requestId:uuid,configurationRevision:z.number().int().positive(),
+      kind:z.enum(['identity_confirmed','identity_wrong','contact_valid','contact_invalid','segment_confirmed','segment_wrong']),contact:z.object({kind:z.string().min(1).max(30),value:z.string().min(1).max(1000)}).strict().optional(),note:z.string().trim().max(2000).optional()}).strict().safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_feedback_payload'})
+    return recordRadarResearchFeedback(app.pg,user,{...body.data,candidateId:params.data.id})
   })
   app.get('/crm-destinations',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

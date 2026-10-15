@@ -1566,7 +1566,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
                           <RadarCandidateResearchPanel key={`${organizationId}-${candidate.id}-${selectedCampaign.configurationRevision}`}
                             candidateId={candidate.id} organizationId={organizationId!} configurationRevision={selectedCampaign.configurationRevision??1}
                             initialOpen availability={researchAvailability} availabilityError={researchAvailabilityError} showTechnical={context.role?.key==='yux_admin'} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
-                            approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
+                            canReview={canManage} approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
                         </div>}
                         {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{context.role?.key==='yux_admin'?candidate.errorMessage:'Este registro requer atenção do responsável pela campanha.'}</p>}
                       </div>

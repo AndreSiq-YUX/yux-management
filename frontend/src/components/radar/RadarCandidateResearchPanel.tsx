@@ -5,6 +5,7 @@ import { radarSizeMetricLabels, type RadarSizeMetric } from '@/lib/radar/radarSe
 import { radarResearchMessage } from '@/lib/radar/radarResearchMessages'
 import {Button} from '@/components/ui/button'
 import {RadarQualitySummary} from './RadarQualitySummary'
+import {RadarResearchFeedback} from './RadarResearchFeedback'
 
 const stages = [['discovery','Presença pública'],['identity','Identidade'],['reading','Páginas e contatos'],['consolidation','Atividade e fontes'],['review','Qualificação e revisão']] as const
 const statusLabel:Record<string,string> = {queued:'Na fila',running:'Pesquisando',partial:'Resultado parcial',succeeded:'Pesquisa concluída',blocked:'Pesquisa bloqueada',failed:'Falha na pesquisa'}
@@ -22,8 +23,8 @@ function SourcedProfileClaim({claim}:{claim:RadarProfileClaim}) {
       <p>Observado em {new Date(claim.observedAt).toLocaleDateString('pt-BR')}; {claim.scope==='establishment'?'estabelecimento':claim.scope==='group'?'grupo — não confirma a filial':'escopo pendente'}.</p>
     </details></div>
 }
-export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,showTechnical=true,initialOpen=false,canStart=true,approved=false,onCompleted}:{
-  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;showTechnical?:boolean;initialOpen?:boolean;canStart?:boolean;approved?:boolean;onCompleted?:()=>void
+export function RadarCandidateResearchPanel({candidateId,organizationId,configurationRevision,availability,availabilityError,showTechnical=true,initialOpen=false,canStart=true,canReview=canStart,approved=false,onCompleted}:{
+  candidateId:string;organizationId:string;configurationRevision:number;availability?:RadarResearchAvailability|null;availabilityError?:string|null;showTechnical?:boolean;initialOpen?:boolean;canStart?:boolean;canReview?:boolean;approved?:boolean;onCompleted?:()=>void
 }) {
   const [open,setOpen]=useState(initialOpen),[result,setResult]=useState<RadarResearchResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[refresh,setRefresh]=useState(0)
@@ -91,6 +92,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {open && <div className="space-y-3 text-sm">
       {output&&<RadarQualitySummary quality={historical?undefined:output.quality}/>}
+      {output&&<RadarResearchFeedback key={`${candidateId}:${configurationRevision}`} candidateId={candidateId} organizationId={organizationId} revision={configurationRevision} contacts={output.contacts??[]} canReview={canReview&&!historical}/>}
       {tlsMessage&&<p role="status">{tlsMessage}</p>}
       {result?.tlsDiagnostics?.map(diagnostic=>{
         const active=result.tlsExceptions?.find(grant=>grant.hostname===diagnostic.hostname&&grant.fingerprint256===diagnostic.fingerprint256&&!grant.revokedAt&&Date.parse(grant.expiresAt)>Date.now())
@@ -135,6 +137,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
             <p className="text-xs">{historical?'Vínculo histórico — confirmar nesta configuração':contact.association==='confirmed'?'Identidade corroborada':'Associação pendente'} · <SafeSource url={contact.sourceUrl}/> · Observado em {new Date(contact.observedAt).toLocaleDateString('pt-BR')}</p>
             <p className="text-xs">Finalidade: {({general:'geral',suppliers:'fornecedores/compras',sales:'comercial/vendas',finance:'financeiro',recruitment:'recrutamento',privacy:'privacidade/proteção de dados',unknown:'não identificada'})[contact.purpose??'unknown']}{contact.preferred?' — prioritário para esta pesquisa':''}. {contact.scope==='group'?'Contato do grupo; não confirma a filial.':''}</p>
             {contact.purposeEvidence&&<details className="text-xs"><summary>Contexto da finalidade</summary>{contact.purposeEvidence}</details>}
+            {(contact.sources?.length??0)>1&&<details className="text-xs"><summary>Fontes deste canal ({contact.sources!.length})</summary>{contact.sources!.map((source,index)=><p key={`${source.sourceUrl}-${index}`}><SafeSource url={source.sourceUrl}/> · {new Date(source.observedAt).toLocaleDateString('pt-BR')}</p>)}</details>}
             {contact.note&&<p className="text-xs text-slate-600">{contact.note}</p>}</li>)}</ul>
         </div>
         {output?.profile&&<div className="space-y-3 rounded border bg-white p-3"><h4 className="font-medium">Perfil aprofundado da empresa</h4>

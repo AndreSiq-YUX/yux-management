@@ -1,6 +1,8 @@
 export type RadarProfileClaim={value:string;evidenceId:string;excerpt:string;sourceUrl:string;observedAt:string;scope:'establishment'|'group'|'unresolved'}
 export type RadarExternalReference={url:string;reason:string}
 export type RadarResearchQuality={identity:'associated'|'pending';contactability:'useful'|'missing'|'pending';fit:'high'|'possible'|'low'|'unknown';potential:{score:number|null;coverage:number|null};readyForReview:boolean;missing:string[]}
+export type RadarResearchFeedback={id:string;kind:'identity_confirmed'|'identity_wrong'|'contact_valid'|'contact_invalid'|'segment_confirmed'|'segment_wrong';contact?:{kind:string;value:string}|null;note?:string;configuration_revision:number;created_by:string;created_at:string}
+export type RadarResearchMetrics={companies:number;identified:number;withUsefulContact:number;readyForReview:number;searchQueries:number;searchEstimatedBrl:number;searchCostPerCompanyBrl:number|null;searchCostPerIdentityBrl:number|null;searchCostPerUsefulContactBrl:number|null;searchCostPerReadyForReviewBrl:number|null;aiAnalyses:number;aiCostKnown:number;aiCostUnknown:number;aiReportedUsd:number|null;period:{from:string;to:string;timeZone:string};currencyNote:string;sources:Array<{sourceType:string;units:number;estimatedCostBrl:number}>}
 export type RadarCompanyProfile={summary?:RadarProfileClaim;services:RadarProfileClaim[];customerSegments:RadarProfileClaim[];operatingRegions:RadarProfileClaim[];
   scaleSignals:Array<RadarProfileClaim&{metric:string;amount:number;referenceDate?:string;currency?:string}>}
 export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:string;message:string;sourceType?:string;resolution:string}>;

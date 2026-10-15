@@ -3,6 +3,19 @@ import { createRoot } from 'react-dom/client'
 import { expect,it,vi } from 'vitest'
 import { RadarResultsTable } from './RadarResultsTable'
 import type { RadarCandidateRecord } from '@/types/radar'
+it('filters the actionable review queue without losing company IDs or confusing readiness with approval',async()=>{
+  const base={organizationId:'org',campaignId:'campaign',sourceType:'manual',dedupeKey:'x',status:'pending_review' as const,createdAt:'',updatedAt:''}
+  const candidates=[{...base,id:'ready',title:'Empresa pronta',normalizedPayload:{researchRevision:2,researchQuality:{identity:'associated',contactability:'useful',readyForReview:true,fit:'high',missing:[]}}},
+    {...base,id:'pending',title:'Empresa pendente',normalizedPayload:{researchRevision:2,researchQuality:{identity:'associated',contactability:'missing',readyForReview:false,fit:'unknown',missing:['contact']}}}]
+  const container=document.createElement('div'),root=createRoot(container)
+  await act(async()=>root.render(<RadarResultsTable candidates={candidates} revision={2} selectedIds={[]} onSelect={()=>{}} onOpen={()=>{}}/>))
+  const filter=container.querySelector<HTMLSelectElement>('select[aria-label="Filtrar por próxima ação"]')
+  expect(filter).not.toBeNull()
+  await act(async()=>{filter!.value='missing_contact';filter!.dispatchEvent(new Event('change',{bubbles:true}))})
+  expect(container.querySelector('tbody')?.textContent).toContain('Empresa pendente')
+  expect(container.querySelector('tbody')?.textContent).not.toContain('Empresa pronta')
+  act(()=>root.unmount())
+})
 
 it('selects company IDs for refinement and opens details separately from a compact paginated list',async()=>{
   const candidates:RadarCandidateRecord[]=Array.from({length:22},(_,i)=>({id:`c${i}`,organizationId:'org',campaignId:'campaign',dedupeKey:`c${i}`,createdAt:'2026-10-13',updatedAt:'2026-10-13',title:`Empresa ${i}`,status:'pending_review',normalizedPayload:{city:'Cidade',state:'PR'},sourceType:'cnpja_advanced_search'}))

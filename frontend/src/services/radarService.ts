@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestText } from '@/lib/apiClient'
-import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant } from '@/types/radarResearch'
+import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant,RadarResearchFeedback,RadarResearchMetrics } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 
@@ -28,6 +28,9 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  getResearchMetrics(campaignId:string,organizationId:string,from:string,to:string){return apiRequest<RadarResearchMetrics>(`/radar/campaigns/${campaignId}/research-metrics${buildQuery({organizationId,from,to})}`)},
+  getResearchFeedback(candidateId:string,organizationId:string){return apiRequest<RadarResearchFeedback[]>(`/radar/candidates/${candidateId}/feedback${buildQuery({organizationId})}`)},
+  saveResearchFeedback(candidateId:string,input:{organizationId:string;requestId:string;configurationRevision:number;kind:RadarResearchFeedback['kind'];contact?:{kind:string;value:string};note?:string}){return apiRequest<RadarResearchFeedback>(`/radar/candidates/${candidateId}/feedback`,{method:'POST',body:input})},
   getResearchHistory(campaignId:string,organizationId:string){return apiRequest<Array<{id:string;candidateId:string;companyName:string;configurationRevision:number;operation:string;status:string;updatedAt:string}>>(`/radar/campaigns/${campaignId}/research-history${buildQuery({organizationId})}`)},
   reopenResearchReview(candidateId:string,organizationId:string,configurationRevision:number){return apiRequest(`/radar/candidates/${candidateId}/reopen-review`,{method:'POST',body:{organizationId,configurationRevision}})},
   getCrmDestinations(organizationId:string){return apiRequest<Array<{crmInstanceId:string;pipelineId:string;stageId:string;pipelineName:string;stageName:string}>>(`/radar/crm-destinations${buildQuery({organizationId})}`)},

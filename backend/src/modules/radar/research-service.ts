@@ -24,7 +24,7 @@ import {getRadarTlsReadOptions,listRadarTlsExceptions,radarTlsDiagnosticId} from
 import type {RadarTlsReadOptions} from './site-tls-exception.js'
 import {projectRadarPublicPresence} from './public-presence.js'
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
-import {pendingRadarReadUrls} from './research-checkpoint.js'
+import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {hasUsefulRadarHits,planRadarResearch} from './research-planner.js'
 import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
@@ -72,12 +72,13 @@ function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
 function currentDossierProjection(output:Output,currentRevision?:number,dossierRevision?:number):Output{
   const historical=currentRevision!==undefined&&dossierRevision!==currentRevision
   const contacts=output.contacts?.filter(contact=>{
-    const page=output.pages?.find(item=>item.url===contact.sourceUrl)
+    const page=output.pages?.find(item=>canonicalRadarReadUrl(item.url)===canonicalRadarReadUrl(contact.sourceUrl))
     const official=output.siteAssociation==='confirmed'?output.discovery?.websiteUrl:undefined
     if(official&&!sameRadarOrigin(contact.sourceUrl,official)&&!(contact.linkedFromUrl&&sameRadarOrigin(contact.linkedFromUrl,official)))return false
     return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})||!!page?.linkedFromUrl&&page.linkedFromUrl===contact.linkedFromUrl&&isRadarContactSource(contact,output.discovery?.websiteUrl)
   }).map(contact=>historical?{...contact,association:'review' as const,scope:'unresolved' as const,preferred:false}:contact)
-  const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl)
+  const selectedEvidence=output.pages?.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(output.discovery?.websiteUrl??''))
+  const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl,{text:selectedEvidence?.text,html:selectedEvidence?.html})
   const readable=(output.pages??[]).filter(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
   const associated=!historical&&output.siteAssociation==='confirmed'&&!invalid?readable.filter(page=>output.discovery?.websiteUrl&&new URL(page.url).origin===new URL(output.discovery.websiteUrl).origin):[]
   const activity=assessRadarBusinessActivity(associated,contacts??[],{pages:readable,scope:output.presenceResolution?.scope})
@@ -692,6 +693,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
       researchQuality:quality,
+      researchLimitations:dossier.limitations,
       researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),
       researchContactPurpose:resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),

@@ -51,6 +51,16 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('does not expose a historical directory as an associated website in the complete dossier',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  const url='https://unknown-directory.example/alfa'
+  pool.run!.status='partial';pool.run!.output={siteAssociation:'confirmed',pages:[{url,text:'Dados cadastrais da empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-10-15'}],contacts:[],
+    discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1}}
+  const result=await getRadarCandidateResearch(pool as never,admin,'org','candidate')
+  expect(result.run!.output.discovery!.websiteUrl).toBeUndefined()
+  expect(result.run!.output.siteAssociation).toBe('review')
+  expect(pool.run!.output.discovery.websiteUrl).toBe(url)
+})
 it('recovers a completed durable analysis receipt after a lost runtime response without replay',async()=>{
   const pool=new ResearchPool()
   pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
