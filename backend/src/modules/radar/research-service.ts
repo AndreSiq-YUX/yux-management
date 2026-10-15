@@ -24,9 +24,10 @@ import {getRadarTlsReadOptions,listRadarTlsExceptions,radarTlsDiagnosticId} from
 import type {RadarTlsReadOptions} from './site-tls-exception.js'
 import {projectRadarPublicPresence} from './public-presence.js'
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
+import {pendingRadarReadUrls} from './research-checkpoint.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
-  reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile }
+  reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile;usage?:RadarPresenceResolution['usage'] }
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
   historicalEvidence?:{pages:RadarSiteEvidence[];contacts:RadarContactEvidence[]};
   methodVersion?:number; associationVersion?:number;
@@ -111,12 +112,15 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const limits: string[] = []
   const checkpoint = async (stage: string) => { dependencies.signal?.throwIfAborted(); await dependencies.checkpoint(stage, output) }
   let pages = [...(output.pages ?? [])]
+  if(!output.analysisOnly&&pendingRadarReadUrls([...(output.discoveryHits??[]),...(output.discovery?.hits??[]),...(output.discovery?.suggestions??[])],pages,configuration.research.maxPagesPerCandidate).length)
+    output.readingComplete=false
   const mentionsIdentity=(text:string)=>!cnpjConflict(identity,text,true)&&[identity.name,identity.legalName].some(name=>!!name&&normalizeRadarText(name).length>=5&&normalizeRadarText(text).includes(normalizeRadarText(name)))
   if (!output.discovery || !output.discoveryLocked && output.discovery.limitations.length) {
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
       search: dependencies.web, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
       checkpoint: async (hits, queries) => { output.discoveryHits = hits; output.discoveryQueries = queries; await checkpoint('discovery') },
-      inspectCandidates:output.analysisOnly||output.readingComplete?undefined:async hits=>{
+      inspectCandidates:output.analysisOnly?undefined:async hits=>{
+        if(pendingRadarReadUrls(hits,pages,configuration.research.maxPagesPerCandidate).length)output.readingComplete=false
         let plausible=false
         for(const hit of hits.filter(item=>isRadarInstitutionalSource(item.url,{title:item.title,text:item.snippets.join(' ')}))){
           const root=new URL('/',hit.url).toString()
@@ -536,6 +540,16 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         throw cause
       }
     }
+    const recoverAnalysis=async(key:'presence'|'semantic',evidenceHash:string)=>{
+      const previous=run.calls[key]
+      if(!previous||previous.status==='completed'||canRetryCreditRejection(previous))return
+      const action=key==='presence'?'radar_presence_resolution':'radar_business_qualification'
+      const requestId=key==='presence'?`${run.id}:presence:${evidenceHash}`:`${run.id}:${evidenceHash}`
+      if(previous.evidenceHash!==evidenceHash)return
+      const recovered=await pool.query('SELECT result FROM public.radar_analysis_receipts WHERE organization_id=$1 AND action=$2 AND request_id=$3 AND status=\'completed\'',[run.organization_id,action,requestId])
+      if(recovered.rows[0]?.result){run.calls[key]={...previous,status:'completed',result:recovered.rows[0].result}
+        await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])}
+    }
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
@@ -559,6 +573,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         return []
       },
       resolvePresence:async(evidence,evidenceHash)=>{
+        await recoverAnalysis('presence',evidenceHash)
         const previous=run.calls.presence
         if(previous?.status==='completed'&&previous.evidenceHash===evidenceHash)return previous.result
         if(previous&&previous.status!=='completed'&&!canRetryCreditRejection(previous))throw error('radar_presence_previous_request_uncertain')
@@ -586,6 +601,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         return result
       },
       qualify: async (pages,evidenceHash) => {
+        await recoverAnalysis('semantic',evidenceHash)
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
         const previousSemantic=run.calls.semantic
         if (previousSemantic?.status==='completed'&&previousSemantic.evidenceHash===evidenceHash) return previousSemantic.result as RadarQualification

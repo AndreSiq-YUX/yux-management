@@ -53,6 +53,44 @@ class EstimateWorkflowCreditsTest(unittest.TestCase):
 
 
 class ApiCreditsTest(unittest.TestCase):
+    def test_completed_radar_request_is_recovered_without_another_analysis_or_credit(self):
+        store = BillingStore()
+        payload = dict(organization_id='org', client_id='client', contract_id='contract', enabled=True,
+                       request_id='receipt-example', identity={}, evidence=[dict(id='p', source_url='https://example.test', text='Empresa teste', kind='institutional_candidate')])
+        def process(_store, **kwargs):
+            kwargs['before_call']()
+            return dict(scope='unresolved', reason='Sem identidade suficiente', claims=[])
+        with patch('yux_agent_runtime.api.resolve_radar_presence', side_effect=process) as analysis:
+            client = self._client(store)
+            first = client.post('/radar/resolve-presence', headers=AUTH, json=payload)
+            second = client.post('/radar/resolve-presence', headers=AUTH, json=payload)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.json(), first.json())
+        self.assertEqual(analysis.call_count, 1)
+        self.assertEqual(store.balance, 99)
+
+    def test_radar_request_id_cannot_be_reused_with_changed_evidence(self):
+        payload = dict(organization_id='org', enabled=True, request_id='receipt-conflict', identity={},
+                       evidence=[dict(id='p', source_url='https://example.test', text='Empresa teste', kind='institutional_candidate')])
+        with patch('yux_agent_runtime.api.resolve_radar_presence', return_value=dict(scope='unresolved', reason='Sem suporte suficiente', claims=[])) as analysis:
+            client = self._client(BillingStore())
+            self.assertEqual(client.post('/radar/resolve-presence', headers=AUTH, json=payload).status_code, 200)
+            changed = {**payload, 'identity': {'name': 'Outra empresa'}}
+            self.assertEqual(client.post('/radar/resolve-presence', headers=AUTH, json=changed).status_code, 409)
+        self.assertEqual(analysis.call_count, 1)
+
+    def test_radar_uncertain_call_is_not_automatically_replayed(self):
+        payload = dict(organization_id='org', enabled=True, request_id='receipt-uncertain', identity={},
+                       evidence=[dict(id='p', source_url='https://example.test', text='Empresa teste', kind='institutional_candidate')])
+        def process(_store, **kwargs):
+            kwargs['before_call']()
+            raise ProviderRequestError('provider_http_500')
+        with patch('yux_agent_runtime.api.resolve_radar_presence', side_effect=process) as analysis:
+            client = self._client(BillingStore())
+            client.post('/radar/resolve-presence', headers=AUTH, json=payload)
+            self.assertEqual(client.post('/radar/resolve-presence', headers=AUTH, json=payload).status_code, 409)
+        self.assertEqual(analysis.call_count, 1)
+
     def test_radar_does_not_mislabel_unexpected_processing_error_as_insufficient_credits(self):
         store = BillingStore()
         payload = dict(organization_id='org', client_id='client', contract_id='contract', enabled=True,

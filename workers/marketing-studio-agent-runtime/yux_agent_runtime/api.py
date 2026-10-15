@@ -18,6 +18,7 @@ from .runtime_factory import build_mission_supervisor, build_strategy_workflow_e
 from .llm_routing import effective_legacy_routes
 from .radar_qualification import qualify_radar_business
 from .radar_presence import resolve_radar_presence
+from .radar_receipts import execute_radar_receipt
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -276,7 +277,8 @@ def create_app(
         try:
             def debit():
                 reserve_radar_credits(request, 'radar_presence_resolution')
-            return resolve_radar_presence(runtime_store,enabled=request.enabled,context=request.model_dump(),identity=request.identity,evidence=[item.model_dump() for item in request.evidence],before_call=debit)
+            return execute_radar_receipt(runtime_store, action='radar_presence_resolution', request=request, debit=debit,
+                compute=lambda before_call: resolve_radar_presence(runtime_store,enabled=request.enabled,context=request.model_dump(),identity=request.identity,evidence=[item.model_dump() for item in request.evidence],before_call=before_call))
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except ValueError as error:
@@ -290,8 +292,9 @@ def create_app(
         try:
             def debit():
                 reserve_radar_credits(request, 'radar_business_qualification')
-            return qualify_radar_business(runtime_store, enabled=request.enabled, context=request.model_dump(),
-                criteria=request.criteria, evidence=[item.model_dump() for item in request.evidence], before_call=debit)
+            return execute_radar_receipt(runtime_store, action='radar_business_qualification', request=request, debit=debit,
+                compute=lambda before_call: qualify_radar_business(runtime_store, enabled=request.enabled, context=request.model_dump(),
+                criteria=request.criteria, evidence=[item.model_dump() for item in request.evidence], before_call=before_call))
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except ValueError as error:

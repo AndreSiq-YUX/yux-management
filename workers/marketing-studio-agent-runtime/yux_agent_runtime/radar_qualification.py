@@ -5,6 +5,7 @@ import re
 from typing import Any
 from .runtime_factory import build_routed_client
 from .providers import ProviderAuthorizationError
+from .radar_receipts import radar_usage
 
 def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dict,
                           evidence: list[dict], llm_client=None, before_call=None) -> dict[str, Any]:
@@ -70,7 +71,7 @@ def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dic
     result = dict(targetStatus=status, productFit=fit, reasons=reasons, evidenceIds=list(dict.fromkeys(ids)),
                 limitations=[str(item)[:1000] for item in payload.get('limitations', [])[:20]],
                 evidenceSources=[dict(id=item['id'],sourceUrl=item['source_url']) for item in bounded if item['id'] in ids],
-                buyingIntent='unknown', provider=response.get('provider'), model=response.get('model'))
+                buyingIntent='unknown', provider=response.get('provider'), model=response.get('model'), usage=radar_usage(response))
     if profile_enabled:
         profile = payload.get('profile')
         if not isinstance(profile, dict):

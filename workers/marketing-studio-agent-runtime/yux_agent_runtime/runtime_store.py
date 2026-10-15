@@ -8,6 +8,7 @@ import json
 import os
 from typing import Any, Protocol
 from uuid import UUID, uuid4
+from threading import RLock
 
 
 class CreditReservationError(RuntimeError):
@@ -55,6 +56,27 @@ class AgentRuntimeStore(Protocol):
 @dataclass
 class InMemoryAgentRuntimeStore:
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _radar_lock: Any = field(default_factory=RLock, repr=False)
+
+    def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token):
+        with self._radar_lock:
+            key = dict(organization_id=organization_id, action=action, request_id=request_id)
+            rows = self.list('radar_analysis_receipts', key)
+            if rows:
+                row = rows[0]
+                if row['input_hash'] != input_hash or row['status'] != 'rejected_before_provider':
+                    return row, False
+                row = self.update('radar_analysis_receipts', row['id'], dict(status='reserved', owner_token=owner_token))
+            else:
+                row = self.insert('radar_analysis_receipts', dict(**key, input_hash=input_hash, owner_token=owner_token, status='reserved'))
+            return row, True
+
+    def finish_radar_receipt(self, *, organization_id, action, request_id, owner_token, status, result, usage):
+        with self._radar_lock:
+            rows = self.list('radar_analysis_receipts', dict(organization_id=organization_id, action=action, request_id=request_id, owner_token=owner_token, status='reserved'))
+            if not rows:
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
+            self.update('radar_analysis_receipts', rows[0]['id'], dict(status=status, result=result, usage=usage))
 
     def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         record = _with_id(dict(payload))
@@ -175,6 +197,26 @@ class PostgresAgentRuntimeStore:
 
     def set_internal_scope(self) -> None:
         _runtime_database_scope.set(RuntimeDatabaseScope(role="yux_operator", organization_ids=()))
+
+    def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token):
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', [f'radar-receipt:{organization_id}:{action}:{request_id}'])
+            cursor.execute('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=%s AND action=%s AND request_id=%s FOR UPDATE', [organization_id, action, request_id])
+            row = cursor.fetchone()
+            if row and (row['input_hash'] != input_hash or row['status'] != 'rejected_before_provider'):
+                return dict(row), False
+            if row:
+                cursor.execute("UPDATE public.radar_analysis_receipts SET status='reserved',owner_token=%s,updated_at=NOW() WHERE id=%s RETURNING *", [owner_token, row['id']])
+            else:
+                cursor.execute("INSERT INTO public.radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status) VALUES(%s,%s,%s,%s,%s,'reserved') RETURNING *", [organization_id, action, request_id, input_hash, owner_token])
+            return dict(cursor.fetchone()), True
+
+    def finish_radar_receipt(self, *, organization_id, action, request_id, owner_token, status, result, usage):
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE public.radar_analysis_receipts SET status=%s,result=%s::jsonb,usage=%s::jsonb,updated_at=NOW() WHERE organization_id=%s AND action=%s AND request_id=%s AND owner_token=%s AND status='reserved' RETURNING id",
+                           [status, json.dumps(result) if result is not None else None, json.dumps(usage) if usage is not None else None, organization_id, action, request_id, owner_token])
+            if not cursor.fetchone():
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
 
     def set_tenant_scope(
         self,

@@ -4,6 +4,15 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('reads newly discovered pages after quota interruption despite a legacy completed-read flag',async()=>{
+  const url='https://new-alfa.example/'
+  const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,readerVersion:4,discoveryLocked:true,
+    discovery:{association:'review',hits:[{url,title:'Empresa Alfa',snippets:[],observedAt:'2026-10-15'}],suggestions:[{url,title:'Empresa Alfa',snippets:[],observedAt:'2026-10-15'}],limitations:[],queries:1}},
+    {web:async()=>{throw Error('completed_search_must_not_repeat')},checkpoint:async()=>{},collect:async()=>[
+      {url,text:'Empresa Alfa CNPJ 12.345.678/0001-90 contato@new-alfa.example',observedAt:'2026-10-15'}]})
+  expect(result.pages.map(page=>page.url)).toContain(url)
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'contato@new-alfa.example',association:'confirmed'}))
+})
 it('invalidates direct identity when a legacy reader refresh contradicts the old CNPJ',async()=>{
   const url='https://alfa.example/',old={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-09-01'}
   const result=await runRadarResearchPipeline(identity,configuration,{readerVersion:3,readingComplete:true,discoveryLocked:true,pages:[old],

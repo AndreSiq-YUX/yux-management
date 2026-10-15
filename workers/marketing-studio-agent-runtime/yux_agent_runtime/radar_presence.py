@@ -4,6 +4,7 @@ import json
 import re
 from .runtime_factory import build_routed_client
 from .providers import ProviderAuthorizationError
+from .radar_receipts import radar_usage
 
 def resolve_radar_presence(store, *, enabled: bool, context: dict, identity: dict, evidence: list[dict], llm_client=None, before_call=None) -> dict:
     if not enabled:
@@ -51,4 +52,4 @@ def resolve_radar_presence(store, *, enabled: bool, context: dict, identity: dic
         else: value['scope']='unresolved'
     except (ValueError,TypeError,KeyError) as error:
         raise ValueError('radar_presence_unverifiable') from error
-    return {**value,'provider':response.get('provider'),'model':response.get('model')}
+    return {**value,'provider':response.get('provider'),'model':response.get('model'),'usage':radar_usage(response)}

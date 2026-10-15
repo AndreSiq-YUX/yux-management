@@ -21,11 +21,28 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
   if(workerUrl)workerUrl.username='yux_worker'
   const rawWorker=new pg.Pool({connectionString:workerUrl?.toString()})
   const worker=createContextAwarePool(rawWorker,'worker')
+  const runtimeUrl=connectionString?new URL(connectionString):undefined
+  if(runtimeUrl)runtimeUrl.username='yux_runtime'
+  const rawRuntime=new pg.Pool({connectionString:runtimeUrl?.toString()})
+  const runtime=createContextAwarePool(rawRuntime,'runtime')
   const admin=fixtureUsers.yux_admin as AuthUser,organizationId=fixtureIds.internalOrg
   const fixtureKey=Buffer.alloc(32,7).toString('base64')
   const scoped=<T>(fn:()=>Promise<T>)=>runWithDatabaseRequestContext({role:'yux_admin',organizationIds:[organizationId],serviceRole:'worker'},fn)
   const jobScope=<T>(fn:()=>Promise<T>)=>runWithDatabaseRequestContext({role:'client_member',organizationIds:[organizationId],serviceRole:'worker'},fn)
   let campaignId:string,candidateId:string,routeId:string,presenceRouteId:string
+  it('persists one tenant-scoped receipt under concurrent runtime claims and keeps worker read-only',async()=>{
+    const requestId=`receipt-${randomUUID()}`,owner=randomUUID()
+    const runtimeScope=<T>(fn:()=>Promise<T>)=>runWithDatabaseRequestContext({role:'client_member',organizationIds:[organizationId],serviceRole:'runtime'},fn)
+    try{
+      const claims=await Promise.all([1,2].map(()=>runtimeScope(()=>runtime.query(`INSERT INTO public.radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status)
+        VALUES($1,'radar_presence_resolution',$2,$3,$4,'reserved') ON CONFLICT(organization_id,action,request_id) DO NOTHING RETURNING id`,[organizationId,requestId,'a'.repeat(64),owner]))))
+      expect(claims.reduce((count,result)=>count+result.rows.length,0)).toBe(1)
+      expect((await scoped(()=>worker.query('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=$1 AND request_id=$2',[organizationId,requestId]))).rows).toHaveLength(1)
+      const foreign=await runWithDatabaseRequestContext({role:'client_member',organizationIds:[fixtureIds.organizationA],serviceRole:'runtime'},()=>runtime.query('SELECT * FROM public.radar_analysis_receipts WHERE request_id=$1',[requestId]))
+      expect(foreign.rows).toHaveLength(0)
+      await expect(scoped(()=>worker.query("UPDATE public.radar_analysis_receipts SET status='uncertain' WHERE request_id=$1",[requestId]))).rejects.toMatchObject({code:'42501'})
+    }finally{await pool.query('DELETE FROM public.radar_analysis_receipts WHERE organization_id=$1 AND request_id=$2',[organizationId,requestId]);await rawRuntime.end()}
+  })
   beforeAll(async()=>{
     await seedIntegrationFixtures(pool)
     await pool.query('UPDATE public.organizations SET is_internal_growth_workspace=TRUE WHERE id=$1',[organizationId])

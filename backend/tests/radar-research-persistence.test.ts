@@ -10,9 +10,11 @@ class ResearchPool {
   researchConfiguration:Record<string,unknown>={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true}}
   run:Record<string,any>|undefined
   payload:Record<string,unknown>={cnpj:'12345678000190',tradeName:'Empresa Alfa',city:'Curitiba',state:'PR',phoneRaw:'4133334444',analysisRevision:1,discoveryRevision:1}
+  receiptResult:unknown
   async connect(){return{query:this.query.bind(this),release(){}}}
   async query(sql:string,params:unknown[]=[]):Promise<{rows:any[]}> {
     this.queries.push({sql,params})
+    if(sql.includes('FROM public.radar_analysis_receipts'))return{rows:this.receiptResult?[{result:this.receiptResult,status:'completed'}]:[]}
     if(/^(BEGIN|COMMIT|ROLLBACK)/.test(sql)||sql.includes('pg_advisory_xact_lock'))return{rows:[]}
     if(sql.includes('SELECT candidate.*, campaign.search_configuration'))return{rows:params[1]==='org'?[{id:'candidate',organization_id:'org',campaign_id:'campaign',title:'Empresa Alfa',status:'pending_review',normalized_payload:this.payload,search_configuration:this.researchConfiguration,configuration_revision:this.revision,campaign_status:'draft',target_segment:'Serviços',offer_type:'Automação',product_focus:[],target_cnaes:[]}]:[]}
     if(sql.includes('JOIN public.model_routing_rules rule'))return{rows:[{model_name:'fixture-admin-model',provider:'openrouter',max_input_tokens:16000,max_output_tokens:4000,fallback_routes:[]}]}
@@ -49,6 +51,22 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('recovers a completed durable analysis receipt after a lost runtime response without replay',async()=>{
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
+  const run=await start(pool)
+  pool.run!.output={readingComplete:true,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+  const result={targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]}
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime:async()=>result as never})
+  pool.run!.status='partial';pool.run!.calls.semantic={...pool.run!.calls.semantic,status:'reserved',result:undefined}
+  pool.run!.output.qualification=undefined;pool.run!.output.qualificationEvidenceHash=undefined
+  pool.receiptResult=result
+  await start(pool)
+  const runtime=vi.fn(async()=>{throw Error('must_not_call_provider')})
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime})
+  expect(pool.run!.output.qualification).toMatchObject({productFit:'possible'})
+  expect(runtime).not.toHaveBeenCalled()
+})
 it('filters association-owned contacts from the current dossier without rewriting historical evidence',async()=>{
   const pool=new ResearchPool();await start(pool)
   const official={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-10-14'}
