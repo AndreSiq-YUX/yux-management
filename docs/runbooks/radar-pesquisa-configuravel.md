@@ -1,6 +1,26 @@
 # Radar: pesquisa configurável por campanha
 
-O Radar não impõe setor, CNAE, produto ou região. Cozinhas industriais são um caso configurável, não um modo fixo do executor. O módulo pode ser contratado por cliente; neste fluxo, pesquisas pagas são iniciadas pelo Admin YUX, com contato manual e entrega por CSV.
+O Radar não impõe setor, CNAE, produto ou região. Cozinhas industriais são um caso configurável, não um modo fixo do executor. O módulo pode ser contratado por cliente; pesquisas pagas são iniciadas pelo Admin YUX, com contato manual e entrega por CSV ou encaminhamento revisado ao CRM. As seções datadas abaixo registram a evolução e suas limitações na data da verificação.
+
+## Qualidade e entrega — 15/10/2026
+
+- Documentos de governo, notícias e cadastros de terceiros são referências externas, não sites oficiais. A projeção de dados antigos aplica essa separação sem apagar a história nem alterar leads já entregues. Um domínio candidato ainda exige comprovação de identidade; busca limitada não comprova ausência de site.
+- Em **Editar configuração**, escolha quando complementar com busca local: antes da web (compatibilidade), depois somente se necessário ou nunca. A primeira consulta usa o nome simples; marca, razão social e CNPJ são alternativas delimitadas. Se uma fonte só retorna referências inúteis, o fallback autorizado pode ser utilizado dentro do mesmo teto de consultas.
+- Em **Quando a pesquisa está suficiente**, configure identidade, segmento, site opcional, tipos/finalidades e mínimo de canais úteis. Fica desligado nas campanhas antigas até edição explícita. Suficiência indica prontidão para revisão, não aprovação. CRM mantém revisão humana, versão, permissões e direitos de entrega, além dos critérios ativos.
+- Identidade, contatabilidade, aderência e potencial por porte são dimensões independentes. Não estimado não significa pequeno ou zero. Contatos repetidos são consolidados com todas as fontes; vagas, privacidade e canais não associados não satisfazem compras. Telefone cadastral não vira WhatsApp confirmado.
+- Em **Próxima ação**, filtre prontas para revisão, falta de contato, identidade ou qualificação pendente, aguardando liberação e fora do perfil. A **Conferência da equipe** registra retorno de verificação/contato manual com autor, data e revisão; não modifica fatos, aprovações ou CRM automaticamente.
+- **Resultados e consumo da pesquisa** apresenta empresas únicas, identidades, canais úteis e prontidão. Busca é estimada em BRL, IA usa apenas custo reportado em USD, com ausência explicitamente desconhecida. Não há conversão de moeda implícita. O período usa UTC e o subtotal não equivale à fatura final do provedor.
+- Retomar lê evidências ainda pendentes sem repetir chamadas concluídas. As migrações aditivas `0188_radar_analysis_receipts.sql` e `0189_radar_research_feedback.sql` acrescentam recibos de IA e feedback auditável com isolamento por organização. Resultado concluído com recibo pode ser recuperado após perda de resposta. Chamadas antigas sem prova persistente permanecem incertas; não se promete recuperar seis respostas históricas nem repetir cobranças automaticamente.
+
+### Verificação local desta entrega
+
+Provedores simulados: 20 casos reduzidos de referência passaram, sem falsos sites oficiais nos casos negativos incluídos. Isso não garante ausência universal de falsos positivos nem mede a qualidade de um novo lote real. PostgreSQL 17 isolado: 86 migrações aplicadas e 23 testes Radar passaram, incluindo concorrência, RLS e entrega sem mensagens/eventos automáticos. Backend, frontend e runtime passaram nas suítes completas; builds e orçamento de bundle passaram. A revisão final e números finais ficam registrados no plano desta entrega.
+
+Chrome local autenticado, API real e banco isolado: referência governamental separada, resumo inline, duas fontes consolidadas, feedback persistido, entrega de empresa previamente aprovada ao CRM fictício e alteração dos critérios gerando revisão 2. Foco dos detalhes e largura do resumo verificados em desktop e celular de 430 px (350 px de conteúdo dentro da tela). Nenhum provedor pago foi chamado. Houve um erro de configuração da URL da API no primeiro início local; corrigido antes da jornada. Depois disso, sem novos erros, apenas avisos preexistentes do React Router. Um contato duplicado no dossiê histórico foi reproduzido e corrigido por teste RED→GREEN.
+
+Para repetir a QA: inicie `backend/tests/journeys/start-radar-quality-server.ts` com `YUX_RADAR_TEST_DATABASE_URL` apontando exclusivamente para `127.0.0.1:55439/yux_radar_research_test`. O script exige esse destino, cria dados sintéticos, escuta em 4182 e recusa pesquisa paga/fila. Inicie Vite em 4174 com `VITE_API_BASE_URL=http://127.0.0.1:4182/api` e `VITE_API_URL=http://127.0.0.1:4182`. Use a URL de campanha impressa e o usuário fixture `yux-admin@integration.test` / `integration-password`. A jornada opt-in `radar-quality-review.pw.ts` registra o percurso repetível; nesta sessão a interação foi executada pelo navegador conectado, não pelo runner Playwright.
+
+Publicação do código não equivale a deploy. Atualize backend, frontend e runtime para usar os recibos. Nenhuma credencial, licença, limite, rota de modelo ou exceção TLS de produção foi alterada nesta entrega, e não houve novo piloto pago.
 
 ## Configurar pelo painel
 

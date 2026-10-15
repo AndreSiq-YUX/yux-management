@@ -51,6 +51,15 @@ class ResearchPool {
 }
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('consolidates legacy dossier contacts on read, retaining sources without rewriting history',async()=>{
+  const pool=new ResearchPool();await start(pool)
+  const contact={kind:'email',value:'compras@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-15',association:'confirmed',scope:'establishment',purpose:'suppliers'}
+  pool.run!.status='partial';pool.run!.output={siteAssociation:'confirmed',pages:[],discovery:{websiteUrl:contact.sourceUrl,association:'confirmed',hits:[],suggestions:[],limitations:[],queries:1},contacts:[contact,{...contact,sourceUrl:'https://alfa.example/fornecedor/'}]}
+  const result=await getRadarCandidateResearch(pool as never,admin,'org','candidate')
+  expect(result.run!.output.contacts).toHaveLength(1)
+  expect(result.run!.output.contacts![0].sources).toHaveLength(2)
+  expect(pool.run!.output.contacts).toHaveLength(2)
+})
 it('does not expose a historical directory as an associated website in the complete dossier',async()=>{
   const pool=new ResearchPool();await start(pool)
   const url='https://unknown-directory.example/alfa'
