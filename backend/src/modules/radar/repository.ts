@@ -1,5 +1,6 @@
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
+import {admitRadarCapturePage,captureError} from './capture-operation.js'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
@@ -87,6 +88,7 @@ export type RadarCnpjaSearchInput = {
   regionalState?: string
   regionalCity?: string
   expectedRevision?: number
+  captureOperationId?: string
 }
 
 export type RadarPlacePreviewInput = {
@@ -1089,6 +1091,14 @@ export async function runRadarCnpjaAdvancedSearch(
       }
       searchConfiguration = resolveRadarSearchConfiguration(campaignSnapshot.search_configuration)
       limit = input.limit ?? searchConfiguration.batch.pageSize
+      if(input.captureOperationId){
+        const op=(await client.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3 FOR UPDATE',[input.captureOperationId,input.organizationId,input.campaignId])).rows[0]
+        if(!op||op.configuration_revision!==campaignSnapshot.configuration_revision)throw captureError('radar_campaign_configuration_changed')
+        if(op.discovery_pending)throw captureError('radar_capture_discovery_uncertain')
+        const admitted=Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
+        if(op.discovery_stopped||admitted>=op.requested_count)throw captureError('radar_capture_target_reached')
+        limit=Math.min(limit,op.requested_count-admitted)
+      }
       const scopes = buildRadarDiscoveryScopes(mapCampaign(campaignSnapshot)).filter(scope => scope.state === input.regionalState
         && (!input.regionalCity || scope.city?.toLocaleLowerCase('pt-BR') === input.regionalCity.toLocaleLowerCase('pt-BR')))
       if (scopes.length !== 1) throw Object.assign(new Error('radar_discovery_scope_required'), { statusCode: 400 })
@@ -1151,6 +1161,8 @@ export async function runRadarCnpjaAdvancedSearch(
     }
 
     await recordRadarSourceUsage(client, input.organizationId, input.campaignId, source, 1, governance.estimatedCost)
+    if(input.captureOperationId)await client.query(`UPDATE public.radar_capture_operations SET discovery_pending=TRUE,queries=queries+1,
+      scope_pages=jsonb_set(scope_pages,ARRAY[$2],to_jsonb(COALESCE((scope_pages->>$2)::int,0)+1)),updated_at=NOW() WHERE id=$1`,[input.captureOperationId,scopeKey])
     if (input.regionalState) {
       await client.query(
         `INSERT INTO public.radar_regional_discovery_cursors
@@ -1216,7 +1228,12 @@ export async function runRadarCnpjaAdvancedSearch(
       }
     }
     const candidates: RadarCandidateRecord[] = []
-    for (const result of results) {
+    if(input.captureOperationId){
+      const ids=await admitRadarCapturePage(candidateClient,{organizationId:input.organizationId,campaignId:input.campaignId,operationId:input.captureOperationId,revision:campaignSnapshot?.configuration_revision??1,scopeKey:scopeKey!,runId},results)
+      if(ids.length){const rows=await candidateClient.query<RadarCandidateRecordRow>('SELECT * FROM public.radar_candidate_records WHERE id=ANY($1::uuid[])',[ids]);candidates.push(...rows.rows.map(mapCandidate))}
+      await candidateClient.query('UPDATE public.radar_capture_operations SET discovery_pending=FALSE,updated_at=NOW() WHERE id=$1',[input.captureOperationId])
+    }
+    for (const result of input.captureOperationId?[]:results) {
       const title = result.tradeName || result.legalName || result.taxId || 'Empresa CNPJa'
       const dedupeKey = result.taxId
         ? `cnpj:${result.taxId}`
