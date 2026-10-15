@@ -147,7 +147,7 @@
 - [x] Executar `npm --prefix backend test`, `npm --prefix backend run build`, `npm --prefix backend run test:integration` no banco local isolado; `npm --prefix frontend test`, `npm --prefix frontend run build`; pytest do runtime a partir de `workers/marketing-studio-agent-runtime`. Provedores externos obrigatoriamente simulados.
 - [x] QA de navegador local autenticado/simulado: configurar critérios, consultar resultados, separar fontes externas, revisar canais, registrar feedback e encaminhar ao CRM com autorização simulada. Verificar desktop/mobile, navegação/foco e nenhum contato automático.
 - [x] Revisar diff inteiro, contratos legados, isolamento e recibos concorrentes. Registrar falhas remanescentes sem ocultá-las; corrigir regressões antes da publicação.
-- [ ] Atualizar runbook e checks deste plano com resultados; criar commit de documentação. Conferir remoto/branch/alterações alheias e publicar em main sem force push. Não executar deploy nem novas pesquisas pagas nesta etapa.
+- [x] Atualizar runbook e checks deste plano com resultados; criar commit de documentação. Conferir remoto/branch/alterações alheias e publicar em main sem force push. Não executar deploy nem novas pesquisas pagas nesta etapa.
 
 ## Revisão do plano
 
@@ -155,3 +155,11 @@
 - Seis chamadas antigas: diagnosticar e preservar incerteza na Task 2; não prometer recuperação de cobrança/resultados inexistentes.
 - Melhorias de fontes, critérios e canais compartilham contratos do Radar; não constituem novos subsistemas independentes. Recibos de IA são restritos às duas funções Radar; não redesenham roteamento global nem carteira.
 - Implementação nativa autorizada e executada; uma revisão independente final, com passagem única de correções. Verificações e limitações: docs/runbooks/radar-pesquisa-configuravel.md, seção 15/10/2026. Publicação após verificação do remoto.
+
+## Fechamento — 15/10/2026
+
+- Tasks 1–7 implementadas. Revisão independente: sete achados importantes e um reclassificado como importante por interromper a leitura histórica; todos corrigidos em uma passagem com testes RED→GREEN. Nenhum menor novo adiado.
+- Verificação final: backend **1.029/1.029**, frontend **667/667**, runtime **299 aprovados e 1 ignorado preexistente**, PostgreSQL Radar **24/24**; builds e orçamento de bundle aprovados. Benchmark de 20 casos passou. Isso não comprova cobertura comercial de um lote pago.
+- QA Chrome local com API/banco reais isolados: resumo inline, fontes, foco, conferência, entrega manual ao CRM e configuração versionada; desktop/celular de 430 px. Runner Playwright opt-in escrito, não executado nesta sessão. Não houve chamadas pagas nem contato externo.
+- Lint global: **562 erros/27 avisos** contra baseline **560/27**; cinco mensagens acima do baseline foram reproduzidas no commit-base. Baseline preservado; não alegar lint limpo.
+- Código funcional publicado sem force push em `main` e `codex/radar-brave-state-fixes`, commit **f3443fe**. Esta atualização final registra o fechamento; não foi acionado deploy. As nove decisões/limitações estão integralmente no runbook.
