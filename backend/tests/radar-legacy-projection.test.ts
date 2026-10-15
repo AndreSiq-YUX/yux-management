@@ -3,6 +3,22 @@ import {mapCandidate,approveRadarB2bProspect,listRadarCandidates} from '../src/m
 import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 const payload={websiteUrl:'https://empresadois.com.br/cnpj/12345678000190',websiteStatus:'verified_present',sitePhones:['+551145047000'],
   publicContacts:[{kind:'phone',value:'+551145047000',sourceUrl:'https://empresadois.com.br/cnpj/12345678000190',association:'confirmed',observedAt:'2026-09-01'}]}
+it('sanitizes nested historical publicPresence as well as registry website fields',()=>{
+  const url='https://www.bec.sp.gov.br/bec_pregao_UI/Ata/becprp17001.aspx'
+  const original={websiteUrl:url,websiteStatus:'verified_present',publicPresence:{version:1,configurationRevision:6,website:{url,association:'confirmed'},contacts:[{kind:'phone',value:'+551145047000',sourceUrl:url,association:'confirmed'}]}}
+  const mapped=mapCandidate({normalized_payload:original} as never).normalizedPayload
+  expect(mapped.websiteUrl).toBeUndefined()
+  expect(mapped.publicPresence).not.toHaveProperty('website')
+  expect(mapped.publicPresence).toMatchObject({contacts:[],externalReferences:[{url,reason:expect.any(String)}]})
+  expect(original.publicPresence.website.url).toBe(url)
+  expect(buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:original},'Oferta').attribution.websiteUrl).toBeUndefined()
+})
+it('does not revive a generic external reference classified by preserved page evidence',()=>{
+  const url='https://cadastro.example/alfa'
+  const value={websiteUrl:url,publicPresence:{version:1,configurationRevision:6,contacts:[],externalReferences:[{url,reason:'Cadastro do editor'}]},publicContacts:[{kind:'email',value:'editor@cadastro.example',sourceUrl:url,association:'confirmed'}]}
+  expect(mapCandidate({normalized_payload:value} as never).normalizedPayload.websiteUrl).toBeUndefined()
+  expect(buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:value},'Oferta').email).toBe('')
+})
 it('projects a current old dossier into the list using one batch read and no writes',async()=>{
   const original={id:'candidate',normalized_payload:{researchRevision:5}}
   const query=vi.fn(async(sql:string)=>({rows:sql.includes('FROM public.radar_candidate_records')?[original]:[{candidate_id:'candidate',configuration_revision:5,output:{discovery:{websiteUrl:'https://alfa.example/',association:'review',hits:[]},pages:[{url:'https://alfa.example/',text:'Alfa empresa',observedAt:'2026-10-14'}],contacts:[],siteAssociation:'review'}}]}))

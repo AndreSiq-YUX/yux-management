@@ -9,7 +9,10 @@ const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='obje
 export function buildRadarPresenceSummary(candidate:RadarCandidateRecord,revision:number):{website?:{url:string;label:string};contacts:RadarResearchContact[];presenceLabel:string;pending:string[]} {
   const data=candidate.normalizedPayload,projection=record(data.publicPresence),current=projection.version===1&&projection.configurationRevision===revision
   const stale=!current&&(projection.version===1||Number(data.researchRevision??data.analysisRevision??data.discoveryRevision??1)!==revision)
-  const found=record(current?projection.website:undefined),url=radarPublicLink(found.url??data.websiteUrl)
+  const references=[...(Array.isArray(data.externalReferences)?data.externalReferences:[]),...(Array.isArray(projection.externalReferences)?projection.externalReferences:[])].map(item=>record(item).url)
+  const found=record(current?projection.website:undefined),candidateUrl=radarPublicLink(found.url??data.websiteUrl)
+  const external=!!candidateUrl&&references.includes(candidateUrl)
+  const url=external?undefined:candidateUrl
   const association=!stale&&(found.association==='confirmed'||!current&&data.websiteStatus==='verified_present')?'confirmed':'review'
   const website=url?{url,label:association==='confirmed'?found.scope==='group'?'Site do grupo — filial a confirmar':'Site associado à empresa':'Site encontrado — confirmação pendente'}:undefined
   const raw=current&&Array.isArray(projection.contacts)?projection.contacts:Array.isArray(data.publicContacts)?data.publicContacts:[]
@@ -20,6 +23,7 @@ export function buildRadarPresenceSummary(candidate:RadarCandidateRecord,revisio
     .map(contact=>stale?{...contact,association:'review' as const,scope:'unresolved',preferred:false}:contact)
     .sort((a,b)=>Number(b.association==='confirmed')-Number(a.association==='confirmed')||Number(!!b.preferred)-Number(!!a.preferred))
   const pending:string[]=[]
+  if(external||references.length&&!website)pending.push('A página encontrada é uma referência externa, não o site da empresa.')
   if(website&&association==='review')pending.push('O site foi encontrado; o vínculo com esta empresa ainda precisa de confirmação.')
   if(found.scope==='group')pending.push('A presença é do grupo; não confirma os contatos desta filial.')
   if(data.researchRevision&&data.researchRevision!==revision||projection.version===1&&!current)pending.push('Há dados de uma configuração anterior. Atualize ou reavalie a pesquisa antes de aprovar.')

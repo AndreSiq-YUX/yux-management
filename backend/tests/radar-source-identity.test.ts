@@ -3,8 +3,31 @@ import {isRadarReferenceUrl,discoverRadarBusinessPresence} from '../src/modules/
 import {extractRadarContacts} from '../src/modules/radar/contact-evidence.js'
 import {runRadarResearchPipeline} from '../src/modules/radar/research-service.js'
 import {resolveRadarSearchConfiguration} from '../src/modules/radar/search-configuration.js'
+import {classifyRadarSource,isRadarInstitutionalSource} from '../src/modules/radar/source-identity.js'
 const identity={name:'Empresa Brasileira de Refeicoes',legalName:'Embrare Empresa Brasileira de Refeicoes LTDA',cnpj:'01128426000198'}
 const directory={url:'https://empresas.serasaexperian.com.br/consulta-gratis/EMBRARE-01128426000198',title:identity.legalName,snippets:[identity.cnpj],observedAt:'2026-10-13'}
+it.each([
+  ['https://compras.example.gov.br/ata/empresa','government_reference'],
+  ['https://www.bec.sp.gov.br/bec_pregao_UI/Ata/becprp17001.aspx','government_reference'],
+  ['https://www.escavador.com/diarios/927547/empresa','editorial_reference'],
+  ['https://www.diariocidade.com/sp/osasco/guia/empresa/','directory_reference'],
+  ['https://www.balancos.com.br/site/lista-completa/empresa.php?cgc=01128426000198','directory_reference'],
+  ['https://unknown.example/guia/empresa','directory_reference'],
+])('does not promote a reference citing exact CNPJ: %s',(url,role)=>{
+  const evidence={title:'Consulta da empresa',text:`Dados cadastrais da empresa ${identity.legalName} CNPJ ${identity.cnpj}`}
+  expect(isRadarInstitutionalSource(url,evidence)).toBe(false)
+  expect(classifyRadarSource(url,evidence)).toMatchObject({role})
+  expect(extractRadarContacts({url,text:`${evidence.text} editor@unknown.example`,observedAt:'2026-10-15'},'confirmed')).toEqual([])
+})
+it('classifies third-party directory structure even without preserved page text',()=>{
+  expect(isRadarInstitutionalSource('https://unknown.example/guia/empresa-alfa')).toBe(false)
+  expect(isRadarInstitutionalSource('https://compras.example.gov.br/ata/empresa')).toBe(false)
+})
+it('keeps genuine supplier pages and public institutional portals eligible, not automatically associated',()=>{
+  expect(isRadarInstitutionalSource('https://alfa.example/fornecedor/',{text:'Seja fornecedor da Alfa. CNPJ 01128426000198'})).toBe(true)
+  expect(isRadarInstitutionalSource('https://entidade.gov.br/',{title:'Entidade Pública',text:'Portal institucional da Entidade Pública'})).toBe(true)
+  expect(classifyRadarSource('https://entidade.gov.br/')).toMatchObject({kind:'institutional_candidate'})
+})
 it('does not call a directory the official website merely because its snippet contains the CNPJ',async()=>{
   expect(isRadarReferenceUrl(directory.url)).toBe(true)
   expect(isRadarReferenceUrl('https://unknown.example/cnpj/empresa-01128426000198')).toBe(true)

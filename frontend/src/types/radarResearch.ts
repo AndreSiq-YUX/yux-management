@@ -1,4 +1,5 @@
 export type RadarProfileClaim={value:string;evidenceId:string;excerpt:string;sourceUrl:string;observedAt:string;scope:'establishment'|'group'|'unresolved'}
+export type RadarExternalReference={url:string;reason:string}
 export type RadarCompanyProfile={summary?:RadarProfileClaim;services:RadarProfileClaim[];customerSegments:RadarProfileClaim[];operatingRegions:RadarProfileClaim[];
   scaleSignals:Array<RadarProfileClaim&{metric:string;amount:number;referenceDate?:string;currency?:string}>}
 export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:string;message:string;sourceType?:string;resolution:string}>;

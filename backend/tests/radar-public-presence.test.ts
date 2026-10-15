@@ -1,6 +1,12 @@
 import {expect,it} from 'vitest'
 import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from '../src/modules/radar/public-presence.js'
 const dossier={discovery:{association:'review' as const,websiteUrl:'https://alfa.example/',hits:[],suggestions:[],limitations:[],queries:1},pages:[{url:'https://alfa.example/',text:'Alfa contato',observedAt:'2026-10-14'}],contacts:[],siteAssociation:'review' as const}
+it('retains government and directory evidence separately, not as the company website',()=>{
+  const url='https://compras.example.gov.br/ata/empresa'
+  const result=projectRadarPublicPresence({configurationRevision:6,...dossier,discovery:{...dossier.discovery,websiteUrl:url},siteAssociation:'confirmed',pages:[{url,text:'Alfa CNPJ 12345678000190',observedAt:'2026-10-15'}]})
+  expect(result.website).toBeUndefined()
+  expect(result).toMatchObject({externalReferences:[{url,reason:expect.any(String)}]})
+})
 it('shows found readable websites without turning them into a confirmed identity',()=>{
   expect(projectRadarPublicPresence({configurationRevision:5,...dossier})).toMatchObject({version:1,configurationRevision:5,website:{association:'review',scope:'unresolved',readable:true,sourceUrl:'https://alfa.example/'}})
 })
