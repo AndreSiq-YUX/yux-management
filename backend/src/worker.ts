@@ -102,6 +102,15 @@ const domainEventDispatchScheduler = schedulerActive ? setInterval(() => {
   void scheduleDomainEventDispatch().catch((error) => console.error('[worker] domain event dispatch scheduling failed', error))
 }, domainEventDispatchIntervalMs) : undefined
 
+function scheduleRadarCaptureReconciliation(){
+  const window=Math.floor(Date.now()/20_000)
+  return maintenanceQueue.add('maintenance.reconcileRadarCaptures',{window},{jobId:createBullMqJobId('radar-capture-reconcile',window)})
+}
+if(schedulerActive)void scheduleRadarCaptureReconciliation().catch(error=>console.error('[worker] radar reconciliation scheduling failed',error))
+const radarCaptureScheduler=schedulerActive?setInterval(()=>{
+  void scheduleRadarCaptureReconciliation().catch(error=>console.error('[worker] radar reconciliation scheduling failed',error))
+},20_000):undefined
+
 function scheduleActionEngineMaintenance() {
   const waitWindow = Math.floor(Date.now() / actionWaitIntervalMs)
   const metricWindow = Math.floor(Date.now() / actionMetricsIntervalMs)
@@ -133,6 +142,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (maintenanceScheduler) clearInterval(maintenanceScheduler)
   if (googleTokenRefreshScheduler) clearInterval(googleTokenRefreshScheduler)
   if (domainEventDispatchScheduler) clearInterval(domainEventDispatchScheduler)
+  if (radarCaptureScheduler) clearInterval(radarCaptureScheduler)
   if (actionEngineScheduler) clearInterval(actionEngineScheduler)
   await Promise.all(workers.map(worker => worker.close()))
   await schedulerLeadership?.release()

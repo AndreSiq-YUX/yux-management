@@ -1,4 +1,5 @@
 import type pg from 'pg'
+export {reconcileRadarCaptureOutbox} from '../../modules/radar/capture-dispatch.js'
 
 export async function purgeExpiredTraces(pool: Pick<pg.Pool, 'query'>) {
   // agent_execution_steps, agent_context_snapshots, agent_verification_results

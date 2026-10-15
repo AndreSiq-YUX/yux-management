@@ -1,0 +1,71 @@
+import {describe,it,expect,vi} from 'vitest'
+import {randomUUID} from 'node:crypto'
+import {captureFixture,connectionString,admin,organizationId,available,company} from './support/radar-capture-fixture.js'
+import {startRadarCaptureOperation,getRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
+import {advanceRadarCaptureDiscovery} from '../src/modules/radar/capture-discovery.js'
+const modulePath='../src/modules/radar/capture-dispatch.js'
+const api=await import(modulePath).catch(()=>({}))
+describe('capture outcomes',()=>{
+ it('distinguishes missing facts from uncertain paid calls and pending TLS approval',()=>{
+  expect(api.classifyRadarCaptureResearch).toBeTypeOf('function')
+  expect(api.classifyRadarCaptureResearch({status:'partial',output:{siteAssociation:'review',limitations:['no site']},calls:{}})).toBe('insufficient')
+  expect(api.classifyRadarCaptureResearch({status:'partial',output:{},calls:{presence:{status:'uncertain'}}})).toBe('blocked')
+  expect(api.classifyRadarCaptureResearch({status:'partial',output:{pages:[{diagnostic:{kind:'tls_expired'}}]},calls:{}})).toBe('blocked')
+  expect(api.classifyRadarCaptureResearch({status:'succeeded',output:{quality:{readyForReview:false}}})).toBe('insufficient')
+ })
+})
+describe.skipIf(!connectionString)('durable capture dispatch',()=>{
+ it('finishes already completed child work even when no search quota remains',async()=>{
+  const f=await captureFixture()
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,{organizationId,operationId:start.operationId},{availability:available,searchPage:async()=>({candidates:[company()]}),loadSecret:async()=>'fixture'})
+   const state=await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId),item=state.items[0]
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output) VALUES($1,$2,$3,$4,1,'succeeded','{"siteAssociation":"confirmed","quality":{"readyForReview":true}}') RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id])).rows[0]
+   await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='researching' WHERE id=$1",[item.id,run.id])
+   const queue={add:vi.fn()}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,{organizationId,operationId:start.operationId},queue,undefined,{availability:async()=>({allowed:false,reasons:[{code:'source_limit_exceeded',message:'Quota',resolution:'Admin'}]})})
+   expect(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).toMatchObject({status:'completed',counts:{completed:1,blocked:0}})
+   expect(queue.add).not.toHaveBeenCalled()
+  }finally{await f.close()}
+ })
+ it('dispatches only admitted IDs and recovers lost queue acknowledgements using the same run and request',async()=>{
+  expect(api.dispatchRadarCaptureOperation).toBeTypeOf('function')
+  const f=await captureFixture()
+  try{
+   await f.pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key) VALUES($1,$2,'cnpja_advanced_search','Old unprocessed',$3)`,[organizationId,f.campaign.id,randomUUID()])
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:2},{availability:available})
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,{organizationId,operationId:start.operationId},{availability:available,searchPage:async()=>({candidates:[company(),company()]}),loadSecret:async()=>'fixture'})
+   const requests:Array<{candidateId:string;requestId:string}>=[]
+   const startResearch=async(_pool:unknown,_user:unknown,input:{candidateId:string;requestId:string})=>{
+    requests.push(input)
+    const row=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id) VALUES($1,$2,$3,$4,1,$5) ON CONFLICT(organization_id,candidate_id,request_id) WHERE request_id IS NOT NULL DO UPDATE SET request_id=EXCLUDED.request_id RETURNING id,status`,[organizationId,f.campaign.id,input.candidateId,admin.id,input.requestId])).rows[0]
+    return {runId:row.id,status:row.status,reused:requests.length>2}
+   }
+   const jobs=new Map<string,unknown>(),add=vi.fn(async(name:string,data:unknown,opts:{jobId:string})=>{jobs.set(opts.jobId,{name,data});if(jobs.size===1&&add.mock.calls.length===1)throw new Error('lost_ack');return{id:opts.jobId}})
+   const dependencies={availability:available,startResearch}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,{organizationId,operationId:start.operationId},{add},undefined,dependencies)
+   const before=await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)
+   expect(before.counts.admitted).toBe(2);expect(before.counts.completed).toBe(0)
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,{organizationId,operationId:start.operationId},{add},undefined,dependencies)
+   expect(jobs.size).toBe(2)
+   expect(new Set(requests.map(x=>x.candidateId))).toEqual(new Set(before.items.map(x=>x.candidateId)))
+   expect(requests.every(x=>before.items.some(item=>item.id===x.requestId&&item.candidateId===x.candidateId))).toBe(true)
+   expect((await f.pool.query('SELECT * FROM public.radar_candidate_research_runs WHERE campaign_id=$1',[f.campaign.id])).rows).toHaveLength(2)
+  }finally{await f.close()}
+ })
+ it('rejects disabled preflight before discovery and pauses a changed revision without provider calls',async()=>{
+  const f=await captureFixture()
+  try{
+   const input={organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:2}
+   await expect(startRadarCaptureOperation(f.pool,admin,input,{availability:async()=>({allowed:false,reasons:[{code:'disabled',message:'disabled',resolution:'Configuração'}]})})).rejects.toThrow('radar_capture_research_unavailable')
+   expect((await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE campaign_id=$1',[f.campaign.id])).rows).toHaveLength(0)
+   const start=await startRadarCaptureOperation(f.pool,admin,input,{availability:available})
+   await f.pool.query('UPDATE public.radar_campaigns SET configuration_revision=2 WHERE id=$1',[f.campaign.id])
+   const discover=vi.fn(),queue={add:vi.fn()}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,{organizationId,operationId:start.operationId},queue,undefined,{availability:available,discover})
+   expect(discover).not.toHaveBeenCalled();expect(queue.add).not.toHaveBeenCalled()
+   expect(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).toMatchObject({status:'blocked',blockers:['radar_campaign_configuration_changed']})
+  }finally{await f.close()}
+ })
+})

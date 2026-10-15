@@ -431,7 +431,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     if(['refresh','reanalyze'].includes(operation)&&!input.requestId)throw error('radar_research_request_id_required',400)
     if(input.requestId){
       const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
-      if(duplicate.rows[0]){await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
+      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running','succeeded'].includes(duplicate.rows[0].status))){await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
     }
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
       WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation])

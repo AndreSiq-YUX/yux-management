@@ -601,6 +601,16 @@ function sessionCookie(rawToken: string) {
 }
 
 describe('radar routes', () => {
+  it('validates capture quantities and UUIDs before writes and requires authentication',async()=>{
+    const {authStore,token}=buildAuthStore(),pool=new FakeRadarPool()
+    app=await buildServer(testEnv,{authStore,pool:pool as never,jobQueue:noopJobQueue})
+    for(const requestedCount of [0,1.5,1001]){
+      const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${ids.campaign}/capture-operations`,headers:{cookie:sessionCookie(token)},payload:{organizationId:ids.org,configurationRevision:1,requestId:ids.diagnostic,requestedCount}})
+      expect(response.statusCode).toBe(400)
+    }
+    expect((await app.inject({method:'GET',url:`/api/radar/capture-operations/${ids.diagnostic}?organizationId=${ids.org}`})).statusCode).toBe(401)
+    expect(pool.queries.some(query=>/INSERT|UPDATE|DELETE/.test(query.sql))).toBe(false)
+  })
   it('validates feedback and metric periods at authenticated HTTP boundaries without side effects',async()=>{
     const {authStore,token}=buildAuthStore(),pool=new FakeRadarPool()
     app=await buildServer(testEnv,{authStore,pool:pool as never,jobQueue:noopJobQueue})

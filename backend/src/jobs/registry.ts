@@ -22,7 +22,7 @@ import { handleKnowledgeIndexing, handleWebsiteOnboarding } from './handlers/com
 import { handleDomainEventDelivery, handleDomainEventDispatch } from './handlers/domain-events.js'
 import { handleEmailSend } from './handlers/email.js'
 import { refreshExpiringGoogleTokens } from './handlers/google-token-refresh.js'
-import { purgeExpiredTraces } from './handlers/maintenance.js'
+import { purgeExpiredTraces,reconcileRadarCaptureOutbox } from './handlers/maintenance.js'
 import { handleInboundMessage, handleOutboundMessage } from './handlers/omnichannel.js'
 import { handleProposalConversion } from './handlers/proposals.js'
 import {
@@ -31,7 +31,7 @@ import {
   handleProviderMetricsSync,
   handleSandboxChannelSimulation,
 } from './handlers/providers.js'
-import { handleRadarOpportunityAnalysis, handleRadarRegionalDiscovery, handleRadarRegionalVerification } from './handlers/radar.js'
+import { handleRadarOpportunityAnalysis, handleRadarRegionalDiscovery, handleRadarRegionalVerification,handleRadarCaptureOperation } from './handlers/radar.js'
 import { executeRadarCandidateResearch } from '../modules/radar/research-service.js'
 import { handleStrategyAdminChat } from './handlers/strategy.js'
 import { handleStrategyIndexKnowledge } from '../modules/strategy-engine/ingestion.js'
@@ -177,6 +177,7 @@ export const jobRegistry = {
   }).passthrough()),
   'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
   'radar.researchCandidate': registered('external', 300_000, ({pool,env,signal},data) => executeRadarCandidateResearch(pool,env,{runId:String(data.runId),organizationId:String(data.organizationId)},signal), z.object({runId:uuid,organizationId:uuid})),
+  'radar.advanceCaptureOperation': registered('external',180_000,({pool,env,queue,signal},data)=>handleRadarCaptureOperation(pool,env,{organizationId:String(data.organizationId),operationId:String(data.operationId)},queue,signal),z.object({organizationId:uuid,operationId:uuid})),
   'radar.runRegionalDiscovery': registered('external', 300_000, ({ pool, env, signal }, data) =>
       handleRadarRegionalDiscovery(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
   'radar.verifyRegionalCandidates': registered('external', 300_000, ({ pool, env, signal, queue }, data) =>
@@ -186,6 +187,7 @@ export const jobRegistry = {
   'proposal.convert': registered('interactive', 120_000, ({ pool }, data) => handleProposalConversion(pool, data.proposalId)),
   'maintenance.purgeExpiredTraces': registered('maintenance', 180_000, ({ pool }) => purgeExpiredTraces(pool)),
   'maintenance.refreshGoogleTokens': registered('maintenance', 180_000, ({ pool, env }) => refreshExpiringGoogleTokens(pool, env)),
+  'maintenance.reconcileRadarCaptures': registered('maintenance',60_000,({pool,queue},data)=>reconcileRadarCaptureOutbox(pool,queue,Number(data.window)),z.object({window:z.number().int().nonnegative()})),
 } satisfies Record<JobName, JobRegistration>
 
 export function parseRegisteredJobData(name: JobName, data: QueueJobData) {

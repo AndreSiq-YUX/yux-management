@@ -7,6 +7,7 @@ import { enrichRadarCandidateWithLicensedBrave, inspectRadarCandidateBusinessSit
 import { buildRadarDiscoveryScopes, resolveRadarSearchConfiguration } from '../../modules/radar/search-configuration.js'
 import { startRadarCandidateResearch } from '../../modules/radar/research-service.js'
 import type { RegisteredJobQueue } from '../registry.js'
+export {dispatchRadarCaptureOperation as handleRadarCaptureOperation} from '../../modules/radar/capture-dispatch.js'
 
 export async function handleRadarOpportunityAnalysis(
   pool: pg.Pool,

@@ -49,6 +49,7 @@ export const JOB_NAMES = [
   'strategy.indexKnowledge',
   'radar.analyzeOpportunity',
   'radar.researchCandidate',
+  'radar.advanceCaptureOperation',
   'radar.runRegionalDiscovery',
   'radar.verifyRegionalCandidates',
   'company-intelligence.indexKnowledge',
@@ -56,6 +57,7 @@ export const JOB_NAMES = [
   'proposal.convert',
   'maintenance.purgeExpiredTraces',
   'maintenance.refreshGoogleTokens',
+  'maintenance.reconcileRadarCaptures',
 ] as const
 
 export type JobName = (typeof JOB_NAMES)[number]

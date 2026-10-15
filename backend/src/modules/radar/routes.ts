@@ -51,6 +51,8 @@ import {deliverRadarCompaniesToCrm,listRadarCrmDestinations} from './crm-deliver
 import {authorizeRadarTlsException,revokeRadarTlsException} from './tls-exception-service.js'
 import {recordRadarResearchFeedback,listRadarResearchFeedback} from './research-feedback.js'
 import {getRadarResearchMetrics} from './research-metrics.js'
+import {startRadarCaptureOperation,getRadarCaptureOperation,getLatestRadarCaptureOperation} from './capture-operation.js'
+import {resumeRadarCaptureOperation} from './capture-dispatch.js'
 
 const uuid = z.string().uuid()
 
@@ -366,6 +368,38 @@ export async function registerRadarRoutes(app: FastifyInstance) {
       return reply.code(202).send({ jobId: job.id, status: 'queued' })
     })
   }
+
+  app.post('/campaigns/:id/capture-operations',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,requestedCount:z.number().int().min(1).max(1000)}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
+    const result=await startRadarCaptureOperation(app.pg,user,{...body.data,campaignId:params.data.id})
+    // Durable outbox is committed first; lost HTTP/queue acknowledgements are safe.
+    try{await app.jobQueue.add('radar.advanceCaptureOperation',{organizationId:body.data.organizationId,operationId:result.operationId},{jobId:`radar-capture-start-${result.operationId}`})}catch{ /* Reconciler dispatches later. */ }
+    return reply.code(202).send(result)
+  })
+  app.get('/campaigns/:id/capture-operations/latest',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),query=campaignQuerySchema.safeParse(request.query)
+    if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_capture_query'})
+    return {operation:await getLatestRadarCaptureOperation(app.pg,user,query.data.organizationId,params.data.id)}
+  })
+  app.get('/capture-operations/:id',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),query=campaignQuerySchema.safeParse(request.query)
+    if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_capture_query'})
+    return getRadarCaptureOperation(app.pg,user,query.data.organizationId,params.data.id)
+  })
+  app.post('/capture-operations/:id/resume',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
+    const operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})
+    try{await app.jobQueue.add('radar.advanceCaptureOperation',{organizationId:body.data.organizationId,operationId:operation.id},{jobId:`radar-capture-resume-${operation.id}-${body.data.requestId}`})}catch{ /* Durable outbox survives. */ }
+    return reply.code(202).send(operation)
+  })
 
   app.post('/campaigns/:id/preview-places', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)

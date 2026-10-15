@@ -5,7 +5,7 @@ import {runRadarCnpjaAdvancedSearch,assertRadarRegionalBatchAccess} from './repo
 import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './search-configuration.js'
 import {admitRadarCapturePage,assertCaptureAvailability,captureError,getRadarCaptureOperation,type AvailabilityLoader} from './capture-operation.js'
 
-export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,availability?:AvailabilityLoader){
+export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,availability?:AvailabilityLoader,checkAvailability=true){
  const op=(await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0]
  if(!op)throw captureError('radar_capture_not_found',404)
  const row=(await pool.query("SELECT id,email,display_name,role FROM app_users WHERE id=$1 AND role='yux_admin' AND is_active=TRUE",[op.requested_by])).rows[0]
@@ -13,7 +13,7 @@ export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,o
  const user={id:row.id,email:row.email,name:row.display_name,role:row.role} as AuthUser
  const revision=await assertRadarRegionalBatchAccess(pool,user,organizationId,op.campaign_id)
  if(revision!==op.configuration_revision)throw captureError('radar_campaign_configuration_changed')
- await assertCaptureAvailability(pool,user,organizationId,op.campaign_id,availability)
+ if(checkAvailability)await assertCaptureAvailability(pool,user,organizationId,op.campaign_id,availability)
  return{op,user}
 }
 export async function blockRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,cause:unknown){
