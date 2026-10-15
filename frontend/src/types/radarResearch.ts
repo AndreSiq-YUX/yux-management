@@ -1,5 +1,6 @@
 export type RadarProfileClaim={value:string;evidenceId:string;excerpt:string;sourceUrl:string;observedAt:string;scope:'establishment'|'group'|'unresolved'}
 export type RadarExternalReference={url:string;reason:string}
+export type RadarResearchQuality={identity:'associated'|'pending';contactability:'useful'|'missing'|'pending';fit:'high'|'possible'|'low'|'unknown';potential:{score:number|null;coverage:number|null};readyForReview:boolean;missing:string[]}
 export type RadarCompanyProfile={summary?:RadarProfileClaim;services:RadarProfileClaim[];customerSegments:RadarProfileClaim[];operatingRegions:RadarProfileClaim[];
   scaleSignals:Array<RadarProfileClaim&{metric:string;amount:number;referenceDate?:string;currency?:string}>}
 export type RadarResearchAvailability = { allowed:boolean; reasons:Array<{code:string;message:string;sourceType?:string;resolution:string}>;
@@ -17,6 +18,7 @@ export type RadarResearchResult = {methodVersion?:number;configurationRevision:n
   tlsCanAuthorize?:boolean;tlsDiagnostics?:Array<{diagnosticId:string;hostname:string;fingerprint256:string;validTo:string}>;tlsExceptions?:RadarTlsExceptionGrant[];
   run:null|{id:string;status:string;stage:string;error_code?:string;updated_at:string;configuration_revision:number;output:{
     methodVersion?:number;associationVersion?:number;
+    quality?:RadarResearchQuality;
     discovery?:{association:string;websiteUrl?:string;suggestions:Array<{url:string;title:string}>;limitations:string[]};
     contacts?:RadarResearchContact[];registryPhone?:string;registryEmail?:string;siteAssociation?:string;
     profile?:RadarCompanyProfile;

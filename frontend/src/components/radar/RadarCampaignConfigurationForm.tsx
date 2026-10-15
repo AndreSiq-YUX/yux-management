@@ -1,7 +1,7 @@
 import { useEffect,useRef,useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, validateRadarSizePolicy, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
+import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, defaultRadarCompletionPolicy, validateRadarSizePolicy, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
   type RadarExportField, type RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import type { RadarCampaignInput } from '@/services/radarService'
 import type { RadarCampaign } from '@/types/radar'
@@ -62,6 +62,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
   const [error, setError] = useState<string | null>(null)
   const rules = config.qualification
   const research = config.research ?? defaultRadarSearchConfiguration().research!
+  const completion=research.completion??defaultRadarCompletionPolicy()
   const changeResearch = (patch: Partial<typeof research>) => setConfig(current => ({ ...current, research: { ...defaultRadarSearchConfiguration().research!,...current.research, ...patch } }))
   const changeRules = (patch: Partial<typeof rules>) => setConfig(current => ({ ...current, qualification: { ...current.qualification, ...patch } }))
 
@@ -167,6 +168,16 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         <div className="mt-3"><Field label="Finalidade do contato desejado"><select className={selectClass} value={research.contactPurpose??'general'} onChange={e=>changeResearch({contactPurpose:e.target.value as typeof research.contactPurpose})}>
           <option value="general">Contato geral</option><option value="suppliers">Oferecer produtos ou serviços — fornecedores/compras</option><option value="sales">Comprar da empresa — comercial/vendas</option><option value="finance">Financeiro/fiscal</option><option value="recruitment">Recrutamento</option>
         </select></Field></div>
+      </fieldset>
+      <fieldset className="flex flex-col gap-3 rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Quando a pesquisa está suficiente</legend>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label="Definir quando a pesquisa está suficiente" checked={completion.enabled} onChange={e=>changeResearch({completion:{...completion,enabled:e.target.checked}})}/>Definir quando a pesquisa está suficiente</label>
+        <p className="text-xs text-muted-foreground">Indica que os dados estão prontos para revisão humana. Não aprova empresas nem dispara contatos. Novas exigências também são verificadas antes da entrega ao CRM.</p>
+        <fieldset disabled={!completion.enabled} className="flex flex-col gap-3">
+          {([['requireIdentity','Exigir identidade associada'],['requireSegment','Exigir segmento confirmado'],['requireWebsite','Exigir site associado']] as const).map(([key,label])=><label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completion[key]} onChange={e=>changeResearch({completion:{...completion,[key]:e.target.checked}})}/>{label}</label>)}
+          <Field label="Quantidade mínima de canais úteis"><Input type="number" min={0} max={20} value={completion.minimumUsefulContacts} onChange={e=>changeResearch({completion:{...completion,minimumUsefulContacts:Number(e.target.value)}})}/></Field>
+          <fieldset className="flex flex-wrap gap-3"><legend className="text-sm">Tipos de contato aceitos</legend>{([['phone','Telefone'],['email','E-mail'],['whatsapp','WhatsApp publicado'],['contact_form','Formulário público']] as const).map(([kind,label])=><label key={kind} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completion.contactTypes.includes(kind)} onChange={e=>changeResearch({completion:{...completion,contactTypes:e.target.checked?[...completion.contactTypes,kind]:completion.contactTypes.filter(value=>value!==kind)}})}/>{label}</label>)}</fieldset>
+          <fieldset className="flex flex-wrap gap-3"><legend className="text-sm">Finalidades aceitas (nenhuma seleção permite alternativas úteis)</legend>{([['general','Geral'],['suppliers','Fornecedores/compras'],['sales','Comercial/vendas'],['finance','Financeiro'],['recruitment','Recrutamento']] as const).map(([purpose,label])=><label key={purpose} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completion.contactPurposes.includes(purpose)} onChange={e=>changeResearch({completion:{...completion,contactPurposes:e.target.checked?[...completion.contactPurposes,purpose]:completion.contactPurposes.filter(value=>value!==purpose)}})}/>{label}</label>)}</fieldset>
+        </fieldset>
       </fieldset>
       <RadarSizeConfiguration value={research.sizeAssessment??defaultRadarSizePolicy()} onChange={value=>changeResearch({sizeAssessment:value})}/>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Critérios de qualificação</legend>

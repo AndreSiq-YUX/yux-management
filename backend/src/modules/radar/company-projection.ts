@@ -34,6 +34,7 @@ export function projectRadarCompanyFacts(payload:Record<string,unknown>):Record<
   if(invalidSite){
     result.websiteUrl=undefined;result.siteFinalUrl=undefined;result.websiteStatus='unknown';result.siteCheckedAt=undefined
     result.companyProfile=undefined;result.sizeAssessment=undefined
+    result.researchQuality=undefined
   }
   return result
 }

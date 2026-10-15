@@ -14,6 +14,16 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 
 describe('Radar campaign configuration panel', () => {
   beforeEach(()=>sessionStorage.clear())
+  it('lets each campaign define completion requirements without requiring a website',async()=>{
+    const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+    const toggle=container.querySelector<HTMLInputElement>('input[aria-label="Definir quando a pesquisa está suficiente"]')
+    expect(toggle).not.toBeNull()
+    await act(async()=>toggle!.click())
+    await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({completion:expect.objectContaining({enabled:true,requireWebsite:false})})})}))
+    act(()=>root.unmount())
+  })
   it('offers editable local research ordering and saves without running research',async()=>{
     const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))

@@ -4,6 +4,17 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('searches only the missing supplier contact on the associated domain before analysis and stops when sufficient',async()=>{
+  const url='https://alfa.example/',page={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90',observedAt:'2026-10-15'}
+  const config=resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,contactPurpose:'suppliers',completion:{enabled:true,contactPurposes:['suppliers']}}})
+  const web=vi.fn(async()=>[{url:url+'compras/',title:'Fornecedores Empresa Alfa',snippets:['Fornecedores'],observedAt:'2026-10-15'}])
+  const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[page],discovery:{association:'confirmed',websiteUrl:url,hits:[],suggestions:[],limitations:[],queries:1}},
+    {web,checkpoint:async()=>{},collect:async(target)=>[{url:target,text:'Empresa Alfa CNPJ 12.345.678/0001-90. Fornecedores compras@alfa.example',observedAt:'2026-10-15'}]})
+  expect(web).toHaveBeenCalledTimes(1)
+  expect(web.mock.calls[0]).toEqual(['site:alfa.example fornecedores compras contato'])
+  expect(result.quality).toMatchObject({readyForReview:true,contactability:'useful'})
+  expect(result.contacts).toContainEqual(expect.objectContaining({value:'compras@alfa.example',purpose:'suppliers'}))
+})
 it('consolidates a public channel found across pages without losing evidence URLs',async()=>{
   const pages=['','contato/','equipe/'].map(path=>({url:'https://alfa.example/'+path,text:'Empresa Alfa CNPJ 12.345.678/0001-90 contato@alfa.example',observedAt:'2026-10-15'}))
   const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}},

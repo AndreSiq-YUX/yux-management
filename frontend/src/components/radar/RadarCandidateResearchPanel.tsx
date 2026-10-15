@@ -4,6 +4,7 @@ import type { RadarProfileClaim, RadarResearchAvailability, RadarResearchResult 
 import { radarSizeMetricLabels, type RadarSizeMetric } from '@/lib/radar/radarSearchConfiguration'
 import { radarResearchMessage } from '@/lib/radar/radarResearchMessages'
 import {Button} from '@/components/ui/button'
+import {RadarQualitySummary} from './RadarQualitySummary'
 
 const stages = [['discovery','Presença pública'],['identity','Identidade'],['reading','Páginas e contatos'],['consolidation','Atividade e fontes'],['review','Qualificação e revisão']] as const
 const statusLabel:Record<string,string> = {queued:'Na fila',running:'Pesquisando',partial:'Resultado parcial',succeeded:'Pesquisa concluída',blocked:'Pesquisa bloqueada',failed:'Falha na pesquisa'}
@@ -89,6 +90,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     {available?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="text-xs text-amber-900">{showTechnical?`${reason.message} Caminho: ${reason.resolution}.`:'Pesquisa indisponível: solicite ao responsável a revisão da configuração ou dos limites da campanha.'}</p>)}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {open && <div className="space-y-3 text-sm">
+      {output&&<RadarQualitySummary quality={historical?undefined:output.quality}/>}
       {tlsMessage&&<p role="status">{tlsMessage}</p>}
       {result?.tlsDiagnostics?.map(diagnostic=>{
         const active=result.tlsExceptions?.find(grant=>grant.hostname===diagnostic.hostname&&grant.fingerprint256===diagnostic.fingerprint256&&!grant.revokedAt&&Date.parse(grant.expiresAt)>Date.now())

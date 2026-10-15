@@ -15,6 +15,8 @@ export const radarSizeMetricLabels={employees:'Funcionários',units:'Unidades',a
 export type RadarSizeMetric=keyof typeof radarSizeMetricLabels
 export type RadarSizePolicy={enabled:boolean;direction:'larger'|'smaller';criteria:Array<{metric:RadarSizeMetric;weight:number;maxAgeDays:number;bands:Array<{min:number;points:number}>}>}
 export const defaultRadarSizePolicy=():RadarSizePolicy=>({enabled:false,direction:'larger',criteria:[]})
+export type RadarCompletionPolicy={enabled:boolean;requireIdentity:boolean;requireSegment:boolean;requireWebsite:boolean;contactTypes:Array<'email'|'phone'|'whatsapp'|'contact_form'>;contactPurposes:Array<'general'|'suppliers'|'sales'|'finance'|'recruitment'>;minimumUsefulContacts:number}
+export const defaultRadarCompletionPolicy=():RadarCompletionPolicy=>({enabled:false,requireIdentity:true,requireSegment:false,requireWebsite:false,contactTypes:['email','phone','whatsapp','contact_form'],contactPurposes:[],minimumUsefulContacts:1})
 export function validateRadarSizePolicy(value:RadarSizePolicy) {
   if(value.criteria.length>6||new Set(value.criteria.map(item=>item.metric)).size!==value.criteria.length)throw new Error('Selecione cada critério de porte apenas uma vez.')
   for(const item of value.criteria) {
@@ -29,6 +31,7 @@ export type RadarSearchConfiguration = {
   research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
     webSearchProviders?:Array<'brave_web_search'|'serper_web_search'>;
     localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled';
+    completion?:RadarCompletionPolicy;
     maxPagesPerCandidate: number; freshnessDays: number; semanticQualificationEnabled: boolean;presenceResolutionEnabled?:boolean;inspectLinkedSocialProfiles?:boolean;
     profileEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }
   cities: Array<{ city: string; state: string }>
@@ -48,7 +51,7 @@ export type RadarSearchConfiguration = {
   exportFields: RadarExportField[]
 }
 export function defaultRadarSearchConfiguration(): RadarSearchConfiguration {
-  return { research: { enabled: false, webSearchEnabled: false,webSearchProviders:['brave_web_search'],localSearchOrder:'before_web', maxSearchQueriesPerCandidate: 3,
+  return { research: { enabled: false, webSearchEnabled: false,webSearchProviders:['brave_web_search'],localSearchOrder:'before_web',completion:defaultRadarCompletionPolicy(), maxSearchQueriesPerCandidate: 3,
     maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: false,presenceResolutionEnabled:false,inspectLinkedSocialProfiles:false,profileEnabled:false,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
     cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
     braveQueryTemplate: '{name}', sources: { enrichWithBrave: true, inspectWebsite: true },

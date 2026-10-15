@@ -29,6 +29,14 @@ describe.skipIf(!url)('Radar regional delivery to real CRM',()=>{
     await pool.end()
   })
   const input=()=>({organizationId,campaignId,configurationRevision:1,candidateIds:[candidateId],destination:{crmInstanceId:instanceId,pipelineId,stageId},requestId:randomUUID()})
+  it('enforces active campaign sufficiency requirements without changing approval or legacy defaults',async()=>{
+    const original=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[campaignId])).rows[0].search_configuration
+    try{
+      await pool.query('UPDATE public.radar_campaigns SET search_configuration=$2::jsonb WHERE id=$1',[campaignId,JSON.stringify({...original,research:{...original.research,completion:{enabled:true,requireWebsite:true}}})])
+      expect((await deliverRadarCompaniesToCrm(pool,admin,input())).items[0]).toMatchObject({status:'blocked',reason:'radar_crm_completion_requirements_missing'})
+      expect((await pool.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1',[candidateId])).rows[0].approved_at).toBeTruthy()
+    }finally{await pool.query('UPDATE public.radar_campaigns SET search_configuration=$2::jsonb WHERE id=$1',[campaignId,JSON.stringify(original)])}
+  })
   it('rejects foreign destinations, unreviewed and stale results before writing any lead',async()=>{
     await expect(deliverRadarCompaniesToCrm(pool,admin,{...input(),destination:{crmInstanceId:instanceId,pipelineId,stageId:randomUUID()}})).rejects.toThrow('radar_crm_destination_invalid')
     await pool.query('UPDATE public.radar_b2b_reviews SET approved_at=NULL WHERE candidate_id=$1',[candidateId])

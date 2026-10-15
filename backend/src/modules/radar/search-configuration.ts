@@ -25,6 +25,14 @@ export const radarSizePolicySchema = z.object({enabled:z.boolean().default(false
 export const radarResearchPolicySchema = z.object({
   enabled: z.boolean().default(false), webSearchEnabled: z.boolean().default(false),
   localSearchOrder:z.enum(['before_web','after_web_if_needed','disabled']).default('before_web'),
+  completion:z.object({enabled:z.boolean().default(false),requireIdentity:z.boolean().default(true),requireSegment:z.boolean().default(false),requireWebsite:z.boolean().default(false),
+    contactTypes:z.array(z.enum(['email','phone','whatsapp','contact_form'])).max(4).default(['email','phone','whatsapp','contact_form']),
+    contactPurposes:z.array(z.enum(['general','suppliers','sales','finance','recruitment'])).max(5).default([]),
+    minimumUsefulContacts:z.number().int().min(0).max(20).default(1)}).strict().superRefine((value,ctx)=>{
+      if(new Set(value.contactTypes).size!==value.contactTypes.length||new Set(value.contactPurposes).size!==value.contactPurposes.length)
+        ctx.addIssue({code:'custom',message:'duplicate_completion_criterion'})
+      if(value.enabled&&value.minimumUsefulContacts>0&&!value.contactTypes.length)ctx.addIssue({code:'custom',message:'completion_contact_type_required'})
+    }).default(()=>({enabled:false,requireIdentity:true,requireSegment:false,requireWebsite:false,contactTypes:['email' as const,'phone' as const,'whatsapp' as const,'contact_form' as const],contactPurposes:[],minimumUsefulContacts:1})),
   webSearchProviders:z.array(z.enum(['brave_web_search','serper_web_search'])).min(1).max(2).refine(value=>new Set(value).size===value.length,'duplicate_search_provider').default(['brave_web_search']),
   maxSearchQueriesPerCandidate: z.number().int().min(1).max(5).default(3),
   maxPagesPerCandidate: z.number().int().min(1).max(10).default(4),

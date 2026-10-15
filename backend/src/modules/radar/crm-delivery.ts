@@ -7,6 +7,8 @@ import type {RadarContactEvidence} from './contact-evidence.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
 import {consolidateRadarContacts,isUsefulRadarContact} from './contact-consolidation.js'
 import type {RadarContactPurpose} from './contact-evidence.js'
+import {radarQualityFromPayload} from './research-quality.js'
+import {resolveRadarSearchConfiguration} from './search-configuration.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
 type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
@@ -60,7 +62,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
   const client=await pool.connect(),items:DeliveryItem[]=[]
   try{
     await client.query('BEGIN')
-    const campaign=(await client.query(`SELECT configuration_revision,offer_type,status FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[input.campaignId,input.organizationId])).rows[0]
+    const campaign=(await client.query(`SELECT configuration_revision,offer_type,status,search_configuration FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[input.campaignId,input.organizationId])).rows[0]
     if(!campaign)throw failure('radar_campaign_not_found',404)
     if(campaign.configuration_revision!==input.configurationRevision)throw failure('radar_campaign_configuration_changed')
     if(['paused','archived','completed'].includes(campaign.status))throw failure('radar_campaign_inactive')
@@ -77,6 +79,8 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
       if(!candidate){block('radar_candidate_not_found');continue}
       if(candidate.crm_lead_id){const linked=(await client.query('SELECT pipeline_id FROM public.leads WHERE id=$1 AND organization_id=$2',[candidate.crm_lead_id,input.organizationId])).rows[0];items.push({candidateId,status:'already_linked',leadId:candidate.crm_lead_id,pipelineId:linked?.pipeline_id});continue}
       const data=projectRadarCompanyFacts(candidate.normalized_payload as Record<string,unknown>)
+      const research=resolveRadarSearchConfiguration(campaign.search_configuration).research
+      if(research.completion.enabled&&!radarQualityFromPayload(data,research,input.configurationRevision).readyForReview){block('radar_crm_completion_requirements_missing');continue}
       if(data.researchAssociationNeedsReview===true&&candidate.verification_method!=='manual'){block('radar_crm_review_required');continue}
       if(candidate.status!=='pending_review'||!candidate.approved_at||candidate.target_status!=='confirmed'||candidate.review_revision!==input.configurationRevision
         ||![Number(data.researchRevision??0),Number(data.discoveryRevision??1)].includes(input.configurationRevision)){
