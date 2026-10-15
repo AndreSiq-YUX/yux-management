@@ -1,7 +1,9 @@
 import type { RadarCompanyProfile } from './company-profile.js'
 import type { RadarContactEvidence } from './contact-evidence.js'
 import type { assessRadarCompanySize } from './company-size.js'
+import {consolidateRadarContacts} from './contact-consolidation.js'
 export function radarCompanyExportFields(payload:Record<string,unknown>,contacts:RadarContactEvidence[]) {
+  contacts=consolidateRadarContacts(contacts,'suppliers')
   const profile=payload.companyProfile as RadarCompanyProfile|undefined,size=payload.sizeAssessment as ReturnType<typeof assessRadarCompanySize>|undefined
   const listed=(items?:RadarCompanyProfile['services'])=>items?.map(item=>`${item.value} [${item.sourceUrl}]`).join(' | ')??''
   return {companySummary:profile?.summary?`${profile.summary.value} [${profile.summary.sourceUrl}]`:'',services:listed(profile?.services),

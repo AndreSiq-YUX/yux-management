@@ -4,6 +4,13 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('consolidates a public channel found across pages without losing evidence URLs',async()=>{
+  const pages=['','contato/','equipe/'].map(path=>({url:'https://alfa.example/'+path,text:'Empresa Alfa CNPJ 12.345.678/0001-90 contato@alfa.example',observedAt:'2026-10-15'}))
+  const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}},
+    {web:async()=>[],checkpoint:async()=>{}})
+  expect(result.contacts.filter(item=>item.value==='contato@alfa.example')).toHaveLength(1)
+  expect(result.contacts[0].sources).toHaveLength(3)
+})
 it('reads newly discovered pages after quota interruption despite a legacy completed-read flag',async()=>{
   const url='https://new-alfa.example/'
   const result=await runRadarResearchPipeline(identity,configuration,{readingComplete:true,readerVersion:4,discoveryLocked:true,

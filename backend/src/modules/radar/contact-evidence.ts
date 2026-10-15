@@ -3,10 +3,11 @@ import { radarHtmlLinks } from './site-evidence.js'
 import { isRadarSocialUrl } from './site-discovery.js'
 import sanitizeHtml from 'sanitize-html'
 import {isRadarInstitutionalSource} from './source-identity.js'
-export type RadarContactPurpose='general'|'suppliers'|'sales'|'finance'|'recruitment'|'unknown'
+export type RadarContactPurpose='general'|'suppliers'|'sales'|'finance'|'recruitment'|'privacy'|'unknown'
 export type RadarContactEvidence = { kind: 'phone' | 'email' | 'whatsapp' | 'social' | 'business_person' | 'contact_form'; value: string;
   sourceUrl: string; observedAt: string; association: 'confirmed' | 'review'; note?: string; preferred?:boolean;
-  purpose?:RadarContactPurpose;purposeEvidence?:string;scope?:'establishment'|'group'|'unresolved';linkedFromUrl?:string }
+  purpose?:RadarContactPurpose;purposeEvidence?:string;scope?:'establishment'|'group'|'unresolved';linkedFromUrl?:string;
+  sources?:Array<{sourceUrl:string;observedAt:string;purpose?:RadarContactPurpose}> }
 export function isRadarContactSource(contact:Pick<RadarContactEvidence,'sourceUrl'|'linkedFromUrl'>,websiteUrl?:string) {
   if(isRadarInstitutionalSource(contact.sourceUrl))return true
   if(!websiteUrl||!contact.linkedFromUrl||!isRadarSocialUrl(contact.sourceUrl)||!isRadarInstitutionalSource(contact.linkedFromUrl))return false
@@ -20,7 +21,7 @@ function purposeFromContext(context:string):RadarContactPurpose {
   context=context.replace(/(?:https?:\/\/|mailto:|tel:)[^\s]+/gi,'').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'')
   const indicators:Array<[RadarContactPurpose,RegExp]>=[['suppliers',/fornecedor(?:es)?|suprimentos|oferecer (?:meus|seus|nossos) produtos/gi],
     ['sales',/comercial|proposta|vendas/gi],['finance',/financeiro|fiscal|faturamento/gi],
-    ['recruitment',/vagas|recrutamento|curr[ií]culo|carreiras/gi],['general',/fale conosco|contato geral|entre em contato/gi],
+    ['recruitment',/vagas|recrutamento|curr[ií]culo|carreiras/gi],['privacy',/encarregado|prote[çc][aã]o de dados|privacidade|\bLGPD\b/gi],['general',/fale conosco|contato geral|entre em contato/gi],
     ['unknown',/\bCEP\b|endere[çc]o|canal de [ée]tica|pol[ií]tica de privacidade|\bCNPJ\b/gi]]
   let purpose:RadarContactPurpose='unknown',last=-1
   for(const [kind,pattern]of indicators)for(const match of context.matchAll(pattern))if(match.index>last){purpose=kind;last=match.index}

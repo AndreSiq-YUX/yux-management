@@ -12,6 +12,7 @@ export function RadarCandidateSummary({candidate,revision,onOpenFull}:{candidate
       <span className="font-medium">{radarChannelLabels[contact.kind]}{contact.purpose==='suppliers'?' — fornecedores':contact.purpose==='sales'?' — comercial':''}</span>
       {['social','contact_form'].includes(contact.kind)?<a className="break-all text-primary underline" href={radarPublicLink(contact.value)} target="_blank" rel="noreferrer">{contact.kind==='contact_form'?'Abrir formulário público':contact.value}</a>:<span className="break-all">{contact.value}</span>}
       <span className="text-xs text-muted-foreground">{contact.association==='review'?'Associação pendente':contact.scope==='group'?'Canal do grupo — filial a confirmar':'Publicado em fonte associada'} · <a className="text-primary underline" href={radarPublicLink(contact.sourceUrl)} target="_blank" rel="noreferrer">Fonte</a>{contact.observedAt?` · ${new Date(contact.observedAt).toLocaleDateString('pt-BR')}`:''}</span>
+      {(contact.sources?.length??0)>1&&<span className="text-xs text-muted-foreground">Publicado em {contact.sources!.length} evidências; fontes preservadas no dossiê.</span>}
     </li>)}</ul>
     {summary.website&&<p className="text-xs text-muted-foreground">{summary.presenceLabel}. Isso não comprova funcionamento atual ou atendimento.</p>}
     {summary.pending.map(item=><p key={item} className="text-xs text-muted-foreground">{item}</p>)}

@@ -16,12 +16,21 @@ export function buildRadarPresenceSummary(candidate:RadarCandidateRecord,revisio
   const association=!stale&&(found.association==='confirmed'||!current&&data.websiteStatus==='verified_present')?'confirmed':'review'
   const website=url?{url,label:association==='confirmed'?found.scope==='group'?'Site do grupo — filial a confirmar':'Site associado à empresa':'Site encontrado — confirmação pendente'}:undefined
   const raw=current&&Array.isArray(projection.contacts)?projection.contacts:Array.isArray(data.publicContacts)?data.publicContacts:[]
-  const contacts=raw.filter((contact):contact is RadarResearchContact=>!!contact&&typeof contact==='object'
+  const listed=raw.filter((contact):contact is RadarResearchContact=>!!contact&&typeof contact==='object'
     &&['phone','email','whatsapp','social','business_person','contact_form'].includes(contact.kind)
     &&['confirmed','review'].includes(contact.association)&&typeof contact.value==='string'&&!!radarPublicLink(contact.sourceUrl)
     &&(!['social','contact_form'].includes(contact.kind)||!!radarPublicLink(contact.value)))
     .map(contact=>stale?{...contact,association:'review' as const,scope:'unresolved',preferred:false}:contact)
     .sort((a,b)=>Number(b.association==='confirmed')-Number(a.association==='confirmed')||Number(!!b.preferred)-Number(!!a.preferred))
+  const distinct=new Map<string,RadarResearchContact>()
+  for(const contact of listed){
+    const key=JSON.stringify([contact.kind,contact.value.trim().toLowerCase(),contact.scope??'establishment',contact.association])
+    const previous=distinct.get(key)
+    const sources=[...new Map([...(previous?.sources??[]),...(contact.sources??[]),{sourceUrl:contact.sourceUrl,observedAt:contact.observedAt,purpose:contact.purpose}]
+      .filter(item=>!!radarPublicLink(item.sourceUrl)).map(item=>[`${item.sourceUrl}:${item.observedAt}`,item])).values()]
+    distinct.set(key,{...(previous??contact),sources})
+  }
+  const contacts=[...distinct.values()]
   const pending:string[]=[]
   if(external||references.length&&!website)pending.push('A página encontrada é uma referência externa, não o site da empresa.')
   if(website&&association==='review')pending.push('O site foi encontrado; o vínculo com esta empresa ainda precisa de confirmação.')

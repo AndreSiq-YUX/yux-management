@@ -5,6 +5,7 @@ import type {RadarSiteEvidence} from './site-evidence.js'
 import type {RadarContactEvidence} from './contact-evidence.js'
 import {isRadarContactSource} from './contact-evidence.js'
 import type {RadarPresenceResolution} from './presence-resolution.js'
+import {consolidateRadarContacts} from './contact-consolidation.js'
 
 export type RadarExternalReference={url:string;reason:string}
 export type RadarPublicPresence={version:1;configurationRevision:number;website?:{url:string;association:'confirmed'|'review';scope:'establishment'|'group'|'unresolved';readable:boolean;sourceUrl:string;observedAt:string};contacts:RadarContactEvidence[];externalReferences?:RadarExternalReference[]}
@@ -29,7 +30,8 @@ export function projectRadarPublicPresence(input:{configurationRevision:number;d
     &&!input.pages.some(page=>page.url===contact.sourceUrl&&!page.linkedFromUrl&&!isRadarInstitutionalSource(page.url,{text:page.text}))
     &&isRadarContactSource(contact,url)&&(origin(contact.sourceUrl)===origin(url)||origin(contact.linkedFromUrl??'')===origin(url)))
     .map(contact=>({...contact,association:association==='confirmed'?contact.association:'review' as const,scope:association==='confirmed'?contact.scope??scope:'unresolved' as const}))
-  return {version:1,configurationRevision:input.configurationRevision,website:{url,association,scope,readable:!!page?.text&&!page.limitation,sourceUrl:page?.url??hit!.url,observedAt:page?.observedAt??hit!.observedAt},contacts,externalReferences}
+  const purpose=input.contacts.find(contact=>contact.preferred)?.purpose??'general'
+  return {version:1,configurationRevision:input.configurationRevision,website:{url,association,scope,readable:!!page?.text&&!page.limitation,sourceUrl:page?.url??hit!.url,observedAt:page?.observedAt??hit!.observedAt},contacts:consolidateRadarContacts(contacts,purpose),externalReferences}
 }
 
 /** Stored dossiers are internal data, but old/partial outputs may omit every optional field. */

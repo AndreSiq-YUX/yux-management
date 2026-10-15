@@ -2,6 +2,12 @@ import {expect,it} from 'vitest'
 import {buildRadarPresenceSummary} from './radarPresenceSummary'
 import type {RadarCandidateRecord} from '@/types/radar'
 const candidateBase={id:'c',organizationId:'org',campaignId:'campaign',sourceType:'manual',status:'pending_review' as const,dedupeKey:'c',createdAt:'',updatedAt:'',title:'Alfa'}
+it('consolidates repeated historical contacts in the user summary with their sources',()=>{
+  const contacts=['','contato/'].map(path=>({kind:'email',value:'contato@alfa.example',sourceUrl:'https://alfa.example/'+path,association:'confirmed',scope:'establishment',observedAt:'2026-10-15'}))
+  const result=buildRadarPresenceSummary({...candidateBase,normalizedPayload:{websiteUrl:'https://alfa.example/',publicContacts:contacts}} as RadarCandidateRecord,6)
+  expect(result.contacts).toHaveLength(1)
+  expect(result.contacts[0].sources).toHaveLength(2)
+})
 it('does not display an externally classified historical URL as the company website',()=>{
   const url='https://compras.example.gov.br/ata/empresa'
   const result=buildRadarPresenceSummary({...candidateBase,normalizedPayload:{websiteUrl:url,externalReferences:[{url,reason:'Documento de terceiro'}],publicPresence:{version:1,configurationRevision:6,website:{url,association:'confirmed'},contacts:[]}}} as RadarCandidateRecord,6)

@@ -26,6 +26,7 @@ import {projectRadarPublicPresence} from './public-presence.js'
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls} from './research-checkpoint.js'
 import {hasUsefulRadarHits} from './research-planner.js'
+import {consolidateRadarContacts} from './contact-consolidation.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile;usage?:RadarPresenceResolution['usage'] }
@@ -263,23 +264,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     &&!pages.some(page=>page.url===hit.url&&!page.limitation&&cnpjConflict(identity,page.text,presenceResolution?.scope==='group')))
   for (const hit of trustedSearchHits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, 'confirmed')
     .map(contact=>({...contact,scope:presenceResolution?.scope??'establishment' as const})))
-  const uniqueContacts = [...new Map(contacts.map(contact => [`${contact.kind}:${contact.value}:${contact.sourceUrl}`, contact])).values()]
-  for(const contact of uniqueContacts)if(contact.association==='confirmed'&&configuration.research.contactPurpose!=='general'
-    &&contact.purpose===configuration.research.contactPurpose) {
-    contact.preferred=true;contact.note='Canal publicado para a finalidade selecionada nesta campanha; atendimento não validado.'
-  }
-  for(const kind of ['phone','email'] as const) {
-    const confirmed=uniqueContacts.filter(contact=>contact.kind===kind&&contact.association==='confirmed')
-    const counts=new Map<string,Set<string>>()
-    for(const contact of confirmed)counts.set(contact.value,new Set([...(counts.get(contact.value)??[]),contact.sourceUrl]))
-    const ranked=[...counts].sort((a,b)=>b[1].size-a[1].size)
-    if(ranked.length && (ranked.length===1||ranked[0][1].size>ranked[1][1].size))for(const contact of confirmed.filter(item=>item.value===ranked[0][0])) {
-      if(uniqueContacts.some(item=>item.kind===kind&&item.preferred))continue
-      contact.preferred=true;contact.note=ranked.length===1?'Preferencial por ser o único canal público corroborado deste tipo; atendimento não validado.':
-        `Preferencial por corroboramento em ${ranked[0][1].size} páginas; atendimento não validado.`
-    }
-  }
-  uniqueContacts.sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))
+  const uniqueContacts = consolidateRadarContacts(contacts,configuration.research.contactPurpose)
   output.contacts=uniqueContacts
   await checkpoint('consolidation')
   const confirmedSearchPages=trustedSearchHits.filter(hit=>isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')}))
@@ -680,6 +665,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
       researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),
+      researchContactPurpose:resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,
       activityAssessment:dossier.activity,websiteStatus:verified?'verified_present':'unknown',siteEmails:known.filter(item=>item.kind==='email').map(item=>item.value),
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),
       ...(verified ? {websiteUrl:associatedPage.url,siteFinalUrl:associatedPage.url,siteCheckedAt:associatedPage.observedAt}:

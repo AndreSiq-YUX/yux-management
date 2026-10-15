@@ -5,6 +5,8 @@ import {isRadarEnabledOrganization} from './repository.js'
 import {assertB2bDeliveryRights} from './b2b-delivery.js'
 import type {RadarContactEvidence} from './contact-evidence.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
+import {consolidateRadarContacts,isUsefulRadarContact} from './contact-consolidation.js'
+import type {RadarContactPurpose} from './contact-evidence.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
 type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
@@ -13,9 +15,11 @@ const failure=(code:string,statusCode=409)=>Object.assign(new Error(code),{statu
 
 export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload:Record<string,unknown>},offer:string){
   const data=projectRadarCompanyFacts(candidate.normalizedPayload)
-  const contacts=(Array.isArray(data.publicContacts)?data.publicContacts:[]).filter((item):item is RadarContactEvidence=>
+  const purpose=(['general','suppliers','sales','finance','recruitment'].includes(String(data.researchContactPurpose))?data.researchContactPurpose:'general') as RadarContactPurpose
+  const contacts=consolidateRadarContacts((Array.isArray(data.publicContacts)?data.publicContacts:[]).filter((item):item is RadarContactEvidence=>
     !!item&&typeof item==='object'&&item.association==='confirmed'&&typeof item.value==='string'&&typeof item.sourceUrl==='string')
-  const first=(kind:string)=>contacts.filter(item=>item.kind===kind).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
+    ,purpose)
+  const first=(kind:string)=>contacts.filter(item=>item.kind===kind&&isUsefulRadarContact(item,purpose)).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
   const reasons=(Array.isArray(data.triageReasons)?data.triageReasons:[]).filter((value):value is string=>typeof value==='string')
   const activity=data.activityAssessment??data.activity
   const tlsExceptions=Array.isArray(data.researchTlsExceptions)?data.researchTlsExceptions:[]
