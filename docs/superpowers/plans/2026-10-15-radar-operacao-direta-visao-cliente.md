@@ -88,7 +88,7 @@
 - [x] Implementar visão comercial/serviços e aplicar flag Admin estrita a todas as superfícies Radar. Revisar CSV/CRM, deep links, detalhes locais/legados e textos derivados; não restringir apenas o quadro de métricas. Registrar regra em AGENTS e no runbook.
 - [x] Rodar suítes completas backend/frontend/runtime, builds e integração PostgreSQL Radar; comparar lint com dívida anterior sem atualizar baseline para ocultar regressões. Esperar testes/builds PASS e reportar limites de BullMQ/provedores simulados.
 - [x] QA navegador conectado com dados sintéticos: desktop/mobile, campo 7 inline → única ação → progresso → reload → duas pausas/retomadas; cliente abrindo todas as seções sem ferramentas/custos e sem chamadas técnicas. Salvar screenshots fora do repo, inspecionar visual YUX e console, anotar diferenças/limitações.
-- [ ] Atualizar plano/runbook com evidências e commit `fix(radar): present only commercial results to client accounts`. Uma revisão independente final conforme execução nativa; corrigir Important/Critical com RED→GREEN em uma passagem. Nenhum deploy/piloto pago. Publicar main sem force somente depois de verificação.
+- [x] Atualizar plano/runbook com evidências e commit `fix(radar): present only commercial results to client accounts`. Uma revisão independente final conforme execução nativa; corrigir Important/Critical com RED→GREEN em uma passagem. Nenhum deploy/piloto pago. Publicação em main autorizada, sem force, após verificação.
 
 ## Self-review / handoff
 

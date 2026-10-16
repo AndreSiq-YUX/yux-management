@@ -32,6 +32,16 @@ describe.skipIf(!url)('Radar regional delivery to real CRM',()=>{
     await pool.end()
   })
   const input=()=>({organizationId,campaignId,configurationRevision:1,candidateIds:[candidateId],destination:{crmInstanceId:instanceId,pipelineId,stageId},requestId:randomUUID()})
+  it('persists only projected commercial attribution even with malformed legacy fields',async()=>{
+    const id=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Brave Transportes',$3,$4::jsonb) RETURNING id`,[organizationId,campaignId,randomUUID(),JSON.stringify({researchRevision:1,websiteUrl:'https://brave.com.br/?api_key=private',websiteStatus:'verified_present',phoneRaw:{provider:'OpenRouter',costUsd:2},targetStatus:{provider:'Brave'},productFit:{model:'private-model'},companyProfile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'}},publicContacts:[{kind:'email',value:'compras@brave.com.br',association:'confirmed',sourceUrl:'https://brave.com.br/',observedAt:'2026-10-15',provider:'OpenRouter'}]})])).rows[0].id
+    await pool.query(`INSERT INTO public.radar_b2b_reviews(candidate_id,organization_id,campaign_id,target_status,product_fit,configuration_revision,verification_method,approved_by,approved_at) VALUES($1,$2,$3,'confirmed','high',1,'manual',$4,NOW())`,[id,organizationId,campaignId,admin.id])
+    const result=await deliverRadarCompaniesToCrm(pool,admin,{...input(),candidateIds:[id]});expect(result.items[0].status).toBe('created')
+    const created=result.items[0].leadId!;extraLeadIds.push(created)
+    const lead=(await pool.query('SELECT email,notes,attribution_context FROM public.leads WHERE id=$1',[created])).rows[0]
+    expect(lead.email).toBe('compras@brave.com.br');expect(lead.attribution_context.companyProfile.summary.value).toBe('Brave Transportes atende fabricantes')
+    expect(lead.attribution_context).not.toHaveProperty('websiteUrl');expect(lead.attribution_context).not.toHaveProperty('registryPhone')
+    expect(JSON.stringify(lead)).not.toMatch(/api_key|private-model|OpenRouter|costUsd|provider/)
+  })
   it('reprojects historical dossier ownership before a new manually approved CRM delivery',async()=>{
     const cnpj=String(randomInt(10_000_000_000_000,99_999_999_999_999)),url='https://publisher.example/pagina'
     const contact={kind:'email',value:'editor@publisher.example',sourceUrl:url,association:'confirmed',observedAt:'2026-10-15'}

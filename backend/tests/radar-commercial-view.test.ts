@@ -4,6 +4,12 @@ const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
 describe('Radar commercial data boundary',()=>{
+ it('preserves sourced company claims rather than treating its name or domain as a tool',()=>{
+  expect(project('candidates',[{title:'Brave Transportes',normalizedPayload:{tradeName:'Brave Transportes',websiteUrl:'https://brave.com.br/',publicContacts:[{kind:'email',value:'compras@brave.com.br',sourceUrl:'https://brave.com.br/',association:'confirmed'}],companyProfile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'},services:[{value:'Transporte de cargas',sourceUrl:'https://brave.com.br/'}]}}}])).toMatchObject([{facts:{contacts:[{value:'compras@brave.com.br'}],profile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'}}}}])
+ })
+ it('preserves company-specific claims in full research using the authorized identity context',()=>{
+  expect(project('research',{companyIdentity:{tradeName:'Brave Transportes'},configurationRevision:1,run:{status:'succeeded',output:{profile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'}}}}})).toMatchObject({facts:{profile:{summary:{value:'Brave Transportes atende fabricantes'}}}})
+ })
  it('does not replace a saved site status when no research website exists',()=>{
   expect(project('research',{configurationRevision:1,run:null})).toMatchObject({facts:{websiteStatus:undefined}})
  })

@@ -34,9 +34,10 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
   return()=>{active=false}
  },[org,id,screen,scope,allowed,refresh])
  const operationStatus=operation?.status
- useEffect(()=>{if(!operationStatus||!['queued','discovering','researching'].includes(operationStatus))return
+ const pendingAnalysis=opportunities.some(item=>item.status==='diagnosing')
+ useEffect(()=>{if(!pendingAnalysis&&(!operationStatus||!['queued','discovering','researching'].includes(operationStatus)))return
   const timer=setTimeout(()=>setRefresh(value=>value+1),4_000);return()=>clearTimeout(timer)
- },[operationStatus,refresh])
+ },[operationStatus,pendingAnalysis,refresh,scope])
  useEffect(()=>{if(fullId&&!detailsLoading){heading.current?.focus({preventScroll:true});heading.current?.scrollIntoView?.({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})}},[fullId,detailsLoading])
  const campaign=campaigns.find(item=>item.id===id)
  const navigate=(path:string)=>{requestSequence.current++;setFullId(null);setResearch(null)
@@ -58,6 +59,14 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
   catch{if(originalScope===currentScope.current)setError('Não foi possível concluir a ação. Confira a revisão e as permissões.')}
   finally{actionSending.current=false;setActionBusy(false)}
  }
+ async function candidateAction(candidateId:string,action:'import'|'discard',input:{analyzeAfterImport:boolean}){
+  const candidate=candidates.find(item=>item.id===candidateId)
+  if(!canReview||actionSending.current||candidate?.status!=='pending_review'||action==='import'&&(campaign?.campaignType==='regional_b2b'||candidate.importedOpportunityId))return
+  const originalScope=currentScope.current;actionSending.current=true;setActionBusy(true)
+  try{await radarService.commercialCandidateAction(candidateId,action,input);if(originalScope===currentScope.current)setRefresh(value=>value+1)}
+  catch{if(originalScope===currentScope.current)setError('Não foi possível concluir a revisão. Confira suas permissões e tente novamente.')}
+  finally{actionSending.current=false;setActionBusy(false)}
+ }
  if(!allowed)return <section className="rounded-md border bg-background p-4"><h2>Radar Comercial indisponivel</h2><p>O módulo precisa estar contratado e seu usuário precisa de permissão de acesso.</p></section>
  const company=candidates.find(item=>item.id===fullId),facts={...company?.facts,...research?.facts}
  return <div className="flex min-w-0 flex-col gap-5"><div><h1 className="text-2xl font-bold">Radar Comercial</h1><p className="text-sm text-muted-foreground">Encontre empresas, consulte seus dados e organize os próximos contatos.</p></div>
@@ -67,7 +76,7 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
    {campaigns.filter(item=>`${item.name} ${item.targetSegment} ${item.targetStates?.join(' ')}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).map((item,i)=><div key={item.id??i} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><div><h3 className="font-medium">{item.name}</h3><p className="text-sm text-muted-foreground">{item.targetSegment} · {item.targetStates?.join(', ')||[item.targetCity,item.targetState].filter(Boolean).join('/')}</p><p className="text-sm">Objetivo: {item.offerType}</p></div>{item.id&&<Button size="sm" variant="outline" onClick={()=>navigate(item.id!)}>Abrir</Button>}</div>)}
    {!campaigns.length&&<p className="mt-4 text-sm">Nenhuma campanha encontrada.</p>}
   </section>:campaign?<RadarCommercialResults key={scope} campaign={campaign} candidates={candidates} operation={operation} screen={screen} history={history} opportunities={opportunities} onNavigate={navigate} onOpenDetails={openDetails}
-   selectedIds={selected} onSelect={canCrm?setSelected:undefined} onSendCrm={canCrm?()=>setCrmOpen(true):undefined} busy={actionBusy} onOpportunityAction={canReview?opportunityAction:undefined}/>:<p>Campanha não encontrada ou acesso indisponível.</p>}
+   selectedIds={selected} onSelect={canCrm?setSelected:undefined} onSendCrm={canCrm?()=>setCrmOpen(true):undefined} busy={actionBusy} onOpportunityAction={canReview?opportunityAction:undefined} onCandidateAction={canReview?candidateAction:undefined}/>:<p>Campanha não encontrada ou acesso indisponível.</p>}
   {fullId&&screen==='results'&&<section className="rounded-md border bg-background p-4"><h3 ref={heading} tabIndex={-1} className="scroll-mt-6 font-semibold">Detalhes completos — {company?.title}</h3><Button size="sm" variant="ghost" onClick={closeDetails}>Fechar detalhes</Button>
    {detailsLoading?<p role="status">Carregando detalhes…</p>:detailsError?<div role="alert"><p>{detailsError}</p><Button size="sm" variant="outline" onClick={()=>openDetails(fullId)}>Tentar novamente</Button></div>:<><RadarCommercialCompanyDetails facts={facts} assessment={research?.assessment}/>{research?.pendingMessage&&<p className="mt-3 text-sm">{research.pendingMessage}</p>}
     {org&&<RadarCommercialFeedback key={`${org}:${fullId}`} candidateId={fullId} organizationId={org} revision={campaign?.configurationRevision??1} contacts={facts.contacts??[]} canReview={canReview}/>}</>}

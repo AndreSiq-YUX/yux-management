@@ -47,9 +47,11 @@ export function RadarCommercialCompanyDetails({facts,assessment}:{facts:RadarCom
 }
 type Props={campaign:RadarCommercialCampaign;candidates:RadarCommercialCandidate[];operation:RadarCommercialCapture|null;screen:RadarScreen;history?:CommercialHistory[];opportunities?:CommercialOpportunity[];
  onNavigate:(path:string)=>void;onOpenDetails:(id:string)=>void;onSelect?:(ids:string[])=>void;selectedIds?:string[];onSendCrm?:()=>void;canReview?:boolean;busy?:boolean;
- onOpportunityAction?:(id:string,action:'analyze'|'approve'|'reject'|'optOut'|'convert')=>void}
-export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,busy=false}:Props){
+ onOpportunityAction?:(id:string,action:'analyze'|'approve'|'reject'|'optOut'|'convert')=>void;
+ onCandidateAction?:(id:string,action:'import'|'discard',input:{analyzeAfterImport:boolean})=>void}
+export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,onCandidateAction,busy=false}:Props){
  const [query,setQuery]=useState(''),[page,setPage]=useState(0),[expanded,setExpanded]=useState<string|null>(null)
+ const [analyzeAfterImport,setAnalyzeAfterImport]=useState(false)
  const filtered=candidates.filter(item=>`${item.title} ${item.facts.cnpj} ${item.facts.city} ${item.facts.state}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))
  const pageCount=Math.max(1,Math.ceil(filtered.length/25)),currentPage=Math.min(page,pageCount-1),visible=filtered.slice(currentPage*25,(currentPage+1)*25)
  const c=operation?.counts,finished=(c?.completed??0)+(c?.insufficient??0)+(c?.blocked??0)
@@ -69,13 +71,16 @@ export function RadarCommercialResults({campaign,candidates,operation,screen,his
    </section>}
    <section className="min-w-0 rounded-md border bg-background p-4"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Empresas encontradas</h3><Input aria-label="Filtrar empresas" placeholder="Nome, CNPJ ou cidade" className="sm:max-w-sm" value={query} onChange={event=>{setQuery(event.target.value);setPage(0);setExpanded(null)}}/></div>
     {onSendCrm&&<Button size="sm" disabled={!selectedIds.length||selectedIds.length>25} onClick={onSendCrm}>Enviar ao CRM</Button>}
+    {onCandidateAction&&campaign.campaignType!=='regional_b2b'&&<label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={analyzeAfterImport} disabled={busy} onChange={event=>setAnalyzeAfterImport(event.target.checked)}/>Analisar após importar</label>}
     {selectedIds.length>25&&<p>Selecione até 25 empresas por envio.</p>}
     <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{onSelect&&<th className="p-3">Selecionar</th>}<th className="p-3">Empresa</th><th className="p-3">Localização</th><th className="p-3">Site e contatos</th><th className="p-3">Detalhes</th></tr></thead><tbody>
      {visible.map((item,index)=>{const id=item.id??String(index),open=expanded===id,contact=item.facts.contacts?.find(contact=>contact.association==='confirmed')??item.facts.contacts?.[0]
       return <Fragment key={id}><tr className="border-t">{onSelect&&<td className="p-3"><input type="checkbox" aria-label={`Selecionar ${item.title}`} checked={selectedIds.includes(id)} onChange={event=>onSelect(event.target.checked?[...selectedIds,id]:selectedIds.filter(value=>value!==id))}/></td>}
        <td className="p-3"><p className="font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{item.facts.cnpj}</p></td><td className="p-3">{[item.facts.city,item.facts.state].filter(Boolean).join(' / ')}</td>
        <td className="p-3"><p>{item.facts.websiteUrl?'Site encontrado':'Site ainda não identificado'}</p><p className="break-all text-xs text-muted-foreground">{contact?.value??'Contato público não identificado'}</p>{item.pendingMessage&&<p>{item.pendingMessage}</p>}</td>
-       <td className="p-3"><Button size="sm" variant="outline" aria-expanded={open} onClick={()=>setExpanded(open?null:id)}>{open?'Ocultar detalhes':'Ver detalhes'}</Button></td></tr>
+       <td className="p-3"><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" aria-expanded={open} onClick={()=>setExpanded(open?null:id)}>{open?'Ocultar detalhes':'Ver detalhes'}</Button>
+        {onCandidateAction&&item.id&&<>{campaign.campaignType!=='regional_b2b'&&<Button size="sm" variant="outline" disabled={busy||item.status!=='pending_review'||!!item.importedOpportunityId} onClick={()=>onCandidateAction(item.id!,'import',{analyzeAfterImport})}>Importar</Button>}<Button size="sm" variant="outline" disabled={busy||item.status!=='pending_review'} onClick={()=>onCandidateAction(item.id!,'discard',{analyzeAfterImport:false})}>Descartar</Button></>}
+       </div></td></tr>
        {open&&<tr><td colSpan={onSelect?5:4} className="border-t bg-muted/20 p-4"><RadarCommercialCompanyDetails facts={item.facts}/>{item.id&&<Button size="sm" variant="outline" className="mt-4" onClick={()=>onOpenDetails(item.id!)}>Ver detalhes completos</Button>}</td></tr>}
       </Fragment>})}
     </tbody></table></div>

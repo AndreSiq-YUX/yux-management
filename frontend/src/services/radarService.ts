@@ -41,6 +41,9 @@ export const radarService = {
     const suffix={analyze:'run-analysis',approve:'review',reject:'review',optOut:'opt-out',convert:'convert-to-lead'}[action]
     return apiRequest<unknown>(`/radar/opportunities/${id}/${suffix}`,{method:action==='approve'||action==='reject'?'PATCH':'POST',body:action==='approve'||action==='reject'?{status:action==='approve'?'approved':'rejected'}:undefined})
   },
+  commercialCandidateAction(id:string,action:'import'|'discard',input:{analyzeAfterImport:boolean}){
+    return apiRequest<unknown>(`/radar/candidates/${id}/${action}`,{method:'POST',body:action==='import'?input:undefined})
+  },
   startCaptureOperation(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;requestedCount:number}){return apiRequest<{operationId:string;status:RadarCaptureOperation['status'];reused:boolean}>(`/radar/campaigns/${campaignId}/capture-operations`,{method:'POST',body:input})},
   getCaptureOperation(operationId:string,organizationId:string){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}${buildQuery({organizationId})}`)},
   getLatestCaptureOperation(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCaptureOperation|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},

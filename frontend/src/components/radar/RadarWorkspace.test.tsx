@@ -21,6 +21,7 @@ vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyCon
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),updateCampaign:vi.fn(),
   getCommercialCampaigns:vi.fn(async()=>[]),getCommercialCandidates:vi.fn(async()=>[]),getCommercialCapture:vi.fn(async()=>({operation:null})),getCommercialResearch:vi.fn(async()=>null),getCommercialHistory:vi.fn(async()=>[]),getCommercialResearchMetrics:vi.fn(async()=>({companies:0,identified:0,withUsefulContact:0,readyForReview:0})),getCommercialOpportunities:vi.fn(async()=>[]),getCommercialFeedback:vi.fn(async()=>[]),
+  commercialOpportunityAction:vi.fn(async()=>{}),commercialCandidateAction:vi.fn(async()=>{}),
   getResearchMetrics:vi.fn(async()=>({companies:0,identified:0,withUsefulContact:0,readyForReview:0,searchEstimatedBrl:0,searchQueries:0,searchCostPerCompanyBrl:null,searchCostPerIdentityBrl:null,searchCostPerUsefulContactBrl:null,searchCostPerReadyForReviewBrl:null,aiReportedUsd:null,aiCostUnknown:0,aiAnalyses:0,aiCostKnown:0,period:{from:'2026-10-15',to:'2026-10-15',timeZone:'UTC'},currencyNote:'Estimativas, IA separada',sources:[]})),
   getResearchAvailability:vi.fn(async():Promise<RadarResearchAvailability>=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
   getCrmDestinations:vi.fn(async()=>[]),
@@ -37,6 +38,26 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('follows a pending commercial analysis to review without an active capture',async()=>{
+    vi.useFakeTimers();state.authRole='manager';state.context={mode:'client_workspace',organization:{id:'org',isInternalGrowthWorkspace:true},role:{key:'yux_operator',scope:'internal',permissions:[]}} as unknown as PlatformContext
+    vi.mocked(radarService.getCommercialCampaigns).mockResolvedValue([{id:'campaign',organizationId:'org',name:'Local',campaignType:'local_niche',criteria:{}}])
+    vi.mocked(radarService.getCommercialCapture).mockResolvedValue({operation:null});vi.mocked(radarService.getCommercialCandidates).mockResolvedValue([])
+    vi.mocked(radarService.getCommercialOpportunities).mockResolvedValueOnce([{id:'offer',status:'raw',company:{tradeName:'Alfa'}}]).mockResolvedValueOnce([{id:'offer',status:'diagnosing',company:{tradeName:'Alfa'}}]).mockResolvedValue([{id:'offer',status:'review_pending',company:{tradeName:'Alfa'}}])
+    const container=document.createElement('div'),root=createRoot(container)
+    try{await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>));await act(async()=>[...container.querySelectorAll('button')].find(item=>item.textContent==='Analisar oportunidade')!.click());expect(container.textContent).toContain('Analisando')
+      await act(async()=>vi.advanceTimersByTimeAsync(4_001));const approve=[...container.querySelectorAll('button')].find(item=>item.textContent==='Aprovar');expect(approve?.disabled).toBe(false);expect(radarService.getRuns).not.toHaveBeenCalled();expect(radarService.getResearchAvailability).not.toHaveBeenCalled()
+    }finally{act(()=>root.unmount());vi.useRealTimers()}
+  })
+  it.each(['import','discard'] as const)('preserves authorized commercial candidate %s and refreshes results',async action=>{
+    state.authRole='client';state.context={mode:'portal',organization:{id:'org',kind:'client'},role:{key:'client_admin',scope:'client',permissions:['radar.read','radar:manage']},enabledModuleKeys:['radar']} as unknown as PlatformContext
+    vi.mocked(radarService.getCommercialCampaigns).mockResolvedValue([{id:'campaign',organizationId:'org',name:'Local',campaignType:'local_niche',criteria:{}}]);vi.mocked(radarService.getCommercialCapture).mockResolvedValue({operation:null})
+    vi.mocked(radarService.getCommercialCandidates).mockResolvedValueOnce([{id:'candidate',title:'Empresa Alfa',status:'pending_review',facts:{}}]).mockResolvedValue([{id:'candidate',title:'Empresa Alfa',status:action==='import'?'imported':'discarded',facts:{}}])
+    vi.mocked(radarService.getCommercialOpportunities).mockResolvedValueOnce([]).mockResolvedValue(action==='import'?[{id:'offer',status:'raw',company:{tradeName:'Empresa Alfa'}}]:[])
+    const container=document.createElement('div'),root=createRoot(container)
+    try{await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>));const label=action==='import'?'Importar':'Descartar';const button=[...container.querySelectorAll('button')].find(item=>item.textContent===label);expect(button).toBeDefined();await act(async()=>button!.click());expect(radarService.commercialCandidateAction).toHaveBeenCalledWith('candidate',action,{analyzeAfterImport:false})
+      expect([...container.querySelectorAll('button')].find(item=>item.textContent===label)?.disabled).toBe(true);if(action==='import')expect(container.textContent).toContain('Oportunidades')
+    }finally{act(()=>root.unmount())}
+  })
   it('never mounts internal tooling for a globally authenticated client even with stale system-admin context',async()=>{
     state.authRole='client'
     const container=document.createElement('div'),root=createRoot(container)

@@ -24,6 +24,11 @@ class ReviewPool {
 }
 
 describe('B2B prospect delivery', () => {
+  it('retains genuine company emails and sourced descriptions matching a supplier name',()=>{
+    const csv=formatB2bProspectCsv([{name:'Brave Transportes',cnpj:'1128426000198',email:'compras@brave.com.br',supplierEmails:'compras@brave.com.br',companySummary:'Brave Transportes atende fabricantes [https://brave.com.br/]',contactSources:'email: https://brave.com.br/contato (2026-10-15)',reviewNote:'brave_web_search aguardando'}],['email','supplierEmails','companySummary','contactSources','reviewNote'])
+    expect(csv).toContain('compras@brave.com.br');expect(csv).toContain('Brave Transportes atende fabricantes');expect(csv).toContain('https://brave.com.br/contato');expect(csv).not.toContain('brave_web_search')
+    expect(formatB2bProspectCsv([{name:'Brave Transportes',cnpj:'1128426000198',companySummary:'BRAVE TRANSPORTES atende fabricantes'}],['companySummary'])).toContain('BRAVE TRANSPORTES atende fabricantes')
+  })
   it('does not publish operational provider notes or API URLs in customer CSV',()=>{
     const csv=formatB2bProspectCsv([{name:'Brave Transportes',cnpj:'1128426000198',reviewNote:'OpenRouter model secret-model',verificationMethod:'brave_web_search',evidenceUrl:'https://api.search.brave.com/res/v1/web/search?token=secret'}],['name','cnpj','reviewNote','verificationMethod','evidenceUrl'])
     expect(csv).toContain('Brave Transportes');expect(csv).toContain('1128426000198')

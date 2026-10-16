@@ -1,6 +1,6 @@
 import { assertLicensedBraveRetention, type LicensedBraveConfig } from './licensed-brave.js'
 import { RADAR_EXPORT_FIELDS, type RadarExportField } from './search-configuration.js'
-import {radarCommercialText,radarCommercialUrl} from './commercial-view.js'
+import {radarCommercialCompanyText,radarCommercialUrl} from './commercial-view.js'
 
 export type B2bProspectCsvRow = Partial<Record<RadarExportField, string>> & { name: string; cnpj: string }
 
@@ -36,7 +36,13 @@ export function formatB2bProspectCsv(rows: B2bProspectCsvRow[], fields: RadarExp
   const identityFields=new Set(['name','legalName','cnpj','city','state','address'])
   const lines = rows.map(row => fields.map(field => {
     const value=row[field]??''
-    const publicValue=identityFields.has(field)?value:field==='verificationMethod'?(value==='manual'?'manual':''):field==='websiteUrl'||field==='evidenceUrl'||field==='instagramUrl'?radarCommercialUrl(value)??'':radarCommercialText(value)??''
+    const emailField=['email','publicEmails','supplierEmails'].includes(field),phoneField=['phone','registryPhone','publicPhones','whatsappPublished'].includes(field)
+    const publicValue=identityFields.has(field)?value:field==='verificationMethod'?(value==='manual'?'manual':'')
+      :emailField?value.split(' | ').filter(item=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item)).join(' | ')
+      :phoneField?value.split(' | ').filter(item=>/^\+?[\d\s().-]+$/.test(item)).join(' | ')
+      :field==='websiteUrl'||field==='evidenceUrl'||field==='instagramUrl'?radarCommercialUrl(value)??''
+      :field==='socialUrls'?value.split(' | ').map(item=>radarCommercialUrl(item)).filter(Boolean).join(' | ')
+      :radarCommercialCompanyText(value,[row.name,row.legalName??''])??''
     return csvCell(publicValue)
   }).join(';'))
   return `\uFEFF${header.map(csvCell).join(';')}\r\n${lines.join('\r\n')}\r\n`

@@ -10,6 +10,14 @@ const bool=z.boolean().optional().catch(undefined)
 // Applied only to generated narratives/operational notes, never company identity or user campaign copy.
 const internalNarrative=/\b(?:openrouter|openai|serper|cnpj[aá]|jina|brave|gemini|qwen|playwright|bullmq|redis|tokens?|embeddings?)(?:\b|_)|radar_[a-z_]+|api[_ -]?key|provider[_ -]|stacktrace|robots_unavailable/i
 export const radarCommercialText=(value:unknown)=>typeof value==='string'&&!internalNarrative.test(value)?value:undefined
+// Business identity/contact/evidence is not an operational provider disclosure.
+export function radarCommercialCompanyText(value:unknown,identities:string[]=[]){
+ if(typeof value!=='string')return
+ const cleaned=value.replace(/https?:\/\/[^\s\])]+/gi,link=>radarCommercialUrl(link)??'')
+ let inspected=cleaned.replace(/https?:\/\/[^\s\])]+/gi,'').replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g,'')
+ for(const identity of identities.filter(name=>name.length>=3))inspected=inspected.replace(new RegExp(identity.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),'')
+ return radarCommercialText(inspected)===undefined?undefined:cleaned
+}
 const narrative=text.transform(radarCommercialText)
 const texts=z.array(z.string()).optional().catch(undefined)
 const narratives=z.array(narrative).optional().catch(undefined).transform(items=>items?.filter((item):item is string=>item!==undefined))
@@ -38,9 +46,18 @@ const factsSchema=z.object({cnpj:text,legalName:text,tradeName:text,city:text,st
  documents:z.array(z.object({url,sourceUrl:url}).strip()).optional().catch(undefined),
  targetStatus:text,productFit:text,quality:quality.optional().catch(undefined),reasons:narratives}).strip()
 export type RadarCommercialFacts=z.infer<typeof factsSchema>
+export function radarCommercialFactsSchemaForCompany(identities:string[]){
+ const value=text.transform(input=>radarCommercialCompanyText(input,identities)),companyClaim=claim.extend({value})
+ const companyClaims=z.array(companyClaim).optional().catch(undefined).transform(items=>items?.filter(item=>!!item.value))
+ return factsSchema.extend({profile:profile.extend({summary:companyClaim.optional().catch(undefined),services:companyClaims,customerSegments:companyClaims,operatingRegions:companyClaims,
+  scaleSignals:z.array(z.object({value,sourceUrl:url,referenceDate:text,scope:text}).strip()).optional().catch(undefined)}).optional().catch(undefined),
+  activity:activity.extend({limitation:value,signals:z.array(z.object({excerpt:value,sourceUrl:url,observedAt:text,publishedDate:text}).strip()).optional().catch(undefined),
+   presenceSignals:z.array(z.object({kind:text,excerpt:value,sourceUrl:url,observedAt:text,association:text,scope:text}).strip()).optional().catch(undefined)}).optional().catch(undefined)})
+}
 export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFacts{
  const data=projectRadarCompanyFacts(object(payload)),presence=object(data.publicPresence),website=object(presence.website)
- return factsSchema.parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
+ const identities=[data.legalName,data.tradeName].filter((value):value is string=>typeof value==='string')
+ return radarCommercialFactsSchemaForCompany(identities).parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
   contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
 const base={id:text,organizationId:text,campaignId:text,status:text,createdAt:text,updatedAt:text}
@@ -64,7 +81,9 @@ const pending='Pesquisa aguardando a equipe responsável'
 const candidate=(value:unknown)=>{const row=object(value)
  // This source requires attribution. Do not silently strip its license while redistributing its facts.
  const restricted=row.sourceType==='osm_extract'
- return candidateSchema.parse({...row,facts:restricted?{}:projectRadarCommercialFacts(row.normalizedPayload??row.facts),pendingMessage:restricted?'Dados aguardam liberação para entrega':undefined})
+ const raw=object(row.normalizedPayload??row.facts),facts=restricted?{}:projectRadarCommercialFacts({...raw,tradeName:raw.tradeName??row.title})
+ // facts were already deeply projected using the company's own identity context.
+ return {...candidateSchema.omit({facts:true}).parse({...row,pendingMessage:restricted?'Dados aguardam liberação para entrega':undefined}),facts}
 }
 const companySchema=z.object({id:text,organizationId:text,cnpj:text,legalName:text,tradeName:text,cnaeMain:text,city:text,state:text,address:text,phoneRaw:text,emailRaw:text,websiteUrl:url,createdAt:text,updatedAt:text}).strip()
 const diagnosticSchema=z.object({id:text,summary:narrative,detectedServices:narratives,detectedChannels:narratives,painHypotheses:narratives,recommendedOffer:narrative,riskFlags:narratives,createdAt:text}).strip()
@@ -87,9 +106,9 @@ export function projectRadarCommercialResponse(surface:RadarCommercialSurface,pa
   case 'metrics':case 'researchMetrics':return metricSchema.parse(row)
   case 'capture':if('operation' in row)return{operation:row.operation===null?null:projectRadarCommercialResponse('capture',row.operation)}
    return captureSchema.parse({...row,pendingMessage:row.status==='blocked'?pending:undefined})
-  case 'research':{const run=object(row.run),out=object(run.output),qualification=object(out.qualification)
-   return researchSchema.parse({configurationRevision:row.configurationRevision,status:run.status,updatedAt:run.updated_at,pendingMessage:run.status==='blocked'||run.status==='failed'?pending:undefined,
-    facts:projectRadarCommercialFacts({websiteUrl:object(out.discovery).websiteUrl,websiteStatus:object(out.discovery).websiteUrl?(out.siteAssociation==='confirmed'?'verified_present':'unverified'):undefined,phoneRaw:out.registryPhone,documents:out.documents,publicContacts:out.contacts,companyProfile:out.profile,activityAssessment:out.activity,sizeAssessment:out.sizeAssessment,researchQuality:out.quality}),assessment:qualification})}
+  case 'research':{const run=object(row.run),out=object(run.output),qualification=object(out.qualification),identity=object(row.companyIdentity)
+   const facts=projectRadarCommercialFacts({tradeName:identity.tradeName,legalName:identity.legalName,websiteUrl:object(out.discovery).websiteUrl,websiteStatus:object(out.discovery).websiteUrl?(out.siteAssociation==='confirmed'?'verified_present':'unverified'):undefined,phoneRaw:out.registryPhone,documents:out.documents,publicContacts:out.contacts,companyProfile:out.profile,activityAssessment:out.activity,sizeAssessment:out.sizeAssessment,researchQuality:out.quality})
+   return {...researchSchema.omit({facts:true}).parse({configurationRevision:row.configurationRevision,status:run.status,updatedAt:run.updated_at,pendingMessage:run.status==='blocked'||run.status==='failed'?pending:undefined,assessment:qualification}),facts}}
   case 'researchHistory':return map(payload,item=>{const r=object(item);return historySchema.parse({...r,actionLabel:({complete:'Pesquisa completa',resume:'Retomada da pesquisa',refresh:'Atualização da pesquisa',reanalyze:'Reavaliação dos dados salvos'} as Record<string,string>)[String(r.operation)]??'Pesquisa da empresa'})})
   case 'feedback':return map(payload,item=>{const r=object(item);return feedbackSchema.parse({...r,candidateId:r.candidateId??r.candidate_id,configurationRevision:r.configurationRevision??r.configuration_revision,createdAt:r.createdAt??r.created_at})})
   case 'duplicates':return map(payload,item=>z.object({...base,duplicateType:text,companyRecordId:text,matchedCompanyRecordId:text,confidence:number}).strip().parse(item))

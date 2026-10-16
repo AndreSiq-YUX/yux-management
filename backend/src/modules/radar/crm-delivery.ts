@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import {z} from 'zod'
 import type {AuthUser} from '../../auth/routes.js'
 import {requireRadarScope} from './access.js'
 import {isRadarEnabledOrganization} from './repository.js'
@@ -10,7 +11,7 @@ import type {RadarContactPurpose} from './contact-evidence.js'
 import {radarQualityFromPayload} from './research-quality.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
 import {radarPublicPresenceFromDossier} from './public-presence.js'
-import {projectRadarCommercialFacts,radarCommercialText,radarCommercialUrl} from './commercial-view.js'
+import {projectRadarCommercialFacts,radarCommercialFactsSchemaForCompany,radarCommercialText,radarCommercialUrl} from './commercial-view.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
 type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
@@ -24,7 +25,12 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
     !!item&&typeof item==='object'&&item.association==='confirmed'&&typeof item.value==='string'&&typeof item.sourceUrl==='string')
     ,purpose)
   const first=(kind:string)=>contacts.filter(item=>item.kind===kind&&isUsefulRadarContact(item,purpose)).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
-  const commercial=projectRadarCommercialFacts(data)
+  const commercial=projectRadarCommercialFacts({...data,tradeName:data.tradeName??candidate.title})
+  const shape=radarCommercialFactsSchemaForCompany([candidate.title,...[data.tradeName,data.legalName].filter((value):value is string=>typeof value==='string')]).shape
+  const attributionSchema=z.object({radarCnpj:shape.cnpj,recommendedOffer:z.string(),websiteUrl:shape.websiteUrl,contacts:shape.contacts,
+    registryPhone:shape.registryPhone,companyProfile:shape.profile,sizeAssessment:shape.sizeAssessment,activity:shape.activity,
+    targetStatus:z.enum(['confirmed','review','not_target','insufficient']).optional().catch(undefined),productFit:z.enum(['high','possible','low','unknown']).optional().catch(undefined),
+    triageReasons:shape.reasons,collectionRevision:z.number().int().positive().optional().catch(undefined),consent:z.literal('not_established'),outreach:z.literal('manual_only'),acquisitionKind:z.literal('outbound')}).strip()
   const reasons=commercial.reasons??[]
   const activity=commercial.activity
   const notes=[`Oferta da campanha: ${offer}`,
@@ -35,10 +41,10 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
     'Contatos públicos não comprovam consentimento nem atendimento. Contato comercial manual.'].filter(Boolean).join('\n')
   return {name:candidate.title,email:first('email')??'',phone:first('phone')??first('whatsapp')??null,
     notes,
-    attribution:{radarCnpj:typeof data.cnpj==='string'?data.cnpj:undefined,recommendedOffer:offer,websiteUrl:data.websiteUrl,
-      contacts:commercial.contacts?.filter(item=>item.association==='confirmed')??[],registryPhone:data.phoneRaw,companyProfile:commercial.profile,sizeAssessment:commercial.sizeAssessment,activity,
-      targetStatus:data.targetStatus,productFit:data.productFit,triageReasons:reasons,
-      collectionRevision:data.researchRevision,consent:'not_established',outreach:'manual_only',acquisitionKind:'outbound'}}
+    attribution:attributionSchema.parse({radarCnpj:commercial.cnpj,recommendedOffer:offer,websiteUrl:commercial.websiteUrl,
+      contacts:commercial.contacts?.filter(item=>item.association==='confirmed')??[],registryPhone:commercial.registryPhone,companyProfile:commercial.profile,sizeAssessment:commercial.sizeAssessment,activity,
+      targetStatus:commercial.targetStatus,productFit:commercial.productFit,triageReasons:reasons,
+      collectionRevision:data.researchRevision,consent:'not_established',outreach:'manual_only',acquisitionKind:'outbound'})}
 }
 
 export async function listRadarCrmDestinations(pool:pg.Pool,user:AuthUser,organizationId:string){

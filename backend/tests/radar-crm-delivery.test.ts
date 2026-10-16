@@ -1,6 +1,15 @@
 import {expect,it} from 'vitest'
 import {buildRadarCrmLeadFacts} from '../src/modules/radar/crm-delivery.js'
 
+it('schema-projects every delivered attribution field including malformed legacy scalars',()=>{
+ const facts=buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{websiteUrl:'https://alfa.example/?api_key=private',phoneRaw:{provider:'OpenRouter',costUsd:2},targetStatus:{provider:'Brave'},productFit:{model:'private-model'},researchRevision:{model:'private-model'}}},'Oferta')
+ expect(facts.attribution.websiteUrl).toBeUndefined();expect(facts.attribution.registryPhone).toBeUndefined()
+ expect(facts.attribution.targetStatus).toBeUndefined();expect(facts.attribution.productFit).toBeUndefined();expect(facts.attribution.collectionRevision).toBeUndefined()
+ expect(JSON.stringify(facts)).not.toMatch(/api_key|private-model|OpenRouter|costUsd|provider/)
+ const valid=buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{websiteUrl:'https://alfa.example/',phoneRaw:'1133334444',targetStatus:'confirmed',productFit:'high',researchRevision:3}},'Oferta')
+ expect(valid.attribution).toMatchObject({websiteUrl:'https://alfa.example/',registryPhone:'1133334444',targetStatus:'confirmed',productFit:'high',collectionRevision:3})
+})
+
 it('carries commercial fit, reasons and sourced activity into readable CRM notes and attribution',()=>{
   const activity={status:'public_signals',limitation:'Sinais não comprovam atendimento.',signals:[{sourceUrl:'https://alfa.example/',excerpt:'Notícia recente',observedAt:'2026-10-13'}]}
   const facts=buildRadarCrmLeadFacts({title:'Empresa Alfa',normalizedPayload:{targetStatus:'confirmed',productFit:'high',triageReasons:['Atende o público definido'],activityAssessment:activity}},'Soluções empresariais')

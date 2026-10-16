@@ -56,6 +56,7 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
   await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,error_code,output) VALUES($1,$2,$3,$4,1,'blocked','brave_provider_inactive',$5::jsonb)`,[fixtureIds.organizationA,campaignId,candidateId,fixtureUsers.yux_admin.id,JSON.stringify({discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:0},contacts:[],pages:[],limitations:['OpenRouter error'],activity:{status:'inconclusive',signals:[],limitation:'Brave unavailable'}})])
   const response=await get(`/candidates/${candidateId}/research?organizationId=${fixtureIds.organizationA}`,'client_admin_A')
   expect(response.statusCode).toBe(200);expect(response.json()).toMatchObject({status:'blocked',pendingMessage:'Pesquisa aguardando a equipe responsável'})
-  expect(response.body).not.toMatch(/brave|OpenRouter|model|availability|error_code|calls|tlsDiagnostics/i)
+  expect(response.json().facts.tradeName).toBe('Brave Transportes')
+  expect(response.body).not.toMatch(/brave_provider|OpenRouter|model|availability|error_code|calls|tlsDiagnostics/i)
  })
 })
