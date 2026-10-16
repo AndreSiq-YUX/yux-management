@@ -1,5 +1,6 @@
 import { assertLicensedBraveRetention, type LicensedBraveConfig } from './licensed-brave.js'
 import { RADAR_EXPORT_FIELDS, type RadarExportField } from './search-configuration.js'
+import {radarCommercialText,radarCommercialUrl} from './commercial-view.js'
 
 export type B2bProspectCsvRow = Partial<Record<RadarExportField, string>> & { name: string; cnpj: string }
 
@@ -32,7 +33,12 @@ export function formatB2bProspectCsv(rows: B2bProspectCsvRow[], fields: RadarExp
     socialUrls:'Redes sociais',activityStatus:'Sinais de atividade',contactSources:'Fontes dos contatos',
     companySummary:'Resumo da empresa',services:'Soluções e serviços',customerSegments:'Públicos atendidos',operatingRegions:'Regiões de atuação',supplierEmails:'E-mails para fornecedores',sizeScore:'Prioridade por porte',sizeCoverage:'Cobertura das evidências de porte (%)',sizeEvidence:'Evidências de porte' }
   const header = fields.map(field => labels[field])
-  const lines = rows.map(row => fields.map(field => csvCell(row[field] ?? '')).join(';'))
+  const identityFields=new Set(['name','legalName','cnpj','city','state','address'])
+  const lines = rows.map(row => fields.map(field => {
+    const value=row[field]??''
+    const publicValue=identityFields.has(field)?value:field==='verificationMethod'?(value==='manual'?'manual':''):field==='websiteUrl'||field==='evidenceUrl'||field==='instagramUrl'?radarCommercialUrl(value)??'':radarCommercialText(value)??''
+    return csvCell(publicValue)
+  }).join(';'))
   return `\uFEFF${header.map(csvCell).join(';')}\r\n${lines.join('\r\n')}\r\n`
 }
 

@@ -24,6 +24,11 @@ class ReviewPool {
 }
 
 describe('B2B prospect delivery', () => {
+  it('does not publish operational provider notes or API URLs in customer CSV',()=>{
+    const csv=formatB2bProspectCsv([{name:'Brave Transportes',cnpj:'1128426000198',reviewNote:'OpenRouter model secret-model',verificationMethod:'brave_web_search',evidenceUrl:'https://api.search.brave.com/res/v1/web/search?token=secret'}],['name','cnpj','reviewNote','verificationMethod','evidenceUrl'])
+    expect(csv).toContain('Brave Transportes');expect(csv).toContain('1128426000198')
+    expect(csv).not.toMatch(/OpenRouter|secret-model|brave_web|api.search|token=/)
+  })
   it('requires separate Serper web delivery permission only when those facts were used',()=>{
     expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{},true)).toThrow('radar_serper_client_delivery_not_approved')
     expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{webSearchLicensed:true,clientDeliveryLicensed:true},true)).not.toThrow()

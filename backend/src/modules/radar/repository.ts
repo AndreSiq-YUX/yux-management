@@ -5,6 +5,7 @@ import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
+import {radarCommercialText,radarCommercialUrl} from './commercial-view.js'
 import {isRadarCandidateCurrentRevision} from './candidate-revision.js'
 import {radarPublicPresenceFromDossier} from './public-presence.js'
 import type {
@@ -2513,9 +2514,10 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
     if (!firstPipeline) throw Object.assign(new Error('radar_crm_pipeline_not_found'), { statusCode: 409 })
 
     const companyName = opportunity.trade_name || opportunity.legal_name || 'Empresa Radar'
-    const evidenceItems = normalizeRadarEvidence(opportunity.evidence_json || opportunity.evidence_used)
-    const sourceLabel = `${opportunity.source_type || 'manual'}${opportunity.source_url ? ` (${opportunity.source_url})` : ''}`
-    const leadNotes = opportunity.summary || `Analise da oportunidade para ${companyName}.`
+    if(opportunity.source_type==='osm_extract')throw Object.assign(new Error('radar_delivery_attribution_required'),{statusCode:409})
+    const evidenceItems = normalizeRadarEvidence(opportunity.evidence_json || opportunity.evidence_used).filter(item=>radarCommercialText(item))
+    const sourceLabel = radarCommercialUrl(opportunity.source_url)
+    const leadNotes = radarCommercialText(opportunity.summary) || `Analise da oportunidade para ${companyName}.`
     const lead = await client.query<{ id: string }>(
       `INSERT INTO public.leads (
          organization_id, pipeline_id, stage_id, name, email, phone, company, source,
@@ -2540,12 +2542,11 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
           radarDiagnosticId: opportunity.latest_diagnostic_id,
           radarScoreId: opportunity.latest_score_id,
           radarMessageSuggestionId: opportunity.latest_message_suggestion_id,
-          sourceType: opportunity.source_type,
-          sourceUrl: opportunity.source_url,
+          sourceUrl: sourceLabel,
           score: opportunity.total_score,
-          scoreExplanation: opportunity.score_explanation,
+          scoreExplanation: radarCommercialText(opportunity.score_explanation),
           evidence: evidenceItems,
-          messagePreview: opportunity.message_body,
+          messagePreview: radarCommercialText(opportunity.message_body),
           convertedBy: user.id,
           recommendedOffer: 'Diagnostico YUX 48h',
         }),
@@ -2560,13 +2561,13 @@ export async function convertRadarOpportunityToLead(pool: pg.Pool, user: AuthUse
         leadId,
         [
           'Origem: Radar Comercial',
-          `Fonte: ${sourceLabel}`,
+          sourceLabel?`Fonte: ${sourceLabel}`:null,
           `Campanha Radar: ${opportunity.campaign_id}`,
           `Oportunidade Radar: ${opportunity.id}`,
           `Score: ${opportunity.total_score ?? 0}`,
           evidenceItems.length > 0 ? `Evidencias:\n${evidenceItems.map(item => `- ${item}`).join('\n')}` : null,
           `Analise:\n${leadNotes}`,
-          opportunity.message_body ? `Mensagem aprovada:\n${opportunity.message_body}` : null,
+          radarCommercialText(opportunity.message_body) ? `Mensagem aprovada:\n${radarCommercialText(opportunity.message_body)}` : null,
         ].filter(Boolean).join('\n\n'),
       ],
     )

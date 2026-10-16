@@ -1268,14 +1268,15 @@ describe('radar routes', () => {
     expect(attribution).toMatchObject({
       source: 'radar_comercial',
       radarOpportunityId: ids.opportunity,
-      sourceType: 'jina_reader',
       sourceUrl: 'https://boavida.com.br',
       score: 72,
       convertedBy: ids.user,
     })
     expect(attribution.evidence).toContain('Fonte publica: https://boavida.com.br')
     expect(pool.lastInteractionDescription ?? '').toContain('Origem: Radar Comercial')
-    expect(pool.lastInteractionDescription ?? '').toContain('Fonte: jina_reader (https://boavida.com.br)')
+    expect(attribution).not.toHaveProperty('sourceType')
+    expect(pool.lastInteractionDescription ?? '').toContain('Fonte: https://boavida.com.br')
+    expect(pool.lastInteractionDescription ?? '').not.toContain('jina_reader')
     expect(pool.lastInteractionDescription ?? '').toContain('Evidencias:')
   })
 })

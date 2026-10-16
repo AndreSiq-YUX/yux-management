@@ -10,6 +10,7 @@ import type {RadarContactPurpose} from './contact-evidence.js'
 import {radarQualityFromPayload} from './research-quality.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
 import {radarPublicPresenceFromDossier} from './public-presence.js'
+import {projectRadarCommercialFacts,radarCommercialText,radarCommercialUrl} from './commercial-view.js'
 
 export type RadarCrmDestination={crmInstanceId:string;pipelineId:string;stageId:string}
 type DeliveryInput={organizationId:string;campaignId:string;configurationRevision:number;candidateIds:string[];destination:RadarCrmDestination;requestId:string}
@@ -23,20 +24,19 @@ export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload
     !!item&&typeof item==='object'&&item.association==='confirmed'&&typeof item.value==='string'&&typeof item.sourceUrl==='string')
     ,purpose)
   const first=(kind:string)=>contacts.filter(item=>item.kind===kind&&isUsefulRadarContact(item,purpose)).sort((a,b)=>Number(!!b.preferred)-Number(!!a.preferred))[0]?.value
-  const reasons=(Array.isArray(data.triageReasons)?data.triageReasons:[]).filter((value):value is string=>typeof value==='string')
-  const activity=data.activityAssessment??data.activity
-  const tlsExceptions=Array.isArray(data.researchTlsExceptions)?data.researchTlsExceptions:[]
+  const commercial=projectRadarCommercialFacts(data)
+  const reasons=commercial.reasons??[]
+  const activity=commercial.activity
   const notes=[`Oferta da campanha: ${offer}`,
     `Público: ${({confirmed:'Confirmado',review:'Requer revisão',not_target:'Fora do público',insufficient:'Evidência insuficiente'} as Record<string,string>)[String(data.targetStatus)]??'Não avaliado'}`,
     `Adequação: ${({high:'Boa aderência',possible:'Possível aderência',low:'Baixa aderência',unknown:'Não confirmada'} as Record<string,string>)[String(data.productFit)]??'Não avaliada'}`,
-    ...reasons, data.companyProfile?`Perfil e fontes: ${JSON.stringify(data.companyProfile)}`:'',
+    ...reasons, commercial.profile?`Perfil e fontes: ${JSON.stringify(commercial.profile)}`:'',
     activity?`Atividade e evidências: ${JSON.stringify(activity)}`:'',
-    tlsExceptions.length?`Leitura pública com certificado vencido, autorizada pelo Admin: ${JSON.stringify(tlsExceptions)}`:'',
     'Contatos públicos não comprovam consentimento nem atendimento. Contato comercial manual.'].filter(Boolean).join('\n')
   return {name:candidate.title,email:first('email')??'',phone:first('phone')??first('whatsapp')??null,
     notes,
     attribution:{radarCnpj:typeof data.cnpj==='string'?data.cnpj:undefined,recommendedOffer:offer,websiteUrl:data.websiteUrl,
-      contacts,registryPhone:data.phoneRaw,companyProfile:data.companyProfile,sizeAssessment:data.sizeAssessment,activity,tlsExceptions,
+      contacts:commercial.contacts?.filter(item=>item.association==='confirmed')??[],registryPhone:data.phoneRaw,companyProfile:commercial.profile,sizeAssessment:commercial.sizeAssessment,activity,
       targetStatus:data.targetStatus,productFit:data.productFit,triageReasons:reasons,
       collectionRevision:data.researchRevision,consent:'not_established',outreach:'manual_only',acquisitionKind:'outbound'}}
 }
@@ -94,6 +94,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
         providers.find(row=>row.provider_key==='brave_place')?.public_config,!!data.braveSourceUrl||data.researchUsesBrave===true,
         providers.find(row=>row.provider_key==='serper')?.public_config,data.researchUsesSerper===true)}
       catch(cause){block(cause instanceof Error?cause.message:'radar_crm_delivery_rights_required');continue}
+      if(candidate.source_type==='osm_extract'){block('radar_delivery_attribution_required');continue}
       const facts=buildRadarCrmLeadFacts({title:candidate.title,normalizedPayload:data},campaign.offer_type)
       const companyKey=facts.attribution.radarCnpj??candidateId
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`radar-crm:${input.organizationId}:${companyKey}`])
@@ -102,6 +103,8 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
         if(duplicate){block('radar_crm_company_already_exists',duplicate.id,duplicate.pipeline_id);continue}
       }
       const evidence=(await client.query(`SELECT kind,value,source_url,observed_at FROM public.radar_b2b_evidence WHERE candidate_id=$1 AND organization_id=$2 ORDER BY observed_at DESC LIMIT 100`,[candidateId,input.organizationId])).rows
+        .filter(row=>radarCommercialUrl(row.source_url)&&radarCommercialText(row.value))
+        .map(row=>({value:row.value,sourceUrl:row.source_url,observedAt:row.observed_at}))
       const lead=(await client.query(`INSERT INTO public.leads(organization_id,crm_instance_id,pipeline_id,stage_id,name,email,phone,company,source,source_kind,status,score,notes,last_activity_at,attribution_context,stage)
         VALUES($1,$2,$3,$4,$5,$6,$7,$5,'Radar Comercial','manual','open',0,$8,NOW(),$9::jsonb,'NEW') RETURNING id`,
         [input.organizationId,input.destination.crmInstanceId,input.destination.pipelineId,input.destination.stageId,facts.name,facts.email,facts.phone,facts.notes,

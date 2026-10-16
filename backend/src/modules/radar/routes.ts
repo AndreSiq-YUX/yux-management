@@ -53,6 +53,8 @@ import {recordRadarResearchFeedback,listRadarResearchFeedback} from './research-
 import {getRadarResearchMetrics} from './research-metrics.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation,getLatestRadarCaptureOperation} from './capture-operation.js'
 import {resumeRadarCaptureOperation} from './capture-dispatch.js'
+import type {AuthUser} from '../../auth/routes.js'
+import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
 
 const uuid = z.string().uuid()
 
@@ -171,7 +173,10 @@ const batchOpportunitySchema = z.object({
   opportunityIds: z.array(uuid).min(1).max(10),
 })
 
+const radarUsers=new WeakMap<FastifyRequest,AuthUser>()
 async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply) {
+  const cached=radarUsers.get(request)
+  if(cached)return cached
   const token = request.cookies[request.server.config.SESSION_COOKIE_NAME]
   if (!token) {
     void reply.code(401).send({ error: 'not_authenticated' })
@@ -182,6 +187,7 @@ async function getAuthenticatedUser(request: FastifyRequest, reply: FastifyReply
     void reply.code(401).send({ error: 'not_authenticated' })
     return null
   }
+  radarUsers.set(request,user)
   return user
 }
 
@@ -196,6 +202,28 @@ async function enqueueRadarAnalysis(app: FastifyInstance, requests: RadarAnalysi
 }
 
 export async function registerRadarRoutes(app: FastifyInstance) {
+  app.addHook('preHandler',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply)
+    if(!user)return reply
+    if(!canViewRadarInternals(user)&&!radarCommercialSurface(request.method,request.routeOptions.url??'')){
+      return reply.code(403).send({error:'radar_internal_access_required'})
+    }
+  })
+  // This hook covers both returned objects and explicit reply.send(), including errors.
+  // Tenant checks stay in the existing services; no internal JSON reaches a commercial caller.
+  app.addHook('onSend',async(request,reply,payload)=>{
+    const user=radarUsers.get(request)
+    if(!user||canViewRadarInternals(user))return payload
+    reply.removeHeader('content-length')
+    if(reply.statusCode>=400){
+      const code=typeof payload==='string'?JSON.parse(payload).error:undefined
+      const safe=['radar_forbidden','radar_campaign_not_found','radar_candidate_not_found','radar_campaign_configuration_changed'].includes(code)
+      return JSON.stringify({error:safe?code:'radar_request_unavailable',message:reply.statusCode===403?'Acesso indisponível para este usuário.':'Não foi possível concluir. Procure a equipe responsável.'})
+    }
+    const surface=radarCommercialSurface(request.method,request.routeOptions.url??'')
+    if(!surface||typeof payload!=='string')return JSON.stringify({})
+    return JSON.stringify(projectRadarCommercialResponse(surface,JSON.parse(payload)))
+  })
   app.get('/admin/data-sources', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
     if (!user) return reply
