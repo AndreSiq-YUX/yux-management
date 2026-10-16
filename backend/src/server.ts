@@ -36,6 +36,7 @@ import { registerStrategyEngineRoutes } from './modules/strategy-engine/routes.j
 import { registerSupportRoutes } from './modules/support/routes.js'
 import { registerPublicWebchatRoutes } from './modules/webchat/routes.js'
 import { registerWorkspaceRoutes } from './modules/workspace/routes.js'
+import { registerProjectDeliveryRoutes } from './modules/project-delivery/routes.js'
 import { registerWorkspaceContextRoutes } from './modules/workspace/context.js'
 import { registerWorkspaceWorkItemRoutes } from './modules/workspace/work-items.js'
 import { registerWebhookRoutes } from './modules/webhooks/routes.js'
@@ -118,6 +119,7 @@ export async function buildServer(env: AppEnv = loadEnv(), options: BuildServerO
   await app.register(registerWorkspaceContextRoutes, { prefix: '/api/workspace' })
   await app.register(registerWorkspaceWorkItemRoutes, { prefix: '/api/workspace' })
   await app.register(registerWorkspaceRoutes, { prefix: '/api/workspace' })
+  await app.register(registerProjectDeliveryRoutes, { prefix: '/api/project-delivery' })
   await app.register(registerSupportRoutes, { prefix: '/api/support' })
   await app.register(registerFinanceRoutes, { prefix: '/api/finance' })
   await app.register(registerReportRoutes, { prefix: '/api/reports' })

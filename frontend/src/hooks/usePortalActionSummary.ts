@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getInvoicePaymentState } from '@/lib/finance/financeRules'
 import { financeService } from '@/services/financeService'
-import { backendDataService } from '@/services/backendDataService'
+import { projectDeliveryService } from '@/services/projectDeliveryService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { PortalFinanceInvoice } from '@/types/finance'
 import type { ApprovalRequest, Project } from '@/types/project'
@@ -43,6 +43,7 @@ const byPriority = (action: PortalNextAction) => {
 }
 
 export function usePortalActionSummary() {
+  const organizationId = usePlatformStore(state => state.organization?.id)
   const activeContract = usePlatformStore(state => state.activeContract)
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
@@ -62,27 +63,25 @@ export function usePortalActionSummary() {
 
     async function load() {
       if (isPlatformLoading) {
-        setProjectState(current => ({ ...current, loading: true, error: null }))
+        setProjectState({ ...emptyProjectActionState, loading: true })
         return
       }
 
-      if (!activeContract) {
+      if (!organizationId) {
         setProjectState({ ...emptyProjectActionState, loading: false })
         return
       }
 
-      setProjectState(current => ({ ...current, loading: true, error: null }))
+      setProjectState({ ...emptyProjectActionState, loading: true })
 
       try {
-        const [projectsResponse, invoices] = await Promise.all([
-          enabledModuleKeys.includes('projects') ? backendDataService.getProjects({ limit: 50 }) : Promise.resolve({ projects: [] }),
-          enabledModuleKeys.includes('finance') ? financeService.getPortalInvoices(activeContract.id) : Promise.resolve([]),
+        const [projectsResponse, approvalsResponse, invoices] = await Promise.all([
+          enabledModuleKeys.includes('projects') ? projectDeliveryService.list(organizationId) : Promise.resolve({ projects: [] }),
+          enabledModuleKeys.includes('projects') ? projectDeliveryService.approvals(organizationId) : Promise.resolve({ approvals: [] }),
+          activeContract && enabledModuleKeys.includes('finance') ? financeService.getPortalInvoices(activeContract.id) : Promise.resolve([]),
         ])
         const projects: Project[] = projectsResponse.projects || []
-        const approvalResponses = await Promise.all(projects.slice(0, 20).map(project => backendDataService.getProjectApprovalRequests(project.id)))
-        const approvals: ApprovalRequest[] = approvalResponses
-          .flatMap(response => response.approvals as ApprovalRequest[])
-          .filter(approval => approval.isClientVisible)
+        const approvals: ApprovalRequest[] = approvalsResponse.approvals
 
         if (!cancelled) {
           setProjectState({
@@ -112,7 +111,7 @@ export function usePortalActionSummary() {
     return () => {
       cancelled = true
     }
-  }, [activeContract, enabledModuleKeys, isPlatformLoading, projectRefreshKey])
+  }, [organizationId, activeContract, enabledModuleKeys, isPlatformLoading, projectRefreshKey])
 
   const actions = useMemo<PortalNextAction[]>(() => {
     const pendingProjectApprovals = projectState.approvals.filter(approval => approval.status === 'pending')
@@ -134,7 +133,7 @@ export function usePortalActionSummary() {
         priority: 'critical',
         title: `${pendingProjectApprovals.length} aprovacao de projeto pendente${pendingProjectApprovals.length > 1 ? 's' : ''}`,
         description: 'Entregaveis e documentos aguardando decisao do cliente.',
-        href: '/portal/projetos/aprovacoes',
+        href: '/portal/projetos/projetos?tab=approvals',
       } : null,
       pendingContentReviews.length > 0 ? {
         id: 'content-reviews',

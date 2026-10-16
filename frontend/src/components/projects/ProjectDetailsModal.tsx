@@ -367,7 +367,7 @@ export function ProjectDetailsModal({
               </TabsContent>
 
               <TabsContent value="delivery" className="space-y-4">
-                <ProjectDeliveryManager project={project} />
+                <ProjectDeliveryManager key={project.id} project={project} />
               </TabsContent>
 
               <TabsContent value="progress" className="space-y-4">

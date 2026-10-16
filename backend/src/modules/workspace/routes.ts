@@ -9,6 +9,8 @@ import { requireInternalRole } from '../../http/guards.js'
 import { ClientAccessError, provisionClientPortalAccess } from './clientAccess.js'
 import { createClientAccessEmailToken } from './clientAccessEmails.js'
 import { syncClientPortalIdentity } from './clientIdentity.js'
+import { decisionSchema, deliverableSchema, deliverablePatchSchema, deliverablePatch, deliveryApprovalSchema } from '../project-delivery/validation.js'
+import { recordDeliveryEvent } from '../project-delivery/events.js'
 
 type SqlState = {
   values: unknown[]
@@ -22,11 +24,9 @@ type Queryable = {
 const idParamSchema = z.object({ id: z.string().uuid() })
 const projectParamSchema = z.object({ projectId: z.string().uuid() })
 const projectChildParamSchema = z.object({ projectId: z.string().uuid(), id: z.string().uuid() })
-const approvalDecisionSchema = z.object({
+const approvalDecisionSchema = decisionSchema.and(z.object({
   approvalRequestId: z.string().uuid(),
-  decision: z.string().min(1),
-  comment: z.string().optional(),
-})
+}))
 
 const growthAllowedTables = new Set([
   'growth_campaign_plans',
@@ -136,7 +136,12 @@ function clientRow(row: any) {
   }
 }
 
-function projectTaskRow(row: any, fallbackProjectId?: string) {
+function calendarDate(value: Date | string | null | undefined) {
+  if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+  return typeof value === 'string' ? value.slice(0, 10) : undefined
+}
+
+export function projectTaskRow(row: any, fallbackProjectId?: string) {
   return {
     id: row.id,
     projectId: row.project_id || fallbackProjectId || '',
@@ -146,7 +151,7 @@ function projectTaskRow(row: any, fallbackProjectId?: string) {
     status: row.status || 'pending',
     priority: row.priority || 'medium',
     assignedTo: row.assigned_to || undefined,
-    dueDate: row.due_date || undefined,
+    dueDate: calendarDate(row.due_date),
     completedAt: row.completed_at || undefined,
     estimatedHours: row.estimated_hours !== null && row.estimated_hours !== undefined ? Number(row.estimated_hours) : undefined,
     actualHours: row.actual_hours !== null && row.actual_hours !== undefined ? Number(row.actual_hours) : undefined,
@@ -157,15 +162,15 @@ function projectTaskRow(row: any, fallbackProjectId?: string) {
   }
 }
 
-function projectPhaseRow(row: any, fallbackProjectId?: string) {
+export function projectPhaseRow(row: any, fallbackProjectId?: string) {
   return {
     id: row.id,
     projectId: row.project_id || fallbackProjectId || '',
     name: row.name,
     description: row.description || undefined,
     status: row.status || 'planning',
-    startDate: row.start_date || undefined,
-    endDate: row.end_date || undefined,
+    startDate: calendarDate(row.start_date),
+    endDate: calendarDate(row.end_date),
     budget: row.budget !== null && row.budget !== undefined ? Number(row.budget) : undefined,
     actualCost: row.actual_cost !== null && row.actual_cost !== undefined ? Number(row.actual_cost) : undefined,
     progress: Number(row.progress || 0),
@@ -175,7 +180,7 @@ function projectPhaseRow(row: any, fallbackProjectId?: string) {
   }
 }
 
-function projectDeliverableRow(row: any) {
+export function projectDeliverableRow(row: any) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -183,7 +188,7 @@ function projectDeliverableRow(row: any) {
     title: row.title,
     description: row.description || undefined,
     status: row.status,
-    dueDate: row.due_date || undefined,
+    dueDate: calendarDate(row.due_date),
     deliveredAt: row.delivered_at || undefined,
     externalUrl: row.external_url || undefined,
     isClientVisible: row.is_client_visible ?? false,
@@ -204,7 +209,7 @@ function approvalDecisionRow(row: any) {
   }
 }
 
-function approvalRequestRow(row: any) {
+export function approvalRequestRow(row: any) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -223,7 +228,7 @@ function approvalRequestRow(row: any) {
   }
 }
 
-function projectTimelineRow(row: any) {
+export function projectTimelineRow(row: any) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -238,7 +243,7 @@ function projectTimelineRow(row: any) {
   }
 }
 
-function projectRow(row: any) {
+export function projectRow(row: any) {
   const client = row.clients ? {
     id: row.clients.id,
     companyName: row.clients.company_name,
@@ -253,10 +258,10 @@ function projectRow(row: any) {
     status: row.status || 'PLANNING',
     priority: row.priority || 'MEDIUM',
     type: row.type || 'OTHER',
-    startDate: row.start_date,
-    expectedEndDate: row.expected_end_date,
-    actualEndDate: row.actual_end_date || undefined,
-    endDate: row.expected_end_date,
+    startDate: calendarDate(row.start_date),
+    expectedEndDate: calendarDate(row.expected_end_date),
+    actualEndDate: calendarDate(row.actual_end_date),
+    endDate: calendarDate(row.expected_end_date),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     budget: Number(row.budget || 0),
@@ -1088,33 +1093,73 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/deliverables', async (request, reply) => {
     const params = projectParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const input = request.body as Record<string, unknown>
-    const row = await insertReturning(app.pg, 'project_deliverables', {
-      project_id: params.data.projectId,
-      phase_id: input.phaseId || null,
-      title: input.title,
-      description: input.description || null,
-      due_date: input.dueDate || null,
-      external_url: input.externalUrl || null,
-      is_client_visible: input.isClientVisible,
-    })
-    return { success: true, data: projectDeliverableRow(row) }
+    const parsed = deliverableSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_deliverable' })
+    const input = parsed.data
+    if (input.phaseId) {
+      const phase = await app.pg.query('SELECT id FROM public.project_phases WHERE id = $1 AND project_id = $2', [input.phaseId, params.data.projectId])
+      if (!phase.rows[0]) return reply.code(400).send({ error: 'invalid_deliverable_phase' })
+    }
+    const client = await app.pg.connect()
+    try {
+      await client.query('BEGIN')
+      const row = await insertReturning(client, 'project_deliverables', {
+        project_id: params.data.projectId, phase_id: input.phaseId || null,
+        title: input.title, description: input.description || null, due_date: input.dueDate || null,
+        external_url: input.externalUrl || null, is_client_visible: input.isClientVisible,
+        created_by: request.ctx!.userId,
+      })
+      await recordDeliveryEvent(client, {
+        projectId: params.data.projectId, type: 'deliverable_created', title: 'Nova entrega cadastrada', body: input.title,
+        referenceKey: 'deliverable_id', referenceId: row.id, visible: input.isClientVisible, actorId: request.ctx!.userId,
+      })
+      await client.query('COMMIT')
+      return { success: true, data: projectDeliverableRow(row) }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
   })
 
   app.patch('/projects/:projectId/deliverables/:id', async (request, reply) => {
     const params = projectChildParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_deliverable_id' })
-    const input = request.body as Record<string, unknown>
-    const row = await updateReturning(app.pg, 'project_deliverables', params.data.id, {
-      title: input.title,
-      description: input.description || null,
-      phase_id: input.phaseId || null,
-      due_date: input.dueDate || null,
-      external_url: input.externalUrl || null,
-      status: input.status,
-      is_client_visible: input.isClientVisible,
-    }, { project_id: params.data.projectId })
-    return { success: true, data: projectDeliverableRow(row) }
+    const parsed = deliverablePatchSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_deliverable' })
+    if (parsed.data.phaseId) {
+      const phase = await app.pg.query('SELECT id FROM public.project_phases WHERE id = $1 AND project_id = $2', [parsed.data.phaseId, params.data.projectId])
+      if (!phase.rows[0]) return reply.code(400).send({ error: 'invalid_deliverable_phase' })
+    }
+    const client = await app.pg.connect()
+    try {
+      await client.query('BEGIN')
+      const existing = await client.query('SELECT * FROM public.project_deliverables WHERE id = $1 AND project_id = $2 FOR UPDATE', [params.data.id, params.data.projectId])
+      if (!existing.rows[0]) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'deliverable_not_found' })
+      }
+      const pending = await client.query("SELECT id FROM public.approval_requests WHERE target_type = 'deliverable' AND target_id = $1 AND project_id = $2 AND status = 'pending'", [params.data.id, params.data.projectId])
+      if (pending.rows[0]) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'approval_already_pending' })
+      }
+      const row = await updateReturning(client, 'project_deliverables', params.data.id,
+        deliverablePatch(parsed.data), { project_id: params.data.projectId })
+      const changedStatus = parsed.data.status !== undefined && parsed.data.status !== existing.rows[0].status
+      const published = parsed.data.isClientVisible === true && !existing.rows[0].is_client_visible
+      if (changedStatus || published) {
+        await recordDeliveryEvent(client, {
+          projectId: params.data.projectId, type: 'status_changed', title: published ? 'Entrega publicada no portal' : 'Status da entrega atualizado',
+          body: row.title, referenceKey: 'deliverable_id', referenceId: row.id,
+          visible: row.is_client_visible, actorId: request.ctx!.userId,
+        })
+      }
+      await client.query('COMMIT')
+      return { success: true, data: projectDeliverableRow(row) }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
   })
 
   app.get('/projects/:projectId/approvals', async (request, reply) => {
@@ -1137,16 +1182,39 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/approvals', async (request, reply) => {
     const params = projectParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const input = request.body as Record<string, unknown>
-    const row = await insertReturning(app.pg, 'approval_requests', {
-      project_id: params.data.projectId,
-      target_type: input.targetType,
-      target_id: input.targetId,
-      title: input.title,
-      instructions: input.instructions || null,
-      is_client_visible: input.isClientVisible ?? true,
-    })
-    return { success: true, data: approvalRequestRow({ ...row, approval_decisions: [] }) }
+    const parsed = deliveryApprovalSchema.safeParse(request.body)
+    if (!parsed.success || parsed.data.targetType !== 'deliverable') return reply.code(400).send({ error: 'invalid_delivery_approval' })
+    const input = parsed.data
+    const client = await app.pg.connect()
+    try {
+      await client.query('BEGIN')
+      const target = await client.query('SELECT id FROM public.project_deliverables WHERE id = $1 AND project_id = $2 FOR UPDATE', [input.targetId, params.data.projectId])
+      if (!target.rows[0]) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'deliverable_not_found' })
+      }
+      const pending = await client.query("SELECT id FROM public.approval_requests WHERE target_type = 'deliverable' AND target_id = $1 AND project_id = $2 AND status = 'pending'", [input.targetId, params.data.projectId])
+      if (pending.rows[0]) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'approval_already_pending' })
+      }
+      // The target-validation trigger requires visibility before inserting the request.
+      await client.query("UPDATE public.project_deliverables SET status = 'in_review', is_client_visible = true, delivered_at = COALESCE(delivered_at, NOW()), updated_at = NOW() WHERE id = $1 AND project_id = $2", [input.targetId, params.data.projectId])
+      const row = await insertReturning(client, 'approval_requests', {
+        project_id: params.data.projectId, target_type: input.targetType, target_id: input.targetId,
+        title: input.title, instructions: input.instructions || null, is_client_visible: true,
+        requested_by: request.ctx!.userId,
+      })
+      await recordDeliveryEvent(client, {
+        projectId: params.data.projectId, type: 'approval_requested', title: 'Entrega enviada para aprovação', body: input.title,
+        referenceKey: 'approval_request_id', referenceId: row.id, visible: true, actorId: request.ctx!.userId,
+      })
+      await client.query('COMMIT')
+      return { success: true, data: approvalRequestRow({ ...row, approval_decisions: [] }) }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
   })
 
   app.post('/approval-decisions', async (request, reply) => {
@@ -1156,6 +1224,7 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
       approval_request_id: parsed.data.approvalRequestId,
       decision: parsed.data.decision,
       comment: parsed.data.comment?.trim() || null,
+      decided_by: request.ctx!.userId,
     })
     return { success: true, data: approvalDecisionRow(row) }
   })
@@ -1171,12 +1240,15 @@ export async function registerWorkspaceRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/timeline', async (request, reply) => {
     const params = projectParamSchema.safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_project_id' })
-    const input = request.body as Record<string, unknown>
+    const parsed = z.object({ title: z.string().trim().min(1).max(300), body: z.string().max(10000).optional(), isClientVisible: z.boolean() }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_project_update' })
+    const input = parsed.data
     const row = await insertReturning(app.pg, 'project_timeline_entries', {
       project_id: params.data.projectId,
       title: input.title,
       body: input.body || null,
       is_client_visible: input.isClientVisible,
+      created_by: request.ctx!.userId,
     })
     return { success: true, data: projectTimelineRow(row) }
   })

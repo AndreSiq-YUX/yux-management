@@ -84,7 +84,7 @@ export function PortalApprovalsPage() {
               </Link>
             ))}
             {pendingProjectApprovals.slice(0, 6).map(approval => (
-              <Link key={approval.id} to={portalPath('/portal/projetos/projetos')} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
+              <Link key={approval.id} to={portalPath(`/portal/projetos/projetos?projectId=${encodeURIComponent(approval.projectId)}&tab=approvals`)} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-gray-900">{approval.title}</p>
                   <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(approval.status)}</span>
