@@ -2,6 +2,7 @@ import { apiRequest, apiRequestText } from '@/lib/apiClient'
 import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant,RadarResearchFeedback,RadarResearchMetrics,RadarCaptureOperation } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
+import type {RadarCommercialCampaign,RadarCommercialCandidate,RadarCommercialCapture,RadarCommercialResearch,RadarCommercialMetrics,CommercialHistory,CommercialOpportunity,CommercialFeedback} from '@/types/radarCommercial'
 
 export type RadarCampaignInput = Pick<RadarCampaign, 'organizationId' | 'name' | 'campaignType' | 'targetSegment' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & {
   targetCity?: string; targetState?: string; targetStates?: string[]; productFocus?: string[]; budgetLimit?: number
@@ -28,6 +29,18 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  getCommercialCampaigns(organizationId:string){return apiRequest<RadarCommercialCampaign[]>(`/radar/campaigns${buildQuery({organizationId})}`)},
+  getCommercialCandidates(campaignId:string){return apiRequest<RadarCommercialCandidate[]>(`/radar/campaigns/${campaignId}/candidates`)},
+  getCommercialCapture(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCommercialCapture|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},
+  getCommercialResearch(candidateId:string,organizationId:string){return apiRequest<RadarCommercialResearch>(`/radar/candidates/${candidateId}/research${buildQuery({organizationId})}`)},
+  getCommercialHistory(campaignId:string,organizationId:string){return apiRequest<CommercialHistory[]>(`/radar/campaigns/${campaignId}/research-history${buildQuery({organizationId})}`)},
+  getCommercialResearchMetrics(campaignId:string,organizationId:string,from:string,to:string){return apiRequest<RadarCommercialMetrics>(`/radar/campaigns/${campaignId}/research-metrics${buildQuery({organizationId,from,to})}`)},
+  getCommercialOpportunities(campaignId:string){return apiRequest<CommercialOpportunity[]>(`/radar/campaigns/${campaignId}/opportunities`)},
+  getCommercialFeedback(candidateId:string,organizationId:string){return apiRequest<CommercialFeedback[]>(`/radar/candidates/${candidateId}/feedback${buildQuery({organizationId})}`)},
+  commercialOpportunityAction(id:string,action:'analyze'|'approve'|'reject'|'optOut'|'convert'){
+    const suffix={analyze:'run-analysis',approve:'review',reject:'review',optOut:'opt-out',convert:'convert-to-lead'}[action]
+    return apiRequest<unknown>(`/radar/opportunities/${id}/${suffix}`,{method:action==='approve'||action==='reject'?'PATCH':'POST',body:action==='approve'||action==='reject'?{status:action==='approve'?'approved':'rejected'}:undefined})
+  },
   startCaptureOperation(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;requestedCount:number}){return apiRequest<{operationId:string;status:RadarCaptureOperation['status'];reused:boolean}>(`/radar/campaigns/${campaignId}/capture-operations`,{method:'POST',body:input})},
   getCaptureOperation(operationId:string,organizationId:string){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}${buildQuery({organizationId})}`)},
   getLatestCaptureOperation(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCaptureOperation|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},

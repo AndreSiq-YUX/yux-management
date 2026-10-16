@@ -7,6 +7,7 @@ import { RadarResultsTable } from './RadarResultsTable'
 import {radarComplementError,radarResearchMessage} from '@/lib/radar/radarResearchMessages'
 import {RadarCaptureControls} from './RadarCaptureControls'
 import {RadarAdminOperations} from './RadarAdminOperations'
+import {RadarCommercialWorkspace,type RadarWorkspaceProps} from './RadarCommercialWorkspace'
 import {RadarCaptureProgress} from './RadarCaptureProgress'
 import {buildRadarPresenceSummary} from '@/lib/radar/radarPresenceSummary'
 import {RadarCrmDeliveryDialog} from './RadarCrmDeliveryDialog'
@@ -194,7 +195,11 @@ const duplicateStatusLabels: Record<string, string> = {
   merged: 'Mesclada',
 }
 
-export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=(id,pipelineId)=>`/portal/comercial/leads?leadId=${encodeURIComponent(id)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`}:{screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void;leadPath?:(id:string,pipelineId?:string)=>string}={}) {
+export function RadarWorkspace(props:RadarWorkspaceProps={}){
+  const context=usePlatformContext(),globalRole=useAuthStore(state=>state.user?.role)
+  return context.role?.key==='yux_admin'&&globalRole==='admin'?<RadarAdminWorkspace {...props}/>:<RadarCommercialWorkspace {...props}/>
+}
+function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=(id,pipelineId)=>`/portal/comercial/leads?leadId=${encodeURIComponent(id)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`}:{screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void;leadPath?:(id:string,pipelineId?:string)=>string}={}) {
   const draftOwner=useAuthStore(state=>state.user?.id)
   const [crmDialogOpen,setCrmDialogOpen]=useState(false)
   const [localScreen,setLocalScreen]=useState<RadarScreen>('list')
@@ -1264,9 +1269,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
             <p className="mt-1 text-xs text-slate-500">Produtos e serviços: {selectedCampaign.productFocus.join(', ') || 'não informados'}. Os critérios completos podem ser editados antes de executar a pesquisa.</p></details>
             {canEditConfiguration&&<RadarCaptureControls scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&!getSourceBlockedReason(cnpjaSource)} error={captureError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>setCaptureRefresh(value=>value+1)}/>}
             {captureOperation&&<div className="mt-4"><RadarCaptureProgress operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
-            {selectedCampaign.searchConfiguration?.research?.enabled && researchAvailability?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="mt-2 text-xs text-amber-800">{context.role?.key==='yux_admin'?`${reason.message} ${reason.resolution}.`:'A operação da pesquisa é realizada pelo responsável autorizado pela campanha.'}</p>)}
             {batchRequestedAt>0&&<p role="status" className="mt-2 text-xs text-slate-600">Busca solicitada. Os resultados serão atualizados automaticamente durante o acompanhamento; a consulta continua em segundo plano.</p>}
-            {b2bProgress && <p className="mt-2 text-xs text-slate-600">{candidates.length} empresas encontradas · {b2bProgress.candidates} nesta configuração · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <div className="mt-3 flex items-center gap-3 border-t pt-3">
               <span className="text-sm text-slate-600">{b2bProspects.filter(item => item.approvedAt).length} empresas aprovadas para contato manual</span>
               {context.role?.key==='yux_admin'&&<Button type="button" size="sm" variant="outline" disabled={Boolean(actionLoading)}
@@ -1286,7 +1289,7 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
             </div>
 
             <div className="my-4 flex flex-wrap items-center gap-2">
-              {context.role?.key==='yux_admin'&&selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
+              {context.role?.key==='yux_admin'&&selectedCandidateIds.length>0&&selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
                 disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!(operation==='reanalyze'?researchAvailability?.operations?.reanalyze.allowed??researchAvailability?.allowed:researchAvailability?.allowed)}
                 onClick={()=>researchSelected(operation)}>{({complete:'Completar dados',resume:'Retomar pesquisa',refresh:'Atualizar pesquisa',reanalyze:'Reavaliar dados salvos'})[operation]}</Button>)}
               {selectedCampaign.campaignType==='regional_b2b'&&<Button size="sm" disabled={!canManage||!canUseCrm||!selectedCandidateIds.length||selectedCandidateIds.length>25||!!actionLoading} onClick={()=>setCrmDialogOpen(true)}>Enviar ao CRM</Button>}
@@ -1444,6 +1447,8 @@ export function RadarWorkspace({screen:routeScreen,campaignId,onNavigate,leadPat
           </section>}
 
           {screen==='results'&&context.role?.key==='yux_admin'&&<RadarAdminOperations>
+            {selectedCampaign.searchConfiguration?.research?.enabled && researchAvailability?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="mt-2 text-xs text-amber-800">{context.role?.key==='yux_admin'?`${reason.message} ${reason.resolution}.`:'A operação da pesquisa é realizada pelo responsável autorizado pela campanha.'}</p>)}
+            {b2bProgress && <p className="mt-2 text-xs text-slate-600">{candidates.length} empresas encontradas · {b2bProgress.candidates} nesta configuração · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <div className="mt-2 flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="outline" disabled={!canManage||Boolean(actionLoading)||captureActive||Boolean(getSourceBlockedReason(cnpjaSource))} onClick={()=>runB2bBatch('discovery')}>Somente descobrir empresas — sem aprofundamento</Button>
               <Button type="button" size="sm" variant="outline" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)||captureActive

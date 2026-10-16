@@ -4,6 +4,12 @@ const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
 describe('Radar commercial data boundary',()=>{
+ it('does not replace a saved site status when no research website exists',()=>{
+  expect(project('research',{configurationRevision:1,run:null})).toMatchObject({facts:{websiteStatus:undefined}})
+ })
+ it('does not expose provider source codes inside legacy narratives',()=>{
+  expect(project('candidates',[{normalizedPayload:{triageReasons:['brave_web_search indisponível','serper_search aguardando','cnpja_advanced_search pendente','Atende indústrias']}}])).toMatchObject([{facts:{reasons:['Atende indústrias']}}])
+ })
  it.each([['yux_admin',true],['yux_operator',false],['client_admin',false],['client_member',false]])('only system admin sees internals: %s',(role,want)=>{
   expect(api.canViewRadarInternals?.({role})).toBe(want)
  })
@@ -33,6 +39,21 @@ describe('Radar commercial data boundary',()=>{
  it('keeps capture counts but hides receipts, raw blockers and discovery internals',()=>{
   expect(project('capture',{operation:{id:'op',campaignId:'campaign',status:'blocked',configurationRevision:1,counts:{requested:7,admitted:7,completed:5,insufficient:1,blocked:1,researching:0},queries:12,blockers:['brave_provider_inactive'],items:[internal],configurationSnapshot:internal}})).toEqual({operation:{id:'op',campaignId:'campaign',status:'blocked',configurationRevision:1,counts:{requested:7,admitted:7,completed:5,insufficient:1,blocked:1,researching:0},pendingMessage:'Pesquisa aguardando a equipe responsável'}})
  })
+ it('normalizes commercial feedback dates and revision without exposing its author or request receipt',()=>{
+  expect(project('feedback',[{id:'feedback',kind:'identity_confirmed',configuration_revision:2,created_at:'2026-10-15',created_by:'private-user',request_id:'private-receipt',note:'Empresa conferida'}])).toEqual([{id:'feedback',kind:'identity_confirmed',configurationRevision:2,createdAt:'2026-10-15',note:'Empresa conferida'}])
+ })
+ it('translates a history operation to a business activity without returning its internal value',()=>{
+  expect(project('researchHistory',[{id:'r',operation:'reanalyze',provider:'OpenRouter',status:'partial'}])).toEqual([{id:'r',status:'partial',actionLabel:'Reavaliação dos dados salvos'}])
+ })
+ it('carries authorized commercial CRM action without leaking the internal policy object',()=>{
+  const result=project('opportunities',[{id:'offer',status:'approved',latestMessageSuggestion:{status:'approved',body:'Proposta',policyDecision:{canSendAutomatically:false,canConvertToLead:true,provider:'OpenRouter'}}}])
+  expect(result).toMatchObject([{id:'offer',canConvertToLead:true}]);expect(JSON.stringify(result)).not.toMatch(/policyDecision|OpenRouter|canSendAutomatically/)
+ })
+ it('preserves commercial registry phone and public document evidence in the company dossier',()=>{
+  const result=project('research',{run:{status:'partial',output:{registryPhone:'1146347070',discovery:{},contacts:[],documents:[{url:'https://empresa.example/balanco.pdf',sourceUrl:'https://empresa.example/relatorios',model:'OpenRouter'}]}}})
+  expect(result).toMatchObject({facts:{registryPhone:'1146347070',documents:[{url:'https://empresa.example/balanco.pdf',sourceUrl:'https://empresa.example/relatorios'}]}})
+  expect(JSON.stringify(result)).not.toContain('OpenRouter')
+ })
  it.each(['research','capture'])('supports empty %s without fabricating facts',surface=>{
   expect(project(surface,null)).toBeNull()
  })
@@ -48,6 +69,7 @@ describe('Radar commercial data boundary',()=>{
   expect(api.radarCommercialSurface?.('GET','/api/radar/future-internal-route')).toBeNull()
   expect(api.radarCommercialSurface?.('GET','/api/radar/campaigns/:id/candidates')).toBe('candidates')
   expect(api.radarCommercialSurface?.('GET','/api/radar/candidates/:id/research')).toBe('research')
+  expect(api.radarCommercialSurface?.('POST','/api/radar/opportunities/:id/run-analysis')).toBe('import')
  })
  it('does not transfer provider/model/TLS diagnostics in new CRM customer-visible data',()=>{
   const facts=buildRadarCrmLeadFacts({title:'Alfa',normalizedPayload:{cnpj:'1128426000198',targetStatus:'confirmed',productFit:'high',

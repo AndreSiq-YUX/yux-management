@@ -4,6 +4,20 @@ O Radar não impõe setor, CNAE, produto ou região. Cozinhas industriais são u
 
 ## Qualidade e entrega — 15/10/2026
 
+### Operação direta e visão comercial
+
+Em **Pesquisa da campanha**, o Admin YUX informa **Novas empresas neste lote** diretamente na página (1–1.000, padrão 10) e usa **Pesquisar novas empresas**. Não há modal ou necessidade de editar a campanha. Durante o lote, a quantidade original fica travada; se houver pendência, a mesma ação se torna **Retomar pesquisa**. Uma resposta de início perdida conserva a quantidade e o identificador para tentar novamente sem duplicar. Depois do encerramento, o campo volta ao padrão para o próximo lote; as contagens do lote anterior continuam visíveis.
+
+Duplicação fica em **Ações da campanha**. Descoberta isolada, atualização de disponibilidade, fontes e avanço manual por região permanecem numa única área fechada **Operação técnica — Admin YUX**, depois dos resultados. Não foi criado outro motor de pesquisa nem ampliada qualquer autorização paga.
+
+Somente o papel global `yux_admin` recebe informações internas. Admin da conta, membro e operador YUX recebem DTOs comerciais explícitos: empresa/CNPJ, localização, site, contatos, perfil, porte, atividade, avaliação, evidências e histórico legível. Não recebem ferramentas, modelos, custos, licenças, parâmetros internos ou erros de infraestrutura, nem solicitam catálogo/disponibilidade/runs técnicos. A separação vale no servidor, não somente na tela; retornos de mutações, novas entregas CRM e exportações também são filtrados. O histórico original e leads já entregues permanecem intactos. Material cuja atribuição obrigatória seria incompatível com essa apresentação permanece restrito ao Admin até solução autorizada.
+
+No portal, **Ver detalhes** expande o resumo junto à empresa; **Ver detalhes completos** abre e leva o foco à seção completa. **Critérios da campanha** mostra público/oferta/regiões, não a configuração técnica. Revisão, conferência e CRM continuam condicionados às permissões existentes. Nenhum contato é enviado automaticamente. A regra permanente de audiência consta em `AGENTS.md`.
+
+Os títulos e procedimentos nas seções históricas abaixo descrevem versões anteriores; a operação vigente é a desta seção. Publicação de código não significa deploy.
+
+Verificação desta reorganização: 1.070 testes backend, 696 frontend, 299 runtime (1 skip preexistente) e 41 testes PostgreSQL Radar aprovados; builds e orçamento de bundle aprovados. Lint comparativo permanece em 562 erros/27 avisos contra baseline 560/27, dívida já reproduzida na base; baseline não alterado. Chrome local, desktop e 430×920: campo inline/validação, sete novas empresas, reload, duas retomadas, resultado parcial honesto; cliente abriu lista, resumo, detalhes completos com foco automático, critérios e histórico sem ferramentas/custos, mantendo CNPJ/contato/perfil/porte. Sem chamadas externas pagas. Fila e provedores simulados: não é piloto de qualidade real nem validação de BullMQ/Redis de produção. Console apresentou avisos de migração do roteador e mensagens de listener da extensão; nenhuma falha funcional da aplicação foi observada nesse percurso.
+
 ### Nova captação com pesquisa completa
 
 Na página de resultados, **Buscar e pesquisar empresas** permite escolher de 1 a 1.000 novas empresas únicas (padrão 10). A quantidade é deste lote; não altera a campanha e não garante empresas qualificadas/aprovadas. Duplicatas da campanha, empresas e leads existentes não consomem o alvo. Excedentes de uma página são guardados para o próximo lote antes de novas consultas.

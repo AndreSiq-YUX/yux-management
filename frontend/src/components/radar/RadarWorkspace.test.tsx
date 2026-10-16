@@ -14,11 +14,13 @@ vi.mock('./RadarCandidateResearchPanel',()=>({RadarCandidateResearchPanel:()=>nu
 const state = vi.hoisted(() => ({ context: {
   mode:'client_workspace', organization:{id:'org',isInternalGrowthWorkspace:true},
   role:{key:'yux_admin',scope:'internal',permissions:[]},
-} as unknown as PlatformContext }))
+} as unknown as PlatformContext,authRole:'admin' as 'admin'|'manager'|'client' }))
+vi.mock('@/stores/authStore',()=>({useAuthStore:(selector:(value:{user:{id:string;role:'admin'|'manager'|'client'}})=>unknown)=>selector({user:{id:'fixture-user',role:state.authRole}})}))
 vi.mock('@/stores/platformStore', () => ({ usePlatformContext: () => state.context }))
 vi.mock('@/components/strategy-engine/StrategyContextPanel', () => ({StrategyContextPanel:() => null}))
 vi.mock('@/services/radarService', () => ({radarService:{
   getCampaigns:vi.fn(async () => []),getDataSources:vi.fn(async () => []),updateCampaign:vi.fn(),
+  getCommercialCampaigns:vi.fn(async()=>[]),getCommercialCandidates:vi.fn(async()=>[]),getCommercialCapture:vi.fn(async()=>({operation:null})),getCommercialResearch:vi.fn(async()=>null),getCommercialHistory:vi.fn(async()=>[]),getCommercialResearchMetrics:vi.fn(async()=>({companies:0,identified:0,withUsefulContact:0,readyForReview:0})),getCommercialOpportunities:vi.fn(async()=>[]),getCommercialFeedback:vi.fn(async()=>[]),
   getResearchMetrics:vi.fn(async()=>({companies:0,identified:0,withUsefulContact:0,readyForReview:0,searchEstimatedBrl:0,searchQueries:0,searchCostPerCompanyBrl:null,searchCostPerIdentityBrl:null,searchCostPerUsefulContactBrl:null,searchCostPerReadyForReviewBrl:null,aiReportedUsd:null,aiCostUnknown:0,aiAnalyses:0,aiCostKnown:0,period:{from:'2026-10-15',to:'2026-10-15',timeZone:'UTC'},currencyNote:'Estimativas, IA separada',sources:[]})),
   getResearchAvailability:vi.fn(async():Promise<RadarResearchAvailability>=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
   getCrmDestinations:vi.fn(async()=>[]),
@@ -35,12 +37,42 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('never mounts internal tooling for a globally authenticated client even with stale system-admin context',async()=>{
+    state.authRole='client'
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace/>))
+    expect(radarService.getDataSources).not.toHaveBeenCalled();expect(radarService.getResearchAvailability).not.toHaveBeenCalled();expect(container.textContent).not.toContain('Nova campanha')
+    act(()=>root.unmount())
+  })
+  it('keeps customer results and the progress visible while refreshing an active research lot',async()=>{
+    vi.useFakeTimers()
+    state.context={mode:'client_workspace',organization:{id:'org',kind:'client'},role:{key:'client_admin',scope:'client',permissions:['radar.read']},enabledModuleKeys:['radar']} as unknown as PlatformContext
+    const campaign={id:'campaign',organizationId:'org',name:'Campanha',targetStates:['SP'],configurationRevision:1,criteria:{}}
+    vi.mocked(radarService.getCommercialCampaigns).mockResolvedValue([campaign])
+    vi.mocked(radarService.getCommercialCandidates).mockResolvedValueOnce([{id:'c',title:'Empresa Alfa',facts:{cnpj:'1128426000198'}}]).mockReturnValueOnce(new Promise(()=>{}))
+    vi.mocked(radarService.getCommercialCapture).mockResolvedValue({operation:{id:'op',status:'researching',counts:{requested:7,admitted:7,researching:7}}})
+    const container=document.createElement('div'),root=createRoot(container)
+    try{await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>));expect(container.textContent).toContain('1128426000198')
+      await act(async()=>vi.advanceTimersByTimeAsync(4_001));expect(container.textContent).toContain('1128426000198');expect(container.textContent).toContain('Solicitadas')
+    }finally{act(()=>root.unmount());vi.useRealTimers()}
+  })
+  it.each(['client_admin','client_member','yux_operator'])('does not request or render internals for %s with broad management permissions',async role=>{
+    state.context={mode:'client_workspace',organization:{id:'org',kind:'client'},role:{key:role,scope:role==='yux_operator'?'internal':'client',permissions:['radar.read','platform.manage']},enabledModuleKeys:['radar']} as unknown as PlatformContext
+    vi.mocked(radarService.getCommercialCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',configurationRevision:1,targetStates:['SP'],targetSegment:'Empresas',offerType:'Massas',criteria:{}}])
+    vi.mocked(radarService.getCommercialCandidates).mockResolvedValueOnce([{id:'c',campaignId:'campaign',title:'Empresa Alfa',facts:{cnpj:'1128426000198'}}])
+    const container=document.createElement('div'),root=createRoot(container)
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    expect(radarService.getDataSources).not.toHaveBeenCalled();expect(radarService.getResearchAvailability).not.toHaveBeenCalled();expect(radarService.getRuns).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('1128426000198');expect(container.textContent).not.toMatch(/Serper|CNPJá|OpenRouter|consumo|R\$/)
+    act(()=>root.unmount())
+  })
   it('keeps the new-company quantity visible and places legacy controls only in one technical area',async()=>{
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
     const container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
     const controls=container.querySelector('form[aria-label="Pesquisar novas empresas"]')
     expect(controls).not.toBeNull();expect(controls!.querySelector('input[type="number"]')).not.toBeNull()
+    expect([...container.querySelectorAll('button')].filter(button=>button.textContent==='Retomar pesquisa')).toHaveLength(0)
     const areas=[...container.querySelectorAll('details')].filter(item=>item.querySelector('summary')?.textContent==='Operação técnica — Admin YUX')
     expect(areas).toHaveLength(1);expect(areas[0].open).toBe(false)
     const regional=[...container.querySelectorAll('summary')].find(item=>item.textContent==='Acompanhar ou avançar a busca por região')
@@ -175,6 +207,7 @@ describe('Radar campaign creation entry point', () => {
   })
   beforeEach(() => {
     vi.clearAllMocks()
+    state.authRole='admin'
     state.context = { mode:'client_workspace', organization:{id:'org',isInternalGrowthWorkspace:true},
       role:{key:'yux_admin',scope:'internal',permissions:[]} } as unknown as PlatformContext
   })
@@ -189,7 +222,7 @@ describe('Radar campaign creation entry point', () => {
     expect(container.textContent).toContain('Acesso de consulta')
     expect(container.textContent).not.toContain('Radar Comercial indisponivel')
     expect(container.querySelector('form')).toBeNull()
-    expect(radarService.getCampaigns).toHaveBeenCalledWith('client-org')
+    expect(radarService.getCommercialCampaigns).toHaveBeenCalledWith('client-org')
     act(() => root.unmount())
   })
 
@@ -236,7 +269,8 @@ describe('Radar campaign creation entry point', () => {
   })
   it('shows commercial research history to a client without exposing providers or configuration forms',async()=>{
     state.context={mode:'portal',organization:{id:'org',kind:'client'},role:{key:'client_admin',scope:'client',permissions:['radar.read']},enabledModuleKeys:['radar']} as unknown as PlatformContext
-    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'local_niche',targetSegment:'Empresas',targetCity:'Cidade',targetState:'PR',targetStates:[],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:10,automationLevel:'human_review_required',strategyProfileKey:'',createdAt:'',updatedAt:''}])
+    vi.mocked(radarService.getCommercialCampaigns).mockResolvedValueOnce([{id:'campaign',organizationId:'org',name:'Campanha',campaignType:'local_niche',targetSegment:'Empresas',targetCity:'Cidade',targetState:'PR',targetStates:[],offerType:'Serviço',criteria:{}}])
+    vi.mocked(radarService.getCommercialHistory).mockResolvedValueOnce([{id:'run',companyName:'Empresa pesquisada',status:'succeeded',actionLabel:'Reavaliação dos dados salvos',updatedAt:'2026-10-15'}])
     const container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarWorkspace screen="history" campaignId="campaign"/>))
     expect(container.textContent).toContain('Empresa pesquisada')
