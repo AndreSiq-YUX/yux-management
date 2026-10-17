@@ -57,14 +57,16 @@
 - [x] Testar mensagens distintas para rejeição, resposta incerta e indisponibilidade.
 - [x] Corrigir textos sem nomes de provedores nos novos avisos.
 - [x] Rodar suítes de regressão e builds; validar renderização com dados simulados, sem serviços pagos.
-- [ ] Revisar diff, registrar resultados neste plano e publicar em `main` sem deploy.
+- [x] Revisar diff, registrar resultados neste plano e publicar em `main` sem deploy.
 
 ## Validação da implementação
 
 - TDD: regressões reproduzidas antes das correções (paginação, rejeição/recuperação, lease concorrente e mensagens).
-- Adaptador: 12 testes aprovados. PostgreSQL isolado: 34 testes de captura aprovados, incluindo 15 cenários de recuperação.
-- Suítes gerais: backend 1.068 aprovados e 28 opt-in ignorados; frontend 701 aprovados. Os testes PostgreSQL de captura foram executados separadamente com conexão local explícita.
+- Adaptador: 12 testes aprovados. PostgreSQL isolado: 35 testes de captura aprovados, incluindo 16 cenários de recuperação.
+- Validação final após integrar as atualizações de `main` e corrigir o achado da revisão: backend 1.118 aprovados, nenhum ignorado, com PostgreSQL local explícito; frontend 721 aprovados.
 - Compilação backend e build/budget frontend aprovados.
-- Chrome conectado, ambiente local `127.0.0.1:4174`/API `4182`: criar lote de uma empresa → rejeição HTTP 422 simulada → mensagem específica → Retomar → mesma operação, uma retomada, duas tentativas → descoberta/afundamento → parcial sem bloqueios por ausência deliberada de IA real no fixture. Recarregamento preservou resultado e empresa anterior. Sem erro de aplicação ou overlay; somente avisos preexistentes de migração do React Router. Viewport desktop, sem validação móvel específica.
+- Chrome conectado, ambiente local `127.0.0.1:4174`/API `4182`: criar lote de uma empresa → rejeição HTTP 422 simulada → mensagem específica → Retomar → mesma operação, uma retomada, duas tentativas → descoberta/aprofundamento → parcial sem bloqueios por ausência deliberada de IA real no fixture. Recarregamento preservou resultado e empresa anterior. Sem erro de aplicação ou overlay; somente avisos preexistentes de migração do React Router. Viewport desktop, sem validação móvel específica.
 - Jornada repetível: `YUX_RADAR_QA_REJECT_DISCOVERY=true` no servidor local `backend/tests/journeys/start-radar-capture-server.ts`; comportamento padrão do fixture permanece inalterado.
 - Nenhuma chamada externa paga, alteração de limites/credenciais ou implantação em produção.
+- Revisão independente encontrou uma janela de interrupção entre gravar rejeição e bloquear o lote. Regressão reproduzida e corrigida: pausa, motivo e recibo agora são persistidos atomicamente; redelivery não refaz a descoberta antes da retomada explícita. Nenhum achado crítico ou menor pendente.
+- Atualizações pré-existentes de `main` (`0a665d1`) foram preservadas por merge sem conflitos, com novas suítes/builds aprovados no conjunto integrado.

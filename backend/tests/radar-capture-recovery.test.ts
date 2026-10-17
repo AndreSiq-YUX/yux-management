@@ -1,11 +1,12 @@
-import {describe,it,expect} from 'vitest'
+import {describe,it,expect,vi} from 'vitest'
 import {randomUUID} from 'node:crypto'
 import {captureFixture,connectionString,admin,organizationId,available,company} from './support/radar-capture-fixture.js'
 import {fixtureIds,fixtureUsers} from './integration/support/fixtures.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
 import {advanceRadarCaptureDiscovery} from '../src/modules/radar/capture-discovery.js'
-import {resumeRadarCaptureOperation} from '../src/modules/radar/capture-dispatch.js'
+import {dispatchRadarCaptureOperation,resumeRadarCaptureOperation} from '../src/modules/radar/capture-dispatch.js'
 import {CnpjaSearchHttpError} from '../src/modules/radar/cnpjaClient.js'
+import {runRadarCnpjaAdvancedSearch} from '../src/modules/radar/repository.js'
 
 describe.skipIf(!connectionString)('rejected capture recovery with PostgreSQL',()=>{
  async function setup(){
@@ -38,6 +39,26 @@ describe.skipIf(!connectionString)('rejected capture recovery with PostgreSQL',(
    expect((await getRadarCaptureOperation(f.pool,admin,organizationId,f.input.operationId)).counts.admitted).toBe(1)
    expect((await f.pool.query("SELECT normalized_payload FROM public.radar_candidate_records WHERE campaign_id=$1 AND dedupe_key='old'",[f.campaign.id])).rows[0].normalized_payload).toEqual({websiteUrl:'https://old.example/'})
    expect((await f.op()).queries).toBe(2)
+  }finally{await f.close()}
+ })
+
+ it('blocks atomically at the rejection receipt boundary so redelivery cannot repeat discovery before explicit resume',async()=>{
+  const f=await setup()
+  try{
+   // Invoke the repository directly: simulate a crash before the caller gets
+   // the chance to call blockRadarCapture after the receipt transaction.
+   await runRadarCnpjaAdvancedSearch(f.pool,admin,{organizationId,campaignId:f.campaign.id,captureOperationId:f.input.operationId,
+    expectedRevision:1,regionalState:'PR',limit:1,secretKeyMaterial:'fixture'},
+    {loadSecret:async()=>'fixture',searchPage:async()=>{throw new CnpjaSearchHttpError('request validation failed',422)}})
+   expect(await f.op()).toMatchObject({status:'blocked',discovery_pending:false,blockers:['radar_capture_discovery_request_rejected'],queries:1})
+   const discover=vi.fn(async()=>getRadarCaptureOperation(f.pool,admin,organizationId,f.input.operationId))
+   const queue={add:vi.fn()}
+   await dispatchRadarCaptureOperation(f.pool,{} as never,f.input,queue,undefined,{availability:available,discover})
+   expect(discover).not.toHaveBeenCalled()
+   expect((await f.runs())).toHaveLength(1)
+   await resumeRadarCaptureOperation(f.pool,admin,f.resume,{availability:available})
+   await dispatchRadarCaptureOperation(f.pool,{} as never,f.input,queue,undefined,{availability:available,discover})
+   expect(discover).toHaveBeenCalledTimes(1)
   }finally{await f.close()}
  })
 

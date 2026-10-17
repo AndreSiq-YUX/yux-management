@@ -1214,12 +1214,18 @@ export async function runRadarCnpjaAdvancedSearch(
     const receipt = await pool.connect()
     try {
       await receipt.query('BEGIN')
+      if (input.captureOperationId) {
+        await receipt.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.campaignId,input.organizationId])
+        await receipt.query('SELECT id FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.captureOperationId,input.organizationId])
+      }
       // Do not free pending discovery until its rejection receipt is durable.
       await updateRadarRunCompletion(receipt, runId, 'failed', { candidateCount: 0, estimatedCost, issues: failedIssues,
         discoveryOutcome: rejected ? 'rejected' : 'uncertain',
         ...(error instanceof CnpjaSearchHttpError ? {httpStatus:error.statusCode} : {}),
       }, message)
-      if (rejected && input.captureOperationId) await receipt.query('UPDATE public.radar_capture_operations SET discovery_pending=FALSE,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[input.captureOperationId,input.organizationId])
+      // A crash after COMMIT must not allow the outbox to retry discovery
+      // before explicit resume. Persist the paused state with the receipt.
+      if (rejected && input.captureOperationId) await receipt.query("UPDATE public.radar_capture_operations SET discovery_pending=FALSE,status='blocked',blockers=$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2",[input.captureOperationId,input.organizationId,JSON.stringify(failedIssues.map(issue=>issue.code))])
       if (input.regionalState) await receipt.query(
         `UPDATE public.radar_regional_discovery_cursors SET lease_id = NULL, running_until = NULL, updated_at = NOW()
          WHERE campaign_id = $1 AND organization_id=$4 AND scope_key = $2 AND lease_id = $3`, [input.campaignId, scopeKey, leaseId,input.organizationId])
