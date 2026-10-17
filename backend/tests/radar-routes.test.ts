@@ -601,6 +601,13 @@ function sessionCookie(rawToken: string) {
 }
 
 describe('radar routes', () => {
+  it.each(['true',1,null])('rejects malformed restart confirmation %s before any writes',async restartExpiredContinuation=>{
+    const {authStore,token}=buildAuthStore(),pool=new FakeRadarPool()
+    app=await buildServer(testEnv,{authStore,pool:pool as never,jobQueue:noopJobQueue})
+    const response=await app.inject({method:'POST',url:`/api/radar/capture-operations/${ids.diagnostic}/resume`,headers:{cookie:sessionCookie(token)},payload:{organizationId:ids.org,configurationRevision:1,requestId:ids.diagnostic,restartExpiredContinuation}})
+    expect(response.statusCode).toBe(400)
+    expect(pool.queries.some(query=>/INSERT|UPDATE|DELETE/.test(query.sql))).toBe(false)
+  })
   it('validates capture quantities and UUIDs before writes and requires authentication',async()=>{
     const {authStore,token}=buildAuthStore(),pool=new FakeRadarPool()
     app=await buildServer(testEnv,{authStore,pool:pool as never,jobQueue:noopJobQueue})

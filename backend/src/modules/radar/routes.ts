@@ -422,7 +422,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/capture-operations/:id/resume',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid}).safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional()}).safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     const operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})
     try{await app.jobQueue.add('radar.advanceCaptureOperation',{organizationId:body.data.organizationId,operationId:operation.id},{jobId:`radar-capture-resume-${operation.id}-${body.data.requestId}`})}catch{ /* Durable outbox survives. */ }

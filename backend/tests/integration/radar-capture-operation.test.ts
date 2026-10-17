@@ -73,7 +73,7 @@ describe.skipIf(!connectionString)('capture journey with isolated PostgreSQL',()
    await runWithDatabaseRequestContext({role:'client_member',serviceRole:'worker',organizationIds:[fixtureIds.organizationB]},async()=>{
     expect((await worker.query('SELECT id FROM public.radar_capture_operations WHERE id=$1',[start.operationId])).rows).toHaveLength(0)
    })
-   const jobs=new Map(),queue={add:vi.fn(async(_name:string,data:unknown,opts?:{jobId?:string})=>{jobs.set(opts?.jobId,data);return{id:opts?.jobId}})}
+   const jobs=new Map(),queue={add:vi.fn(async(_name:string,data:{operationId:string},opts?:{jobId?:string})=>{if(data.operationId===start.operationId)jobs.set(opts?.jobId,data);return{id:opts?.jobId}})}
    await Promise.all([1,2].map(()=>runWithDatabaseRequestContext({role:'yux_operator',serviceRole:'worker',organizationIds:[]},()=>reconcileRadarCaptureOutbox(worker,queue,1))))
    expect(jobs.size).toBe(1)
   }finally{await raw.end();await f.close()}
