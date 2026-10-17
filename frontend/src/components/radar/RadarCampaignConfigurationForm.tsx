@@ -2,7 +2,7 @@ import { useEffect,useRef,useState, type FormEvent, type ReactNode } from 'react
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { defaultRadarSearchConfiguration, defaultRadarSizePolicy, defaultRadarCompletionPolicy, validateRadarSizePolicy, parseRadarCities, radarBrazilStates, radarExportLabels, splitRadarTerms,
-  type RadarExportField, type RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
+  type RadarExportField } from '@/lib/radar/radarSearchConfiguration'
 import type { RadarCampaignInput } from '@/services/radarService'
 import type { RadarCampaign } from '@/types/radar'
 import { RadarSizeConfiguration } from './RadarSizeConfiguration'

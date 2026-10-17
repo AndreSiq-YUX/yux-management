@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
+import { CalendarClock, CheckCircle2, CheckSquare, Link2, Lock, Plus, Radar, Search, ShieldCheck, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,12 +24,11 @@ import {
   canConvertRadarOpportunity,
   canManageRadar,
   canShowRadarNavigation,
-  getRadarCampaignStatusLabel,
   getRadarCompanyDisplayName,
   getRadarOpportunityStatusLabel,
   getRadarScoreTone,
 } from '@/lib/radar/radarRules'
-import { buildRadarPlaceSearchDefaults, getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from '@/lib/radar/radarSourceRules'
+import { getCsvPreviewRows, getRadarSourceBlockedReason, isSmallBatch, splitLines } from '@/lib/radar/radarSourceRules'
 import { awaitCurrentRadarPlacePreview } from '@/lib/radar/radarPlacePreviewGuard'
 import { radarService, type RadarCampaignInput } from '@/services/radarService'
 import { usePlatformContext } from '@/stores/platformStore'
@@ -612,7 +611,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
       if(!active)return
       const running=trackedResearchCandidates.filter((_,index)=>{const value=results[index];return value.status==='fulfilled'&&value.value.run&&['queued','running'].includes(value.value.run.status)})
       setTrackedResearchCandidates(running)
-      refreshCampaignSidebars()
+      refreshCaptureResults.current?.()
       if(running.length)timer=setTimeout(poll,4000)
     }
     timer=setTimeout(poll,4000)

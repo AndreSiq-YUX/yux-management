@@ -1,289 +1,627 @@
-import { useEffect, useState } from 'react'
-import { Calendar, CheckCircle2, Clock3, ExternalLink, FileCheck2, FolderKanban, History } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import {
+  Calendar,
+  CheckCircle2,
+  Clock3,
+  ExternalLink,
+  History,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { validateApprovalDecision } from '@/lib/projects/approvalRules'
-import { backendDataService } from '@/services/backendDataService'
+import { ApiClientError } from '@/lib/apiClient'
+import {
+  APPROVAL_LABELS,
+  DELIVERABLE_LABELS,
+  formatDeliveryDate,
+  isDeliveryOverdue,
+  safeDeliveryUrl,
+} from '@/lib/projects/deliveryPresentation'
+import {
+  projectDeliveryService,
+  ProjectDeliverySnapshot,
+} from '@/services/projectDeliveryService'
 import { usePlatformStore } from '@/stores/platformStore'
 import {
   ApprovalDecisionValue,
   ApprovalRequest,
   Project,
-  ProjectDeliverable,
-  ProjectPhase,
-  ProjectTask,
-  ProjectTimelineEntry,
+  PHASE_STATUS_LABELS,
+  PROJECT_STATUS_LABELS,
+  TASK_STATUS_LABELS,
 } from '@/types/project'
 
-const approvalLabels: Record<ApprovalRequest['status'], string> = {
-  pending: 'Pendente',
-  approved: 'Aprovado',
-  changes_requested: 'Ajustes solicitados',
-  rejected: 'Rejeitado',
-  cancelled: 'Cancelado',
+export function PortalProjectsPage() {
+  const [search] = useSearchParams()
+  const organizationId = usePlatformStore((state) => state.organization?.id)
+  const isPlatformLoading = usePlatformStore((state) => state.isLoading)
+  if (isPlatformLoading) return <p role="status">Carregando projetos...</p>
+  if (!organizationId)
+    return <p>Selecione um espaço de trabalho para acompanhar seus projetos.</p>
+  return (
+    <PortalProjectsWorkspace
+      key={organizationId}
+      organizationId={organizationId}
+      requestedProjectId={search.get('projectId') || undefined}
+      requestedTab={search.get('tab') || undefined}
+    />
+  )
 }
 
-export function PortalProjectsPage() {
-  const activeContract = usePlatformStore(state => state.activeContract)
-  const isPlatformLoading = usePlatformStore(state => state.isLoading)
+function PortalProjectsWorkspace({
+  organizationId,
+  requestedProjectId,
+  requestedTab,
+}: {
+  organizationId: string
+  requestedProjectId?: string
+  requestedTab?: string
+}) {
   const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<string>()
-  const [tasks, setTasks] = useState<ProjectTask[]>([])
-  const [phases, setPhases] = useState<ProjectPhase[]>([])
-  const [deliverables, setDeliverables] = useState<ProjectDeliverable[]>([])
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
-  const [timeline, setTimeline] = useState<ProjectTimelineEntry[]>([])
-  const [comments, setComments] = useState<Record<string, string>>({})
+  const [selectedId, setSelectedId] = useState<string>()
   const [loading, setLoading] = useState(true)
-  const [submittingId, setSubmittingId] = useState<string>()
-
-  const selectedProject = projects.find(project => project.id === selectedProjectId)
-
+  const [error, setError] = useState(false)
+  const [reload, setReload] = useState(0)
   useEffect(() => {
-    if (isPlatformLoading) {
-      setLoading(true)
-      return
-    }
-
-    if (!activeContract) {
-      setProjects([])
-      setSelectedProjectId(undefined)
-      setLoading(false)
-      return
-    }
-
-    backendDataService.getProjects({ limit: 100 })
-      .then(response => {
+    let active = true
+    setLoading(true)
+    setError(false)
+    projectDeliveryService
+      .list(organizationId)
+      .then((response) => {
+        if (!active) return
         setProjects(response.projects)
-        setSelectedProjectId(response.projects[0]?.id)
+        setSelectedId((previous) =>
+          response.projects.some((p) => p.id === requestedProjectId)
+            ? requestedProjectId
+            : response.projects.some((p) => p.id === previous)
+              ? previous
+              : response.projects[0]?.id
+        )
       })
-      .catch(error => {
-        console.error('Erro ao carregar projetos do portal:', error)
-        toast.error('Erro ao carregar projetos')
+      .catch(() => {
+        if (active) setError(true)
       })
-      .finally(() => setLoading(false))
-  }, [activeContract, isPlatformLoading])
-
-  const loadProjectDetails = async (projectId: string) => {
-    try {
-      setLoading(true)
-      const [tasksResponse, phasesResponse, deliverablesResponse, approvalsResponse, timelineResponse] = await Promise.all([
-        backendDataService.getProjectTasks(projectId),
-        backendDataService.getProjectPhases(projectId),
-        backendDataService.getProjectDeliverables(projectId),
-        backendDataService.getProjectApprovalRequests(projectId),
-        backendDataService.getProjectTimeline(projectId),
-      ])
-      setTasks(tasksResponse.tasks)
-      setPhases(phasesResponse.phases)
-      setDeliverables(deliverablesResponse.deliverables)
-      setApprovals(approvalsResponse.approvals)
-      setTimeline(timelineResponse.entries)
-    } catch (error) {
-      console.error('Erro ao carregar detalhes do projeto:', error)
-      toast.error('Erro ao carregar detalhes do projeto')
-    } finally {
-      setLoading(false)
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
     }
-  }
+  }, [organizationId, reload, requestedProjectId])
+  const selectedProject = projects.find((p) => p.id === selectedId)
 
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">
+          Projetos e entregas
+        </h1>
+        <p className="mt-1 text-muted-foreground">
+          Veja o que avançou, confira os prazos e aprove as próximas entregas.
+        </p>
+      </div>
+      {loading && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Carregando projetos...
+        </p>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg border p-4"
+        >
+          <p>Não foi possível carregar seus projetos.</p>
+          <Button
+            variant="outline"
+            onClick={() => setReload((value) => value + 1)}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+      {!loading && !error && projects.length === 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Seus projetos aparecerão aqui</CardTitle>
+            <CardDescription>
+              Quando a equipe iniciar um projeto, você poderá acompanhar etapas,
+              entregas e aprovações neste espaço.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+      {!error && projects.length > 0 && (
+        <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <aside
+            aria-label="Selecionar projeto"
+            className="flex flex-col gap-2"
+          >
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                aria-pressed={selectedId === project.id}
+                disabled={loading}
+                className="flex w-full flex-col gap-2 rounded-lg border bg-background p-4 text-left transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-accent"
+                onClick={() => setSelectedId(project.id)}
+              >
+                <span className="break-words font-medium">{project.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {PROJECT_STATUS_LABELS[project.status]} · {project.progress}%
+                  concluído
+                </span>
+                <Progress value={project.progress} className="h-1.5" />
+              </button>
+            ))}
+          </aside>
+          {selectedProject && (
+            <ProjectTracking
+              key={`${selectedProject.id}:${requestedTab || ''}`}
+              organizationId={organizationId}
+              project={selectedProject}
+              initialTab={requestedTab}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProjectTracking({
+  organizationId,
+  project,
+  initialTab,
+}: {
+  organizationId: string
+  project: Project
+  initialTab?: string
+}) {
+  const [snapshot, setSnapshot] = useState<ProjectDeliverySnapshot>()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [comments, setComments] = useState<Record<string, string>>({})
+  const [submittingId, setSubmittingId] = useState<string>()
+  const [tab, setTab] = useState(
+    initialTab === 'approvals' ? 'approvals' : 'overview'
+  )
+  const sequence = useRef(0)
+  const mutationLock = useRef(false)
+  const mounted = useRef(true)
+  const load = useCallback(async () => {
+    const version = ++sequence.current
+    setLoading(true)
+    setError(false)
+    try {
+      const response = await projectDeliveryService.details(
+        organizationId,
+        project.id
+      )
+      if (version === sequence.current) setSnapshot(response)
+    } catch {
+      if (version === sequence.current) setError(true)
+    } finally {
+      if (version === sequence.current) setLoading(false)
+    }
+  }, [organizationId, project.id])
+  const invalidateRequests = useCallback(() => {
+    sequence.current++
+  }, [])
   useEffect(() => {
-    if (selectedProjectId) loadProjectDetails(selectedProjectId)
-  }, [selectedProjectId])
+    mounted.current = true
+    void load()
+    return () => {
+      mounted.current = false
+      invalidateRequests()
+    }
+  }, [load, invalidateRequests])
 
-  const submitDecision = async (approval: ApprovalRequest, decision: ApprovalDecisionValue) => {
+  const decide = async (
+    approval: ApprovalRequest,
+    decision: ApprovalDecisionValue
+  ) => {
+    if (mutationLock.current) return
     const comment = comments[approval.id] || ''
     const validationError = validateApprovalDecision(decision, comment)
     if (validationError) {
       toast.error(validationError)
       return
     }
-
+    mutationLock.current = true
+    setSubmittingId(approval.id)
     try {
-      setSubmittingId(approval.id)
-      await backendDataService.submitApprovalDecision(approval.id, decision, comment)
-      toast.success('Decisao registrada')
-      if (selectedProjectId) loadProjectDetails(selectedProjectId)
+      await projectDeliveryService.decide(
+        organizationId,
+        project.id,
+        approval.id,
+        decision,
+        comment
+      )
+      if (!mounted.current) return
+      toast.success('Decisão registrada')
+      setComments((previous) => {
+        const next = { ...previous }
+        delete next[approval.id]
+        return next
+      })
+      await load()
     } catch (error) {
-      console.error('Erro ao registrar decisao:', error)
-      toast.error('Erro ao registrar decisao')
+      if (!mounted.current) return
+      if (error instanceof ApiClientError && error.status === 409) {
+        toast.error(
+          'Esta solicitação já foi respondida. O acompanhamento será atualizado.'
+        )
+        await load()
+      } else
+        toast.error(
+          'Não foi possível registrar sua decisão. O comentário foi mantido; tente novamente.'
+        )
     } finally {
-      setSubmittingId(undefined)
+      mutationLock.current = false
+      if (mounted.current) setSubmittingId(undefined)
     }
   }
-
-  if (loading && projects.length === 0) {
-    return <p className="text-sm text-gray-600">Carregando projetos...</p>
-  }
-
-  if (projects.length === 0) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Projetos</h1>
-        <p className="mt-2 text-gray-600">Nenhum projeto disponivel para este contrato.</p>
-      </div>
-    )
-  }
+  const pending =
+    snapshot?.approvals.filter((a) => a.status === 'pending').length || 0
+  const completedTasks =
+    snapshot?.tasks.filter((t) => t.status === 'completed').length || 0
+  const overdue = isDeliveryOverdue(project.expectedEndDate, project.status)
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Projetos e entregas</h1>
-        <p className="text-gray-600">Acompanhe o andamento e registre aprovacoes pendentes.</p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-        <aside className="space-y-2">
-          {projects.map(project => (
-            <button
-              key={project.id}
-              type="button"
-              className={`w-full rounded-md border p-3 text-left transition-colors ${selectedProjectId === project.id ? 'border-yux-400 bg-yux-50' : 'bg-white hover:bg-gray-50'}`}
-              onClick={() => setSelectedProjectId(project.id)}
-            >
-              <span className="block font-medium text-gray-900">{project.name}</span>
-              <span className="mt-1 block text-xs text-gray-500">{project.progress}% concluido</span>
-            </button>
-          ))}
-        </aside>
-
-        {selectedProject && (
-          <main className="space-y-4">
+    <main className="flex min-w-0 flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <CardTitle className="break-words">{project.name}</CardTitle>
+            <Badge variant="outline">
+              {PROJECT_STATUS_LABELS[project.status]}
+            </Badge>
+          </div>
+          {project.description && (
+            <CardDescription className="whitespace-pre-wrap break-words">
+              {project.description}
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <Progress
+              value={project.progress}
+              className="h-2 flex-1"
+              aria-label="Progresso do projeto"
+            />
+            <span className="text-sm font-medium">{project.progress}%</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Calendar className="size-4" />
+              Previsão: {formatDeliveryDate(project.expectedEndDate)}
+            </span>
+            {overdue && <Badge variant="destructive">Prazo vencido</Badge>}
+          </div>
+          {snapshot && !error && !loading && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variant="secondary">
+                {completedTasks}/
+                {snapshot.tasks.filter((t) => t.status !== 'cancelled').length}{' '}
+                tarefas publicadas concluídas
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTab('approvals')}
+              >
+                {pending > 0
+                  ? `${pending} ${pending === 1 ? 'aprovação' : 'aprovações'} aguardando você`
+                  : 'Ver aprovações'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      {loading && (
+        <p role="status" className="py-6 text-sm text-muted-foreground">
+          Carregando acompanhamento...
+        </p>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg border p-4"
+        >
+          <p>Não foi possível atualizar o acompanhamento deste projeto.</p>
+          <Button variant="outline" onClick={() => void load()}>
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+      {!loading && !error && snapshot && (
+        <Tabs
+          value={tab}
+          onValueChange={setTab}
+          className="flex flex-col gap-4"
+        >
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+            <TabsTrigger value="overview">Andamento</TabsTrigger>
+            <TabsTrigger value="deliverables">
+              Entregas ({snapshot.deliverables.length})
+            </TabsTrigger>
+            <TabsTrigger value="approvals">Aprovações ({pending})</TabsTrigger>
+            <TabsTrigger value="timeline">Histórico</TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview" className="flex flex-col gap-4">
             <Card>
-              <CardContent className="p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900">{selectedProject.name}</h2>
-                    <p className="mt-1 text-sm text-gray-600">{selectedProject.description}</p>
+              <CardHeader>
+                <CardTitle>Etapas do projeto</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {snapshot.phases.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    As etapas serão publicadas pela equipe.
+                  </p>
+                )}
+                {snapshot.phases.map((phase) => (
+                  <div key={phase.id} className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-medium">{phase.name}</h3>
+                      <Badge variant="outline">
+                        {PHASE_STATUS_LABELS[phase.status]}
+                      </Badge>
+                    </div>
+                    <Progress
+                      value={phase.progress}
+                      className="h-1.5"
+                      aria-label={`Progresso: ${phase.name}`}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {phase.progress}% concluído
+                      {phase.endDate &&
+                        ` · Previsão: ${formatDeliveryDate(phase.endDate)}`}
+                    </p>
                   </div>
-                  <Badge>{selectedProject.status}</Badge>
-                </div>
-                <div className="mt-4 flex items-center gap-3">
-                  <Progress value={selectedProject.progress} className="h-2 flex-1" />
-                  <span className="text-sm font-medium">{selectedProject.progress}%</span>
-                </div>
+                ))}
               </CardContent>
             </Card>
-
-            <Tabs defaultValue="overview">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="overview">Andamento</TabsTrigger>
-                <TabsTrigger value="deliverables">Entregaveis</TabsTrigger>
-                <TabsTrigger value="approvals">Aprovacoes</TabsTrigger>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="space-y-4">
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Fases</CardTitle></CardHeader>
-                  <CardContent className="space-y-3">
-                    {phases.map(phase => (
-                      <div key={phase.id} className="flex items-center justify-between border-b pb-2 last:border-0">
-                        <span className="text-sm font-medium">{phase.name}</span>
-                        <Badge variant="outline">{phase.status}</Badge>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Tarefas publicadas</CardTitle></CardHeader>
-                  <CardContent className="space-y-3">
-                    {tasks.length === 0 && <p className="text-sm text-gray-500">Nenhuma tarefa publicada.</p>}
-                    {tasks.map(task => (
-                      <div key={task.id} className="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
-                        <div className="flex items-center gap-2">
-                          {task.status === 'completed' ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <Clock3 className="h-4 w-4 text-gray-400" />}
-                          <span className="text-sm">{task.title}</span>
-                        </div>
-                        <Badge variant="outline">{task.status}</Badge>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="deliverables" className="space-y-3">
-                {deliverables.length === 0 && <p className="text-sm text-gray-500">Nenhum entregavel publicado.</p>}
-                {deliverables.map(deliverable => (
-                  <Card key={deliverable.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <FolderKanban className="h-4 w-4" />
-                          <h3 className="font-medium">{deliverable.title}</h3>
-                        </div>
-                        <Badge variant="outline">{deliverable.status}</Badge>
-                      </div>
-                      {deliverable.description && <p className="mt-2 text-sm text-gray-600">{deliverable.description}</p>}
-                      {deliverable.externalUrl && (
-                        <a className="mt-3 flex items-center gap-1 text-sm text-blue-600 hover:underline" href={deliverable.externalUrl} target="_blank" rel="noreferrer">
-                          <ExternalLink className="h-3 w-3" />Abrir entregavel
-                        </a>
+            <Card>
+              <CardHeader>
+                <CardTitle>Tarefas publicadas</CardTitle>
+                <CardDescription>
+                  Atividades compartilhadas pela equipe para você acompanhar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                {snapshot.tasks.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma tarefa publicada por enquanto.
+                  </p>
+                )}
+                {snapshot.tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex flex-wrap items-start justify-between gap-2 border-b pb-3 last:border-0"
+                  >
+                    <div className="flex min-w-0 items-start gap-2">
+                      {task.status === 'completed' ? (
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                      ) : (
+                        <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                       )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </TabsContent>
-
-              <TabsContent value="approvals" className="space-y-3">
-                {approvals.length === 0 && <p className="text-sm text-gray-500">Nenhuma aprovacao pendente.</p>}
-                {approvals.map(approval => (
-                  <Card key={approval.id}>
-                    <CardContent className="space-y-3 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <FileCheck2 className="h-4 w-4" />
-                          <h3 className="font-medium">{approval.title}</h3>
-                        </div>
-                        <Badge>{approvalLabels[approval.status]}</Badge>
+                      <div>
+                        <p className="break-words text-sm">{task.title}</p>
+                        {task.dueDate && (
+                          <p className="text-xs text-muted-foreground">
+                            Prazo: {formatDeliveryDate(task.dueDate)}
+                            {isDeliveryOverdue(task.dueDate, task.status)
+                              ? ' · Prazo vencido'
+                              : ''}
+                          </p>
+                        )}
                       </div>
-                      {approval.instructions && <p className="text-sm text-gray-600">{approval.instructions}</p>}
-                      {approval.decisions?.map(decision => (
-                        <p key={decision.id} className="text-sm text-gray-500">
-                          {approvalLabels[decision.decision]}{decision.comment ? `: ${decision.comment}` : ''}
-                        </p>
-                      ))}
-                      {approval.status === 'pending' && (
-                        <>
-                          <Textarea
-                            placeholder="Comentario para ajustes ou rejeicao"
-                            value={comments[approval.id] || ''}
-                            onChange={event => setComments({ ...comments, [approval.id]: event.target.value })}
-                          />
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" disabled={submittingId === approval.id} onClick={() => submitDecision(approval, 'approved')}>Aprovar</Button>
-                            <Button size="sm" variant="outline" disabled={submittingId === approval.id} onClick={() => submitDecision(approval, 'changes_requested')}>Solicitar ajustes</Button>
-                            <Button size="sm" variant="destructive" disabled={submittingId === approval.id} onClick={() => submitDecision(approval, 'rejected')}>Rejeitar</Button>
-                          </div>
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </TabsContent>
-
-              <TabsContent value="timeline" className="space-y-3">
-                {timeline.length === 0 && <p className="text-sm text-gray-500">Nenhuma atualizacao publicada.</p>}
-                {timeline.map(entry => (
-                  <div key={entry.id} className="flex gap-3 border-l-2 border-gray-200 py-2 pl-4">
-                    {entry.origin === 'automatic' ? <Clock3 className="mt-1 h-4 w-4 text-gray-500" /> : <History className="mt-1 h-4 w-4 text-gray-500" />}
-                    <div>
-                      <h3 className="text-sm font-medium">{entry.title}</h3>
-                      {entry.body && <p className="text-sm text-gray-600">{entry.body}</p>}
-                      <p className="mt-1 flex items-center gap-1 text-xs text-gray-400"><Calendar className="h-3 w-3" />{new Date(entry.createdAt).toLocaleDateString('pt-BR')}</p>
                     </div>
+                    <Badge variant="outline">
+                      {TASK_STATUS_LABELS[task.status]}
+                    </Badge>
                   </div>
                 ))}
-              </TabsContent>
-            </Tabs>
-          </main>
-        )}
-      </div>
-    </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="deliverables" className="flex flex-col gap-3">
+            {snapshot.deliverables.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma entrega publicada por enquanto.
+              </p>
+            )}
+            {snapshot.deliverables.map((d) => (
+              <Card key={d.id}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="break-words">{d.title}</CardTitle>
+                    <Badge variant="outline">
+                      {DELIVERABLE_LABELS[d.status]}
+                    </Badge>
+                  </div>
+                  {d.description && (
+                    <CardDescription className="whitespace-pre-wrap break-words">
+                      {d.description}
+                    </CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    Prazo: {formatDeliveryDate(d.dueDate)}
+                    {isDeliveryOverdue(d.dueDate, d.status)
+                      ? ' · Prazo vencido'
+                      : ''}
+                  </p>
+                  {safeDeliveryUrl(d.externalUrl) && (
+                    <a
+                      className="flex items-center gap-1 text-sm text-primary hover:underline"
+                      href={safeDeliveryUrl(d.externalUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink className="size-4" />
+                      Abrir entrega
+                    </a>
+                  )}
+                  {snapshot.approvals.some(
+                    (a) => a.targetId === d.id && a.status === 'pending'
+                  ) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTab('approvals')}
+                    >
+                      Revisar e aprovar
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </TabsContent>
+          <TabsContent value="approvals" className="flex flex-col gap-3">
+            {snapshot.approvals.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma aprovação solicitada por enquanto.
+              </p>
+            )}
+            {snapshot.approvals.map((a) => {
+              const deliverable = snapshot.deliverables.find(
+                (d) => d.id === a.targetId
+              )
+              const url = safeDeliveryUrl(deliverable?.externalUrl)
+              return (
+                <Card key={a.id}>
+                  <CardHeader>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="break-words">{a.title}</CardTitle>
+                      <Badge variant="outline">
+                        {APPROVAL_LABELS[a.status]}
+                      </Badge>
+                    </div>
+                    <CardDescription>
+                      Enviada em {formatDeliveryDate(a.submittedAt)}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    {a.instructions && (
+                      <p className="whitespace-pre-wrap text-sm">
+                        {a.instructions}
+                      </p>
+                    )}
+                    {url && (
+                      <a
+                        className="flex items-center gap-1 text-sm text-primary hover:underline"
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink className="size-4" />
+                        Abrir entrega para revisão
+                      </a>
+                    )}
+                    {a.decisions?.map((d) => (
+                      <p
+                        key={d.id}
+                        className="whitespace-pre-wrap break-words text-sm text-muted-foreground"
+                      >
+                        {formatDeliveryDate(d.createdAt)} ·{' '}
+                        {APPROVAL_LABELS[d.decision]}
+                        {d.comment ? `: ${d.comment}` : ''}
+                      </p>
+                    ))}
+                    {a.status === 'pending' && (
+                      <fieldset
+                        disabled={Boolean(submittingId)}
+                        className="flex flex-col gap-3"
+                      >
+                        <Label htmlFor={`comment-${a.id}`}>Comentário</Label>
+                        <Textarea
+                          id={`comment-${a.id}`}
+                          maxLength={10000}
+                          placeholder="Descreva os ajustes ou o motivo da rejeição"
+                          value={comments[a.id] || ''}
+                          onChange={(e) =>
+                            setComments((previous) => ({
+                              ...previous,
+                              [a.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Obrigatório para solicitar ajustes ou rejeitar.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => void decide(a, 'approved')}
+                          >
+                            {submittingId === a.id
+                              ? 'Registrando...'
+                              : 'Aprovar'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void decide(a, 'changes_requested')}
+                          >
+                            Solicitar ajustes
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => void decide(a, 'rejected')}
+                          >
+                            Rejeitar
+                          </Button>
+                        </div>
+                      </fieldset>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </TabsContent>
+          <TabsContent value="timeline" className="flex flex-col gap-4">
+            {snapshot.timeline.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                As atualizações da equipe aparecerão aqui.
+              </p>
+            )}
+            {snapshot.timeline.map((entry) => (
+              <div key={entry.id} className="flex gap-3 border-l-2 py-2 pl-4">
+                <History className="mt-1 size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-medium">{entry.title}</h3>
+                  {entry.body && (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                      {entry.body}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatDeliveryDate(entry.createdAt)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </TabsContent>
+        </Tabs>
+      )}
+    </main>
   )
 }
