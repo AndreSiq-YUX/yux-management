@@ -33,7 +33,7 @@ import type {
 import { parseRadarCsv, type RadarCsvImportIssue } from './csvImport.js'
 import { createRadarDuplicateCandidates } from './dedupe.js'
 import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
-import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
+import { buildCnpjaCandidateSnippet, CnpjaSearchHttpError, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { resolveRadarOsmSegment } from './osm-segment-map.js'
@@ -1150,6 +1150,7 @@ export async function runRadarCnpjaAdvancedSearch(
           configurationRevision: campaignSnapshot?.configuration_revision ?? 1,
           searchConfiguration: input.regionalState ? searchConfiguration : undefined,
           pageToken,
+          captureOperationId: input.captureOperationId,
         }),
       ],
     )
@@ -1208,11 +1209,22 @@ export async function runRadarCnpjaAdvancedSearch(
     } else results = await (dependencies.search ?? searchCnpjaAdvanced)(searchInput)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao executar pesquisa avancada no CNPJa.'
-    const failedIssues = [{ code: 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
-    await updateRadarRunCompletion(pool, runId, 'failed', { candidateCount: 0, estimatedCost, issues: failedIssues }, message)
-    if (input.regionalState) await pool.query(
-      `UPDATE public.radar_regional_discovery_cursors SET lease_id = NULL, running_until = NULL, updated_at = NOW()
-       WHERE campaign_id = $1 AND scope_key = $2 AND lease_id = $3`, [input.campaignId, scopeKey, leaseId])
+    const rejected = error instanceof CnpjaSearchHttpError && error.requestRejected
+    const failedIssues = [{ code: rejected ? 'radar_capture_discovery_request_rejected' : 'provider_failed', sourceType: 'cnpja_advanced_search', message }]
+    const receipt = await pool.connect()
+    try {
+      await receipt.query('BEGIN')
+      // Do not free pending discovery until its rejection receipt is durable.
+      await updateRadarRunCompletion(receipt, runId, 'failed', { candidateCount: 0, estimatedCost, issues: failedIssues,
+        discoveryOutcome: rejected ? 'rejected' : 'uncertain',
+        ...(error instanceof CnpjaSearchHttpError ? {httpStatus:error.statusCode} : {}),
+      }, message)
+      if (rejected && input.captureOperationId) await receipt.query('UPDATE public.radar_capture_operations SET discovery_pending=FALSE,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[input.captureOperationId,input.organizationId])
+      if (input.regionalState) await receipt.query(
+        `UPDATE public.radar_regional_discovery_cursors SET lease_id = NULL, running_until = NULL, updated_at = NOW()
+         WHERE campaign_id = $1 AND organization_id=$4 AND scope_key = $2 AND lease_id = $3`, [input.campaignId, scopeKey, leaseId,input.organizationId])
+      await receipt.query('COMMIT')
+    } catch (cause) { await receipt.query('ROLLBACK'); throw cause } finally { receipt.release() }
     return { candidates: [], issues: failedIssues, runId }
   }
 

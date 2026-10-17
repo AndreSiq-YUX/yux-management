@@ -8,6 +8,7 @@ import {startRadarCandidateResearch} from './research-service.js'
 import {advanceRadarCaptureDiscovery,authorizeRadarCapture,blockRadarCapture} from './capture-discovery.js'
 import {assertRadarRegionalBatchAccess} from './repository.js'
 import {captureError,getRadarCaptureOperation,type AvailabilityLoader} from './capture-operation.js'
+import {recoverRejectedRadarCaptureDiscovery} from './capture-recovery.js'
 
 type Child={status:string;error_code?:string;lease_until?:string;output?:Record<string,unknown>;calls?:Record<string,{status:string}>}
 export function classifyRadarCaptureResearch(run:Child):'researching'|'completed'|'insufficient'|'blocked'{
@@ -104,11 +105,16 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
  const revision=await assertRadarRegionalBatchAccess(pool,user,input.organizationId,op.campaign_id)
  if(revision!==input.configurationRevision||revision!==op.configuration_revision)throw captureError('radar_campaign_configuration_changed')
- if(op.discovery_pending)throw captureError('radar_capture_discovery_uncertain')
  const client=await pool.connect()
  try{
   await client.query('BEGIN')
-  const current=(await client.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,input.organizationId])).rows[0]
+  // Match discovery's lock order and recheck revision after waiting for locks.
+  const campaign=(await client.query('SELECT configuration_revision FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.campaign_id,input.organizationId])).rows[0]
+  if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
+  const current=(await client.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,input.organizationId])).rows[0]
+  if(!current)throw captureError('radar_capture_not_found',404)
+  if(current.status==='blocked'&&current.lease_active&&!current.discovery_pending)throw captureError('radar_capture_in_progress')
+  if(current.discovery_pending&&!await recoverRejectedRadarCaptureDiscovery(client,current))throw captureError('radar_capture_discovery_uncertain')
   if(current.resume_request_id!==input.requestId&&current.status==='blocked'){
    const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND status='blocked'",[op.id])).rows
    for(const item of items){
