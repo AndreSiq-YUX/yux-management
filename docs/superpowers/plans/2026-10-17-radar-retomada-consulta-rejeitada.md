@@ -70,3 +70,13 @@
 - Nenhuma chamada externa paga, alteração de limites/credenciais ou implantação em produção.
 - Revisão independente encontrou uma janela de interrupção entre gravar rejeição e bloquear o lote. Regressão reproduzida e corrigida: pausa, motivo e recibo agora são persistidos atomicamente; redelivery não refaz a descoberta antes da retomada explícita. Nenhum achado crítico ou menor pendente.
 - Atualizações pré-existentes de `main` (`0a665d1`) foram preservadas por merge sem conflitos, com novas suítes/builds aprovados no conjunto integrado.
+
+## Investigação complementar — rejeição em 17/10 às 18:37:53
+
+O histórico enviado pelo usuário confirma uma nova rejeição após a implantação. Isso não é apenas o aviso antigo ou ausência de clique. A causa específica da rejeição em produção ainda não foi determinada: o adaptador descartava `constraints`, campo oficial dos erros CNPJá que contém as razões de validação.
+
+Correção complementar restrita ao diagnóstico: preservar mensagens/constraints textuais e o status HTTP, removendo chave de API e token antes de limitar o tamanho da mensagem. Não serializar corpo bruto, cabeçalhos, objetos desconhecidos ou valores aninhados. O texto usa o histórico técnico já exclusivo do Admin; projeções comerciais e permissões permanecem inalteradas. A leitura de consulta CNPJ usada no teste de credenciais recebe o mesmo tratamento seguro.
+
+Referência primária: [exceção do SDK oficial](https://github.com/cnpja/sdk-nodejs/blob/master/source/cnpja/cnpja.exception.ts) e [tratamento HTTP/paginação](https://github.com/cnpja/sdk-nodejs/blob/master/source/http/http.service.ts). A continuação apenas com token está de acordo com esse SDK; não reiniciar nem descartar o cursor sem confirmar o motivo real.
+
+TDD: três regressões falharam antes do ajuste e passaram depois. Adaptador 15/15; três suítes direcionadas 41/41; suíte completa backend com PostgreSQL isolado 1.121/1.121, compilação aprovada. Nenhum frontend foi modificado. Sem chamadas pagas, mudanças de limites ou deploy. O problema operacional da captação continua pendente de obter a mensagem detalhada de uma execução com esse ajuste; registros antigos não permitem recuperar detalhes já descartados.

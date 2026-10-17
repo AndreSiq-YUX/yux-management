@@ -102,7 +102,7 @@ export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): 
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new CnpjaSearchHttpError(extractCnpjaError(body) || `CNPJa retornou HTTP ${response.status}.`, response.status)
+    throw new CnpjaSearchHttpError(extractCnpjaError(body, [input.apiKey, input.token], response.status) || `CNPJa retornou HTTP ${response.status}.`, response.status)
   }
 
   const candidates = extractCnpjaItems(body)
@@ -136,7 +136,7 @@ export async function lookupCnpjaOffice(input: CnpjaOfficeLookupInput) {
   })
   const body = await response.json().catch(() => null)
   if (!response.ok) {
-    throw Object.assign(new Error(extractCnpjaError(body) || `CNPJa retornou HTTP ${response.status}.`), {
+    throw Object.assign(new Error(extractCnpjaError(body, [input.apiKey], response.status) || `CNPJa retornou HTTP ${response.status}.`), {
       statusCode: response.status,
     })
   }
@@ -313,17 +313,23 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
   }
 }
 
-function extractCnpjaError(body: unknown) {
+function extractCnpjaError(body: unknown, sensitiveValues: Array<string | undefined>, statusCode: number) {
   if (!isRecord(body)) return null
-  const value = body as { error?: unknown; message?: unknown; errors?: unknown }
-  if (typeof value.message === 'string') return value.message
-  if (typeof value.error === 'string') return value.error
-  if (Array.isArray(value.errors)) {
-    const first = value.errors.find(item => typeof item === 'string' || isRecord(item))
-    if (typeof first === 'string') return first
-    if (isRecord(first) && typeof first.message === 'string') return first.message
-  }
-  return null
+  // The official API returns {code,message,constraints:string[]}. Keeping only
+  // message hid the actual invalid parameter. Never serialize the raw body,
+  // headers or values; these diagnostics are displayed in the Admin history.
+  const details: unknown[] = [body.message, body.error,
+    ...(Array.isArray(body.constraints) ? body.constraints.slice(0,8) : []),
+    ...(Array.isArray(body.errors) ? body.errors.slice(0,8).map(item => isRecord(item) ? item.message : item) : []),
+  ]
+  const secrets = [...new Set(sensitiveValues.filter((value): value is string => typeof value === 'string' && value.length > 0))]
+    .sort((left,right) => right.length-left.length)
+  const messages = details.filter((value): value is string => typeof value === 'string').map(value => {
+    for (const secret of secrets) value = value.replaceAll(secret, '[redigido]')
+    return value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0,200)
+  }).filter(Boolean)
+  const bounded = [...new Set(messages)].slice(0,9)
+  return bounded.length ? `HTTP ${statusCode}: ${bounded.join('; ')}` : null
 }
 
 function firstContact(values?: unknown[]) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildCnpjaCandidateSnippet, searchCnpjaAdvanced, searchCnpjaAdvancedPage, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
+import { buildCnpjaCandidateSnippet, lookupCnpjaOffice, searchCnpjaAdvanced, searchCnpjaAdvancedPage, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
 
 describe('radar CNPJa client', () => {
   it('searches advanced company records and normalizes candidates', async () => {
@@ -156,5 +156,44 @@ describe('radar CNPJa client', () => {
     const failure = new TypeError('fetch failed')
     const fetchImpl = vi.fn(async () => {throw failure}) as typeof fetch
     await expect(searchCnpjaAdvancedPage({apiKey:'fixture',fetchImpl})).rejects.toBe(failure)
+  })
+
+  it('keeps the official constraints in the diagnostic without disclosing credentials or pagination tokens', async () => {
+    const apiKey='fixture-api-secret-value',token='private-page-token-value'
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({code:400,message:'request validation failed',
+      constraints:[`token ${token} is invalid`,'limit must not be combined with token',`authorization ${apiKey} is invalid`],
+      headers:{Authorization:apiKey},secret:'ignored-nested-data',
+    }),{status:400})) as typeof fetch
+    const error=await searchCnpjaAdvancedPage({apiKey,token,fetchImpl}).catch(error=>error)
+    expect(error.message).toContain('request validation failed')
+    expect(error.message).toContain('token [redigido] is invalid')
+    expect(error.message).toContain('limit must not be combined with token')
+    expect(error.message).toContain('HTTP 400')
+    expect(error.message).not.toContain(apiKey)
+    expect(error.message).not.toContain(token)
+    expect(error.message).not.toContain('ignored-nested-data')
+    expect(error).toMatchObject({statusCode:400,requestRejected:true})
+  })
+
+  it('redacts secrets before bounding diagnostics and ignores non-string constraints',async()=>{
+    const apiKey='secret-before-truncation-'.repeat(30)
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({message:`invalid ${apiKey}`,
+      constraints:[{value:apiKey},null,42,...Array.from({length:40},()=>`invalid ${apiKey} ${'x'.repeat(500)}`)],
+    }),{status:422})) as typeof fetch
+    const error=await searchCnpjaAdvancedPage({apiKey,fetchImpl}).catch(error=>error)
+    expect(error.message).toContain('[redigido]')
+    expect(error.message).not.toContain('secret-before-truncation-')
+    expect(error.message.length).toBeLessThan(2000)
+    expect(error.message).not.toContain('[object Object]')
+  })
+
+  it('also preserves constraints safely when validating credentials through office lookup',async()=>{
+    const apiKey='lookup-api-secret-value'
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({message:'request validation failed',
+      constraints:[`invalid authorization ${apiKey}`,'taxId must have 14 digits'],
+    }),{status:400})) as typeof fetch
+    const error=await lookupCnpjaOffice({apiKey,taxId:'123',fetchImpl}).catch(error=>error)
+    expect(error.message).toContain('taxId must have 14 digits')
+    expect(error.message).not.toContain(apiKey)
   })
 })
