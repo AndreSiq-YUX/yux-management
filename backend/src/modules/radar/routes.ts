@@ -53,6 +53,7 @@ import {recordRadarResearchFeedback,listRadarResearchFeedback} from './research-
 import {getRadarResearchMetrics} from './research-metrics.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation,getLatestRadarCaptureOperation} from './capture-operation.js'
 import {resumeRadarCaptureOperation} from './capture-dispatch.js'
+import {RadarCaptureContinuationConsentRequired} from './capture-continuation.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
 
@@ -422,9 +423,15 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/capture-operations/:id/resume',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional()}).safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional()}).safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
-    const operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})
+    let operation:Awaited<ReturnType<typeof resumeRadarCaptureOperation>>
+    try{operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})}
+    catch(cause){
+      // Only this authorized Admin operation exposes the opaque consent receipt.
+      if(cause instanceof RadarCaptureContinuationConsentRequired)return reply.code(409).send({error:cause.message,continuationReceiptId:cause.continuationReceiptId})
+      throw cause
+    }
     try{await app.jobQueue.add('radar.advanceCaptureOperation',{organizationId:body.data.organizationId,operationId:operation.id},{jobId:`radar-capture-resume-${operation.id}-${body.data.requestId}`})}catch{ /* Durable outbox survives. */ }
     return reply.code(202).send(operation)
   })

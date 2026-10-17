@@ -100,7 +100,7 @@ export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:CaptureQueu
  for(const row of rows)await queue.add('radar.advanceCaptureOperation',{organizationId:row.organization_id,operationId:row.operation_id},{jobId:`radar-capture-${row.operation_id}-${window}`})
  return{enqueued:rows.length}
 }
-export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;operationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean},dependencies:{availability?:AvailabilityLoader}={}){
+export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;operationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean;continuationReceiptId?:string},dependencies:{availability?:AvailabilityLoader}={}){
  z.uuid().parse(input.requestId)
  const {op}=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability)
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
@@ -117,7 +117,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   if(current.status==='blocked'&&current.lease_active&&!current.discovery_pending)throw captureError('radar_capture_in_progress')
   if(current.discovery_pending&&!await recoverRejectedRadarCaptureDiscovery(client,current))throw captureError('radar_capture_discovery_uncertain')
   if(current.resume_request_id!==input.requestId&&current.status==='blocked'){
-   await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id})
+   await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId})
    const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND status='blocked'",[op.id])).rows
    for(const item of items){
     await client.query("UPDATE public.radar_capture_items SET status='queued',blocker=NULL,dispatch_generation=dispatch_generation+1 WHERE id=$1",[item.id])

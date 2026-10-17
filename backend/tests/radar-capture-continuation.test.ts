@@ -25,14 +25,15 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
    outbox:(await f.pool.query('SELECT * FROM public.radar_capture_outbox WHERE operation_id=$1',[input.operationId])).rows,
    usage:(await f.pool.query('SELECT * FROM public.radar_source_usage_counters WHERE campaign_id=$1 ORDER BY source_type,usage_date',[f.campaign.id])).rows,
   })
-  return{...f,input,resume,old,state}
+  const consent={...resume,restartExpiredContinuation:true,continuationReceiptId:(await state()).runs[0].id}
+  return{...f,input,resume,consent,old,state}
  }
  const confirmed={restartExpiredContinuation:true}
  it('requires consent without changing any receipt, cursor, lot or queue',async()=>{
   const f=await setup()
   try{
    const before=await f.state()
-   await expect(resumeRadarCaptureOperation(f.pool,admin,f.resume,{availability:available})).rejects.toThrow('radar_capture_continuation_confirmation_required')
+   await expect(resumeRadarCaptureOperation(f.pool,admin,f.resume,{availability:available})).rejects.toMatchObject({message:'radar_capture_continuation_confirmation_required',continuationReceiptId:before.runs[0].id})
    expect(await f.state()).toEqual(before)
   }finally{await f.close()}
  })
@@ -40,7 +41,7 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
   const f=await setup()
   try{
    const before=await f.state()
-   await Promise.all([1,2].map(()=>resumeRadarCaptureOperation(f.pool,admin,{...f.resume,...confirmed},{availability:available})))
+   await Promise.all([1,2].map(()=>resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})))
    const after=await f.state()
    expect(after.cursor).toMatchObject({next_token:null,completed:false,pages_processed:4,candidates_seen:40})
    expect(after.op).toMatchObject({id:f.input.operationId,status:'queued',requested_count:20,queries:1,scope_pages:{'v1:PR:all':1},resume_generation:1})
@@ -50,7 +51,7 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
    const next=company();let receivedToken:unknown='not-called'
    await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async input=>{receivedToken=input.token;return{candidates:[f.old,next],nextToken:'new-token'}}})
    expect(receivedToken).toBeUndefined()
-   await resumeRadarCaptureOperation(f.pool,admin,{...f.resume,...confirmed},{availability:available})
+   await resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})
    expect((await f.state()).cursor.next_token).toBe('new-token')
    expect((await f.state()).op).toMatchObject({queries:2,resume_generation:1})
    expect((await f.pool.query('SELECT candidate_id FROM public.radar_capture_items WHERE operation_id=$1',[f.input.operationId])).rows).toHaveLength(1)
@@ -72,7 +73,7 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
    if(mode==='ambiguous_scope')await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{target_states}','[\"PR\",\"PR\"]') WHERE id=$1",[f.input.operationId])
    if(mode==='later_run')await f.pool.query("INSERT INTO public.radar_enrichment_runs(organization_id,campaign_id,status,provider,input_payload,output_payload,started_at) VALUES($1,$2,'running','cnpja_advanced_search','{}','{}',NOW())",[organizationId,f.campaign.id])
    const before=await f.state()
-   await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,...confirmed},{availability:available})).rejects.toThrow('radar_capture_continuation_confirmation_stale')
+   await expect(resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})).rejects.toThrow('radar_capture_continuation_confirmation_stale')
    expect(await f.state()).toEqual(before)
   }finally{await f.close()}
  })
@@ -100,7 +101,7 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
    const before=await f.state()
    await f.pool.query(`CREATE FUNCTION public.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='${f.input.operationId}' AND NEW.status='queued' THEN RAISE EXCEPTION 'simulated_queue_failure'; END IF; RETURN NEW; END $$`)
    await f.pool.query(`CREATE TRIGGER ${name} BEFORE UPDATE ON public.radar_capture_operations FOR EACH ROW EXECUTE FUNCTION public.${name}()`)
-   await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,...confirmed},{availability:available})).rejects.toThrow('simulated_queue_failure')
+   await expect(resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})).rejects.toThrow('simulated_queue_failure')
    expect(await f.state()).toEqual(before)
   }finally{await f.pool.query(`DROP TRIGGER IF EXISTS ${name} ON public.radar_capture_operations`);await f.pool.query(`DROP FUNCTION IF EXISTS public.${name}()`);await f.close()}
  })
@@ -108,7 +109,7 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
   const f=await setup();let calls=0
   try{
    await f.pool.query('UPDATE public.radar_capture_operations SET queries=5 WHERE id=$1',[f.input.operationId])
-   await resumeRadarCaptureOperation(f.pool,admin,{...f.resume,...confirmed},{availability:available})
+   await resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})
    const result=await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{calls++;return{candidates:[]}}})
    expect(result).toMatchObject({discoveryStopped:true,discoveryReason:'query_cap',queries:5})
    expect(calls).toBe(0)
@@ -126,14 +127,14 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
      const login=await app.inject({method:'POST',url:'/api/auth/login',payload:{email:fixtureUsers[role].email,password:fixturePassword}})
      expect(login.statusCode).toBe(200);cookies.set(role,String(login.headers['set-cookie']).split(';')[0])
     }
-    return app.inject({method:'POST',url:`/api/radar/capture-operations/${f.input.operationId}/resume`,headers:{cookie:cookies.get(role)!},payload:{organizationId,configurationRevision:1,requestId:f.resume.requestId,...(consent===undefined?{}:{restartExpiredContinuation:consent})}})
+    return app.inject({method:'POST',url:`/api/radar/capture-operations/${f.input.operationId}/resume`,headers:{cookie:cookies.get(role)!},payload:{organizationId,configurationRevision:1,requestId:f.resume.requestId,...(consent===undefined?{}:{restartExpiredContinuation:consent}),...(consent?{continuationReceiptId:f.consent.continuationReceiptId}:{})}})
    }
    for(const role of ['yux_operator','client_admin_A','client_member_A','client_admin_B'] as const){
     const response=await post(role,true)
     expect(response.statusCode).toBe(403)
     expect(response.body).not.toMatch(/expired-token|captureContinuationRecovery|pageToken|cnpja/i)
    }
-   expect((await post('yux_admin')).json()).toMatchObject({error:'radar_capture_continuation_confirmation_required'})
+   expect((await post('yux_admin')).json()).toEqual({error:'radar_capture_continuation_confirmation_required',continuationReceiptId:f.consent.continuationReceiptId})
    expect(dispatched).toBe(0)
    expect((await post('yux_admin',false)).statusCode).toBe(409)
    const response=await post('yux_admin',true)
@@ -143,4 +144,30 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
    expect(dispatched).toBe(1)
   }finally{await app.close();await pool.end();await f.close()}
  },20_000)
+ it.each(['same_scope','other_scope'])('rejects old consent after a new rejected receipt in %s',async mode=>{
+  const f=await setup()
+  try{
+   await resumeRadarCaptureOperation(f.pool,admin,{...f.consent,requestId:randomUUID()},{availability:available})
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>({candidates:[],nextToken:'new-token'})})
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{throw new CnpjaSearchHttpError('HTTP 400: token is invalid or expired',400)}})
+   if(mode==='other_scope'){
+    await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{target_states}','[\"PR\",\"SP\"]') WHERE id=$1",[f.input.operationId])
+    await f.pool.query("UPDATE public.radar_enrichment_runs SET input_payload=jsonb_set(input_payload,'{regionalState}','\"SP\"') WHERE id=(SELECT id FROM public.radar_enrichment_runs WHERE campaign_id=$1 ORDER BY started_at DESC LIMIT 1)",[f.campaign.id])
+    await f.pool.query("UPDATE public.radar_regional_discovery_cursors SET scope_key='v1:SP:all',state='SP' WHERE campaign_id=$1",[f.campaign.id])
+   }
+   const before=await f.state()
+   expect(before.runs[0].input_payload.pageToken).toBe('new-token')
+   expect(before.runs[0].id).not.toBe(f.consent.continuationReceiptId)
+   await expect(resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})).rejects.toThrow('radar_capture_continuation_confirmation_stale')
+   expect(await f.state()).toEqual(before)
+  }finally{await f.close()}
+ })
+ it('never accepts unbound consent even for a currently proven expired cursor',async()=>{
+  const f=await setup()
+  try{
+   const before=await f.state()
+   await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,...confirmed},{availability:available})).rejects.toThrow('radar_capture_continuation_confirmation_stale')
+   expect(await f.state()).toEqual(before)
+  }finally{await f.close()}
+ })
 })

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { RadarResultsTable } from './RadarResultsTable'
 import {radarComplementError,radarResearchMessage} from '@/lib/radar/radarResearchMessages'
 import {RadarCaptureControls} from './RadarCaptureControls'
+import {ApiClientError} from '@/lib/apiClient'
 import {RadarAdminOperations} from './RadarAdminOperations'
 import {RadarCommercialWorkspace,type RadarWorkspaceProps} from './RadarCommercialWorkspace'
 import {RadarCaptureProgress} from './RadarCaptureProgress'
@@ -252,7 +253,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   const [captureOperation,setCaptureOperation]=useState<RadarCaptureOperation|null>(null)
   const [captureLoading,setCaptureLoading]=useState(false),[captureError,setCaptureError]=useState('')
   const [captureRefresh,setCaptureRefresh]=useState(0),[captureBusy,setCaptureBusy]=useState(false)
-  const captureResumeRequest=useRef<{operationId:string;requestId:string}|null>(null)
+  const captureResumeRequest=useRef<{operationId:string;requestId:string;continuationReceiptId?:string}|null>(null)
   const captureResumeSending=useRef(false),refreshCaptureResults=useRef(()=>{})
   const captureLoadedScope=useRef('')
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([])
@@ -676,12 +677,18 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     if(!captureOperation||!organizationId||captureResumeSending.current)return
     const scope=sidebarScope.current
     if(captureResumeRequest.current?.operationId!==captureOperation.id)captureResumeRequest.current={operationId:captureOperation.id,requestId:crypto.randomUUID()}
+    const resumeRequest=captureResumeRequest.current
     captureResumeSending.current=true;setCaptureBusy(true);setCaptureError('')
     try{
-      const operation=await radarService.resumeCaptureOperation(captureOperation.id,{organizationId,configurationRevision:captureOperation.configurationRevision,requestId:captureResumeRequest.current.requestId,...options})
+      const operation=await radarService.resumeCaptureOperation(captureOperation.id,{organizationId,configurationRevision:captureOperation.configurationRevision,requestId:resumeRequest.requestId,...options,...(options?.restartExpiredContinuation?{continuationReceiptId:resumeRequest.continuationReceiptId}:{})})
       if(scope===sidebarScope.current){captureResumeRequest.current=null;setCaptureOperation(operation);refreshCampaignSidebars()}
     }catch(cause){if(scope===sidebarScope.current){
-      if(cause instanceof Error&&cause.message==='radar_capture_continuation_confirmation_required')return 'confirmation_required' as const
+      if(cause instanceof ApiClientError&&cause.status===409&&cause.message==='radar_capture_continuation_confirmation_required'&&cause.body&&typeof cause.body==='object'){
+        const receiptId=(cause.body as {continuationReceiptId?:unknown}).continuationReceiptId
+        if(typeof receiptId==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(receiptId)){
+          resumeRequest.continuationReceiptId=receiptId;return 'confirmation_required' as const
+        }
+      }
       const message=cause instanceof Error?radarResearchMessage(cause.message):'';setCaptureError(message&&!/^[a-z0-9_]+$/.test(message)?message:'Não foi possível retomar. Confira as pendências e tente novamente sem iniciar outro lote.')
     }}
     finally{captureResumeSending.current=false;if(scope===sidebarScope.current)setCaptureBusy(false)}

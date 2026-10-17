@@ -7,10 +7,14 @@ type ContinuationCapture={
  status:string;created_at:Date|string;lease_active?:boolean
  configuration_snapshot:{target_states:string[];search_configuration?:unknown}
 }
+export class RadarCaptureContinuationConsentRequired extends Error{
+ readonly statusCode=409
+ constructor(readonly continuationReceiptId:string){super('radar_capture_continuation_confirmation_required');this.name='RadarCaptureContinuationConsentRequired'}
+}
 
 // Caller holds campaign, then operation locks. No network calls in this transaction.
 export async function recoverExpiredRadarCaptureContinuation(client:pg.PoolClient,op:ContinuationCapture,
- approval:{confirmed:boolean;requestId:string;approvedBy:string}):Promise<boolean>{
+ approval:{confirmed:boolean;requestId:string;approvedBy:string;continuationReceiptId?:string}):Promise<boolean>{
  const stale=()=>captureError('radar_capture_continuation_confirmation_stale')
  const run=(await client.query(`SELECT id,status,input_payload,output_payload,error_message,completed_at
   FROM public.radar_enrichment_runs
@@ -24,6 +28,7 @@ export async function recoverExpiredRadarCaptureContinuation(client:pg.PoolClien
   &&typeof run.error_message==='string'&&/\btoken is invalid or expired\b/i.test(run.error_message)
   &&!output.captureContinuationRecovery
  if(!proven){if(approval.confirmed)throw stale();return false}
+ if(approval.confirmed&&approval.continuationReceiptId!==run.id)throw stale()
  const scopes=buildRadarDiscoveryScopes({targetStates:op.configuration_snapshot.target_states,
   searchConfiguration:op.configuration_snapshot.search_configuration,configurationRevision:op.configuration_revision})
   .filter(scope=>scope.state===input.regionalState&&(scope.city??null)===(input.regionalCity??null))
@@ -33,7 +38,7 @@ export async function recoverExpiredRadarCaptureContinuation(client:pg.PoolClien
   WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' AND scope_key=$3 FOR UPDATE`,
   [op.organization_id,op.campaign_id,scope.key])).rows[0]
  if(!cursor||cursor.lease_active||cursor.next_token!==input.pageToken)throw stale()
- if(!approval.confirmed)throw captureError('radar_capture_continuation_confirmation_required')
+ if(!approval.confirmed)throw new RadarCaptureContinuationConsentRequired(run.id)
  await client.query(`UPDATE public.radar_regional_discovery_cursors
   SET next_token=NULL,completed=FALSE,lease_id=NULL,running_until=NULL,updated_at=NOW()
   WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' AND scope_key=$3`,
