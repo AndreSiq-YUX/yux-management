@@ -8,6 +8,7 @@ import {runWithDatabaseRequestContext} from '../../src/db/request-context.js'
 import {fixtureIds,fixtureUsers,seedIntegrationFixtures} from '../integration/support/fixtures.js'
 import {createRadarCampaign} from '../../src/modules/radar/repository.js'
 import {advanceRadarCaptureDiscovery} from '../../src/modules/radar/capture-discovery.js'
+import {CnpjaSearchHttpError} from '../../src/modules/radar/cnpjaClient.js'
 import {dispatchRadarCaptureOperation,reconcileRadarCaptureOutbox} from '../../src/modules/radar/capture-dispatch.js'
 import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
 import {storePlatformProviderSecret} from '../../src/modules/platform/adminRepository.js'
@@ -36,14 +37,18 @@ const apiPool=createContextAwarePool(new pg.Pool({connectionString:apiUrl.toStri
 const workerUrl=new URL(databaseUrl);workerUrl.username='yux_worker'
 const workerPool=createContextAwarePool(new pg.Pool({connectionString:workerUrl.toString()}),'worker')
 const env=loadEnv({NODE_ENV:'test',DATABASE_URL:databaseUrl,REDIS_URL:'redis://127.0.0.1:1',PROVIDER_SECRET_ENCRYPTION_KEY_B64:key,SESSION_SECRET:'local-radar-capture-fixture-session-secret',CORS_ORIGIN:'http://127.0.0.1:4174',GLOBAL_RATE_LIMIT_MAX:'5000'})
-const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=false
+const rejectDiscovery=process.env.YUX_RADAR_QA_REJECT_DISCOVERY==='true'
+const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=rejectDiscovery,rejectedOnce=false
 const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  const id=options?.jobId??`${name}-${Date.now()}`
  if(queued.has(id))return{id};queued.add(id)
  if(!['radar.advanceCaptureOperation','radar.researchCandidate'].includes(name))throw Error('qa_external_effects_disabled')
  setTimeout(()=>void runWithDatabaseRequestContext({role:'client_member',organizationIds:[org],serviceRole:'worker'},async()=>{
   if(name==='radar.advanceCaptureOperation'){
-   const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>({candidates:Array.from({length:input.limit??1},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa Sintética ${i+1} LTDA`,tradeName:`Empresa Sintética ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))})})
+   const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>{
+    if(rejectDiscovery&&!rejectedOnce){rejectedOnce=true;throw new CnpjaSearchHttpError('request validation failed',422)}
+    return{candidates:Array.from({length:input.limit??1},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa Sintética ${i+1} LTDA`,tradeName:`Empresa Sintética ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))}
+   }})
    await dispatchRadarCaptureOperation(workerPool,env,{organizationId:org,operationId:String(data.operationId)},queue,undefined,{discover})
   }else{
    const runId=String(data.runId)

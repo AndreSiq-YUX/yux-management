@@ -3,6 +3,16 @@ import {createRoot} from 'react-dom/client'
 import {describe,it,expect,vi} from 'vitest'
 const modulePath='./RadarCaptureProgress',api=await import(modulePath).catch(()=>({}))
 describe('truthful capture progress',()=>{
+ it('shows a rejected discovery reason instead of the generic pending message',async()=>{
+  const container=document.createElement('div'),root=createRoot(container)
+  try{
+   await act(async()=>root.render(<api.RadarCaptureProgress operation={{id:'op',status:'blocked',configurationRevision:6,discoveryStopped:false,counts:{requested:20,admitted:0,researching:0,completed:0,insufficient:0,blocked:0},blockers:['radar_capture_discovery_request_rejected'],items:[]}} onRefresh={vi.fn()}/>))
+   expect(container.querySelector('[role="alert"]')?.textContent).toContain('rejeitada')
+   expect(container.textContent).not.toContain('Há uma etapa pendente')
+   expect(container.textContent).not.toMatch(/CNPJá|Serper|Brave/)
+   expect(container.textContent).toContain('20')
+  }finally{act(()=>root.unmount())}
+ })
  it.each(['queued','partial','blocked'])('never labels %s as successful completion',async status=>{
   expect(api.RadarCaptureProgress).toBeTypeOf('function')
   const container=document.createElement('div'),root=createRoot(container)

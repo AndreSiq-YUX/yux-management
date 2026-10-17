@@ -1,5 +1,12 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_capture_discovery_request_rejected:'A busca por novas empresas foi rejeitada por parâmetros inválidos. Os resultados anteriores foram preservados. Após a correção, use Retomar pesquisa para continuar este lote.',
+  radar_capture_discovery_uncertain:'Não foi possível confirmar o resultado da última busca. Não repita a consulta: o administrador do sistema precisa conferir a execução para evitar cobrança duplicada. As empresas já salvas foram preservadas.',
+  provider_failed:'Não recebemos uma resposta válida para buscar novas empresas. Confira o diagnóstico da pesquisa antes de retomar; uma resposta incerta não será repetida automaticamente.',
+  radar_capture_in_progress:'Aguarde o processamento atual encerrar e atualize o acompanhamento antes de retomar este lote.',
+  radar_capture_research_unavailable:'A pesquisa completa está indisponível. O administrador do sistema precisa conferir a disponibilidade da pesquisa antes da retomada. Os resultados salvos foram preservados.',
+  radar_capture_model_route_missing:'A análise das empresas ainda não está configurada. O administrador do sistema precisa concluir essa configuração antes da pesquisa completa.',
+  radar_capture_queue_unavailable:'Não foi possível encaminhar o processamento. Retome para recuperar as etapas pendentes deste mesmo lote.',
   source_limit_exceeded:'O limite diário desta fonte foi atingido. Confira os limites no Admin.',
   source_budget_exceeded:'O orçamento desta campanha foi atingido. Confira os limites no Admin.',
   radar_candidate_requires_current_discovery:'Retome a pesquisa desta empresa na configuração atual antes de completar os dados.',
