@@ -68,6 +68,17 @@ const DEFAULT_CONFIG: Required<CnpjaProviderConfig> = {
 
 const municipalityCache = new Map<string, { expiresAt: number; items: Array<{ id: number; nome: string }> }>()
 
+// Only an actual HTTP validation response is proof that discovery was rejected.
+// A timeout or an error while persisting a successful response is not retry-safe.
+export class CnpjaSearchHttpError extends Error {
+  readonly requestRejected: boolean
+  constructor(message: string, readonly statusCode: number) {
+    super(message)
+    this.name = 'CnpjaSearchHttpError'
+    this.requestRejected = statusCode === 400 || statusCode === 422
+  }
+}
+
 export async function searchCnpjaAdvanced(input: CnpjaAdvancedSearchInput) {
   return (await searchCnpjaAdvancedPage(input)).candidates
 }
@@ -91,15 +102,15 @@ export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): 
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw Object.assign(new Error(extractCnpjaError(body) || `CNPJa retornou HTTP ${response.status}.`), {
-      statusCode: response.status,
-    })
+    throw new CnpjaSearchHttpError(extractCnpjaError(body) || `CNPJa retornou HTTP ${response.status}.`, response.status)
   }
 
   const candidates = extractCnpjaItems(body)
     .map(normalizeCnpjaCandidate)
     .filter(candidate => candidate.taxId || candidate.tradeName || candidate.legalName)
-    .slice(0, limit)
+    // A continuation inherits its original page size. Admission stores any
+    // excess in overflow; truncating here would silently lose paid-for records.
+    .slice(0, input.token ? undefined : limit)
   const record = isRecord(body) ? body : {}
   const next = stringValue(record.next) || stringValue(record.nextToken)
   return { candidates, nextToken: next && /^[\w-]{1,256}$/.test(next) ? next : undefined }
@@ -182,11 +193,11 @@ function buildAdvancedSearchUrl(config: Required<CnpjaProviderConfig>, input: Cn
   // Ignore legacy provider path/method settings that pointed to the nonexistent POST /office/search.
   const path = '/office'
   const url = new URL(`${config.baseUrl}${path}`)
-  url.searchParams.set('limit', String(limit))
   if (input.token) {
     url.searchParams.set('token', input.token)
     return url.toString()
   }
+  url.searchParams.set('limit', String(limit))
   url.searchParams.set('status.id.in', (input.registrationStatusIds ?? [2]).join(','))
   if (input.query?.trim()) url.searchParams.set('names.in', input.query.trim())
   if (input.excludedNameTerms?.length) url.searchParams.set('names.nin', input.excludedNameTerms.join(','))

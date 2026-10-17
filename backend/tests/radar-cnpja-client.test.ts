@@ -125,6 +125,36 @@ describe('radar CNPJa client', () => {
     expect(page.candidates[0].cnaes).toEqual(['5611201', '5620101'])
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('activities.id.in=5620101'), expect.anything())
     await searchCnpjaAdvancedPage({ apiKey: 'fixture', token: 'pagina-2', limit: 10, fetchImpl })
-    expect(fetchImpl).toHaveBeenLastCalledWith('https://api.cnpja.com/office?limit=10&token=pagina-2', expect.anything())
+    expect(fetchImpl).toHaveBeenLastCalledWith('https://api.cnpja.com/office?token=pagina-2', expect.anything())
+  })
+
+  it('continues with the token alone and preserves the whole inherited page for overflow', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      records: Array.from({length:10}, (_, i) => ({taxId:String(12345678000100+i), alias:`Empresa ${i}`})), next:'page-3',
+    }), {status:200})) as typeof fetch
+    const page = await searchCnpjaAdvancedPage({apiKey:'fixture',token:'page-2',limit:3,city:'Curitiba',state:'PR',
+      query:'empresas',cnaes:['5620101'],excludedNameTerms:['restaurante'],openingFrom:'2020-01-01',fetchImpl})
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledWith('https://api.cnpja.com/office?token=page-2',expect.anything())
+    expect(page.candidates).toHaveLength(10)
+    expect(page.nextToken).toBe('page-3')
+  })
+
+  it.each([400,422])('identifies a confirmed HTTP %i validation rejection without conflating it with transport failures', async status => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({message:'request validation failed'}), {status})) as typeof fetch
+    await expect(searchCnpjaAdvancedPage({apiKey:'fixture',fetchImpl})).rejects.toMatchObject({statusCode:status,requestRejected:true})
+  })
+
+  it.each([429,500,503])('keeps HTTP %i outside confirmed validation rejections', async status => {
+    const fetchImpl = vi.fn(async () => new Response('{}',{status})) as typeof fetch
+    const error = await searchCnpjaAdvancedPage({apiKey:'fixture',fetchImpl}).catch(error => error)
+    expect(error.statusCode).toBe(status)
+    expect(error.requestRejected).not.toBe(true)
+  })
+
+  it('does not turn a lost network response into a confirmed rejection', async () => {
+    const failure = new TypeError('fetch failed')
+    const fetchImpl = vi.fn(async () => {throw failure}) as typeof fetch
+    await expect(searchCnpjaAdvancedPage({apiKey:'fixture',fetchImpl})).rejects.toBe(failure)
   })
 })
