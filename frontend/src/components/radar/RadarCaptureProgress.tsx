@@ -14,7 +14,7 @@ export function RadarCaptureProgress({operation,onRefresh,busy=false,error}:{ope
    {operation.discoveryReason&&reasons[operation.discoveryReason]&&<p className="text-sm">{reasons[operation.discoveryReason]} Não aumentamos os limites automaticamente.</p>}
    {operation.status==='partial'&&<p className="text-sm">O lote não atingiu toda a quantidade ou algumas empresas terminaram sem os dados necessários. Revise os resultados antes de aprovar.</p>}
    {operation.blockers.length>0&&<div role="alert" className="flex flex-col gap-2 text-sm">{operation.blockers.map((code,index)=>{const message=radarResearchMessage(code);return <p key={index}>{message===code?'Há uma etapa pendente. Confira a disponibilidade e os detalhes das empresas antes de retomar.':message}</p>})}</div>}
-   {operation.status==='blocked'&&<p className="text-sm">Resolva a pendência indicada. Retomar mantém este lote e recupera as etapas pendentes; não refaz a descoberta nem repete chamadas com cobrança incerta. Autorizações de certificado continuam nos detalhes da empresa.</p>}
+   {operation.status==='blocked'&&<p className="text-sm">Resolva a pendência indicada. Retomar mantém este lote e recupera as etapas pendentes. Se a continuação da busca não for mais válida, o reinício da descoberta exigirá sua confirmação. Chamadas com cobrança incerta não são repetidas automaticamente. Autorizações de certificado continuam nos detalhes da empresa.</p>}
    {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
   </CardContent>{error&&<CardFooter><Button type="button" size="sm" variant="outline" disabled={busy} onClick={onRefresh}>Atualizar acompanhamento</Button></CardFooter>}
  </Card>

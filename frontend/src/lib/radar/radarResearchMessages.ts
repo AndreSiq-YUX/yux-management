@@ -1,5 +1,7 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_capture_continuation_confirmation_required:'A continuação da busca não é mais válida. Use Retomar pesquisa e revise a confirmação para reiniciar a descoberta neste mesmo lote.',
+  radar_capture_continuation_confirmation_stale:'A situação da pesquisa mudou. Atualize o acompanhamento e use Retomar pesquisa novamente. Nenhuma nova busca foi iniciada por esta confirmação.',
   radar_capture_discovery_request_rejected:'A busca por novas empresas foi rejeitada por parâmetros inválidos. Os resultados anteriores foram preservados. Após a correção, use Retomar pesquisa para continuar este lote.',
   radar_capture_discovery_uncertain:'Não foi possível confirmar o resultado da última busca. Não repita a consulta: o administrador do sistema precisa conferir a execução para evitar cobrança duplicada. As empresas já salvas foram preservadas.',
   provider_failed:'Não recebemos uma resposta válida para buscar novas empresas. Confira o diagnóstico da pesquisa antes de retomar; uma resposta incerta não será repetida automaticamente.',

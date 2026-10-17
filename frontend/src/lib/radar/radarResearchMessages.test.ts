@@ -1,5 +1,9 @@
 import {it,expect} from 'vitest'
 import {radarResearchMessage} from './radarResearchMessages'
+it('explains a stale continuation confirmation without leaking technical codes',()=>{
+  expect(radarResearchMessage('radar_capture_continuation_confirmation_stale')).toContain('Atualize')
+  expect(radarResearchMessage('radar_capture_continuation_confirmation_required')).toContain('confirmação')
+})
 it('distinguishes missing YUX wallet, internal balance and provider credits',()=>{
   const missing=radarResearchMessage('radar_ai_wallet_missing')
   expect(missing).toContain('carteira');expect(missing).toContain('YUX')

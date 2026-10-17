@@ -672,15 +672,18 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     if(scope!==sidebarScope.current)return
     setCaptureOperation(operation);setCaptureError('');refreshCampaignSidebars()
   }
-  const resumeCapture=async()=>{
+  const resumeCapture=async(options?:{restartExpiredContinuation?:boolean})=>{
     if(!captureOperation||!organizationId||captureResumeSending.current)return
     const scope=sidebarScope.current
     if(captureResumeRequest.current?.operationId!==captureOperation.id)captureResumeRequest.current={operationId:captureOperation.id,requestId:crypto.randomUUID()}
     captureResumeSending.current=true;setCaptureBusy(true);setCaptureError('')
     try{
-      const operation=await radarService.resumeCaptureOperation(captureOperation.id,{organizationId,configurationRevision:captureOperation.configurationRevision,requestId:captureResumeRequest.current.requestId})
+      const operation=await radarService.resumeCaptureOperation(captureOperation.id,{organizationId,configurationRevision:captureOperation.configurationRevision,requestId:captureResumeRequest.current.requestId,...options})
       if(scope===sidebarScope.current){captureResumeRequest.current=null;setCaptureOperation(operation);refreshCampaignSidebars()}
-    }catch(cause){if(scope===sidebarScope.current){const message=cause instanceof Error?radarResearchMessage(cause.message):'';setCaptureError(message&&!/^[a-z0-9_]+$/.test(message)?message:'Não foi possível retomar. Confira as pendências e tente novamente sem iniciar outro lote.')}}
+    }catch(cause){if(scope===sidebarScope.current){
+      if(cause instanceof Error&&cause.message==='radar_capture_continuation_confirmation_required')return 'confirmation_required' as const
+      const message=cause instanceof Error?radarResearchMessage(cause.message):'';setCaptureError(message&&!/^[a-z0-9_]+$/.test(message)?message:'Não foi possível retomar. Confira as pendências e tente novamente sem iniciar outro lote.')
+    }}
     finally{captureResumeSending.current=false;if(scope===sidebarScope.current)setCaptureBusy(false)}
   }
 

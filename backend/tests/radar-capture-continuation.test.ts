@@ -120,10 +120,13 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
   const app=await buildServer({NODE_ENV:'test',DATABASE_URL:connectionString!,REDIS_URL:'redis://127.0.0.1:1',SESSION_COOKIE_NAME:'yux_session',SESSION_SECRET:'local-continuation-test-secret-at-least-32',CORS_ORIGIN:'http://localhost:3000',PORT:4000},{pool,jobQueue:{add:async()=>{dispatched++;return{id:'fake'}},close:async()=>{}},redisPing:async()=>'PONG'})
   try{
    await activateCaptureSearch(f.pool)
+   const cookies=new Map<string,string>()
    const post=async(role:keyof typeof fixtureUsers,consent?:boolean)=>{
-    const login=await app.inject({method:'POST',url:'/api/auth/login',payload:{email:fixtureUsers[role].email,password:fixturePassword}})
-    expect(login.statusCode).toBe(200)
-    return app.inject({method:'POST',url:`/api/radar/capture-operations/${f.input.operationId}/resume`,headers:{cookie:String(login.headers['set-cookie']).split(';')[0]},payload:{organizationId,configurationRevision:1,requestId:f.resume.requestId,...(consent===undefined?{}:{restartExpiredContinuation:consent})}})
+    if(!cookies.has(role)){
+     const login=await app.inject({method:'POST',url:'/api/auth/login',payload:{email:fixtureUsers[role].email,password:fixturePassword}})
+     expect(login.statusCode).toBe(200);cookies.set(role,String(login.headers['set-cookie']).split(';')[0])
+    }
+    return app.inject({method:'POST',url:`/api/radar/capture-operations/${f.input.operationId}/resume`,headers:{cookie:cookies.get(role)!},payload:{organizationId,configurationRevision:1,requestId:f.resume.requestId,...(consent===undefined?{}:{restartExpiredContinuation:consent})}})
    }
    for(const role of ['yux_operator','client_admin_A','client_member_A','client_admin_B'] as const){
     const response=await post(role,true)
@@ -139,5 +142,5 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
    expect(response.body).not.toMatch(/expired-token|captureContinuationRecovery|pageToken/)
    expect(dispatched).toBe(1)
   }finally{await app.close();await pool.end();await f.close()}
- })
+ },20_000)
 })

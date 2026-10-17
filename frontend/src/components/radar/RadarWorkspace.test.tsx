@@ -38,6 +38,23 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('opens continuation consent from the server and forwards explicit approval with the same requestId',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    const operation={id:'op',campaignId:'campaign',configurationRevision:2,status:'blocked' as const,discoveryStopped:false,queries:1,blockers:['radar_capture_discovery_request_rejected'],counts:{requested:20,admitted:0,researching:0,completed:0,insufficient:0,blocked:0},items:[]}
+    vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValue({operation})
+    vi.mocked(radarService.resumeCaptureOperation).mockRejectedValueOnce(Error('radar_capture_continuation_confirmation_required')).mockRejectedValueOnce(Error('radar_capture_continuation_confirmation_stale'))
+    const container=document.createElement('div'),root=createRoot(container);document.body.append(container)
+    try{
+      await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+      await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Retomar pesquisa')!.click())
+      const dialog=document.querySelector('[role="dialog"]');expect(dialog).not.toBeNull()
+      await act(async()=>[...dialog!.querySelectorAll('button')].find(button=>button.textContent==='Confirmar e retomar')!.click())
+      const calls=vi.mocked(radarService.resumeCaptureOperation).mock.calls
+      expect(calls).toHaveLength(2);expect(calls[1]).toEqual(['op',{...calls[0][1],restartExpiredContinuation:true}])
+      expect(container.textContent).toContain('Atualize');expect(container.textContent).not.toContain('radar_capture_continuation_confirmation_stale')
+      expect(radarService.startCaptureOperation).not.toHaveBeenCalled()
+    }finally{act(()=>root.unmount());container.remove();vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValue({operation:null})}
+  })
   it('follows a pending commercial analysis to review without an active capture',async()=>{
     vi.useFakeTimers();state.authRole='manager';state.context={mode:'client_workspace',organization:{id:'org',isInternalGrowthWorkspace:true},role:{key:'yux_operator',scope:'internal',permissions:[]}} as unknown as PlatformContext
     vi.mocked(radarService.getCommercialCampaigns).mockResolvedValue([{id:'campaign',organizationId:'org',name:'Local',campaignType:'local_niche',criteria:{}}])

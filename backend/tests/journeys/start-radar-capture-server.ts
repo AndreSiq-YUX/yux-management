@@ -8,6 +8,7 @@ import {runWithDatabaseRequestContext} from '../../src/db/request-context.js'
 import {fixtureIds,fixtureUsers,seedIntegrationFixtures} from '../integration/support/fixtures.js'
 import {createRadarCampaign} from '../../src/modules/radar/repository.js'
 import {advanceRadarCaptureDiscovery} from '../../src/modules/radar/capture-discovery.js'
+import {startRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js'
 import {CnpjaSearchHttpError} from '../../src/modules/radar/cnpjaClient.js'
 import {dispatchRadarCaptureOperation,reconcileRadarCaptureOutbox} from '../../src/modules/radar/capture-dispatch.js'
 import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
@@ -38,7 +39,12 @@ const workerUrl=new URL(databaseUrl);workerUrl.username='yux_worker'
 const workerPool=createContextAwarePool(new pg.Pool({connectionString:workerUrl.toString()}),'worker')
 const env=loadEnv({NODE_ENV:'test',DATABASE_URL:databaseUrl,REDIS_URL:'redis://127.0.0.1:1',PROVIDER_SECRET_ENCRYPTION_KEY_B64:key,SESSION_SECRET:'local-radar-capture-fixture-session-secret',CORS_ORIGIN:'http://127.0.0.1:4174',GLOBAL_RATE_LIMIT_MAX:'5000'})
 const rejectDiscovery=process.env.YUX_RADAR_QA_REJECT_DISCOVERY==='true'
-const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=rejectDiscovery,rejectedOnce=false
+const expiredContinuation=process.env.YUX_RADAR_QA_EXPIRED_CONTINUATION==='true'
+if(expiredContinuation){
+ await pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','qa-expired-token',4,40)`,[org,campaign.id])
+ await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:crypto.randomUUID(),requestedCount:1})
+}
+const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=rejectDiscovery||expiredContinuation,rejectedOnce=false
 const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  const id=options?.jobId??`${name}-${Date.now()}`
  if(queued.has(id))return{id};queued.add(id)
@@ -46,6 +52,7 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  setTimeout(()=>void runWithDatabaseRequestContext({role:'client_member',organizationIds:[org],serviceRole:'worker'},async()=>{
   if(name==='radar.advanceCaptureOperation'){
    const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>{
+    if(expiredContinuation&&input.token==='qa-expired-token')throw new CnpjaSearchHttpError('HTTP 400: request validation failed; token is invalid or expired',400)
     if(rejectDiscovery&&!rejectedOnce){rejectedOnce=true;throw new CnpjaSearchHttpError('request validation failed',422)}
     return{candidates:Array.from({length:input.limit??1},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa Sintética ${i+1} LTDA`,tradeName:`Empresa Sintética ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))}
    }})
