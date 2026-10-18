@@ -109,9 +109,9 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
   const f=await setup();let calls=0
   try{
    await f.pool.query('UPDATE public.radar_capture_operations SET queries=5 WHERE id=$1',[f.input.operationId])
-   await resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})
+   await expect(resumeRadarCaptureOperation(f.pool,admin,f.consent,{availability:available})).rejects.toThrow('radar_capture_history_uncertain')
    const result=await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{calls++;return{candidates:[]}}})
-   expect(result).toMatchObject({discoveryStopped:true,discoveryReason:'query_cap',queries:5})
+   expect(result).toMatchObject({status:'blocked',queries:5})
    expect(calls).toBe(0)
   }finally{await f.close()}
  })

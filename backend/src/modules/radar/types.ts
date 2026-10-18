@@ -2,7 +2,7 @@ import type { RadarSearchConfiguration } from './search-configuration.js'
 
 export type RadarCaptureOperation = {
   id:string;campaignId:string;configurationRevision:number;status:'queued'|'discovering'|'researching'|'completed'|'partial'|'blocked';
-  discoveryStopped:boolean;discoveryReason?:string;queries:number;blockers:string[];
+  discoveryStopped:boolean;discoveryReason?:string;queries:number;blockers:string[];canContinue?:boolean;
   counts:{requested:number;admitted:number;researching:number;completed:number;insufficient:number;blocked:number};
   items:Array<{id:string;candidateId:string;runId?:string;status:string;blocker?:string}>
 }

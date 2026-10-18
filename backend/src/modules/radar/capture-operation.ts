@@ -6,6 +6,7 @@ import {assertRadarRegionalBatchAccess} from './repository.js'
 import {getRadarResearchAvailability} from './research-availability.js'
 import type {RadarCaptureOperation} from './types.js'
 import {buildCnpjaCandidateSnippet,type CnpjaCandidate} from './cnpjaClient.js'
+import {loadRadarCapturePreflight,isRadarCaptureLimitPause} from './capture-preflight.js'
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().min(1).max(1000).parse(value)
@@ -35,6 +36,8 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
   const active=(await client.query(`SELECT id,status FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked')`,[input.organizationId,input.campaignId,revision])).rows[0]
   if(active){await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
   await assertCaptureAvailability(client as unknown as pg.Pool,user,input.organizationId,input.campaignId,dependencies.availability)
+  const {preflight}=await loadRadarCapturePreflight(client,user,input,dependencies)
+  if(!preflight.allowed)throw captureError(preflight.blockers[0]?.code??'radar_capture_research_unavailable')
   const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot)
    VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify(campaign)])).rows[0]
   await client.query('INSERT INTO public.radar_capture_outbox(operation_id,organization_id,campaign_id) VALUES($1,$2,$3)',[row.id,input.organizationId,input.campaignId])
@@ -49,7 +52,7 @@ export async function getRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organi
  await requireRadarScope(pool,user,{organizationId,campaignId:row.campaign_id})
  const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
  const n=(status:string)=>items.filter(item=>item.status===status).length
- return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,
+ return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,items.length)}:{}),
   counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked')}}
 }
 export async function getLatestRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){

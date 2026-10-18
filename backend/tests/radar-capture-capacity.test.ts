@@ -21,14 +21,16 @@ describe('capture capacity',()=>{
 describe.skipIf(!connectionString)('capture accounting and limit pause with PostgreSQL',()=>{
  async function setup(){
   const f=await captureFixture()
-  await f.pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(jsonb_set(search_configuration,'{batch,maxPagesPerScope}','1'),'{batch,maxQueriesPerBatch}','5') WHERE id=$1`,[f.campaign.id])
   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20},{availability:available})
+  // Historic lots were accepted before capacity validation existed.
+  await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{search_configuration,batch,maxPagesPerScope}','1') WHERE id=$1",[started.operationId])
   const input={organizationId,operationId:started.operationId},op=async()=>(await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[input.operationId])).rows[0]
   return{...f,input,op}
  }
  it('does not count rejected attempts as obtained pages or erase consumption',async()=>{
   const f=await setup()
   try{
+   await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{search_configuration,batch,maxPagesPerScope}','5') WHERE id=$1",[f.input.operationId])
    await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{throw new CnpjaSearchHttpError('invalid request',400)}})
    await resumeRadarCaptureOperation(f.pool,admin,{...f.input,configurationRevision:1,requestId:randomUUID()},{availability:available})
    let calls=0

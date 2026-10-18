@@ -1,0 +1,90 @@
+import {createHash} from 'node:crypto'
+import type pg from 'pg'
+import type {AuthUser} from '../../auth/routes.js'
+import {assertRadarRegionalBatchAccess,findRadarDataSource,evaluateRadarSourceGovernance} from './repository.js'
+import {captureError,parseRadarCaptureCount,type AvailabilityLoader,type CaptureAvailability} from './capture-operation.js'
+import {inspectRejectedRadarCaptureDiscovery} from './capture-recovery.js'
+import {getRadarResearchAvailability} from './research-availability.js'
+import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './search-configuration.js'
+import {calculateRadarCaptureCapacity,loadRadarCapturePageAccounting,type RadarCaptureLimits,type RadarQueryable} from './capture-capacity.js'
+import {inspectExpiredRadarCaptureContinuation} from './capture-continuation.js'
+export type PreflightInput={organizationId:string;campaignId:string;configurationRevision:number;requestedCount:number;operationId?:string}
+export type PreflightDependencies={availability?:AvailabilityLoader;workerReady?:()=>Promise<boolean>}
+export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
+export const isRadarCaptureLimitPause=(op:{status:string;discovery_reason?:string;requested_count:number},admitted:number)=>['blocked','partial'].includes(op.status)&&['page_cap','query_cap'].includes(op.discovery_reason??'')&&admitted<op.requested_count
+export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){
+ if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
+ parseRadarCaptureCount(input.requestedCount)
+ const revision=await assertRadarRegionalBatchAccess(db as pg.Pool,user,input.organizationId,input.campaignId)
+ if(revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
+ const campaign=(await db.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[input.campaignId,input.organizationId])).rows[0]
+ const op=input.operationId?(await db.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3',[input.operationId,input.organizationId,input.campaignId])).rows[0]:null
+ if(input.operationId&&!op)throw captureError('radar_capture_not_found',404)
+ if(op&&(op.configuration_revision!==revision||op.requested_count!==input.requestedCount))throw captureError('radar_capture_request_conflict')
+ const snapshot=op?.configuration_snapshot??campaign,config=resolveRadarSearchConfiguration(snapshot.search_configuration)
+ const {pageSize,maxPagesPerScope,maxQueriesPerBatch}=config.batch,limits={pageSize,maxPagesPerScope,maxQueriesPerBatch}
+ const items=op?(await db.query('SELECT COUNT(*)::int AS n FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows[0].n:0
+ const remaining=Math.max(0,input.requestedCount-items)
+ const cursors=(await db.query("SELECT scope_key,next_token,completed,lease_id,running_until,running_until>NOW() AS lease_active FROM public.radar_regional_discovery_cursors WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY scope_key",[input.organizationId,input.campaignId])).rows
+ const scopes=buildRadarDiscoveryScopes({targetStates:snapshot.target_states,configurationRevision:revision,searchConfiguration:config}).map(scope=>({...scope,completed:cursors.some(row=>row.scope_key===scope.key&&row.completed)}))
+ const overflowCount=Number((await db.query(`SELECT COUNT(DISTINCT candidate->>'taxId') AS n FROM public.radar_capture_overflow overflow
+  WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND candidate->>'taxId' IS NOT NULL
+  AND NOT EXISTS(SELECT 1 FROM public.radar_candidate_records candidate WHERE candidate.campaign_id=$2 AND candidate.dedupe_key='cnpj:'||(overflow.candidate->>'taxId'))
+  AND NOT EXISTS(SELECT 1 FROM public.radar_company_records company WHERE company.organization_id=$1 AND company.cnpj=overflow.candidate->>'taxId')
+  AND NOT EXISTS(SELECT 1 FROM public.leads lead WHERE lead.organization_id=$1 AND lead.attribution_context->>'radarCnpj'=overflow.candidate->>'taxId')`,[input.organizationId,input.campaignId,revision])).rows[0].n)
+ const rejected=op?.discovery_pending?await inspectRejectedRadarCaptureDiscovery(db,op):false
+ const accounting=op?await loadRadarCapturePageAccounting(db,op):{successfulPagesByScope:{},historyCertain:true}
+ // The narrow legacy rejection proof accounts for one failed attempt, never an obtained page.
+ if(rejected&&rejected.legacy)accounting.historyCertain=true
+ const capacity=calculateRadarCaptureCapacity({limits,remaining,attemptedQueries:op?.queries??0,scopes,successfulPagesByScope:accounting.successfulPagesByScope,usableOverflowCount:overflowCount})
+ const blockers:RadarCapturePreflight['blockers']=[],checks:RadarCapturePreflight['checks']=[]
+ const fail=(code:string,message=code)=>{if(!blockers.some(item=>item.code===code))blockers.push({code,message})}
+ if(op?.discovery_pending&&!rejected)fail('radar_capture_discovery_uncertain')
+ if(op?.lease_active||cursors.some(row=>row.lease_active))fail('radar_capture_in_progress')
+ if(!accounting.historyCertain)fail('radar_capture_history_uncertain')
+ if(['paused','archived','completed'].includes(campaign.status))fail('radar_capture_campaign_inactive')
+ const other=(await db.query("SELECT id FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked') AND ($4::uuid IS NULL OR id<>$4) LIMIT 1",[input.organizationId,input.campaignId,revision,op?.id??null])).rows[0]
+ if(other)fail('radar_capture_other_active_lot')
+ const limitPause=op&&isRadarCaptureLimitPause(op,items),needsDiscovery=remaining>0&&(!op?.discovery_stopped||limitPause)
+ const requiresLimitsApproval=!!op&&!!needsDiscovery&&(!!limitPause||capacity.optimisticAdditionalCapacity<remaining)
+ if(!op&&capacity.optimisticAdditionalCapacity<remaining)fail('radar_capture_capacity_insufficient')
+ const availability:CaptureAvailability=await(deps.availability??getRadarResearchAvailability)(db as pg.Pool,user,input.organizationId,input.campaignId)
+ if(!availability.allowed)for(const reason of availability.reasons)fail(reason.code,reason.message)
+ if(availability.presence?.routeConfigured===false||availability.semantic?.routeConfigured===false)fail('radar_capture_model_route_missing')
+ checks.push({key:'research_configuration',status:availability.allowed?'ok':'blocked'})
+ if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
+  const source=await findRadarDataSource(db as pg.Pool,input.organizationId,'cnpja_advanced_search')
+  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,capacity.minimumAdditionalQueries)
+  for(const issue of governance.issues)fail(issue.code,issue.message)
+  const provider=(await db.query(`SELECT status,EXISTS(SELECT 1 FROM public.platform_provider_secrets secret WHERE secret.provider_connection_id=provider.id AND secret.secret_kind='api_key') AS has_secret
+   FROM public.platform_provider_connections provider WHERE provider_key='cnpja' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)).rows[0]
+  if(provider?.status!=='active')fail('radar_capture_source_inactive')
+  if(!provider?.has_secret)fail('radar_capture_source_secret_missing')
+  checks.push({key:'discovery_source',status:governance.allowed&&provider?.status==='active'&&provider.has_secret?'ok':'blocked'})
+ }
+ const worker=deps.workerReady?await deps.workerReady():!!(await db.query("SELECT 1 FROM public.worker_process_heartbeats WHERE 'external'=ANY(queue_classes) AND last_seen_at>NOW()-INTERVAL '90 seconds' LIMIT 1")).rows.length
+ if(!worker)fail('radar_capture_worker_unavailable')
+ checks.push({key:'external_worker',status:worker?'ok':'blocked'})
+ const ai=config.research.presenceResolutionEnabled||config.research.semanticQualificationEnabled||config.research.profileEnabled||config.research.sizeAssessment.enabled
+ if(ai){
+  const context=(await db.query(`SELECT organization.client_id,contract.id AS contract_id FROM public.organizations organization
+   LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE WHERE organization.id=$1`,[input.organizationId])).rows[0]
+  if(context?.client_id&&context.contract_id){
+   const wallet=(await db.query('SELECT current_balance,is_unlimited FROM public.ai_credit_wallets WHERE organization_id=$1 AND client_id=$2 AND contract_id=$3',[input.organizationId,context.client_id,context.contract_id])).rows[0]
+   const code=!wallet?'radar_ai_wallet_missing':!wallet.is_unlimited&&Number(wallet.current_balance)<1?'radar_ai_credits_insufficient':undefined
+   if(code)fail(code);checks.push({key:'ai_wallet',status:code?'blocked':'ok',...(code?{code}:{})})
+  }else checks.push({key:'ai_wallet',status:'not_applicable'})
+ }else checks.push({key:'ai_wallet',status:'not_applicable'})
+ checks.push({key:'external_credit',status:'not_checked'},{key:'runtime_connectivity',status:'not_checked'})
+ const latest=(await db.query("SELECT id FROM public.radar_enrichment_runs WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY started_at DESC NULLS LAST,id DESC LIMIT 1",[input.organizationId,input.campaignId])).rows[0]?.id??null
+ let expired:Awaited<ReturnType<typeof inspectExpiredRadarCaptureContinuation>>=null
+ if(op&&!op.discovery_pending&&!op.lease_active){try{expired=await inspectExpiredRadarCaptureContinuation(db,op)}catch{fail('radar_capture_continuation_confirmation_stale')}}
+ const stateId=createHash('sha256').update(JSON.stringify({organizationId:input.organizationId,campaignId:input.campaignId,operationId:op?.id??null,revision,requested:input.requestedCount,status:op?.status??null,reason:op?.discovery_reason??null,generation:op?.resume_generation??0,queries:op?.queries??0,items,accounting,limits,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,cursors,latest,overflowCount})).digest('hex')
+ const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
+ return{preflight,operation:op,campaign,scopes,overflowCount}
+}
+export async function getRadarCapturePreflight(pool:pg.Pool,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){
+ const client=await pool.connect()
+ try{await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await loadRadarCapturePreflight(client,user,input,deps);await client.query('COMMIT');return result.preflight}
+ catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+}

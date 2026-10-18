@@ -15,9 +15,14 @@ export async function captureFixture(){
   await pool.query('UPDATE public.organizations SET is_internal_growth_workspace=TRUE WHERE id=$1',[organizationId])
   await pool.query(`UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.025,rate_limit_per_day=10000 WHERE source_key='cnpja_advanced_search'`)
   await pool.query(`INSERT INTO public.platform_provider_connections(provider_type,provider_key,display_name,status,public_config) VALUES('internal_service','cnpja','Fixture','active','{}') ON CONFLICT(provider_type,provider_key,environment) DO UPDATE SET status='active'`)
+  const provider=(await pool.query("SELECT id FROM public.platform_provider_connections WHERE provider_key='cnpja' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1")).rows[0]
+  await storePlatformProviderSecret(pool,{providerConnectionId:provider.id,secretKind:'api_key',value:'fixture-not-real'},`provider-key:${Buffer.alloc(32,7).toString('base64')}`)
+  await activateCaptureSearch(pool)
+  const heartbeat=randomUUID()
+  await pool.query("INSERT INTO public.worker_process_heartbeats(instance_id,queue_classes,started_at,last_seen_at,metadata) VALUES($1,ARRAY['external'],NOW(),NOW(),'{}')",[heartbeat])
   const campaign=await createRadarCampaign(pool,admin,{organizationId,name:`Capture ${randomUUID()}`,campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:10000,budgetLimit:100,
     searchConfiguration:{sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},research:{enabled:true,webSearchEnabled:true}}} as never)
-  return {pool,campaign,async close(){await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id]);await pool.end()}}
+  return {pool,campaign,async close(){await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id]);await pool.query('DELETE FROM public.worker_process_heartbeats WHERE instance_id=$1',[heartbeat]);await pool.end()}}
 }
 export function company(){return {taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),tradeName:'Empresa sintética',legalName:'Empresa sintética LTDA',city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}}
 export async function activateCaptureSearch(pool:pg.Pool){
