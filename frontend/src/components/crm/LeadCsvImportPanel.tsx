@@ -18,7 +18,7 @@ export function LeadCsvImportPanel({ onExecute }: LeadCsvImportPanelProps) {
         <h2 className="text-lg font-semibold text-gray-900">Importacao CSV</h2>
         <p className="text-sm text-gray-500">Revise os leads antes de executar a importacao.</p>
       </div>
-      <Textarea rows={6} value={csv} onChange={event => setCsv(event.target.value)} />
+      <Textarea rows={6} aria-label="Conteúdo CSV dos leads" value={csv} onChange={event => setCsv(event.target.value)} />
       <div className="grid gap-2 text-sm sm:grid-cols-3">
         <Metric label="Linhas" value={preview.rows.length.toString()} />
         <Metric label="Validas" value={preview.validRows.toString()} />

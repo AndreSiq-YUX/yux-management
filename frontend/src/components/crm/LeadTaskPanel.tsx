@@ -25,8 +25,8 @@ export function LeadTaskPanel({
   return (
     <div className="space-y-3">
       <div className="grid gap-2 md:grid-cols-[1fr_220px_auto]">
-        <Input placeholder="Proxima acao" value={taskTitle} onChange={event => onTaskTitleChange(event.target.value)} />
-        <Input type="datetime-local" value={dueAt} onChange={event => onDueAtChange(event.target.value)} />
+        <Input aria-label="Próxima ação" placeholder="Próxima ação" value={taskTitle} onChange={event => onTaskTitleChange(event.target.value)} />
+        <Input aria-label="Data e hora do prazo" type="datetime-local" value={dueAt} onChange={event => onDueAtChange(event.target.value)} />
         <Button title="Criar tarefa comercial" onClick={onCreateTask}>
           <Plus className="mr-1 h-4 w-4" />
           Criar

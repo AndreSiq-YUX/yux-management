@@ -39,13 +39,13 @@ export function TaskEditorDialog({ open, onOpenChange, leads, onCreate }: TaskEd
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Nova tarefa comercial</DialogTitle><DialogDescription>Crie um follow-up ligado diretamente a um lead.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Nova tarefa comercial</DialogTitle><DialogDescription>Crie um acompanhamento ligado a um lead.</DialogDescription></DialogHeader>
         <form className="space-y-3" onSubmit={submit}>
           <div><label htmlFor="task-lead" className="text-sm font-medium">Lead</label><select id="task-lead" className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={leadId} onChange={event => setLeadId(event.target.value)}><option value="">Selecione um lead</option>{leads.map(lead => <option key={lead.id} value={lead.id}>{lead.name}{lead.company ? ` - ${lead.company}` : ''}</option>)}</select></div>
           <div><label htmlFor="task-title" className="text-sm font-medium">Ação</label><Input id="task-title" value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: Ligar para confirmar diagnóstico" /></div>
           <div><label htmlFor="task-description" className="text-sm font-medium">Observação</label><Input id="task-description" value={description} onChange={event => setDescription(event.target.value)} placeholder="Contexto opcional" /></div>
           <div className="grid gap-3 sm:grid-cols-2"><div><label htmlFor="task-due-at" className="text-sm font-medium">Prazo</label><Input id="task-due-at" type="datetime-local" value={dueAt} onChange={event => setDueAt(event.target.value)} /></div><div><label htmlFor="task-priority-new" className="text-sm font-medium">Prioridade</label><select id="task-priority-new" className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={priority} onChange={event => setPriority(event.target.value as CrmTaskPriority)}><option value="urgent">Urgente</option><option value="high">Alta</option><option value="medium">Média</option><option value="low">Baixa</option></select></div></div>
-          {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+          {error && <p className="text-sm text-yx-crit" role="alert">{error}</p>}
           <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Criar tarefa'}</Button></DialogFooter>
         </form>
       </DialogContent>

@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import { CheckSquare, Download, Megaphone, Play, Save, SlidersHorizontal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { PendingAction } from '@/components/portal-ui'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { SmartSegmentDraft, SmartSegmentFilter, SmartSegmentFilterKey } from '@/types/growthWorkspace'
+import type { SmartSegmentFilter, SmartSegmentFilterKey } from '@/types/growthWorkspace'
 
 interface SmartSegmentBuilderProps {
   stages?: Array<{ id: string; name: string }>
@@ -14,11 +13,6 @@ interface SmartSegmentBuilderProps {
   owners?: Array<{ id: string; name: string }>
   estimatedSize?: number
   compact?: boolean
-  onSaveSegment?: (segment: SmartSegmentDraft) => void
-  onCreateTask?: (segment: SmartSegmentDraft) => void
-  onStartAutomation?: (segment: SmartSegmentDraft) => void
-  onCreateCampaign?: (segment: SmartSegmentDraft) => void
-  onExport?: (segment: SmartSegmentDraft) => void
 }
 
 const defaultValue = '__none__'
@@ -27,10 +21,10 @@ const filterLabels: Record<SmartSegmentFilterKey, string> = {
   source: 'Origem',
   stage: 'Etapa',
   status: 'Status',
-  owner: 'Responsavel',
-  last_activity: 'Ultima atividade',
+  owner: 'Responsável',
+  last_activity: 'Última atividade',
   campaign: 'Campanha',
-  score: 'Score',
+  score: 'Pontuação',
   proposal_status: 'Status da proposta',
 }
 
@@ -46,11 +40,6 @@ export function SmartSegmentBuilder({
   owners = [],
   estimatedSize,
   compact,
-  onSaveSegment,
-  onCreateTask,
-  onStartAutomation,
-  onCreateCampaign,
-  onExport,
 }: SmartSegmentBuilderProps) {
   const [name, setName] = useState('Segmento inteligente')
   const [filters, setFilters] = useState<SmartSegmentFilter[]>([
@@ -59,12 +48,7 @@ export function SmartSegmentBuilder({
     { key: 'last_activity', value: 'mais de 15 dias' },
   ])
 
-  const draft = useMemo<SmartSegmentDraft>(() => ({
-    name: name.trim() || 'Segmento inteligente',
-    filters: filters.filter(filter => filter.value && filter.value !== defaultValue),
-    estimatedSize: estimatedSize ?? estimateSegmentSize(filters),
-    status: 'draft',
-  }), [estimatedSize, filters, name])
+  const activeFilters = useMemo(() => filters.filter(filter => filter.value && filter.value !== defaultValue), [filters])
 
   const updateFilter = (key: SmartSegmentFilterKey, value: string) => {
     setFilters(current => {
@@ -83,28 +67,28 @@ export function SmartSegmentBuilder({
           <SlidersHorizontal className="mt-0.5 h-4 w-4 text-slate-600" />
           <div>
             <h2 className="font-semibold text-slate-950">Segmentos inteligentes</h2>
-            <p className="mt-1 text-sm text-slate-600">Monte publicos por origem, etapa, status, responsavel, atividade, campanha, score e proposta.</p>
+            <p className="mt-1 text-sm text-slate-600">Monte públicos por origem, etapa, status, responsável, atividade, campanha, pontuação e proposta.</p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-bold text-slate-950">{draft.estimatedSize}</p>
+          <p className="text-2xl font-bold text-slate-950">{estimatedSize ?? '—'}</p>
           <p className="text-xs text-slate-500">leads estimados</p>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-[1fr_180px]">
         <Input value={name} onChange={event => setName(event.target.value)} placeholder="Nome do segmento" />
-        <Button type="button" onClick={() => onSaveSegment?.(draft)}>
-          <Save className="mr-2 h-4 w-4" />
+        <PendingAction code="B9" variant="primary">
+          <Save className="h-4 w-4" />
           Salvar segmento
-        </Button>
+        </PendingAction>
       </div>
 
       <div className={`mt-4 grid gap-3 ${compact ? 'md:grid-cols-2' : 'md:grid-cols-4'}`}>
         <SegmentSelect label={filterLabels.source} value={getValue('source')} options={sources.length ? sources : ['Manual', 'Google Ads', 'Meta Ads', 'WhatsApp']} onChange={value => updateFilter('source', value)} />
         <SegmentSelect label={filterLabels.stage} value={getValue('stage')} options={stages.map(stage => ({ value: stage.id, label: stage.name }))} fallbackOptions={['todos']} onChange={value => updateFilter('stage', value)} />
         <SegmentSelect label={filterLabels.status} value={getValue('status')} options={statusOptions} onChange={value => updateFilter('status', value)} />
-        <SegmentSelect label={filterLabels.owner} value={getValue('owner')} options={owners.map(owner => ({ value: owner.id, label: owner.name }))} fallbackOptions={['Sem responsavel']} onChange={value => updateFilter('owner', value)} />
+        <SegmentSelect label={filterLabels.owner} value={getValue('owner')} options={owners.map(owner => ({ value: owner.id, label: owner.name }))} fallbackOptions={['Sem responsável']} onChange={value => updateFilter('owner', value)} />
         <SegmentSelect label={filterLabels.last_activity} value={getValue('last_activity')} options={lastActivityOptions} onChange={value => updateFilter('last_activity', value)} />
         <SegmentSelect label={filterLabels.campaign} value={getValue('campaign')} options={campaigns.map(campaign => ({ value: campaign.id, label: campaign.name }))} fallbackOptions={['Todas campanhas']} onChange={value => updateFilter('campaign', value)} />
         <SegmentSelect label={filterLabels.score} value={getValue('score')} options={scoreOptions} onChange={value => updateFilter('score', value)} />
@@ -112,19 +96,19 @@ export function SmartSegmentBuilder({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {draft.filters.map(filter => (
+        {activeFilters.map(filter => (
           <Badge key={`${filter.key}:${filter.value}`} variant="secondary">
             {filterLabels[filter.key]}: {filter.value}
           </Badge>
         ))}
-        {draft.filters.length === 0 && <span className="text-sm text-slate-500">Nenhum filtro aplicado.</span>}
+        {activeFilters.length === 0 && <span className="text-sm text-slate-500">Nenhum filtro aplicado.</span>}
       </div>
 
       <div className="mt-4 grid gap-2 md:grid-cols-4">
-        <ActionButton icon={<CheckSquare className="h-4 w-4" />} label="Criar tarefa" onClick={() => onCreateTask?.(draft)} />
-        <ActionButton icon={<Play className="h-4 w-4" />} label="Iniciar automacao" onClick={() => onStartAutomation?.(draft)} />
-        <ActionButton icon={<Megaphone className="h-4 w-4" />} label="Criar campanha" onClick={() => onCreateCampaign?.(draft)} />
-        <ActionButton icon={<Download className="h-4 w-4" />} label="Exportar" onClick={() => onExport?.(draft)} />
+        <PendingAction code="B9"><CheckSquare className="h-4 w-4" />Criar tarefa</PendingAction>
+        <PendingAction code="B9"><Play className="h-4 w-4" />Iniciar automação</PendingAction>
+        <PendingAction code="B9"><Megaphone className="h-4 w-4" />Criar campanha</PendingAction>
+        <PendingAction code="B9"><Download className="h-4 w-4" />Exportar</PendingAction>
       </div>
     </section>
   )
@@ -162,23 +146,4 @@ function SegmentSelect({
       </Select>
     </label>
   )
-}
-
-function ActionButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <Button type="button" variant="outline" onClick={onClick}>
-      {icon}
-      <span className="ml-2">{label}</span>
-    </Button>
-  )
-}
-
-function estimateSegmentSize(filters: SmartSegmentFilter[]) {
-  const base = 240
-  const weight = filters.reduce((total, filter) => {
-    if (filter.key === 'score' || filter.key === 'proposal_status') return total + 36
-    if (filter.key === 'last_activity' || filter.key === 'campaign') return total + 28
-    return total + 18
-  }, 0)
-  return Math.max(8, base - weight)
 }

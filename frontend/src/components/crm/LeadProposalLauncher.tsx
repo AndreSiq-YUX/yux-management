@@ -1,4 +1,5 @@
 import { FilePlus2 } from 'lucide-react'
+import { leadSourceLabel } from '@/lib/crm/leadSourceLabel'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { CrmLead } from '@/types/crm'
@@ -32,7 +33,7 @@ export function LeadProposalLauncher({ lead, packages, packageId, onPackageChang
         </div>
       </div>
       <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
-        <Info label="Origem" value={lead.sourceKind || lead.source} />
+        <Info label="Origem" value={leadSourceLabel(lead.sourceKind, lead.source)} />
         <Info label="Interesse" value={lead.interest || 'Nao informado'} />
         <Info label="Score" value={`${lead.score}/100`} />
       </div>
