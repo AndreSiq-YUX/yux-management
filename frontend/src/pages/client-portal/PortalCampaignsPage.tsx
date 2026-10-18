@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Megaphone } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { EmptyState, PageHeader, SkeletonCard } from '@/components/portal-ui'
 import { MetaCampaignBuilder } from '@/components/campaigns/MetaCampaignBuilder'
 import { PortalCampaignsWorkspace } from '@/components/campaigns/PortalCampaignsWorkspace'
 import { campaignService } from '@/services/campaignService'
@@ -15,7 +17,10 @@ export function PortalCampaignsPage() {
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'list' | 'meta-builder'>('list')
 
-  const load = useCallback(async () => {
+  // `silent` recarrega sem trocar a tela por "Carregando" e mantém os dados atuais se falhar.
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
+
     if (isPlatformLoading) {
       setLoading(true)
       return
@@ -26,15 +31,15 @@ export function PortalCampaignsPage() {
       return
     }
 
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       setCampaigns(await campaignService.getPortalCampaigns(activeContract.id))
     } catch (error) {
       console.error('Erro ao carregar campanhas do portal:', error)
       toast.error('Erro ao carregar campanhas')
-      setCampaigns([])
+      if (!silent) setCampaigns([])
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [activeContract, isPlatformLoading])
 
@@ -42,9 +47,11 @@ export function PortalCampaignsPage() {
     load()
   }, [load])
 
+  const refresh = useCallback(() => load({ silent: true }), [load])
+
   const createDraft = useCallback(async (input: CreateCampaignDraftInput) => {
     if (!activeContract || !organization?.id) {
-      toast.error('Contexto do contrato indisponivel')
+      toast.error('Contexto do contrato indisponível')
       return null
     }
 
@@ -58,18 +65,22 @@ export function PortalCampaignsPage() {
     const draft = await createDraft(input)
     if (!draft) return
     await campaignService.submitCampaignForApproval(draft.id)
-    toast.success('Campanha enviada para aprovacao')
+    toast.success('Campanha enviada para aprovação')
     await load()
     setMode('list')
   }, [createDraft, load])
 
-  if (isPlatformLoading || loading) return <p className="text-sm text-slate-600">Carregando campanhas...</p>
+  if (isPlatformLoading || loading) return <SkeletonCard lines={5} />
 
   if (!activeContract) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold text-slate-950">Campanhas</h1>
-        <p className="mt-2 text-slate-600">Nenhum contrato ativo encontrado para este usuario.</p>
+      <div className="w-full space-y-6">
+        <PageHeader title="Campanhas" />
+        <EmptyState
+          icon={Megaphone}
+          title="Nenhum contrato ativo"
+          description="Não encontramos um contrato ativo para a sua conta. Fale com a YUX para liberar as campanhas."
+        />
       </div>
     )
   }
@@ -92,13 +103,8 @@ export function PortalCampaignsPage() {
     <PortalCampaignsWorkspace
       contract={activeContract}
       campaigns={campaigns}
-      onRequestChange={(campaignId) => {
-        if (campaignId) {
-          toast.success('Campanha selecionada para revisao')
-          return
-        }
-        setMode('meta-builder')
-      }}
+      onNewCampaign={() => setMode('meta-builder')}
+      onRefresh={refresh}
     />
   )
 }

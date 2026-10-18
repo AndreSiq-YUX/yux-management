@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
-  Clock3,
   Columns,
   Copy,
   FileText,
@@ -24,13 +24,37 @@ import {
   Video,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import {
+  EmptyState,
+  ErrorState,
+  MasterDetail,
+  PendingAction,
+  ResponsiveTable,
+  SectionCard,
+  SkeletonCard,
+  StatusChip,
+  portalButtonClasses,
+  portalFocusRing,
+  ShowMoreButton,
+  useShowMore,
+  type ResponsiveTableColumn,
+  type StatusChipVariant,
+} from '@/components/portal-ui'
+import { EditorialAgenda } from '@/components/marketing-studio/EditorialAgenda'
+import { channelLabel } from '@/components/marketing-studio/editorialCalendar'
+import { useMediaQuery } from '@/components/marketing-studio/useMediaQuery'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
 import { formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { cn } from '@/lib/utils'
+import { marketingStudioService } from '@/services/marketingStudioService'
+import { usePlatformStore } from '@/stores/platformStore'
 import type {
+  MarketingCalendarItem,
   MarketingCampaignCreativeSuggestion,
-  MarketingChannel,
+  MarketingContentReview,
   MarketingContentStatus,
   MarketingContentType,
   PortalMarketingContentItem,
@@ -40,15 +64,27 @@ import type { PortalCampaign } from '@/types/campaign'
 type LibraryView = 'gallery' | 'table' | 'kanban' | 'calendar'
 type AssetStatus = MarketingContentStatus | 'waiting_approval' | 'used_in_campaign'
 type AssetKind = 'creative' | 'post' | 'ad' | 'copy' | 'brief' | 'video' | 'email' | 'landing'
-type PreviewVariant = 'diagnosis' | 'dashboard' | 'growth' | 'portrait' | 'copy' | 'video' | 'brief' | 'email'
-type MarketingPulseTone = 'blue' | 'violet' | 'slate' | 'emerald' | 'amber'
+type AssetSource = 'content' | 'suggestion' | 'campaign'
+type DecisionStatus = 'approved' | 'changes_requested'
 
-interface MarketingPulseMetric {
-  label: string
-  value: string | number
-  detail: string
-  icon: LucideIcon
-  tone: MarketingPulseTone
+const MIN_CHANGE_COMMENT_LENGTH = 5
+const DESKTOP_QUERY = '(min-width: 1024px)'
+/** Abaixo de 640px a galeria mostra 10 itens por vez, com "Mostrar mais". */
+const PHONE_QUERY = '(max-width: 639px)'
+const NO_CALENDAR_ITEMS: MarketingCalendarItem[] = []
+
+interface AssetFilters {
+  channel: string
+  status: string
+  origin: string
+  campaign: string
+}
+
+const emptyFilters: AssetFilters = { channel: '', status: '', origin: '', campaign: '' }
+
+interface ReviewTarget {
+  contentId: string
+  contentVersionId: string
 }
 
 interface ContentAsset {
@@ -60,21 +96,21 @@ interface ContentAsset {
   status: AssetStatus
   origin: string
   campaign: string
-  owner: string
   updatedAt: string
   description: string
   tags: string[]
-  preview: PreviewVariant
+  source: AssetSource
+  /** Presente só quando existe uma revisão pendente que aceita a decisão do cliente. */
+  review?: ReviewTarget
   cta?: string
-  sourceLabel?: string
 }
 
-const typeTabs = ['Todos', 'Criativos', 'Posts', 'Ads', 'Copies', 'Briefs', 'Videos', 'Aprovacao pendente', 'Publicado']
+const typeTabs = ['Todos', 'Criativos', 'Posts', 'Ads', 'Copies', 'Briefs', 'Vídeos', 'Aprovação pendente', 'Publicado']
 
 const statusOrder: Array<{ key: AssetStatus; label: string }> = [
   { key: 'draft', label: 'Rascunho' },
-  { key: 'in_review', label: 'Em revisao YUX' },
-  { key: 'waiting_approval', label: 'Aguardando aprovacao' },
+  { key: 'in_review', label: 'Em revisão' },
+  { key: 'waiting_approval', label: 'Aguardando aprovação' },
   { key: 'changes_requested', label: 'Ajustes solicitados' },
   { key: 'approved', label: 'Aprovado' },
   { key: 'scheduled', label: 'Agendado' },
@@ -82,166 +118,77 @@ const statusOrder: Array<{ key: AssetStatus; label: string }> = [
   { key: 'used_in_campaign', label: 'Usado em campanha' },
 ]
 
-const fallbackAssets: ContentAsset[] = [
-  {
-    id: 'sample-diagnostico-whatsapp',
-    title: 'Criativo Meta Ads - Diagnostico WhatsApp',
-    kind: 'creative',
-    kindLabel: 'Criativo Meta Ads',
-    channel: 'Meta Ads',
-    status: 'waiting_approval',
-    origin: 'Estudio de Automacoes',
-    campaign: 'Diagnostico WhatsApp 48h',
-    owner: 'YUX Growth',
-    updatedAt: '2026-07-04T10:30:00.000Z',
-    description: 'Peca visual para oferta de diagnostico rapido com foco em resposta comercial pelo WhatsApp.',
-    tags: ['whatsapp', 'lead', 'clinicas'],
-    preview: 'diagnosis',
-    cta: 'Solicitar diagnostico gratuito',
-  },
-  {
-    id: 'sample-dashboard',
-    title: 'Carrossel LinkedIn - Operacao previsivel',
-    kind: 'creative',
-    kindLabel: 'Carrossel LinkedIn',
-    channel: 'LinkedIn',
-    status: 'approved',
-    origin: 'Brief da YUX',
-    campaign: 'Conteudo institucional',
-    owner: 'Marketing / Growth',
-    updatedAt: '2026-07-03T15:00:00.000Z',
-    description: 'Sequencia educativa para mostrar antes e depois de uma operacao comercial organizada.',
-    tags: ['linkedin', 'carrossel', 'crm'],
-    preview: 'dashboard',
-    cta: 'Ver conteudo completo',
-  },
-  {
-    id: 'sample-copy-lp',
-    title: 'Copy Landing Page - Diagnostico comercial',
-    kind: 'copy',
-    kindLabel: 'Copy Landing Page',
-    channel: 'Landing Page',
-    status: 'in_review',
-    origin: 'Redator Multicanal',
-    campaign: 'Diagnostico WhatsApp 48h',
-    owner: 'YUX Copy',
-    updatedAt: '2026-07-03T12:00:00.000Z',
-    description: 'Hero, proposta de valor, provas, objecoes e CTA para captura de diagnostico.',
-    tags: ['landing-page', 'copy', 'conversao'],
-    preview: 'copy',
-  },
-  {
-    id: 'sample-post-instagram',
-    title: 'Post Instagram - 3 sinais de perda de leads',
-    kind: 'post',
-    kindLabel: 'Post Instagram',
-    channel: 'Instagram',
-    status: 'scheduled',
-    origin: 'Calendario Editorial',
-    campaign: 'Educacao comercial',
-    owner: 'Social Media',
-    updatedAt: '2026-07-02T18:00:00.000Z',
-    description: 'Post educativo com CTA para revisar o atendimento e entender gargalos.',
-    tags: ['instagram', 'organico', 'leads'],
-    preview: 'growth',
-    cta: 'Salvar post',
-  },
-  {
-    id: 'sample-video',
-    title: 'Roteiro Reels - Resposta rapida no WhatsApp',
-    kind: 'video',
-    kindLabel: 'Roteiro Reels',
-    channel: 'Instagram Reels',
-    status: 'changes_requested',
-    origin: 'Gerador de Criativos',
-    campaign: 'Diagnostico WhatsApp 48h',
-    owner: 'Conteudo YUX',
-    updatedAt: '2026-07-02T09:00:00.000Z',
-    description: 'Roteiro curto com gancho, demonstracao do problema e chamada para diagnostico.',
-    tags: ['reels', 'roteiro', 'whatsapp'],
-    preview: 'video',
-  },
-  {
-    id: 'sample-email',
-    title: 'Email - Convite para diagnostico',
-    kind: 'email',
-    kindLabel: 'Email',
-    channel: 'Email',
-    status: 'published',
-    origin: 'Upload manual',
-    campaign: 'Reativacao de leads',
-    owner: 'CRM / Marketing',
-    updatedAt: '2026-07-01T11:20:00.000Z',
-    description: 'Email de nutricao para leads antigos com convite para diagnostico gratuito.',
-    tags: ['email', 'reativacao', 'crm'],
-    preview: 'email',
-  },
-  {
-    id: 'sample-brief',
-    title: 'Brief Designer - Kit de anuncios',
-    kind: 'brief',
-    kindLabel: 'Brief Designer',
-    channel: 'Design',
-    status: 'draft',
-    origin: 'Estudio de Automacoes',
-    campaign: 'Kit Meta Ads',
-    owner: 'YUX Design',
-    updatedAt: '2026-06-30T16:00:00.000Z',
-    description: 'Brief com formatos, referencias, copy principal e variacoes para criacao visual.',
-    tags: ['brief', 'design', 'ads'],
-    preview: 'brief',
-  },
-  {
-    id: 'sample-portrait',
-    title: 'Criativo Persona - Gestor sem follow-up',
-    kind: 'ad',
-    kindLabel: 'Ads completa',
-    channel: 'Meta Ads',
-    status: 'used_in_campaign',
-    origin: 'Reaproveitamento de ativo',
-    campaign: 'Follow-up comercial',
-    owner: 'Performance',
-    updatedAt: '2026-06-29T14:00:00.000Z',
-    description: 'Peca ja usada em campanha para explicar perda de oportunidades por falta de retorno.',
-    tags: ['ads', 'follow-up', 'performance'],
-    preview: 'portrait',
-  },
-]
+const toolbarCardClasses = 'rounded-[10px] border border-yx-line bg-yx-surface'
+const fieldClasses = cn(
+  'min-h-10 rounded-lg border border-yx-line-strong bg-yx-surface px-2.5 text-[13px] text-yx-fg sm:min-h-[34px]',
+  portalFocusRing,
+)
 
 export function PortalOrganicContentPage() {
   const portalPath = usePortalWorkspacePath()
+  const workspaceContext = usePlatformStore(state => state.workspaceContext)
   const {
     loading,
     error,
     contents,
     campaigns,
     creativeSuggestions,
-  } = usePortalMarketingContext({ resources: ['contents', 'campaigns', 'creativeSuggestions'] })
+    reviews,
+    calendarItems = NO_CALENDAR_ITEMS,
+    reload,
+  } = usePortalMarketingContext({ resources: ['contents', 'campaigns', 'creativeSuggestions', 'reviews', 'calendarItems'] })
+  const isDesktop = useMediaQuery(DESKTOP_QUERY, true)
   const [view, setView] = useState<LibraryView>('gallery')
   const [activeType, setActiveType] = useState('Todos')
   const [query, setQuery] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, AssetStatus>>({})
+  const [filters, setFilters] = useState<AssetFilters>(emptyFilters)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [changeComments, setChangeComments] = useState<Record<string, string>>({})
+  const [commentErrors, setCommentErrors] = useState<Record<string, string>>({})
+  const [submittingId, setSubmittingId] = useState<string | null>(null)
+  const submitLock = useRef(false)
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    if (!loading) setHasLoaded(true)
+  }, [loading])
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+
+  const canDecide = Boolean(
+    workspaceContext?.contractId
+    && workspaceContext.canConfigure
+    && workspaceContext.role !== 'client_member',
+  )
 
   const assets = useMemo(() => {
+    const pendingReviews = pendingReviewByContent(reviews)
+    const campaignNames = new Map(campaigns.map(campaign => [campaign.id, campaign.name]))
     const mapped = [
-      ...contents.map(contentToAsset),
+      ...contents.map(content => contentToAsset(content, pendingReviews.get(content.id), campaignNames)),
       ...creativeSuggestions.map(suggestionToAsset),
       ...campaigns.flatMap(campaignToAssets),
     ]
 
     const byId = new Map<string, ContentAsset>()
     mapped.forEach(asset => byId.set(asset.id, asset))
+    return Array.from(byId.values())
+  }, [campaigns, contents, creativeSuggestions, reviews])
 
-    fallbackAssets.forEach(asset => {
-      if (byId.size < 12) byId.set(asset.id, asset)
-    })
+  const filterOptions = useMemo(() => ({
+    channel: uniqueOptions(assets.map(asset => asset.channel)),
+    status: uniqueOptions(assets.map(asset => statusText(asset.status)), assets.map(asset => asset.status)),
+    origin: uniqueOptions(assets.map(asset => asset.origin)),
+    campaign: uniqueOptions(assets.map(asset => asset.campaign)),
+  }), [assets])
 
-    return Array.from(byId.values()).map(asset => ({
-      ...asset,
-      status: statusOverrides[asset.id] || asset.status,
-    }))
-  }, [campaigns, contents, creativeSuggestions, statusOverrides])
+  const hasActiveFilters = Object.values(filters).some(Boolean)
+  const setFilter = (key: keyof AssetFilters, value: string) => setFilters(current => ({ ...current, [key]: value }))
+  const clearFilters = () => setFilters(emptyFilters)
 
   const filteredAssets = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -251,10 +198,9 @@ export function PortalOrganicContentPage() {
         asset.title,
         asset.kindLabel,
         asset.channel,
-        asset.status,
+        statusText(asset.status),
         asset.origin,
         asset.campaign,
-        asset.owner,
         ...asset.tags,
       ].join(' ').toLowerCase().includes(normalizedQuery)
 
@@ -264,222 +210,290 @@ export function PortalOrganicContentPage() {
         || (activeType === 'Ads' && asset.kind === 'ad')
         || (activeType === 'Copies' && asset.kind === 'copy')
         || (activeType === 'Briefs' && asset.kind === 'brief')
-        || (activeType === 'Videos' && asset.kind === 'video')
-        || (activeType === 'Aprovacao pendente' && ['waiting_approval', 'in_review'].includes(asset.status))
+        || (activeType === 'Vídeos' && asset.kind === 'video')
+        || (activeType === 'Aprovação pendente' && ['waiting_approval', 'in_review'].includes(asset.status))
         || (activeType === 'Publicado' && asset.status === 'published')
 
-      return matchesQuery && matchesType
+      const matchesFilters = (!filters.channel || asset.channel === filters.channel)
+        && (!filters.status || asset.status === filters.status)
+        && (!filters.origin || asset.origin === filters.origin)
+        && (!filters.campaign || asset.campaign === filters.campaign)
+
+      return matchesQuery && matchesType && matchesFilters
     })
-  }, [activeType, assets, query])
+  }, [activeType, assets, filters, query])
 
-  const selectedAsset = filteredAssets.find(asset => asset.id === selectedAssetId) || filteredAssets[0] || assets[0]
+  // No computador o primeiro item já aparece no painel de detalhes; no celular o detalhe só abre depois do toque.
+  const selectedAsset = filteredAssets.find(asset => asset.id === selectedAssetId)
+    ?? (isDesktop ? filteredAssets[0] : undefined)
 
-  useEffect(() => {
-    if (!selectedAssetId && filteredAssets[0]) {
-      setSelectedAssetId(filteredAssets[0].id)
-    }
-    if (selectedAssetId && filteredAssets.length > 0 && !filteredAssets.some(asset => asset.id === selectedAssetId)) {
-      setSelectedAssetId(filteredAssets[0].id)
-    }
-  }, [filteredAssets, selectedAssetId])
+  const countStatus = (...statuses: AssetStatus[]) => assets.filter(asset => statuses.includes(asset.status)).length
+  const metrics = !error && hasLoaded && assets.length > 0
+    ? [
+        { label: 'Total de ativos', value: String(assets.length), detail: 'Biblioteca do contrato' },
+        { label: 'Aguardando aprovação', value: String(countStatus('waiting_approval', 'in_review')), detail: 'Precisam da sua decisão' },
+        { label: 'Ajustes solicitados', value: String(countStatus('changes_requested')), detail: 'Voltaram para a equipe' },
+        { label: 'Aprovados', value: String(countStatus('approved')), detail: 'Prontos para uso' },
+        { label: 'Publicados', value: String(countStatus('published')), detail: 'Já distribuídos' },
+        { label: 'Usados em campanha', value: String(countStatus('used_in_campaign')), detail: 'Vinculados a anúncios' },
+      ]
+    : []
 
-  const metrics: MarketingPulseMetric[] = [
-    { label: 'Total de ativos', value: assets.length, detail: 'Biblioteca do contrato', icon: Image, tone: 'blue' },
-    { label: 'Aguardando aprovacao', value: assets.filter(asset => ['waiting_approval', 'in_review'].includes(asset.status)).length, detail: 'Precisam de decisao', icon: Clock3, tone: 'amber' },
-    { label: 'Aprovados', value: assets.filter(asset => asset.status === 'approved').length, detail: 'Prontos para uso', icon: CheckCircle2, tone: 'emerald' },
-    { label: 'Publicados', value: assets.filter(asset => asset.status === 'published').length, detail: 'Ja distribuidos', icon: Send, tone: 'violet' },
-    { label: 'Usados em campanha', value: assets.filter(asset => asset.status === 'used_in_campaign').length, detail: 'Vinculados a ads', icon: Megaphone, tone: 'slate' },
-  ]
-
-  const updateSelectedStatus = (status: AssetStatus) => {
-    if (!selectedAsset) return
-    setStatusOverrides(current => ({ ...current, [selectedAsset.id]: status }))
+  const setComment = (assetId: string, value: string) => {
+    setChangeComments(current => ({ ...current, [assetId]: value }))
+    setCommentErrors(current => {
+      if (!current[assetId]) return current
+      const next = { ...current }
+      delete next[assetId]
+      return next
+    })
   }
 
+  const decide = async (asset: ContentAsset, status: DecisionStatus) => {
+    if (submitLock.current) return
+    if (!asset.review || !workspaceContext?.contractId || !canDecide) return
+
+    const comments = (changeComments[asset.id] || '').trim()
+    if (status === 'changes_requested' && comments.length < MIN_CHANGE_COMMENT_LENGTH) {
+      setCommentErrors(current => ({
+        ...current,
+        [asset.id]: `Descreva o que precisa mudar (mínimo de ${MIN_CHANGE_COMMENT_LENGTH} caracteres).`,
+      }))
+      return
+    }
+
+    submitLock.current = true
+    setSubmittingId(asset.id)
+    try {
+      await marketingStudioService.decideJourneyContentReview(asset.review.contentId, {
+        organizationId: workspaceContext.organizationId,
+        contractId: workspaceContext.contractId,
+        contentVersionId: asset.review.contentVersionId,
+        status,
+        ...(comments ? { comments } : {}),
+      })
+      if (!mounted.current) return
+      toast.success('Decisão registrada')
+      setChangeComments(current => {
+        const next = { ...current }
+        delete next[asset.id]
+        return next
+      })
+      await reload()
+    } catch (decisionError) {
+      console.error('Erro ao registrar decisão de conteúdo:', decisionError)
+      if (mounted.current) toast.error('Não foi possível registrar sua decisão. Tente novamente.')
+    } finally {
+      submitLock.current = false
+      if (mounted.current) setSubmittingId(null)
+    }
+  }
+
+  const firstLoad = loading && !hasLoaded
+
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-5 bg-[#f4f4f4] px-4 py-5 text-[#141821] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
-      <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-[#141821]">Central de Conteudo</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Biblioteca operacional de criativos, copies, posts, aprovacoes e ativos de campanha.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            <Plus className="h-4 w-4" />
-            Novo conteudo
-          </button>
-          <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+    <PortalPage
+      eyebrow="Marketing"
+      title="Central de conteúdo"
+      description="Revise e aprove o que foi produzido: criativos, copies, posts e anúncios. Para criar ou editar, use o Marketing Studio; para saber quando sai, veja o Calendário editorial."
+      primaryAction={
+        <>
+          <Link to={portalPath('/portal/marketing/studio')} className={portalButtonClasses('ghost')}>
+            <Plus aria-hidden="true" />
+            Novo conteúdo
+          </Link>
+          <PendingAction code="B19">
             <Upload className="h-4 w-4" />
             Importar
-          </button>
-          <Link to={portalPath('/marketing/studio')} className="inline-flex h-10 items-center gap-2 rounded-md bg-[#2563EB] px-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
-            <Sparkles className="h-4 w-4" />
+          </PendingAction>
+          <Link to={portalPath('/portal/marketing/studio')} className={portalButtonClasses('yux')}>
+            <Sparkles aria-hidden="true" />
             Gerar com IA
           </Link>
-        </div>
-      </header>
-
-      <MarketingPulse metrics={metrics} />
-
-      <section className="rounded-md border border-slate-300 bg-white">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 xl:flex-row xl:items-center xl:justify-between">
+        </>
+      }
+      metrics={metrics}
+      related={[
+        { label: 'Marketing Studio', href: '/portal/marketing/studio' },
+        { label: 'Calendário editorial', href: '/portal/marketing/calendario' },
+        { label: 'Criativos e inspirações', href: '/portal/marketing/criativos' },
+      ]}
+    >
+      <section aria-label="Buscar e filtrar conteúdos" className={toolbarCardClasses}>
+        <div className="flex flex-col gap-3 border-b border-yx-line p-3.5 sm:p-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-yx-fg-3" />
             <input
               value={query}
               onChange={event => setQuery(event.target.value)}
-              className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-              placeholder="Buscar por titulo, canal, campanha, origem ou tag..."
+              aria-label="Buscar conteúdos"
+              className={cn(
+                'min-h-11 w-full rounded-lg border border-yx-line-strong bg-yx-surface-2 pl-9 pr-3 text-sm text-yx-fg placeholder:text-yx-fg-3 focus:bg-yx-surface',
+                portalFocusRing,
+              )}
+              placeholder="Buscar por título, canal, campanha, origem ou tag..."
             />
           </div>
-          <div className="inline-flex rounded-md border border-slate-300 bg-slate-50 p-1">
+          <div role="group" aria-label="Forma de exibição" className="inline-flex max-w-full overflow-x-auto rounded-lg border border-yx-line-strong bg-yx-surface-2 p-0.5">
             <ViewButton icon={Grid2X2} label="Galeria" active={view === 'gallery'} onClick={() => setView('gallery')} />
             <ViewButton icon={Table2} label="Tabela" active={view === 'table'} onClick={() => setView('table')} />
             <ViewButton icon={Columns} label="Kanban" active={view === 'kanban'} onClick={() => setView('kanban')} />
-            <ViewButton icon={CalendarDays} label="Calendario" active={view === 'calendar'} onClick={() => setView('calendar')} />
+            <ViewButton icon={CalendarDays} label="Calendário" active={view === 'calendar'} onClick={() => setView('calendar')} />
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-4">
+        <div className="flex flex-col gap-3 p-3.5 sm:p-4">
           <div className="flex flex-wrap gap-2">
             {typeTabs.map(tab => (
               <button
                 key={tab}
                 type="button"
+                aria-pressed={activeType === tab}
                 onClick={() => setActiveType(tab)}
-                className={`h-8 rounded-md border px-3 text-xs font-semibold transition ${
+                className={cn(
+                  'min-h-10 rounded-full border px-3.5 text-xs font-semibold transition-colors sm:min-h-8',
+                  portalFocusRing,
                   activeType === tab
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50'
-                }`}
+                    ? 'border-yx-blue bg-yx-blue text-white'
+                    : 'border-yx-line-strong bg-yx-surface text-yx-fg-2 hover:border-yx-blue hover:text-yx-blue',
+                )}
               >
                 {tab}
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1">
-              <SlidersHorizontal className="h-3.5 w-3.5" />
+          <div className="flex flex-wrap items-center gap-2 text-xs text-yx-fg-2">
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">
+              <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
               Filtros
             </span>
-            {['Canal: todos', 'Status: todos', 'Origem: todas', 'Campanha: todas', 'Tags: todas'].map(filter => (
-              <button key={filter} type="button" className="rounded-md border border-slate-200 bg-white px-2.5 py-1 hover:border-blue-300 hover:bg-blue-50">
-                {filter}
+            <FilterSelect label="Canal" allLabel="Todos" value={filters.channel} options={filterOptions.channel} onChange={value => setFilter('channel', value)} />
+            <FilterSelect label="Status" allLabel="Todos" value={filters.status} options={filterOptions.status} onChange={value => setFilter('status', value)} />
+            <FilterSelect label="Origem" allLabel="Todas" value={filters.origin} options={filterOptions.origin} onChange={value => setFilter('origin', value)} />
+            <FilterSelect label="Campanha" allLabel="Todas" value={filters.campaign} options={filterOptions.campaign} onChange={value => setFilter('campaign', value)} />
+            {hasActiveFilters && (
+              <button type="button" onClick={clearFilters} className={portalButtonClasses('ghost')}>
+                Limpar
               </button>
-            ))}
+            )}
           </div>
         </div>
-
       </section>
 
-      {loading ? (
-        <section className="rounded-md border border-slate-300 bg-white p-5 text-sm text-slate-600">Carregando Central de Conteudo...</section>
+      {loading && hasLoaded && (
+        <p role="status" className="text-xs text-yx-fg-3">Atualizando...</p>
+      )}
+
+      {firstLoad ? (
+        <SkeletonCard lines={6} />
       ) : error ? (
-        <section className="rounded-md border border-red-200 bg-white p-5 text-sm text-red-600">{error}</section>
+        <ErrorState title="Não foi possível carregar a Central de conteúdo." description={error} onRetry={() => void reload()} />
+      ) : assets.length === 0 ? (
+        <EmptyState
+          icon={Layers3}
+          title="Nenhum conteúdo para revisar"
+          description="Os conteúdos produzidos no Marketing Studio aparecem aqui para você revisar e aprovar."
+          action={{ label: 'Ir para o Marketing Studio', href: '/portal/marketing/studio' }}
+        />
       ) : (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <div className="min-w-0 space-y-4">
+        <MasterDetail
+          className="lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-4"
+          onBack={() => setSelectedAssetId(null)}
+          backLabel="Voltar"
+          list={
+            <div className="min-w-0">
               {view === 'gallery' && (
-                <GalleryView assets={filteredAssets} selectedId={selectedAsset?.id} onSelect={setSelectedAssetId} />
+                <GalleryView assets={filteredAssets} selectedId={isDesktop ? selectedAsset?.id : undefined} onSelect={setSelectedAssetId} />
               )}
               {view === 'table' && (
-                <TableView assets={filteredAssets} selectedId={selectedAsset?.id} onSelect={setSelectedAssetId} />
+                <TableView assets={filteredAssets} onSelect={setSelectedAssetId} />
               )}
               {view === 'kanban' && (
-                <KanbanView assets={filteredAssets} selectedId={selectedAsset?.id} onSelect={setSelectedAssetId} />
+                <KanbanView assets={filteredAssets} selectedId={isDesktop ? selectedAsset?.id : undefined} onSelect={setSelectedAssetId} />
               )}
               {view === 'calendar' && (
-                <CalendarView assets={filteredAssets} selectedId={selectedAsset?.id} onSelect={setSelectedAssetId} />
+                <SectionCard
+                  title="Próximas publicações"
+                  description="Só os próximos itens. O calendário completo mostra o mês e a semana."
+                >
+                  <EditorialAgenda entries={calendarItems} />
+                </SectionCard>
               )}
             </div>
-            <AssetInspector asset={selectedAsset} onApprove={() => updateSelectedStatus('approved')} onRequestChanges={() => updateSelectedStatus('changes_requested')} />
-        </section>
+          }
+          detail={selectedAsset ? (
+            <AssetInspector
+              asset={selectedAsset}
+              canDecide={canDecide}
+              submitting={submittingId === selectedAsset.id}
+              busy={submittingId !== null}
+              comment={changeComments[selectedAsset.id] || ''}
+              commentError={commentErrors[selectedAsset.id]}
+              onCommentChange={value => setComment(selectedAsset.id, value)}
+              onApprove={() => void decide(selectedAsset, 'approved')}
+              onRequestChanges={() => void decide(selectedAsset, 'changes_requested')}
+            />
+          ) : null}
+          emptyDetail={
+            <aside className={cn(toolbarCardClasses, 'p-5')}>
+              <p className="text-sm text-yx-fg-2">Selecione um ativo para ver detalhes.</p>
+            </aside>
+          }
+        />
       )}
-    </div>
-  )
-}
-
-function MarketingPulse({ metrics }: { metrics: MarketingPulseMetric[] }) {
-  return (
-    <section className="rounded-sm border border-slate-300 bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-950">Pulso Executivo</p>
-          <h2 className="sr-only">Indicadores principais da central de conteudo</h2>
-        </div>
-        <BarChart3 className="hidden h-5 w-5 text-slate-400 sm:block" />
-      </div>
-      <div className="grid divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
-        {metrics.map(metric => {
-          const Icon = metric.icon
-          return (
-            <article key={metric.label} className="flex min-h-[108px] items-center gap-5 px-5 py-5">
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center ${marketingPulseIconClass(metric.tone)}`}>
-                <Icon className="h-6 w-6 stroke-[2.2]" />
-              </span>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{metric.label}</p>
-                <p className="mt-2 text-[1.75rem] font-semibold leading-none tracking-[-0.01em] text-slate-950">{metric.value}</p>
-                <p className={`mt-2 text-xs font-medium ${marketingPulseDetailClass(metric.tone)}`}>{metric.detail}</p>
-              </div>
-            </article>
-          )
-        })}
-      </div>
-    </section>
+    </PortalPage>
   )
 }
 
 function GalleryView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; selectedId?: string; onSelect: (id: string) => void }) {
+  const isPhone = useMediaQuery(PHONE_QUERY, false)
+  const pager = useShowMore(assets, { enabled: isPhone, resetKey: assets })
   if (!assets.length) return <EmptyContentState />
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-      {assets.map(asset => (
-        <AssetCard key={asset.id} asset={asset} selected={asset.id === selectedId} onSelect={() => onSelect(asset.id)} />
-      ))}
-    </div>
+    <>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-1 min-[1280px]:grid-cols-2 min-[1760px]:grid-cols-3">
+        {pager.visibleItems.map(asset => (
+          <AssetCard key={asset.id} asset={asset} selected={asset.id === selectedId} onSelect={() => onSelect(asset.id)} />
+        ))}
+      </div>
+      {pager.hasMore ? <ShowMoreButton shown={pager.shown} total={pager.total} onClick={pager.showMore} /> : null}
+    </>
   )
 }
 
-function TableView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; selectedId?: string; onSelect: (id: string) => void }) {
+function TableView({ assets, onSelect }: { assets: ContentAsset[]; onSelect: (id: string) => void }) {
   if (!assets.length) return <EmptyContentState />
 
+  const columns: Array<ResponsiveTableColumn<ContentAsset>> = [
+    {
+      key: 'title',
+      header: 'Ativo',
+      mobileLabel: '',
+      render: asset => (
+        <div className="min-w-0">
+          <p className="font-semibold text-yx-fg">{asset.title}</p>
+          <p className="mt-1 line-clamp-1 text-xs text-yx-fg-3">{asset.description}</p>
+        </div>
+      ),
+    },
+    { key: 'kindLabel', header: 'Tipo' },
+    { key: 'channel', header: 'Canal' },
+    { key: 'status', header: 'Status', render: asset => <StatusBadge status={asset.status} /> },
+    { key: 'origin', header: 'Origem' },
+    { key: 'campaign', header: 'Campanha' },
+    { key: 'updatedAt', header: 'Atualizado', render: asset => formatPortalDate(asset.updatedAt) },
+  ]
+
   return (
-    <div className="overflow-hidden rounded-md border border-slate-300 bg-white">
-      <div className="overflow-auto">
-      <table className="min-w-[980px] w-full border-collapse text-sm">
-        <thead className="bg-[#f4f4f4] text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          <tr>
-            <th className="px-4 py-3">Ativo</th>
-            <th className="px-4 py-3">Tipo</th>
-            <th className="px-4 py-3">Canal</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Origem</th>
-            <th className="px-4 py-3">Campanha</th>
-            <th className="px-4 py-3">Atualizado</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-200">
-          {assets.map(asset => (
-            <tr key={asset.id} onClick={() => onSelect(asset.id)} className={`cursor-pointer hover:bg-blue-50/50 ${asset.id === selectedId ? 'bg-blue-50' : 'bg-white'}`}>
-              <td className="px-4 py-3">
-                <p className="font-semibold text-[#141821]">{asset.title}</p>
-                <p className="mt-1 line-clamp-1 text-xs text-slate-500">{asset.description}</p>
-              </td>
-              <td className="px-4 py-3 text-slate-700">{asset.kindLabel}</td>
-              <td className="px-4 py-3 text-slate-700">{asset.channel}</td>
-              <td className="px-4 py-3"><StatusBadge status={asset.status} /></td>
-              <td className="px-4 py-3 text-slate-700">{asset.origin}</td>
-              <td className="px-4 py-3 text-slate-700">{asset.campaign}</td>
-              <td className="px-4 py-3 text-slate-500">{formatPortalDate(asset.updatedAt)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
+    <div className={cn(toolbarCardClasses, 'overflow-hidden p-1.5 sm:p-2')}>
+      <ResponsiveTable
+        caption="Conteúdos da biblioteca"
+        columns={columns}
+        rows={assets}
+        getRowKey={asset => asset.id}
+        onRowClick={asset => onSelect(asset.id)}
+      />
     </div>
   )
 }
@@ -492,12 +506,12 @@ function KanbanView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; 
     .filter(column => column.assets.length > 0)
 
   return (
-    <div className="grid min-h-[520px] auto-cols-[280px] grid-flow-col gap-3 overflow-auto">
+    <div className="grid min-h-[320px] snap-x snap-mandatory auto-cols-[min(280px,85%)] grid-flow-col gap-3 overflow-x-auto pb-2">
       {columns.map(column => (
-        <section key={column.key} className="rounded-md border border-slate-200 bg-slate-50">
-          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">{column.label}</p>
-            <span className="rounded-md bg-white px-2 py-0.5 text-xs text-slate-500">{column.assets.length}</span>
+        <section key={column.key} aria-label={column.label} className="snap-start rounded-[10px] border border-yx-line bg-yx-surface-2">
+          <div className="flex items-center justify-between border-b border-yx-line px-3 py-2">
+            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">{column.label}</p>
+            <span className="rounded-full bg-yx-surface px-2 py-0.5 font-mono text-xs text-yx-fg-2">{column.assets.length}</span>
           </div>
           <div className="space-y-2 p-3">
             {column.assets.map(asset => (
@@ -505,45 +519,18 @@ function KanbanView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; 
                 key={asset.id}
                 type="button"
                 onClick={() => onSelect(asset.id)}
-                className={`w-full rounded-md border bg-white p-3 text-left shadow-sm hover:border-blue-300 ${asset.id === selectedId ? 'border-blue-500 ring-4 ring-blue-100' : 'border-slate-200'}`}
+                aria-pressed={asset.id === selectedId}
+                className={cn(
+                  'w-full rounded-lg border bg-yx-surface p-3 text-left hover:border-yx-blue',
+                  portalFocusRing,
+                  asset.id === selectedId ? 'border-yx-blue ring-2 ring-yx-blue/30' : 'border-yx-line',
+                )}
               >
-                <p className="text-sm font-semibold text-[#141821]">{asset.title}</p>
-                <p className="mt-1 text-xs text-slate-500">{asset.kindLabel} / {asset.channel}</p>
+                <p className="text-sm font-semibold text-yx-fg">{asset.title}</p>
+                <p className="mt-1 text-xs text-yx-fg-3">{asset.kindLabel} / {asset.channel}</p>
                 <div className="mt-3 flex flex-wrap gap-1">
                   {asset.tags.slice(0, 2).map(tag => <TagPill key={tag}>{tag}</TagPill>)}
                 </div>
-              </button>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  )
-}
-
-function CalendarView({ assets, selectedId, onSelect }: { assets: ContentAsset[]; selectedId?: string; onSelect: (id: string) => void }) {
-  if (!assets.length) return <EmptyContentState />
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {['Esta semana', 'Proximos 15 dias', 'Publicados recentes'].map((period, index) => (
-        <section key={period} className="rounded-md border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{period}</p>
-          </div>
-          <div className="space-y-2 p-3">
-            {assets.slice(index * 3, index * 3 + 4).map(asset => (
-              <button
-                key={asset.id}
-                type="button"
-                onClick={() => onSelect(asset.id)}
-                className={`flex w-full items-start gap-3 rounded-md border p-3 text-left hover:border-blue-300 ${asset.id === selectedId ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50'}`}
-              >
-                <Clock3 className="mt-0.5 h-4 w-4 text-slate-500" />
-                <span>
-                  <span className="block text-sm font-semibold text-[#141821]">{asset.title}</span>
-                  <span className="mt-1 block text-xs text-slate-500">{formatPortalDate(asset.updatedAt)} / {asset.channel}</span>
-                </span>
               </button>
             ))}
           </div>
@@ -558,21 +545,24 @@ function AssetCard({ asset, selected, onSelect }: { asset: ContentAsset; selecte
     <button
       type="button"
       onClick={onSelect}
-      className={`group overflow-hidden rounded-md border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${
-        selected ? 'border-blue-500 ring-4 ring-blue-100' : 'border-slate-200'
-      }`}
+      aria-pressed={selected}
+      className={cn(
+        'group overflow-hidden rounded-[10px] border bg-yx-surface text-left transition-colors hover:border-yx-blue',
+        portalFocusRing,
+        selected ? 'border-yx-blue ring-2 ring-yx-blue/30' : 'border-yx-line',
+      )}
     >
       <AssetPreview asset={asset} compact />
-      <div className="space-y-3 p-3">
+      <div className="space-y-3 p-3.5">
         <div className="flex flex-wrap items-center gap-2">
           <KindBadge kind={asset.kind} label={asset.kindLabel} />
           <StatusBadge status={asset.status} />
         </div>
         <div>
-          <h2 className="line-clamp-2 text-sm font-semibold leading-snug text-[#141821]">{asset.title}</h2>
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{asset.description}</p>
+          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-yx-fg">{asset.title}</h3>
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-yx-fg-3">{asset.description}</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-xs">
+        <div className="grid grid-cols-2 gap-2 border-t border-yx-line pt-3 text-xs">
           <MetaLine label="Canal" value={asset.channel} />
           <MetaLine label="Origem" value={asset.origin} />
           <MetaLine label="Campanha" value={asset.campaign} wide />
@@ -582,18 +572,35 @@ function AssetCard({ asset, selected, onSelect }: { asset: ContentAsset; selecte
   )
 }
 
-function AssetInspector({ asset, onApprove, onRequestChanges }: { asset?: ContentAsset; onApprove: () => void; onRequestChanges: () => void }) {
-  if (!asset) {
-    return (
-      <aside className="self-start rounded-sm border border-slate-300 border-l-[#2563EB] bg-white p-5 shadow-sm xl:border-l-2">
-        <p className="text-sm text-slate-600">Selecione um ativo para ver detalhes.</p>
-      </aside>
-    )
-  }
+interface AssetInspectorProps {
+  asset: ContentAsset
+  canDecide: boolean
+  submitting: boolean
+  busy: boolean
+  comment: string
+  commentError?: string
+  onCommentChange: (value: string) => void
+  onApprove: () => void
+  onRequestChanges: () => void
+}
+
+function AssetInspector({
+  asset,
+  canDecide,
+  submitting,
+  busy,
+  comment,
+  commentError,
+  onCommentChange,
+  onApprove,
+  onRequestChanges,
+}: AssetInspectorProps) {
+  const commentId = `asset-change-comment-${asset.id}`
+  const errorId = `${commentId}-error`
 
   return (
-    <aside className="self-start rounded-sm border border-slate-300 border-l-[#2563EB] bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:border-l-2">
-      <div className="overflow-hidden rounded-md border border-slate-300">
+    <aside aria-label="Detalhes do ativo" className={cn(toolbarCardClasses, 'p-4 lg:sticky lg:top-4')}>
+      <div className="overflow-hidden rounded-lg border border-yx-line">
         <AssetPreview asset={asset} />
       </div>
 
@@ -603,57 +610,110 @@ function AssetInspector({ asset, onApprove, onRequestChanges }: { asset?: Conten
             <KindBadge kind={asset.kind} label={asset.kindLabel} />
             <StatusBadge status={asset.status} />
           </div>
-          <h2 className="mt-3 text-lg font-semibold leading-snug text-[#141821]">{asset.title}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">{asset.description}</p>
+          <h2 className="mt-3 font-display text-lg font-semibold leading-snug text-yx-fg">{asset.title}</h2>
+          <p className="mt-2 text-sm leading-relaxed text-yx-fg-2">{asset.description}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-xs">
           <DetailBox label="Origem" value={asset.origin} />
           <DetailBox label="Canal" value={asset.channel} />
           <DetailBox label="Campanha" value={asset.campaign} />
-          <DetailBox label="Responsavel" value={asset.owner} />
+          <DetailBox label="Atualizado em" value={formatPortalDate(asset.updatedAt)} />
         </div>
 
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tags</p>
-          <div className="flex flex-wrap gap-2">
-            {asset.tags.map(tag => <TagPill key={tag}>{tag}</TagPill>)}
+        {asset.tags.length > 0 && (
+          <div>
+            <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-yx-fg-3">Tags</p>
+            <div className="flex flex-wrap gap-2">
+              {asset.tags.map(tag => <TagPill key={tag}>{tag}</TagPill>)}
+            </div>
           </div>
-        </div>
+        )}
 
         <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Acoes</p>
+          <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-yx-fg-3">Ações</p>
           <div className="grid gap-2">
-            <button type="button" onClick={onApprove} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700">
-              <CheckCircle2 className="h-4 w-4" />
-              Aprovar
-            </button>
-            <button type="button" onClick={onRequestChanges} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-700 hover:bg-amber-100">
-              <MessageSquare className="h-4 w-4" />
-              Pedir ajustes
-            </button>
-            <button type="button" className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            {asset.review && canDecide && (
+              <div className="grid gap-2">
+                <label htmlFor={commentId} className="text-xs font-semibold text-yx-fg-2">O que precisa mudar?</label>
+                <textarea
+                  id={commentId}
+                  value={comment}
+                  onChange={event => onCommentChange(event.target.value)}
+                  disabled={busy}
+                  rows={3}
+                  aria-invalid={commentError ? true : undefined}
+                  aria-describedby={commentError ? errorId : undefined}
+                  className={cn(
+                    'w-full rounded-lg border border-yx-line-strong bg-yx-surface p-2.5 text-sm text-yx-fg placeholder:text-yx-fg-3 disabled:opacity-60',
+                    portalFocusRing,
+                  )}
+                  placeholder="Descreva os ajustes que você quer ver nesta versão."
+                />
+                {commentError && <p id={errorId} role="alert" className="text-xs font-medium text-yx-crit">{commentError}</p>}
+                <button
+                  type="button"
+                  onClick={onApprove}
+                  disabled={busy}
+                  className={portalButtonClasses('primary', 'w-full')}
+                >
+                  <CheckCircle2 aria-hidden="true" />
+                  {submitting ? 'Registrando...' : 'Aprovar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onRequestChanges}
+                  disabled={busy}
+                  className={portalButtonClasses('ghost', 'w-full')}
+                >
+                  <MessageSquare aria-hidden="true" />
+                  {submitting ? 'Registrando...' : 'Pedir ajustes'}
+                </button>
+              </div>
+            )}
+            {asset.review && !canDecide && (
+              <p className="rounded-lg border border-yx-line bg-yx-surface-2 p-3 text-xs text-yx-fg-2">
+                Seu perfil não permite registrar decisões nesta área. Peça a um administrador da conta.
+              </p>
+            )}
+            {asset.source === 'content' && !asset.review && (
+              <p className="rounded-lg border border-yx-line bg-yx-surface-2 p-3 text-xs text-yx-fg-2">
+                Este conteúdo não tem uma revisão aguardando sua decisão.
+              </p>
+            )}
+            {asset.source === 'suggestion' && (
+              <div className="flex flex-wrap gap-2">
+                <PendingAction code="B3">Aprovar</PendingAction>
+                <PendingAction code="B3">Pedir ajustes</PendingAction>
+              </div>
+            )}
+            {asset.source === 'campaign' && (
+              <p className="rounded-lg border border-yx-line bg-yx-surface-2 p-3 text-xs text-yx-fg-2">
+                As decisões desta campanha ficam em Campanhas.
+              </p>
+            )}
+            <PendingAction code="B19">
               <Copy className="h-4 w-4" />
-              Gerar variacao
-            </button>
-            <button type="button" className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-300 bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+              Gerar variação
+            </PendingAction>
+            <PendingAction code="B19">
               <Send className="h-4 w-4" />
               Enviar para campanha
-            </button>
+            </PendingAction>
           </div>
         </div>
 
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Linha do tempo</p>
+        <div className="rounded-lg border border-yx-line bg-yx-surface-2 p-3">
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-yx-fg-3">Linha do tempo</p>
           <div className="mt-3 space-y-3">
             {[
-              ['Gerado por IA', asset.origin],
-              ['Revisado pela YUX', asset.owner],
-              ['Aguardando cliente', statusText(asset.status)],
+              ['Origem', asset.origin],
+              ['Situação atual', statusText(asset.status)],
+              ['Última atualização', formatPortalDate(asset.updatedAt)],
             ].map(([label, value]) => (
               <div key={label} className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 rounded-full bg-blue-600" />
-                <p className="text-xs text-slate-600"><span className="font-semibold text-slate-900">{label}</span><br />{value}</p>
+                <span aria-hidden="true" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-yx-blue" />
+                <p className="text-xs text-yx-fg-2"><span className="font-semibold text-yx-fg">{label}</span><br />{value}</p>
               </div>
             ))}
           </div>
@@ -664,123 +724,16 @@ function AssetInspector({ asset, onApprove, onRequestChanges }: { asset?: Conten
 }
 
 function AssetPreview({ asset, compact = false }: { asset: ContentAsset; compact?: boolean }) {
-  const height = compact ? 'h-48' : 'h-64'
-  const iconClass = 'h-5 w-5'
-  const outerPadding = compact ? 'p-4' : 'p-5'
-  const innerPadding = compact ? 'p-3.5' : 'p-4'
-  const headlineClass = compact ? 'text-xl leading-tight' : 'text-2xl leading-tight'
-  const metaClass = compact ? 'text-[11px] tracking-[0.16em]' : 'text-xs tracking-[0.2em]'
-  const visualBlockClass = compact ? 'h-12' : 'h-14'
-
-  if (asset.preview === 'copy') {
-    return (
-      <div className={`${height} bg-[#141821] ${outerPadding} text-white`}>
-        <FileText className={iconClass} />
-        <p className={`mt-5 ${metaClass} uppercase text-blue-200`}>Landing page</p>
-        <p className={`mt-3 line-clamp-3 ${headlineClass} font-semibold`}>Diagnostico comercial em 48h</p>
-        {!compact && <p className="mt-3 max-w-xs text-sm text-slate-300">Identifique gargalos, follow-ups perdidos e oportunidades de conversao.</p>}
-      </div>
-    )
-  }
-
-  if (asset.preview === 'video') {
-    return (
-      <div className={`${height} bg-slate-900 ${outerPadding} text-white`}>
-        <div className={`flex h-full flex-col justify-between rounded-md border border-white/15 bg-slate-800 ${innerPadding}`}>
-          <Video className={iconClass} />
-          <div>
-            <p className={`${metaClass} uppercase text-amber-200`}>Roteiro Reels</p>
-            <p className={`mt-2 line-clamp-3 ${headlineClass} font-semibold`}>Seu WhatsApp demora a responder?</p>
-          </div>
-          <div className="h-2 rounded-full bg-white/20"><div className="h-2 w-2/3 rounded-full bg-amber-400" /></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (asset.preview === 'email') {
-    return (
-      <div className={`${height} bg-slate-100 ${outerPadding}`}>
-        <div className={`h-full rounded-md border border-slate-300 bg-white ${innerPadding} shadow-sm`}>
-          <Mail className="h-5 w-5 text-blue-600" />
-          <p className={`mt-4 ${metaClass} font-semibold uppercase text-slate-500`}>Email</p>
-          <p className="mt-2 line-clamp-3 text-lg font-semibold text-[#141821]">Convite para diagnostico gratuito</p>
-          <div className="mt-4 space-y-2">
-            <span className="block h-2 rounded bg-slate-200" />
-            <span className="block h-2 w-4/5 rounded bg-slate-200" />
-            <span className="block h-8 w-36 rounded bg-blue-600" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (asset.preview === 'brief') {
-    return (
-      <div className={`${height} bg-[#f4f4f4] ${outerPadding}`}>
-        <div className={`h-full rounded-md border border-slate-300 bg-white ${innerPadding}`}>
-          <Layers3 className="h-5 w-5 text-[#B449A6]" />
-          <p className={`mt-4 ${metaClass} font-semibold uppercase text-slate-500`}>Brief designer</p>
-          <p className="mt-2 text-lg font-semibold text-[#141821]">Kit de anuncios</p>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <span className="h-14 rounded bg-blue-100" />
-            <span className="h-14 rounded bg-violet-100" />
-            <span className="h-14 rounded bg-pink-100" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const previewStyles = {
-    diagnosis: 'from-slate-800 via-slate-700 to-emerald-100',
-    dashboard: 'from-blue-50 via-white to-slate-200',
-    growth: 'from-emerald-100 via-white to-blue-100',
-    portrait: 'from-slate-950 via-slate-800 to-blue-700',
-  }[asset.preview] || 'from-slate-100 via-white to-blue-100'
+  const Icon = kindIcon(asset.kind)
 
   return (
-    <div className={`${height} bg-gradient-to-br ${previewStyles} ${outerPadding}`}>
-      <div className={`flex h-full flex-col justify-between rounded-md border border-white/40 bg-white/70 ${innerPadding} shadow-sm backdrop-blur-sm`}>
-        <div className="flex items-center justify-between">
-          <span className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-blue-700">YUX</span>
-          <BarChart3 className="h-5 w-5 text-blue-600" />
-        </div>
-        <div>
-          <p className={`${metaClass} font-semibold uppercase text-slate-500`}>{asset.channel}</p>
-          <p className={`mt-2 line-clamp-3 max-w-[240px] ${headlineClass} font-semibold text-[#141821]`}>{asset.title.replace(' - ', ': ')}</p>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <span className={`${visualBlockClass} rounded-md bg-white/80 shadow-sm`} />
-          <span className={`${visualBlockClass} rounded-md bg-blue-600/90 shadow-sm`} />
-        </div>
-      </div>
+    <div className={cn(compact ? 'h-16 flex-row sm:h-36 sm:flex-col' : 'h-48 flex-col', 'flex items-center justify-center gap-3 bg-yx-surface-2 p-4 text-center')}>
+      <span className={cn('flex shrink-0 items-center justify-center rounded-full border border-yx-line bg-yx-surface text-yx-blue', compact ? 'h-10 w-10 sm:h-14 sm:w-14' : 'h-14 w-14')}>
+        <Icon className={cn(compact ? 'h-5 w-5 sm:h-7 sm:w-7' : 'h-7 w-7')} aria-hidden="true" />
+      </span>
+      <span className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-yx-fg-3">{asset.kindLabel}</span>
     </div>
   )
-}
-
-function marketingPulseIconClass(tone: MarketingPulseTone) {
-  const map: Record<MarketingPulseTone, string> = {
-    blue: 'text-[#2563EB]',
-    violet: 'text-[#635BFF]',
-    slate: 'text-slate-500',
-    emerald: 'text-emerald-600',
-    amber: 'text-amber-600',
-  }
-
-  return map[tone]
-}
-
-function marketingPulseDetailClass(tone: MarketingPulseTone) {
-  const map: Record<MarketingPulseTone, string> = {
-    blue: 'text-slate-700',
-    violet: 'text-[#635BFF]',
-    slate: 'text-slate-600',
-    emerald: 'text-emerald-700',
-    amber: 'text-amber-700',
-  }
-
-  return map[tone]
 }
 
 function ViewButton({ icon: Icon, label, active, onClick }: { icon: LucideIcon; label: string; active: boolean; onClick: () => void }) {
@@ -788,98 +741,145 @@ function ViewButton({ icon: Icon, label, active, onClick }: { icon: LucideIcon; 
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-semibold ${active ? 'bg-[#141821] text-white' : 'text-slate-600 hover:bg-white'}`}
+      aria-pressed={active}
+      className={cn(
+        'inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-semibold sm:min-h-8',
+        portalFocusRing,
+        active ? 'bg-yx-surface text-yx-blue shadow-sm' : 'text-yx-fg-2 hover:text-yx-fg',
+      )}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
       {label}
     </button>
   )
 }
 
 function KindBadge({ kind, label }: { kind: AssetKind; label: string }) {
-  const Icon = kindIcon(kind)
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </span>
-  )
+  return <StatusChip icon={kindIcon(kind)}>{label}</StatusChip>
+}
+
+const statusVariants: Record<AssetStatus, StatusChipVariant> = {
+  draft: 'neutral',
+  in_review: 'warn',
+  waiting_approval: 'warn',
+  changes_requested: 'warn',
+  approved: 'ok',
+  scheduled: 'ok',
+  published: 'ok',
+  used_in_campaign: 'neutral',
+  rejected: 'crit',
+  archived: 'neutral',
 }
 
 function StatusBadge({ status }: { status: AssetStatus }) {
-  const className = {
-    draft: 'border-slate-200 bg-slate-50 text-slate-600',
-    in_review: 'border-blue-200 bg-blue-50 text-blue-700',
-    waiting_approval: 'border-amber-200 bg-amber-50 text-amber-700',
-    changes_requested: 'border-orange-200 bg-orange-50 text-orange-700',
-    approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    scheduled: 'border-violet-200 bg-violet-50 text-violet-700',
-    published: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-    used_in_campaign: 'border-pink-200 bg-pink-50 text-pink-700',
-    rejected: 'border-red-200 bg-red-50 text-red-700',
-    archived: 'border-slate-200 bg-slate-100 text-slate-500',
-  }[status] || 'border-slate-200 bg-slate-50 text-slate-600'
-
-  return (
-    <span className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold ${className}`}>
-      {statusText(status)}
-    </span>
-  )
+  return <StatusChip variant={statusVariants[status] ?? 'neutral'}>{statusText(status)}</StatusChip>
 }
 
 function MetaLine({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
     <p className={wide ? 'col-span-2' : undefined}>
-      <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
-      <span className="mt-0.5 block truncate font-medium text-slate-700">{value}</span>
+      <span className="block font-mono text-[10.5px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">{label}</span>
+      <span className="mt-0.5 block truncate font-medium text-yx-fg-2">{value}</span>
     </p>
   )
 }
 
 function DetailBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-      <p className="mt-1 text-xs font-semibold text-slate-800">{value}</p>
+    <div className="rounded-lg border border-yx-line bg-yx-surface-2 p-3">
+      <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">{label}</p>
+      <p className="mt-1 text-xs font-semibold text-yx-fg">{value}</p>
     </div>
   )
 }
 
 function TagPill({ children }: { children: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600">
-      <Tag className="h-3 w-3" />
+    <span className="inline-flex items-center gap-1 rounded-full border border-yx-line bg-yx-surface px-2 py-0.5 text-[11px] font-medium text-yx-fg-2">
+      <Tag aria-hidden="true" className="h-3 w-3" />
       {children}
     </span>
   )
 }
 
-function EmptyContentState() {
+function uniqueOptions(labels: string[], values: string[] = labels) {
+  const seen = new Map<string, string>()
+  labels.forEach((label, index) => { if (!seen.has(values[index])) seen.set(values[index], label) })
+  return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+}
+
+function FilterSelect({
+  label,
+  allLabel,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  allLabel: string
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+}) {
   return (
-    <div className="flex min-h-[420px] flex-col items-center justify-center p-8 text-center">
-      <Layers3 className="h-10 w-10 text-slate-300" />
-      <h2 className="mt-4 text-base font-semibold text-[#141821]">Nenhum ativo encontrado</h2>
-      <p className="mt-2 max-w-md text-sm text-slate-500">Ajuste os filtros ou gere novos conteudos pelo Estudio de Automacoes.</p>
-    </div>
+    <label className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+      <span className="shrink-0 font-medium">{label}:</span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        className={cn(fieldClasses, 'min-w-0 max-w-full flex-1 text-xs')}
+      >
+        <option value="">{allLabel}</option>
+        {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   )
 }
 
-function contentToAsset(content: PortalMarketingContentItem): ContentAsset {
+function EmptyContentState() {
+  return (
+    <EmptyState
+      icon={Layers3}
+      title="Nenhum ativo encontrado"
+      description="Ajuste os filtros ou busque por outro termo."
+    />
+  )
+}
+
+/** Revisão pendente mais recente de cada conteúdo (as revisões chegam da mais nova para a mais antiga). */
+function pendingReviewByContent(reviews: MarketingContentReview[]) {
+  const byContent = new Map<string, MarketingContentReview>()
+  reviews.forEach(review => {
+    if (review.status !== 'pending' || !review.contentVersionId) return
+    const current = byContent.get(review.contentItemId)
+    if (!current || review.createdAt > current.createdAt) byContent.set(review.contentItemId, review)
+  })
+  return byContent
+}
+
+function contentToAsset(
+  content: PortalMarketingContentItem,
+  pendingReview: MarketingContentReview | undefined,
+  campaignNames: Map<string, string>,
+): ContentAsset {
   const type = contentTypeInfo(content.contentType)
+  const channel = channelLabel(content.channel)
+  const reviewable = content.status === 'in_review' && pendingReview?.contentVersionId
   return {
     id: `content-${content.id}`,
     title: content.title,
     kind: type.kind,
     kindLabel: type.label,
-    channel: channelLabel(content.channel),
+    channel,
     status: content.status,
-    origin: content.createdByAgentId ? 'Estudio de Automacoes' : 'Upload manual',
-    campaign: content.campaignId || content.landingPageId || 'Sem campanha vinculada',
-    owner: content.approvedBy || 'YUX Marketing',
+    origin: content.createdByAgentId ? 'Marketing Studio' : 'Equipe YUX',
+    campaign: (content.campaignId && campaignNames.get(content.campaignId)) || 'Sem campanha vinculada',
     updatedAt: content.updatedAt,
-    description: content.brief || content.body || 'Ativo do Marketing Studio pronto para revisao e organizacao.',
-    tags: [type.label.toLowerCase(), channelLabel(content.channel).toLowerCase(), statusText(content.status).toLowerCase()],
-    preview: type.preview,
+    description: content.brief || content.body || 'Conteúdo do Marketing Studio para sua revisão.',
+    tags: [type.label.toLowerCase(), channel.toLowerCase(), statusText(content.status).toLowerCase()],
+    source: 'content',
+    review: reviewable ? { contentId: content.id, contentVersionId: pendingReview!.contentVersionId! } : undefined,
     cta: content.cta,
   }
 }
@@ -889,16 +889,15 @@ function suggestionToAsset(suggestion: MarketingCampaignCreativeSuggestion): Con
     id: `suggestion-${suggestion.id}`,
     title: suggestion.title,
     kind: 'ad',
-    kindLabel: 'Ads completa',
+    kindLabel: 'Anúncio completo',
     channel: suggestion.provider === 'meta' ? 'Meta Ads' : 'Google Ads',
     status: suggestion.status === 'converted' ? 'used_in_campaign' : suggestion.status,
     origin: 'Gerador de Criativos',
     campaign: suggestion.campaignName,
-    owner: 'Performance / Growth',
     updatedAt: suggestion.updatedAt,
     description: suggestion.angle || suggestion.targetAudience,
     tags: [suggestion.objective, suggestion.funnelStage, suggestion.provider],
-    preview: 'diagnosis',
+    source: 'suggestion',
     cta: suggestion.cta,
   }
 }
@@ -913,24 +912,23 @@ function campaignToAssets(campaign: PortalCampaign): ContentAsset[] {
     status: campaign.lifecycleStatus === 'active' ? 'used_in_campaign' : 'approved',
     origin: 'Campanha',
     campaign: campaign.name,
-    owner: 'Performance',
     updatedAt: creative.updatedAt,
-    description: creative.headline || creative.body || 'Criativo vinculado a campanha ativa.',
+    description: creative.headline || creative.body || 'Criativo vinculado a uma campanha.',
     tags: [creative.format, campaign.provider],
-    preview: 'portrait',
+    source: 'campaign',
   }))
 }
 
-function contentTypeInfo(type: MarketingContentType): { kind: AssetKind; label: string; preview: PreviewVariant } {
-  const map: Record<MarketingContentType, { kind: AssetKind; label: string; preview: PreviewVariant }> = {
-    social_post: { kind: 'post', label: 'Post', preview: 'growth' },
-    blog_article: { kind: 'copy', label: 'Artigo', preview: 'copy' },
-    newsletter: { kind: 'email', label: 'Newsletter', preview: 'email' },
-    email: { kind: 'email', label: 'Email', preview: 'email' },
-    ad_copy: { kind: 'ad', label: 'Copy Ads', preview: 'diagnosis' },
-    video_script: { kind: 'video', label: 'Roteiro Video', preview: 'video' },
-    carousel_text: { kind: 'creative', label: 'Carrossel', preview: 'dashboard' },
-    creative_brief: { kind: 'brief', label: 'Brief', preview: 'brief' },
+function contentTypeInfo(type: MarketingContentType): { kind: AssetKind; label: string } {
+  const map: Record<MarketingContentType, { kind: AssetKind; label: string }> = {
+    social_post: { kind: 'post', label: 'Post' },
+    blog_article: { kind: 'copy', label: 'Artigo' },
+    newsletter: { kind: 'email', label: 'Newsletter' },
+    email: { kind: 'email', label: 'E-mail' },
+    ad_copy: { kind: 'ad', label: 'Texto de anúncio' },
+    video_script: { kind: 'video', label: 'Roteiro de vídeo' },
+    carousel_text: { kind: 'creative', label: 'Carrossel' },
+    creative_brief: { kind: 'brief', label: 'Briefing' },
   }
 
   return map[type]
@@ -951,25 +949,8 @@ function kindIcon(kind: AssetKind) {
   return icons[kind]
 }
 
-function channelLabel(channel?: MarketingChannel | string) {
-  if (!channel) return 'Canal nao informado'
-  const labels: Record<string, string> = {
-    linkedin: 'LinkedIn',
-    instagram: 'Instagram',
-    blog: 'Blog',
-    newsletter: 'Newsletter',
-    email: 'Email',
-    ad: 'Ads',
-    video_script: 'Video',
-    carousel: 'Carrossel',
-    whatsapp_broadcast: 'WhatsApp',
-  }
-
-  return labels[channel] || statusLabel(channel)
-}
-
 function statusText(status: AssetStatus) {
-  if (status === 'waiting_approval') return 'Aguardando aprovacao'
+  if (status === 'waiting_approval') return 'Aguardando aprovação'
   if (status === 'used_in_campaign') return 'Usado em campanha'
   return statusLabel(status)
 }
