@@ -14,19 +14,9 @@ import {loadRadarCapturePreflight,isRadarCaptureLimitPause,type PreflightDepende
 import {authorizeRadarCaptureLimits} from './capture-limit-authorization.js'
 import type {RadarCaptureLimits} from './capture-capacity.js'
 import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
+import {assessRadarCaptureResearch} from './capture-research-state.js'
 
-type Child={status:string;error_code?:string;lease_until?:string;output?:Record<string,unknown>;calls?:Record<string,{status:string}>}
-export function classifyRadarCaptureResearch(run:Child):'researching'|'completed'|'insufficient'|'blocked'{
- if(run.status==='queued'||run.status==='running')return run.status==='running'&&run.lease_until&&Date.parse(run.lease_until)<Date.now()?'blocked':'researching'
- if(['blocked','failed'].includes(run.status)||Object.values(run.calls??{}).some(call=>call.status!=='completed'))return 'blocked'
- const output=run.output??{},pages=(output.pages??[]) as Array<{diagnostic?:{kind?:string};text?:string;limitation?:string}>
- if((output.discovery as {association?:string}|undefined)?.association==='blocked')return 'blocked'
- if(pages.some(page=>page.diagnostic?.kind==='tls_expired'&&(!page.text||page.limitation)))return 'blocked'
- const limitations=Array.isArray(output.limitations)?output.limitations as string[]:[]
- if(limitations.some(value=>/radar_.*(?:failed|unavailable|uncertain|pending|waiting|wallet|credits)|agent_runtime_|Identificação do site pendente|Qualificação semântica pendente/i.test(value)))return 'blocked'
- const quality=output.quality as {readyForReview?:boolean}|undefined
- return run.status==='succeeded'&&output.siteAssociation!=='review'&&quality?.readyForReview!==false?'completed':'insufficient'
-}
+export const classifyRadarCaptureResearch=(run:Parameters<typeof assessRadarCaptureResearch>[0])=>assessRadarCaptureResearch(run).status
 type CaptureQueue=Pick<RegisteredJobQueue,'add'>
 export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,input:{organizationId:string;operationId:string},queue:CaptureQueue,signal?:AbortSignal,
  dependencies:{availability?:AvailabilityLoader;startResearch?:typeof startRadarCandidateResearch;discover?:typeof advanceRadarCaptureDiscovery}={}){
@@ -82,8 +72,8 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
      await pool.query("UPDATE public.radar_capture_items SET status='researching',blocker=NULL WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId])
     }catch{await pool.query("UPDATE public.radar_capture_items SET blocker='radar_capture_queue_unavailable' WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId])}
    }else{
-    const classification=classifyRadarCaptureResearch({...item,status})
-    await pool.query('UPDATE public.radar_capture_items SET status=$3,blocker=$4 WHERE id=$1 AND organization_id=$2',[item.id,input.organizationId,classification,classification==='blocked'?item.error_code||'radar_capture_item_requires_review':null])
+    const assessment=assessRadarCaptureResearch({...item,status})
+    await pool.query('UPDATE public.radar_capture_items SET status=$3,blocker=$4 WHERE id=$1 AND organization_id=$2',[item.id,input.organizationId,assessment.status,assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null])
    }
   }
   const state=await getRadarCaptureOperation(pool,user,input.organizationId,op.id)

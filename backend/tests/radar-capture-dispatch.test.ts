@@ -5,7 +5,24 @@ import {startRadarCaptureOperation,getRadarCaptureOperation} from '../src/module
 import {advanceRadarCaptureDiscovery,blockRadarCapture} from '../src/modules/radar/capture-discovery.js'
 const modulePath='../src/modules/radar/capture-dispatch.js'
 const api=await import(modulePath).catch(()=>({}))
+const state=await import('../src/modules/radar/capture-research-state.js')
 describe('capture outcomes',()=>{
+ it('treats exhausted identity evidence as insufficient, not an execution failure',()=>{
+  const run={status:'partial',stage:'review',calls:{presence:{status:'completed'}},output:{siteAssociation:'review',limitations:['radar_qualification_waiting_identity','radar_profile_waiting_identity']}}
+  expect(api.classifyRadarCaptureResearch(run)).toBe('insufficient')
+  expect(state.assessRadarCaptureResearch(run)).toEqual({status:'insufficient',stage:'presence',reason:'radar_research_identity_insufficient'})
+ })
+ it('ignores incidental quota warnings only after required research is demonstrably complete',()=>{
+  const output={siteAssociation:'confirmed',quality:{readyForReview:true},qualification:{targetStatus:'confirmed',productFit:'high'},limitations:['source_limit_exceeded']}
+  expect(api.classifyRadarCaptureResearch({status:'partial',stage:'review',calls:{},output})).toBe('completed')
+  expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:['source_limit_exceeded','radar_qualification_waiting_public_read']}})).toEqual({status:'blocked',stage:'discovery',reason:'source_limit_exceeded'})
+ })
+ it('keeps a precise operational reason without interpreting arbitrary public text as an error',()=>{
+  expect(state.assessRadarCaptureResearch({status:'partial',calls:{semantic:{status:'uncertain'}},output:{}})).toEqual({status:'blocked',stage:'qualification',reason:'radar_research_call_uncertain'})
+  expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:['Qualificação semântica pendente (agent_runtime_422). Os fatos foram preservados.']}})).toEqual({status:'blocked',stage:'qualification',reason:'agent_runtime_422'})
+  expect(api.classifyRadarCaptureResearch({status:'partial',output:{limitations:['Texto público: radar_company_failed é o nome do produto']}})).toBe('insufficient')
+  expect(api.classifyRadarCaptureResearch({status:'partial',output:{siteAssociation:'review',limitations:['radar_profile_unverifiable']}})).toBe('insufficient')
+ })
  it.each(['source_limit_exceeded','source_budget_exceeded','provider_inactive'])('keeps structured provider blocker %s resumable',code=>{
    expect(api.classifyRadarCaptureResearch({status:'partial',output:{discovery:{association:'blocked',limitations:[code]},limitations:[code]},calls:{}})).toBe('blocked')
  })
