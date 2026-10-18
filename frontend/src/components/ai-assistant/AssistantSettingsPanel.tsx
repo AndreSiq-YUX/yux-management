@@ -1,26 +1,45 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import {
-  Bot, Sparkles, Volume2, ShieldCheck, Tag, Plus, Trash2,
-  Save, ArrowRight, ArrowLeft, Check, BookOpen, Link, FileText, DollarSign, CheckCheck, X
+  Bot, Sparkles, Volume2, Plus,
+  Save, ArrowRight, ArrowLeft, BookOpen, FileText, DollarSign, CheckCheck, X
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { StatusChip, portalButtonClasses } from '@/components/portal-ui'
+import { portalFocusRing } from '@/components/portal-ui/buttonStyles'
 import { aiAssistantDataClient } from '@/lib/aiAssistantDataClient'
+import { statusLabel } from '@/lib/client-portal/portalDisplay'
+import { cn } from '@/lib/utils'
+import { usePlatformStore } from '@/stores/platformStore'
 import toast from 'react-hot-toast'
-import type { AiAssistantRole, AiAssistantSettings, AiAssistantHandoffRule, AiAssistantSafetyRule, AiAssistantKnowledgeLink } from '@/types/aiAssistant'
+import type { AiAssistantRole, AiAssistantSettings } from '@/types/aiAssistant'
+
+const PRODUCT_PREFIX = '[PRODUTO]'
+
+const labelCls = 'block space-y-1'
+const labelTextCls = 'block text-[13px] font-semibold text-yx-fg'
+const fieldCls =
+  'h-10 w-full rounded-lg border border-yx-line-strong bg-yx-surface px-3 text-[13px] text-yx-fg placeholder:text-yx-fg-3 ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yx-blue focus-visible:ring-offset-2 focus-visible:ring-offset-yx-surface'
+const cardCls = 'rounded-[10px] border border-yx-line bg-yx-surface p-4 text-yx-fg shadow-[0_1px_2px_rgba(14,17,32,0.04)] dark:shadow-none'
 
 interface AssistantSettingsPanelProps {
   organizationId: string
   assistant?: AiAssistantSettings | null
   onSaveAssistant?: (organizationId: string) => void
+  /**
+   * `portal`: tela do cliente, largura total e sem campos técnicos (só para papéis internos, em "Detalhes técnicos").
+   * `internal` (padrão): Hub interno, com todos os campos.
+   */
+  variant?: 'portal' | 'internal'
 }
 
 export function AssistantSettingsPanel({
   organizationId,
   assistant,
   onSaveAssistant,
+  variant = 'internal',
 }: AssistantSettingsPanelProps) {
+  const idPrefix = useId()
+  const isInternalRole = usePlatformStore(state => state.role?.scope === 'internal')
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
 
@@ -165,7 +184,7 @@ export function AssistantSettingsPanel({
   // Add Product to catalog & unified knowledge database
   const handleAddProduct = async () => {
     if (!newProdName.trim() || !newProdPrice.trim()) {
-      toast.error('Preencha pelo menos o nome e preço do produto')
+      toast.error('Preencha pelo menos o nome e o preço do produto')
       return
     }
 
@@ -176,7 +195,7 @@ export function AssistantSettingsPanel({
         .from('knowledge_entries')
         .insert({
           organization_id: organizationId,
-          title: `[PRODUTO] ${newProdName.trim()}`,
+          title: `${PRODUCT_PREFIX} ${newProdName.trim()}`,
           body: `Nome: ${newProdName.trim()}\nPreço: ${newProdPrice.trim()}\nDescrição: ${newProdDesc.trim()}\nLink: ${newProdLink.trim()}`,
           status: 'published'
         })
@@ -205,10 +224,10 @@ export function AssistantSettingsPanel({
       setNewProdDesc('')
       setNewProdLink('')
       setShowAddProduct(false)
-      toast.success('Produto adicionado e integrado à Base de Conhecimento')
+      toast.success('Produto adicionado e vinculado à base de conhecimento')
     } catch (e) {
       console.error(e)
-      toast.error('Erro ao registrar produto')
+      toast.error('Não foi possível cadastrar o produto. Tente novamente.')
     } finally {
       setSaving(false)
     }
@@ -217,7 +236,7 @@ export function AssistantSettingsPanel({
   // Handle master save
   const handleSave = async () => {
     if (!agentName.trim()) {
-      toast.error('O nome do bot é obrigatório')
+      toast.error('O nome do agente é obrigatório')
       return
     }
     try {
@@ -262,14 +281,14 @@ export function AssistantSettingsPanel({
       const handoffRulesPayload = [
         {
           assistant_id: assistantId,
-          name: 'Palavras-chave de escape',
+          name: 'Pedido de atendente',
           rule_type: 'human_request',
           conditions: { keywords, outOfHoursBehavior, handoffQueueId, moveCrmStage },
           is_enabled: true
         },
         {
           assistant_id: assistantId,
-          name: 'Limiar de confiança',
+          name: 'Confiança baixa do agente',
           rule_type: 'low_confidence',
           conditions: {},
           min_confidence: Number(confidenceThreshold / 100),
@@ -323,11 +342,11 @@ export function AssistantSettingsPanel({
         if (linksError) throw linksError
       }
 
-      toast.success('Agente de IA salvo e ativado com sucesso!')
+      toast.success('Agente de IA salvo e ativado.')
       if (onSaveAssistant) onSaveAssistant(organizationId)
     } catch (e) {
       console.error(e)
-      toast.error('Erro ao salvar configurações do assistente')
+      toast.error('Não foi possível salvar a configuração do agente. Tente novamente.')
     } finally {
       setSaving(false)
     }
@@ -340,346 +359,291 @@ export function AssistantSettingsPanel({
     )
   }
 
+  const showTechnical = variant === 'internal' || isInternalRole
+  const technicalFields = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className={labelCls}>
+        <span className={labelTextCls}>Perfil estratégico (ID)</span>
+        <input value={strategyProfileId} onChange={e => setStrategyProfileId(e.target.value)} placeholder="Opcional: UUID do perfil estratégico" className={fieldCls} />
+      </label>
+      <label className={labelCls}>
+        <span className={labelTextCls}>Prioridade de roteamento</span>
+        <input type="number" value={routingPriority} onChange={e => setRoutingPriority(Number(e.target.value || 100))} className={fieldCls} />
+      </label>
+      <label className={labelCls}>
+        <span className={labelTextCls}>Tempo para manter o mesmo papel (minutos)</span>
+        <input type="number" value={roleLockMinutes} onChange={e => setRoleLockMinutes(Number(e.target.value || 30))} className={fieldCls} />
+      </label>
+    </div>
+  )
+
+  const stepTitles = ['1. Identidade', '2. Habilidades', '3. Gatilhos e transferência', '4. Conhecimento']
+  const capabilities = [
+    { checked: understandVoice, set: setUnderstandVoice, icon: Volume2, title: 'Compreender áudios (voz)', hint: 'O agente transcreve e interpreta mensagens de voz enviadas no WhatsApp.' },
+    { checked: understandImages, set: setUnderstandImages, icon: CheckCheck, title: 'Compreender imagens e fotos', hint: 'Permite ao agente analisar fotos de produtos ou comprovantes enviados.' },
+    { checked: understandFiles, set: setUnderstandFiles, icon: FileText, title: 'Compreender arquivos (PDF e documentos)', hint: 'O agente lê o conteúdo de PDFs ou planilhas anexadas.' },
+    { checked: understandVideos, set: setUnderstandVideos, icon: Bot, title: 'Compreender vídeos', hint: 'Analisa quadros e a transcrição do áudio de vídeos curtos.' },
+  ]
+
   return (
-    <section className="space-y-4 max-w-4xl mx-auto">
-      {/* Wizard Step Bar */}
-      <div className="bg-white p-3 border rounded-xl shadow-sm">
-        <div className="flex items-center justify-between border-b pb-2 mb-3">
-          <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
-            <Sparkles className="h-4.5 w-4.5 text-yux-600 animate-pulse" />
-            Configurar Agente de IA Comercial
-          </h2>
-          <span className="text-xs text-gray-400 font-semibold">Etapa {step} de 4</span>
+    <section aria-label="Configuração do agente de IA" className={cn('space-y-4', variant === 'internal' && 'mx-auto max-w-4xl')}>
+      <div className={cardCls}>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-yx-line pb-3">
+          <h3 className="flex items-center gap-2 font-display text-base font-semibold tracking-[-0.01em] text-yx-fg">
+            <Sparkles aria-hidden="true" className="h-4 w-4 text-yx-blue" />
+            {variant === 'portal' ? 'Passo a passo da configuração' : 'Configurar agente de IA comercial'}
+          </h3>
+          <StatusChip>Etapa {step} de 4</StatusChip>
         </div>
-        <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500">
-          <button onClick={() => setStep(1)} className={`py-1.5 rounded border ${step === 1 ? 'bg-yux-50 text-yux-700 border-yux-200' : 'bg-slate-50'}`}>1. Identidade</button>
-          <button onClick={() => setStep(2)} className={`py-1.5 rounded border ${step === 2 ? 'bg-yux-50 text-yux-700 border-yux-200' : 'bg-slate-50'}`}>2. Habilidades</button>
-          <button onClick={() => setStep(3)} className={`py-1.5 rounded border ${step === 3 ? 'bg-yux-50 text-yux-700 border-yux-200' : 'bg-slate-50'}`}>3. Gatilhos & Handoff</button>
-          <button onClick={() => setStep(4)} className={`py-1.5 rounded border ${step === 4 ? 'bg-yux-50 text-yux-700 border-yux-200' : 'bg-slate-50'}`}>4. Conhecimento</button>
+        <div role="group" aria-label="Etapas da configuração" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {stepTitles.map((title, index) => (
+            <button
+              key={title}
+              type="button"
+              onClick={() => setStep(index + 1)}
+              aria-current={step === index + 1 ? 'step' : undefined}
+              className={cn(
+                'min-h-10 rounded-lg border px-2 py-1.5 text-center text-[13px] font-semibold transition-colors',
+                portalFocusRing,
+                step === index + 1
+                  ? 'border-yx-blue bg-yx-blue-soft text-yx-blue'
+                  : 'border-yx-line-strong bg-yx-surface-2 text-yx-fg-2 hover:text-yx-fg',
+              )}
+            >
+              {title}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Main step content */}
-      <div className="bg-white border rounded-xl p-4 shadow-sm min-h-[300px]">
-        {/* STEP 1: IDENTITY */}
+      <div className={cn(cardCls, 'min-h-[300px]')}>
         {step === 1 && (
-          <div className="space-y-3">
-            <div className="border-b pb-1.5 mb-2">
-              <h3 className="font-bold text-sm text-gray-900">Identidade e Prompt do Agente</h3>
-              <p className="text-xs text-gray-400">Configure a persona do bot e as instruções fundamentais que guiarão as respostas.</p>
-            </div>
+          <div className="space-y-4">
+            <StepHeader title="Identidade e instruções do agente" description="Defina a persona do agente e as instruções que guiam as respostas." />
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Nome do Atendente Virtual</span>
-                <Input value={agentName} onChange={e => setAgentName(e.target.value)} placeholder="Ex: Sofia, Lucas" className="h-9" />
+              <label className={labelCls}>
+                <span className={labelTextCls}>Nome do atendente virtual</span>
+                <input value={agentName} onChange={e => setAgentName(e.target.value)} placeholder="Ex.: Sofia, Lucas" className={fieldCls} />
               </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Tom de Voz Principal</span>
-                <select
-                  value={tone}
-                  onChange={e => setTone(e.target.value)}
-                  className="h-9 w-full rounded-md border px-2 bg-white text-xs text-gray-800"
-                >
-                  <option value="consultivo">Consultivo (Orienta e sugere soluções)</option>
-                  <option value="objetivo">Objetivo (Direto ao ponto, respostas curtas)</option>
-                  <option value="acolhedor">Acolhedor (Empático e amigável)</option>
-                  <option value="premium">Premium (Formal, refinado e polido)</option>
+              <label className={labelCls}>
+                <span className={labelTextCls}>Tom de voz principal</span>
+                <select value={tone} onChange={e => setTone(e.target.value)} className={fieldCls}>
+                  <option value="consultivo">Consultivo (orienta e sugere soluções)</option>
+                  <option value="objetivo">Objetivo (direto ao ponto, respostas curtas)</option>
+                  <option value="acolhedor">Acolhedor (empático e amigável)</option>
+                  <option value="premium">Premium (formal, refinado e polido)</option>
                 </select>
               </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Nome da Empresa</span>
-                <Input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Ex: Portal YUX" className="h-9" />
+              <label className={labelCls}>
+                <span className={labelTextCls}>Nome da empresa</span>
+                <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Ex.: Minha Empresa" className={fieldCls} />
               </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Site Oficial de Referência</span>
-                <Input value={websiteUrl} onChange={e => setWebsiteUrl(e.target.value)} placeholder="Ex: https://yux.com.br" className="h-9" />
+              <label className={labelCls}>
+                <span className={labelTextCls}>Site oficial de referência</span>
+                <input value={websiteUrl} onChange={e => setWebsiteUrl(e.target.value)} placeholder="Ex.: https://suaempresa.com.br" className={fieldCls} />
               </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Papel da IA</span>
-                <select
-                  value={assistantRole}
-                  onChange={e => setAssistantRole(e.target.value as AiAssistantRole)}
-                  className="h-9 w-full rounded-md border px-2 bg-white text-xs text-gray-800"
-                >
-                  <option value="sdr">SDR / Comercial 1</option>
-                  <option value="closer">Closer</option>
+              <label className={labelCls}>
+                <span className={labelTextCls}>Papel do agente</span>
+                <select value={assistantRole} onChange={e => setAssistantRole(e.target.value as AiAssistantRole)} className={fieldCls}>
+                  <option value="sdr">Comercial: primeiro contato</option>
+                  <option value="closer">Comercial: fechamento</option>
                   <option value="support">Suporte receptivo</option>
-                  <option value="retention">Retencao / Comercial 2</option>
-                  <option value="custom">Customizado</option>
+                  <option value="retention">Retenção e pós-venda</option>
+                  <option value="custom">Personalizado</option>
                 </select>
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Strategy Profile ID</span>
-                <Input value={strategyProfileId} onChange={e => setStrategyProfileId(e.target.value)} placeholder="Opcional: UUID do perfil estrategico" className="h-9" />
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Prioridade de Roteamento</span>
-                <Input type="number" value={routingPriority} onChange={e => setRoutingPriority(Number(e.target.value || 100))} className="h-9" />
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="font-semibold text-gray-700">Lock de Papel (min)</span>
-                <Input type="number" value={roleLockMinutes} onChange={e => setRoleLockMinutes(Number(e.target.value || 30))} className="h-9" />
               </label>
             </div>
-            <div className="space-y-1 text-xs pt-1">
-              <span className="font-semibold text-gray-700 flex justify-between">
-                <span>Instruções de Sistema (System Prompt)</span>
-                <span className="text-gray-400">{systemPrompt.length} caracteres</span>
-              </span>
+
+            {showTechnical ? (
+              variant === 'portal' ? (
+                <details className="rounded-lg border border-yx-line bg-yx-surface-2 p-3">
+                  <summary className={cn('cursor-pointer rounded text-[13px] font-semibold text-yx-fg', portalFocusRing)}>Detalhes técnicos</summary>
+                  <div className="mt-3">{technicalFields}</div>
+                </details>
+              ) : (
+                technicalFields
+              )
+            ) : null}
+
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <label htmlFor={`${idPrefix}-instructions`} className={labelTextCls}>Instruções do agente</label>
+                <span className="text-xs text-yx-fg-3">{systemPrompt.length} {systemPrompt.length === 1 ? 'caractere' : 'caracteres'}</span>
+              </div>
               <textarea
+                id={`${idPrefix}-instructions`}
                 value={systemPrompt}
                 onChange={e => setSystemPrompt(e.target.value)}
                 rows={6}
-                placeholder="Insira as regras rígidas do bot. Ex: 'Você é um vendedor de planos da empresa X. Nunca forneça descontos sem permissão. Sempre direcione o cliente para o agendamento...'"
-                className="w-full rounded-md border p-3 text-xs bg-slate-50/50 focus:ring-1 focus:ring-yux-500 focus:outline-none"
+                placeholder="Escreva as regras do agente. Ex.: 'Você atende clientes da empresa X. Nunca ofereça descontos sem autorização. Sempre convide o cliente a agendar uma conversa.'"
+                className={cn(fieldCls, 'h-auto min-h-[140px] py-2.5 leading-relaxed')}
               />
             </div>
           </div>
         )}
 
-        {/* STEP 2: CAPABILITIES */}
         {step === 2 && (
-          <div className="space-y-3">
-            <div className="border-b pb-1.5 mb-2">
-              <h3 className="font-bold text-sm text-gray-900">Habilidades e Mídias Suportadas</h3>
-              <p className="text-xs text-gray-400">Ative o que o agente de IA pode entender nas conversas com os clientes.</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 pt-2">
-              <label className="flex items-start gap-3 p-3 rounded-lg border hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={understandVoice}
-                  onChange={e => setUnderstandVoice(e.target.checked)}
-                  className="rounded border-gray-300 text-yux-600 mt-0.5 focus:ring-yux-500"
-                />
-                <div className="text-xs">
-                  <div className="font-bold text-gray-800 flex items-center gap-1.5">
-                    <Volume2 className="h-4 w-4 text-yux-600" />
-                    Compreender Áudios (Voz)
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">O bot transcreverá e interpretará mensagens de voz enviadas no WhatsApp.</p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 p-3 rounded-lg border hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={understandImages}
-                  onChange={e => setUnderstandImages(e.target.checked)}
-                  className="rounded border-gray-300 text-yux-600 mt-0.5 focus:ring-yux-500"
-                />
-                <div className="text-xs">
-                  <div className="font-bold text-gray-800 flex items-center gap-1.5">
-                    <CheckCheck className="h-4 w-4 text-yux-600" />
-                    Compreender Imagens e Fotos
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">Permite ao bot analisar fotos de produtos ou comprovantes enviados.</p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 p-3 rounded-lg border hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={understandFiles}
-                  onChange={e => setUnderstandFiles(e.target.checked)}
-                  className="rounded border-gray-300 text-yux-600 mt-0.5 focus:ring-yux-500"
-                />
-                <div className="text-xs">
-                  <div className="font-bold text-gray-800 flex items-center gap-1.5">
-                    <FileText className="h-4 w-4 text-yux-600" />
-                    Compreender Arquivos (PDF/Docs)
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">O bot lerá o conteúdo de PDFs ou planilhas anexadas.</p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 p-3 rounded-lg border hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={understandVideos}
-                  onChange={e => setUnderstandVideos(e.target.checked)}
-                  className="rounded border-gray-300 text-yux-600 mt-0.5 focus:ring-yux-500"
-                />
-                <div className="text-xs">
-                  <div className="font-bold text-gray-800 flex items-center gap-1.5">
-                    <Bot className="h-4 w-4 text-yux-600" />
-                    Compreender Vídeos
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">Analisa frames e transcrições de áudio de vídeos curtos.</p>
-                </div>
-              </label>
+          <div className="space-y-4">
+            <StepHeader title="Habilidades e mídias aceitas" description="Ative o que o agente pode entender nas conversas com seus clientes." />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {capabilities.map(({ checked, set, icon: Icon, title, hint }) => (
+                <label key={title} className="flex cursor-pointer items-start gap-3 rounded-lg border border-yx-line bg-yx-surface p-3 hover:bg-yx-surface-2">
+                  <input type="checkbox" checked={checked} onChange={e => set(e.target.checked)} className="mt-0.5 h-4 w-4 accent-yx-blue" />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5 text-[13px] font-semibold text-yx-fg">
+                      <Icon aria-hidden="true" className="h-4 w-4 text-yx-blue" />
+                      {title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-yx-fg-3">{hint}</span>
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
         )}
 
-        {/* STEP 3: HANDOFF & ROUTING */}
         {step === 3 && (
-          <div className="space-y-3">
-            <div className="border-b pb-1.5 mb-2">
-              <h3 className="font-bold text-sm text-gray-900">Gatilhos de Transferência (Handoff) & CRM</h3>
-              <p className="text-xs text-gray-400">Configure em quais situações a IA deve passar a conversa para um atendente humano.</p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 text-xs">
+          <div className="space-y-4">
+            <StepHeader title="Gatilhos e transferência para atendente" description="Defina em quais situações o agente passa a conversa para uma pessoa da equipe." />
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <span className="font-semibold text-gray-700">Limiar de Confiança da IA: {confidenceThreshold}%</span>
+                <label htmlFor={`${idPrefix}-confidence`} className={labelTextCls}>Confiança mínima do agente: {confidenceThreshold}%</label>
                 <input
+                  id={`${idPrefix}-confidence`}
                   type="range"
                   min="50"
                   max="95"
                   value={confidenceThreshold}
                   onChange={e => setConfidenceThreshold(Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yux-600"
+                  className="h-6 w-full cursor-pointer accent-yx-blue"
                 />
-                <p className="text-[10px] text-gray-400">Transfere se a confiança da resposta da IA cair abaixo de {confidenceThreshold}%.</p>
+                <p className="text-xs text-yx-fg-3">Transfere para um atendente se a confiança da resposta cair abaixo de {confidenceThreshold}%.</p>
               </div>
 
-              <label className="space-y-1">
-                <span className="font-semibold text-gray-700">Palavras-chave de Escape (separadas por vírgula)</span>
-                <Input
-                  value={escapeKeywords}
-                  onChange={e => setEscapeKeywords(e.target.value)}
-                  placeholder="Ex: atendente, falar com pessoa"
-                  className="h-9"
-                />
+              <label className={labelCls}>
+                <span className={labelTextCls}>Palavras que pedem um atendente (separadas por vírgula)</span>
+                <input value={escapeKeywords} onChange={e => setEscapeKeywords(e.target.value)} placeholder="Ex.: atendente, falar com pessoa" className={fieldCls} />
               </label>
 
-              <label className="space-y-1">
-                <span className="font-semibold text-gray-700">Comportamento fora do horário comercial</span>
-                <select
-                  value={outOfHoursBehavior}
-                  onChange={e => setOutOfHoursBehavior(e.target.value)}
-                  className="h-9 w-full rounded-md border px-2 bg-white text-xs text-gray-800"
-                >
-                  <option value="unavailability_message">Informar indisponibilidade e manter na IA</option>
-                  <option value="queue_handoff">Informar e enviar para fila humana de urgência</option>
-                  <option value="ai_only">Permitir que a IA responda 24h normalmente</option>
+              <label className={labelCls}>
+                <span className={labelTextCls}>Comportamento fora do horário comercial</span>
+                <select value={outOfHoursBehavior} onChange={e => setOutOfHoursBehavior(e.target.value)} className={fieldCls}>
+                  <option value="unavailability_message">Informar indisponibilidade e manter com o agente</option>
+                  <option value="queue_handoff">Informar e enviar para a fila de urgência</option>
+                  <option value="ai_only">Deixar o agente responder 24h normalmente</option>
                 </select>
               </label>
 
               {queues.length > 0 && (
-                <label className="space-y-1">
-                  <span className="font-semibold text-gray-700">Fila Destino do Handoff</span>
-                  <select
-                    value={handoffQueueId}
-                    onChange={e => setHandoffQueueId(e.target.value)}
-                    className="h-9 w-full rounded-md border px-2 bg-white text-xs text-gray-800"
-                  >
+                <label className={labelCls}>
+                  <span className={labelTextCls}>Fila de destino da transferência</span>
+                  <select value={handoffQueueId} onChange={e => setHandoffQueueId(e.target.value)} className={fieldCls}>
                     {queues.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}
                   </select>
                 </label>
               )}
 
-              <label className="col-span-2 flex items-center gap-2 p-2 rounded border bg-slate-50/50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={moveCrmStage}
-                  onChange={e => setMoveCrmStage(e.target.checked)}
-                  className="rounded border-gray-300 text-yux-600 focus:ring-yux-500"
-                />
-                <div>
-                  <span className="font-bold text-gray-800">Mover lead no CRM ao transferir para humano</span>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Move automaticamente o estágio do lead associado para a etapa de "Handoff Humano".</p>
-                </div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-yx-line bg-yx-surface-2 p-3 sm:col-span-2">
+                <input type="checkbox" checked={moveCrmStage} onChange={e => setMoveCrmStage(e.target.checked)} className="mt-0.5 h-4 w-4 accent-yx-blue" />
+                <span>
+                  <span className="block text-[13px] font-semibold text-yx-fg">Mover o lead no CRM ao transferir para um atendente</span>
+                  <span className="mt-0.5 block text-xs text-yx-fg-3">Muda automaticamente o lead para a etapa de atendimento humano.</span>
+                </span>
               </label>
             </div>
           </div>
         )}
 
-        {/* STEP 4: KNOWLEDGE & PRODUCTS */}
         {step === 4 && (
-          <div className="space-y-3">
-            <div className="border-b pb-1.5 mb-2 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-sm text-gray-900">Biblioteca de Conhecimento & Catálogo</h3>
-                <p className="text-xs text-gray-400">Associe materiais gerais da empresa ao assistente ou cadastre produtos.</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddProduct(true)}
-                className="text-[11px] h-8 border-yux-200 text-yux-700 bg-yux-50/20 hover:bg-yux-50"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Cadastrar Produto
-              </Button>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <StepHeader title="Biblioteca de conhecimento e catálogo" description="Vincule materiais da empresa ao agente ou cadastre produtos." className="min-w-0 flex-1 basis-[220px]" />
+              <button type="button" onClick={() => setShowAddProduct(true)} className={portalButtonClasses('ghost')}>
+                <Plus aria-hidden="true" />
+                Cadastrar produto
+              </button>
             </div>
 
-            {/* Product registration form modal-like overlay */}
             {showAddProduct && (
-              <div className="bg-slate-50 border rounded-lg p-3 space-y-2 text-xs">
-                <div className="flex items-center justify-between border-b pb-1">
-                  <span className="font-bold text-slate-800">Novo Produto no Catálogo Unificado</span>
-                  <button onClick={() => setShowAddProduct(false)}><X className="h-4 w-4 text-slate-400 hover:text-slate-600" /></button>
+              <div role="group" aria-label="Novo produto no catálogo" className="space-y-3 rounded-lg border border-yx-line bg-yx-surface-2 p-3">
+                <div className="flex items-center justify-between gap-2 border-b border-yx-line pb-2">
+                  <span className="text-[13px] font-semibold text-yx-fg">Novo produto no catálogo</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProduct(false)}
+                    aria-label="Fechar o cadastro de produto"
+                    className={cn('inline-flex h-10 w-10 items-center justify-center rounded-lg text-yx-fg-3 hover:text-yx-fg', portalFocusRing)}
+                  >
+                    <X aria-hidden="true" className="h-4 w-4" />
+                  </button>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="space-y-1">
-                    <span className="font-medium">Nome do Produto</span>
-                    <Input value={newProdName} onChange={e => setNewProdName(e.target.value)} placeholder="Ex: Notebook Pro" className="h-8 text-xs" />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className={labelCls}>
+                    <span className={labelTextCls}>Nome do produto</span>
+                    <input value={newProdName} onChange={e => setNewProdName(e.target.value)} placeholder="Ex.: Notebook Pro" className={fieldCls} />
                   </label>
-                  <label className="space-y-1">
-                    <span className="font-medium">Preço</span>
-                    <Input value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} placeholder="Ex: R$ 4.500,00" className="h-8 text-xs" />
+                  <label className={labelCls}>
+                    <span className={labelTextCls}>Preço</span>
+                    <input value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} placeholder="Ex.: R$ 4.500,00" className={fieldCls} />
                   </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="font-medium">Link de Checkout/Info</span>
-                    <Input value={newProdLink} onChange={e => setNewProdLink(e.target.value)} placeholder="Ex: https://checkout.com/note-pro" className="h-8 text-xs" />
+                  <label className={cn(labelCls, 'sm:col-span-2')}>
+                    <span className={labelTextCls}>Link de compra ou informações</span>
+                    <input value={newProdLink} onChange={e => setNewProdLink(e.target.value)} placeholder="Ex.: https://sualoja.com.br/produto" className={fieldCls} />
                   </label>
-                  <label className="space-y-1 col-span-2">
-                    <span className="font-medium">Descrição Completa</span>
+                  <label className={cn(labelCls, 'sm:col-span-2')}>
+                    <span className={labelTextCls}>Descrição completa</span>
                     <textarea
                       value={newProdDesc}
                       onChange={e => setNewProdDesc(e.target.value)}
                       rows={2}
                       placeholder="Ficha técnica, cores, garantia..."
-                      className="w-full rounded-md border p-2 text-xs focus:ring-1 focus:ring-yux-500 focus:outline-none"
+                      className={cn(fieldCls, 'h-auto py-2.5')}
                     />
                   </label>
                 </div>
-                <Button size="sm" onClick={handleAddProduct} className="text-xs">Confirmar Cadastro</Button>
+                <button type="button" onClick={handleAddProduct} disabled={saving} className={portalButtonClasses('primary')}>
+                  Confirmar cadastro
+                </button>
               </div>
             )}
 
-            {/* List of general knowledge files for selection */}
             <div className="space-y-2">
-              <span className="font-bold text-xs text-gray-700 flex items-center gap-1">
-                <BookOpen className="h-4 w-4 text-yux-600" />
-                Vincular Materiais e Documentos do Acervo Geral
-              </span>
-              <div className="max-h-[180px] overflow-y-auto border rounded-lg divide-y bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[13px] font-semibold text-yx-fg">
+                  <BookOpen aria-hidden="true" className="h-4 w-4 text-yx-blue" />
+                  Materiais e documentos da empresa
+                </span>
+                <span className="text-xs text-yx-fg-3">{selectedKnowledgeIds.length} {selectedKnowledgeIds.length === 1 ? 'material vinculado' : 'materiais vinculados'}</span>
+              </div>
+              <div className="max-h-[260px] divide-y divide-yx-line overflow-y-auto rounded-lg border border-yx-line bg-yx-surface">
                 {availableKnowledge.map(entry => {
                   const isChecked = selectedKnowledgeIds.includes(entry.id)
-                  const isProduct = entry.title.startsWith('[PRODUTO]')
+                  const isProduct = String(entry.title).startsWith(PRODUCT_PREFIX)
+                  const title = isProduct ? String(entry.title).slice(PRODUCT_PREFIX.length).trim() : entry.title
                   return (
                     <label
                       key={entry.id}
-                      className={`flex items-start gap-2.5 p-2.5 hover:bg-slate-50 cursor-pointer text-xs ${
-                        isChecked ? 'bg-yux-50/25' : ''
-                      }`}
+                      className={cn('flex cursor-pointer items-start gap-3 p-3 text-[13px] hover:bg-yx-surface-2', isChecked && 'bg-yx-blue-soft')}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleToggleKnowledge(entry.id)}
-                        className="rounded border-gray-300 text-yux-600 mt-0.5 focus:ring-yux-500"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={isChecked} onChange={() => handleToggleKnowledge(entry.id)} className="mt-0.5 h-4 w-4 accent-yx-blue" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-1.5">
                           {isProduct ? (
-                            <DollarSign className="h-3 w-3.5 text-emerald-600 shrink-0" />
+                            <DollarSign aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-yx-ok" />
                           ) : (
-                            <FileText className="h-3 w-3.5 text-slate-400 shrink-0" />
+                            <FileText aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-yx-fg-3" />
                           )}
-                          <span className="font-bold text-slate-800 truncate">{entry.title}</span>
-                          <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold">{entry.status}</Badge>
-                        </div>
-                        <p className="text-[10px] text-gray-400 line-clamp-1 mt-0.5">{entry.body}</p>
-                      </div>
+                          <span className="min-w-0 truncate font-semibold text-yx-fg">{title}</span>
+                          {isProduct ? <StatusChip variant="ok">Produto</StatusChip> : null}
+                          <StatusChip variant={entry.status === 'published' ? 'ok' : 'neutral'}>{statusLabel(entry.status)}</StatusChip>
+                        </span>
+                        <span className="mt-0.5 line-clamp-1 block text-xs text-yx-fg-3">{entry.body}</span>
+                      </span>
                     </label>
                   )
                 })}
                 {availableKnowledge.length === 0 && (
-                  <p className="p-4 text-center text-slate-400 text-[11px]">Nenhum material cadastrado na biblioteca de conhecimento geral.</p>
+                  <p className="p-4 text-center text-[13px] text-yx-fg-3">Nenhum material cadastrado na biblioteca de conhecimento da empresa.</p>
                 )}
               </div>
             </div>
@@ -687,40 +651,33 @@ export function AssistantSettingsPanel({
         )}
       </div>
 
-      {/* Navigation Buttons */}
-      <div className="flex justify-between items-center bg-white p-3 border rounded-xl shadow-sm">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={step === 1 || saving}
-          onClick={() => setStep(step - 1)}
-          className="text-xs"
-        >
-          <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+      <div className={cn(cardCls, 'flex flex-wrap items-center justify-between gap-2')}>
+        <button type="button" disabled={step === 1 || saving} onClick={() => setStep(step - 1)} className={portalButtonClasses('ghost')}>
+          <ArrowLeft aria-hidden="true" />
           Voltar
-        </Button>
+        </button>
 
         {step < 4 ? (
-          <Button
-            size="sm"
-            onClick={() => setStep(step + 1)}
-            className="text-xs"
-          >
+          <button type="button" onClick={() => setStep(step + 1)} className={portalButtonClasses('primary')}>
             Avançar
-            <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-          </Button>
+            <ArrowRight aria-hidden="true" />
+          </button>
         ) : (
-          <Button
-            size="sm"
-            disabled={saving}
-            onClick={handleSave}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-          >
-            <Save className="h-3.5 w-3.5 mr-1.5" />
-            {saving ? 'Salvando...' : 'Salvar e Ativar Agente de IA'}
-          </Button>
+          <button type="button" disabled={saving} onClick={handleSave} className={portalButtonClasses('primary')}>
+            <Save aria-hidden="true" />
+            {saving ? 'Salvando...' : 'Salvar e ativar o agente'}
+          </button>
         )}
       </div>
     </section>
+  )
+}
+
+function StepHeader({ title, description, className }: { title: string; description: string; className?: string }) {
+  return (
+    <div className={cn('border-b border-yx-line pb-3', className)}>
+      <h4 className="font-display text-[15px] font-semibold text-yx-fg">{title}</h4>
+      <p className="mt-0.5 text-[13px] text-yx-fg-3">{description}</p>
+    </div>
   )
 }
