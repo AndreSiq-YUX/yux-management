@@ -1,6 +1,6 @@
 // Opt-in local UI QA. Every search/read/model dependency is simulated; no Redis or real provider request.
 import pg from 'pg'
-import {randomInt} from 'node:crypto'
+import {randomInt,randomUUID} from 'node:crypto'
 import {buildServer} from '../../src/server.js'
 import {loadEnv} from '../../src/config/env.js'
 import {createContextAwarePool} from '../../src/db/client.js'
@@ -18,6 +18,9 @@ import type {AppJobQueue} from '../../src/server.js'
 const databaseUrl=process.env.YUX_RADAR_TEST_DATABASE_URL??'',target=new URL(databaseUrl)
 if(target.hostname!=='127.0.0.1'||target.port!=='55439'||target.pathname!=='/yux_radar_research_test')throw Error('isolated_radar_test_database_required')
 const pool=new pg.Pool({connectionString:databaseUrl});await seedIntegrationFixtures(pool)
+const heartbeat=randomUUID()
+const beat=()=>pool.query("INSERT INTO public.worker_process_heartbeats(instance_id,queue_classes,started_at,last_seen_at) VALUES($1,ARRAY['external'],NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET last_seen_at=NOW()",[heartbeat])
+await beat()
 const org=fixtureIds.organizationA,key=Buffer.alloc(32,7).toString('base64')
 await pool.query(`INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES($1,'radar',TRUE) ON CONFLICT(contract_id,module_key) DO UPDATE SET enabled=TRUE`,[fixtureIds.contractA])
 for(const providerKey of ['brave_place','cnpja']){
@@ -40,11 +43,19 @@ const workerPool=createContextAwarePool(new pg.Pool({connectionString:workerUrl.
 const env=loadEnv({NODE_ENV:'test',DATABASE_URL:databaseUrl,REDIS_URL:'redis://127.0.0.1:1',PROVIDER_SECRET_ENCRYPTION_KEY_B64:key,SESSION_SECRET:'local-radar-capture-fixture-session-secret',CORS_ORIGIN:'http://127.0.0.1:4174',GLOBAL_RATE_LIMIT_MAX:'5000'})
 const rejectDiscovery=process.env.YUX_RADAR_QA_REJECT_DISCOVERY==='true'
 const expiredContinuation=process.env.YUX_RADAR_QA_EXPIRED_CONTINUATION==='true'
-if(expiredContinuation){
- await pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','qa-expired-token',4,40)`,[org,campaign.id])
- await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:crypto.randomUUID(),requestedCount:1})
+const limitContinuation=process.env.YUX_RADAR_QA_LIMIT_CONTINUATION==='true'
+const oldCompanies=Array.from({length:40},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa anterior ${i+1} LTDA`,tradeName:`Empresa anterior ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))
+if(limitContinuation){
+ for(const record of oldCompanies)await pool.query("INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search',$3,$4,$5)",[org,campaign.id,record.tradeName,`cnpj:${record.taxId}`,JSON.stringify({cnpj:record.taxId,legalName:record.legalName,city:'Curitiba',state:'PR',discoveryRevision:1})])
+ const started=await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20})
+ await pool.query("UPDATE public.radar_capture_operations SET status='partial',discovery_stopped=TRUE,discovery_reason='page_cap',queries=1,scope_pages='{\"v1:PR:all\":1}',configuration_snapshot=jsonb_set(configuration_snapshot,'{search_configuration,batch,maxPagesPerScope}','1') WHERE id=$1",[started.operationId])
+ await pool.query("INSERT INTO public.radar_enrichment_runs(organization_id,campaign_id,status,provider,input_payload,output_payload,error_message,started_at,completed_at) VALUES($1,$2,'failed','cnpja_advanced_search',$3,'{\"candidateCount\":0,\"discoveryOutcome\":\"rejected\",\"httpStatus\":400}','HTTP 400: token is invalid or expired',NOW(),NOW())",[org,campaign.id,JSON.stringify({captureOperationId:started.operationId,configurationRevision:1,regionalState:'PR',regionalCity:null,scopeKey:'v1:PR:all',pageToken:'qa-expired-token'})])
 }
-const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=rejectDiscovery||expiredContinuation,rejectedOnce=false
+if(expiredContinuation||limitContinuation){
+ await pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','qa-expired-token',4,40)`,[org,campaign.id])
+ if(!limitContinuation)await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:crypto.randomUUID(),requestedCount:1})
+}
+const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=rejectDiscovery||expiredContinuation||limitContinuation,rejectedOnce=false
 const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  const id=options?.jobId??`${name}-${Date.now()}`
  if(queued.has(id))return{id};queued.add(id)
@@ -54,9 +65,16 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
    const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>{
     if(expiredContinuation&&input.token==='qa-expired-token')throw new CnpjaSearchHttpError('HTTP 400: request validation failed; token is invalid or expired',400)
     if(rejectDiscovery&&!rejectedOnce){rejectedOnce=true;throw new CnpjaSearchHttpError('request validation failed',422)}
+    if(limitContinuation){
+     const page=Number(input.token?.replace('qa-page-','')??0)
+     if(page<4)return{candidates:oldCompanies.slice(page*10,page*10+10),nextToken:`qa-page-${page+1}`}
+     return{candidates:Array.from({length:10},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa nova ${(page-4)*10+i+1} LTDA`,tradeName:`Empresa nova ${(page-4)*10+i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}})),...(page===4?{nextToken:'qa-page-5'}:{})}
+    }
     return{candidates:Array.from({length:input.limit??1},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa Sintética ${i+1} LTDA`,tradeName:`Empresa Sintética ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))}
    }})
    await dispatchRadarCaptureOperation(workerPool,env,{organizationId:org,operationId:String(data.operationId)},queue,undefined,{discover})
+   // Accelerate only this opt-in synthetic journey; normal production dispatch timing is unchanged.
+   if(limitContinuation)await workerPool.query('UPDATE public.radar_capture_outbox SET next_dispatch_at=NOW() WHERE operation_id=$1 AND organization_id=$2',[String(data.operationId),org])
   }else{
    const runId=String(data.runId)
    if(!failedOnce){failedOnce=true;blocked.add(runId);await workerPool.query("UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='radar_ai_credits_insufficient' WHERE id=$1",[runId]);return}
@@ -72,10 +90,11 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
 const app=await buildServer(env,{pool:apiPool,jobQueue:queue,redisPing:async()=>'PONG'})
 app.addHook('onRequest',async(request,reply)=>{
  if(request.method==='GET')return
- if(request.url==='/api/auth/login'||request.url==='/api/auth/logout'||request.url.includes(`/campaigns/${campaign.id}/capture-operations`)||/\/capture-operations\/[0-9a-f-]+\/resume$/.test(request.url))return
+ if(request.url==='/api/auth/login'||request.url==='/api/auth/logout'||request.url.includes(`/campaigns/${campaign.id}/capture-operations`)||request.url===`/api/radar/campaigns/${campaign.id}/capture-preflight`||/\/capture-operations\/[0-9a-f-]+\/resume$/.test(request.url))return
  return reply.code(403).send({error:'qa_external_effects_disabled'})
 })
 await app.listen({host:'127.0.0.1',port:4182})
 const timer=setInterval(()=>void runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[],serviceRole:'worker'},()=>reconcileRadarCaptureOutbox(workerPool,queue,Math.floor(Date.now()/1000))).catch(error=>console.error('[QA reconciler]',error)),1000)
+const heartbeatTimer=setInterval(()=>void beat(),20_000)
 console.log(JSON.stringify({campaignId:campaign.id,url:`http://127.0.0.1:4174/client-workspaces/${org}/comercial/radar/${campaign.id}`}))
-for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{clearInterval(timer);void app.close().then(()=>Promise.all([apiPool.end(),workerPool.end(),pool.end()])).then(()=>process.exit(0))})
+for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{clearInterval(timer);clearInterval(heartbeatTimer);void app.close().then(()=>pool.query('DELETE FROM public.worker_process_heartbeats WHERE instance_id=$1',[heartbeat])).then(()=>Promise.all([apiPool.end(),workerPool.end(),pool.end()])).then(()=>process.exit(0))})

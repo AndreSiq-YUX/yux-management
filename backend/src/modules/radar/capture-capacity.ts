@@ -12,7 +12,7 @@ export async function loadRadarCapturePageAccounting(client:RadarQueryable,op:Ca
   if(row.status!=='succeeded'&&!row.output_payload?.discoveryOutcome&&row.status!=='running')continue // Governance rejected before a request reservation.
   attempts++
   const input=row.input_payload,matching=scopes.filter(scope=>scope.state===input.regionalState&&(scope.city??null)===(input.regionalCity??null))
-  if(input.configurationRevision!==op.configuration_revision||matching.length!==1||input.scopeKey&&input.scopeKey!==matching[0].key||!row.completed_at||row.status==='running'){historyCertain=false;continue}
+  if(input.configurationRevision!==op.configuration_revision||matching.length!==1||input.scopeKey&&input.scopeKey!==matching[0].key||!row.completed_at||row.output_payload?.discoveryOutcome==='uncertain'||row.status!=='succeeded'&&row.output_payload?.discoveryOutcome!=='rejected'){historyCertain=false;continue}
   if(row.status==='succeeded')successfulPagesByScope[matching[0].key]=(successfulPagesByScope[matching[0].key]??0)+1
  }
  return{successfulPagesByScope,historyCertain:historyCertain&&attempts===op.queries}

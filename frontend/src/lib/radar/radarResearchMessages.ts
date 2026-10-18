@@ -1,5 +1,16 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_capture_capacity_insufficient:'Os limites deste lote não comportam a quantidade solicitada, mesmo sem duplicatas. Edite a configuração da campanha: empresas por página, páginas por região e consultas por lote. Para um lote já salvo, use Retomar pesquisa e aprove os novos totais.',
+  radar_capture_limits_confirmation_required:'Para continuar este lote, use Retomar pesquisa e confirme os limites totais autorizados.',
+  radar_capture_limits_confirmation_stale:'A situação do lote mudou. Atualize o acompanhamento e use Retomar pesquisa novamente para conferir os limites atuais.',
+  radar_capture_history_uncertain:'O histórico de consultas não corresponde aos recibos disponíveis. É necessária conferência administrativa; nenhuma consulta será repetida automaticamente.',
+  radar_capture_worker_unavailable:'O processo de pesquisa não está disponível. O Admin deve verificar o worker externo antes de retomar.',
+  radar_capture_other_active_lot:'Já existe outro lote ativo nesta campanha. Conclua ou resolva suas pendências antes de continuar este lote anterior.',
+  radar_capture_source_inactive:'Ative a integração da fonte de descoberta no Admin antes de continuar.',
+  radar_capture_source_secret_missing:'Cadastre a credencial da fonte de descoberta no Admin antes de continuar.',
+  radar_capture_campaign_inactive:'A campanha está pausada ou encerrada. Ative-a antes de continuar a pesquisa.',
+  radar_capture_page_limit:'O limite de páginas por região deste lote foi atingido. Use Retomar pesquisa para conferir e autorizar novos limites.',
+  radar_capture_query_limit:'O limite de consultas deste lote foi atingido. Use Retomar pesquisa para conferir e autorizar novos limites.',
   radar_capture_continuation_confirmation_required:'A continuação da busca não é mais válida. Use Retomar pesquisa e revise a confirmação para reiniciar a descoberta neste mesmo lote.',
   radar_capture_continuation_confirmation_stale:'A situação da pesquisa mudou. Atualize o acompanhamento e use Retomar pesquisa novamente. Nenhuma nova busca foi iniciada por esta confirmação.',
   radar_capture_discovery_request_rejected:'A busca por novas empresas foi rejeitada por parâmetros inválidos. Os resultados anteriores foram preservados. Após a correção, use Retomar pesquisa para continuar este lote.',

@@ -27,6 +27,7 @@ vi.mock('@/services/radarService', () => ({radarService:{
   getResearchAvailability:vi.fn(async():Promise<RadarResearchAvailability>=>({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})),
   getCrmDestinations:vi.fn(async()=>[]),
   getLatestCaptureOperation:vi.fn(async()=>({operation:null})),getCaptureOperation:vi.fn(),startCaptureOperation:vi.fn(),resumeCaptureOperation:vi.fn(),
+  capturePreflight:vi.fn(async()=>({stateId:'a'.repeat(64),allowed:true,requiresLimitsApproval:false,remaining:20,limits:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},attemptedQueries:0,successfulPagesByScope:{},optimisticAdditionalCapacity:20,minimumAdditionalQueries:2,blockers:[],checks:[]})),
   startCandidateResearch:vi.fn(async()=>({runId:'run',status:'queued',reused:false})),
   getResearchHistory:vi.fn(async()=>[{id:'run',candidateId:'candidate',companyName:'Empresa pesquisada',configurationRevision:2,operation:'reanalyze',status:'succeeded',updatedAt:'2026-10-13T12:00:00Z'}]),
   getB2bProspects:vi.fn(async()=>[]),getB2bProgress:vi.fn(async()=>({candidates:0,checked:0,confirmed:0,approved:0,scopes:[]})),runB2bBatch:vi.fn(async()=>({status:'queued'})),
@@ -39,6 +40,29 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('confirms exact limits and expiry together for the same legacy partial lot; cancel does not resume',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
+    const operation={id:'op-limit',campaignId:'campaign',configurationRevision:2,status:'partial' as const,canContinue:true,discoveryStopped:true,discoveryReason:'page_cap',queries:1,blockers:[],counts:{requested:20,admitted:0,researching:0,completed:0,insufficient:0,blocked:0},items:[]}
+    vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValue({operation})
+    const p={stateId:'b'.repeat(64),allowed:true,requiresLimitsApproval:true,remaining:20,limits:{pageSize:10,maxPagesPerScope:1,maxQueriesPerBatch:5},attemptedQueries:1,successfulPagesByScope:{},optimisticAdditionalCapacity:10,minimumAdditionalQueries:2,blockers:[],checks:[],expiredContinuation:{receiptId:'receipt',scopeLabel:'Paraná'}}
+    vi.mocked(radarService.capturePreflight).mockResolvedValueOnce(p).mockResolvedValueOnce(p)
+    vi.mocked(radarService.resumeCaptureOperation).mockResolvedValueOnce({...operation,status:'queued',canContinue:false})
+    const container=document.createElement('div'),root=createRoot(container);document.body.append(container)
+    try{
+      await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+      const resume=()=>[...container.querySelectorAll('button')].find(b=>b.textContent==='Retomar pesquisa')!
+      await act(async()=>resume().click());expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+      expect(radarService.resumeCaptureOperation).not.toHaveBeenCalled()
+      await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b=>b.textContent==='Cancelar')!.click())
+      expect(radarService.resumeCaptureOperation).not.toHaveBeenCalled()
+      await act(async()=>resume().click())
+      const input=document.querySelectorAll<HTMLInputElement>('[role="dialog"] input')[1]
+      await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'4');input.dispatchEvent(new Event('input',{bubbles:true}))})
+      await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b=>b.textContent==='Confirmar e retomar')!.click())
+      expect(radarService.resumeCaptureOperation).toHaveBeenCalledExactlyOnceWith('op-limit',{organizationId:'org',configurationRevision:2,requestId:expect.any(String),limitsAuthorization:{expectedStateId:p.stateId,limits:{...p.limits,maxPagesPerScope:4}},restartExpiredContinuation:true,continuationReceiptId:'receipt'})
+      expect(radarService.startCaptureOperation).not.toHaveBeenCalled()
+    }finally{act(()=>root.unmount());container.remove();vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValue({operation:null})}
+  })
   it('opens continuation consent from the server and forwards explicit approval with the same requestId',async()=>{
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:10,createdAt:'',updatedAt:''} as RadarCampaign])
     const operation={id:'op',campaignId:'campaign',configurationRevision:2,status:'blocked' as const,discoveryStopped:false,queries:1,blockers:['radar_capture_discovery_request_rejected'],counts:{requested:20,admitted:0,researching:0,completed:0,insufficient:0,blocked:0},items:[]}

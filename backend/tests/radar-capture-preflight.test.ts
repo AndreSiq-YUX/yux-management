@@ -4,6 +4,7 @@ import {fixtureUsers} from './integration/support/fixtures.js'
 import {limitFixture} from './support/radar-capture-limit-fixture.js'
 import {startRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
 import {randomUUID} from 'node:crypto'
+import {createRadarCampaign} from '../src/modules/radar/repository.js'
 const path='../src/modules/radar/capture-preflight.js',api=await import(path).catch(()=>({}))
 describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
  it('explains legacy lot capacity without changing limits or queueing work',async()=>{
@@ -48,13 +49,33 @@ describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
    expect((await f.op()).organization_id).toBe(organizationId)
   }finally{await f.close()}
  })
- it.each(['source','quota','route'])('reports a real local %s blocker without writing',async kind=>{
+ it.each(['quota','route'])('reports a real local %s blocker without writing',async kind=>{
   const f=await limitFixture()
   try{
-   if(kind==='source')await f.pool.query("UPDATE public.radar_data_sources SET enabled=FALSE WHERE source_key='cnpja_advanced_search'")
    if(kind==='quota')await f.pool.query('UPDATE public.radar_campaigns SET daily_limit=1 WHERE id=$1',[f.campaign.id])
    const p=await api.getRadarCapturePreflight(f.pool,admin,f.input,{availability:kind==='route'?async()=>({allowed:false,reasons:[{code:'route_missing',message:'Configure modelo',resolution:'Admin'}]}):available})
    expect(p.allowed).toBe(false);expect(p.blockers.length).toBeGreaterThan(0)
-  }finally{if(kind==='source')await f.pool.query("UPDATE public.radar_data_sources SET enabled=TRUE WHERE source_key='cnpja_advanced_search'");await f.close()}
+  }finally{await f.close()}
+ })
+ it('checks the exact client contract wallet only for enabled AI stages',async()=>{
+  const f=await limitFixture(),clientId=randomUUID(),orgId=randomUUID(),contractId=randomUUID()
+  try{
+   await f.pool.query("INSERT INTO public.clients(id,company_name,contact_name,email,sector,size,lead_source,status) VALUES($1,'Wallet QA','QA',$2,'QA','small','test','active')",[clientId,`${clientId}@example.test`])
+   await f.pool.query("INSERT INTO public.organizations(id,name,slug,kind,client_id) VALUES($1::uuid,'Wallet QA',$1::text,'client',$2)",[orgId,clientId])
+   await f.pool.query("INSERT INTO public.contracts(id,client_id,package_id,status) VALUES($1,$2,'31000000-0000-4000-8000-000000000001','active')",[contractId,clientId])
+   await f.pool.query("INSERT INTO public.contract_modules(contract_id,module_key,enabled) VALUES($1,'radar',TRUE)",[contractId])
+   const campaign=await createRadarCampaign(f.pool,admin,{organizationId:orgId,name:'Wallet QA',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:100,budgetLimit:100,searchConfiguration:{batch:{maxPagesPerScope:5},research:{enabled:true,profileEnabled:true}}} as never)
+   const input={organizationId:orgId,campaignId:campaign.id,configurationRevision:1,requestedCount:1}
+   const check=()=>api.getRadarCapturePreflight(f.pool,admin,input,{availability:available})
+   expect((await check()).blockers).toContainEqual({code:'radar_ai_wallet_missing',message:'radar_ai_wallet_missing'})
+   await f.pool.query('INSERT INTO public.ai_credit_wallets(organization_id,client_id,contract_id,current_balance) VALUES($1,$2,$3,0)',[orgId,clientId,contractId])
+   expect((await check()).blockers).toContainEqual({code:'radar_ai_credits_insufficient',message:'radar_ai_credits_insufficient'})
+   await f.pool.query('UPDATE public.ai_credit_wallets SET is_unlimited=TRUE WHERE contract_id=$1',[contractId])
+   expect((await check()).checks).toContainEqual({key:'ai_wallet',status:'ok'})
+   expect((await f.pool.query('SELECT current_balance FROM public.ai_credit_wallets WHERE contract_id=$1',[contractId])).rows[0].current_balance).toBe(0)
+   await f.pool.query("INSERT INTO public.radar_data_sources(organization_id,source_key,source_type,display_name,enabled) VALUES($1,'cnpja_advanced_search','cnpja_advanced_search','Own disabled fixture',FALSE)",[orgId])
+   expect((await check()).allowed).toBe(false)
+   expect((await check()).blockers.map((b:{code:string})=>b.code)).toContain('source_disabled')
+  }finally{await f.pool.query('DELETE FROM public.organizations WHERE id=$1',[orgId]);await f.pool.query('DELETE FROM public.contracts WHERE id=$1',[contractId]);await f.pool.query('DELETE FROM public.clients WHERE id=$1',[clientId]);await f.close()}
  })
 })

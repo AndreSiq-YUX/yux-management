@@ -21,6 +21,19 @@ async function render(overrides:Record<string,unknown>={}){
 }
 const operation=(status:RadarCaptureOperation['status'])=>({id:'op',campaignId:'campaign',configurationRevision:1,status,counts:{requested:7,admitted:7,researching:0,completed:0,insufficient:0,blocked:7},blockers:[],items:[],discoveryStopped:true,queries:1})
 describe('direct complete capture controls',()=>{
+ it('allows adjusting a rejected quantity when preflight proves no work was submitted',async()=>{
+  const onStart=vi.fn().mockRejectedValueOnce(Object.assign(Error('Os limites não comportam este lote. Edite a configuração.'),{captureNotStarted:true})).mockResolvedValue(undefined)
+  const ui=await render({onStart});await ui.set('20');await act(async()=>ui.submit())
+  expect(ui.input().disabled).toBe(false);expect(ui.container.textContent).toContain('Edite a configuração')
+  await ui.set('10');await act(async()=>ui.submit());expect(onStart.mock.calls[1][0].requestedCount).toBe(10)
+  expect(onStart.mock.calls[1][0].requestId).not.toBe(onStart.mock.calls[0][0].requestId)
+ })
+ it('continues a legacy partial-by-limit lot instead of starting another',async()=>{
+  const ui=await render({operation:{...operation('partial'),canContinue:true,counts:{...operation('partial').counts,requested:20,admitted:0}}})
+  expect(ui.input().value).toBe('20');expect(ui.input().disabled).toBe(true)
+  expect(ui.container.querySelectorAll('button[type="submit"]')).toHaveLength(1)
+  await act(async()=>ui.submit());expect(ui.props.onResume).toHaveBeenCalledTimes(1);expect(ui.props.onStart).not.toHaveBeenCalled()
+ })
  it('requests confirmation before restarting discovery and lets cancellation leave the lot unchanged',async()=>{
   const onResume=vi.fn(async()=> 'confirmation_required')
   const ui=await render({operation:operation('blocked'),onResume})

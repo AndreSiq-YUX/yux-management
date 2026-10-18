@@ -70,13 +70,14 @@ describe.skipIf(!connectionString)('capture accounting and limit pause with Post
    expect(calls).toBe(0)
   }finally{await f.close()}
  })
- it.each(['wrong_operation','wrong_revision','running','ambiguous_scope'])('does not trust %s history',async mode=>{
+ it.each(['wrong_operation','wrong_revision','running','ambiguous_scope','uncertain'])('does not trust %s history',async mode=>{
   const f=await setup()
   try{
    await advanceRadarCaptureDiscovery(f.pool,{} as never,f.input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>({candidates:[],nextToken:'more'})})
    if(mode==='wrong_operation')await f.pool.query("UPDATE public.radar_enrichment_runs SET input_payload=jsonb_set(input_payload,'{captureOperationId}',to_jsonb($2::text)) WHERE campaign_id=$1",[f.campaign.id,randomUUID()])
    if(mode==='wrong_revision')await f.pool.query("UPDATE public.radar_enrichment_runs SET input_payload=jsonb_set(input_payload,'{configurationRevision}','2') WHERE campaign_id=$1",[f.campaign.id])
    if(mode==='running')await f.pool.query("UPDATE public.radar_enrichment_runs SET status='running',completed_at=NULL WHERE campaign_id=$1",[f.campaign.id])
+   if(mode==='uncertain')await f.pool.query("UPDATE public.radar_enrichment_runs SET status='failed',output_payload=jsonb_set(output_payload,'{discoveryOutcome}','\"uncertain\"') WHERE campaign_id=$1",[f.campaign.id])
    if(mode==='ambiguous_scope')await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{target_states}','[\"PR\",\"PR\"]') WHERE id=$1",[f.input.operationId])
    expect(await api.loadRadarCapturePageAccounting(f.pool,await f.op())).toEqual({successfulPagesByScope:{},historyCertain:false})
   }finally{await f.close()}
