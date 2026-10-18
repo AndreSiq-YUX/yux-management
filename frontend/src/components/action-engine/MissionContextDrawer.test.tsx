@@ -28,16 +28,17 @@ describe('MissionContextDrawer accessibility', () => {
     container.remove()
   })
 
-  it('leva o foco ao fechamento, aceita Escape e devolve o foco', async () => {
+  it('leva o foco ao fechamento, prende o foco, aceita Escape e devolve o foco', async () => {
     const trigger = document.createElement('button')
     document.body.appendChild(trigger)
     trigger.focus()
     const onClose = vi.fn()
     await act(async () => root.render(<MissionContextDrawer conversation={conversation} open onClose={onClose} />))
-    expect(document.activeElement).toBe(container.querySelector('[aria-label="Fechar contexto"]'))
+    expect(document.activeElement).toBe(document.querySelector('[aria-label="Fechar contexto"]'))
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(onClose).toHaveBeenCalledOnce()
     await act(async () => root.render(<MissionContextDrawer conversation={conversation} open={false} onClose={onClose} />))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
     expect(document.activeElement).toBe(trigger)
     trigger.remove()
   })

@@ -6,11 +6,12 @@ import { z } from 'zod'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+import { PendingBadge } from '@/components/portal-ui'
 import { requestPasswordReset } from '@/services/backendAuthService'
 import { useAuthStore } from '@/stores/authStore'
 
 const loginSchema = z.object({
-  email: z.string().email('Email inválido'),
+  email: z.string().email('E-mail inválido'),
   password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
 })
 
@@ -53,16 +54,16 @@ export function LoginPage() {
     const parsedEmail = z.string().email().safeParse(email)
 
     if (!parsedEmail.success) {
-      toast.error('Informe seu email para redefinir a senha.')
+      toast.error('Informe seu e-mail para redefinir a senha.')
       return
     }
 
     try {
       setResettingPassword(true)
       await requestPasswordReset(parsedEmail.data)
-      toast.success('Se o email existir no YUX Hub, enviaremos um link de redefinicao.')
+      toast.success('Se o e-mail existir, enviaremos um link de redefinição.')
     } catch (error: any) {
-      toast.error(error.message || 'Nao foi possivel solicitar a redefinicao de senha.')
+      toast.error(error.message || 'Não foi possível solicitar a redefinição de senha.')
     } finally {
       setResettingPassword(false)
     }
@@ -72,7 +73,7 @@ export function LoginPage() {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-          Email
+          E-mail
         </label>
         <div className="mt-1">
           <input
@@ -126,11 +127,15 @@ export function LoginPage() {
             id="remember-me"
             name="remember-me"
             type="checkbox"
-            className="h-4 w-4 rounded border-gray-300 text-yux-600 focus:ring-yux-500"
+            disabled
+            aria-describedby="remember-me-pending"
+            className="h-4 w-4 rounded border-gray-300 text-yux-600 focus:ring-yux-500 disabled:cursor-not-allowed disabled:opacity-60"
           />
           <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
             Lembrar de mim
           </label>
+          <PendingBadge code="B15" className="ml-2" />
+          <span id="remember-me-pending" className="sr-only">Função em implantação</span>
         </div>
 
         <div className="text-sm">

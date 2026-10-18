@@ -8,13 +8,13 @@ describe('validateApprovalDecision', () => {
 
   it('requires a comment when requesting changes', () => {
     expect(validateApprovalDecision('changes_requested', '   ')).toBe(
-      'Informe o ajuste necessario antes de enviar.'
+      'Informe o ajuste necessário antes de enviar.'
     )
   })
 
   it('requires a comment when rejecting an item', () => {
     expect(validateApprovalDecision('rejected')).toBe(
-      'Informe o motivo da rejeicao antes de enviar.'
+      'Informe o motivo da rejeição antes de enviar.'
     )
   })
 

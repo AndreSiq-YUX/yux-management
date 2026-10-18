@@ -1,52 +1,49 @@
-import { CheckCircle2, Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Plus } from 'lucide-react'
+import { useId, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Button } from '@/components/ui/button'
 import { TaskEditorDialog } from '@/components/crm/tasks/TaskEditorDialog'
-import { TaskFilters } from '@/components/crm/tasks/TaskFilters'
-import { TaskList } from '@/components/crm/tasks/TaskList'
 import { WorkItemsDailyQueue } from '@/components/work-items/WorkItemsDailyQueue'
-import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { ErrorState, SkeletonCard, portalButtonClasses } from '@/components/portal-ui'
 import { usePortalCrmContext } from '@/hooks/usePortalCrmContext'
-import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { countItems } from '@/lib/client-portal/portalDisplay'
 import { crmService } from '@/services/crmService'
-import type { CrmTaskFilters, CrmTaskStatus } from '@/types/crm'
+import type { CrmTaskStatus } from '@/types/crm'
 
-type LocalFilters = Pick<CrmTaskFilters, 'status' | 'priority' | 'assignedTo' | 'due' | 'search'>
-
-function matchesDue(dueAt: string, due: LocalFilters['due']) {
-  if (!due) return true
-  const date = new Date(dueAt)
-  const now = new Date()
-  if (due === 'overdue') return date.getTime() < now.getTime()
-  if (due === 'today') return date.toDateString() === now.toDateString()
-  return date.getTime() >= new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime()
+/** Motivo (em texto visível) pelo qual "Nova tarefa" está desabilitada; `null` quando está liberada. */
+export function newTaskDisabledReason(input: {
+  loading: boolean
+  organizationId?: string
+  pipelineCount: number
+  crmInstanceId?: string
+  leadCount: number
+}): string | null {
+  if (input.loading) return 'Carregando seus dados comerciais...'
+  if (!input.organizationId) return 'Escolha uma empresa para criar tarefas.'
+  if (input.pipelineCount === 0) return 'Ainda não há um funil. Configure um funil em Funis para poder criar tarefas.'
+  if (!input.crmInstanceId) return 'O CRM da sua empresa ainda não foi publicado. Fale com a equipe YUX.'
+  if (input.leadCount === 0) return 'Cadastre ao menos um lead para criar uma tarefa: toda tarefa fica ligada a um lead.'
+  return null
 }
 
 export function PortalCommercialTasksPage() {
   const { organization, loading, error, tasks, leads, pipelines, reload } = usePortalCrmContext()
-  const portalPath = usePortalWorkspacePath()
-  const [filters, setFilters] = useState<LocalFilters>({})
   const [editorOpen, setEditorOpen] = useState(false)
-  const [busyTaskId, setBusyTaskId] = useState<string | null>(null)
-
-  const filteredTasks = useMemo(() => tasks.filter(task => {
-    if (filters.status && task.status !== filters.status) return false
-    if (filters.priority && task.priority !== filters.priority) return false
-    if (filters.due && !matchesDue(task.dueAt, filters.due)) return false
-    const query = filters.search?.trim().toLowerCase()
-    if (query && !`${task.title} ${task.leadName} ${task.leadCompany || ''}`.toLowerCase().includes(query)) return false
-    return true
-  }), [filters, tasks])
+  const [queueVersion, setQueueVersion] = useState(0)
+  const reasonId = useId()
 
   const pendingTasks = tasks.filter(task => task.status === 'pending')
   const overdueTasks = pendingTasks.filter(task => new Date(task.dueAt).getTime() < Date.now())
   const crmInstanceId = pipelines.find(pipeline => pipeline.crmInstanceId)?.crmInstanceId
+  const disabledReason = newTaskDisabledReason({
+    loading,
+    organizationId: organization?.id,
+    pipelineCount: pipelines.length,
+    crmInstanceId,
+    leadCount: leads.length,
+  })
 
   const updateStatus = async (taskId: string, status: CrmTaskStatus) => {
-    setBusyTaskId(taskId)
     try {
       await crmService.patchTask(taskId, { status })
       await reload()
@@ -54,45 +51,58 @@ export function PortalCommercialTasksPage() {
     } catch (updateError) {
       console.error('Erro ao atualizar tarefa:', updateError)
       toast.error('Não foi possível atualizar a tarefa.')
-    } finally { setBusyTaskId(null) }
+      throw updateError
+    }
   }
 
   return (
-    <PortalJourneyPage
+    <PortalPage
       eyebrow="Comercial"
-      title="Tarefas e Follow-ups"
-      description="Centralize as próximas ações comerciais por lead, responsável e prazo."
-      icon={CheckCircle2}
-      metrics={[
-        { label: 'Pendentes', value: String(pendingTasks.length), detail: 'Follow-ups e tarefas comerciais.' },
-        { label: 'Atrasadas', value: String(overdueTasks.length), detail: 'Atividades que precisam de atenção.' },
-        { label: 'Concluídas', value: String(countItems(tasks, task => task.status === 'completed')), detail: 'Histórico operacional.' },
+      title="Tarefas e follow-ups"
+      description="Veja o que você precisa fazer hoje, o que está atrasado e todo o resto da fila, em uma lista só."
+      help={[
+        'Use os filtros Hoje, Atrasadas e Todas para escolher o que ver primeiro.',
+        'Crie tarefas ligadas a um lead e acompanhe o prazo de cada uma.',
+        'Conclua uma tarefa descrevendo o que foi feito; cancele ou reabra tarefas comerciais quando precisar.',
+        'Entregas de projeto e passos de missões atribuídos a você aparecem na mesma fila.',
       ]}
-      capabilities={[
-        'Criar tarefas ligadas a leads e organizar a fila por prazo.',
-        'Filtrar por status, prioridade, prazo e texto de busca.',
-        'Concluir, cancelar e reabrir tarefas mantendo a jornada do lead.',
-        'Atualizar automaticamente a próxima ação do lead no CRM.',
-      ]}
-      primaryAction={{ label: 'Abrir Leads', href: '/portal/comercial/leads' }}
-      secondaryActions={[{ label: 'Funis', href: '/portal/comercial/funis' }, { label: 'Empresas / Contas', href: '/portal/comercial/contas' }]}
-    >
-      {organization?.id ? <WorkItemsDailyQueue organizationId={organization.id} onCompleted={reload} /> : null}
-      <section className="rounded-lg border bg-white p-5" aria-labelledby="task-center-title">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h2 id="task-center-title" className="text-base font-semibold text-gray-900">Central de tarefas</h2><p className="mt-1 text-sm text-gray-600">Acompanhe a fila operacional e mantenha o próximo passo do lead atualizado.</p></div>
-          <Button type="button" onClick={() => setEditorOpen(true)} disabled={!organization?.id || !crmInstanceId || leads.length === 0} title={leads.length === 0 ? 'É necessário ter pelo menos um lead para criar uma tarefa.' : undefined}><Plus className="mr-2 h-4 w-4" />Nova tarefa</Button>
+      primaryAction={
+        <div className="flex flex-col items-start gap-1.5 md:items-end">
+          <button
+            type="button"
+            onClick={() => setEditorOpen(true)}
+            disabled={Boolean(disabledReason)}
+            aria-describedby={disabledReason ? reasonId : undefined}
+            className={portalButtonClasses('primary')}
+          >
+            <Plus aria-hidden="true" />
+            Nova tarefa
+          </button>
+          {disabledReason ? <p id={reasonId} className="max-w-xs text-xs leading-snug text-yx-fg-3 md:text-right">{disabledReason}</p> : null}
         </div>
-        <div className="mt-4"><TaskFilters value={filters} onChange={setFilters} onReset={() => setFilters({})} /></div>
-        {loading ? <p className="mt-4 text-sm text-gray-600" role="status">Carregando tarefas comerciais...</p> : error ? <p className="mt-4 text-sm text-red-600" role="alert">{error}</p> : pipelines.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6">
-            <h3 className="text-sm font-semibold text-slate-950">Ainda não há uma operação comercial ativa</h3>
-            <p className="mt-1 max-w-xl text-sm leading-5 text-slate-600">As tarefas precisam estar ligadas a um lead e a um funil. Configure o primeiro funil para liberar a fila de follow-ups.</p>
-            <Link to={portalPath('/portal/comercial/funis')} className="mt-4 inline-flex items-center rounded-lg bg-yux-600 px-3 py-2 text-sm font-semibold text-white hover:bg-yux-700">Configurar funis</Link>
-          </div>
-        ) : <div className="mt-4"><TaskList tasks={filteredTasks} busyTaskId={busyTaskId} onStatusChange={updateStatus} /></div>}
-        {busyTaskId && <p className="mt-2 text-xs text-gray-500" role="status">Atualizando tarefa...</p>}
-      </section>
+      }
+      metrics={[
+        { label: 'Pendentes', value: String(pendingTasks.length), detail: 'Tarefas comerciais em aberto.' },
+        { label: 'Atrasadas', value: String(overdueTasks.length), detail: 'Passaram do prazo.' },
+        { label: 'Concluídas', value: String(countItems(tasks, task => task.status === 'completed')), detail: 'Já feitas.' },
+      ]}
+      related={[
+        { label: 'Leads', href: '/portal/comercial/leads' },
+        { label: 'Funis', href: '/portal/comercial/funis' },
+        { label: 'Empresas e contas', href: '/portal/comercial/contas' },
+      ]}
+    >
+      {loading && !organization?.id ? <SkeletonCard lines={4} /> : null}
+      {error ? <ErrorState title="Não foi possível carregar as tarefas comerciais" description={error} onRetry={() => void reload()} /> : null}
+      {organization?.id ? (
+        <WorkItemsDailyQueue
+          organizationId={organization.id}
+          crmTasks={tasks}
+          onCrmTaskStatusChange={updateStatus}
+          onCompleted={reload}
+          reloadToken={queueVersion}
+        />
+      ) : null}
       <TaskEditorDialog
         open={editorOpen}
         onOpenChange={setEditorOpen}
@@ -101,9 +111,10 @@ export function PortalCommercialTasksPage() {
           if (!organization?.id) throw new Error('organization_required')
           await crmService.createLeadTask({ organizationId: organization.id, ...input })
           await reload()
+          setQueueVersion(current => current + 1)
           toast.success('Tarefa criada.')
         }}
       />
-    </PortalJourneyPage>
+    </PortalPage>
   )
 }

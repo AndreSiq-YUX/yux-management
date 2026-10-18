@@ -3,6 +3,9 @@ import { CopyPlus, MailCheck, RefreshCw, Save, Send, UploadCloud } from 'lucide-
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmailTemplateEditor } from './EmailTemplateEditor'
+import { PageHeader, StatusChip, portalButtonClasses, type StatusChipVariant } from '@/components/portal-ui'
+import { emailVariableLabel, STANDARD_PORTAL_VARIABLES } from '@/lib/email/emailTemplateVariableLabels'
+import { cn } from '@/lib/utils'
 import {
   extractEmailTemplateVariables,
   getEmailTemplateStatusLabel,
@@ -96,6 +99,11 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
     return uniqueSorted([...(draft.requiredVariables ?? []), ...schemaVariables, ...contentVariables])
   }, [draft])
 
+  const editorVariables = useMemo(
+    () => (mode === 'portal' ? uniqueSorted([...STANDARD_PORTAL_VARIABLES, ...usedVariables]) : usedVariables),
+    [mode, usedVariables],
+  )
+
   useEffect(() => {
     setTestVariables(current => {
       const next: Record<string, string> = {}
@@ -114,12 +122,71 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
         newLabel: 'Novo modelo do sistema',
       }
     : {
-        title: 'Meus modelos de email',
-        subtitle: 'Personalize modelos da sua organizacao sem alterar os emails globais da YUX.',
-        empty: 'Nenhum modelo proprio encontrado.',
-        newLabel: 'Novo modelo de email',
+        title: 'Modelos de e-mail',
+        subtitle: 'Personalize os e-mails da sua empresa sem alterar os e-mails padrão da YUX.',
+        empty: 'Você ainda não tem modelos próprios.',
+        newLabel: 'Novo modelo de e-mail',
       }
 
+  const portal = mode === 'portal'
+  const card = portal ? 'rounded-[10px] border border-yx-line bg-yx-surface' : 'rounded-md border bg-white'
+  const t = portal
+    ? {
+        blueprintBadge: 'Modelo da YUX',
+        blueprintHint: 'Use este modelo para criar uma cópia que você pode editar.',
+        editHint: 'Edite o conteúdo e as informações principais do e-mail.',
+        cloneLabel: 'Usar este modelo',
+        cloned: 'Modelo copiado para os seus modelos.',
+        bodyLabel: 'Conteúdo do e-mail',
+        altTextLabel: 'Versão em texto simples',
+        preheaderLabel: 'Texto de pré-visualização',
+        actions: 'Ações',
+        preview: 'Pré-visualização',
+        recipient: 'Destinatário',
+        noSubject: 'Sem assunto',
+        history: 'Histórico de envios',
+        historyHint: 'Últimos testes e envios feitos com os seus modelos.',
+        records: 'registros',
+        none: 'Nenhum envio registrado ainda.',
+        emailKind: 'Tipo de e-mail',
+        saving: 'Salvando…',
+        publishing: 'Publicando…',
+        sending: 'Enviando…',
+        reloaded: 'Lista atualizada.',
+        saved: 'Modelo salvo.',
+        published: 'Modelo publicado.',
+        testSent: 'E-mail de teste enviado.',
+        testDone: 'Pedido de teste concluído.',
+        failed: 'Não foi possível concluir a ação.',
+      }
+    : {
+        blueprintBadge: 'Blueprint',
+        blueprintHint: 'Clone o blueprint antes de editar este modelo.',
+        editHint: 'Edite conteudo, variaveis e metadados principais.',
+        cloneLabel: 'Clonar blueprint',
+        cloned: 'Blueprint clonado para seus modelos.',
+        bodyLabel: 'Corpo HTML',
+        altTextLabel: 'Texto alternativo',
+        preheaderLabel: 'Preheader',
+        actions: 'Acoes',
+        preview: 'Preview',
+        recipient: 'Destinatario',
+        noSubject: 'Sem assunto',
+        history: 'Historico de envios',
+        historyHint: 'Ultimos testes e solicitacoes registradas pelos modelos desta area.',
+        records: 'registros',
+        none: 'Nenhum envio registrado ainda.',
+        emailKind: 'Tipo de email',
+        saving: 'Salvando...',
+        publishing: 'Publicando...',
+        sending: 'Enviando...',
+        reloaded: 'Lista atualizada.',
+        saved: 'Modelo salvo.',
+        published: 'Modelo publicado.',
+        testSent: 'Email de teste enviado.',
+        testDone: 'Solicitacao de teste concluida.',
+        failed: 'Nao foi possivel concluir a acao.',
+      }
   const portalBlueprintSelected = mode === 'portal' && selectedTemplate?.scope === 'blueprint'
   const validation = draft
     ? validateEmailTemplateDraft({
@@ -159,7 +226,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
     try {
       await work()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Nao foi possivel concluir a acao.')
+      setError(cause instanceof Error ? cause.message : t.failed)
     } finally {
       setBusyAction(null)
     }
@@ -168,7 +235,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
   async function handleReload() {
     await runAction('reload', async () => {
       await onReload()
-      setNotice('Lista atualizada.')
+      setNotice(t.reloaded)
     })
   }
 
@@ -184,7 +251,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
       setDraft(toInput(saved))
       setIsCreating(false)
       setHasDetachedDraft(true)
-      setNotice('Modelo salvo.')
+      setNotice(t.saved)
       await onReload()
     })
   }
@@ -200,7 +267,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
       setSelectedId(published.id)
       setDraft(toInput(published))
       setHasDetachedDraft(true)
-      setNotice('Modelo publicado.')
+      setNotice(t.published)
       await onReload()
     })
   }
@@ -214,7 +281,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
         ? await emailTemplateService.testAdminTemplate(draft.id!, input)
         : await emailTemplateService.testPortalTemplate(draft.id!, input)
 
-      setNotice(result.message || (result.sent ? 'Email de teste enviado.' : 'Solicitacao de teste concluida.'))
+      setNotice(result.message || (result.sent ? t.testSent : t.testDone))
       await onReload()
     })
   }
@@ -228,29 +295,48 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
       setDraft(toInput(cloned))
       setIsCreating(false)
       setHasDetachedDraft(true)
-      setNotice('Blueprint clonado para seus modelos.')
+      setNotice(t.cloned)
       await onReload()
     })
   }
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-950">{copy.title}</h1>
-          <p className="text-sm text-slate-600">{copy.subtitle}</p>
+      {portal ? (
+        <PageHeader
+          title={copy.title}
+          lead={copy.subtitle}
+          actions={
+            <>
+              <button type="button" title="Atualizar modelos" onClick={handleReload} disabled={busyAction !== null} className={portalButtonClasses('ghost')}>
+                <RefreshCw aria-hidden="true" />
+                Atualizar
+              </button>
+              <button type="button" title={copy.newLabel} onClick={startNewTemplate} disabled={busyAction !== null} className={portalButtonClasses('primary')}>
+                <MailCheck aria-hidden="true" />
+                {copy.newLabel}
+              </button>
+            </>
+          }
+        />
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-950">{copy.title}</h1>
+            <p className="text-sm text-slate-600">{copy.subtitle}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" title="Atualizar modelos" onClick={handleReload} disabled={busyAction !== null}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Atualizar
+            </Button>
+            <Button type="button" title={copy.newLabel} onClick={startNewTemplate} disabled={busyAction !== null}>
+              <MailCheck className="mr-2 h-4 w-4" />
+              {copy.newLabel}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" title="Atualizar modelos" onClick={handleReload} disabled={busyAction !== null}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Atualizar
-          </Button>
-          <Button type="button" title={copy.newLabel} onClick={startNewTemplate} disabled={busyAction !== null}>
-            <MailCheck className="mr-2 h-4 w-4" />
-            {copy.newLabel}
-          </Button>
-        </div>
-      </div>
+      )}
 
       {(error || notice || !validation.ok) && (
         <div className="space-y-2">
@@ -258,14 +344,14 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
           {notice && <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
           {!validation.ok && (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              {validationMessage(validation.reason, validation.missingVariables)}
+              {validationMessage(validation.reason, validation.missingVariables, portal)}
             </p>
           )}
         </div>
       )}
 
       <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="space-y-3 rounded-md border bg-white p-4">
+        <aside className={cn('space-y-3 p-4', card)}>
           <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
             <FilterSelect label="Categoria" value={categoryFilter} onChange={setCategoryFilter} options={categories} />
             <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={statusOrder} labelForOption={value => getEmailTemplateStatusLabel(value as EmailTemplateStatus)} />
@@ -280,17 +366,20 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
                 <button
                   key={template.id}
                   type="button"
-                  className={`w-full rounded-md border p-3 text-left transition hover:border-sky-300 hover:bg-sky-50 ${
-                    selectedId === template.id ? 'border-sky-400 bg-sky-50' : 'border-slate-200 bg-white'
-                  }`}
+                  className={cn(
+                    'w-full rounded-md border p-3 text-left transition',
+                    portal
+                      ? cn('hover:border-yx-blue', selectedId === template.id ? 'border-yx-blue bg-yx-blue-soft' : 'border-yx-line bg-yx-surface')
+                      : cn('hover:border-sky-300 hover:bg-sky-50', selectedId === template.id ? 'border-sky-400 bg-sky-50' : 'border-slate-200 bg-white'),
+                  )}
                   onClick={() => selectTemplate(template)}
                 >
                   <span className="block truncate text-sm font-semibold text-slate-950">{template.name}</span>
                   <span className="mt-1 block truncate text-xs text-slate-500">{template.subject}</span>
                   <span className="mt-3 flex flex-wrap gap-1.5">
-                    <Badge variant={template.status === 'published' ? 'default' : 'secondary'}>{getEmailTemplateStatusLabel(template.status)}</Badge>
-                    <Badge variant="outline">{kindLabels[template.emailKind]}</Badge>
-                    {template.scope === 'blueprint' && <Badge variant="outline">Blueprint</Badge>}
+                    <Tag portal={portal} chip={template.status === 'published' ? 'ok' : 'neutral'} badge={template.status === 'published' ? 'default' : 'secondary'}>{getEmailTemplateStatusLabel(template.status)}</Tag>
+                    <Tag portal={portal} chip="neutral" badge="outline">{kindLabels[template.emailKind]}</Tag>
+                    {template.scope === 'blueprint' && <Tag portal={portal} chip="yux" badge="outline">{t.blueprintBadge}</Tag>}
                   </span>
                 </button>
               ))
@@ -300,22 +389,20 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
 
         {draft ? (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <main className="space-y-4 rounded-md border bg-white p-4">
+            <div className={cn('space-y-4 p-4', card)}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-950">
                     {isCreating ? copy.newLabel : selectedTemplate?.name ?? 'Modelo selecionado'}
                   </h2>
                   <p className="text-sm text-slate-500">
-                    {portalBlueprintSelected
-                      ? 'Clone o blueprint antes de editar este modelo.'
-                      : 'Edite conteudo, variaveis e metadados principais.'}
+                    {portalBlueprintSelected ? t.blueprintHint : t.editHint}
                   </p>
                 </div>
                 {portalBlueprintSelected && (
-                  <Button type="button" variant="outline" title="Clonar blueprint" onClick={handleCloneBlueprint} disabled={busyAction !== null}>
+                  <Button type="button" variant="outline" title={t.cloneLabel} onClick={handleCloneBlueprint} disabled={busyAction !== null}>
                     <CopyPlus className="mr-2 h-4 w-4" />
-                    Clonar blueprint
+                    {t.cloneLabel}
                   </Button>
                 )}
               </div>
@@ -324,48 +411,51 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
                 <TextField label="Nome" value={draft.name} onChange={value => updateDraft('name', value)} disabled={portalBlueprintSelected} />
                 <TextField label="Categoria" value={draft.category} onChange={value => updateDraft('category', value)} disabled={portalBlueprintSelected} />
                 <SelectField
-                  label="Tipo de email"
+                  label={t.emailKind}
                   value={draft.emailKind}
                   onChange={value => updateDraft('emailKind', value as EmailTemplateKind)}
                   options={Object.keys(kindLabels)}
                   labelForOption={value => kindLabels[value as EmailTemplateKind]}
                   disabled={portalBlueprintSelected}
                 />
-                <TextField label="Modulo" value={draft.moduleKey} onChange={value => updateDraft('moduleKey', value)} disabled={portalBlueprintSelected} />
-                <TextField label="Trigger" value={draft.triggerKey ?? ''} onChange={value => updateDraft('triggerKey', value || null)} disabled={portalBlueprintSelected} />
-                <TextField label="Preheader" value={draft.preheader ?? ''} onChange={value => updateDraft('preheader', value || null)} disabled={portalBlueprintSelected} />
+                {!portal && <TextField label="Modulo" value={draft.moduleKey} onChange={value => updateDraft('moduleKey', value)} disabled={portalBlueprintSelected} />}
+                {!portal && <TextField label="Trigger" value={draft.triggerKey ?? ''} onChange={value => updateDraft('triggerKey', value || null)} disabled={portalBlueprintSelected} />}
+                <TextField label={t.preheaderLabel} value={draft.preheader ?? ''} onChange={value => updateDraft('preheader', value || null)} disabled={portalBlueprintSelected} />
               </div>
 
-              <TextAreaField label="Descricao" value={draft.description ?? ''} onChange={value => updateDraft('description', value || null)} disabled={portalBlueprintSelected} rows={2} />
+              <TextAreaField label={portal ? 'Descrição' : 'Descricao'} value={draft.description ?? ''} onChange={value => updateDraft('description', value || null)} disabled={portalBlueprintSelected} rows={2} />
               <TextField label="Assunto" value={draft.subject} onChange={value => updateDraft('subject', value)} disabled={portalBlueprintSelected} />
-              <TextAreaField
-                label="Variaveis obrigatorias"
-                value={(draft.requiredVariables ?? []).join(', ')}
-                onChange={value => updateDraft('requiredVariables', parseVariableList(value))}
-                disabled={portalBlueprintSelected}
-                rows={2}
-              />
+              {!portal && (
+                <TextAreaField
+                  label="Variaveis obrigatorias"
+                  value={(draft.requiredVariables ?? []).join(', ')}
+                  onChange={value => updateDraft('requiredVariables', parseVariableList(value))}
+                  disabled={portalBlueprintSelected}
+                  rows={2}
+                />
+              )}
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Corpo HTML</label>
+                <label className="text-sm font-medium text-slate-700">{t.bodyLabel}</label>
                 <EmailTemplateEditor
                   value={draft.bodyHtml}
-                  variables={usedVariables}
+                  variables={editorVariables}
+                  variableLabel={portal ? emailVariableLabel : undefined}
                   onChange={value => updateDraft('bodyHtml', value)}
                   disabled={portalBlueprintSelected}
                 />
               </div>
 
-              <TextAreaField label="Texto alternativo" value={draft.bodyText ?? ''} onChange={value => updateDraft('bodyText', value || null)} disabled={portalBlueprintSelected} rows={4} />
-            </main>
+              <TextAreaField label={t.altTextLabel} value={draft.bodyText ?? ''} onChange={value => updateDraft('bodyText', value || null)} disabled={portalBlueprintSelected} rows={4} />
+            </div>
 
             <aside className="space-y-4">
-              <div className="rounded-md border bg-white p-4">
-                <h3 className="text-sm font-semibold text-slate-950">Acoes</h3>
+              <div className={cn('p-4', card)}>
+                <h3 className="text-sm font-semibold text-slate-950">{t.actions}</h3>
                 <div className="mt-3 grid gap-2">
                   <Button type="button" title="Salvar modelo" onClick={handleSave} disabled={busyAction !== null || portalBlueprintSelected}>
                     <Save className="mr-2 h-4 w-4" />
-                    {busyAction === 'save' ? 'Salvando...' : 'Salvar'}
+                    {busyAction === 'save' ? t.saving : 'Salvar'}
                   </Button>
                   <Button
                     type="button"
@@ -375,34 +465,34 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
                     disabled={busyAction !== null || portalBlueprintSelected || !draft.id || !validation.ok}
                   >
                     <UploadCloud className="mr-2 h-4 w-4" />
-                    {busyAction === 'publish' ? 'Publicando...' : 'Publicar'}
+                    {busyAction === 'publish' ? t.publishing : 'Publicar'}
                   </Button>
                 </div>
               </div>
 
-              <div className="rounded-md border bg-white p-4">
-                <h3 className="text-sm font-semibold text-slate-950">Preview</h3>
+              <div className={cn('p-4', card)}>
+                <h3 className="text-sm font-semibold text-slate-950">{t.preview}</h3>
                 <div className="mt-3 rounded-md border bg-slate-50 p-3">
                   <p className="text-xs font-medium uppercase text-slate-500">Assunto</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">{draft.subject || 'Sem assunto'}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-950">{draft.subject || t.noSubject}</p>
                   {draft.preheader && <p className="mt-1 text-xs text-slate-500">{draft.preheader}</p>}
                 </div>
                 <iframe
-                  title="Preview do email"
+                  title={portal ? 'Pré-visualização do e-mail' : 'Preview do email'}
                   sandbox=""
                   className="mt-3 h-64 w-full rounded-md border bg-white"
                   srcDoc={buildPreviewDocument(draft.bodyHtml)}
                 />
               </div>
 
-              <div className="rounded-md border bg-white p-4">
+              <div className={cn('p-4', card)}>
                 <h3 className="text-sm font-semibold text-slate-950">Enviar teste</h3>
                 <div className="mt-3 space-y-3">
-                  <TextField label="Destinatario" type="email" value={testRecipient} onChange={setTestRecipient} disabled={portalBlueprintSelected || !draft.id} />
+                  <TextField label={t.recipient} type="email" value={testRecipient} onChange={setTestRecipient} disabled={portalBlueprintSelected || !draft.id} />
                   {usedVariables.map(variable => (
                     <TextField
                       key={variable}
-                      label={`{{${variable}}}`}
+                      label={portal ? emailVariableLabel(variable) : `{{${variable}}}`}
                       value={testVariables[variable] ?? ''}
                       onChange={value => setTestVariables(current => ({ ...current, [variable]: value }))}
                       disabled={portalBlueprintSelected || !draft.id}
@@ -416,14 +506,14 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
                     disabled={busyAction !== null || portalBlueprintSelected || !draft.id || !testRecipient.trim()}
                   >
                     <Send className="mr-2 h-4 w-4" />
-                    {busyAction === 'test' ? 'Enviando...' : 'Enviar teste'}
+                    {busyAction === 'test' ? t.sending : 'Enviar teste'}
                   </Button>
                 </div>
               </div>
             </aside>
           </div>
         ) : (
-          <div className="rounded-md border bg-white p-8 text-center">
+          <div className={cn('p-8 text-center', card)}>
             <p className="text-sm text-slate-500">{copy.empty}</p>
             <Button type="button" className="mt-4" onClick={startNewTemplate}>
               <MailCheck className="mr-2 h-4 w-4" />
@@ -433,7 +523,7 @@ export function EmailTemplateWorkspace({ mode, templates, sendRequests = [], onR
         )}
       </div>
 
-      <EmailSendHistory requests={sendRequests} />
+      <EmailSendHistory requests={sendRequests} portal={portal} />
     </section>
   )
 }
@@ -483,12 +573,24 @@ function parseVariableList(value: string) {
   return uniqueSorted(value.split(/[,\n]/).map(item => item.trim()).filter(Boolean))
 }
 
-function validationMessage(reason: string, missingVariables?: string[]) {
+function validationMessage(reason: string, missingVariables?: string[], portal = false) {
+  if (portal) return portalValidationMessage(reason, missingVariables)
   if (reason === 'subject_required') return 'Informe um assunto antes de publicar.'
   if (reason === 'body_required') return 'Informe o corpo HTML antes de publicar.'
   if (reason === 'marketing_requires_unsubscribe_url') return 'Modelos de marketing precisam usar a variavel {{unsubscribe_url}}.'
   if (reason === 'required_variable_missing') {
     return `Variaveis obrigatorias ausentes no conteudo: ${(missingVariables ?? []).map(variable => `{{${variable}}}`).join(', ')}.`
+  }
+  return 'Revise o modelo antes de publicar.'
+}
+
+function portalValidationMessage(reason: string, missingVariables?: string[]) {
+  if (reason === 'subject_required') return 'Escreva o assunto do e-mail antes de publicar.'
+  if (reason === 'body_required') return 'Escreva o conteúdo do e-mail antes de publicar.'
+  if (reason === 'marketing_requires_unsubscribe_url') return "Inclua o link de descadastro (botão 'Link de descadastro')."
+  if (reason === 'required_variable_missing') {
+    const names = (missingVariables ?? []).map(variable => `'${emailVariableLabel(variable)}'`)
+    return `Inclua no e-mail: ${names.join(', ')}. Use os botões acima do conteúdo para inserir.`
   }
   return 'Revise o modelo antes de publicar.'
 }
@@ -505,15 +607,23 @@ function buildPreviewDocument(bodyHtml: string) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Inter,Arial,sans-serif;margin:16px;color:#0f172a;font-size:14px;line-height:1.5}a{color:#0369a1}</style></head><body>${bodyHtml}</body></html>`
 }
 
-function EmailSendHistory({ requests }: { requests: EmailTemplateSendRequest[] }) {
+type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>['variant']>
+
+/** Selo do visual do portal (StatusChip) ou o Badge original do Hub interno. */
+function Tag({ portal, chip, badge, children }: { portal: boolean; chip: StatusChipVariant; badge: BadgeVariant; children: React.ReactNode }) {
+  return portal ? <StatusChip variant={chip}>{children}</StatusChip> : <Badge variant={badge}>{children}</Badge>
+}
+
+function EmailSendHistory({ requests, portal }: { requests: EmailTemplateSendRequest[]; portal: boolean }) {
+  const card = portal ? 'rounded-[10px] border border-yx-line bg-yx-surface' : 'rounded-md border bg-white'
   return (
-    <section className="rounded-md border bg-white p-4">
+    <section className={cn('p-4', card)}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-slate-950">Historico de envios</h2>
-          <p className="text-sm text-slate-500">Ultimos testes e solicitacoes registradas pelos modelos desta area.</p>
+          <h2 className="text-base font-semibold text-slate-950">{portal ? 'Histórico de envios' : 'Historico de envios'}</h2>
+          <p className="text-sm text-slate-500">{portal ? 'Últimos testes e envios feitos com os seus modelos.' : 'Ultimos testes e solicitacoes registradas pelos modelos desta area.'}</p>
         </div>
-        <Badge variant="outline">{requests.length} registros</Badge>
+        <Tag portal={portal} chip="neutral" badge="outline">{requests.length} {requests.length === 1 && portal ? 'registro' : 'registros'}</Tag>
       </div>
 
       {requests.length === 0 ? (
@@ -524,10 +634,10 @@ function EmailSendHistory({ requests }: { requests: EmailTemplateSendRequest[] }
             <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-2">Data</th>
-                <th className="px-3 py-2">Destinatario</th>
+                <th className="px-3 py-2">{portal ? 'Destinatário' : 'Destinatario'}</th>
                 <th className="px-3 py-2">Assunto</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Modulo</th>
+                {!portal && <th className="px-3 py-2">Modulo</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -537,11 +647,15 @@ function EmailSendHistory({ requests }: { requests: EmailTemplateSendRequest[] }
                   <td className="whitespace-nowrap px-3 py-2 text-slate-900">{request.recipientEmail}</td>
                   <td className="max-w-[360px] truncate px-3 py-2 text-slate-700" title={request.subject}>{request.subject}</td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    <Badge variant={request.status === 'sent' ? 'default' : request.status === 'failed' || request.status === 'rejected' ? 'destructive' : 'secondary'}>
+                    <Tag
+                      portal={portal}
+                      chip={request.status === 'sent' ? 'ok' : request.status === 'failed' || request.status === 'rejected' ? 'crit' : 'neutral'}
+                      badge={request.status === 'sent' ? 'default' : request.status === 'failed' || request.status === 'rejected' ? 'destructive' : 'secondary'}
+                    >
                       {sendStatusLabel(request.status)}
-                    </Badge>
+                    </Tag>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{request.moduleKey}</td>
+                  {!portal && <td className="whitespace-nowrap px-3 py-2 text-slate-600">{request.moduleKey}</td>}
                 </tr>
               ))}
             </tbody>

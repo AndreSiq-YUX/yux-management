@@ -1,30 +1,44 @@
-import { Users } from 'lucide-react'
-import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { CrmMembersPanel } from '@/components/crm-governance/CrmMembersPanel'
+import { CrmSeatUsagePanel } from '@/components/crm-governance/CrmSeatUsagePanel'
+import { CrmTeamsPanel } from '@/components/crm-governance/CrmTeamsPanel'
+import { PendingSection } from '@/components/portal-ui'
+import { usePlatformStore } from '@/stores/platformStore'
 
 export function PortalCompanyUsersPage() {
+  const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
+  const hasCrm = enabledModuleKeys.includes('crm')
+
   return (
-    <PortalJourneyPage
+    <PortalPage
       eyebrow="Empresa"
-      title="Usuarios e Equipe"
-      description="Organiza quem acessa o portal, quais papeis existem e quais modulos cada pessoa pode usar."
-      icon={Users}
-      metrics={[
-        { label: 'Papeis', value: '6 perfis', detail: 'Administrador, comercial, atendimento, marketing, financeiro e visualizador.' },
-        { label: 'Permissoes', value: 'Por modulo', detail: 'Acesso separado por area contratada.' },
-        { label: 'Seguranca', value: 'Acesso', detail: 'Ultimo acesso e desativacao de usuarios.' },
+      title="Equipe"
+      description="Quem da sua empresa acessa o portal e o que cada pessoa pode fazer."
+      help={[
+        'Convidar, desativar e revisar as pessoas da empresa que usam o portal.',
+        'Definir papéis, como administrador, gestor comercial, atendente, marketing, financeiro e visualizador.',
+        'Limitar o acesso por área contratada, como atendimento, financeiro, campanhas e relatórios.',
+        'Consultar o último acesso de cada pessoa.',
       ]}
-      capabilities={[
-        'Convidar, remover, desativar e revisar usuarios da empresa.',
-        'Definir papeis como administrador, gestor comercial, atendente, marketing, financeiro e visualizador.',
-        'Limitar acesso ao chat, financeiro, campanhas, relatorios e demais modulos.',
-        'Consultar ultimo acesso e separar permissoes de usuario das configuracoes globais da empresa.',
-      ]}
-      secondaryActions={[
-        { label: 'Configuracoes da Conta', href: '/portal/configuracoes/conta' },
-        { label: 'Atendimento & IA', href: '/portal/atendimento/conversas' },
+      related={[
+        { label: 'Minha conta', href: '/portal/configuracoes/conta' },
+        { label: 'Conversas', href: '/portal/atendimento/conversas' },
         { label: 'Financeiro', href: '/portal/financeiro' },
       ]}
-      note="Convites, desativacoes e mudancas de permissao devem ser executados por administradores autorizados para manter rastreabilidade de acesso."
-    />
+    >
+      {hasCrm ? (
+        <div className="space-y-5">
+          <CrmMembersPanel />
+          <CrmTeamsPanel />
+          <CrmSeatUsagePanel />
+        </div>
+      ) : (
+        <PendingSection
+          code="B4"
+          title="Gestão da equipe"
+          description="Aqui você vai convidar pessoas, definir papéis e desativar acessos da sua empresa."
+        />
+      )}
+    </PortalPage>
   )
 }

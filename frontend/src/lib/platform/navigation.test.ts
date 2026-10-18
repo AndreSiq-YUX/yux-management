@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBreadcrumbs, buildNavigation, buildNavigationGroups } from '@/lib/platform/navigation'
+import { buildBreadcrumbs, buildNavigation, buildNavigationFooter, buildNavigationGroups, resolveActiveNavigationItem } from '@/lib/platform/navigation'
 import type { PlatformContext } from '@/types/platform'
 
 const internalContext: PlatformContext = {
@@ -13,6 +13,32 @@ const internalContext: PlatformContext = {
     permissions: ['platform.manage'],
   },
   enabledModuleKeys: ['clients', 'crm', 'projects', 'campaigns', 'blueprints'],
+}
+
+const clientOrganization: NonNullable<PlatformContext['organization']> = {
+  id: 'org-client-1',
+  name: 'Empresa ABC',
+  slug: 'empresa-abc',
+  kind: 'client',
+  clientId: 'client-1',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+}
+
+const allModulesPortalContext: PlatformContext = {
+  mode: 'portal',
+  organization: clientOrganization,
+  membership: null,
+  role: {
+    key: 'client_admin',
+    name: 'Client Admin',
+    scope: 'client',
+    permissions: ['platform.manage', 'radar.read'],
+  },
+  enabledModuleKeys: [
+    'crm', 'whatsapp_ai', 'landing_pages', 'campaigns', 'marketing_studio', 'automations',
+    'action_engine', 'projects', 'proposals', 'bi_reports', 'support', 'finance',
+  ],
 }
 
 describe('buildNavigation', () => {
@@ -74,10 +100,10 @@ describe('buildNavigation', () => {
     })
     const labels = items.map(item => item.label)
 
-    expect(items[0]).toEqual({ label: 'Visao Geral', href: '/portal' })
-    expect(labels).toContain('Projetos')
+    expect(items[0]).toEqual({ label: 'Visão geral', href: '/portal' })
+    expect(labels).toContain('Projetos e entregas')
     expect(labels).toContain('Campanhas')
-    expect(labels).toContain('Suporte')
+    expect(labels).toContain('Ajuda e suporte')
     expect(labels).not.toContain('Clientes')
     expect(labels).not.toContain('Modelos Setoriais')
     expect(items.find(item => item.moduleKey === 'campaigns')?.href).toBe('/portal/marketing/campanhas')
@@ -102,10 +128,10 @@ describe('buildNavigation', () => {
       'Leads',
       'Funis',
       'Conversas',
-      'Canais',
-      'Landing Pages',
+      'Canais conectados',
+      'Landing pages',
       'Campanhas',
-      'Relatorios',
+      'Relatórios',
     ]))
 
     expect(portalRoutes).toEqual(expect.arrayContaining([
@@ -118,7 +144,7 @@ describe('buildNavigation', () => {
       '/portal/relatorios',
     ]))
     expect(items.find(item => item.moduleKey === 'landing_pages')).toEqual({
-      label: 'Landing Pages',
+      label: 'Landing pages',
       href: '/portal/marketing/landing-pages',
       moduleKey: 'landing_pages',
     })
@@ -138,8 +164,9 @@ describe('buildNavigation', () => {
     })
     const labels = items.map(item => item.label)
 
-    expect(labels).not.toContain('Projetos')
-    expect(labels).not.toContain('Suporte')
+    expect(labels).not.toContain('Projetos e entregas')
+    expect(labels).not.toContain('Ajuda e suporte')
+    expect(labels).not.toContain('Financeiro')
   })
 
   it('routes contracted client CRM access to the portal workspace', () => {
@@ -163,7 +190,7 @@ describe('buildNavigation', () => {
     expect(items.find(item => item.moduleKey === 'clients')).toBeUndefined()
   })
 
-  it('routes contracted proposals to the portal approval queue only when enabled', () => {
+  it('routes contracted proposals to the portal proposals page only when enabled', () => {
     const context: PlatformContext = {
       ...internalContext,
       mode: 'portal',
@@ -178,7 +205,7 @@ describe('buildNavigation', () => {
 
     expect(buildNavigation(context).find(item => item.moduleKey === 'proposals')).toEqual({
       label: 'Propostas',
-      href: '/portal/projetos/aprovacoes',
+      href: '/portal/projetos/propostas',
       moduleKey: 'proposals',
     })
     expect(buildNavigation({ ...context, enabledModuleKeys: [] }).find(item => item.moduleKey === 'proposals')).toBeUndefined()
@@ -333,200 +360,176 @@ describe('buildNavigationGroups', () => {
   })
 
   it('builds portal navigation by client journeys', () => {
-    const groups = buildNavigationGroups({
-      ...internalContext,
-      mode: 'portal',
-      role: {
-        key: 'client_admin',
-        name: 'Client Admin',
-        scope: 'client',
-        permissions: [
-          'crm.read',
-          'leads.read',
-          'omnichannel.read',
-          'landing_pages.read',
-          'campaigns.read',
-          'marketing_studio.read',
-          'reports.read',
-          'projects.read',
-          'support.read',
-          'finance.read',
-        ],
-      },
-      enabledModuleKeys: [
-        'crm',
-        'whatsapp_ai',
-        'landing_pages',
-        'campaigns',
-        'marketing_studio',
-        'bi_reports',
-        'projects',
-        'support',
-        'finance',
-      ],
-    })
+    const groups = buildNavigationGroups(allModulesPortalContext)
 
     expect(groups.map(group => group.label)).toEqual([
-      'Visao Geral',
-      'Empresa',
+      'Início',
       'Comercial',
-      'Atendimento & IA',
+      'Atendimento',
       'Marketing',
+      'Automações',
+      'Execução YUX',
       'Projetos',
-      'Relatorios',
-      'Suporte',
-      'Financeiro',
-      'Configuracoes da Conta',
+      'Resultados',
+      'Empresa',
     ])
-    expect(groups.find(group => group.label === 'Comercial')?.items).toEqual(expect.arrayContaining([
-      { label: 'Leads', href: '/portal/comercial/leads', moduleKey: 'crm' },
-      { label: 'Funis', href: '/portal/comercial/funis', moduleKey: 'crm' },
-    ]))
-    expect(groups.find(group => group.label === 'Atendimento & IA')?.items).toEqual(expect.arrayContaining([
+    expect(groups.find(group => group.label === 'Início')?.items).toEqual([
+      { label: 'Visão geral', href: '/portal' },
+      { label: 'Aprovações', href: '/portal/projetos/aprovacoes', badge: 'approvals' },
+    ])
+    expect(groups.find(group => group.label === 'Comercial')?.items.map(item => item.label)).toEqual([
+      'Leads',
+      'Funis',
+      'Tarefas e follow-ups',
+      'Empresas e contas',
+      'Pontuação de leads',
+    ])
+    expect(groups.find(group => group.label === 'Atendimento')?.items).toEqual([
       { label: 'Conversas', href: '/portal/atendimento/conversas', moduleKey: 'whatsapp_ai' },
-      { label: 'Canais', href: '/portal/atendimento/canais', moduleKey: 'whatsapp_ai' },
-    ]))
-    expect(groups.find(group => group.label === 'Marketing')?.items).toEqual(expect.arrayContaining([
-      { label: 'Landing Pages', href: '/portal/marketing/landing-pages', moduleKey: 'landing_pages' },
-      { label: 'Formulários externos', href: '/portal/marketing/formularios', moduleKey: 'landing_pages' },
-      { label: 'Campanhas', href: '/portal/marketing/campanhas', moduleKey: 'campaigns' },
-      { label: 'Marketing Studio', href: '/portal/marketing/studio', moduleKey: 'marketing_studio' },
-      { label: 'Central de Conteudo', href: '/portal/marketing/conteudo', moduleKey: 'marketing_studio' },
-      { label: 'Criativos e Inspiracoes', href: '/portal/marketing/criativos', moduleKey: 'marketing_studio' },
-    ]))
+      { label: 'Agente IA', href: '/portal/atendimento/agente-ia', moduleKey: 'whatsapp_ai' },
+      { label: 'Canais conectados', href: '/portal/atendimento/canais', moduleKey: 'whatsapp_ai' },
+      { label: 'Filas e transferência', href: '/portal/atendimento/filas-handoff', moduleKey: 'whatsapp_ai' },
+    ])
+    expect(groups.find(group => group.label === 'Marketing')?.items.map(item => item.label)).toEqual([
+      'Campanhas',
+      'Landing pages',
+      'Formulários externos',
+      'Marketing Studio',
+      'Central de conteúdo',
+      'Calendário editorial',
+      'Criativos e inspirações',
+    ])
+    expect(groups.find(group => group.label === 'Automações')?.items.map(item => item.label)).toEqual([
+      'Fluxos',
+      'Modelos de fluxo',
+      'Execuções',
+    ])
+    expect(groups.find(group => group.label === 'Execução YUX')?.items).toEqual([
+      { label: 'Missões', href: '/portal/missoes', moduleKey: 'action_engine' },
+    ])
+    expect(groups.find(group => group.label === 'Projetos')?.items.map(item => item.label)).toEqual([
+      'Projetos e entregas',
+      'Documentos',
+      'Propostas',
+    ])
+    expect(groups.find(group => group.label === 'Resultados')?.items).toEqual([
+      { label: 'Relatórios', href: '/portal/relatorios', moduleKey: 'bi_reports' },
+    ])
+    expect(groups.find(group => group.label === 'Empresa')?.items).toEqual([
+      { label: 'Perfil da empresa', href: '/portal/empresa/perfil' },
+      { label: 'Marca e tom de voz', href: '/portal/empresa/marca' },
+      { label: 'Base de conhecimento', href: '/portal/empresa/conhecimento' },
+      { label: 'Equipe', href: '/portal/empresa/usuarios' },
+      { label: 'Conexões', href: '/portal/empresa/integracoes' },
+      { label: 'Modelos de e-mail', href: '/portal/configuracoes/emails' },
+    ])
   })
 
-  it('adds portal automations journey only when contracted', () => {
+  it('never repeats an href inside the portal navigation', () => {
+    const workspaceContext: PlatformContext = { ...allModulesPortalContext, mode: 'client_workspace' }
+    for (const context of [allModulesPortalContext, workspaceContext]) {
+      const hrefs = buildNavigation(context).map(item => item.href)
+      expect(new Set(hrefs).size).toBe(hrefs.length)
+    }
+  })
+
+  it('shows only the base groups when no module is contracted', () => {
+    const groups = buildNavigationGroups({ ...allModulesPortalContext, enabledModuleKeys: [] })
+
+    expect(groups.map(group => group.label)).toEqual(['Início', 'Empresa'])
+  })
+
+  it('exposes the footer items according to the contracted modules', () => {
+    expect(buildNavigationFooter(allModulesPortalContext)).toEqual([
+      { label: 'Financeiro', href: '/portal/financeiro', moduleKey: 'finance' },
+      { label: 'Ajuda e suporte', href: '/portal/suporte', moduleKey: 'support' },
+      { label: 'Minha conta', href: '/portal/configuracoes/conta' },
+    ])
+    expect(buildNavigationFooter({ ...allModulesPortalContext, enabledModuleKeys: ['finance'] })).toEqual([
+      { label: 'Financeiro', href: '/portal/financeiro', moduleKey: 'finance' },
+      { label: 'Minha conta', href: '/portal/configuracoes/conta' },
+    ])
+    expect(buildNavigationFooter({ ...allModulesPortalContext, enabledModuleKeys: [] })).toEqual([
+      { label: 'Minha conta', href: '/portal/configuracoes/conta' },
+    ])
+    expect(buildNavigationFooter(internalContext)).toEqual([])
+  })
+
+  it('keeps the old automation logs route out of the menu', () => {
     const groups = buildNavigationGroups({
-      ...internalContext,
-      mode: 'portal',
-      role: {
-        key: 'client_admin',
-        name: 'Client Admin',
-        scope: 'client',
-        permissions: ['automations.read'],
-      },
+      ...allModulesPortalContext,
       enabledModuleKeys: ['automations'],
     })
 
-    expect(groups.find(group => group.label === 'Automacoes')?.items).toEqual([
+    expect(groups.find(group => group.label === 'Automações')?.items).toEqual([
       { label: 'Fluxos', href: '/portal/automacoes/fluxos', moduleKey: 'automations' },
-      { label: 'Templates', href: '/portal/automacoes/templates', moduleKey: 'automations' },
-      { label: 'Execucoes', href: '/portal/automacoes/execucoes', moduleKey: 'automations' },
-      { label: 'Logs', href: '/portal/automacoes/logs', moduleKey: 'automations' },
+      { label: 'Modelos de fluxo', href: '/portal/automacoes/templates', moduleKey: 'automations' },
+      { label: 'Execuções', href: '/portal/automacoes/execucoes', moduleKey: 'automations' },
     ])
+    expect(buildNavigation(allModulesPortalContext).some(item => item.href.endsWith('/automacoes/logs'))).toBe(false)
   })
 
-  it('adds portal email templates only to the real client portal settings', () => {
-    const portalGroups = buildNavigationGroups({
-      ...internalContext,
-      mode: 'portal',
-      role: {
-        key: 'client_admin',
-        name: 'Client Admin',
-        scope: 'client',
-        permissions: [],
-      },
-      enabledModuleKeys: [],
-    })
-    const workspaceGroups = buildNavigationGroups({
-      ...internalContext,
+  it('adds portal email templates only to the real client portal', () => {
+    const portalItems = buildNavigation({ ...allModulesPortalContext, enabledModuleKeys: [] })
+    const workspaceItems = buildNavigation({
+      ...allModulesPortalContext,
       mode: 'client_workspace',
-      organization: {
-        id: 'org-client-1',
-        name: 'Empresa ABC',
-        slug: 'empresa-abc',
-        kind: 'client',
-        clientId: 'client-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      },
       enabledModuleKeys: [],
     })
 
-    expect(portalGroups.find(group => group.label === 'Configuracoes da Conta')?.items).toContainEqual({
-      label: 'Modelos de Email',
-      href: '/portal/configuracoes/emails',
-    })
-    expect(workspaceGroups.find(group => group.label === 'Configuracoes da Conta')?.items).toEqual([
-      { label: 'Conta', href: '/client-workspaces/org-client-1/configuracoes/conta' },
-    ])
+    expect(portalItems).toContainEqual({ label: 'Modelos de e-mail', href: '/portal/configuracoes/emails' })
+    expect(workspaceItems.find(item => item.label === 'Modelos de e-mail')).toBeUndefined()
+    expect(workspaceItems).toContainEqual({ label: 'Minha conta', href: '/client-workspaces/org-client-1/configuracoes/conta' })
   })
 
   it('builds client workspace navigation with selected client route prefix', () => {
-    const groups = buildNavigationGroups({
-      ...internalContext,
+    const context: PlatformContext = {
+      ...allModulesPortalContext,
       mode: 'client_workspace',
-      organization: {
-        id: 'org-client-1',
-        name: 'Empresa ABC',
-        slug: 'empresa-abc',
-        kind: 'client',
-        clientId: 'client-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      },
-      role: {
-        key: 'client_admin',
-        name: 'Client Admin',
-        scope: 'client',
-        permissions: [
-          'crm.read',
-          'leads.read',
-          'omnichannel.read',
-          'marketing_studio.read',
-          'projects.read',
-          'finance.read',
-        ],
-      },
       enabledModuleKeys: ['crm', 'whatsapp_ai', 'marketing_studio', 'projects', 'finance'],
-    })
+    }
+    const groups = buildNavigationGroups(context)
 
-    expect(groups[0]).toEqual({
-      label: 'Workspaces dos Clientes',
-      items: [{ label: 'Selecionar Cliente', href: '/client-workspaces' }],
-    })
-    expect(groups.find(group => group.label === 'Visao Geral')?.items).toEqual([
-      { label: 'Visao Geral', href: '/client-workspaces/org-client-1' },
+    expect(groups.find(group => group.label === 'Início')?.items).toEqual([
+      { label: 'Visão geral', href: '/client-workspaces/org-client-1' },
+      { label: 'Aprovações', href: '/client-workspaces/org-client-1/projetos/aprovacoes', badge: 'approvals' },
     ])
     expect(groups.find(group => group.label === 'Comercial')?.items).toEqual(expect.arrayContaining([
       { label: 'Leads', href: '/client-workspaces/org-client-1/comercial/leads', moduleKey: 'crm' },
       { label: 'Funis', href: '/client-workspaces/org-client-1/comercial/funis', moduleKey: 'crm' },
     ]))
-    expect(groups.find(group => group.label === 'Atendimento & IA')?.items).toEqual(expect.arrayContaining([
+    expect(groups.find(group => group.label === 'Atendimento')?.items).toEqual(expect.arrayContaining([
       { label: 'Conversas', href: '/client-workspaces/org-client-1/atendimento/conversas', moduleKey: 'whatsapp_ai' },
     ]))
-    expect(groups.find(group => group.label === 'Financeiro')?.items).toEqual([
-      { label: 'Financeiro', href: '/client-workspaces/org-client-1/financeiro', moduleKey: 'finance' },
-    ])
+    expect(buildNavigationFooter(context)).toContainEqual({
+      label: 'Financeiro',
+      href: '/client-workspaces/org-client-1/financeiro',
+      moduleKey: 'finance',
+    })
+    // A troca de cliente fica no cartão da empresa, não numa entrada do menu.
+    expect(groups.some(group => group.label === 'Workspaces dos Clientes')).toBe(false)
   })
 
   it('does not show portal journeys in client workspace before a client is selected', () => {
-    const groups = buildNavigationGroups({
+    const context: PlatformContext = {
       ...internalContext,
       mode: 'client_workspace',
       organization: null,
       enabledModuleKeys: ['crm', 'finance'],
-    })
+    }
 
-    expect(groups).toEqual([
+    expect(buildNavigationGroups(context)).toEqual([
       {
         label: 'Workspaces dos Clientes',
-        items: [{ label: 'Selecionar Cliente', href: '/client-workspaces' }],
+        items: [{ label: 'Selecionar cliente', href: '/client-workspaces' }],
       },
     ])
+    expect(buildNavigationFooter(context)).toEqual([])
   })
 
   it('does not expose technical module labels as portal groups', () => {
     const groups = buildNavigationGroups({
-      ...internalContext,
-      mode: 'portal',
-      role: {
-        key: 'client_admin',
-        name: 'Client Admin',
-        scope: 'client',
-        permissions: ['omnichannel.read', 'crm.read', 'leads.read'],
-      },
+      ...allModulesPortalContext,
       enabledModuleKeys: ['whatsapp_ai', 'crm'],
     })
 
@@ -536,24 +539,102 @@ describe('buildNavigationGroups', () => {
       'Knowledge Source',
     ]))
   })
+})
 
+describe('resolveActiveNavigationItem', () => {
+  const items = buildNavigation(allModulesPortalContext)
+
+  it('keeps the root item active only on its exact address', () => {
+    expect(resolveActiveNavigationItem(items, '/portal')?.label).toBe('Visão geral')
+    expect(resolveActiveNavigationItem(items, '/portal/comercial/leads')?.label).toBe('Leads')
+    expect(resolveActiveNavigationItem(items, '/portal/pagina-sem-menu')).toBeUndefined()
+  })
+
+  it('activates exactly one item per address, including child routes', () => {
+    expect(resolveActiveNavigationItem(items, '/portal/projetos/aprovacoes')?.label).toBe('Aprovações')
+    expect(resolveActiveNavigationItem(items, '/portal/projetos/propostas')?.label).toBe('Propostas')
+    expect(resolveActiveNavigationItem(items, '/portal/missoes/conversas/abc')?.label).toBe('Missões')
+    expect(resolveActiveNavigationItem(items, '/portal/automacoes/execucoes/')?.label).toBe('Execuções')
+  })
+
+  it('does not light up the workspace root on inner pages', () => {
+    const workspaceItems = buildNavigation({ ...allModulesPortalContext, mode: 'client_workspace' })
+
+    expect(resolveActiveNavigationItem(workspaceItems, '/client-workspaces/org-client-1')?.label).toBe('Visão geral')
+    expect(resolveActiveNavigationItem(workspaceItems, '/client-workspaces/org-client-1/missoes/m1')?.label).toBe('Missões')
+  })
+})
+
+describe('buildBreadcrumbs', () => {
   it('builds client-oriented breadcrumbs from portal journeys', () => {
     const breadcrumbs = buildBreadcrumbs({
-      ...internalContext,
-      mode: 'portal',
-      role: {
-        key: 'client_admin',
-        name: 'Client Admin',
-        scope: 'client',
-        permissions: ['marketing_studio.read'],
-      },
+      ...allModulesPortalContext,
       enabledModuleKeys: ['marketing_studio'],
     }, '/portal/marketing/calendario')
 
     expect(breadcrumbs).toEqual([
       { label: 'Portal do Cliente', href: '/portal' },
       { label: 'Marketing' },
-      { label: 'Calendario Editorial' },
+      { label: 'Calendário editorial' },
     ])
+  })
+
+  it('collapses a group label that equals the item label', () => {
+    expect(buildBreadcrumbs(allModulesPortalContext, '/portal/relatorios')).toEqual([
+      { label: 'Portal do Cliente', href: '/portal' },
+      { label: 'Resultados' },
+      { label: 'Relatórios' },
+    ])
+    expect(buildBreadcrumbs(allModulesPortalContext, '/portal/financeiro').map(crumb => crumb.label))
+      .toEqual(['Portal do Cliente', 'Financeiro'])
+    expect(buildBreadcrumbs(allModulesPortalContext, '/portal/projetos/projetos').map(crumb => crumb.label))
+      .toEqual(['Portal do Cliente', 'Projetos', 'Projetos e entregas'])
+  })
+
+  it('never returns two consecutive crumbs with the same label', () => {
+    for (const item of buildNavigation(allModulesPortalContext)) {
+      const labels = buildBreadcrumbs(allModulesPortalContext, item.href).map(crumb => crumb.label.toLowerCase())
+      labels.forEach((label, index) => {
+        if (index > 0) expect(label).not.toBe(labels[index - 1])
+      })
+    }
+  })
+
+  it('keeps the child item link for nested routes', () => {
+    expect(buildBreadcrumbs(allModulesPortalContext, '/portal/missoes/m1')).toEqual([
+      { label: 'Portal do Cliente', href: '/portal' },
+      { label: 'Execução YUX' },
+      { label: 'Missões', href: '/portal/missoes' },
+    ])
+  })
+
+  it('uses the workspace home for assisted client journeys', () => {
+    expect(buildBreadcrumbs({
+      ...allModulesPortalContext,
+      mode: 'client_workspace',
+    }, '/client-workspaces/org-client-1/configuracoes/conta')).toEqual([
+      { label: 'Workspaces dos Clientes', href: '/client-workspaces' },
+      { label: 'Minha conta' },
+    ])
+  })
+})
+
+describe('Radar gating in the portal navigation', () => {
+  it('shows Radar only when the radar module is entitled', () => {
+    const withRadar = buildNavigation({ ...allModulesPortalContext, enabledModuleKeys: ['radar', 'crm'] })
+    const withoutRadar = buildNavigation({ ...allModulesPortalContext, enabledModuleKeys: ['crm'] })
+
+    expect(withRadar.some(item => item.moduleKey === 'radar')).toBe(true)
+    expect(withoutRadar.some(item => item.moduleKey === 'radar')).toBe(false)
+  })
+
+  it('hides Radar from roles without Radar permission even when the module is contracted', () => {
+    const items = buildNavigation({
+      ...allModulesPortalContext,
+      role: { key: 'client_member', name: 'Membro', scope: 'client', permissions: ['platform.manage'] },
+      enabledModuleKeys: ['radar', 'crm'],
+    })
+
+    expect(items.some(item => item.moduleKey === 'radar')).toBe(false)
   })
 })

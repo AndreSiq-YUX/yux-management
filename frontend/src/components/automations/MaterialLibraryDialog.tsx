@@ -103,7 +103,7 @@ export function MaterialLibraryDialog({ open, onOpenChange, onSelect, organizati
 
         <div className="flex gap-3 my-2 items-center">
           <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-yx-fg-3" />
             <Input
               placeholder="Buscar materiais..."
               value={searchQuery}
@@ -139,19 +139,19 @@ export function MaterialLibraryDialog({ open, onOpenChange, onSelect, organizati
           </div>
         </div>
 
-        <p className="text-[10px] text-slate-500 mb-2">
+        <p className="text-[10px] text-yx-fg-3 mb-2">
           Limite de tamanho por arquivo configurado pelo admin: <span className="font-semibold">{uploadLimitMb} MB</span>.
         </p>
 
-        <div className="flex-1 overflow-y-auto min-h-[300px] border rounded bg-slate-50 p-2">
+        <div className="flex-1 overflow-y-auto min-h-[300px] border rounded bg-yx-surface-2 p-2">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500 py-12 gap-2 text-xs">
+            <div className="flex flex-col items-center justify-center h-full text-yx-fg-3 py-12 gap-2 text-xs">
               <Loader2 className="h-6 w-6 animate-spin text-yux-600" />
               Buscando biblioteca...
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12 gap-1 text-xs text-center">
-              <p className="font-semibold text-slate-500">Nenhum arquivo encontrado</p>
+            <div className="flex flex-col items-center justify-center h-full text-yx-fg-3 py-12 gap-1 text-xs text-center">
+              <p className="font-semibold text-yx-fg-3">Nenhum arquivo encontrado</p>
               <p>Envie arquivos PDF ou imagens para usar em suas mensagens.</p>
             </div>
           ) : (
@@ -160,14 +160,14 @@ export function MaterialLibraryDialog({ open, onOpenChange, onSelect, organizati
                 <div
                   key={material.id}
                   onClick={() => onSelect(material)}
-                  className="flex items-start gap-3 rounded border bg-white p-3 hover:border-yux-500 hover:bg-yux-50/20 cursor-pointer group transition-all"
+                  className="flex items-start gap-3 rounded border bg-yx-surface p-3 hover:border-yux-500 hover:bg-yux-50/20 cursor-pointer group transition-all"
                 >
-                  <FileText className="h-8 w-8 text-slate-400 shrink-0 mt-0.5" />
+                  <FileText className="h-8 w-8 text-yx-fg-3 shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="text-xs font-semibold text-slate-900 truncate" title={material.name}>
+                    <p className="text-xs font-semibold text-yx-fg truncate" title={material.name}>
                       {material.name}
                     </p>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-yx-fg-3">
                       <span>{formatSize(material.byteSize)}</span>
                       <Badge variant="outline" className="px-1 text-[8px] py-0 uppercase">
                         {material.fileType.split('/')[1] || 'DOC'}
@@ -178,7 +178,7 @@ export function MaterialLibraryDialog({ open, onOpenChange, onSelect, organizati
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="opacity-0 group-hover:opacity-100 h-8 w-8 p-0 text-red-500 hover:text-red-700 shrink-0"
+                    className="opacity-0 group-hover:opacity-100 h-8 w-8 p-0 text-yx-crit hover:text-yx-crit shrink-0"
                     onClick={e => handleDelete(e, material.id)}
                   >
                     <Trash2 className="h-4 w-4" />

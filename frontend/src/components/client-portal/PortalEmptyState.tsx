@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Inbox, type LucideIcon } from 'lucide-react'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 
 interface PortalEmptyStateProps {
   title: string
@@ -12,6 +13,8 @@ interface PortalEmptyStateProps {
 }
 
 export function PortalEmptyState({ title, description, icon: Icon = Inbox, action }: PortalEmptyStateProps) {
+  const portalPath = usePortalWorkspacePath()
+
   return (
     <div className="rounded-lg border border-dashed bg-white p-6 text-center">
       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-gray-50 text-gray-500">
@@ -21,7 +24,7 @@ export function PortalEmptyState({ title, description, icon: Icon = Inbox, actio
       <p className="mx-auto mt-1 max-w-md text-sm text-gray-600">{description}</p>
       {action && (
         <Link
-          to={action.href}
+          to={portalPath(action.href)}
           className="mt-4 inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium text-gray-700 hover:border-yux-300 hover:bg-yux-50 hover:text-yux-800"
         >
           {action.label}

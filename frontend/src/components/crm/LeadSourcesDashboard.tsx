@@ -1,4 +1,5 @@
 import { Download, TrendingUp } from 'lucide-react'
+import { leadSourceLabel } from '@/lib/crm/leadSourceLabel'
 import { Button } from '@/components/ui/button'
 import { MroiAlertPanel } from '@/components/crm/MroiAlertPanel'
 import { SourceFunnelChart } from '@/components/crm/SourceFunnelChart'
@@ -64,7 +65,7 @@ export function LeadSourcesDashboard({ dashboard, portalSafe = false, onExport }
               <tr key={`${source.sourceId}-${source.periodStart}-${source.periodEnd}`}>
                 <td className="px-3 py-3">
                   <span className="font-medium text-slate-950">{source.sourceName}</span>
-                  <span className="block text-xs text-slate-500">{source.sourceKind}</span>
+                  <span className="block text-xs text-slate-500">{leadSourceLabel(source.sourceKind)}</span>
                 </td>
                 <td className="px-3 py-3 text-right">{source.leads}</td>
                 <td className="px-3 py-3 text-right">{source.opportunities}</td>

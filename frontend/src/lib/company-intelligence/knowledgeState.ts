@@ -13,7 +13,7 @@ export function labelForKnowledgeState(input: KnowledgeStateInput) {
   if (input.processingError) return 'Falha no processamento'
   if (input.documentStatus === 'indexing') return 'Processando'
   if (input.documentStatus === 'indexed' && !input.publicationId) return 'Pronto para revisão'
-  if (input.lastUsedQueryId) return 'Usado por agente'
+  if (input.lastUsedQueryId) return 'Usado pelo agente de IA'
   if (input.documentStatus === 'published' && input.publicationId) return 'Publicado'
   if (input.documentStatus === 'draft') return 'Enviado'
   return 'Processando'

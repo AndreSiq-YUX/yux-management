@@ -1,10 +1,10 @@
-import { ArrowRight, GitBranch, Plus, RefreshCw, Settings2 } from 'lucide-react'
+import { ArrowRight, GitBranch, Plus, Settings2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Button } from '@/components/ui/button'
+import { ErrorState, SectionCard, SkeletonCard, portalButtonClasses } from '@/components/portal-ui'
 import { PipelineEditorDialog } from '@/components/crm/funnels/PipelineEditorDialog'
 import { PipelineSummaryBoard } from '@/components/crm/funnels/PipelineSummaryBoard'
-import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { PortalPage } from '@/components/client-portal/PortalPage'
 import { usePortalCrmContext } from '@/hooks/usePortalCrmContext'
 import { formatPortalCurrency } from '@/lib/client-portal/portalDisplay'
 import { crmGovernanceService } from '@/services/crmGovernanceService'
@@ -161,85 +161,70 @@ export function PortalCommercialFunnelsPage() {
     setEditorOpen(true)
   }
 
+  const noticeClasses = 'rounded-[10px] border px-4 py-3 text-sm'
+  const adminHint = 'um administrador da sua empresa ou a equipe YUX'
+
   return (
-    <PortalJourneyPage
+    <PortalPage
       eyebrow="Comercial"
       title="Funis"
-      description="Organize oportunidades por etapa, identifique gargalos e mova cada lead para a próxima ação comercial."
-      icon={GitBranch}
+      description="Organize suas oportunidades por etapa, veja onde elas travam e mova cada lead para a próxima ação."
+      help={[
+        'Veja leads, valor, conversão e gargalos de cada etapa.',
+        'Mova leads entre etapas; o histórico do lead é mantido.',
+        'Criar funis, etapas e mudar a ordem depende do seu perfil. Se você não puder alterar a estrutura, ainda acompanha e move os leads.',
+      ]}
+      primaryAction={canConfigure && pipelines.length > 0
+        ? (
+          <button type="button" onClick={openCreateEditor} disabled={governanceLoading || !crmInstanceId} className={portalButtonClasses('primary')}>
+            <Plus aria-hidden="true" />
+            Novo funil
+          </button>
+        )
+        : { label: 'Ver leads', href: '/portal/comercial/leads' }}
       metrics={[
-        { label: 'Funis ativos', value: String(pipelines.length), detail: 'Estruturas comerciais disponíveis.' },
-        { label: 'Oportunidades', value: String(openLeads.length), detail: 'Leads abertos na operação.' },
+        { label: 'Funis ativos', value: String(pipelines.length) },
+        { label: 'Oportunidades', value: String(openLeads.length), detail: 'Leads abertos.' },
         { label: 'Valor em aberto', value: formatPortalCurrency(openValue), detail: 'Soma das oportunidades abertas.' },
       ]}
-      capabilities={[
-        'Visualizar leads, valor, conversão e gargalos por etapa.',
-        'Mover leads entre etapas e manter o histórico comercial integrado ao CRM.',
-        'Configurar funis, etapas e ordem somente com a autorização da governança.',
-        'Preservar a leitura para sellers e demais perfis sem permissão estrutural.',
-      ]}
-      primaryAction={!canConfigure ? { label: 'Abrir Leads', href: '/portal/comercial/leads' } : undefined}
-      secondaryActions={[
-        { label: 'Empresas / Contas', href: '/portal/comercial/contas' },
-        { label: 'Tarefas e Follow-ups', href: '/portal/comercial/tarefas' },
+      related={[
+        { label: 'Empresas e contas', href: '/portal/comercial/contas' },
+        { label: 'Tarefas e follow-ups', href: '/portal/comercial/tarefas' },
       ]}
     >
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-labelledby="funnels-operation-title">
-        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 px-6 py-5 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-white p-2 text-yux-700 shadow-sm ring-1 ring-inset ring-slate-200">
-                <GitBranch className="h-4 w-4" aria-hidden="true" />
-              </div>
-              <h2 id="funnels-operation-title" className="text-base font-semibold text-slate-950">Operação comercial</h2>
-            </div>
-            <p className="mt-2 text-sm text-slate-600">Escolha um funil para acompanhar as oportunidades e agir no momento certo.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {canConfigure && (
-              <Button type="button" variant="outline" onClick={openCreateEditor} disabled={governanceLoading || !crmInstanceId} className="bg-white">
-                <Plus className="mr-2 h-4 w-4" />
-                Novo funil
-              </Button>
-            )}
-            {selectedPipeline && canConfigure && (
-              <Button type="button" onClick={openEditEditor} disabled={governanceLoading}>
-                <Settings2 className="mr-2 h-4 w-4" />
-                Configurar funil
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="p-6">
+      <SectionCard
+        id="funnels-operation"
+        title="Operação comercial"
+        description="Escolha um funil para acompanhar as oportunidades e agir no momento certo."
+        action={selectedPipeline && canConfigure ? (
+          <button type="button" onClick={openEditEditor} disabled={governanceLoading} className={portalButtonClasses('ghost')}>
+            <Settings2 aria-hidden="true" />
+            Configurar funil
+          </button>
+        ) : undefined}
+      >
         {loading ? (
-          <p className="text-sm text-slate-600" role="status">Carregando sua operação comercial...</p>
+          <SkeletonCard lines={4} />
         ) : error ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
-            <p className="text-sm text-red-700" role="alert">Não foi possível carregar os funis. {error}</p>
-            <Button type="button" variant="outline" onClick={() => void reload()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Tentar novamente
-            </Button>
-          </div>
+          <ErrorState title="Não foi possível carregar os funis" description={error} onRetry={() => void reload()} />
         ) : (
           <>
             {governanceLoading && (
-              <p className="text-sm text-slate-600" role="status">Verificando permissões de configuração...</p>
+              <p className="text-sm text-yx-fg-3" role="status">Verificando permissões de configuração...</p>
             )}
             {governanceError && (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">{governanceError} A visualização continua disponível em modo somente leitura.</p>
+              <p className={`${noticeClasses} border-yx-warn-line bg-yx-warn-soft text-yx-warn`} role="alert">{governanceError} A visualização continua disponível em modo somente leitura.</p>
             )}
             {!governanceLoading && !governanceError && governance && !canConfigure && (
-              <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Seu perfil pode acompanhar e operar leads, mas não alterar a estrutura dos funis.</p>
+              <p className={`${noticeClasses} border-yx-line bg-yx-surface-2 text-yx-fg-2`}>Seu perfil pode acompanhar e mover leads, mas não alterar a estrutura dos funis. Para mudar etapas, fale com {adminHint}.</p>
             )}
 
             {pipelines.length > 0 && (
-              <div className="max-w-md">
-                <label htmlFor="selected-pipeline" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Funil em análise</label>
+              <div className="mt-4 max-w-md">
+                <label htmlFor="selected-pipeline" className="font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">Funil em análise</label>
                 <select
                   id="selected-pipeline"
-                  className="mt-2 flex h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yux-500"
+                  className="mt-1.5 flex h-10 w-full rounded-lg border border-yx-line-strong bg-yx-surface px-3 py-2 text-sm font-medium text-yx-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yx-blue"
                   value={selectedPipeline?.id || ''}
                   onChange={event => setSelectedPipelineId(event.target.value)}
                 >
@@ -260,30 +245,32 @@ export function PortalCommercialFunnelsPage() {
                 />
               </div>
             ) : (
-              <div className="mt-6 grid gap-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-6 md:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] md:p-8">
+              <div className="mt-2 grid gap-6 rounded-[10px] border border-dashed border-yx-line-strong bg-yx-surface-2 p-5 md:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] md:p-8">
                 <div>
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yux-100 text-yux-700">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yx-blue-soft text-yx-blue">
                     <GitBranch className="h-5 w-5" aria-hidden="true" />
                   </div>
-                  <h3 className="mt-4 text-lg font-semibold tracking-tight text-slate-950">Comece pela sua primeira operação</h3>
-                  <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">O funil organiza os leads que chegam pelos formulários, automações e canais comerciais. Crie as etapas uma vez e use-as para orientar o time.</p>
+                  <h3 className="mt-4 font-display text-lg font-semibold tracking-tight text-yx-fg">Comece pela sua primeira operação</h3>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-yx-fg-2">O funil organiza os leads que chegam pelos formulários, automações e canais comerciais. Crie as etapas uma vez e use-as para orientar o time.</p>
                   {canConfigure && crmInstanceId ? (
-                    <Button type="button" className="mt-5" onClick={openCreateEditor}>
+                    <button type="button" className={portalButtonClasses('primary', 'mt-5')} onClick={openCreateEditor}>
                       Criar primeiro funil
-                      <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
-                    </Button>
+                      <ArrowRight aria-hidden="true" />
+                    </button>
+                  ) : !crmInstanceId ? (
+                    <p className={`mt-5 ${noticeClasses} border-yx-warn-line bg-yx-warn-soft text-yx-warn`}>A estrutura do CRM ainda precisa ser publicada por {adminHint} antes de criar o primeiro funil.</p>
                   ) : (
-                    <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">A estrutura do CRM ainda precisa ser publicada por um administrador antes de criar o primeiro funil.</p>
+                    <p className={`mt-5 ${noticeClasses} border-yx-warn-line bg-yx-warn-soft text-yx-warn`}>Seu perfil não pode criar funis. Peça a {adminHint} para criar o primeiro.</p>
                   )}
                 </div>
-                <ol className="space-y-3 rounded-xl border border-white bg-white p-4 shadow-sm">
+                <ol className="m-0 list-none space-y-3 rounded-xl border border-yx-line bg-yx-surface p-4">
                   {[
                     'Crie o funil e defina seu objetivo.',
                     'Ajuste etapas, cores e resultados.',
                     'Receba leads e mova-os conforme a próxima ação.',
                   ].map((step, index) => (
-                    <li key={step} className="flex gap-3 text-sm text-slate-700">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yux-50 text-xs font-bold text-yux-700">{index + 1}</span>
+                    <li key={step} className="flex gap-3 text-sm text-yx-fg-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yx-blue-soft font-mono text-xs font-bold text-yx-blue">{index + 1}</span>
                       <span className="pt-0.5">{step}</span>
                     </li>
                   ))}
@@ -292,8 +279,7 @@ export function PortalCommercialFunnelsPage() {
             )}
           </>
         )}
-        </div>
-      </section>
+      </SectionCard>
 
       <PipelineEditorDialog
         open={editorOpen}
@@ -312,6 +298,6 @@ export function PortalCommercialFunnelsPage() {
         onUpdateStage={updateStage}
         onReorderStages={reorderStages}
       />
-    </PortalJourneyPage>
+    </PortalPage>
   )
 }

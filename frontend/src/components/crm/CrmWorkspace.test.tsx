@@ -1,7 +1,7 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CrmWorkspace } from './CrmWorkspace'
 import { crmGovernanceService } from '@/services/crmGovernanceService'
 import { crmService } from '@/services/crmService'
@@ -141,6 +141,37 @@ describe('CrmWorkspace', () => {
     expect(html).toContain('Ana Lead')
     expect(html).toContain('Bruno Lead')
     expect(html).toContain('Novo lead')
+
+    act(() => root.unmount())
+  })
+
+  it('marks CSV import and smart segment actions as pending without faking success', async () => {
+    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
+    vi.mocked(crmService.getLeads).mockResolvedValue(leads)
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<MemoryRouter><CrmWorkspace /></MemoryRouter>)
+      await flush()
+      await flush()
+      await flush()
+    })
+
+    const buttons = Array.from(container.querySelectorAll('button'))
+    const pendingLabels = ['Importar CSV', 'Salvar segmento', 'Criar tarefa', 'Iniciar automação', 'Criar campanha', 'Exportar']
+    for (const label of pendingLabels) {
+      const button = buttons.find(item => item.textContent?.includes(label))
+      expect(button, label).toBeTruthy()
+      expect(button!.textContent, label).toContain('Pendente')
+    }
+
+    act(() => {
+      buttons.find(item => item.textContent?.includes('Importar CSV'))!.click()
+    })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.textContent).toContain('importação de leads por planilha CSV está em implantação')
 
     act(() => root.unmount())
   })
@@ -367,6 +398,129 @@ describe('CrmWorkspace', () => {
 
     expect(container.innerHTML).toContain('Leads da equipe')
 
+    act(() => root.unmount())
+  })
+})
+
+describe('CrmWorkspace (variante portal)', () => {
+  const originalMatchMedia = window.matchMedia
+  const setNativeInput = (element: Element, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  const click = (element: Element | null | undefined) => element?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    usePlatformStore.setState({
+      organization: {
+        id: pipeline.organizationId, name: 'Cliente ABC', slug: 'cliente-abc', kind: 'yux',
+        createdAt: '2026-06-03T10:00:00.000Z', updatedAt: '2026-06-03T10:00:00.000Z',
+      },
+      isLoading: false,
+      error: null,
+      enabledModuleKeys: [],
+    })
+    vi.mocked(crmService.getPipelines).mockResolvedValue([pipeline])
+    vi.mocked(crmService.getLeads).mockResolvedValue(leads)
+  })
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia
+    document.body.innerHTML = ''
+  })
+
+  async function renderPortal(props: Parameters<typeof CrmWorkspace>[0] = {}) {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<MemoryRouter><CrmWorkspace profile="portal" {...props} /></MemoryRouter>)
+      await flush(); await flush(); await flush()
+    })
+    return { container, root }
+  }
+
+  it('usa o vocabulário do cliente: Leads, Funil, análise recolhida e filtros recolhidos', async () => {
+    const { container, root } = await renderPortal()
+    const text = (container.textContent || '').replace(/\u00a0/g, ' ')
+
+    expect(container.querySelector('h1')?.textContent).toBe('Leads')
+    expect(container.querySelector('label[for="lead-pipeline"]')?.textContent).toBe('Funil')
+    for (const label of ['Novos leads', 'Leads parados', 'Conversão', 'Valor em aberto']) expect(text).toContain(label)
+    for (const forbidden of ['Pipeline', 'CRM Controller', 'CRM Cockpit', 'Cockpit', 'Score']) expect(text, forbidden).not.toContain(forbidden)
+
+    const analysis = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Pedir análise à YUX'))!
+    expect(analysis.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('Abrir pedido no Suporte')
+    act(() => click(analysis))
+    expect(container.textContent).toContain('Abrir pedido no Suporte')
+
+    const filtersToggle = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Filtros e segmentos'))!
+    expect(filtersToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector<HTMLElement>('#lead-advanced-filters')?.hidden).toBe(true)
+    act(() => click(filtersToggle))
+    expect(container.querySelector<HTMLElement>('#lead-advanced-filters')?.hidden).toBe(false)
+    expect(container.querySelector('label[for="lead-filter-stage"]')?.textContent).toBe('Etapa')
+
+    // As ações pendentes continuam visíveis e marcadas.
+    for (const label of ['Importar CSV', 'Salvar segmento', 'Criar tarefa', 'Exportar']) {
+      const button = [...container.querySelectorAll('button')].find(item => item.textContent?.includes(label))
+      expect(button, label).toBeTruthy()
+      expect(button!.textContent, label).toContain('Pendente')
+    }
+    act(() => root.unmount())
+  })
+
+  it('no celular abre na lista e no desktop abre no quadro', async () => {
+    window.matchMedia = ((query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, onchange: null, dispatchEvent: () => false })) as typeof window.matchMedia
+    const mobile = await renderPortal()
+    expect(mobile.container.querySelector('[data-testid="lead-kanban"]')).toBeNull()
+    expect(mobile.container.querySelector('[data-testid="responsive-table-cards"]')).not.toBeNull()
+    act(() => mobile.root.unmount())
+
+    window.matchMedia = originalMatchMedia
+    const desktop = await renderPortal()
+    expect(desktop.container.querySelector('[data-testid="lead-kanban"]')).not.toBeNull()
+    act(() => desktop.root.unmount())
+  })
+
+  it('aplica a empresa recebida pela URL como busca', async () => {
+    const { container, root } = await renderPortal({ initialSearch: 'Clinica Alpha' })
+    const search = container.querySelector<HTMLInputElement>('#lead-search')!
+    expect(search.value).toBe('Clinica Alpha')
+    expect(container.textContent).toContain('Ana Lead')
+    expect(container.textContent).not.toContain('Bruno Lead')
+    act(() => root.unmount())
+  })
+
+  it('cadastra um lead com rótulos visíveis, e-mail obrigatório e sem campo de pontuação', async () => {
+    vi.mocked(crmService.createLead).mockResolvedValue(leads[0])
+    const { container, root } = await renderPortal()
+    await act(async () => click([...container.querySelectorAll('button')].find(button => button.textContent === 'Novo lead')))
+
+    const dialog = document.querySelector('[role="dialog"]')!
+    const labels = [...dialog.querySelectorAll('label')].map(label => label.textContent)
+    expect(labels).toEqual(['Nome *', 'E-mail *', 'Telefone', 'Empresa', 'Origem', 'Valor estimado (R$)'])
+    expect(dialog.textContent).not.toContain('Score')
+    expect(dialog.textContent).not.toContain('Pontuação')
+    expect(dialog.textContent).toContain('o cadastro de leads exige um e-mail')
+    for (const input of dialog.querySelectorAll('input')) expect(dialog.querySelector(`label[for="${input.id}"]`), input.id).not.toBeNull()
+
+    // Sem e-mail: não envia e explica.
+    await act(async () => { setNativeInput(dialog.querySelector('#new-lead-name')!, 'Carla Nova') })
+    await act(async () => { dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    expect(crmService.createLead).not.toHaveBeenCalled()
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('e-mail válido')
+
+    await act(async () => {
+      setNativeInput(dialog.querySelector('#new-lead-email')!, 'carla@example.com')
+      setNativeInput(dialog.querySelector('#new-lead-phone')!, '11999990000')
+    })
+    await act(async () => { dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush(); await flush() })
+    expect(crmService.createLead).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Carla Nova', email: 'carla@example.com', phone: '11999990000', score: 0, stageId: 'new-stage', pipelineId: 'pipeline-1',
+    }))
     act(() => root.unmount())
   })
 })

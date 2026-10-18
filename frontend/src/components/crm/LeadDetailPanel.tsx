@@ -1,4 +1,5 @@
 import { CircleDollarSign, Mail, MessageCircle, Trophy, XCircle } from 'lucide-react'
+import { leadSourceLabel } from '@/lib/crm/leadSourceLabel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { CrmLead } from '@/types/crm'
@@ -11,16 +12,7 @@ interface LeadDetailPanelProps {
 
 const formatCurrency = (value?: number) => value !== undefined
   ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-  : 'Nao informado'
-
-const sourceLabel: Record<string, string> = {
-  paid_campaign: 'Campanha paga',
-  landing_page: 'Landing page',
-  whatsapp_cta: 'WhatsApp',
-  organic: 'Organico',
-  referral: 'Indicacao',
-  manual: 'Manual',
-}
+  : 'Não informado'
 
 export function LeadDetailPanel({ lead, onMarkWon, onMarkLost }: LeadDetailPanelProps) {
   return (
@@ -37,7 +29,7 @@ export function LeadDetailPanel({ lead, onMarkWon, onMarkLost }: LeadDetailPanel
 
       <div className="grid gap-3 md:grid-cols-6">
         <Info icon={Mail} label="Email" value={lead.email} />
-        <Info icon={MessageCircle} label="Telefone" value={lead.phone || 'Nao informado'} />
+        <Info icon={MessageCircle} label="Telefone" value={lead.phone || 'Não informado'} />
         <Info icon={CircleDollarSign} label="Valor" value={formatCurrency(lead.value)} />
         <Info icon={Trophy} label="Score" value={`${lead.score}/100`} />
         <Info icon={Trophy} label="Fit" value={`${lead.fitScore ?? 0}/100`} />
@@ -47,7 +39,7 @@ export function LeadDetailPanel({ lead, onMarkWon, onMarkLost }: LeadDetailPanel
       <div className="grid gap-3 rounded-md border bg-slate-50 p-3 md:grid-cols-3">
         <div>
           <p className="text-xs font-medium uppercase text-slate-500">Origem</p>
-          <p className="mt-1 text-sm text-slate-900">{sourceLabel[lead.sourceKind || 'manual'] || lead.source}</p>
+          <p className="mt-1 text-sm text-slate-900">{leadSourceLabel(lead.sourceKind || 'manual', lead.source)}</p>
         </div>
         <div>
           <p className="text-xs font-medium uppercase text-slate-500">Responsavel</p>

@@ -58,7 +58,7 @@ describe('WebsiteOnboardingCard', () => {
     await act(async () => {
       root.render(<WebsiteOnboardingCard organizationId="00000000-0000-4000-8000-000000000001" initialUrl="https://yux.com.br" onApplied={vi.fn()} />)
     })
-    await changeInput(container.querySelector('[aria-label="Limite de páginas"]') as HTMLInputElement, '45')
+    await changeInput(container.querySelector('#website-onboarding-max-pages') as HTMLInputElement, '45')
     await clickButton(container, 'Analisar site')
 
     expect(companyIntelligenceService.startWebsiteOnboarding).toHaveBeenCalledWith(
@@ -76,6 +76,53 @@ describe('WebsiteOnboardingCard', () => {
       [suggestion.id],
       [{ id: suggestion.id, suggestedValue: 'Descrição revisada pelo usuário' }],
     )
+    act(() => root.unmount())
+  })
+
+  it('mostra rótulo visível para o limite de páginas', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<WebsiteOnboardingCard organizationId="org" onApplied={vi.fn()} />) })
+    const label = container.querySelector('label[for="website-onboarding-max-pages"]')
+    expect(label?.textContent).toBe('Limite de páginas')
+    act(() => root.unmount())
+  })
+
+  it('fica recolhido quando o perfil já tem dados e abre ao expandir', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<WebsiteOnboardingCard organizationId="org" defaultOpen={false} onApplied={vi.fn()} />) })
+    expect(container.querySelector('#website-onboarding-max-pages')).toBeNull()
+    const toggle = container.querySelector('button[aria-expanded]') as HTMLButtonElement
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await act(async () => { toggle.click() })
+    expect(container.querySelector('#website-onboarding-max-pages')).not.toBeNull()
+    act(() => root.unmount())
+  })
+
+  it('nunca pede ao cliente para editar JSON: objetos viram campos simples ou texto legível', async () => {
+    const structured = {
+      ...partialResult,
+      run: { ...partialResult.run, status: 'ready_for_review' as const },
+      suggestions: [
+        { ...suggestion, id: '00000000-0000-4000-8000-000000000011', fieldPath: 'address', suggestedValue: { street: 'Rua A', city: 'São Paulo' } },
+        { ...suggestion, id: '00000000-0000-4000-8000-000000000012', fieldPath: 'businessHours', suggestedValue: { monday: { open: '09:00', close: '18:00' } } },
+      ],
+    }
+    vi.mocked(companyIntelligenceService.startWebsiteOnboarding).mockResolvedValue(structured)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<WebsiteOnboardingCard organizationId="org" initialUrl="https://yux.com.br" onApplied={vi.fn()} />) })
+    await clickButton(container, 'Analisar site')
+
+    expect(container.querySelector('#edit-00000000-0000-4000-8000-000000000011-street')).not.toBeNull()
+    expect(container.textContent).toContain('Segunda: 09:00 às 18:00')
+    expect(container.textContent).not.toMatch(/JSON/i)
+    expect(container.textContent).not.toContain('"monday"')
+    expect(container.querySelector('textarea')).toBeNull()
     act(() => root.unmount())
   })
 })

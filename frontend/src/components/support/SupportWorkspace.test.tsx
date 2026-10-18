@@ -2,9 +2,7 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { SupportWorkspace } from './SupportWorkspace'
-import { PortalSupportWorkspace } from './PortalSupportWorkspace'
 import type { SupportSummary, SupportTicket } from '@/types/support'
-import type { ContractDetails } from '@/types/platform'
 
 const summary: SupportSummary = {
   totalOpen: 3,
@@ -56,21 +54,6 @@ const ticket: SupportTicket = {
   ],
 }
 
-const contract: ContractDetails = {
-  id: 'contract-1',
-  clientId: 'client-1',
-  packageId: 'package-1',
-  name: 'Contrato principal',
-  status: 'active',
-  value: 1500,
-  billingCycle: 'monthly',
-  startsAt: '2026-06-01',
-  createdAt: '2026-06-01T12:00:00.000Z',
-  updatedAt: '2026-06-01T12:00:00.000Z',
-  package: null,
-  modules: [],
-}
-
 describe('SupportWorkspace', () => {
   it('renders internal queue, ticket details, and operational controls', () => {
     const container = document.createElement('div')
@@ -120,58 +103,6 @@ describe('SupportWorkspace', () => {
     })
     expect(handlers.onUpdateTicket).toHaveBeenCalledWith('ticket-1', { status: 'in_progress' })
     expect(handlers.onUpdateTicket).toHaveBeenCalledWith('ticket-1', { status: 'resolved' })
-
-    act(() => root.unmount())
-  })
-})
-
-describe('PortalSupportWorkspace', () => {
-  it('renders client-safe tickets and allows opening and replying', () => {
-    const container = document.createElement('div')
-    const root = createRoot(container)
-    const handlers = {
-      onCreateTicket: vi.fn(),
-      onAddMessage: vi.fn(),
-      onRefresh: vi.fn(),
-    }
-
-    act(() => {
-      root.render(
-        <PortalSupportWorkspace
-          contract={contract}
-          tickets={[ticket]}
-          {...handlers}
-        />,
-      )
-    })
-
-    const html = container.innerHTML
-    expect(html).toContain('Suporte do contrato')
-    expect(html).toContain('Contrato principal')
-    expect(html).toContain('Ajuste no dashboard')
-    expect(html).toContain('Nao consigo ver o relatorio.')
-    expect(html).not.toContain('Conta estrategica')
-    expect(html).not.toContain('Investigar permissao interna')
-
-    act(() => {
-      container.querySelector<HTMLButtonElement>('button[title="Abrir chamado"]')!.click()
-      container.querySelector<HTMLButtonElement>('button[title="Enviar resposta"]')!.click()
-    })
-
-    expect(handlers.onCreateTicket).toHaveBeenCalledWith({
-      contractId: 'contract-1',
-      clientId: 'client-1',
-      subject: expect.any(String),
-      category: 'technical',
-      priority: 'medium',
-      body: expect.any(String),
-    })
-    expect(handlers.onAddMessage).toHaveBeenCalledWith({
-      ticketId: 'ticket-1',
-      authorType: 'client',
-      body: expect.any(String),
-      isInternal: false,
-    })
 
     act(() => root.unmount())
   })

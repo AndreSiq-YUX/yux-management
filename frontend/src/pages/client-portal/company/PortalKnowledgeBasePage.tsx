@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BookOpen, BrainCircuit, Building2, Check, Plus, RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { PortalPage } from '@/components/client-portal/PortalPage'
 import { KnowledgeCreateDialog } from '@/components/company-intelligence/KnowledgeCreateDialog'
 import { KnowledgeLibrary } from '@/components/company-intelligence/KnowledgeLibrary'
-import { KnowledgeReadinessPanel } from '@/components/growth-workspace/KnowledgeReadinessPanel'
-import { Button } from '@/components/ui/button'
+import { ErrorState, SectionCard, portalButtonClasses } from '@/components/portal-ui'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { countItems } from '@/lib/client-portal/portalDisplay'
+import { cn } from '@/lib/utils'
 import { companyIntelligenceService } from '@/services/companyIntelligenceService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { CompanyKnowledgeDocument } from '@/types/companyIntelligence'
@@ -21,12 +21,9 @@ export function PortalKnowledgeBasePage() {
   const {
     loading,
     error,
-    brandProfile,
     knowledgeDocuments,
-    knowledgeMatches,
     productsServices,
-    settings,
-  } = usePortalMarketingContext({ resources: ['brandProfile', 'knowledgeDocuments', 'knowledgeMatches', 'productsServices', 'settings'] })
+  } = usePortalMarketingContext({ resources: ['knowledgeDocuments', 'productsServices'] })
   const [documents, setDocuments] = useState<CompanyKnowledgeDocument[]>([])
   const [libraryLoading, setLibraryLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -36,8 +33,8 @@ export function PortalKnowledgeBasePage() {
     if (!quiet) setLibraryLoading(true)
     try {
       setDocuments(await companyIntelligenceService.listKnowledge(organization.id))
-    } catch (error) {
-      console.error('Falha ao carregar base editável:', error)
+    } catch (failure) {
+      console.error('Falha ao carregar base editável:', failure)
     } finally {
       if (!quiet) setLibraryLoading(false)
     }
@@ -60,68 +57,70 @@ export function PortalKnowledgeBasePage() {
   const publishedCount = countItems(effectiveDocuments, document => document.status === 'published')
   const indexedCount = countItems(effectiveDocuments, document => document.status === 'indexed')
   const activeProducts = productsServices.filter(product => product.status === 'active')
-  const brandReadinessProfile = brandProfile || (settings ? {
-    toneOfVoice: settings.toneOfVoice || '',
-    persona: settings.persona || '',
-    brandVoiceSummary: settings.toneOfVoice || '',
-    forbiddenTopics: settings.forbiddenTopics || [],
-    priorityTopics: settings.priorityTopics || [],
-    visualIdentity: {},
-    visualGuidelines: settings.visualPreferences,
-    status: 'active' as const,
-  } : null)
   const returnHref = resolveKnowledgeReturnHref(searchParams.get('returnToKind'), searchParams.get('returnToId'), portalPath)
 
   return (
-    <PortalJourneyPage
+    <PortalPage
       eyebrow="Empresa"
-      title="Base de Conhecimento"
-      description="Fonte compartilhada da empresa para IA, marketing, respostas sugeridas, campanhas, landing pages, FAQ e suporte."
-      icon={BookOpen}
+      title="Base de conhecimento"
+      description="Tudo o que a YUX e o atendimento podem usar para responder, criar campanhas, páginas e conteúdos com informação correta sobre a sua empresa."
+      primaryAction={
+        <button type="button" onClick={() => setCreateOpen(true)} className={portalButtonClasses('primary')}>
+          <Plus aria-hidden="true" />
+          Adicionar conhecimento
+        </button>
+      }
       metrics={[
-        { label: 'Documentos', value: String(effectiveDocuments.length), detail: `${publishedCount} publicados e ${indexedCount} prontos para publicar.` },
-        { label: 'Ofertas', value: String(activeProducts.length), detail: 'Produtos e servicos ativos para contexto comercial.' },
-        { label: 'Busca IA', value: String(knowledgeMatches.length), detail: 'Trechos recuperados pela busca semantica.' },
+        { label: 'Documentos', value: String(effectiveDocuments.length), detail: `${publishedCount} ${publishedCount === 1 ? 'publicado' : 'publicados'} e ${indexedCount} ${indexedCount === 1 ? 'pronto' : 'prontos'} para publicar.` },
+        { label: 'Ofertas ativas', value: String(activeProducts.length), detail: 'Produtos e serviços usados como contexto comercial.' },
       ]}
-      capabilities={[
-        'Enviar documentos, cadastrar FAQs, produtos, servicos, politicas, precos e objecoes.',
-        'Importar site, ver paginas lidas e revisar conhecimento extraido.',
-        'Aprovar conhecimento para Agente IA, respostas sugeridas e Marketing Studio.',
-        'Marcar conteudo como publico ou interno e acompanhar lacunas detectadas pela IA.',
+      help={[
+        'Envie documentos, cadastre perguntas frequentes, produtos, serviços, políticas, preços e respostas a objeções.',
+        'Importe o seu site e revise o conhecimento extraído antes de usar.',
+        'Aprove o que está correto para o atendimento, as respostas sugeridas e o Marketing Studio.',
+        'Defina o que pode ser usado no atendimento aos seus clientes e o que é só de uso interno.',
       ]}
-      secondaryActions={[
-        { label: 'Agente IA', href: '/portal/atendimento/agente-ia' },
+      related={[
+        { label: 'Agente de IA', href: '/portal/atendimento/agente-ia' },
         { label: 'Marketing Studio', href: '/portal/marketing/studio' },
-        { label: 'Marca e Tom de Voz', href: '/portal/empresa/marca' },
+        { label: 'Marca e tom de voz', href: '/portal/empresa/marca' },
       ]}
-      note="A regra de produto e evitar bases duplicadas por modulo. Esta pagina representa a fonte unica de conhecimento da empresa."
     >
-      <nav aria-label="Áreas de conhecimento" className="grid gap-3 sm:grid-cols-2">
-        <a href="#company-library" className="border border-blue-200 bg-blue-50 p-4 text-left"><Building2 className="h-5 w-5 text-blue-700" /><strong className="mt-2 block text-slate-950">Acervo da empresa</strong><span className="mt-1 block text-sm text-slate-600">Fatos, marca, ofertas, políticas e documentos deste workspace.</span></a>
-        <Link to={portalPath('/portal/missoes')} className="border border-violet-200 bg-violet-50 p-4 text-left"><BrainCircuit className="h-5 w-5 text-violet-700" /><strong className="mt-2 block text-slate-950">Metodologia estratégica</strong><span className="mt-1 block text-sm text-slate-600">Doutrina YUX governada, aplicada pelas missões conforme perfil e contrato.</span></Link>
-      </nav>
-      <KnowledgeJourney documents={documents} onAdd={() => setCreateOpen(true)} />
-      {returnHref && <div className="flex flex-wrap items-center justify-between gap-3 border border-emerald-200 bg-emerald-50 p-4"><div><strong className="text-emerald-950">Correção de conhecimento em andamento</strong><p className="text-sm text-emerald-800">Salve ou publique o necessário e retorne à missão para revalidar o contexto.</p></div><Button asChild><Link to={returnHref}>Retornar à missão</Link></Button></div>}
-      <KnowledgeReadinessPanel
-        profile={brandReadinessProfile}
-        knowledgeDocuments={documents}
-        productsServices={productsServices}
-        knowledgeMatches={knowledgeMatches}
-      />
-      <section id="company-library" className="space-y-4 scroll-mt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-4">
-          <div><h2 className="font-semibold text-gray-950">Biblioteca da empresa</h2><p className="text-sm text-gray-600">Escreva conteúdo, importe páginas do site ou envie documentos para revisão.</p></div>
-          <div className="flex gap-2"><Button variant="outline" onClick={() => void loadLibrary()} disabled={libraryLoading}><RefreshCw className="mr-2 h-4 w-4" />Atualizar</Button><Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Adicionar conhecimento</Button></div>
+      {returnHref && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-yx-ok-line bg-yx-ok-soft p-4">
+          <div>
+            <strong className="text-yx-fg">Correção de conhecimento em andamento</strong>
+            <p className="text-sm text-yx-fg-2">Salve ou publique o necessário e retorne à missão para revalidar o contexto.</p>
+          </div>
+          <Link to={returnHref} className={portalButtonClasses('primary')}>Retornar à missão</Link>
         </div>
-        {error && <p role="alert" className="rounded-md bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-        <KnowledgeLibrary documents={documents} loading={libraryLoading || loading && documents.length === 0} onChanged={replaceDocument} />
-      </section>
+      )}
+
+      <KnowledgeProgress documents={documents} />
+
+      <SectionCard
+        id="company-library"
+        title="Biblioteca da empresa"
+        description="Escreva conteúdo, importe páginas do site ou envie documentos para revisão."
+        action={
+          <button type="button" onClick={() => void loadLibrary()} disabled={libraryLoading} className={portalButtonClasses('ghost')}>
+            <RefreshCw aria-hidden="true" className={cn(libraryLoading && 'animate-spin motion-reduce:animate-none')} />
+            Atualizar
+          </button>
+        }
+        className="scroll-mt-6"
+      >
+        {error ? <ErrorState title="Não foi possível carregar parte da base." description={error} className="mb-4" /> : null}
+        <KnowledgeLibrary documents={documents} loading={libraryLoading || (loading && documents.length === 0)} onChanged={replaceDocument} />
+      </SectionCard>
+
       {organization?.id && <KnowledgeCreateDialog open={createOpen} onOpenChange={setCreateOpen} organizationId={organization.id} contractId={activeContract?.id} onCreated={created => created.forEach(replaceDocument)} />}
-    </PortalJourneyPage>
+    </PortalPage>
   )
 }
 
-function KnowledgeJourney({ documents, onAdd }: { documents: CompanyKnowledgeDocument[]; onAdd: () => void }) {
+/** Barra de progresso compacta: Enviar → Processar → Revisar → Publicar → Ver uso (somente progresso comprovado). */
+function KnowledgeProgress({ documents }: { documents: CompanyKnowledgeDocument[] }) {
   const steps = [
     { label: 'Enviar', complete: documents.length > 0 },
     { label: 'Processar', complete: documents.some(document => !['draft', 'indexing'].includes(document.status)) },
@@ -129,8 +128,37 @@ function KnowledgeJourney({ documents, onAdd }: { documents: CompanyKnowledgeDoc
     { label: 'Publicar', complete: documents.some(document => document.status === 'published' && document.currentPublicationId) },
     { label: 'Ver uso', complete: documents.some(document => Boolean(document.lastUsedQueryId)) },
   ]
-  const next = steps.find(step => !step.complete)?.label
-  return <section aria-label="Percurso do conhecimento" className="border bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-950">Enviar → Processar → Revisar → Publicar → Ver uso</h2><p className="mt-1 text-sm text-slate-600">Cada etapa mostra somente progresso comprovado pelos registros.</p></div>{next === 'Enviar' && <Button onClick={onAdd}><Plus className="mr-2 h-4 w-4" />Enviar conhecimento</Button>}</div><ol className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">{steps.map((step, index) => <li key={step.label} className={`flex items-center gap-2 border p-3 text-sm ${step.complete ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : index === steps.findIndex(item => !item.complete) ? 'border-blue-300 bg-blue-50 font-semibold text-blue-900' : 'border-slate-200 text-slate-500'}`}>{step.complete ? <Check className="h-4 w-4" /> : <span className="flex h-5 w-5 items-center justify-center rounded-full border text-xs">{index + 1}</span>}{step.label}</li>)}</ol></section>
+  const done = steps.filter(step => step.complete).length
+  const nextIndex = steps.findIndex(step => !step.complete)
+  const percent = Math.round((done / steps.length) * 100)
+  return (
+    <section aria-label="Progresso do conhecimento" className="rounded-[10px] border border-yx-line bg-yx-surface px-[18px] py-3.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-[13px] font-medium text-yx-fg">
+          {nextIndex === -1 ? 'Todas as etapas concluídas' : <>Próximo passo: <strong>{steps[nextIndex].label}</strong></>}
+        </p>
+        <p className="font-mono text-xs text-yx-fg-3">{done} de {steps.length} etapas</p>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Progresso do conhecimento"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`${done} de ${steps.length} etapas`}
+        className="mt-2 h-1.5 overflow-hidden rounded-[3px] bg-yx-bar-track"
+      >
+        <div className="h-full rounded-[3px] bg-brand-gradient" style={{ width: `${percent}%` }} />
+      </div>
+      <ol className="m-0 mt-2 grid list-none grid-cols-5 gap-1 p-0 text-center font-mono text-[11px] text-yx-fg-3">
+        {steps.map((step, index) => (
+          <li key={step.label} aria-current={index === nextIndex ? 'step' : undefined} className={cn(step.complete && 'text-yx-ok', index === nextIndex && 'font-semibold text-yx-blue')}>
+            {step.complete ? '✓ ' : ''}{step.label}
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
 }
 
 function resolveKnowledgeReturnHref(kind: string | null, id: string | null, portalPath: (href?: string) => string) {

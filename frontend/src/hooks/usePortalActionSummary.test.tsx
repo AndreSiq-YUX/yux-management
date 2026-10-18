@@ -101,4 +101,28 @@ describe('portal project action summary', () => {
     expect(projectDeliveryService.list).not.toHaveBeenCalled()
     expect(projectDeliveryService.approvals).not.toHaveBeenCalled()
   })
+
+  it('expõe o estado dos projetos e a data mais antiga de cada pendência', async () => {
+    vi.spyOn(projectDeliveryService, 'approvals').mockResolvedValue({
+      approvals: [
+        { id: 'new', title: 'Nova', status: 'pending', isClientVisible: true, submittedAt: '2026-10-16T10:00:00.000Z' } as never,
+        { id: 'old', title: 'Antiga', status: 'pending', isClientVisible: true, submittedAt: '2026-10-10T10:00:00.000Z' } as never,
+      ],
+    })
+    let captured: ReturnType<typeof usePortalActionSummary> | undefined
+    function Probe() {
+      captured = usePortalActionSummary()
+      return null
+    }
+    await act(async () => {
+      root.render(<Probe />)
+      await flush()
+      await flush()
+    })
+    const action = captured?.actions.find((item) => item.id === 'project-approvals')
+    expect(action?.title).toBe('2 aprovações de projeto pendentes')
+    expect(action?.since).toBe('2026-10-10T10:00:00.000Z')
+    expect(captured?.projectsLoading).toBe(false)
+    expect(captured?.projectsError).toBeNull()
+  })
 })

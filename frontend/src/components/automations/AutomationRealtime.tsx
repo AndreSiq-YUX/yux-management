@@ -28,7 +28,7 @@ export function AutomationRealtime({ flowId, onNewExecution }: AutomationRealtim
         }
         initialized = true
       } catch (error) {
-        console.warn('Nao foi possivel atualizar execucoes de automacao:', error)
+        console.warn('Não foi possível atualizar as execuções da automação:', error)
       }
     }
 

@@ -1,32 +1,42 @@
 import { useState } from 'react'
-import { CheckCircle2, Clipboard, ExternalLink, MessageSquare, Plus, Power, RefreshCw, Save, Settings2, Trash2 } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Link } from 'react-router-dom'
+import { CheckCircle2, ExternalLink, LayoutTemplate, MessageSquare } from 'lucide-react'
+import { ConfirmDialog, EmptyState, StatusChip, portalButtonClasses, type StatusChipVariant } from '@/components/portal-ui'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { calculateLandingPageMetrics } from '@/lib/landing-pages/landingPageRules'
-import type { LandingPageForm, PortalLandingPage } from '@/types/landingPage'
+import { formatPortalDateTime, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { cn } from '@/lib/utils'
+import type { LandingPageForm, LandingPageStatus, PortalLandingPage } from '@/types/landingPage'
 import type { ContractDetails } from '@/types/platform'
+
+/** Quantidade mínima de caracteres do pedido de ajuste. */
+export const MIN_CHANGE_REQUEST_LENGTH = 10
 
 interface PortalLandingPagesWorkspaceProps {
   contract: ContractDetails
   pages: PortalLandingPage[]
-  onRequestChange: (landingPageId: string) => void
-  onApprove: (landingPageId: string) => void
+  /** Recebe a mensagem digitada pelo cliente (mínimo de 10 caracteres). */
+  onRequestChange: (landingPageId: string, message: string) => void | Promise<void>
+  onApprove: (landingPageId: string) => void | Promise<void>
   onCreateLeadForm?: (landingPageId: string) => Promise<unknown>
-  onRotateLeadFormToken?: (formId: string) => Promise<unknown>
   onToggleLeadForm?: (formId: string, isActive: boolean) => Promise<unknown>
-  onUpdateLeadFormOrigins?: (formId: string, allowedOrigins: string[]) => Promise<unknown>
-  onUpdateLeadFormFields?: (
-    formId: string,
-    fields: Array<{ fieldName: string; crmFieldKey: string; required: boolean }>,
-  ) => Promise<unknown>
 }
 
-type LeadFormDraftField = {
-  draftId: string
-  fieldName: string
-  crmFieldKey: string
-  required: boolean
+const STATUS_VARIANT: Record<LandingPageStatus, StatusChipVariant> = {
+  active: 'ok',
+  pending_approval: 'warn',
+  draft: 'neutral',
+  paused: 'neutral',
+  archived: 'neutral',
+}
+
+const formatDate = (value: string) => formatPortalDateTime(value)
+
+function ctaCaption(type: string, value: string) {
+  if (type === 'whatsapp') return `Chamada principal: WhatsApp ${value}`
+  if (type === 'phone') return `Chamada principal: telefone ${value}`
+  return `Chamada principal: ${value}`
 }
 
 export function PortalLandingPagesWorkspace({
@@ -35,366 +45,288 @@ export function PortalLandingPagesWorkspace({
   onRequestChange,
   onApprove,
   onCreateLeadForm = async () => undefined,
-  onRotateLeadFormToken = async () => undefined,
   onToggleLeadForm = async () => undefined,
-  onUpdateLeadFormOrigins = async () => undefined,
-  onUpdateLeadFormFields = async () => undefined,
 }: PortalLandingPagesWorkspaceProps) {
-  return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-950">Landing Pages do contrato</h1>
-        <p className="text-slate-600">{contract.name || contract.id}</p>
-      </div>
+  const [approving, setApproving] = useState<PortalLandingPage | null>(null)
+  const [requesting, setRequesting] = useState<PortalLandingPage | null>(null)
+  const [message, setMessage] = useState('')
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {pages.map(page => {
-          const metrics = calculateLandingPageMetrics(page)
-          return (
-            <article key={page.id} className="overflow-hidden rounded-md border bg-white">
-              <div className="aspect-[16/7] bg-slate-100">
-                {page.thumbnailUrl ? (
-                  <img src={page.thumbnailUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-slate-500">Preview indisponivel</div>
-                )}
-              </div>
-              <div className="space-y-4 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="font-semibold text-slate-950">{page.name}</h2>
-                    <p className="text-sm text-slate-500">{page.primaryCtaValue}</p>
-                  </div>
-                  <Badge variant={page.status === 'active' ? 'default' : 'secondary'}>{page.status}</Badge>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <Metric label="Visitas" value={metrics.visits.toString()} />
-                  <Metric label="Leads" value={metrics.leads.toString()} />
-                  <Metric label="Conversao" value={`${metrics.conversionRate}%`} />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {page.previewUrl && (
-                    <Button title="Ver preview" variant="outline" size="sm" asChild>
-                      <a href={page.previewUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-1 h-3.5 w-3.5" />Preview</a>
-                    </Button>
-                  )}
-                  <Button title="Solicitar alteracao" variant="outline" size="sm" onClick={() => onRequestChange(page.id)}>
-                    <MessageSquare className="mr-1 h-3.5 w-3.5" />
-                    Solicitar ajuste
-                  </Button>
-                  <Button title="Aprovar publicacao" variant="outline" size="sm" onClick={() => onApprove(page.id)}>
-                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                    Aprovar
-                  </Button>
-                </div>
-                <LeadFormManagementCard
-                  form={page.forms?.[0]}
-                  onCreate={() => onCreateLeadForm(page.id)}
-                  onRotate={onRotateLeadFormToken}
-                  onToggle={onToggleLeadForm}
-                  onUpdateOrigins={onUpdateLeadFormOrigins}
-                  onUpdateFields={onUpdateLeadFormFields}
-                />
-              </div>
-            </article>
-          )
-        })}
+  const totals = pages.reduce(
+    (sum, page) => ({ visits: sum.visits + page.visits, leads: sum.leads + page.leads }),
+    { visits: 0, leads: 0 },
+  )
+  const awaiting = pages.filter(page => page.status === 'pending_approval').length
+  const trimmedLength = message.trim().length
+  const messageTooShort = trimmedLength < MIN_CHANGE_REQUEST_LENGTH
+
+  const closeRequest = (open: boolean) => {
+    if (open) return
+    setRequesting(null)
+    setMessage('')
+  }
+
+  return (
+    <>
+      <PortalPage
+        eyebrow={contract.name || undefined}
+        title="Landing pages"
+        description="Acompanhe suas páginas de captação, aprove publicações e peça ajustes à YUX."
+        metrics={
+          pages.length > 0
+            ? [
+                { label: 'Páginas', value: String(pages.length) },
+                { label: 'Visitas', value: totals.visits.toLocaleString('pt-BR') },
+                { label: 'Leads', value: totals.leads.toLocaleString('pt-BR') },
+                { label: 'Aguardando aprovação', value: String(awaiting) },
+              ]
+            : []
+        }
+        related={[{ label: 'Formulários externos', href: '/portal/marketing/formularios' }]}
+      >
+        {pages.length === 0 ? (
+          <EmptyState
+            icon={LayoutTemplate}
+            title="Nenhuma landing page ainda"
+            description="Quando a YUX publicar uma página para a sua campanha, ela aparece aqui. Você poderá acompanhar visitas e leads, aprovar a publicação e pedir ajustes."
+          />
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {pages.map(page => (
+              <LandingPageCard
+                key={page.id}
+                page={page}
+                onApprove={() => setApproving(page)}
+                onRequestChange={() => setRequesting(page)}
+                onCreateLeadForm={onCreateLeadForm}
+                onToggleLeadForm={onToggleLeadForm}
+              />
+            ))}
+          </div>
+        )}
+      </PortalPage>
+
+      <ConfirmDialog
+        open={approving !== null}
+        onOpenChange={open => {
+          if (!open) setApproving(null)
+        }}
+        title="Aprovar publicação"
+        description={
+          approving
+            ? `Ao aprovar, a YUX pode publicar "${approving.name}". Sua aprovação fica registrada.`
+            : ''
+        }
+        confirmLabel="Aprovar publicação"
+        onConfirm={async () => {
+          if (approving) await onApprove(approving.id)
+        }}
+      />
+
+      <ConfirmDialog
+        open={requesting !== null}
+        onOpenChange={closeRequest}
+        title="Solicitar ajuste"
+        description={
+          requesting
+            ? `Conte o que você quer mudar em "${requesting.name}". A equipe da YUX recebe o seu pedido.`
+            : ''
+        }
+        confirmLabel="Enviar solicitação"
+        confirmDisabled={messageTooShort}
+        onConfirm={async () => {
+          if (!requesting) return
+          await onRequestChange(requesting.id, message.trim())
+          setMessage('')
+        }}
+      >
+        <label className="grid gap-1.5 text-[13px] font-medium text-yx-fg">
+          O que você quer ajustar?
+          <textarea
+            value={message}
+            onChange={event => setMessage(event.target.value)}
+            required
+            minLength={MIN_CHANGE_REQUEST_LENGTH}
+            rows={4}
+            placeholder="Ex.: Trocar o título e atualizar o telefone de contato."
+            className="min-h-24 w-full rounded-lg border border-yx-line-strong bg-yx-surface p-3 text-sm font-normal text-yx-fg outline-none placeholder:text-yx-fg-3 focus-visible:ring-2 focus-visible:ring-yx-blue"
+          />
+        </label>
+        <p className={cn('mt-1.5 text-xs', messageTooShort ? 'text-yx-fg-3' : 'text-yx-ok')}>
+          {messageTooShort
+            ? `Escreva pelo menos ${MIN_CHANGE_REQUEST_LENGTH} caracteres (${trimmedLength}/${MIN_CHANGE_REQUEST_LENGTH}).`
+            : 'Pronto para enviar.'}
+        </p>
+      </ConfirmDialog>
+    </>
+  )
+}
+
+function LandingPageCard({
+  page,
+  onApprove,
+  onRequestChange,
+  onCreateLeadForm,
+  onToggleLeadForm,
+}: {
+  page: PortalLandingPage
+  onApprove: () => void
+  onRequestChange: () => void
+  onCreateLeadForm: (landingPageId: string) => Promise<unknown>
+  onToggleLeadForm: (formId: string, isActive: boolean) => Promise<unknown>
+}) {
+  const metrics = calculateLandingPageMetrics(page)
+  const awaitingApproval = page.status === 'pending_approval'
+  const canRequestChange = page.status !== 'archived'
+  const openRequests = (page.changeRequests || []).filter(request => request.status === 'open').length
+
+  return (
+    <article className="flex min-w-0 flex-col overflow-hidden rounded-[10px] border border-yx-line bg-yx-surface text-yx-fg shadow-[0_1px_2px_rgba(14,17,32,0.04),0_2px_8px_rgba(14,17,32,0.04)] dark:shadow-none">
+      <div className="aspect-[16/7] bg-yx-surface-2">
+        {page.thumbnailUrl ? (
+          <img src={page.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-yx-fg-3">Prévia indisponível</div>
+        )}
       </div>
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-display text-base font-semibold leading-snug text-yx-fg">{page.name}</h2>
+            {page.primaryCtaValue ? <p className="mt-0.5 break-words text-[13px] text-yx-fg-3">{ctaCaption(page.primaryCtaType, page.primaryCtaValue)}</p> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusChip variant={STATUS_VARIANT[page.status] || 'neutral'}>{statusLabel(page.status)}</StatusChip>
+            {openRequests > 0 ? (
+              <StatusChip variant="warn">{openRequests === 1 ? 'Ajuste solicitado' : `${openRequests} ajustes solicitados`}</StatusChip>
+            ) : null}
+          </div>
+        </div>
+
+        <dl className="m-0 grid grid-cols-3 gap-2">
+          <PageMetric label="Visitas" value={metrics.visits.toLocaleString('pt-BR')} />
+          <PageMetric label="Leads" value={metrics.leads.toLocaleString('pt-BR')} />
+          <PageMetric label="Conversão" value={`${metrics.conversionRate.toString().replace('.', ',')}%`} />
+        </dl>
+
+        <div className="flex flex-wrap gap-2">
+          {page.previewUrl ? (
+            <a href={page.previewUrl} target="_blank" rel="noreferrer" title="Ver prévia" className={portalButtonClasses('ghost')}>
+              <ExternalLink aria-hidden="true" />
+              Prévia
+            </a>
+          ) : null}
+          {page.publishedUrl ? (
+            <a href={page.publishedUrl} target="_blank" rel="noreferrer" title="Ver página publicada" className={portalButtonClasses('ghost')}>
+              <ExternalLink aria-hidden="true" />
+              Página publicada
+            </a>
+          ) : null}
+          {canRequestChange ? (
+            <button type="button" title="Solicitar ajuste" onClick={onRequestChange} className={portalButtonClasses('ghost')}>
+              <MessageSquare aria-hidden="true" />
+              Solicitar ajuste
+            </button>
+          ) : null}
+          {awaitingApproval ? (
+            <button type="button" title="Aprovar publicação" onClick={onApprove} className={portalButtonClasses('primary')}>
+              <CheckCircle2 aria-hidden="true" />
+              Aprovar
+            </button>
+          ) : null}
+        </div>
+
+        <LeadCaptureSection
+          form={page.forms?.[0]}
+          onCreate={() => onCreateLeadForm(page.id)}
+          onToggle={onToggleLeadForm}
+        />
+      </div>
+    </article>
+  )
+}
+
+function PageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-yx-line bg-yx-surface-2 p-3">
+      <dt className="font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">{label}</dt>
+      <dd className="m-0 mt-1 font-display text-lg font-semibold leading-none tabular-nums text-yx-fg">{value}</dd>
     </div>
   )
 }
 
-export function LeadFormManagementCard({
+/** Captura de leads da página, recolhida: o lado técnico fica em "Formulários externos". */
+function LeadCaptureSection({
   form,
   onCreate,
-  onRotate,
   onToggle,
-  onUpdateOrigins = async () => undefined,
-  onUpdateFields,
 }: {
   form?: LandingPageForm
   onCreate: () => Promise<unknown>
-  onRotate: (formId: string) => Promise<unknown>
   onToggle: (formId: string, isActive: boolean) => Promise<unknown>
-  onUpdateOrigins?: (formId: string, allowedOrigins: string[]) => Promise<unknown>
-  onUpdateFields: (
-    formId: string,
-    fields: Array<{ fieldName: string; crmFieldKey: string; required: boolean }>,
-  ) => Promise<unknown>
 }) {
-  const [isEditingFields, setIsEditingFields] = useState(false)
-  const [draftFields, setDraftFields] = useState<LeadFormDraftField[]>([])
-  const [isEditingOrigins, setIsEditingOrigins] = useState(false)
-  const [originsDraft, setOriginsDraft] = useState('')
+  const toWorkspace = usePortalWorkspacePath()
+  const [busy, setBusy] = useState(false)
 
-  const copyEndpoint = async (endpoint?: string) => {
-    if (!endpoint) return
-    await navigator.clipboard?.writeText(endpoint)
-    toast.success('Endpoint copiado')
-  }
-
-  const openFieldEditor = () => {
-    setDraftFields((form?.mappings || []).map(mapping => ({
-      draftId: mapping.id,
-      fieldName: mapping.fieldName,
-      crmFieldKey: mapping.crmFieldKey,
-      required: mapping.required,
-    })))
-    setIsEditingFields(true)
-  }
-
-  const saveFields = async () => {
-    if (!form) return
-    const fields = draftFields
-      .map(field => ({
-        fieldName: field.fieldName.trim(),
-        crmFieldKey: field.crmFieldKey.trim(),
-        required: field.required,
-      }))
-      .filter(field => field.fieldName && field.crmFieldKey)
-    const keys = new Set(fields.map(field => field.crmFieldKey))
-    if (!keys.has('name') || !keys.has('email')) {
-      toast.error('Mantenha os mapeamentos de nome e e-mail')
-      return
-    }
-    const fieldNames = new Set(fields.map(field => field.fieldName.toLowerCase()))
-    if (keys.size !== fields.length || fieldNames.size !== fields.length) {
-      toast.error('Os nomes externos e os campos do CRM não podem se repetir')
-      return
-    }
+  const run = async (action: () => Promise<unknown>) => {
+    if (busy) return
+    setBusy(true)
     try {
-      await onUpdateFields(form.id, fields)
-      setIsEditingFields(false)
-      toast.success('Campos do formulário atualizados')
+      await action()
     } catch {
-      toast.error('Não foi possível atualizar os campos')
+      // A tela que fornece a ação avisa o cliente; aqui só liberamos o botão.
+    } finally {
+      setBusy(false)
     }
   }
 
   return (
-    <section className="space-y-3 rounded-md border border-dashed bg-slate-50 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-950">Captura de leads por formulário</h3>
-          <p className="mt-1 text-xs text-slate-600">Receba leads de um formulário externo e envie-os para o CRM deste contrato.</p>
-        </div>
-        {form && <span className={`rounded-full px-2 py-1 text-xs font-medium ${form.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>{form.isActive ? 'Ativo' : 'Pausado'}</span>}
+    <details className="group rounded-lg border border-dashed border-yx-line-strong bg-yx-surface-2">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-3 py-2 text-[13px] font-semibold text-yx-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yx-blue [&::-webkit-details-marker]:hidden">
+        <span>Captura de leads</span>
+        <span className="flex items-center gap-2">
+          {form ? (
+            <StatusChip variant={form.isActive ? 'ok' : 'neutral'}>{form.isActive ? 'Ativa' : 'Pausada'}</StatusChip>
+          ) : (
+            <StatusChip>Desativada</StatusChip>
+          )}
+          <span aria-hidden="true" className="text-yx-fg-3 transition-transform group-open:rotate-180">▾</span>
+        </span>
+      </summary>
+      <div className="grid gap-3 border-t border-yx-line px-3 pb-3 pt-3">
+        {!form ? (
+          <>
+            <p className="text-[13px] leading-snug text-yx-fg-2">
+              Receba os leads desta página no seu CRM. Ative a captura e depois siga o passo a passo de instalação em Formulários externos.
+            </p>
+            <div>
+              <button type="button" disabled={busy} onClick={() => run(onCreate)} className={portalButtonClasses('ghost')}>
+                Ativar captura de leads
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <dl className="m-0 grid grid-cols-2 gap-2 text-[13px]">
+              <div>
+                <dt className="font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">Leads recebidos</dt>
+                <dd className="m-0 font-semibold text-yx-fg">{form.submissionCount}</dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">Último lead</dt>
+                <dd className="m-0 font-semibold text-yx-fg">{form.lastSubmissionAt ? formatDate(form.lastSubmissionAt) : 'Ainda não'}</dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={busy} onClick={() => run(() => onToggle(form.id, !form.isActive))} className={portalButtonClasses('ghost')}>
+                {form.isActive ? 'Pausar captura' : 'Ativar captura'}
+              </button>
+              <Link to={toWorkspace('/portal/marketing/formularios')} className={portalButtonClasses('ghost')}>
+                Ver instruções de instalação
+              </Link>
+            </div>
+          </>
+        )}
       </div>
-
-      {!form ? (
-        <Button type="button" size="sm" onClick={onCreate}>
-          Ativar captura de leads
-        </Button>
-      ) : (
-        <>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Metric label="Submissões" value={String(form.submissionCount)} />
-            <Metric label="Campos mapeados" value={String(form.mappings.length)} />
-            <Metric label="Último lead" value={form.lastSubmissionAt ? formatDate(form.lastSubmissionAt) : 'Ainda não'} />
-          </div>
-
-          {form.mappings.length > 0 && (
-            <div className="rounded border bg-white p-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-medium text-slate-600">Campos configurados para este cliente</p>
-                <Button type="button" size="sm" variant="ghost" onClick={openFieldEditor}>
-                  <Settings2 className="mr-1 h-3.5 w-3.5" />
-                  Configurar campos
-                </Button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {form.mappings.map(mapping => (
-                  <span key={mapping.id} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
-                    {mapping.fieldName} → {mapping.crmFieldKey}{mapping.required ? ' *' : ''}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {isEditingFields && (
-            <div className="space-y-2 rounded border bg-white p-3">
-              <div>
-                <p className="text-xs font-semibold text-slate-800">Mapeamento personalizado</p>
-                <p className="text-[11px] text-slate-500">Relacione o nome enviado pelo formulário ao campo salvo no CRM. Nome e e-mail são obrigatórios.</p>
-              </div>
-              {draftFields.map((field, index) => (
-                <div key={field.draftId} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
-                  <input
-                    aria-label={`Campo externo ${index + 1}`}
-                    className="rounded border px-2 py-1.5 text-xs"
-                    value={field.fieldName}
-                    placeholder="Campo externo"
-                    onChange={event => setDraftFields(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, fieldName: event.target.value } : item))}
-                  />
-                  <input
-                    aria-label={`Campo CRM ${index + 1}`}
-                    className="rounded border px-2 py-1.5 text-xs"
-                    value={field.crmFieldKey}
-                    placeholder="Campo no CRM"
-                    onChange={event => setDraftFields(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, crmFieldKey: event.target.value } : item))}
-                  />
-                  <label className="flex items-center gap-1 text-[11px] text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={field.required}
-                      onChange={event => setDraftFields(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))}
-                    />
-                    Obrigatório
-                  </label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    title={`Remover campo ${field.fieldName || index + 1}`}
-                    disabled={field.crmFieldKey === 'name' || field.crmFieldKey === 'email'}
-                    onClick={() => setDraftFields(current => current.filter((_, itemIndex) => itemIndex !== index))}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setDraftFields(current => [...current, {
-                    draftId: `new-${Date.now()}-${current.length}`,
-                    fieldName: '',
-                    crmFieldKey: '',
-                    required: false,
-                  }])}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" />
-                  Adicionar campo
-                </Button>
-                <Button type="button" size="sm" onClick={saveFields}>
-                  <Save className="mr-1 h-3.5 w-3.5" />
-                  Salvar campos
-                </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditingFields(false)}>
-                  Cancelar
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {form.publicEndpoint && (
-            <div className="rounded border bg-white p-2">
-              <p className="text-xs font-medium text-slate-600">Endpoint gerado</p>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate text-xs text-slate-800">{form.publicEndpoint}</code>
-                <Button type="button" size="sm" variant="ghost" title="Copiar endpoint" onClick={() => copyEndpoint(form.publicEndpoint)}>
-                  <Clipboard className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <p className="mt-1 text-[11px] text-slate-500">Use este endereço no seu formulário. O token é exibido apenas quando gerado ou renovado.</p>
-            </div>
-          )}
-
-          <div className="rounded border bg-white p-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium text-slate-600">Origens permitidas</p>
-                <p className="text-[11px] text-slate-500">
-                  {form.allowedOrigins.length > 0 ? form.allowedOrigins.join(', ') : 'Qualquer origem (não recomendado em produção)'}
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setOriginsDraft(form.allowedOrigins.join('\n'))
-                  setIsEditingOrigins(true)
-                }}
-              >
-                Configurar origens
-              </Button>
-            </div>
-            {isEditingOrigins && (
-              <div className="mt-2 space-y-2">
-                <textarea
-                  aria-label="Origens permitidas"
-                  className="min-h-20 w-full rounded border px-2 py-1.5 text-xs"
-                  value={originsDraft}
-                  placeholder={'https://www.seusite.com.br\nhttps://landing.seusite.com.br'}
-                  onChange={event => setOriginsDraft(event.target.value)}
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={async () => {
-                      const origins = originsDraft.split(/[\n,]/).map(value => value.trim()).filter(Boolean)
-                      await onUpdateOrigins(form.id, origins)
-                      setIsEditingOrigins(false)
-                      toast.success('Origens atualizadas')
-                    }}
-                  >
-                    Salvar origens
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setIsEditingOrigins(false)}>Cancelar</Button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {form.recentSubmissions.length > 0 && (
-            <div className="rounded border bg-white p-2">
-              <p className="text-xs font-medium text-slate-600">Leads recebidos recentemente</p>
-              <div className="mt-2 space-y-2">
-                {form.recentSubmissions.map(submission => (
-                  <div key={submission.id} className="space-y-1.5 rounded bg-slate-50 p-2 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium text-slate-900">{submission.name || 'Lead sem nome'}</span>
-                      <span className="text-slate-500">{submission.email || submission.phone || 'Contato sem canal'}</span>
-                      <span className="text-slate-400">{formatDate(submission.createdAt)}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600">
-                      {submission.source && <span>Origem: {submission.source}</span>}
-                      {submission.profile && <span>Perfil: {submission.profile}</span>}
-                      {submission.country && <span>País: {submission.country}</span>}
-                      {submission.language && <span>Idioma: {submission.language}</span>}
-                      {submission.utmCampaign && <span>UTM: {submission.utmCampaign}</span>}
-                      {submission.fitScore != null && <span>Fit: {submission.fitScore}</span>}
-                      {submission.intentScore != null && <span>Intenção: {submission.intentScore}</span>}
-                      {submission.consentVersion && <span>Consentimento: {submission.consentCode || 'lead_capture'} v{submission.consentVersion}</span>}
-                      {submission.privacyPolicyVersion && <span>Política: v{submission.privacyPolicyVersion}</span>}
-                      {submission.crmContactId && <span>CRM: {submission.crmContactId}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => onRotate(form.id)}>
-              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              Gerar novo endpoint
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => onToggle(form.id, !form.isActive)}>
-              <Power className="mr-1 h-3.5 w-3.5" />
-              {form.isActive ? 'Pausar captura' : 'Ativar captura'}
-            </Button>
-          </div>
-        </>
-      )}
-    </section>
+    </details>
   )
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border bg-slate-50 p-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="text-sm font-semibold text-slate-950">{value}</p>
-    </div>
-  )
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }

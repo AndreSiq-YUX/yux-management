@@ -93,16 +93,16 @@ export function SequencesWorkspace({
 
   if (loading) {
     return (
-      <section className="rounded-md border bg-white p-4">
-        <p className="text-sm text-gray-500">Carregando sequências...</p>
+      <section className="rounded-md border bg-yx-surface p-4">
+        <p className="text-sm text-yx-fg-3">Carregando sequências...</p>
       </section>
     )
   }
 
   return (
-    <section className="rounded-md border bg-white space-y-4">
+    <section className="rounded-md border bg-yx-surface space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <div className="flex items-center gap-2 text-sm font-semibold text-yx-fg">
           <span>Sequências</span>
         </div>
         <div className="flex items-center gap-2">
@@ -119,7 +119,7 @@ export function SequencesWorkspace({
       </header>
 
       {showCreateForm && (
-        <div className="border-b p-3 bg-slate-50 space-y-3">
+        <div className="border-b p-3 bg-yx-surface-2 space-y-3">
           <div className="space-y-1">
             <Label className="text-xs">Nome da sequência</Label>
             <Input
@@ -166,8 +166,8 @@ export function SequencesWorkspace({
       <div className="divide-y">
         {sequences.length === 0 && !showCreateForm && (
           <div className="p-6 text-center space-y-3">
-            <p className="text-sm text-gray-600">Nenhuma sequência configurada.</p>
-            <p className="text-xs text-gray-500 max-w-md mx-auto">
+            <p className="text-sm text-yx-fg-2">Nenhuma sequência configurada.</p>
+            <p className="text-xs text-yx-fg-3 max-w-md mx-auto">
               Sequências são fluxos de nutrição com múltiplos passos ao longo do tempo.
               Exemplo: enviar mensagem → aguardar 2 dias → enviar follow-up → criar tarefa para vendedor.
             </p>
@@ -189,24 +189,24 @@ export function SequencesWorkspace({
           return (
             <article key={sequence.id} className="space-y-2">
               <div
-                className="flex cursor-pointer items-start justify-between gap-3 p-3 hover:bg-slate-50"
+                className="flex cursor-pointer items-start justify-between gap-3 p-3 hover:bg-yx-surface-2"
                 onClick={() => setExpandedSequenceId(isExpanded ? null : sequence.id)}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-gray-900">{sequence.name}</p>
+                    <p className="font-medium text-yx-fg">{sequence.name}</p>
                     <Badge variant={sequence.status === 'active' ? 'default' : 'secondary'} className="text-xs">
                       {sequence.status}
                     </Badge>
                   </div>
                   {sequence.description && (
-                    <p className="text-xs text-gray-500 mt-1">{sequence.description}</p>
+                    <p className="text-xs text-yx-fg-3 mt-1">{sequence.description}</p>
                   )}
-                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
+                  <div className="flex items-center gap-3 mt-2 text-xs text-yx-fg-2">
                     <Badge variant="outline" className="text-xs">{sequence.channel}</Badge>
                     <span>{sortedSteps.length} passo(s)</span>
                     <span>{sequence.activeEnrollmentCount} ativo(s)</span>
-                    <span className="text-green-600">{conversionRate}% conversão</span>
+                    <span className="text-yx-ok">{conversionRate}% conversão</span>
                   </div>
                 </div>
                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
@@ -224,16 +224,16 @@ export function SequencesWorkspace({
                     variant="ghost"
                     onClick={() => onDeleteSequence?.(sequence.id)}
                   >
-                    <Trash2 className="h-3 w-3 text-red-500" />
+                    <Trash2 className="h-3 w-3 text-yx-crit" />
                   </Button>
                 </div>
               </div>
 
               {isExpanded && (
-                <div className="border-t bg-slate-50 p-3 space-y-3">
+                <div className="border-t bg-yx-surface-2 p-3 space-y-3">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-semibold text-slate-700">Passos da sequência</h4>
+                      <h4 className="text-xs font-semibold text-yx-fg-2">Passos da sequência</h4>
                       <Button
                         type="button"
                         size="sm"
@@ -246,7 +246,7 @@ export function SequencesWorkspace({
                     </div>
 
                     {sortedSteps.length === 0 && (
-                      <p className="text-xs text-slate-500">Nenhum passo adicionado. Adicione o primeiro passo abaixo.</p>
+                      <p className="text-xs text-yx-fg-3">Nenhum passo adicionado. Adicione o primeiro passo abaixo.</p>
                     )}
 
                     <div className="relative">
@@ -257,35 +257,35 @@ export function SequencesWorkspace({
                         return (
                           <div key={step.id} className="relative">
                             {!isFirst && (
-                              <div className="absolute left-3 -top-2 w-0.5 h-2 bg-slate-300" />
+                              <div className="absolute left-3 -top-2 w-0.5 h-2 bg-yx-line-strong" />
                             )}
                             
-                            <div className="flex items-start gap-3 rounded-md border bg-white p-2 relative">
+                            <div className="flex items-start gap-3 rounded-md border bg-yx-surface p-2 relative">
                               <div className="flex flex-col items-center">
-                                <div className="flex items-center justify-center h-6 w-6 rounded-full bg-slate-100 text-xs font-semibold text-slate-600 shrink-0">
+                                <div className="flex items-center justify-center h-6 w-6 rounded-full bg-yx-surface-2 text-xs font-semibold text-yx-fg-2 shrink-0">
                                   {index + 1}
                                 </div>
                                 {!isLast && (
-                                  <div className="w-0.5 h-full bg-slate-300 mt-1" />
+                                  <div className="w-0.5 h-full bg-yx-line-strong mt-1" />
                                 )}
                               </div>
                               
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm">{stepKindIcons[step.stepKind]}</span>
-                                  <span className="text-xs font-medium text-slate-900">{stepKindLabels[step.stepKind]}</span>
+                                  <span className="text-xs font-medium text-yx-fg">{stepKindLabels[step.stepKind]}</span>
                                   {step.channel && (
                                     <Badge variant="outline" className="text-xs">{step.channel}</Badge>
                                   )}
                                 </div>
                                 {step.stepKind === 'delay' && (
-                                  <p className="text-xs text-slate-600 mt-1">Aguardar {formatDelay(step.delayMinutes)}</p>
+                                  <p className="text-xs text-yx-fg-2 mt-1">Aguardar {formatDelay(step.delayMinutes)}</p>
                                 )}
                                 {step.stepKind === 'message' && step.subject && (
-                                  <p className="text-xs text-slate-600 mt-1 font-medium">{step.subject}</p>
+                                  <p className="text-xs text-yx-fg-2 mt-1 font-medium">{step.subject}</p>
                                 )}
                                 {step.stepKind === 'message' && step.body && (
-                                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">{step.body}</p>
+                                  <p className="text-xs text-yx-fg-3 mt-1 line-clamp-2">{step.body}</p>
                                 )}
                               </div>
                               
@@ -295,14 +295,14 @@ export function SequencesWorkspace({
                                 variant="ghost"
                                 onClick={() => onDeleteStep?.(sequence.id, step.id)}
                               >
-                                <Trash2 className="h-3 w-3 text-red-500" />
+                                <Trash2 className="h-3 w-3 text-yx-crit" />
                               </Button>
                             </div>
                             
                             {!isLast && step.stepKind !== 'delay' && (
                               <div className="flex items-center gap-2 my-1 ml-3">
-                                <div className="w-0.5 h-4 bg-slate-300" />
-                                <span className="text-xs text-slate-400">↓</span>
+                                <div className="w-0.5 h-4 bg-yx-line-strong" />
+                                <span className="text-xs text-yx-fg-3">↓</span>
                               </div>
                             )}
                           </div>
@@ -312,8 +312,8 @@ export function SequencesWorkspace({
                   </div>
 
                   {addingStepToSequenceId === sequence.id && (
-                    <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
-                      <h5 className="text-xs font-semibold text-blue-900">Novo passo</h5>
+                    <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-3">
+                      <h5 className="text-xs font-semibold text-yx-blue">Novo passo</h5>
 
                       <div className="space-y-1">
                         <Label className="text-xs">Tipo de passo</Label>
@@ -376,7 +376,7 @@ export function SequencesWorkspace({
                             value={newStepDelay}
                             onChange={e => setNewStepDelay(e.target.value)}
                           />
-                          <p className="text-xs text-slate-600">
+                          <p className="text-xs text-yx-fg-2">
                             Equivale a {formatDelay(Number(newStepDelay) || 0)}
                           </p>
                         </div>

@@ -159,4 +159,65 @@ describe('PortalCommercialFunnelsPage', () => {
 
     act(() => root.unmount())
   })
+
+  it('mostra contagem e valor por etapa e permite abrir e fechar as etapas (acordeão no celular)', async () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<MemoryRouter><PortalCommercialFunnelsPage /></MemoryRouter>)
+      await flush()
+      await flush()
+      await flush()
+    })
+
+    const headers = [...container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')]
+      .filter(button => button.getAttribute('aria-controls')?.startsWith('stage-body-'))
+    expect(headers).toHaveLength(2)
+    const text = (button: HTMLButtonElement) => (button.textContent || '').replace(/\u00a0/g, ' ')
+    expect(text(headers[0])).toContain('Novo lead')
+    expect(text(headers[0])).toContain('0 leads · R$ 0,00')
+    expect(text(headers[1])).toContain('Proposta')
+    expect(text(headers[1])).toContain('2 leads · R$ 15.000,00')
+    // Abre primeiro a etapa que tem leads.
+    expect(headers[0].getAttribute('aria-expanded')).toBe('false')
+    expect(headers[1].getAttribute('aria-expanded')).toBe('true')
+
+    await act(async () => { headers[0].click() })
+    expect(headers[0].getAttribute('aria-expanded')).toBe('true')
+    await act(async () => { headers[1].click() })
+    expect(headers[1].getAttribute('aria-expanded')).toBe('false')
+
+    act(() => root.unmount())
+  })
+
+  it('diz quem pode publicar a estrutura do CRM quando ainda não há funil nem instância', async () => {
+    vi.mocked(usePortalCrmContext).mockReturnValue({
+      organization: { id: organizationId, name: 'Cliente', slug: 'cliente', kind: 'client', createdAt: '', updatedAt: '' },
+      role: null,
+      enabledModuleKeys: ['crm'], loading: false, error: null, pipelines: [], leads: [], tasks: [], reload: vi.fn().mockResolvedValue(undefined),
+    })
+    vi.mocked(crmGovernanceService.getActiveInstanceForOrganization).mockResolvedValue(null)
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<MemoryRouter><PortalCommercialFunnelsPage /></MemoryRouter>)
+      await flush()
+      await flush()
+      await flush()
+    })
+
+    const renderedText = (container.textContent || '').replace(/\u00a0/g, ' ')
+    expect(renderedText).toContain('Comece pela sua primeira operação')
+    expect(renderedText).toContain('publicada por um administrador da sua empresa ou a equipe YUX')
+    expect(renderedText).not.toContain('Criar primeiro funil')
+    // Os 3 passos continuam visíveis.
+    for (const step of ['Crie o funil e defina seu objetivo.', 'Ajuste etapas, cores e resultados.', 'Receba leads e mova-os conforme a próxima ação.']) {
+      expect(renderedText).toContain(step)
+    }
+
+    act(() => root.unmount())
+  })
 })

@@ -2,9 +2,7 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { FinanceWorkspace } from './FinanceWorkspace'
-import { PortalFinanceWorkspace } from './PortalFinanceWorkspace'
 import type { FinanceInvoice, FinanceSummary } from '@/types/finance'
-import type { ContractDetails } from '@/types/platform'
 
 const summary: FinanceSummary = {
   totalIssued: 2500,
@@ -50,21 +48,6 @@ const invoice: FinanceInvoice = {
   }],
 }
 
-const contract: ContractDetails = {
-  id: 'contract-1',
-  clientId: 'client-1',
-  packageId: 'package-1',
-  name: 'Contrato principal',
-  status: 'active',
-  value: 1500,
-  billingCycle: 'monthly',
-  startsAt: '2026-06-01',
-  createdAt: '2026-06-01T12:00:00.000Z',
-  updatedAt: '2026-06-01T12:00:00.000Z',
-  package: null,
-  modules: [],
-}
-
 describe('FinanceWorkspace', () => {
   it('renders internal summary, invoice list, details, and controls', () => {
     const container = document.createElement('div')
@@ -108,35 +91,6 @@ describe('FinanceWorkspace', () => {
     expect(handlers.onStatusChange).toHaveBeenCalledWith('invoice-1', 'cancelled')
     expect(handlers.onAddItem).toHaveBeenCalled()
     expect(handlers.onCreateInvoice).toHaveBeenCalled()
-
-    act(() => root.unmount())
-  })
-})
-
-describe('PortalFinanceWorkspace', () => {
-  it('renders client-safe financial data without internal controls or notes', () => {
-    const container = document.createElement('div')
-    const root = createRoot(container)
-
-    act(() => {
-      root.render(
-        <PortalFinanceWorkspace
-          contract={contract}
-          invoices={[invoice]}
-          summary={summary}
-        />,
-      )
-    })
-
-    const html = container.innerHTML.replace(/&nbsp;/g, ' ')
-
-    expect(html).toContain('Financeiro do contrato')
-    expect(html).toContain('Contrato principal')
-    expect(html).toContain('YUX-2026-0001')
-    expect(html).toContain('Operacao mensal')
-    expect(html).not.toContain('Cliente pediu boleto separado')
-    expect(html).not.toContain('Criar fatura')
-    expect(container.querySelector('button[title="Marcar como pago"]')).toBeNull()
 
     act(() => root.unmount())
   })

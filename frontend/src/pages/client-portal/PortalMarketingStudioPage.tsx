@@ -1,3 +1,6 @@
+import { Megaphone } from 'lucide-react'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { EmptyState, SkeletonCard } from '@/components/portal-ui'
 import { StudioJourney } from '@/components/marketing-studio/StudioJourney'
 import { usePlatformStore } from '@/stores/platformStore'
 
@@ -8,12 +11,26 @@ export function PortalMarketingStudioPage() {
     workspaceContext: state.workspaceContext,
   }))
 
-  if (isLoading) return <p className="text-sm text-slate-600">Carregando Marketing Studio...</p>
+  if (isLoading) {
+    return (
+      <PortalPage eyebrow="Marketing" title="Marketing Studio">
+        <SkeletonCard lines={5} />
+      </PortalPage>
+    )
+  }
   if (!workspaceContext) {
-    return <div><h1 className="text-2xl font-semibold text-slate-950">Marketing Studio</h1><p className="mt-2 text-slate-600">{error || 'O contexto deste workspace não está disponível.'}</p></div>
+    return (
+      <PortalPage eyebrow="Marketing" title="Marketing Studio">
+        <EmptyState icon={Megaphone} title="Marketing Studio indisponível" description={error || 'O contexto deste workspace não está disponível.'} />
+      </PortalPage>
+    )
   }
   if (!workspaceContext.moduleKeys.includes('marketing_studio')) {
-    return <div><h1 className="text-2xl font-semibold text-slate-950">Marketing Studio</h1><p className="mt-2 text-slate-600">Módulo não disponível para este acesso.</p></div>
+    return (
+      <PortalPage eyebrow="Marketing" title="Marketing Studio">
+        <EmptyState icon={Megaphone} title="Módulo não disponível" description="Este módulo não está incluído neste acesso." />
+      </PortalPage>
+    )
   }
   return <StudioJourney
     key={`${workspaceContext.organizationId}:${workspaceContext.contractId ?? 'no-contract'}`}

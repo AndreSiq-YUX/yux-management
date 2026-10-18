@@ -1,12 +1,28 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { AlertCircle, ArrowRight, CheckCircle2, Clock3, FileText, Megaphone, RefreshCw, Send, Workflow } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { AlertCircle, ArrowRight, CheckCircle2, Megaphone, RefreshCw } from 'lucide-react'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import {
+  ConfirmDialog,
+  EmptyState,
+  ErrorState,
+  SectionCard,
+  SkeletonCard,
+  StatusChip,
+  portalButtonClasses,
+  portalFocusRing,
+  sectionLinkClasses,
+  type StatusChipVariant,
+} from '@/components/portal-ui'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { clearSessionDraft, readSessionDraft, writeSessionDraft } from '@/lib/sessionDraft'
+import { cn } from '@/lib/utils'
 import { marketingStudioService } from '@/services/marketingStudioService'
 import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 import type { MarketingCampaignObjective, MarketingChannel, StudioJourneyContent, StudioJourneySummary } from '@/types/marketingStudio'
+import { EditorialAgenda } from './EditorialAgenda'
+import { channelLabel } from './editorialCalendar'
 
 type PlanForm = {
   name: string
@@ -25,10 +41,40 @@ const statusLabels: Record<string, string> = {
   draft: 'Rascunho', in_review: 'Em revisão', changes_requested: 'Ajustes solicitados', approved: 'Aprovado',
   scheduled: 'Agendado', published: 'Publicado', rejected: 'Rejeitado', archived: 'Arquivado',
   queued: 'Na fila', running: 'Publicando', succeeded: 'Publicado', failed: 'Falhou', blocked: 'Bloqueado', cancelled: 'Cancelado',
+  active: 'Ativo', paused: 'Pausado', planned: 'Planejado', completed: 'Concluído',
 }
+
+const providerLabels: Record<string, string> = {
+  wordpress: 'WordPress', meta_facebook: 'Facebook', meta_instagram: 'Instagram', google_business_profile: 'Google Meu Negócio',
+}
+
+const statusVariants: Record<string, StatusChipVariant> = {
+  in_review: 'warn', changes_requested: 'warn', queued: 'warn', running: 'warn',
+  approved: 'ok', scheduled: 'ok', published: 'ok', succeeded: 'ok', active: 'ok',
+  rejected: 'crit', failed: 'crit', blocked: 'crit',
+}
+
+const statusVariant = (status: string): StatusChipVariant => statusVariants[status] ?? 'neutral'
+
+const objectiveLabels: Record<string, string> = {
+  lead_generation: 'Gerar leads', traffic: 'Gerar tráfego', conversions: 'Conversões', awareness: 'Reconhecimento',
+}
+
+const fieldClasses = cn(
+  'min-h-10 w-full rounded-lg border border-yx-line-strong bg-yx-surface px-3 py-2 text-sm font-normal text-yx-fg placeholder:text-yx-fg-3',
+  portalFocusRing,
+)
+
+const helpItems = [
+  'Planeje: informe objetivo, público, oferta e canal para criar a campanha e o primeiro rascunho.',
+  'Produza: crie novas versões do texto e envie para revisão.',
+  'Aprove e publique: aprove, peça ajustes ou rejeite; só versões aprovadas podem ser publicadas.',
+  'Para revisar tudo em um só lugar, use a Central de conteúdo; para ver as datas de saída, o Calendário editorial.',
+]
 
 export function StudioJourney({ workspaceContext }: { workspaceContext: WorkspaceContextV1 }) {
   const portalPath = usePortalWorkspacePath()
+  const { hash } = useLocation()
   const contractId = workspaceContext.contractId
   const canWrite = workspaceContext.canConfigure && workspaceContext.role !== 'client_member'
   const [summary, setSummary] = useState<StudioJourneySummary | null>(null)
@@ -46,6 +92,8 @@ export function StudioJourney({ workspaceContext }: { workspaceContext: Workspac
   const [reviewComment, setReviewComment] = useState<Record<string, string>>({})
   const [publishConnectionId, setPublishConnectionId] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<{ id: string; title: string; body: string } | null>(initialDraft?.editing ?? null)
+  const [rejecting, setRejecting] = useState<StudioJourneyContent | null>(null)
+  const [publishing, setPublishing] = useState<StudioJourneyContent | null>(null)
 
   useEffect(() => {
     const hasPlanDraft = showPlan || Object.values(plan).some(value => String(value).trim() && value !== emptyPlan.objective && value !== emptyPlan.channel)
@@ -70,13 +118,19 @@ export function StudioJourney({ workspaceContext }: { workspaceContext: Workspac
 
   useEffect(() => { void load() }, [load])
 
+  // Os indicadores apontam para blocos desta página (#fluxos, #conteúdos…); o Link do roteador não rola sozinho.
+  useEffect(() => {
+    if (!hash || !summary) return
+    document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: 'start' })
+  }, [hash, summary])
+
   const connectedConnections = useMemo(
     () => summary?.connections.filter(connection => connection.status === 'connected') ?? [],
     [summary?.connections],
   )
 
   if (!contractId) return <StudioUnavailable message="O Marketing Studio precisa de um contrato ativo neste workspace." />
-  if (loading && !summary) return <p className="text-sm text-slate-600">Carregando Marketing Studio...</p>
+  if (loading && !summary) return <StudioLoading />
   if (error && !summary) return <StudioUnavailable message={error} retry={load} />
 
   const run = async (key: string, action: () => Promise<unknown>, success: string) => {
@@ -117,7 +171,7 @@ export function StudioJourney({ workspaceContext }: { workspaceContext: Workspac
 
   const decide = (content: StudioJourneyContent, status: 'approved' | 'changes_requested' | 'rejected') => {
     if (!contractId || !content.reviewVersionId) return
-    void run(`review:${content.id}`, () => marketingStudioService.decideJourneyContentReview(content.id, {
+    return run(`review:${content.id}`, () => marketingStudioService.decideJourneyContentReview(content.id, {
       organizationId: workspaceContext.organizationId, contractId, contentVersionId: content.reviewVersionId!,
       status, comments: reviewComment[content.id],
     }), status === 'approved' ? 'Versão aprovada.' : 'Decisão registrada.')
@@ -137,7 +191,7 @@ export function StudioJourney({ workspaceContext }: { workspaceContext: Workspac
   const publish = (content: StudioJourneyContent) => {
     const connection = connectedConnections.find(item => item.id === publishConnectionId[content.id]) ?? connectedConnections[0]
     if (!contractId || !content.latestVersionId || !connection) return
-    void run(`publish:${content.id}`, () => marketingStudioService.createJourneyPublishingIntent(content.id, {
+    return run(`publish:${content.id}`, () => marketingStudioService.createJourneyPublishingIntent(content.id, {
       organizationId: workspaceContext.organizationId, contractId,
       approvedContentVersionId: content.latestVersionId!, connectionId: connection.id,
       action: 'publish', idempotencyKey: `studio-publish:${content.id}:${content.latestVersionId}`,
@@ -145,126 +199,257 @@ export function StudioJourney({ workspaceContext }: { workspaceContext: Workspac
   }
 
   const counts = summary?.counts ?? { activeFlows: 0, generatedAssets: 0, pendingReviews: 0, scheduledAssets: 0, failedPublications: 0 }
+  const links = summary?.links
+  const metrics = [
+    { label: 'Fluxos ativos', value: String(counts.activeFlows), href: links?.activeFlows },
+    { label: 'Conteúdos no período', value: String(counts.generatedAssets), href: links?.generatedAssets },
+    { label: 'Em revisão', value: String(counts.pendingReviews), href: links?.pendingReviews },
+    { label: 'Agendados', value: String(counts.scheduledAssets), href: links?.scheduledAssets },
+    { label: 'Publicações com falha', value: String(counts.failedPublications), href: links?.failedPublications },
+    { label: 'Campanhas planejadas', value: String(summary?.campaigns.length ?? 0), href: links ? '/portal/marketing/studio#campaigns' : undefined },
+  ]
 
   return (
-    <div className="space-y-6 pb-10">
-      <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Marketing Studio</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Planeje, revise e publique com controle</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Todos os indicadores abaixo vêm dos registros deste workspace e da janela informada.</p>
+    <PortalPage
+      eyebrow="Marketing"
+      title="Marketing Studio"
+      description="Aqui você planeja e produz: defina a campanha, escreva as versões e envie para revisão. Para revisar e aprovar, use a Central de conteúdo; para ver as datas, o Calendário editorial."
+      primaryAction={canWrite ? (
+        <button type="button" className={portalButtonClasses('primary')} onClick={() => setShowPlan(value => !value)}>
+          <Megaphone aria-hidden="true" />Planejar campanha
+        </button>
+      ) : undefined}
+      metrics={metrics}
+      help={helpItems}
+      related={[
+        { label: 'Central de conteúdo', href: '/portal/marketing/conteudo' },
+        { label: 'Calendário editorial', href: '/portal/marketing/calendario' },
+        { label: 'Criativos e inspirações', href: '/portal/marketing/criativos' },
+        { label: 'Campanhas', href: '/portal/marketing/campanhas' },
+      ]}
+    >
+      {error && (
+        <div role="alert" className="flex items-center gap-2 rounded-[10px] border border-yx-warn-line bg-yx-warn-soft p-3 text-sm text-yx-warn">
+          <AlertCircle aria-hidden="true" className="h-4 w-4 shrink-0" />{error}
         </div>
-        {canWrite && <Button onClick={() => setShowPlan(value => !value)}><Megaphone className="mr-2 h-4 w-4" />Planejar campanha</Button>}
-      </header>
-
-      {error && <div role="alert" className="flex items-center gap-2 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertCircle className="h-4 w-4" />{error}</div>}
-
-      <section aria-label="Resumo operacional" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric label="Fluxos ativos" value={counts.activeFlows} icon={Workflow} href={portalPath(summary?.links.activeFlows)} />
-        <Metric label="Conteúdos no período" value={counts.generatedAssets} icon={FileText} href={portalPath(summary?.links.generatedAssets)} />
-        <Metric label="Em revisão" value={counts.pendingReviews} icon={Clock3} href={portalPath(summary?.links.pendingReviews)} />
-        <Metric label="Agendados" value={counts.scheduledAssets} icon={Send} href={portalPath(summary?.links.scheduledAssets)} />
-        <Metric label="Publicações com falha" value={counts.failedPublications} icon={AlertCircle} href={portalPath(summary?.links.failedPublications)} />
-      </section>
+      )}
 
       {showPlan && canWrite && <PlanCampaignForm value={plan} busy={busy === 'plan'} onChange={setPlan} onSubmit={submitPlan} />}
 
       {!!summary?.campaigns.length && (
-        <section id="campaigns" className="border border-slate-200 bg-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Campanhas</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-950">Planejamentos persistidos</h2>
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
+        <SectionCard id="campaigns" title="Campanhas planejadas" description="Planejamentos salvos neste contrato." className="scroll-mt-6">
+          <ul className="m-0 grid list-none gap-2 p-0 md:grid-cols-2">
             {summary.campaigns.map(campaign => (
-              <div key={campaign.id} className="border border-slate-100 p-3 text-sm">
-                <strong className="text-slate-950">{campaign.name}</strong>
-                <p className="mt-1 text-slate-600">{campaign.objective} · {statusLabels[campaign.status] ?? campaign.status}</p>
-              </div>
+              <li key={campaign.id} className="rounded-lg border border-yx-line bg-yx-surface-2 p-3 text-sm">
+                <strong className="text-yx-fg">{campaign.name}</strong>
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-yx-fg-2">
+                  <span>{objectiveLabels[campaign.objective] ?? campaign.objective}</span>
+                  <StatusChip variant={statusVariant(campaign.status)}>{statusLabels[campaign.status] ?? campaign.status}</StatusChip>
+                </p>
+              </li>
             ))}
-          </div>
-        </section>
+          </ul>
+        </SectionCard>
       )}
 
       {!summary?.contents.length ? (
-        <section id="contents" className="border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+        <section id="contents" className="scroll-mt-6">
           <span id="reviews" className="scroll-mt-6" />
-          <Megaphone className="mx-auto h-8 w-8 text-slate-400" />
-          <h2 className="mt-3 text-lg font-semibold text-slate-900">Nenhuma campanha planejada</h2>
-          <p className="mt-1 text-sm text-slate-600">Comece por objetivo, público, oferta, canal e restrições.</p>
-          {canWrite && <Button className="mt-4" onClick={() => setShowPlan(true)}>Planejar campanha</Button>}
+          <EmptyState
+            icon={Megaphone}
+            title="Nenhuma campanha planejada"
+            description="Comece por objetivo, público, oferta, canal e restrições."
+            action={canWrite ? { label: 'Planejar campanha', onClick: () => setShowPlan(true) } : undefined}
+          />
         </section>
       ) : (
-        <section id="contents" className="space-y-3">
+        <SectionCard
+          id="contents"
+          title="Conteúdos"
+          description="Da versão ao resultado publicado."
+          className="scroll-mt-6"
+          action={
+            <button type="button" className={portalButtonClasses('ghost')} onClick={() => void load()} disabled={loading}>
+              <RefreshCw aria-hidden="true" />Atualizar
+            </button>
+          }
+        >
           <span id="reviews" className="scroll-mt-6" />
-          <div className="flex items-end justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo</p><h2 className="text-xl font-semibold text-slate-950">Da versão ao resultado publicado</h2></div><Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className="mr-2 h-4 w-4" />Atualizar</Button></div>
-          {summary.contents.map(content => (
-            <article key={content.id} className="border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">{content.channel} · versão {content.latestVersionNumber ?? '—'}</p><h3 className="mt-1 font-semibold text-slate-950">{content.title}</h3><p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{content.body || 'Conteúdo ainda sem texto.'}</p></div>
-                <span className="w-fit border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">{statusLabels[content.status] ?? content.status}</span>
-              </div>
-              {content.reviewComments && <p className="mt-3 border-l-2 border-amber-400 pl-3 text-sm text-slate-700">{content.reviewComments}</p>}
-              {content.publishedUrl && <a className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-blue-700 hover:underline" href={content.publishedUrl} target="_blank" rel="noreferrer">Abrir publicação <ArrowRight className="h-3 w-3" /></a>}
-              {canWrite && <div className="mt-4 flex flex-wrap gap-2">
-                {['draft', 'changes_requested', 'rejected'].includes(content.status) && <>
-                  <Button variant="outline" size="sm" onClick={() => setEditing({ id: content.id, title: content.title, body: content.body ?? '' })}>Criar nova versão</Button>
-                  <Button size="sm" disabled={!content.latestVersionId || busy === `submit:${content.id}`} onClick={() => submitReview(content)}>Enviar para revisão</Button>
-                </>}
-                {content.status === 'in_review' && <>
-                  <input aria-label={`Comentário para ${content.title}`} className="h-9 min-w-56 border border-slate-300 px-3 text-sm" placeholder="Comentário opcional" value={reviewComment[content.id] ?? ''} onChange={event => setReviewComment(current => ({ ...current, [content.id]: event.target.value }))} />
-                  <Button size="sm" disabled={busy === `review:${content.id}`} onClick={() => decide(content, 'approved')}><CheckCircle2 className="mr-1 h-4 w-4" />Aprovar</Button>
-                  <Button variant="outline" size="sm" disabled={busy === `review:${content.id}`} onClick={() => decide(content, 'changes_requested')}>Pedir ajustes</Button>
-                  <Button variant="outline" size="sm" disabled={busy === `review:${content.id}`} onClick={() => decide(content, 'rejected')}>Rejeitar</Button>
-                </>}
-                {content.status === 'approved' && <>
-                  <select
-                    aria-label={`Conexão de publicação para ${content.title}`}
-                    className="h-9 border border-slate-300 bg-white px-2 text-sm"
-                    disabled={!connectedConnections.length || busy === `publish:${content.id}`}
-                    value={publishConnectionId[content.id] ?? connectedConnections[0]?.id ?? ''}
-                    onChange={event => setPublishConnectionId(current => ({ ...current, [content.id]: event.target.value }))}
-                  >
-                    {!connectedConnections.length && <option value="">Nenhuma conexão validada</option>}
-                    {connectedConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name} · {connection.provider}</option>)}
-                  </select>
-                  <Button size="sm" disabled={!connectedConnections.length || busy === `publish:${content.id}`} onClick={() => publish(content)}>Publicar versão aprovada</Button>
-                </>}
-              </div>}
-              {content.status === 'approved' && !connectedConnections.length && <p className="mt-2 text-xs text-amber-700">Conecte e valide um provedor antes de publicar.</p>}
-            </article>
-          ))}
-        </section>
+          <div className="grid gap-3">
+            {summary.contents.map(content => (
+              <article key={content.id} className="rounded-[10px] border border-yx-line bg-yx-surface p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-yx-blue">{channelLabel(content.channel)} · versão {content.latestVersionNumber ?? '—'}</p>
+                    <h3 className="mt-1 font-semibold text-yx-fg">{content.title}</h3>
+                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-yx-fg-2">{content.body || 'Conteúdo ainda sem texto.'}</p>
+                  </div>
+                  <StatusChip variant={statusVariant(content.status)} className="w-fit shrink-0">{statusLabels[content.status] ?? content.status}</StatusChip>
+                </div>
+                {content.reviewComments && <p className="mt-3 border-l-2 border-yx-warn pl-3 text-sm text-yx-fg-2">{content.reviewComments}</p>}
+                {content.publishedUrl && <a className={cn(sectionLinkClasses, 'mt-3')} href={content.publishedUrl} target="_blank" rel="noreferrer">Abrir publicação <ArrowRight aria-hidden="true" /></a>}
+                {canWrite && <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {['draft', 'changes_requested', 'rejected'].includes(content.status) && <>
+                    <button type="button" className={portalButtonClasses('ghost')} onClick={() => setEditing({ id: content.id, title: content.title, body: content.body ?? '' })}>Criar nova versão</button>
+                    <button type="button" className={portalButtonClasses('primary')} disabled={!content.latestVersionId || busy === `submit:${content.id}`} onClick={() => submitReview(content)}>Enviar para revisão</button>
+                  </>}
+                  {content.status === 'in_review' && <>
+                    <input
+                      aria-label={`Comentário para ${content.title}`}
+                      className={cn(fieldClasses, 'sm:w-auto sm:min-w-56')}
+                      placeholder="Comentário opcional"
+                      value={reviewComment[content.id] ?? ''}
+                      onChange={event => setReviewComment(current => ({ ...current, [content.id]: event.target.value }))}
+                    />
+                    <button type="button" className={portalButtonClasses('primary')} disabled={busy === `review:${content.id}`} onClick={() => void decide(content, 'approved')}><CheckCircle2 aria-hidden="true" />Aprovar</button>
+                    <button type="button" className={portalButtonClasses('ghost')} disabled={busy === `review:${content.id}`} onClick={() => void decide(content, 'changes_requested')}>Pedir ajustes</button>
+                    <button type="button" className={portalButtonClasses('ghost')} disabled={busy === `review:${content.id}`} onClick={() => setRejecting(content)}>Rejeitar</button>
+                  </>}
+                  {content.status === 'approved' && <>
+                    <select
+                      aria-label={`Conexão de publicação para ${content.title}`}
+                      className={cn(fieldClasses, 'sm:w-auto')}
+                      disabled={!connectedConnections.length || busy === `publish:${content.id}`}
+                      value={publishConnectionId[content.id] ?? connectedConnections[0]?.id ?? ''}
+                      onChange={event => setPublishConnectionId(current => ({ ...current, [content.id]: event.target.value }))}
+                    >
+                      {!connectedConnections.length && <option value="">Nenhuma conexão validada</option>}
+                      {connectedConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name} · {providerLabels[connection.provider] ?? connection.provider}</option>)}
+                    </select>
+                    <button type="button" className={portalButtonClasses('primary')} disabled={!connectedConnections.length || busy === `publish:${content.id}`} onClick={() => setPublishing(content)}>Publicar versão aprovada</button>
+                  </>}
+                </div>}
+                {content.status === 'approved' && !connectedConnections.length && <p className="mt-2 text-xs text-yx-warn">Conecte e valide um provedor antes de publicar.</p>}
+              </article>
+            ))}
+          </div>
+        </SectionCard>
       )}
 
-      {editing && <section className="border border-blue-200 bg-blue-50 p-5"><h2 className="font-semibold text-slate-950">Nova versão</h2><div className="mt-3 grid gap-3"><input aria-label="Título da nova versão" className="h-10 border border-slate-300 bg-white px-3 text-sm" value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })} /><textarea aria-label="Texto da nova versão" className="min-h-40 border border-slate-300 bg-white p-3 text-sm" value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} /><div className="flex gap-2"><Button onClick={saveVersion} disabled={busy === `version:${editing.id}`}>Salvar nova versão</Button><Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button></div></div></section>}
+      {editing && (
+        <SectionCard title="Nova versão" description="Ajuste o título e o texto. A versão é salva como rascunho." className="border-yx-blue">
+          <div className="grid gap-3">
+            <input aria-label="Título da nova versão" className={fieldClasses} value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })} />
+            <textarea aria-label="Texto da nova versão" className={cn(fieldClasses, 'min-h-40')} value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={portalButtonClasses('primary')} onClick={saveVersion} disabled={busy === `version:${editing.id}`}>Salvar nova versão</button>
+              <button type="button" className={portalButtonClasses('ghost')} onClick={() => setEditing(null)}>Cancelar</button>
+            </div>
+          </div>
+        </SectionCard>
+      )}
 
       <span id="flows" className="scroll-mt-6" />
-      {!!summary?.workflows.length && <section className="border border-slate-200 bg-white p-5"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Builder avançado</p><h2 className="mt-1 text-lg font-semibold text-slate-950">Fluxos persistidos</h2><div className="mt-3 space-y-2">{summary.workflows.map(flow => <div key={flow.id} className="flex items-center justify-between border border-slate-100 p-3 text-sm"><span><strong>{flow.name}</strong><span className="ml-2 text-slate-500">{statusLabels[flow.status] ?? flow.status}</span></span><a className="font-semibold text-blue-700" href={portalPath('/portal/automacoes')}>Editar fluxo</a></div>)}</div></section>}
+      {!!summary?.workflows.length && (
+        <SectionCard title="Fluxos salvos" description="Editor avançado dos fluxos que preparam e publicam seus conteúdos.">
+          <ul className="m-0 grid list-none gap-2 p-0">
+            {summary.workflows.map(flow => (
+              <li key={flow.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-yx-line bg-yx-surface-2 p-3 text-sm">
+                <span className="flex flex-wrap items-center gap-2">
+                  <strong className="text-yx-fg">{flow.name}</strong>
+                  <StatusChip variant={statusVariant(flow.status)}>{statusLabels[flow.status] ?? flow.status}</StatusChip>
+                </span>
+                <Link className={sectionLinkClasses} to={portalPath('/portal/automacoes')}>Editar fluxo</Link>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      )}
 
-      <section id="calendar" className="border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-950">Agenda editorial</h2>
-        {summary?.calendarItems.length ? <div className="mt-3 space-y-2">{summary.calendarItems.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 text-sm"><strong>{item.title}</strong><span className="text-slate-600">{item.channel} · {statusLabels[item.status] ?? item.status} · {new Date(item.startsAt).toLocaleString('pt-BR')}</span></div>)}</div> : <p className="mt-2 text-sm text-slate-600">Nenhum conteúdo agendado neste workspace.</p>}
-      </section>
+      <SectionCard id="calendar" title="Agenda editorial" description="Os próximos itens a sair." className="scroll-mt-6">
+        <EditorialAgenda entries={summary?.calendarItems ?? []} emptyDescription="Nenhum conteúdo agendado neste workspace. Quando houver, os próximos itens aparecem aqui." />
+      </SectionCard>
 
-      <section id="publishing" className="border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-950">Histórico de publicação</h2>
-        {summary?.publishingRuns.length ? <div className="mt-3 space-y-2">{summary.publishingRuns.map(runItem => <div key={runItem.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 text-sm"><span>{runItem.connectionName} · {statusLabels[runItem.status] ?? runItem.status}</span>{runItem.publishedUrl && <a className="font-semibold text-blue-700" href={runItem.publishedUrl} target="_blank" rel="noreferrer">Abrir resultado</a>}{runItem.protectedError && <span className="text-red-700">Falha recuperável</span>}</div>)}</div> : <p className="mt-2 text-sm text-slate-600">Nenhuma tentativa de publicação registrada.</p>}
-      </section>
-    </div>
+      <SectionCard id="publishing" title="Histórico de publicação" className="scroll-mt-6">
+        {summary?.publishingRuns.length ? (
+          <ul className="m-0 grid list-none gap-2 p-0">
+            {summary.publishingRuns.map(runItem => (
+              <li key={runItem.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-yx-line pb-2 text-sm last:border-b-0">
+                <span className="flex flex-wrap items-center gap-2 text-yx-fg">
+                  {runItem.connectionName}
+                  <StatusChip variant={statusVariant(runItem.status)}>{statusLabels[runItem.status] ?? runItem.status}</StatusChip>
+                </span>
+                {runItem.publishedUrl && <a className={sectionLinkClasses} href={runItem.publishedUrl} target="_blank" rel="noreferrer">Abrir resultado</a>}
+                {runItem.protectedError && <span className="text-yx-crit">Falha recuperável</span>}
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-sm text-yx-fg-2">Nenhuma tentativa de publicação registrada.</p>}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={rejecting !== null}
+        onOpenChange={open => { if (!open) setRejecting(null) }}
+        title="Rejeitar esta versão?"
+        description={rejecting ? `A versão de "${rejecting.title}" volta para a equipe como rejeitada. Para só pedir mudanças, use "Pedir ajustes".` : ''}
+        confirmLabel="Rejeitar versão"
+        tone="danger"
+        onConfirm={async () => { if (rejecting) await decide(rejecting, 'rejected') }}
+      />
+      <ConfirmDialog
+        open={publishing !== null}
+        onOpenChange={open => { if (!open) setPublishing(null) }}
+        title="Publicar esta versão?"
+        description={publishing ? `A versão aprovada de "${publishing.title}" entra na fila de publicação.` : ''}
+        confirmLabel="Publicar"
+        onConfirm={async () => { if (publishing) await publish(publishing) }}
+      />
+    </PortalPage>
   )
-}
-
-function Metric({ label, value, icon: Icon, href }: { label: string; value: number; icon: typeof Workflow; href: string }) {
-  return <a href={href} className="group border border-slate-200 bg-white p-4 shadow-sm hover:border-blue-300"><div className="flex items-center justify-between"><Icon className="h-4 w-4 text-blue-600" /><ArrowRight className="h-3 w-3 text-slate-400 group-hover:text-blue-600" /></div><p className="mt-4 text-2xl font-semibold text-slate-950">{value}</p><p className="mt-1 text-xs text-slate-600">{label}</p></a>
 }
 
 function PlanCampaignForm({ value, busy, onChange, onSubmit }: { value: PlanForm; busy: boolean; onChange: (value: PlanForm) => void; onSubmit: (event: FormEvent) => void }) {
   const field = (key: keyof PlanForm) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => onChange({ ...value, [key]: event.target.value })
-  const inputClass = 'w-full border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-blue-500'
-  return <form onSubmit={onSubmit} className="border border-blue-200 bg-blue-50 p-5"><div><p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Novo planejamento</p><h2 className="mt-1 text-lg font-semibold text-slate-950">Contexto autorizado da campanha</h2></div><div className="mt-4 grid gap-4 md:grid-cols-2"><Field label="Nome"><input aria-label="Nome" required className={inputClass} value={value.name} onChange={field('name')} /></Field><Field label="Objetivo"><select aria-label="Objetivo" className={inputClass} value={value.objective} onChange={field('objective')}><option value="lead_generation">Gerar leads</option><option value="traffic">Gerar tráfego</option><option value="conversions">Conversões</option><option value="awareness">Reconhecimento</option></select></Field><Field label="Público"><textarea aria-label="Público" required className={`${inputClass} min-h-24`} value={value.audience} onChange={field('audience')} /></Field><Field label="Oferta"><textarea aria-label="Oferta" required className={`${inputClass} min-h-24`} value={value.offer} onChange={field('offer')} /></Field><Field label="Canal"><select aria-label="Canal" className={inputClass} value={value.channel} onChange={field('channel')}><option value="linkedin">LinkedIn</option><option value="instagram">Instagram</option><option value="blog">Blog</option><option value="newsletter">Newsletter</option><option value="email">E-mail</option></select></Field><Field label="Restrições"><textarea aria-label="Restrições" className={`${inputClass} min-h-24`} placeholder="Palavras proibidas, limites legais, prazo ou outras condições" value={value.constraints} onChange={field('constraints')} /></Field></div><Button className="mt-4" type="submit" disabled={busy}>{busy ? 'Salvando...' : 'Salvar planejamento'}</Button></form>
+  return (
+    <form onSubmit={onSubmit}>
+      <SectionCard title="Contexto da campanha" description="Novo planejamento: conte o que a campanha precisa alcançar." className="border-yx-blue">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Nome"><input aria-label="Nome" required className={fieldClasses} value={value.name} onChange={field('name')} /></Field>
+          <Field label="Objetivo">
+            <select aria-label="Objetivo" className={fieldClasses} value={value.objective} onChange={field('objective')}>
+              <option value="lead_generation">Gerar leads</option>
+              <option value="traffic">Gerar tráfego</option>
+              <option value="conversions">Conversões</option>
+              <option value="awareness">Reconhecimento</option>
+            </select>
+          </Field>
+          <Field label="Público"><textarea aria-label="Público" required className={cn(fieldClasses, 'min-h-24')} value={value.audience} onChange={field('audience')} /></Field>
+          <Field label="Oferta"><textarea aria-label="Oferta" required className={cn(fieldClasses, 'min-h-24')} value={value.offer} onChange={field('offer')} /></Field>
+          <Field label="Canal">
+            <select aria-label="Canal" className={fieldClasses} value={value.channel} onChange={field('channel')}>
+              <option value="linkedin">LinkedIn</option>
+              <option value="instagram">Instagram</option>
+              <option value="blog">Blog</option>
+              <option value="newsletter">Newsletter</option>
+              <option value="email">E-mail</option>
+            </select>
+          </Field>
+          <Field label="Restrições"><textarea aria-label="Restrições" className={cn(fieldClasses, 'min-h-24')} placeholder="Palavras proibidas, limites legais, prazo ou outras condições" value={value.constraints} onChange={field('constraints')} /></Field>
+        </div>
+        <button className={portalButtonClasses('primary', 'mt-4')} type="submit" disabled={busy}>{busy ? 'Salvando...' : 'Salvar planejamento'}</button>
+      </SectionCard>
+    </form>
+  )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-1 text-sm font-semibold text-slate-800"><span>{label}</span>{children}</label> }
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="grid gap-1 text-sm font-semibold text-yx-fg-2"><span>{label}</span>{children}</label>
+}
+
+function StudioLoading() {
+  return (
+    <PortalPage eyebrow="Marketing" title="Marketing Studio">
+      <SkeletonCard lines={6} />
+    </PortalPage>
+  )
+}
 
 function StudioUnavailable({ message, retry }: { message: string; retry?: () => void }) {
-  return <div className="border border-slate-200 bg-white p-6"><h1 className="text-xl font-semibold text-slate-950">Marketing Studio</h1><p className="mt-2 text-sm text-slate-600">{message}</p>{retry && <Button className="mt-4" variant="outline" onClick={() => void retry()}>Tentar novamente</Button>}</div>
+  return (
+    <PortalPage eyebrow="Marketing" title="Marketing Studio">
+      {retry
+        ? <ErrorState title="Não foi possível carregar o Marketing Studio." description={message} onRetry={() => void retry()} />
+        : <EmptyState icon={Megaphone} title="Marketing Studio indisponível" description={message} />}
+    </PortalPage>
+  )
 }

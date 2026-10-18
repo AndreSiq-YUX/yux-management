@@ -9,18 +9,18 @@ interface CrmIntegrationPreviewProps {
 export function CrmIntegrationPreview({ action }: CrmIntegrationPreviewProps) {
   if (action.actionType === 'change_stage') {
     return (
-      <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2">
+      <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-2">
         <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-blue-600" />
-          <p className="text-xs font-semibold text-blue-900">Preview do Pipeline</p>
+          <Building2 className="h-4 w-4 text-yx-blue" />
+          <p className="text-xs font-semibold text-yx-blue">Preview do Pipeline</p>
         </div>
-        <div className="text-xs text-blue-800">
+        <div className="text-xs text-yx-blue">
           <p>Esta ação moverá o lead para a etapa especificada no pipeline do CRM.</p>
           <p className="mt-2">
             <span className="font-semibold">Stage ID:</span>{' '}
-            <code className="rounded bg-blue-100 px-1 py-0.5">{String(action.payload.stageId || 'Não definido')}</code>
+            <code className="rounded bg-yx-blue-soft px-1 py-0.5">{String(action.payload.stageId || 'Não definido')}</code>
           </p>
-          <p className="mt-1 text-blue-700">
+          <p className="mt-1 text-yx-blue">
             O lead será movido para a etapa correspondente no pipeline ativo.
           </p>
         </div>
@@ -34,18 +34,18 @@ export function CrmIntegrationPreview({ action }: CrmIntegrationPreviewProps) {
 
   if (action.actionType === 'assign_owner') {
     return (
-      <div className="rounded-md border border-purple-200 bg-purple-50 p-3 space-y-2">
+      <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-2">
         <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-purple-600" />
-          <p className="text-xs font-semibold text-purple-900">Atribuição de Responsável</p>
+          <Users className="h-4 w-4 text-brand-violet-500" />
+          <p className="text-xs font-semibold text-brand-violet-500">Atribuição de Responsável</p>
         </div>
-        <div className="text-xs text-purple-800">
+        <div className="text-xs text-brand-violet-500">
           <p>Esta ação atribuirá o lead ao responsável especificado.</p>
           <p className="mt-2">
             <span className="font-semibold">Owner ID:</span>{' '}
-            <code className="rounded bg-purple-100 px-1 py-0.5">{String(action.payload.ownerId || 'Não definido')}</code>
+            <code className="rounded bg-yx-blue-soft px-1 py-0.5">{String(action.payload.ownerId || 'Não definido')}</code>
           </p>
-          <p className="mt-1 text-purple-700">
+          <p className="mt-1 text-brand-violet-500">
             O responsável receberá notificação e o lead aparecerá em sua lista de trabalho.
           </p>
         </div>
@@ -59,23 +59,23 @@ export function CrmIntegrationPreview({ action }: CrmIntegrationPreviewProps) {
 
   if (action.actionType === 'create_task') {
     return (
-      <div className="rounded-md border border-green-200 bg-green-50 p-3 space-y-2">
+      <div className="rounded-md border border-yx-ok-line bg-yx-ok-soft p-3 space-y-2">
         <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-green-600" />
-          <p className="text-xs font-semibold text-green-900">Criação de Tarefa</p>
+          <Building2 className="h-4 w-4 text-yx-ok" />
+          <p className="text-xs font-semibold text-yx-ok">Criação de Tarefa</p>
         </div>
-        <div className="text-xs text-green-800">
+        <div className="text-xs text-yx-ok">
           <p>Esta ação criará uma tarefa no CRM para o lead.</p>
           {action.payload.title !== undefined && action.payload.title !== null && (
             <p className="mt-2">
               <span className="font-semibold">Título:</span>{' '}
-              <code className="rounded bg-green-100 px-1 py-0.5">{String(action.payload.title)}</code>
+              <code className="rounded bg-yx-ok-soft px-1 py-0.5">{String(action.payload.title)}</code>
             </p>
           )}
           {action.payload.description !== undefined && action.payload.description !== null && (
             <p className="mt-1">
               <span className="font-semibold">Descrição:</span>{' '}
-              <span className="text-green-700">{String(action.payload.description)}</span>
+              <span className="text-yx-ok">{String(action.payload.description)}</span>
             </p>
           )}
         </div>

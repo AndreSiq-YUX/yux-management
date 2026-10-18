@@ -330,21 +330,27 @@ Funcionalidades:
 As rotas do Portal do Cliente usam o prefixo `/portal`. As mesmas paginas sao
 reaproveitadas pelo admin dentro de `/client-workspaces/:organizationId`.
 
-| Area | Portal do Cliente | Workspace Cliente |
-| --- | --- | --- |
-| Visao Geral | `/portal` | `/client-workspaces/:organizationId` |
-| Empresa | `/portal/empresa/*` | `/client-workspaces/:organizationId/empresa/*` |
-| Comercial | `/portal/comercial/*` | `/client-workspaces/:organizationId/comercial/*` |
-| Atendimento & IA | `/portal/atendimento/*` | `/client-workspaces/:organizationId/atendimento/*` |
-| Marketing | `/portal/marketing/*` | `/client-workspaces/:organizationId/marketing/*` |
-| Automacoes | `/portal/automacoes/*` | `/client-workspaces/:organizationId/automacoes/*` |
-| Projetos | `/portal/projetos/*` | `/client-workspaces/:organizationId/projetos/*` |
-| Relatorios | `/portal/relatorios` | `/client-workspaces/:organizationId/relatorios` |
-| Suporte | `/portal/suporte` | `/client-workspaces/:organizationId/suporte` |
-| Financeiro | `/portal/financeiro` | `/client-workspaces/:organizationId/financeiro` |
-| Conta | `/portal/configuracoes/conta` | `/client-workspaces/:organizationId/configuracoes/conta` |
+Menu lateral (grupos, na ordem em que aparecem; cada grupo so aparece se o cliente
+tem o modulo contratado):
 
-### Visao Geral
+| Grupo do menu | Itens | Portal do Cliente | Workspace Cliente |
+| --- | --- | --- | --- |
+| Inicio | Visao geral; Aprovacoes | `/portal`; `/portal/projetos/aprovacoes` | `/client-workspaces/:organizationId`; `.../projetos/aprovacoes` |
+| Comercial | Leads; Funis; Tarefas e follow-ups; Empresas e contas; Pontuacao de leads; Radar Comercial | `/portal/comercial/*` | `/client-workspaces/:organizationId/comercial/*` |
+| Atendimento | Conversas; Agente IA; Canais conectados; Filas e transferencia | `/portal/atendimento/*` | `/client-workspaces/:organizationId/atendimento/*` |
+| Marketing | Campanhas; Landing pages; Formularios externos; Marketing Studio; Central de conteudo; Calendario editorial; Criativos e inspiracoes | `/portal/marketing/*` | `/client-workspaces/:organizationId/marketing/*` |
+| Automacoes | Fluxos; Modelos de fluxo; Execucoes | `/portal/automacoes/*` | `/client-workspaces/:organizationId/automacoes/*` |
+| Execucao YUX | Missoes | `/portal/missoes` | `/client-workspaces/:organizationId/missoes` |
+| Projetos | Projetos e entregas; Documentos; Propostas | `/portal/projetos/*` | `/client-workspaces/:organizationId/projetos/*` |
+| Resultados | Relatorios | `/portal/relatorios` | `/client-workspaces/:organizationId/relatorios` |
+| Empresa | Perfil da empresa; Marca e tom de voz; Base de conhecimento; Equipe; Conexoes; Modelos de e-mail (so no portal) | `/portal/empresa/*`; `/portal/configuracoes/emails` | `/client-workspaces/:organizationId/empresa/*` |
+| Rodape fixo | Financeiro; Ajuda e suporte; Minha conta | `/portal/financeiro`; `/portal/suporte`; `/portal/configuracoes/conta` | `/client-workspaces/:organizationId/financeiro`; `.../suporte`; `.../configuracoes/conta` |
+
+Funcoes que dependem de backend ainda nao implantado ficam visiveis com o selo
+"Pendente" (registro central `frontend/src/lib/client-portal/pendingFeatures.ts`,
+codigos B1 a B26); elas nunca simulam sucesso.
+
+### Visao geral
 
 Rota:
 
@@ -363,7 +369,7 @@ Funcionalidades:
 
 ### Empresa
 
-#### Perfil da Empresa
+#### Perfil da empresa
 
 Rota:
 
@@ -377,11 +383,11 @@ Funcionalidades:
 - servir de base para atendimento, marketing, campanhas e relatorios;
 - acessar atalhos relacionados a marca, conhecimento e integracoes.
 
-#### Usuarios e Equipe
+#### Equipe
 
 Rota:
 
-- `/portal/empresa/usuarios`
+- `/portal/empresa/usuarios` (menu: Empresa > Equipe; antes "Usuarios e Equipe")
 
 Funcionalidades:
 
@@ -392,7 +398,7 @@ Funcionalidades:
 - preparar gestao de convites, remocao e desativacao;
 - separar permissoes pessoais de dados da empresa.
 
-#### Base de Conhecimento
+#### Base de conhecimento
 
 Rota:
 
@@ -408,7 +414,7 @@ Funcionalidades:
   landing pages, FAQ e suporte;
 - evidenciar lacunas e fontes que precisam de revisao.
 
-#### Marca e Tom de Voz
+#### Marca e tom de voz
 
 Rota:
 
@@ -422,11 +428,11 @@ Funcionalidades:
 - definir promessas permitidas e restricoes legais;
 - expor guardrails para conteudo, campanhas e atendimento.
 
-#### Integracoes da Empresa
+#### Conexoes
 
 Rota:
 
-- `/portal/empresa/integracoes`
+- `/portal/empresa/integracoes` (menu: Empresa > Conexoes; antes "Integracoes da Empresa")
 
 Funcionalidades:
 
@@ -434,6 +440,19 @@ Funcionalidades:
 - mostrar canais, publicacao, midia, calendario, planilhas e webhooks;
 - ver status de conexao, ultima sincronizacao e necessidade de reautenticacao;
 - acessar atalhos para canais, campanhas e Marketing Studio.
+
+#### Modelos de e-mail
+
+Rota:
+
+- `/portal/configuracoes/emails` (menu: Empresa > Modelos de e-mail; so no Portal do Cliente)
+
+Funcionalidades:
+
+- criar e publicar modelos de e-mail da empresa;
+- inserir variaveis por botoes com nome amigavel (ex.: "Nome do contato"),
+  sem digitar a sintaxe tecnica;
+- enviar e-mail de teste antes de publicar.
 
 ### Comercial
 
@@ -458,7 +477,7 @@ Funcionalidades:
 - acompanhar historico, tarefas, automacoes, propostas e insights comerciais;
 - manter escopo filtrado pelo contrato e pela organizacao do cliente.
 
-#### Empresas / Contas
+#### Empresas e contas
 
 Rota:
 
@@ -486,7 +505,7 @@ Funcionalidades:
 - identificar oportunidades paradas;
 - acessar leads do funil.
 
-#### Tarefas e Follow-ups
+#### Tarefas e follow-ups
 
 Rota:
 
@@ -500,7 +519,19 @@ Funcionalidades:
 - concluir, reagendar ou acompanhar proximas acoes;
 - alimentar a area de proximas acoes da visao geral.
 
-### Atendimento & IA
+#### Pontuacao de leads
+
+Rota:
+
+- `/portal/comercial/scoring`
+
+Funcionalidades:
+
+- ver como cada lead recebe pontos (perfil e interesse);
+- simular uma acao e ver o efeito na pontuacao;
+- consultar regras e faixas de pontuacao.
+
+### Atendimento
 
 #### Conversas
 
@@ -532,7 +563,7 @@ Funcionalidades:
 - visualizar execucoes recentes;
 - acompanhar perguntas sem resposta e necessidade de treinamento.
 
-#### Canais
+#### Canais conectados
 
 Rota:
 
@@ -546,11 +577,11 @@ Funcionalidades:
 - ver status operacional, ultima sincronizacao e necessidade de reautenticacao;
 - diferenciar conexoes ativas de canais ainda nao conectados.
 
-#### Filas e Handoff
+#### Filas e transferencia
 
 Rota:
 
-- `/portal/atendimento/filas-handoff`
+- `/portal/atendimento/filas-handoff` (menu: Atendimento > Filas e transferencia; "transferencia para atendente" no lugar de "handoff")
 
 Funcionalidades:
 
@@ -561,7 +592,7 @@ Funcionalidades:
 
 ### Marketing
 
-#### Landing Pages
+#### Landing pages
 
 Rota:
 
@@ -595,6 +626,20 @@ Funcionalidades:
 - ver alertas, recomendacoes e sincronizacao de metricas;
 - sinalizar provider desconectado ou com reautenticacao pendente.
 
+#### Formularios externos
+
+Rota:
+
+- `/portal/marketing/formularios`
+
+Funcionalidades:
+
+- criar formularios de captura para o site do cliente (fluxo em passos: criar,
+  instalar no site, testar o envio);
+- copiar o codigo pronto por plataforma (HTML, WordPress/Elementor, Webflow,
+  webhook avancado);
+- manter endereco de envio, chave e origens permitidas em "Avancado".
+
 #### Marketing Studio
 
 Rota:
@@ -610,11 +655,11 @@ Funcionalidades:
 - acompanhar publicacao WordPress, canais nativos, criativos e rascunhos de
   campanha quando configurados.
 
-#### Conteudo Organico
+#### Central de conteudo
 
 Rota:
 
-- `/portal/marketing/conteudo`
+- `/portal/marketing/conteudo` (antes "Conteudo Organico"; galeria mostra 10 itens por vez no celular, com "Mostrar mais")
 
 Funcionalidades:
 
@@ -622,7 +667,7 @@ Funcionalidades:
 - acompanhar status, canal, aprovacao, publicacao e performance;
 - abrir Marketing Studio como superficie principal de producao.
 
-#### Calendario Editorial
+#### Calendario editorial
 
 Rota:
 
@@ -635,11 +680,11 @@ Funcionalidades:
 - filtrar por canal e status;
 - abrir Marketing Studio para edicao detalhada.
 
-#### Criativos e Assets
+#### Criativos e inspiracoes
 
 Rota:
 
-- `/portal/marketing/criativos`
+- `/portal/marketing/criativos` (antes "Criativos e Assets")
 
 Funcionalidades:
 
@@ -652,16 +697,16 @@ Funcionalidades:
 
 Rotas:
 
-- `/portal/automacoes/fluxos`;
-- `/portal/automacoes/templates`;
-- `/portal/automacoes/execucoes`;
-- `/portal/automacoes/logs`.
+- `/portal/automacoes/fluxos` (menu: Fluxos);
+- `/portal/automacoes/templates` (menu: Modelos de fluxo);
+- `/portal/automacoes/execucoes` (menu: Execucoes; lista 10 por vez com "Mostrar mais");
+- `/portal/automacoes/logs` (redireciona para Execucoes).
 
 Funcionalidades:
 
 - apresentar modulo protegido no portal;
 - mostrar capacidades contratadas sem expor configuracoes sensiveis;
-- separar Fluxos, Templates, Execucoes e Logs;
+- separar Fluxos, Modelos de fluxo e Execucoes;
 - iniciar automacoes por objetivo de negocio antes do builder tecnico;
 - objetivos disponiveis: responder lead novo, follow-up de proposta, reativar
   cliente, confirmar agendamento, lembrar atendimento, criar tarefa para
@@ -670,9 +715,25 @@ Funcionalidades:
 - preparar acesso futuro para pausa, duplicacao, historico, erros e consumo de
   creditos.
 
+### Execucao YUX
+
+#### Missoes
+
+Rotas:
+
+- `/portal/missoes`;
+- `/portal/missoes/conversas/:conversationId`;
+- `/portal/missoes/:missionId`.
+
+Funcionalidades:
+
+- acompanhar as missoes pedidas a YUX, com progresso em relacao a meta;
+- destacar no topo as conversas que aguardam resposta do cliente;
+- abrir nova missao em janela com foco preso e fechamento por Esc.
+
 ### Projetos
 
-#### Projetos
+#### Projetos e entregas
 
 Rota:
 
@@ -687,7 +748,7 @@ Funcionalidades:
 
 #### Aprovacoes
 
-Rota:
+Rota (menu: Inicio > Aprovacoes):
 
 - `/portal/projetos/aprovacoes`
 
@@ -712,9 +773,21 @@ Funcionalidades:
 - listar propostas, contratos e documentos financeiros;
 - respeitar permissoes e visibilidade do cliente.
 
-### Relatorios
+#### Propostas
 
 Rota:
+
+- `/portal/projetos/propostas`
+
+Funcionalidades:
+
+- listar propostas enviadas ao cliente;
+- aprovar, recusar ou pedir ajustes, com comentario;
+- consultar valores, itens e situacao de cada proposta.
+
+### Relatorios
+
+Rota (grupo do menu: Resultados):
 
 - `/portal/relatorios`
 
@@ -725,16 +798,18 @@ Funcionalidades:
 - acessar presets: performance de campanhas, ROI por origem de lead,
   conversao de landing pages, follow-up WhatsApp, impacto das automacoes,
   onboarding por setor e prontidao de marca/conhecimento;
-- acompanhar cockpit executivo Ads/MROI com gasto, impressoes, cliques, leads,
+- acompanhar o resultado de midia (antes "cockpit executivo Ads/MROI") com gasto, impressoes, cliques, leads,
   CPL, oportunidades, propostas, clientes, receita, MROI e sync status;
 - ver resumo de IA com melhor oportunidade, mudanca no periodo, lacunas de
   dados e ressalva quando atribuicao estiver ausente;
 - acompanhar ROI/MROI sem expor custos ou dados internos indevidos;
-- exportar ou consultar relatorios quando o modulo estiver ativo.
+- exportar pela folha de impressao do navegador ("Exportar PDF"); menu lateral,
+  cabecalho e controles somem na impressao;
+- escolher periodo (selo Pendente ate o backend aceitar datas).
 
-### Suporte
+### Ajuda e suporte
 
-Rota:
+Rota (rodape do menu):
 
 - `/portal/suporte`
 
@@ -748,7 +823,7 @@ Funcionalidades:
 
 ### Financeiro
 
-Rota:
+Rota (rodape do menu):
 
 - `/portal/financeiro`
 
@@ -760,9 +835,9 @@ Funcionalidades:
 - ver aberto, pago, vencido e proximo vencimento;
 - manter area financeira separada das configuracoes da empresa.
 
-### Configuracoes da Conta
+### Minha conta
 
-Rota:
+Rota (rodape do menu; antes "Configuracoes da Conta"):
 
 - `/portal/configuracoes/conta`
 
@@ -782,7 +857,7 @@ a nova arquitetura:
 | Rota antiga | Nova rota |
 | --- | --- |
 | `/portal/projects` | `/portal/projetos/projetos` |
-| `/portal/proposals` | `/portal/projetos/aprovacoes` |
+| `/portal/proposals` | `/portal/projetos/propostas` |
 | `/portal/crm` | `/portal/comercial/leads` |
 | `/portal/crm/settings` | `/portal/empresa/usuarios` |
 | `/portal/omnichannel` | `/portal/atendimento/conversas` |
@@ -794,6 +869,7 @@ a nova arquitetura:
 | `/portal/reports` | `/portal/relatorios` |
 | `/portal/support` | `/portal/suporte` |
 | `/portal/finance` | `/portal/financeiro` |
+| `/portal/automacoes/logs` | `/portal/automacoes/execucoes` |
 | `/whatsapp-ai` | `/omnichannel` |
 
 ## 6. Observacoes de produto

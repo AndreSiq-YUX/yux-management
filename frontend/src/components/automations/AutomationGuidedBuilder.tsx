@@ -38,14 +38,14 @@ const conditionOperators = [
 ]
 
 const suggestedFields = [
-  { value: 'source', label: 'Origem do lead', example: 'instagram, google, indicacao', type: 'text' },
-  { value: 'stage', label: 'Etapa do pipeline', example: 'novo, qualificado, proposta', type: 'text' },
+  { value: 'source', label: 'Origem do lead', example: 'instagram, google, indicação', type: 'text' },
+  { value: 'stage', label: 'Etapa do funil', example: 'novo, qualificado, proposta', type: 'text' },
   { value: 'status', label: 'Status do lead', example: 'active, won, lost', type: 'text' },
   { value: 'owner', label: 'Responsável', example: 'user-id ou nome', type: 'text' },
   { value: 'temperature', label: 'Temperatura', example: 'hot, warm, cold', type: 'text' },
   { value: 'value', label: 'Valor da proposta', example: '1000, 5000', type: 'number' },
   { value: 'days_in_stage', label: 'Dias na etapa', example: '5, 10, 30', type: 'number' },
-  { value: 'email', label: 'Email', example: 'contato@empresa.com', type: 'text' },
+  { value: 'email', label: 'E-mail', example: 'contato@empresa.com', type: 'text' },
   { value: 'phone', label: 'Telefone', example: '+5511999999999', type: 'text' },
   { value: 'company', label: 'Empresa', example: 'Nome da empresa', type: 'text' },
 ]
@@ -53,14 +53,14 @@ const suggestedFields = [
 const actionTypes = [
   { value: 'create_task', label: 'Criar tarefa', group: 'CRM' },
   { value: 'change_stage', label: 'Mover etapa', group: 'CRM' },
-  { value: 'assign_owner', label: 'Atribuir responsavel', group: 'CRM' },
+  { value: 'assign_owner', label: 'Atribuir responsável', group: 'CRM' },
   { value: 'update_field', label: 'Atualizar campo', group: 'CRM' },
   { value: 'register_activity', label: 'Registrar atividade', group: 'CRM' },
-  { value: 'send_whatsapp', label: 'Enviar WhatsApp', group: 'Comunicacao' },
-  { value: 'send_email', label: 'Enviar email', group: 'Comunicacao' },
-  { value: 'create_ticket', label: 'Criar ticket', group: 'Suporte' },
-  { value: 'webhook', label: 'Webhook', group: 'Integracao' },
-  { value: 'call_api', label: 'Chamar API', group: 'Integracao' },
+  { value: 'send_whatsapp', label: 'Enviar WhatsApp', group: 'Comunicação' },
+  { value: 'send_email', label: 'Enviar e-mail', group: 'Comunicação' },
+  { value: 'create_ticket', label: 'Criar chamado', group: 'Suporte' },
+  { value: 'webhook', label: 'Webhook', group: 'Integração' },
+  { value: 'call_api', label: 'Chamar API', group: 'Integração' },
   { value: 'ai_classify_lead', label: 'Classificar lead (IA)', group: 'IA' },
   { value: 'ai_generate_message', label: 'Gerar mensagem (IA)', group: 'IA' },
   { value: 'ai_generate_proposal', label: 'Gerar proposta (IA)', group: 'IA' },
@@ -80,7 +80,7 @@ const moduleLabels: Record<AutomationModule, string> = {
   projects: 'Projetos',
   finance: 'Financeiro',
   campaigns: 'Campanhas',
-  reports: 'Relatorios',
+  reports: 'Relatórios',
   support: 'Suporte',
 }
 
@@ -101,8 +101,8 @@ export function AutomationGuidedBuilder({
 }: AutomationGuidedBuilderProps) {
   if (!flow) {
     return (
-      <section className="rounded-md border bg-white p-4">
-        <div className="flex items-center justify-center min-h-[200px] text-sm text-gray-500">
+      <section className="rounded-md border bg-yx-surface p-4">
+        <div className="flex items-center justify-center min-h-[200px] text-sm text-yx-fg-3">
           Selecione um fluxo para editar ou crie um novo.
         </div>
       </section>
@@ -113,11 +113,11 @@ export function AutomationGuidedBuilder({
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-950">Builder guiado</h2>
-          <p className="text-sm text-slate-600">
+          <h2 className="text-base font-semibold text-yx-fg">Construtor guiado</h2>
+          <p className="text-sm text-yx-fg-2">
             {selectedObjectiveLabel
-              ? `Objetivo selecionado: ${selectedObjectiveLabel}. Ajuste trigger, condicoes e acoes do fluxo.`
-              : 'Configure o trigger, condicoes e acoes do fluxo.'}
+              ? `Objetivo selecionado: ${selectedObjectiveLabel}. Ajuste gatilho, condições e ações do fluxo.`
+              : 'Configure o gatilho, as condições e as ações do fluxo.'}
           </p>
         </div>
       </div>
@@ -154,7 +154,7 @@ export function AutomationGuidedBuilder({
 function StepConnector() {
   return (
     <div className="flex justify-center">
-      <ArrowDown className="h-4 w-4 text-slate-300" />
+      <ArrowDown className="h-4 w-4 text-yx-fg-3" />
     </div>
   )
 }
@@ -176,11 +176,11 @@ function TriggerStep({
   const [editingId, setEditingId] = useState<string | null>(null)
 
   return (
-    <div className="rounded-md border bg-white p-4">
+    <div className="rounded-md border bg-yx-surface p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <div className="flex items-center gap-2 text-sm font-semibold text-yx-fg">
           <GitBranch className="h-4 w-4" />
-          Quando (Trigger)
+          Quando (Gatilho)
         </div>
         {!adding && (
           <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => setAdding(true)}>
@@ -190,7 +190,7 @@ function TriggerStep({
         )}
       </div>
       {triggers.length === 0 && !adding && (
-        <p className="text-sm text-slate-500">Nenhum trigger configurado.</p>
+        <p className="text-sm text-yx-fg-3">Nenhum gatilho configurado.</p>
       )}
       <div className="space-y-2">
         {triggers.map(trigger => (
@@ -205,19 +205,19 @@ function TriggerStep({
                 onCancel={() => setEditingId(null)}
               />
             ) : (
-              <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
+              <div className="flex items-center justify-between rounded-md bg-yx-surface-2 px-3 py-2">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">
+                  <p className="text-sm font-medium text-yx-fg">
                     {automationTriggerCatalog.find(t => t.key === trigger.triggerType)?.label || trigger.triggerType}
                   </p>
-                  <p className="text-xs text-slate-500">{trigger.triggerType}</p>
+                  <p className="text-xs text-yx-fg-3">{trigger.triggerType}</p>
                 </div>
                 <div className="flex gap-1">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setEditingId(trigger.id)}>
+                  <Button type="button" aria-label="Editar item" size="sm" variant="ghost" onClick={() => setEditingId(trigger.id)}>
                     <Pencil className="h-3 w-3" />
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onDelete?.(trigger.id)}>
-                    <Trash2 className="h-3 w-3 text-red-500" />
+                  <Button type="button" aria-label="Remover item" size="sm" variant="ghost" onClick={() => onDelete?.(trigger.id)}>
+                    <Trash2 className="h-3 w-3 text-yx-crit" />
                   </Button>
                 </div>
               </div>
@@ -250,7 +250,7 @@ function TriggerEditor({
   const [triggerType, setTriggerType] = useState(trigger?.triggerType || '')
 
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
+    <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-3">
       <div className="space-y-1">
         <Label className="text-xs">Evento</Label>
         <Select value={triggerType} onValueChange={setTriggerType}>
@@ -260,7 +260,7 @@ function TriggerEditor({
           <SelectContent>
             {Object.entries(triggersByModule).map(([module, triggers]) => (
               <div key={module}>
-                <div className="px-2 py-1 text-xs font-semibold text-slate-500">
+                <div className="px-2 py-1 text-xs font-semibold text-yx-fg-3">
                   {moduleLabels[module as AutomationModule] || module}
                 </div>
                 {triggers.map(t => (
@@ -302,11 +302,11 @@ function ConditionStep({
   const [editingId, setEditingId] = useState<string | null>(null)
 
   return (
-    <div className="rounded-md border bg-white p-4">
+    <div className="rounded-md border bg-yx-surface p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <div className="flex items-center gap-2 text-sm font-semibold text-yx-fg">
           <Workflow className="h-4 w-4" />
-          Se (Condicoes)
+          Se (Condição)
         </div>
         {!adding && (
           <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => setAdding(true)}>
@@ -316,7 +316,7 @@ function ConditionStep({
         )}
       </div>
       {conditions.length === 0 && !adding && (
-        <p className="text-sm text-slate-500">Nenhuma condicao configurada. Todas as execucoes prosseguem sem filtro.</p>
+        <p className="text-sm text-yx-fg-3">Nenhuma condição configurada. Todas as execuções prosseguem sem filtro.</p>
       )}
       <div className="space-y-2">
         {conditions.map(condition => (
@@ -331,20 +331,20 @@ function ConditionStep({
                 onCancel={() => setEditingId(null)}
               />
             ) : (
-              <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
+              <div className="flex items-center justify-between rounded-md bg-yx-surface-2 px-3 py-2">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">
+                  <p className="text-sm font-medium text-yx-fg">
                     {condition.field}{' '}
-                    <span className="text-slate-500">{conditionOperators.find(op => op.value === condition.operator)?.label || condition.operator}</span>{' '}
+                    <span className="text-yx-fg-3">{conditionOperators.find(op => op.value === condition.operator)?.label || condition.operator}</span>{' '}
                     {condition.value !== undefined && condition.value !== null ? String(condition.value) : ''}
                   </p>
                 </div>
                 <div className="flex gap-1">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setEditingId(condition.id!)}>
+                  <Button type="button" aria-label="Editar item" size="sm" variant="ghost" onClick={() => setEditingId(condition.id!)}>
                     <Pencil className="h-3 w-3" />
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => onDelete?.(condition.id!)}>
-                    <Trash2 className="h-3 w-3 text-red-500" />
+                  <Button type="button" aria-label="Remover item" size="sm" variant="ghost" onClick={() => onDelete?.(condition.id!)}>
+                    <Trash2 className="h-3 w-3 text-yx-crit" />
                   </Button>
                 </div>
               </div>
@@ -385,7 +385,7 @@ function ConditionEditor({
   const selectedOperator = conditionOperators.find(op => op.value === operator)
 
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
+    <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-3">
       <div className="space-y-1">
         <Label className="text-xs">Campo para verificar</Label>
         {!useCustomField ? (
@@ -403,7 +403,7 @@ function ConditionEditor({
                 <div className="border-t my-1" />
                 <button
                   type="button"
-                  className="w-full text-left px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50"
+                  className="w-full text-left px-2 py-1.5 text-xs text-yx-blue hover:bg-yx-blue-soft"
                   onClick={() => setUseCustomField(true)}
                 >
                   + Usar campo personalizado
@@ -411,8 +411,8 @@ function ConditionEditor({
               </SelectContent>
             </Select>
             {selectedField && (
-              <p className="text-xs text-slate-600">
-                Exemplo: <code className="bg-slate-100 px-1 rounded">{selectedField.example}</code>
+              <p className="text-xs text-yx-fg-2">
+                Exemplo: <code className="bg-yx-surface-2 px-1 rounded">{selectedField.example}</code>
               </p>
             )}
           </div>
@@ -447,20 +447,20 @@ function ConditionEditor({
             {conditionOperators.map(op => (
               <div key={op.value} className="px-2 py-1">
                 <SelectItem value={op.value}>{op.label}</SelectItem>
-                <p className="text-xs text-slate-500 pl-8 pb-1">{op.description}</p>
+                <p className="text-xs text-yx-fg-3 pl-8 pb-1">{op.description}</p>
               </div>
             ))}
           </SelectContent>
         </Select>
         {selectedOperator && (
-          <p className="text-xs text-slate-600">{selectedOperator.description}</p>
+          <p className="text-xs text-yx-fg-2">{selectedOperator.description}</p>
         )}
       </div>
 
       {needsValue && (
         <div className="space-y-1">
           <Label className="text-xs">Valor</Label>
-          <Input
+          <Input aria-label="Valor"
             className="h-8 text-xs"
             placeholder={selectedField?.example || 'Digite o valor'}
             value={value}
@@ -551,11 +551,11 @@ function ActionStep({
   const validation = validateFlow({ triggers: [], conditions: [], actions: sorted })
 
   return (
-    <div className="rounded-md border bg-white p-4">
+    <div className="rounded-md border bg-yx-surface p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <div className="flex items-center gap-2 text-sm font-semibold text-yx-fg">
           <Play className="h-4 w-4" />
-          Entao (Acoes)
+          Então (Ação)
           <Tooltip content="Arraste para reordenar as ações. Elas executam na ordem definida." />
         </div>
         {!adding && (
@@ -567,9 +567,9 @@ function ActionStep({
       </div>
 
       {validation.errors.length > 0 && (
-        <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-2">
+        <div className="mb-3 rounded-md border border-yx-crit-line bg-yx-crit-soft p-2">
           {validation.errors.map((error, index) => (
-            <div key={index} className="flex items-start gap-1 text-xs text-red-800">
+            <div key={index} className="flex items-start gap-1 text-xs text-yx-crit">
               <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
@@ -578,9 +578,9 @@ function ActionStep({
       )}
 
       {validation.warnings.length > 0 && (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-2">
+        <div className="mb-3 rounded-md border border-yx-warn-line bg-yx-warn-soft p-2">
           {validation.warnings.map((warning, index) => (
-            <div key={index} className="flex items-start gap-1 text-xs text-amber-800">
+            <div key={index} className="flex items-start gap-1 text-xs text-yx-warn">
               <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
               <span>{warning}</span>
             </div>
@@ -589,7 +589,7 @@ function ActionStep({
       )}
 
       {actions.length === 0 && !adding && (
-        <p className="text-sm text-slate-500">Nenhuma acao configurada.</p>
+        <p className="text-sm text-yx-fg-3">Nenhuma ação configurada.</p>
       )}
       <div className="space-y-2">
         {sorted.map((action, index) => {
@@ -608,7 +608,7 @@ function ActionStep({
               className={`transition-all ${
                 isDragged ? 'opacity-50' : ''
               } ${
-                isDragOver ? 'border-2 border-blue-400 rounded-md' : ''
+                isDragOver ? 'border-2 border-yx-blue rounded-md' : ''
               }`}
             >
               {editingId === action.id ? (
@@ -621,25 +621,25 @@ function ActionStep({
                   onCancel={() => setEditingId(null)}
                 />
               ) : (
-                <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 cursor-move hover:bg-slate-100">
-                  <GripVertical className="h-4 w-4 text-slate-400 shrink-0" />
+                <div className="flex items-center gap-2 rounded-md bg-yx-surface-2 px-3 py-2 cursor-move hover:bg-yx-surface-2">
+                  <GripVertical className="h-4 w-4 text-yx-fg-3 shrink-0" />
                   <Badge variant="outline" className="text-xs shrink-0">{index + 1}</Badge>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900">
+                    <p className="text-sm font-medium text-yx-fg">
                       {actionTypes.find(t => t.value === action.actionType)?.label || action.actionType}
                     </p>
                     {Object.keys(action.payload).length > 0 && (
-                      <p className="text-xs text-slate-500 truncate">
+                      <p className="text-xs text-yx-fg-3 truncate">
                         {Object.entries(action.payload).map(([k, v]) => `${k}: ${String(v)}`).join(', ')}
                       </p>
                     )}
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditingId(action.id)}>
+                    <Button type="button" aria-label="Editar item" size="sm" variant="ghost" onClick={() => setEditingId(action.id)}>
                       <Pencil className="h-3 w-3" />
                     </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => onDelete?.(action.id)}>
-                      <Trash2 className="h-3 w-3 text-red-500" />
+                    <Button type="button" aria-label="Remover item" size="sm" variant="ghost" onClick={() => onDelete?.(action.id)}>
+                      <Trash2 className="h-3 w-3 text-yx-crit" />
                     </Button>
                   </div>
                 </div>
@@ -660,7 +660,7 @@ function ActionStep({
       </div>
 
       {actions.length > 0 && (
-        <div className="mt-3 flex items-center gap-1 text-xs text-slate-500">
+        <div className="mt-3 flex items-center gap-1 text-xs text-yx-fg-3">
           <CheckCircle2 className="h-3 w-3" />
           <span>{actions.length} ação(ões) configurada(s) - arraste para reordenar</span>
         </div>
@@ -694,17 +694,17 @@ function ActionEditor({
   }, {})
 
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
+    <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-3">
       <div className="space-y-1">
-        <Label className="text-xs">Tipo de acao</Label>
+        <Label className="text-xs">Tipo de ação</Label>
         <Select value={actionType} onValueChange={setActionType}>
           <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="Selecione uma acao" />
+            <SelectValue placeholder="Selecione uma ação" />
           </SelectTrigger>
           <SelectContent>
             {Object.entries(actionGroups).map(([group, actions]) => (
               <div key={group}>
-                <div className="px-2 py-1 text-xs font-semibold text-slate-500">{group}</div>
+                <div className="px-2 py-1 text-xs font-semibold text-yx-fg-3">{group}</div>
                 {actions.map(a => (
                   <SelectItem key={a.value} value={a.value}>
                     {a.label}
@@ -749,12 +749,12 @@ function ActionPayloadFields({
       return (
         <div className="space-y-2">
           <div className="space-y-1">
-            <Label className="text-xs">Titulo da tarefa</Label>
-            <Input className="h-8 text-xs" placeholder="Ex: Follow-up comercial" value={String(payload.title || '')} onChange={e => onUpdate('title', e.target.value)} />
+            <Label className="text-xs">Título da tarefa</Label>
+            <Input aria-label="Título da tarefa" className="h-8 text-xs" placeholder="Ex: Follow-up comercial" value={String(payload.title || '')} onChange={e => onUpdate('title', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Descricao</Label>
-            <Textarea className="text-xs min-h-[60px]" placeholder="Detalhes da tarefa..." value={String(payload.description || '')} onChange={e => onUpdate('description', e.target.value)} />
+            <Label className="text-xs">Descrição</Label>
+            <Textarea aria-label="Descrição" className="text-xs min-h-[60px]" placeholder="Detalhes da tarefa..." value={String(payload.description || '')} onChange={e => onUpdate('description', e.target.value)} />
           </div>
         </div>
       )
@@ -762,22 +762,22 @@ function ActionPayloadFields({
       return (
         <div className="space-y-1">
           <Label className="text-xs">ID da etapa de destino</Label>
-          <Input className="h-8 text-xs" placeholder="stage-id" value={String(payload.stageId || '')} onChange={e => onUpdate('stageId', e.target.value)} />
+          <Input aria-label="ID da etapa de destino" className="h-8 text-xs" placeholder="stage-id" value={String(payload.stageId || '')} onChange={e => onUpdate('stageId', e.target.value)} />
         </div>
       )
     case 'assign_owner':
       return (
         <div className="space-y-1">
-          <Label className="text-xs">ID do responsavel</Label>
-          <Input className="h-8 text-xs" placeholder="user-id" value={String(payload.ownerId || '')} onChange={e => onUpdate('ownerId', e.target.value)} />
+          <Label className="text-xs">ID do responsável</Label>
+          <Input aria-label="ID do responsável" className="h-8 text-xs" placeholder="user-id" value={String(payload.ownerId || '')} onChange={e => onUpdate('ownerId', e.target.value)} />
         </div>
       )
     case 'send_whatsapp':
       return (
         <div className="space-y-2">
           <div className="space-y-1">
-            <Label className="text-xs">Mensagem ou Template ID</Label>
-            <Textarea className="text-xs min-h-[60px]" placeholder="Corpo da mensagem..." value={String(payload.body || payload.templateId || '')} onChange={e => onUpdate('body', e.target.value)} />
+            <Label className="text-xs">Mensagem ou ID do modelo</Label>
+            <Textarea aria-label="Mensagem ou ID do modelo" className="text-xs min-h-[60px]" placeholder="Corpo da mensagem..." value={String(payload.body || payload.templateId || '')} onChange={e => onUpdate('body', e.target.value)} />
           </div>
         </div>
       )
@@ -786,11 +786,11 @@ function ActionPayloadFields({
         <div className="space-y-2">
           <div className="space-y-1">
             <Label className="text-xs">Assunto</Label>
-            <Input className="h-8 text-xs" placeholder="Assunto do email" value={String(payload.subject || '')} onChange={e => onUpdate('subject', e.target.value)} />
+            <Input aria-label="Assunto" className="h-8 text-xs" placeholder="Assunto do e-mail" value={String(payload.subject || '')} onChange={e => onUpdate('subject', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Corpo</Label>
-            <Textarea className="text-xs min-h-[60px]" placeholder="Corpo do email..." value={String(payload.body || '')} onChange={e => onUpdate('body', e.target.value)} />
+            <Textarea aria-label="Corpo" className="text-xs min-h-[60px]" placeholder="Corpo do e-mail..." value={String(payload.body || '')} onChange={e => onUpdate('body', e.target.value)} />
           </div>
         </div>
       )
@@ -798,8 +798,8 @@ function ActionPayloadFields({
       return (
         <div className="space-y-2">
           <div className="space-y-1">
-            <Label className="text-xs">Titulo do ticket</Label>
-            <Input className="h-8 text-xs" placeholder="Ex: Suporte pos-venda" value={String(payload.title || '')} onChange={e => onUpdate('title', e.target.value)} />
+            <Label className="text-xs">Título do chamado</Label>
+            <Input aria-label="Título do chamado" className="h-8 text-xs" placeholder="Ex: Suporte pós-venda" value={String(payload.title || '')} onChange={e => onUpdate('title', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Prioridade</Label>
@@ -809,7 +809,7 @@ function ActionPayloadFields({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="low">Baixa</SelectItem>
-                <SelectItem value="medium">Media</SelectItem>
+                <SelectItem value="medium">Média</SelectItem>
                 <SelectItem value="high">Alta</SelectItem>
               </SelectContent>
             </Select>
@@ -821,11 +821,11 @@ function ActionPayloadFields({
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label className="text-xs">Campo</Label>
-            <Input className="h-8 text-xs" placeholder="Ex: status" value={String(payload.field || '')} onChange={e => onUpdate('field', e.target.value)} />
+            <Input aria-label="Campo" className="h-8 text-xs" placeholder="Ex: status" value={String(payload.field || '')} onChange={e => onUpdate('field', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Valor</Label>
-            <Input className="h-8 text-xs" placeholder="Ex: qualified" value={String(payload.value || '')} onChange={e => onUpdate('value', e.target.value)} />
+            <Input aria-label="Valor" className="h-8 text-xs" placeholder="Ex: qualified" value={String(payload.value || '')} onChange={e => onUpdate('value', e.target.value)} />
           </div>
         </div>
       )
@@ -834,11 +834,11 @@ function ActionPayloadFields({
         <div className="space-y-2">
           <div className="space-y-1">
             <Label className="text-xs">Tipo de atividade</Label>
-            <Input className="h-8 text-xs" placeholder="Ex: follow_up" value={String(payload.activityType || '')} onChange={e => onUpdate('activityType', e.target.value)} />
+            <Input aria-label="Tipo de atividade" className="h-8 text-xs" placeholder="Ex: follow_up" value={String(payload.activityType || '')} onChange={e => onUpdate('activityType', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Descricao</Label>
-            <Textarea className="text-xs min-h-[60px]" placeholder="Detalhes da atividade..." value={String(payload.description || '')} onChange={e => onUpdate('description', e.target.value)} />
+            <Label className="text-xs">Descrição</Label>
+            <Textarea aria-label="Descrição" className="text-xs min-h-[60px]" placeholder="Detalhes da atividade..." value={String(payload.description || '')} onChange={e => onUpdate('description', e.target.value)} />
           </div>
         </div>
       )
@@ -847,10 +847,10 @@ function ActionPayloadFields({
         <div className="space-y-2">
           <div className="space-y-1">
             <Label className="text-xs">URL</Label>
-            <Input className="h-8 text-xs" placeholder="https://..." value={String(payload.url || '')} onChange={e => onUpdate('url', e.target.value)} />
+            <Input aria-label="URL" className="h-8 text-xs" placeholder="https://..." value={String(payload.url || '')} onChange={e => onUpdate('url', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Metodo</Label>
+            <Label className="text-xs">Método</Label>
             <Select value={String(payload.method || 'POST')} onValueChange={v => onUpdate('method', v)}>
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
@@ -869,10 +869,10 @@ function ActionPayloadFields({
         <div className="space-y-2">
           <div className="space-y-1">
             <Label className="text-xs">URL</Label>
-            <Input className="h-8 text-xs" placeholder="https://api..." value={String(payload.url || '')} onChange={e => onUpdate('url', e.target.value)} />
+            <Input aria-label="URL" className="h-8 text-xs" placeholder="https://api..." value={String(payload.url || '')} onChange={e => onUpdate('url', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Metodo</Label>
+            <Label className="text-xs">Método</Label>
             <Select value={String(payload.method || 'POST')} onValueChange={v => onUpdate('method', v)}>
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
@@ -889,16 +889,16 @@ function ActionPayloadFields({
     case 'ai_classify_lead':
       return (
         <div className="space-y-1">
-          <Label className="text-xs">Modelo / criterios</Label>
-          <Input className="h-8 text-xs" placeholder="Ex: BANT scoring" value={String(payload.model || '')} onChange={e => onUpdate('model', e.target.value)} />
+          <Label className="text-xs">Modelo / critérios</Label>
+          <Input aria-label="Modelo / critérios" className="h-8 text-xs" placeholder="Ex: BANT scoring" value={String(payload.model || '')} onChange={e => onUpdate('model', e.target.value)} />
         </div>
       )
     case 'ai_generate_message':
       return (
         <div className="space-y-2">
           <div className="space-y-1">
-            <Label className="text-xs">Prompt / instrucao</Label>
-            <Textarea className="text-xs min-h-[60px]" placeholder="Instrucoes para geracao da mensagem..." value={String(payload.prompt || '')} onChange={e => onUpdate('prompt', e.target.value)} />
+            <Label className="text-xs">Instrução para a IA</Label>
+            <Textarea aria-label="Instrução para a IA" className="text-xs min-h-[60px]" placeholder="Instruções para gerar a mensagem..." value={String(payload.prompt || '')} onChange={e => onUpdate('prompt', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Canal</Label>
@@ -908,7 +908,7 @@ function ActionPayloadFields({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
+                <SelectItem value="email">E-mail</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -917,8 +917,8 @@ function ActionPayloadFields({
     case 'ai_generate_proposal':
       return (
         <div className="space-y-1">
-          <Label className="text-xs">Template ID da proposta</Label>
-          <Input className="h-8 text-xs" placeholder="proposal-template-id" value={String(payload.templateId || '')} onChange={e => onUpdate('templateId', e.target.value)} />
+          <Label className="text-xs">ID do modelo da proposta</Label>
+          <Input aria-label="ID do modelo da proposta" className="h-8 text-xs" placeholder="proposal-template-id" value={String(payload.templateId || '')} onChange={e => onUpdate('templateId', e.target.value)} />
         </div>
       )
     default:

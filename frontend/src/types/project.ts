@@ -186,9 +186,9 @@ export interface ProjectStats {
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   PLANNING: 'Planejamento',
-  ACTIVE: 'Em Andamento',
-  REVIEW: 'Em Revisao',
-  COMPLETED: 'Concluido',
+  ACTIVE: 'Em andamento',
+  REVIEW: 'Em revisão',
+  COMPLETED: 'Concluído',
   PAUSED: 'Pausado',
   CANCELLED: 'Cancelado',
   ARCHIVED: 'Arquivado',
@@ -196,7 +196,7 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
 
 export const PROJECT_PRIORITY_LABELS: Record<ProjectPriority, string> = {
   LOW: 'Baixa',
-  MEDIUM: 'Media',
+  MEDIUM: 'Média',
   HIGH: 'Alta',
   URGENT: 'Urgente',
 }
@@ -204,7 +204,7 @@ export const PROJECT_PRIORITY_LABELS: Record<ProjectPriority, string> = {
 export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   WEBSITE: 'Website',
   ECOMMERCE: 'E-commerce',
-  MOBILE_APP: 'App Mobile',
+  MOBILE_APP: 'App mobile',
   MARKETING: 'Marketing',
   BRANDING: 'Branding',
   CONSULTING: 'Consultoria',
@@ -231,21 +231,21 @@ export type Phase = ProjectPhase
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'Pendente',
-  in_progress: 'Em Andamento',
-  completed: 'Concluida',
+  in_progress: 'Em andamento',
+  completed: 'Concluída',
   cancelled: 'Cancelada',
 }
 
 export const PHASE_STATUS_LABELS: Record<PhaseStatus, string> = {
   planning: 'Planejamento',
-  in_progress: 'Em Andamento',
-  completed: 'Concluida',
-  on_hold: 'Em Espera',
+  in_progress: 'Em andamento',
+  completed: 'Concluída',
+  on_hold: 'Em espera',
 }
 
 export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
   low: 'Baixa',
-  medium: 'Media',
+  medium: 'Média',
   high: 'Alta',
   urgent: 'Urgente',
 }

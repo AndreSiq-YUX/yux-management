@@ -1,57 +1,85 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
+import { LifeBuoy } from 'lucide-react'
+import { EmptyState, ErrorState, PageHeader, SkeletonCard } from '@/components/portal-ui'
 import { PortalSupportWorkspace } from '@/components/support/PortalSupportWorkspace'
-import { platformService } from '@/services/platformService'
+import { createPortalTicket } from '@/lib/support/createPortalTicket'
 import { supportService } from '@/services/supportService'
+import { useAuthStore } from '@/stores/authStore'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { PortalSupportTicket } from '@/types/support'
 
 export function PortalSupportPage() {
   const activeContract = usePlatformStore(state => state.activeContract)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
+  const userName = useAuthStore(state => state.user?.name)
   const [tickets, setTickets] = useState<PortalSupportTicket[]>([])
-  const [organizationId, setOrganizationId] = useState<string>()
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
-  const load = useCallback(async () => {
+  const contractId = activeContract?.id
+
+  /** `silent` recarrega a lista sem trocar a tela por "carregando" (mantém o chamado aberto e os textos). */
+  const load = useCallback(async (silent = false) => {
     if (isPlatformLoading) {
       setLoading(true)
       return
     }
 
-    if (!activeContract) {
+    if (!contractId) {
       setLoading(false)
       return
     }
 
-    setLoading(true)
+    if (!silent) setLoading(true)
+    setError(false)
     try {
-      const [loadedTickets, organizations] = await Promise.all([
-        supportService.getPortalTickets(activeContract.id),
-        platformService.getOrganizations(),
-      ])
-      setTickets(loadedTickets)
-      setOrganizationId(organizations.find(organization => organization.slug === 'yux')?.id || organizations[0]?.id)
-    } catch (error) {
-      console.error('Erro ao carregar suporte do portal:', error)
-      toast.error('Erro ao carregar suporte')
-      setTickets([])
+      setTickets(await supportService.getPortalTickets(contractId))
+    } catch (cause) {
+      console.error('Erro ao carregar suporte do portal:', cause)
+      if (silent) {
+        toast.error('Não foi possível atualizar a lista de chamados.')
+      } else {
+        toast.error('Erro ao carregar suporte')
+        setTickets([])
+        setError(true)
+      }
     } finally {
       setLoading(false)
     }
-  }, [activeContract, isPlatformLoading])
+  }, [contractId, isPlatformLoading])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
-  if (isPlatformLoading || loading) return <p className="text-sm text-gray-600">Carregando suporte...</p>
+  if (isPlatformLoading || loading) {
+    return (
+      <div className="w-full space-y-6" aria-busy="true">
+        <PageHeader title="Ajuda e suporte" lead="Carregando seus chamados…" />
+        <SkeletonCard lines={5} />
+      </div>
+    )
+  }
 
   if (!activeContract) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Suporte</h1>
-        <p className="mt-2 text-gray-600">Nenhum contrato ativo encontrado para este usuario.</p>
+      <div className="w-full space-y-6">
+        <PageHeader title="Ajuda e suporte" />
+        <EmptyState
+          icon={LifeBuoy}
+          title="Nenhum contrato ativo"
+          description="Não encontramos um contrato ativo para a sua conta. Quando ele estiver ativo, você poderá abrir chamados aqui."
+        />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="w-full space-y-6">
+        <PageHeader title="Ajuda e suporte" />
+        <ErrorState title="Não foi possível carregar seus chamados." description="Verifique sua conexão e tente de novo." onRetry={() => void load()} />
       </div>
     )
   }
@@ -60,33 +88,29 @@ export function PortalSupportPage() {
     <PortalSupportWorkspace
       contract={activeContract}
       tickets={tickets}
-      onRefresh={load}
+      currentUserName={userName}
+      onRefresh={() => load(true)}
       onCreateTicket={async input => {
-        if (!organizationId) {
-          toast.error('Organizacao operacional nao encontrada')
-          return
+        try {
+          await createPortalTicket(input)
+        } catch (cause) {
+          console.error('Erro ao abrir chamado:', cause)
+          toast.error('Não foi possível abrir o chamado.')
+          throw cause
         }
-        const ticket = await supportService.createTicket({
-          organizationId,
-          clientId: input.clientId,
-          contractId: input.contractId,
-          subject: input.subject,
-          category: input.category,
-          priority: input.priority,
-        })
-        await supportService.addMessage({
-          ticketId: ticket.id,
-          authorType: 'client',
-          body: input.body,
-          isInternal: false,
-        })
-        toast.success('Chamado aberto')
-        load()
+        toast.success('Chamado aberto. A equipe YUX vai responder por aqui.')
+        await load(true)
       }}
       onAddMessage={async input => {
-        await supportService.addMessage(input)
+        try {
+          await supportService.addMessage(input)
+        } catch (cause) {
+          console.error('Erro ao enviar resposta:', cause)
+          toast.error('Não foi possível enviar a resposta.')
+          throw cause
+        }
         toast.success('Resposta enviada')
-        load()
+        await load(true)
       }}
     />
   )

@@ -13,8 +13,8 @@ const fallbackDefinitions: MissionMetricDefinition[] = [
 export function MissionMetricsPanel({ metrics, metricSpec, showTechnicalProof = false }: { metrics: MissionMetrics; metricSpec?: MissionMetricSpec; showTechnicalProof?: boolean }) {
   const definitions = metricDefinitions(metricSpec)
   return (
-    <section className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-5 py-4"><h2 className="font-semibold text-slate-950">Resultados observados</h2><p className="mt-1 text-xs text-slate-500">Valores ausentes continuam desconhecidos; métricas sem denominador aparecem como não aplicáveis.</p></div>
+    <section className="border border-yx-line bg-yx-surface">
+      <div className="border-b border-yx-line px-5 py-4"><h2 className="font-semibold text-yx-fg">Resultados observados</h2><p className="mt-1 text-xs text-yx-fg-3">Valores ausentes continuam desconhecidos; métricas sem denominador aparecem como não aplicáveis.</p></div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {definitions.map(definition => <MetricCard key={definition.key} definition={definition} metric={metrics[definition.key]} showTechnicalProof={showTechnicalProof} />)}
       </div>
@@ -25,7 +25,7 @@ export function MissionMetricsPanel({ metrics, metricSpec, showTechnicalProof = 
 function MetricCard({ definition, metric, showTechnicalProof }: { definition: MissionMetricDefinition; metric?: MissionMetric; showTechnicalProof: boolean }) {
   const Icon = metricIcon[definition.key] ?? Activity
   const policy = definition.attributionPolicy ?? {}
-  return <div className="border-b border-slate-200 p-4 sm:border-r"><Icon className="h-4 w-4 text-[#2563EB]" /><p className="mt-4 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{metricLabel[definition.key] ?? humanize(definition.key)}</p><p className="mt-2 text-lg font-semibold text-slate-950">{metricText(metric)}</p>{metric && metric.kind !== 'known' ? <p className="mt-1 text-[11px] leading-4 text-slate-500">{reasonLabel[metric.reason] ?? humanize(metric.reason)}</p> : null}{definition.attributionPolicy ? <p className="mt-2 text-[10px] leading-4 text-slate-500">Atribuição: {humanize(String(policy.model ?? 'versionada'))} · {String(policy.windowDays ?? '—')} dias · v{String(policy.version ?? '—')}</p> : null}{showTechnicalProof && definition.attributionPolicyHash ? <p className="mt-1 break-all font-mono text-[9px] text-slate-400">{definition.attributionPolicyHash}</p> : null}</div>
+  return <div className="border-b border-yx-line p-4 sm:border-r"><Icon className="h-4 w-4 text-yx-blue" /><p className="mt-4 text-[10px] font-bold uppercase tracking-[0.12em] text-yx-fg-3">{metricLabel[definition.key] ?? humanize(definition.key)}</p><p className="mt-2 text-lg font-semibold text-yx-fg">{metricText(metric)}</p>{metric && metric.kind !== 'known' ? <p className="mt-1 text-[11px] leading-4 text-yx-fg-3">{reasonLabel[metric.reason] ?? humanize(metric.reason)}</p> : null}{definition.attributionPolicy ? <p className="mt-2 text-[10px] leading-4 text-yx-fg-3">Atribuição: {humanize(String(policy.model ?? 'versionada'))} · {String(policy.windowDays ?? '—')} dias · v{String(policy.version ?? '—')}</p> : null}{showTechnicalProof && definition.attributionPolicyHash ? <p className="mt-1 break-all font-mono text-[9px] text-yx-fg-3">{definition.attributionPolicyHash}</p> : null}</div>
 }
 
 export function metricDefinitions(spec?: MissionMetricSpec): MissionMetricDefinition[] {

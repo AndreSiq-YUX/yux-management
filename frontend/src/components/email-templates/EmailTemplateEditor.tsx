@@ -9,6 +9,8 @@ import { Bold, Code2, Eye, Italic, Link2, List, ListOrdered } from 'lucide-react
 interface EmailTemplateEditorProps {
   value: string
   variables: string[]
+  /** Quando informado, os botões mostram este nome em vez de `{{variavel}}` (modo portal). */
+  variableLabel?: (variable: string) => string
   onChange: (html: string) => void
   disabled?: boolean
 }
@@ -18,7 +20,7 @@ type EditorMode = 'visual' | 'html'
 const toolbarButtonBase =
   'inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50'
 
-export function EmailTemplateEditor({ value, variables, onChange, disabled = false }: EmailTemplateEditorProps) {
+export function EmailTemplateEditor({ value, variables, variableLabel, onChange, disabled = false }: EmailTemplateEditorProps) {
   const [mode, setMode] = useState<EditorMode>('visual')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -31,7 +33,7 @@ export function EmailTemplateEditor({ value, variables, onChange, disabled = fal
         openOnClick: false,
       }),
       Placeholder.configure({
-        placeholder: 'Escreva o conteudo do email...',
+        placeholder: 'Escreva o conteúdo do e-mail...',
       }),
     ],
     content: value,
@@ -130,8 +132,8 @@ export function EmailTemplateEditor({ value, variables, onChange, disabled = fal
               className={`${toolbarButtonBase} ${editor?.isActive('italic') ? 'bg-gray-900 text-white' : 'bg-white'}`}
               onClick={() => editor?.chain().focus().toggleItalic().run()}
               disabled={disabled || !editor}
-              title="Italico"
-              aria-label="Italico"
+              title="Itálico"
+              aria-label="Itálico"
             >
               <Italic className="h-4 w-4" />
             </button>
@@ -178,8 +180,10 @@ export function EmailTemplateEditor({ value, variables, onChange, disabled = fal
               className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => insertVariable(variable)}
               disabled={disabled}
+              aria-label={variableLabel ? `Inserir ${variableLabel(variable)}` : undefined}
+              title={variableLabel ? `Insere "${variableLabel(variable)}" onde o cursor estiver` : undefined}
             >
-              {`{{${variable}}}`}
+              {variableLabel ? variableLabel(variable) : `{{${variable}}}`}
             </button>
           ))}
         </div>
@@ -200,7 +204,7 @@ export function EmailTemplateEditor({ value, variables, onChange, disabled = fal
           onChange={event => onChange(event.target.value)}
           disabled={disabled}
           spellCheck={false}
-          aria-label="HTML do modelo de email"
+          aria-label="HTML do modelo de e-mail"
         />
       )}
     </div>

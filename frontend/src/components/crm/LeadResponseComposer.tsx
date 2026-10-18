@@ -45,7 +45,7 @@ export function LeadResponseComposer({
             Este lead ainda nao possui opt-in de WhatsApp. Use apenas canais permitidos ou confirme consentimento antes do envio.
           </div>
         )}
-        <Textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Escreva ou ajuste a resposta sugerida" />
+        <Textarea aria-label="Resposta ao lead" value={draft} onChange={event => setDraft(event.target.value)} placeholder="Escreva ou ajuste a resposta sugerida" />
         <div className="flex flex-wrap gap-2">
           {quickReplies.slice(0, 6).map(reply => (
             <Button key={reply.id} type="button" variant="outline" size="sm" onClick={() => setDraft(reply.body)}>

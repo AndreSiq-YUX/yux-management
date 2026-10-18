@@ -39,6 +39,7 @@ const PortalReportsPage = lazy(() => import('@/pages/client-portal/PortalReports
 const PortalSupportPage = lazy(() => import('@/pages/client-portal/PortalSupportPage').then(module => ({ default: module.PortalSupportPage })))
 const PortalAccountSettingsPage = lazy(() => import('@/pages/client-portal/PortalAccountSettingsPage').then(module => ({ default: module.PortalAccountSettingsPage })))
 const PortalApprovalsPage = lazy(() => import('@/pages/client-portal/PortalApprovalsPage').then(module => ({ default: module.PortalApprovalsPage })))
+const PortalProposalsPage = lazy(() => import('@/pages/client-portal/PortalProposalsPage').then(module => ({ default: module.PortalProposalsPage })))
 const PortalAutomationsPage = lazy(() => import('@/pages/client-portal/PortalAutomationsPage').then(module => ({ default: module.PortalAutomationsPage })))
 const PortalEmailTemplatesPage = lazy(() => import('@/pages/client-portal/PortalEmailTemplatesPage').then(module => ({ default: module.PortalEmailTemplatesPage })))
 const PortalCommercialAccountsPage = lazy(() => import('@/pages/client-portal/commercial/PortalCommercialAccountsPage').then(module => ({ default: module.PortalCommercialAccountsPage })))
@@ -209,10 +210,11 @@ function App() {
               <Route path="automacoes/fluxos" element={<PortalAutomationsPage section="Automacoes" />} />
               <Route path="automacoes/templates" element={<PortalAutomationsPage section="Templates" />} />
               <Route path="automacoes/execucoes" element={<PortalAutomationsPage section="Execucoes" />} />
-              <Route path="automacoes/logs" element={<PortalAutomationsPage section="Execucoes" />} />
+              <Route path="automacoes/logs" element={<Navigate to="../automacoes/execucoes" replace />} />
 
               <Route path="projetos/projetos" element={<PortalProjectsPage />} />
               <Route path="projetos/aprovacoes" element={<PortalApprovalsPage />} />
+              <Route path="projetos/propostas" element={<PortalProposalsPage />} />
               <Route path="projetos/documentos" element={<PortalDocumentsPage />} />
               <Route path="missoes" element={<PortalMissionsPage />} />
               <Route path="missoes/conversas/:conversationId" element={<PortalMissionConversationPage />} />
@@ -264,10 +266,11 @@ function App() {
             <Route path="portal/automacoes/fluxos" element={<PortalAutomationsPage section="Automacoes" />} />
             <Route path="portal/automacoes/templates" element={<PortalAutomationsPage section="Templates" />} />
             <Route path="portal/automacoes/execucoes" element={<PortalAutomationsPage section="Execucoes" />} />
-            <Route path="portal/automacoes/logs" element={<PortalAutomationsPage section="Execucoes" />} />
+            <Route path="portal/automacoes/logs" element={<Navigate to="/portal/automacoes/execucoes" replace />} />
 
             <Route path="portal/projetos/projetos" element={<PortalProjectsPage />} />
             <Route path="portal/projetos/aprovacoes" element={<PortalApprovalsPage />} />
+            <Route path="portal/projetos/propostas" element={<PortalProposalsPage />} />
             <Route path="portal/projetos/documentos" element={<PortalDocumentsPage />} />
             <Route path="portal/missoes" element={<PortalMissionsPage />} />
             <Route path="portal/missoes/conversas/:conversationId" element={<PortalMissionConversationPage />} />
@@ -280,7 +283,7 @@ function App() {
             <Route path="portal/configuracoes/emails" element={<PortalEmailTemplatesPage />} />
 
             <Route path="portal/projects" element={<Navigate to="/portal/projetos/projetos" replace />} />
-            <Route path="portal/proposals" element={<Navigate to="/portal/projetos/aprovacoes" replace />} />
+            <Route path="portal/proposals" element={<Navigate to="/portal/projetos/propostas" replace />} />
             <Route path="portal/crm" element={<Navigate to="/portal/comercial/leads" replace />} />
             <Route path="portal/crm/settings" element={<Navigate to="/portal/empresa/usuarios" replace />} />
             <Route path="portal/omnichannel" element={<Navigate to="/portal/atendimento/conversas" replace />} />

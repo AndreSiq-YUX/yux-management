@@ -1,8 +1,68 @@
-import { PlugZap } from 'lucide-react'
-import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, Megaphone, MessageCircle, PlugZap, Send } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { EmptyState, ErrorState, SkeletonCard, StatusChip, portalButtonClasses, type StatusChipVariant } from '@/components/portal-ui'
 import { usePortalMarketingContext } from '@/hooks/usePortalMarketingContext'
-import { formatPortalDateTime, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
+import { formatRelativeTime, statusLabel } from '@/lib/client-portal/portalDisplay'
 import { usePlatformStore } from '@/stores/platformStore'
+import type { MarketingPublishingConnectionStatus, MarketingPublishingProvider } from '@/types/marketingStudio'
+
+const PUBLISHING_PROVIDER_LABELS: Record<MarketingPublishingProvider, string> = {
+  wordpress: 'WordPress',
+  meta_facebook: 'Facebook',
+  meta_instagram: 'Instagram',
+  google_business_profile: 'Perfil da empresa no Google',
+}
+
+const CAMPAIGN_PROVIDER_LABELS: Record<string, string> = {
+  meta: 'Meta Ads (Facebook e Instagram)',
+  google: 'Google Ads',
+}
+
+const CONNECTION_VARIANTS: Record<MarketingPublishingConnectionStatus, StatusChipVariant> = {
+  connected: 'ok',
+  needs_setup: 'warn',
+  stale: 'warn',
+  needs_reauth: 'warn',
+  failed: 'crit',
+  disabled: 'neutral',
+}
+
+interface ConnectionCardProps {
+  icon: LucideIcon
+  name: string
+  kind: string
+  status?: ReactNode
+  detail: string
+  href: string
+  linkLabel: string
+}
+
+function ConnectionCard({ icon: Icon, name, kind, status, detail, href, linkLabel }: ConnectionCardProps) {
+  const toWorkspace = usePortalWorkspacePath()
+  return (
+    <article className="flex flex-col gap-3 rounded-[10px] border border-yx-line bg-yx-surface p-4 text-yx-fg shadow-[0_1px_2px_rgba(14,17,32,0.04)] dark:shadow-none sm:flex-row sm:items-center">
+      <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-yx-blue-soft text-yx-blue">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-display text-[15px] font-semibold leading-snug">{name}</h3>
+          {status}
+        </div>
+        <p className="mt-0.5 text-xs text-yx-fg-3">{kind}</p>
+        <p className="mt-1 text-[13px] text-yx-fg-2">{detail}</p>
+      </div>
+      <Link to={toWorkspace(href)} className={portalButtonClasses('ghost', 'shrink-0')}>
+        {linkLabel}
+        <ArrowRight aria-hidden="true" />
+      </Link>
+    </article>
+  )
+}
 
 export function PortalCompanyIntegrationsPage() {
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
@@ -14,79 +74,86 @@ export function PortalCompanyIntegrationsPage() {
   } = usePortalMarketingContext({ resources: ['campaigns', 'publishingConnections'] })
 
   const connectedPublishing = publishingConnections.filter(connection => connection.status === 'connected')
-  const campaignProviders = new Set(campaigns.map(campaign => campaign.provider))
-  const channelModules = [
-    { label: 'WhatsApp / Atendimento', enabled: enabledModuleKeys.includes('whatsapp_ai') },
-    { label: 'Campanhas Meta ou Google', enabled: enabledModuleKeys.includes('campaigns') || campaignProviders.size > 0 },
-    { label: 'Landing Pages', enabled: enabledModuleKeys.includes('landing_pages') },
-    { label: 'Marketing Studio', enabled: enabledModuleKeys.includes('marketing_studio') },
-  ]
+  const campaignProviders = Array.from(new Set(campaigns.map(campaign => campaign.provider)))
+  const hasChannels = enabledModuleKeys.includes('whatsapp_ai')
+  const hasAnyConnection = publishingConnections.length > 0 || campaignProviders.length > 0 || hasChannels
 
   return (
-    <PortalJourneyPage
+    <PortalPage
       eyebrow="Empresa"
-      title="Integracoes da Empresa"
-      description="Conexoes do cliente com canais, midia, publicacao, calendario, planilhas e automacoes externas."
-      icon={PlugZap}
+      title="Conexões"
+      description="Visão geral de todas as conexões da sua empresa: publicação de conteúdo, campanhas e canais de atendimento. Cada conexão é gerenciada na área a que pertence."
       metrics={[
-        { label: 'Modulos', value: String(channelModules.filter(module => module.enabled).length), detail: 'Areas contratadas que dependem de integracao.' },
-        { label: 'Publicacao', value: String(connectedPublishing.length), detail: 'Conexoes conectadas para conteudo.' },
-        { label: 'Campanhas', value: String(campaignProviders.size), detail: 'Provedores usados em campanhas.' },
+        { label: 'Publicação conectada', value: String(connectedPublishing.length), detail: `De ${publishingConnections.length} conexões de publicação.` },
+        { label: 'Provedores de campanha', value: String(campaignProviders.length), detail: 'Em uso nas suas campanhas.' },
       ]}
-      capabilities={[
-        'WhatsApp, Instagram, Facebook Messenger, Meta Ads, Google Ads e WordPress.',
-        'Google Calendar, Google Sheets e webhooks para fluxos operacionais.',
-        'Status da conexao, reconexao, permissoes e ultima sincronizacao.',
-        'Logs basicos do cliente, sem expor provedores ou segredos globais da plataforma.',
+      help={[
+        'Veja em um só lugar o que está conectado e quando foi a última verificação.',
+        'Para conectar, reconectar ou desconectar, abra a área indicada em cada cartão.',
+        'Canais de atendimento, como o WhatsApp, continuam sendo gerenciados em Atendimento.',
       ]}
-      secondaryActions={[
-        { label: 'Canais de Atendimento', href: '/portal/atendimento/canais' },
-        { label: 'Campanhas', href: '/portal/marketing/campanhas' },
-        { label: 'Landing Pages', href: '/portal/marketing/landing-pages' },
+      related={[
+        ...(hasChannels ? [{ label: 'Canais de atendimento', href: '/portal/atendimento/canais' }] : []),
+        ...(enabledModuleKeys.includes('campaigns') ? [{ label: 'Campanhas', href: '/portal/marketing/campanhas' }] : []),
+        ...(enabledModuleKeys.includes('marketing_studio') ? [{ label: 'Marketing Studio', href: '/portal/marketing/studio' }] : []),
       ]}
-      note="Integracoes globais, provedores e custos continuam restritos a Administracao da Plataforma."
     >
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-lg border bg-white p-5">
-          <h2 className="text-base font-semibold text-gray-900">Conexoes de publicacao</h2>
-          {loading ? (
-            <p className="mt-3 text-sm text-gray-600">Carregando integracoes...</p>
-          ) : error ? (
-            <p className="mt-3 text-sm text-red-600">{error}</p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {publishingConnections.map(connection => (
-                <div key={connection.id} className="rounded-md border bg-gray-50 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">{connection.name}</p>
-                    <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(connection.status)}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {connection.provider} - ultima verificacao {formatPortalDateTime(connection.lastVerifiedAt || connection.lastHealthCheckAt)}
-                  </p>
-                </div>
-              ))}
-              {!publishingConnections.length && (
-                <p className="text-sm text-gray-600">Nenhuma conexao de publicacao configurada para este contrato.</p>
-              )}
-            </div>
-          )}
-        </article>
-
-        <article className="rounded-lg border bg-white p-5">
-          <h2 className="text-base font-semibold text-gray-900">Disponibilidade por area</h2>
-          <div className="mt-4 space-y-2">
-            {channelModules.map(module => (
-              <div key={module.label} className="flex items-center justify-between rounded-md border bg-gray-50 px-3 py-2 text-sm">
-                <span className="font-medium text-gray-800">{module.label}</span>
-                <span className={module.enabled ? 'text-emerald-700' : 'text-gray-500'}>
-                  {module.enabled ? 'ativo' : 'nao contratado'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-    </PortalJourneyPage>
+      {error ? (
+        <ErrorState title="Não foi possível carregar as conexões." description={error} />
+      ) : loading ? (
+        <SkeletonCard lines={4} />
+      ) : !hasAnyConnection ? (
+        <EmptyState
+          icon={PlugZap}
+          title="Nenhuma conexão por aqui ainda"
+          description="Quando você conectar um site, uma rede social, uma conta de anúncios ou um canal de atendimento, ele aparece aqui com o status e a última verificação."
+        />
+      ) : (
+        <div className="space-y-3">
+          {publishingConnections.map(connection => (
+            <ConnectionCard
+              key={connection.id}
+              icon={Send}
+              name={connection.name}
+              kind={`Publicação de conteúdo · ${PUBLISHING_PROVIDER_LABELS[connection.provider] ?? connection.provider}`}
+              status={<StatusChip variant={CONNECTION_VARIANTS[connection.status] ?? 'neutral'}>{statusLabel(connection.status)}</StatusChip>}
+              detail={
+                connection.lastVerifiedAt || connection.lastHealthCheckAt
+                  ? `Última verificação ${formatRelativeTime(connection.lastVerifiedAt || connection.lastHealthCheckAt)}.`
+                  : 'Ainda não verificada.'
+              }
+              href="/portal/marketing/studio"
+              linkLabel="Gerenciar no Marketing Studio"
+            />
+          ))}
+          {campaignProviders.map(provider => {
+            const providerCampaigns = campaigns.filter(campaign => campaign.provider === provider)
+            const latest = providerCampaigns.map(campaign => campaign.updatedAt).filter(Boolean).sort().at(-1)
+            return (
+              <ConnectionCard
+                key={provider}
+                icon={Megaphone}
+                name={CAMPAIGN_PROVIDER_LABELS[provider] ?? provider}
+                kind="Campanhas de anúncios"
+                status={<StatusChip variant="ok">Em uso</StatusChip>}
+                detail={`${providerCampaigns.length} ${providerCampaigns.length === 1 ? 'campanha' : 'campanhas'}${latest ? ` · última atualização ${formatRelativeTime(latest)}` : ''}.`}
+                href="/portal/marketing/campanhas"
+                linkLabel="Gerenciar em Campanhas"
+              />
+            )
+          })}
+          {hasChannels ? (
+            <ConnectionCard
+              icon={MessageCircle}
+              name="Canais de atendimento"
+              kind="WhatsApp e outros canais"
+              detail="Conecte e acompanhe os canais de atendimento na área de Atendimento."
+              href="/portal/atendimento/canais"
+              linkLabel="Abrir canais de atendimento"
+            />
+          ) : null}
+        </div>
+      )}
+    </PortalPage>
   )
 }

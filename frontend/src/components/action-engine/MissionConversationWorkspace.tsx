@@ -169,8 +169,8 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
     }
   }
 
-  if (loading) return <div className="grid min-h-[520px] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div>
-  if (!conversation) return <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error ?? 'Conversa não encontrada.'}</div>
+  if (loading) return <div className="grid min-h-[520px] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-yx-blue" /></div>
+  if (!conversation) return <div className="rounded-lg border border-yx-crit-line bg-yx-crit-soft p-5 text-sm text-yx-crit">{error ?? 'Conversa não encontrada.'}</div>
   const recordedProcessingError = typeof conversation.contextReadiness.processingError === 'string'
     ? conversation.contextReadiness.processingError
     : null
@@ -183,26 +183,26 @@ export function MissionConversationWorkspace({ conversationId, organizationId, c
   const liveStatus = processing ? 'O agente está consultando a estratégia YUX e o contexto da empresa.' : statusLabel(conversation.status)
 
   return (
-    <main className="flex min-h-[calc(100vh-7.5rem)] flex-col overflow-hidden border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-6">
+    <div className="flex min-h-[calc(100vh-7.5rem)] flex-col overflow-hidden border border-yx-line bg-yx-surface shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-yx-line px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <Link aria-label="Voltar para missões" className="rounded-full p-2 text-slate-500 hover:bg-slate-100" to={backHref}><ArrowLeft className="h-4 w-4" /></Link>
-          <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-950">{conversation.title}</p><p className="mt-0.5 text-xs text-slate-500">{statusLabel(conversation.status)}</p></div>
+          <Link aria-label="Voltar para missões" className="rounded-full p-2 text-yx-fg-3 hover:bg-yx-surface-2" to={backHref}><ArrowLeft className="h-4 w-4" /></Link>
+          <div className="min-w-0"><p className="truncate text-sm font-semibold text-yx-fg">{conversation.title}</p><p className="mt-0.5 text-xs text-yx-fg-3">{statusLabel(conversation.status)}</p></div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setContextOpen(true)} type="button"><BookOpen className="h-4 w-4" />Contexto usado</button>
-          {conversation.missionId ? <Link className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white" to={missionHref(conversation.missionId)}>Ver missão <ExternalLink className="h-3.5 w-3.5" /></Link> : null}
-          {writable && !processing ? <button aria-label="Cancelar conversa" className="rounded-full p-2 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => void cancel()} type="button"><XCircle className="h-4 w-4" /></button> : <MoreHorizontal className="h-4 w-4 text-slate-300" />}
+          <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-yx-line px-3 text-xs font-semibold text-yx-fg-2 hover:bg-yx-surface-2" onClick={() => setContextOpen(true)} type="button"><BookOpen className="h-4 w-4" />Contexto usado</button>
+          {conversation.missionId ? <Link className="inline-flex h-9 items-center gap-2 rounded-lg bg-yx-blue px-3 text-xs font-semibold text-white" to={missionHref(conversation.missionId)}>Ver missão <ExternalLink className="h-3.5 w-3.5" /></Link> : null}
+          {writable && !processing ? <button aria-label="Cancelar conversa" className="rounded-full p-2 text-yx-fg-3 hover:bg-yx-crit-soft hover:text-yx-crit" onClick={() => void cancel()} type="button"><XCircle className="h-4 w-4" /></button> : <MoreHorizontal className="h-4 w-4 text-yx-fg-3" />}
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
         <MissionConversationThread conversation={conversation} processing={processing} processingError={processingError} canWrite={canInteract} onQuickReply={message => void send(message)} onConfirmBrief={() => void confirmBrief()} onRetry={pendingRetry ? () => void send(pendingRetry.message, pendingRetry) : processingError ? () => void retryProcessing() : undefined} onApprovePlan={reference => void approvePlan(reference)} onRequestPlanChanges={(reference, reasonKey, comment) => void requestPlanChanges(reference, reasonKey, comment)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => setInlineCorrection({ missing, target })} />
-        <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-red-600"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{inlineCorrection ? <MissionInlineCorrectionPanel missing={inlineCorrection.missing} target={inlineCorrection.target} busy={processing} onCancel={() => setInlineCorrection(null)} onSave={async message => { await send(message); setInlineCorrection(null) }} /> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-slate-50 p-3 text-center text-sm text-slate-500">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-slate-400">Nada é executado externamente sem passar pelas regras e aprovações do Action Engine.</p></div></div>
+        <div className="border-t border-yx-line bg-yx-surface px-4 py-4 sm:px-6"><div className="mx-auto max-w-3xl">{error ? <div className="mb-2 flex items-center justify-between gap-3 text-xs text-yx-crit"><span>{error}</span>{pendingRetry ? <button className="shrink-0 font-semibold hover:underline" onClick={() => void send(pendingRetry.message, pendingRetry)} type="button">Tentar novamente</button> : null}</div> : null}{inlineCorrection ? <MissionInlineCorrectionPanel missing={inlineCorrection.missing} target={inlineCorrection.target} busy={processing} onCancel={() => setInlineCorrection(null)} onSave={async message => { await send(message); setInlineCorrection(null) }} /> : null}{writable ? <MissionConversationComposer disabled={processing} onSend={send} /> : <p className="rounded-lg bg-yx-surface-2 p-3 text-center text-sm text-yx-fg-3">{conversation.status === 'cancelled' ? 'Esta conversa foi encerrada.' : 'Acompanhe a próxima etapa na missão.'}</p>}<p className="mt-2 text-center text-[11px] text-yx-fg-3">Nada é executado externamente sem passar pelas regras e aprovações da YUX.</p></div></div>
       </div>
       <p aria-live="polite" className="sr-only">{liveStatus}</p>
       <MissionContextDrawer conversation={conversation} open={contextOpen} onClose={() => setContextOpen(false)} correctionTarget={correctionTarget} onInlineCorrection={(missing, target) => { setContextOpen(false); setInlineCorrection({ missing, target }) }} />
-    </main>
+    </div>
   )
 }
 

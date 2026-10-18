@@ -1,11 +1,11 @@
 import { cn } from '@/lib/utils'
 
 const tones = {
-  neutral: 'border-slate-200 bg-slate-50 text-slate-700',
-  info: 'border-blue-200 bg-blue-50 text-blue-700',
-  warning: 'border-amber-200 bg-amber-50 text-amber-800',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  danger: 'border-red-200 bg-red-50 text-red-700',
+  neutral: 'border-yx-line bg-yx-surface-2 text-yx-fg-2',
+  info: 'border-yx-line-strong bg-yx-blue-soft text-yx-blue',
+  warning: 'border-yx-warn-line bg-yx-warn-soft text-yx-warn',
+  success: 'border-yx-ok-line bg-yx-ok-soft text-yx-ok',
+  danger: 'border-yx-crit-line bg-yx-crit-soft text-yx-crit',
 }
 
 export function MissionStatusBadge({ label, tone, className }: { label: string; tone: keyof typeof tones; className?: string }) {

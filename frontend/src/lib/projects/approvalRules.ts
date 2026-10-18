@@ -9,6 +9,6 @@ export function validateApprovalDecision(
   }
 
   return decision === 'changes_requested'
-    ? 'Informe o ajuste necessario antes de enviar.'
-    : 'Informe o motivo da rejeicao antes de enviar.'
+    ? 'Informe o ajuste necessário antes de enviar.'
+    : 'Informe o motivo da rejeição antes de enviar.'
 }

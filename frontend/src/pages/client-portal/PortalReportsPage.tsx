@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
+import { BarChart3 } from 'lucide-react'
+import { EmptyState, ErrorState, PageHeader, SkeletonCard, SkeletonKpiGrid } from '@/components/portal-ui'
 import { PortalReportsWorkspace } from '@/components/reports/PortalReportsWorkspace'
 import { reportService } from '@/services/reportService'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { PortalOperationalReport } from '@/types/reports'
+
+function ReportsLoading() {
+  return (
+    <div className="w-full space-y-6" aria-busy="true">
+      <PageHeader title="Relatórios" lead="Carregando seus resultados…" />
+      <SkeletonKpiGrid count={6} />
+      <SkeletonCard lines={5} />
+    </div>
+  )
+}
 
 export function PortalReportsPage() {
   const organization = usePlatformStore(state => state.organization)
@@ -11,30 +23,47 @@ export function PortalReportsPage() {
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const organizationId = activeContract && organization?.kind === 'client' ? organization.id : undefined
   const [report, setReport] = useState<PortalOperationalReport>()
+  const [error, setError] = useState(false)
 
   const load = useCallback(async () => {
     if (isPlatformLoading || !organizationId) return
 
+    setError(false)
     try {
       setReport(await reportService.getPortalReport(organizationId))
-    } catch (error) {
-      console.error('Erro ao carregar relatorios do portal:', error)
-      toast.error('Erro ao carregar relatorios')
+    } catch (cause) {
+      console.error('Erro ao carregar relatorios do portal:', cause)
+      setError(true)
+      toast.error('Erro ao carregar relatórios')
     }
   }, [isPlatformLoading, organizationId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
-  if (isPlatformLoading) return <p className="text-sm text-slate-600">Carregando relatorios...</p>
+  if (isPlatformLoading) return <ReportsLoading />
+
   if (!activeContract || !organizationId) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold text-slate-950">Relatorios</h1>
-        <p className="mt-2 text-slate-600">Nenhum contrato ativo encontrado para este usuario.</p>
+      <div className="w-full space-y-6">
+        <PageHeader title="Relatórios" />
+        <EmptyState
+          icon={BarChart3}
+          title="Nenhum contrato ativo"
+          description="Não encontramos um contrato ativo para a sua conta. Quando ele estiver ativo, os relatórios aparecem aqui."
+        />
       </div>
     )
   }
 
-  if (!report) return <p className="text-sm text-slate-600">Carregando relatorios...</p>
+  if (error) {
+    return (
+      <div className="w-full space-y-6">
+        <PageHeader title="Relatórios" />
+        <ErrorState title="Não foi possível carregar os relatórios." description="Verifique sua conexão e tente de novo." onRetry={() => void load()} />
+      </div>
+    )
+  }
+
+  if (!report) return <ReportsLoading />
   return <PortalReportsWorkspace report={report} />
 }

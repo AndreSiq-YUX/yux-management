@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { AutomationWorkspace } from '@/components/automations/AutomationWorkspace'
+import { SkeletonCard, SkeletonKpiGrid } from '@/components/portal-ui'
 import { isPersistedOrganizationId } from '@/lib/crm/followUpRules'
 import { getSectorTemplate } from '@/lib/automations/sectorTemplateCatalog'
 import { automationService, isAutomationBackendUnavailableError } from '@/services/automationService'
@@ -12,10 +13,13 @@ import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 
 type AutomationSection = 'Dashboard' | 'Automacoes' | 'Sequencias' | 'Templates' | 'Execucoes' | 'Configuracoes'
 
-export function AutomationsPage({ workspaceContext: suppliedContext, initialSection = 'Automacoes' }: {
+export function AutomationsPage({ workspaceContext: suppliedContext, initialSection = 'Automacoes', variant = 'default' }: {
   workspaceContext?: WorkspaceContextV1 | null
   initialSection?: AutomationSection
+  /** `portal` = visual do Portal do Cliente; `default` = tela interna (Hub YUX). */
+  variant?: 'default' | 'portal'
 } = {}) {
+  const portal = variant === 'portal'
   const storedContext = usePlatformStore(state => state.workspaceContext)
   const platformError = usePlatformStore(state => state.error)
   const workspaceContext = suppliedContext ?? storedContext
@@ -31,7 +35,9 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
     if (!organizationId || !isPersistedOrganizationId(organizationId)) {
       setFlows([])
       setSequences([])
-      setLoadError(platformError || 'Nao foi possivel carregar uma organizacao real para automacoes. Verifique a sessao do usuario e o acesso a organizations.')
+      setLoadError(portal
+        ? 'Não foi possível abrir as automações deste workspace. Tente novamente em instantes.'
+        : (platformError || 'Não foi possível carregar uma organização real para automações. Verifique a sessão do usuário e o acesso a organizations.'))
       setBackendUnavailable(false)
       setLoading(false)
       return
@@ -43,18 +49,22 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
       setBackendUnavailable(false)
       setFlows(await automationService.getFlows({ organizationId }))
     } catch (error) {
-      console.error('Erro ao carregar automacoes:', error)
+      console.error('Erro ao carregar automações:', error)
       const isBackendMissing = isAutomationBackendUnavailableError(error)
       setBackendUnavailable(isBackendMissing)
       setLoadError(isBackendMissing
-        ? 'A base de automacoes ainda nao esta disponivel no backend alvo. Aplique as migrations/probes de automacoes e confira as permissoes da API.'
-        : 'Nao foi possivel carregar automacoes para esta organizacao.')
-      if (!isBackendMissing) toast.error('Erro ao carregar automacoes')
+        ? (portal
+          ? 'As automações estão em implantação e serão liberadas em breve.'
+          : 'A base de automacoes ainda nao esta disponivel no backend alvo. Aplique as migrations/probes de automacoes e confira as permissoes da API.')
+        : (portal
+          ? 'Não foi possível carregar as automações. Tente novamente em instantes.'
+          : 'Nao foi possivel carregar automacoes para esta organizacao.'))
+      if (!isBackendMissing) toast.error('Erro ao carregar automações')
       setFlows([])
     } finally {
       setLoading(false)
     }
-  }, [organizationId, platformError])
+  }, [organizationId, platformError, portal])
 
   const loadSequences = useCallback(async () => {
     if (!organizationId || !isPersistedOrganizationId(organizationId) || backendUnavailable) return
@@ -63,7 +73,7 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
     try {
       setSequences(await automationSequenceService.getSequences(organizationId))
     } catch (error) {
-      console.error('Erro ao carregar sequencias:', error)
+      console.error('Erro ao carregar sequências:', error)
     } finally {
       setSequencesLoading(false)
     }
@@ -76,7 +86,7 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
 
   const withToast = async (action: () => Promise<unknown>, success: string) => {
     if (!organizationId || !isPersistedOrganizationId(organizationId) || backendUnavailable || !workspaceContext?.canConfigure) {
-      toast.error('Automacoes ainda nao estao prontas para gravacao neste ambiente')
+      toast.error('As automações ainda não estão prontas para alterações neste ambiente')
       return
     }
 
@@ -85,15 +95,20 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
       toast.success(success)
       load()
     } catch (error) {
-      console.error('Erro em automacao:', error)
-      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar automacao')
+      console.error('Erro em automação:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar a automação')
     }
   }
 
-  if (loading) return <p className="text-sm text-slate-600">Carregando automacoes...</p>
+  if (loading) {
+    return portal
+      ? <div className="grid gap-6"><SkeletonKpiGrid count={3} /><SkeletonCard lines={4} /></div>
+      : <p className="text-sm text-yx-fg-2">Carregando automações...</p>
+  }
 
   return (
     <AutomationWorkspace
+      variant={variant}
       flows={flows}
       workspaceContext={workspaceContext ?? undefined}
       initialSection={initialSection}
@@ -121,7 +136,7 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
         }
       }, 'Fluxo criado')}
       onUpdateFlow={(flowId, input) => withToast(() => automationService.updateFlow(flowId, input), 'Fluxo atualizado')}
-      onDeleteFlow={flowId => withToast(() => automationService.deleteFlow(flowId), 'Fluxo excluido')}
+      onDeleteFlow={flowId => withToast(() => automationService.deleteFlow(flowId), 'Fluxo excluído')}
       onDuplicateFlow={flowId => withToast(async () => {
         await automationService.duplicateFlow(flowId, organizationId)
       }, 'Fluxo duplicado')}
@@ -145,30 +160,27 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
         for (const flowId of flowIds) {
           await automationService.deleteFlow(flowId)
         }
-      }, `${flowIds.length} fluxo(s) excluido(s)`)}
-      onAddTrigger={(flowId, triggerType, config) => withToast(() => automationService.addTrigger(flowId, { triggerType, config }), 'Trigger adicionado')}
-      onUpdateTrigger={(flowId, triggerId, triggerType, config) => withToast(() => automationService.updateTrigger(triggerId, { triggerType, config }), 'Trigger atualizado')}
-      onDeleteTrigger={(flowId, triggerId) => withToast(() => automationService.deleteTrigger(triggerId), 'Trigger removido')}
-      onAddCondition={(flowId, field, operator, value) => withToast(() => automationService.addCondition(flowId, { field, operator, value }), 'Condicao adicionada')}
-      onUpdateCondition={(flowId, conditionId, field, operator, value) => withToast(() => automationService.updateCondition(conditionId, { field, operator, value }), 'Condicao atualizada')}
-      onDeleteCondition={(flowId, conditionId) => withToast(() => automationService.deleteCondition(conditionId), 'Condicao removida')}
-      onAddAction={(flowId, actionType, payload) => withToast(() => automationService.addAction(flowId, { actionType, payload }), 'Acao adicionada')}
-      onUpdateAction={(flowId, actionId, actionType, payload) => withToast(() => automationService.updateAction(actionId, { actionType, payload }), 'Acao atualizada')}
-      onDeleteAction={(flowId, actionId) => withToast(() => automationService.deleteAction(actionId), 'Acao removida')}
+      }, `${flowIds.length} fluxo(s) excluído(s)`)}
+      onAddTrigger={(flowId, triggerType, config) => withToast(() => automationService.addTrigger(flowId, { triggerType, config }), 'Gatilho adicionado')}
+      onUpdateTrigger={(flowId, triggerId, triggerType, config) => withToast(() => automationService.updateTrigger(triggerId, { triggerType, config }), 'Gatilho atualizado')}
+      onDeleteTrigger={(flowId, triggerId) => withToast(() => automationService.deleteTrigger(triggerId), 'Gatilho removido')}
+      onAddCondition={(flowId, field, operator, value) => withToast(() => automationService.addCondition(flowId, { field, operator, value }), 'Condição adicionada')}
+      onUpdateCondition={(flowId, conditionId, field, operator, value) => withToast(() => automationService.updateCondition(conditionId, { field, operator, value }), 'Condição atualizada')}
+      onDeleteCondition={(flowId, conditionId) => withToast(() => automationService.deleteCondition(conditionId), 'Condição removida')}
+      onAddAction={(flowId, actionType, payload) => withToast(() => automationService.addAction(flowId, { actionType, payload }), 'Ação adicionada')}
+      onUpdateAction={(flowId, actionId, actionType, payload) => withToast(() => automationService.updateAction(actionId, { actionType, payload }), 'Ação atualizada')}
+      onDeleteAction={(flowId, actionId) => withToast(() => automationService.deleteAction(actionId), 'Ação removida')}
       onReorderActions={(flowId, actions) => withToast(async () => {
         for (const action of actions) {
           await automationService.updateAction(action.id, { orderIndex: action.orderIndex })
         }
-      }, 'Acoes reordenadas')}
+      }, 'Ações reordenadas')}
       onSaveSimulation={result => withToast(async () => {
         await automationService.simulateFlow(result.flowId, {
           organizationId, eventType: result.eventType, samplePayload: result.samplePayload,
         })
-      }, 'Simulacao salva')}
-      onRollbackVersion={(flowId, versionId) => withToast(() => automationService.activateVersion(flowId, versionId, organizationId), 'Versao restaurada')}
-      onRetryExecution={runId => withToast(async () => {
-        console.log('Retry execution:', runId)
-      }, 'Execucao reprocessada')}
+      }, 'Simulação salva')}
+      onRollbackVersion={(flowId, versionId) => withToast(() => automationService.activateVersion(flowId, versionId, organizationId), 'Versão restaurada')}
       onCreateFromTemplate={templateKey => withToast(async () => {
         const template = getSectorTemplate(templateKey)
         if (!template) return
@@ -187,14 +199,14 @@ export function AutomationsPage({ workspaceContext: suppliedContext, initialSect
         for (const [index, action] of template.actions.entries()) {
           await automationService.addAction(flow.id, { actionType: action.actionType, orderIndex: index + 1, payload: action.payload })
         }
-      }, 'Fluxo criado a partir do template')}
-      onToggleDryRun={(flowId, dryRun) => withToast(() => automationService.updateFlow(flowId, { riskLevel: dryRun ? 'test' : 'low' }), 'Modo teste atualizado')}
+      }, 'Fluxo criado a partir do modelo')}
+      onToggleDryRun={(flowId, dryRun) => withToast(() => automationService.updateFlow(flowId, { riskLevel: dryRun ? 'test' : 'low' }), 'Modo de teste atualizado')}
       onCreateSequence={input => withToast(async () => {
         await automationSequenceService.createSequence({ ...input, organizationId })
         loadSequences()
-      }, 'Sequencia criada')}
-      onDeleteSequence={sequenceId => withToast(() => automationSequenceService.deleteSequence(sequenceId), 'Sequencia excluida')}
-      onToggleSequence={(sequenceId, status) => withToast(() => automationSequenceService.setSequenceStatus(sequenceId, status), 'Sequencia atualizada')}
+      }, 'Sequência criada')}
+      onDeleteSequence={sequenceId => withToast(() => automationSequenceService.deleteSequence(sequenceId), 'Sequência excluída')}
+      onToggleSequence={(sequenceId, status) => withToast(() => automationSequenceService.setSequenceStatus(sequenceId, status), 'Sequência atualizada')}
       onAddSequenceStep={(sequenceId, step) => withToast(async () => {
         await automationSequenceService.addStep(sequenceId, step)
         loadSequences()

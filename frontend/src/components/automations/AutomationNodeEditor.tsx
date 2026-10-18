@@ -50,13 +50,13 @@ function TriggerNode({ data }: { data: AutomationGraphNodeData }) {
   const triggerType = stringValue(data.triggerType)
   const triggerLabel = automationTriggerCatalog.find(t => t.key === triggerType)?.label || triggerType || 'Definir evento...'
   return (
-    <div className="rounded-md border-2 border-blue-400 bg-blue-50 px-3 py-2.5 shadow-md w-48 text-center text-xs relative">
-      <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-blue-500 text-white font-semibold text-[8px] py-0 px-1 border-0">
+    <div className="rounded-md border-2 border-yx-blue bg-yx-blue-soft px-3 py-2.5 shadow-md w-48 text-center text-xs relative">
+      <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-yx-blue text-white font-semibold text-[8px] py-0 px-1 border-0">
         GATILHO
       </Badge>
-      <p className="font-semibold text-slate-800 truncate mt-1">{triggerLabel}</p>
-      {triggerType && <p className="text-[8px] text-slate-500 truncate">{triggerType}</p>}
-      <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-blue-500 border border-white" />
+      <p className="font-semibold text-yx-fg truncate mt-1">{triggerLabel}</p>
+      {triggerType && <p className="text-[8px] text-yx-fg-3 truncate">{triggerType}</p>}
+      <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-yx-blue border border-white" />
     </div>
   )
 }
@@ -69,20 +69,20 @@ function ConditionNode({ data }: { data: AutomationGraphNodeData }) {
   const ruleText = field ? `${field} ${opLabel} ${data.value !== undefined ? String(data.value) : ''}` : 'Configurar regras...'
   
   return (
-    <div className="rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-2 shadow-md w-48 text-center text-xs relative">
-      <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-amber-500 text-white font-semibold text-[8px] py-0 px-1 border-0">
+    <div className="rounded-md border-2 border-yx-warn bg-yx-warn-soft px-3 py-2 shadow-md w-48 text-center text-xs relative">
+      <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-yx-warn text-white font-semibold text-[8px] py-0 px-1 border-0">
         FILTRO / REGRAS
       </Badge>
-      <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-amber-400 border border-white" />
-      <p className="font-semibold text-slate-800 truncate mt-1">{ruleText}</p>
+      <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-yx-warn border border-white" />
+      <p className="font-semibold text-yx-fg truncate mt-1">{ruleText}</p>
       
       {/* Handles represent branches: left for true, right for false */}
-      <div className="flex justify-between mt-2 pt-2 border-t border-amber-200 text-[8px] font-bold text-slate-500">
-        <span className="text-green-600">SIM (True)</span>
-        <span className="text-red-600">NÃO (False)</span>
+      <div className="flex justify-between mt-2 pt-2 border-t border-yx-warn-line text-[8px] font-bold text-yx-fg-3">
+        <span className="text-yx-ok">SIM (True)</span>
+        <span className="text-yx-crit">NÃO (False)</span>
       </div>
-      <Handle type="source" position={Position.Bottom} id="true" style={{ left: '25%' }} className="w-2.5 h-2.5 bg-green-500 border border-white" />
-      <Handle type="source" position={Position.Bottom} id="false" style={{ left: '75%' }} className="w-2.5 h-2.5 bg-red-500 border border-white" />
+      <Handle type="source" position={Position.Bottom} id="true" style={{ left: '25%' }} className="w-2.5 h-2.5 bg-yx-ok border border-white" />
+      <Handle type="source" position={Position.Bottom} id="false" style={{ left: '75%' }} className="w-2.5 h-2.5 bg-yx-crit border border-white" />
     </div>
   )
 }
@@ -95,20 +95,20 @@ function ActionNode({ data }: { data: AutomationGraphNodeData }) {
   const attachments = Array.isArray(payload.attachments) ? payload.attachments : []
 
   return (
-    <div className="rounded-md border-2 border-emerald-400 bg-emerald-50 px-3 py-2 shadow-md w-48 text-center text-xs relative">
-      <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-emerald-500 text-white font-semibold text-[8px] py-0 px-1 border-0">
+    <div className="rounded-md border-2 border-yx-ok bg-yx-ok-soft px-3 py-2 shadow-md w-48 text-center text-xs relative">
+      <Badge variant="outline" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-yx-ok text-white font-semibold text-[8px] py-0 px-1 border-0">
         AÇÃO
       </Badge>
-      <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-emerald-400 border border-white" />
+      <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-yx-ok border border-white" />
       <div className="space-y-1 mt-1">
-        <p className="font-semibold text-slate-800 truncate">{label}</p>
+        <p className="font-semibold text-yx-fg truncate">{label}</p>
         {attachments.length > 0 && (
-          <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.5 text-[8px] text-emerald-800 border border-emerald-200">
+          <span className="inline-flex items-center gap-0.5 rounded bg-yx-ok-soft px-1 py-0.5 text-[8px] text-yx-ok border border-yx-ok-line">
             📎 {attachments.length} anexo(s)
           </span>
         )}
       </div>
-      <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-emerald-500 border border-white" />
+      <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-yx-ok border border-white" />
     </div>
   )
 }
@@ -306,13 +306,13 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
   }
 
   return (
-    <div className="relative h-[600px] border rounded bg-slate-50 overflow-hidden flex flex-col">
-      <header className="flex h-12 items-center justify-between border-b bg-white px-4 shrink-0">
+    <div className="relative h-[600px] border rounded bg-yx-surface-2 overflow-hidden flex flex-col">
+      <header className="flex h-12 items-center justify-between border-b bg-yx-surface px-4 shrink-0">
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="bg-slate-100 hover:bg-slate-200">
+          <Badge variant="outline" className="bg-yx-surface-2 hover:bg-yx-bar-track">
             Modo Nós / Editor Visual
           </Badge>
-          <span className="text-[10px] text-slate-500 flex items-center gap-1">
+          <span className="text-[10px] text-yx-fg-3 flex items-center gap-1">
             <HelpCircle className="h-3.5 w-3.5" />
             Selecione um nó para configurar. Use as conexões "SIM" e "NÃO" nos Filtros para bifurcar.
           </span>
@@ -351,21 +351,21 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
           nodeTypes={nodeTypes}
           fitView
         >
-          <Background color="#cbd5e1" gap={16} />
+          <Background color="var(--yx-line-strong)" gap={16} />
           <Controls />
           <MiniMap />
         </ReactFlow>
 
         {/* Floating panel for actions */}
         <div className="absolute left-4 bottom-4 flex flex-col gap-2 bg-white/95 p-3 rounded-lg border shadow-lg z-10">
-          <p className="text-[10px] font-bold text-slate-500 uppercase">Adicionar Blocos</p>
+          <p className="text-[10px] font-bold text-yx-fg-3 uppercase">Adicionar Blocos</p>
           <div className="flex gap-1.5">
             <Button
               type="button"
               size="sm"
               variant="outline"
               onClick={() => handleAddNode('trigger')}
-              className="text-[10px] border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50"
+              className="text-[10px] border-yx-line-strong text-yx-blue bg-yx-blue-soft hover:bg-yx-blue-soft"
             >
               + Gatilho
             </Button>
@@ -374,7 +374,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
               size="sm"
               variant="outline"
               onClick={() => handleAddNode('condition')}
-              className="text-[10px] border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50"
+              className="text-[10px] border-yx-warn-line text-yx-warn bg-yx-warn-soft hover:bg-yx-warn-soft"
             >
               + Filtro
             </Button>
@@ -383,7 +383,7 @@ export function AutomationNodeEditor({ flow, onSaveGraph }: AutomationNodeEditor
               size="sm"
               variant="outline"
               onClick={() => handleAddNode('action')}
-              className="text-[10px] border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50"
+              className="text-[10px] border-yx-ok-line text-yx-ok bg-yx-ok-soft hover:bg-yx-ok-soft"
             >
               + Ação
             </Button>

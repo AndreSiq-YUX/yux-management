@@ -23,10 +23,10 @@ export function MissionConversationComposer({ disabled = false, initialValue = '
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_8px_30px_rgba(15,23,42,0.08)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+    <div className="rounded-2xl border border-yx-line bg-yx-surface p-2 shadow-[0_8px_30px_rgba(15,23,42,0.08)] focus-within:border-yx-line-strong focus-within:ring-2 focus-within:ring-yx-line-strong">
       <textarea
         aria-label="Mensagem para o agente de missões"
-        className="min-h-20 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400"
+        className="min-h-20 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-yx-fg outline-none placeholder:text-yx-fg-3"
         disabled={disabled}
         maxLength={8000}
         onChange={event => setValue(event.target.value)}
@@ -40,10 +40,10 @@ export function MissionConversationComposer({ disabled = false, initialValue = '
         value={value}
       />
       <div className="flex items-center justify-between gap-3 px-2 pb-1">
-        <span className="text-[11px] text-slate-400">Enter envia · Shift + Enter quebra a linha</span>
+        <span className="text-[11px] text-yx-fg-3">Enter envia · Shift + Enter quebra a linha</span>
         <button
           aria-label="Enviar mensagem"
-          className="grid h-9 w-9 place-items-center rounded-full bg-[#2563EB] text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="grid h-9 w-9 place-items-center rounded-full bg-yx-blue text-white transition hover:bg-yx-blue-ink disabled:cursor-not-allowed disabled:bg-yx-line-strong"
           disabled={disabled || !value.trim()}
           onClick={() => void submit()}
           type="button"

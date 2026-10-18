@@ -84,12 +84,33 @@ describe('KnowledgeLibrary publication dialog', () => {
       resultCardIds: [], resultChunkIds: ['chunk-1'], scoreMetadata: { sourceCount: 1 }, status: 'succeeded', createdAt: used.updatedAt,
     })
     await act(async () => root.render(<KnowledgeLibrary documents={[used]} onChanged={vi.fn()} />))
-    expect(container.textContent).toContain('Uso confirmado: query-1')
+    expect(container.textContent).toContain('Já foi usado em conversas')
     const usage = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Ver último uso'))!
     await act(async () => { usage.click(); await Promise.resolve() })
     expect(service.getKnowledgeUsage).toHaveBeenCalledWith(used.organizationId, 'query-1')
     expect(document.body.textContent).toContain('política de atendimento')
     expect(document.body.textContent).toContain('omnichannel')
+  })
+
+  it('usa permissões em linguagem simples e guarda perfis de agente em "Detalhes técnicos"', async () => {
+    service.getKnowledgeProcessing.mockResolvedValue({ document: documentFixture, run: null, chunks: [] })
+    await act(async () => root.render(<KnowledgeLibrary documents={[documentFixture]} onChanged={vi.fn()} />))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Revisar'))!.click())
+    await act(async () => { await Promise.resolve() })
+    const options = Array.from(document.querySelectorAll('#knowledge-review-visibility option')).map(option => option.textContent)
+    expect(options).toContain('Pode ser usado no atendimento aos seus clientes')
+    expect(options).toContain('Só uso interno')
+    const technical = Array.from(document.querySelectorAll('details')).find(item => item.textContent?.includes('Detalhes técnicos'))!
+    expect(technical.querySelector('#allowed-profiles')).not.toBeNull()
+    expect(technical.open).toBe(false)
+    expect(document.body.textContent).not.toContain('Agentes externos')
+  })
+
+  it('mostra cartões e estado vazio explicativo', async () => {
+    await act(async () => root.render(<KnowledgeLibrary documents={[]} onChanged={vi.fn()} />))
+    expect(container.textContent).toContain('Sua base de conhecimento ainda está vazia')
+    await act(async () => root.render(<KnowledgeLibrary documents={[documentFixture]} onChanged={vi.fn()} />))
+    expect(container.querySelectorAll('article')).toHaveLength(1)
   })
 })
 
