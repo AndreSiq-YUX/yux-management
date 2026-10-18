@@ -12,7 +12,7 @@ type ContinuationCapture={
 }
 export class RadarCaptureContinuationConsentRequired extends Error{
  readonly statusCode=409
- constructor(readonly continuationReceiptId:string){super('radar_capture_continuation_confirmation_required');this.name='RadarCaptureContinuationConsentRequired'}
+ constructor(readonly continuationReceiptId:string,readonly continuationStateId:string){super('radar_capture_continuation_confirmation_required');this.name='RadarCaptureContinuationConsentRequired'}
 }
 
 // Caller holds campaign, then operation locks. No network calls in this transaction.
@@ -35,6 +35,13 @@ export async function inspectExpiredRadarCaptureContinuation(client:RadarQueryab
   .filter(scope=>scope.state===input.regionalState&&(scope.city??null)===(input.regionalCity??null))
  if(scopes.length!==1)throw stale()
  const scope=scopes[0]
+ // The modern consent path records consumption in the durable audit instead of
+ // rewriting the old receipt. A pre-dispatch failure must not revive that receipt.
+ const consumed=(await client.query(`SELECT 1 FROM public.radar_continuation_authorizations
+  WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND scope_key=$4
+  AND token_hash=encode(sha256(convert_to($5,'UTF8')),'hex') AND generation::text=$6 AND reason='rejected' LIMIT 1`,
+  [op.organization_id,op.campaign_id,op.configuration_revision,scope.key,input.pageToken,String(input.continuationGeneration??0)])).rows.length>0
+ if(consumed)return null
  const cursor=(await client.query(`SELECT next_token,running_until>NOW() AS lease_active FROM public.radar_regional_discovery_cursors
   WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' AND scope_key=$3 ${lock?'FOR UPDATE':''}`,
   [op.organization_id,op.campaign_id,scope.key])).rows[0]
@@ -42,17 +49,18 @@ export async function inspectExpiredRadarCaptureContinuation(client:RadarQueryab
  return{receiptId:run.id as string,scopeKey:scope.key,scopeLabel:scope.label}
 }
 export async function recoverExpiredRadarCaptureContinuation(client:pg.PoolClient,op:ContinuationCapture,
- approval:{confirmed:boolean;requestId:string;approvedBy:string;continuationReceiptId?:string}):Promise<boolean>{
+ approval:{confirmed:boolean;requestId:string;approvedBy:string;continuationReceiptId?:string;continuationStateId?:string}):Promise<boolean>{
  const expired=await inspectExpiredRadarCaptureContinuation(client,op,true)
  if(!expired){if(approval.confirmed)throw captureError('radar_capture_continuation_confirmation_stale');return false}
  const scope={key:expired.scopeKey},run={id:expired.receiptId}
  if(approval.confirmed&&approval.continuationReceiptId!==run.id)throw captureError('radar_capture_continuation_confirmation_stale')
- if(!approval.confirmed)throw new RadarCaptureContinuationConsentRequired(run.id)
  const definition=buildRadarDiscoveryScopes({targetStates:op.configuration_snapshot.target_states,searchConfiguration:op.configuration_snapshot.search_configuration,configurationRevision:op.configuration_revision}).find(s=>s.key===scope.key)!
  const durableScope={...definition,organizationId:op.organization_id,campaignId:op.campaign_id,configurationRevision:op.configuration_revision}
  const policy=await loadRadarOperationalLimits(client),state=await inspectRadarContinuationState(client,durableScope,policy)
  if(!state?.requiresRestartConfirmation)throw captureError('radar_capture_continuation_confirmation_stale')
- await approveRadarContinuationRestart(client,durableScope,{expectedStateId:state.stateId,requestId:approval.requestId,approvedBy:approval.approvedBy},policy)
+ if(!approval.confirmed)throw new RadarCaptureContinuationConsentRequired(run.id,state.stateId)
+ if(approval.continuationStateId!==state.stateId)throw captureError('radar_capture_continuation_confirmation_stale')
+ await approveRadarContinuationRestart(client,durableScope,{expectedStateId:approval.continuationStateId,requestId:approval.requestId,approvedBy:approval.approvedBy},policy)
  await client.query(`UPDATE public.radar_enrichment_runs SET output_payload=output_payload||jsonb_build_object('captureContinuationRecovery',
   jsonb_build_object('operationId',$2::text,'requestId',$3::text,'approvedBy',$4::text,'scopeKey',$5::text,'recoveredAt',NOW())),updated_at=NOW()
   WHERE id=$1 AND organization_id=$6`,[run.id,op.id,approval.requestId,approval.approvedBy,scope.key,op.organization_id])

@@ -70,10 +70,13 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  checks.push({key:'research_configuration',status:availability.allowed?'ok':'blocked'})
  if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(db as pg.Pool,input.organizationId,'cnpja_advanced_search')
-  // Preview the best allowed proposal; authorization rechecks its exact cost.
+  // With no proposal yet, use optimistic lower bounds for quota/cost. The Admin
+  // ceiling permits larger pages; it never forces their purchase. Exact proposed
+  // and inherited sizes are priced again before consent commits and reservation.
   const previewPageSize=Math.max(requiresLimitsApproval?policy.limits.maxDiscoveryPageSize:pageSize,...scopes.map(scope=>scope.inheritedPageSize??0))
   const minimumQueries=requiresLimitsApproval?Math.ceil(Math.max(0,remaining-overflowCount)/previewPageSize):capacity.minimumAdditionalQueries
-  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,minimumQueries,minimumQueries*Math.ceil(previewPageSize/10))
+  const minimumBillingUnits=requiresLimitsApproval?Math.max(minimumQueries,Math.ceil(Math.max(0,remaining-overflowCount)/10)):minimumQueries*Math.ceil(previewPageSize/10)
+  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,minimumQueries,minimumBillingUnits)
   for(const issue of governance.issues)fail(issue.code,issue.message)
   const provider=(await db.query(`SELECT status,EXISTS(SELECT 1 FROM public.platform_provider_secrets secret WHERE secret.provider_connection_id=provider.id AND secret.secret_kind='api_key') AS has_secret
    FROM public.platform_provider_connections provider WHERE provider_key='cnpja' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)).rows[0]

@@ -28,7 +28,10 @@ export async function inspectRadarContinuationState(db:RadarQueryable,scope:Cont
  const uncertain=run&&(run.status==='running'||output?.discoveryOutcome==='uncertain'||run.status==='failed'&&!output?.discoveryOutcome)
  if(!cursor.next_token&&!cursor.lease_active&&!uncertain)return null
  const reason:RadarContinuationState['reason']=cursor.lease_active?'running':uncertain?'uncertain':rejected?'rejected':!cursor.token_received_at?'unknown_age':cursor.idle?'idle':'ready'
- const stateId=digest(JSON.stringify({scope,policyVersion:policy.version,generation,tokenHash,receivedAt:cursor.token_received_at,reason,receiptId:run?.id??cursor.rejected_receipt_id??null}))
+ // Callers can decorate scopes for capacity/UI. Hash only the canonical authority
+ // fields, never property insertion order or transient completed/page-size data.
+ const authorityScope={organizationId:scope.organizationId,campaignId:scope.campaignId,configurationRevision:scope.configurationRevision,key:scope.key,state:scope.state,city:scope.city??null}
+ const stateId=digest(JSON.stringify({scope:authorityScope,policyVersion:policy.version,generation,tokenHash,receivedAt:cursor.token_received_at,reason,receiptId:run?.id??cursor.rejected_receipt_id??null}))
  return{scopeKey:scope.key,scopeLabel:scope.label,stateId,generation,reason,requiresRestartConfirmation:['rejected','unknown_age','idle'].includes(reason),replayEstimate:Number(cursor.pages_processed??0)}
 }
 

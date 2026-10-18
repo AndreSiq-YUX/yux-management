@@ -8,9 +8,23 @@ import {buildServer} from '../src/server.js'
 import {createContextAwarePool} from '../src/db/client.js'
 import {runWithDatabaseRequestContext} from '../src/db/request-context.js'
 import {fixtureUsers,fixturePassword,fixtureIds} from './integration/support/fixtures.js'
+import {getRadarOperationalLimits,updateRadarOperationalLimits} from '../src/modules/radar/operational-limits.js'
 const path='../src/modules/radar/capture-preflight.js',api=await import(path).catch(()=>({}))
 const limits={pageSize:10,maxPagesPerScope:4,maxQueriesPerBatch:8}
 describe.skipIf(!connectionString)('capture limits consent with PostgreSQL',()=>{
+ it.each([false,true])('does not price the Admin ceiling as the approved page size (inherited cursor: %s)',async inherited=>{
+  const f=await limitFixture(),before=await getRadarOperationalLimits(f.pool,admin);let version=before.version
+  try{
+   version=(await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:version,limits:{...before.limits,maxDiscoveryPageSize:100}})).version
+   await f.pool.query('UPDATE public.radar_capture_operations SET requested_count=10 WHERE id=$1',[f.input.operationId])
+   await f.pool.query('UPDATE public.radar_campaigns SET budget_limit=.05 WHERE id=$1',[f.campaign.id])
+   if(inherited)await f.pool.query("INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,page_size,token_received_at) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','fresh-cursor',10,NOW())",[f.input.organizationId,f.campaign.id])
+   const p=await api.getRadarCapturePreflight(f.pool,admin,{...f.input,requestedCount:10},{availability:available})
+   expect(p).toMatchObject({allowed:true,requiresLimitsApproval:true,remaining:10})
+   await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,limitsAuthorization:{expectedStateId:p.stateId,limits}},{availability:available})).resolves.toMatchObject({status:'queued',counts:{requested:10}})
+   expect((await f.op()).configuration_snapshot.search_configuration.batch.pageSize).toBe(10)
+  }finally{await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:version,limits:before.limits});await f.close()}
+ })
  it('requires explicit consent to reopen a legacy partial lot',async()=>{
   const f=await limitFixture()
   try{await expect(resumeRadarCaptureOperation(f.pool,admin,f.resume,{availability:available})).rejects.toThrow('radar_capture_limits_confirmation_required')}
@@ -88,10 +102,13 @@ describe.skipIf(!connectionString)('capture limits consent with PostgreSQL',()=>
    expect((await f.pool.query('SELECT id FROM public.radar_capture_limit_authorizations WHERE operation_id=$1',[f.input.operationId])).rows).toHaveLength(1)
   }finally{await f.close()}
  })
- it.each([{pageSize:0,maxPagesPerScope:4,maxQueriesPerBatch:8},{pageSize:10,maxPagesPerScope:11,maxQueriesPerBatch:8},{pageSize:10,maxPagesPerScope:4,maxQueriesPerBatch:101},{pageSize:1,maxPagesPerScope:1,maxQueriesPerBatch:1},{maxPagesPerScope:4,maxQueriesPerBatch:8}])('rejects invalid or insufficient approved limits %j',async proposed=>{
+ it.each(['zero_page','page_ceiling','query_ceiling','insufficient','missing_page'] as const)('rejects invalid or insufficient approved limits: %s',async mode=>{
   const f=await limitFixture()
   try{
    const p=await api.getRadarCapturePreflight(f.pool,admin,f.input,{availability:available}),before=await f.op()
+   const proposed={zero_page:{...limits,pageSize:0},page_ceiling:{...limits,maxPagesPerScope:p.policy.limits.maxPagesPerScope+1},
+    query_ceiling:{...limits,maxQueriesPerBatch:p.policy.limits.maxDiscoveryQueriesPerLot+1},insufficient:{pageSize:1,maxPagesPerScope:1,maxQueriesPerBatch:1},
+    missing_page:{maxPagesPerScope:4,maxQueriesPerBatch:8}}[mode]
    await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,limitsAuthorization:{expectedStateId:p.stateId,limits:proposed as typeof limits}},{availability:available})).rejects.toThrow()
    expect(await f.op()).toEqual(before)
   }finally{await f.close()}

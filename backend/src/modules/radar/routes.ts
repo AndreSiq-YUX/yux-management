@@ -444,13 +444,13 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/capture-operations/:id/resume',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional(),continuationAuthorizations:continuationAuthorizationsSchema,limitsAuthorization:z.object({expectedStateId:z.string().regex(/^[a-f0-9]{64}$/),limits:radarCaptureLimitsSchema}).strict().optional()}).strict().safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional(),continuationStateId:z.string().regex(/^[a-f0-9]{64}$/).optional(),continuationAuthorizations:continuationAuthorizationsSchema,limitsAuthorization:z.object({expectedStateId:z.string().regex(/^[a-f0-9]{64}$/),limits:radarCaptureLimitsSchema}).strict().optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     let operation:Awaited<ReturnType<typeof resumeRadarCaptureOperation>>
     try{operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})}
     catch(cause){
       // Only this authorized Admin operation exposes the opaque consent receipt.
-      if(cause instanceof RadarCaptureContinuationConsentRequired)return reply.code(409).send({error:cause.message,continuationReceiptId:cause.continuationReceiptId})
+      if(cause instanceof RadarCaptureContinuationConsentRequired)return reply.code(409).send({error:cause.message,continuationReceiptId:cause.continuationReceiptId,continuationStateId:cause.continuationStateId})
       throw cause
     }
     try{await app.jobQueue.add('radar.advanceCaptureOperation',{organizationId:body.data.organizationId,operationId:operation.id},{jobId:`radar-capture-resume-${operation.id}-${body.data.requestId}`})}catch{ /* Durable outbox survives. */ }
