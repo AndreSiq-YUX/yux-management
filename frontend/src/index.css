@@ -4,65 +4,126 @@
 
 @layer base {
   :root {
+    /* shadcn (HSL triplets) remapped to the YUX brand */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 230 39% 9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 230 39% 9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 230 39% 9%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 222 100% 59%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 225 36% 96%;
+    --secondary-foreground: 230 39% 9%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 225 36% 96%;
+    --muted-foreground: 226 14% 52%;
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 222 100% 96%;
+    --accent-foreground: 224 77% 42%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 352 63% 50%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 222 30% 92%;
+    --input: 222 30% 92%;
+    --ring: 222 100% 59%;
 
     --radius: 0.5rem;
+
+    /* YUX semantic tokens (light) */
+    --yx-bg: #f4f6fb;
+    --yx-surface: #ffffff;
+    --yx-surface-2: #f0f2f8;
+    --yx-line: #e3e7f0;
+    --yx-line-strong: #cfd5e3;
+    --yx-fg: #0e1120;
+    --yx-fg-2: #444b66;
+    --yx-fg-3: #737b96;
+    --yx-blue: #2e6bff;
+    --yx-blue-ink: #1946bd;
+    --yx-blue-soft: #ebf1ff;
+    --yx-ok: #0c8f63;
+    --yx-ok-soft: #e4f7ef;
+    --yx-ok-line: #b5e6d2;
+    --yx-warn: #b85d06;
+    --yx-warn-soft: #fff2e4;
+    --yx-warn-line: #f6d2a8;
+    --yx-crit: #cf2f45;
+    --yx-crit-soft: #fdecee;
+    --yx-crit-line: #f4c1c9;
+    --yx-bar-track: #eef1f8;
+
+    /* Sidebar (dark in both themes) */
+    --yx-side-bg: #070811;
+    --yx-side-bg-2: #0e1120;
+    --yx-side-fg: #cdd4e6;
+    --yx-side-fg-strong: #f4f6fc;
+    --yx-side-muted: #7d859f;
+    --yx-side-line: #1a1f36;
+    --yx-side-hover: rgba(255, 255, 255, 0.04);
+    --yx-side-active: rgba(123, 92, 255, 0.16);
+
+    --yx-grad-brand: linear-gradient(100deg, #2e6bff 0%, #7b5cff 52%, #c93cc0 100%);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 230 40% 6%;
+    --foreground: 225 57% 97%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 230 39% 9%;
+    --card-foreground: 225 57% 97%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 230 39% 9%;
+    --popover-foreground: 225 57% 97%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 222 100% 59%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 229 37% 12%;
+    --secondary-foreground: 225 57% 97%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 229 37% 12%;
+    --muted-foreground: 226 18% 61%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 229 37% 12%;
+    --accent-foreground: 225 57% 97%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 352 63% 45%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --border: 230 34% 17%;
+    --input: 230 34% 17%;
+    --ring: 223 100% 68%;
+
+    --yx-bg: #090b15;
+    --yx-surface: #0e1120;
+    --yx-surface-2: #131729;
+    --yx-line: #1c2139;
+    --yx-line-strong: #2a3150;
+    --yx-fg: #f4f6fc;
+    --yx-fg-2: #c3cadf;
+    --yx-fg-3: #8a92ad;
+    --yx-blue: #5c8bff;
+    --yx-blue-ink: #9ab6ff;
+    --yx-blue-soft: rgba(46, 107, 255, 0.14);
+    --yx-ok: #2ee6a8;
+    --yx-ok-soft: rgba(46, 230, 168, 0.1);
+    --yx-ok-line: rgba(46, 230, 168, 0.3);
+    --yx-warn: #ffb877;
+    --yx-warn-soft: rgba(255, 159, 69, 0.1);
+    --yx-warn-line: rgba(255, 159, 69, 0.32);
+    --yx-crit: #ff7a8c;
+    --yx-crit-soft: rgba(255, 92, 112, 0.1);
+    --yx-crit-line: rgba(255, 92, 112, 0.32);
+    --yx-bar-track: #171c31;
+
+    --yx-side-bg: #05060c;
+    --yx-side-line: #161a2e;
   }
 }
 
@@ -71,7 +132,15 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  /* Tabular figures: opt-in only (indicators, tables, values) */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
   }
 }
 
@@ -91,17 +160,6 @@
 
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-gray-400;
-}
-
-/* Loading animation */
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
 }
 
 /* Custom YUX brand colors */
