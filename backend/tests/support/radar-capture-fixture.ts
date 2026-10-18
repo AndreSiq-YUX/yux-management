@@ -20,7 +20,7 @@ export async function captureFixture(){
   await activateCaptureSearch(pool)
   const heartbeat=randomUUID()
   await pool.query("INSERT INTO public.worker_process_heartbeats(instance_id,queue_classes,started_at,last_seen_at,metadata) VALUES($1,ARRAY['external'],NOW(),NOW(),'{}')",[heartbeat])
-  const campaign=await createRadarCampaign(pool,admin,{organizationId,name:`Capture ${randomUUID()}`,campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:10000,budgetLimit:100,
+  const campaign=await createRadarCampaign(pool,admin,{organizationId,name:`Capture ${randomUUID()}`,campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],offerType:'Oferta',dailyLimit:1000,budgetLimit:100,
     searchConfiguration:{sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},research:{enabled:true,webSearchEnabled:true}}} as never)
   return {pool,campaign,async close(){await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaign.id]);await pool.query('DELETE FROM public.worker_process_heartbeats WHERE instance_id=$1',[heartbeat]);await pool.end()}}
 }

@@ -8,9 +8,10 @@ import {getRadarResearchAvailability} from './research-availability.js'
 import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './search-configuration.js'
 import {calculateRadarCaptureCapacity,loadRadarCapturePageAccounting,type RadarCaptureLimits,type RadarQueryable} from './capture-capacity.js'
 import {inspectExpiredRadarCaptureContinuation} from './capture-continuation.js'
+import {loadRadarOperationalLimits,assertRadarOperationalLimit,validateRadarOperationalConfiguration,type RadarOperationalPolicy} from './operational-limits.js'
 export type PreflightInput={organizationId:string;campaignId:string;configurationRevision:number;requestedCount:number;operationId?:string}
 export type PreflightDependencies={availability?:AvailabilityLoader;workerReady?:()=>Promise<boolean>}
-export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
+export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;policy:RadarOperationalPolicy;campaignLimits:RadarCaptureLimits;attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
 export const isRadarCaptureLimitPause=(op:{status:string;discovery_reason?:string;requested_count:number},admitted:number)=>['blocked','partial'].includes(op.status)&&['page_cap','query_cap'].includes(op.discovery_reason??'')&&admitted<op.requested_count
 export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
@@ -21,7 +22,10 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const op=input.operationId?(await db.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3',[input.operationId,input.organizationId,input.campaignId])).rows[0]:null
  if(input.operationId&&!op)throw captureError('radar_capture_not_found',404)
  if(op&&(op.configuration_revision!==revision||op.requested_count!==input.requestedCount))throw captureError('radar_capture_request_conflict')
+ const policy=await loadRadarOperationalLimits(db)
+ if(!op)assertRadarOperationalLimit(input.requestedCount,policy.limits.maxNewCompaniesPerLot)
  const snapshot=op?.configuration_snapshot??campaign,config=resolveRadarSearchConfiguration(snapshot.search_configuration)
+ if(!op)validateRadarOperationalConfiguration(config,policy.limits,campaign.daily_limit)
  const {pageSize,maxPagesPerScope,maxQueriesPerBatch}=config.batch,limits={pageSize,maxPagesPerScope,maxQueriesPerBatch}
  const items=op?(await db.query('SELECT COUNT(*)::int AS n FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows[0].n:0
  const remaining=Math.max(0,input.requestedCount-items)
@@ -54,11 +58,10 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  checks.push({key:'research_configuration',status:availability.allowed?'ok':'blocked'})
  if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(db as pg.Pool,input.organizationId,'cnpja_advanced_search')
-  // An approval may increase pageSize up to the schema ceiling of10. Do not
-  // reject that proposal using an obsolete smaller page size. Authorization
-  // rechecks quota/budget against the exact proposed page size before writing.
-  const minimumQueries=requiresLimitsApproval?Math.ceil(Math.max(0,remaining-overflowCount)/10):capacity.minimumAdditionalQueries
-  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,minimumQueries)
+  // Preview the best allowed proposal; authorization rechecks its exact cost.
+  const previewPageSize=requiresLimitsApproval?policy.limits.maxDiscoveryPageSize:pageSize
+  const minimumQueries=requiresLimitsApproval?Math.ceil(Math.max(0,remaining-overflowCount)/previewPageSize):capacity.minimumAdditionalQueries
+  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,minimumQueries,minimumQueries*Math.ceil(previewPageSize/10))
   for(const issue of governance.issues)fail(issue.code,issue.message)
   const provider=(await db.query(`SELECT status,EXISTS(SELECT 1 FROM public.platform_provider_secrets secret WHERE secret.provider_connection_id=provider.id AND secret.secret_kind='api_key') AS has_secret
    FROM public.platform_provider_connections provider WHERE provider_key='cnpja' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)).rows[0]
@@ -83,9 +86,9 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const latest=(await db.query("SELECT id FROM public.radar_enrichment_runs WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY started_at DESC NULLS LAST,id DESC LIMIT 1",[input.organizationId,input.campaignId])).rows[0]?.id??null
  let expired:Awaited<ReturnType<typeof inspectExpiredRadarCaptureContinuation>>=null
  if(op&&!op.discovery_pending&&!op.lease_active){try{expired=await inspectExpiredRadarCaptureContinuation(db,op)}catch{fail('radar_capture_continuation_confirmation_stale')}}
- const stateId=createHash('sha256').update(JSON.stringify({organizationId:input.organizationId,campaignId:input.campaignId,operationId:op?.id??null,revision,requested:input.requestedCount,status:op?.status??null,reason:op?.discovery_reason??null,generation:op?.resume_generation??0,queries:op?.queries??0,items,accounting,limits,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,cursors,latest,overflowCount})).digest('hex')
- const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
- return{preflight,operation:op,campaign,scopes,overflowCount}
+ const stateId=createHash('sha256').update(JSON.stringify({policyVersion:policy.version,organizationId:input.organizationId,campaignId:input.campaignId,operationId:op?.id??null,revision,requested:input.requestedCount,status:op?.status??null,reason:op?.discovery_reason??null,generation:op?.resume_generation??0,queries:op?.queries??0,items,accounting,limits,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,cursors,latest,overflowCount})).digest('hex')
+ const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,policy,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
+ return{preflight,operation:op,campaign,scopes,overflowCount,policy}
 }
 export async function getRadarCapturePreflight(pool:pg.Pool,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){
  const client=await pool.connect()

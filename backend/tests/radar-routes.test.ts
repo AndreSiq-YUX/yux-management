@@ -4,6 +4,7 @@ import type { AuthStore, AuthUser } from '../src/auth/routes.js'
 import { hashSessionToken } from '../src/auth/session.js'
 import type { AppJobQueue } from '../src/server.js'
 import { buildServer } from '../src/server.js'
+import { defaultRadarOperationalLimits } from '../src/modules/radar/operational-limits.js'
 
 const testEnv = {
   NODE_ENV: 'test' as const,
@@ -85,6 +86,7 @@ class FakeRadarPool {
   async query(sql: string, params: unknown[] = []) {
     this.queries.push({ sql, params })
     const normalized = sql.replace(/\s+/g, ' ').trim()
+    if (sql.includes('FROM public.radar_operational_limits')) return { rows: [{ version: 1, limits: defaultRadarOperationalLimits }] }
 
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
     if (sql.includes('JOIN public.memberships membership') && sql.includes("module.module_key = 'radar'")) return { rows: [{ allowed: this.clientRadarAllowed }] }
@@ -611,7 +613,7 @@ describe('radar routes', () => {
   it('validates capture quantities and UUIDs before writes and requires authentication',async()=>{
     const {authStore,token}=buildAuthStore(),pool=new FakeRadarPool()
     app=await buildServer(testEnv,{authStore,pool:pool as never,jobQueue:noopJobQueue})
-    for(const requestedCount of [0,1.5,1001]){
+    for(const requestedCount of [0,1.5,Number.MAX_SAFE_INTEGER + 1]){
       const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${ids.campaign}/capture-operations`,headers:{cookie:sessionCookie(token)},payload:{organizationId:ids.org,configurationRevision:1,requestId:ids.diagnostic,requestedCount}})
       expect(response.statusCode).toBe(400)
     }
@@ -782,7 +784,7 @@ describe('radar routes', () => {
     app = await buildServer(testEnv, { authStore, pool: pool as never, jobQueue: noopJobQueue })
     const anonymous = await app.inject({ method: 'GET', url: '/api/radar/admin/data-sources' })
     expect(anonymous.statusCode).toBe(401)
-    for (const rateLimitPerDay of [0, 1.5, 1001]) {
+    for (const rateLimitPerDay of [0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
       const update = await app.inject({ method: 'PATCH', url: `/api/radar/data-sources/${ids.dataSource}`,
         headers: { cookie: sessionCookie(token) }, payload: { rateLimitPerDay } })
       expect(update.statusCode).toBe(400)

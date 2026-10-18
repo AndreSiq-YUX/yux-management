@@ -34,9 +34,9 @@ export const radarResearchPolicySchema = z.object({
       if(value.enabled&&value.minimumUsefulContacts>0&&!value.contactTypes.length)ctx.addIssue({code:'custom',message:'completion_contact_type_required'})
     }).default(()=>({enabled:false,requireIdentity:true,requireSegment:false,requireWebsite:false,contactTypes:['email' as const,'phone' as const,'whatsapp' as const,'contact_form' as const],contactPurposes:[],minimumUsefulContacts:1})),
   webSearchProviders:z.array(z.enum(['brave_web_search','serper_web_search'])).min(1).max(2).refine(value=>new Set(value).size===value.length,'duplicate_search_provider').default(['brave_web_search']),
-  maxSearchQueriesPerCandidate: z.number().int().min(1).max(5).default(3),
-  maxPagesPerCandidate: z.number().int().min(1).max(10).default(4),
-  freshnessDays: z.number().int().min(1).max(30).default(7),
+  maxSearchQueriesPerCandidate: z.number().int().positive().safe().default(3),
+  maxPagesPerCandidate: z.number().int().positive().safe().default(4),
+  freshnessDays: z.number().int().positive().safe().default(7),
   semanticQualificationEnabled: z.boolean().default(false),
   presenceResolutionEnabled:z.boolean().default(false),
   inspectLinkedSocialProfiles:z.boolean().default(false),
@@ -66,10 +66,10 @@ export const radarSearchConfigurationSchema = z.object({
     productTerms: terms.default([]), productMatch: z.enum(['any','all']).default('any'),
   }).strict().default({ includeAnyTerms: [], includeAllTerms: [], excludeTerms: [], requireCnaeMatch: false,
     missingWebsite: 'review', productTerms: [], productMatch: 'any' }),
-  batch: z.object({ pageSize: z.number().int().min(1).max(10).default(10),
-    maxPagesPerScope: z.number().int().min(1).max(10).default(1),
-    maxQueriesPerBatch: z.number().int().min(1).max(100).default(10),
-    verificationLimit: z.number().int().min(1).max(25).default(10) }).strict()
+  batch: z.object({ pageSize: z.number().int().positive().safe().default(10),
+    maxPagesPerScope: z.number().int().positive().safe().default(1),
+    maxQueriesPerBatch: z.number().int().positive().safe().default(10),
+    verificationLimit: z.number().int().positive().safe().default(10) }).strict()
     .default({ pageSize: 10, maxPagesPerScope: 1, maxQueriesPerBatch: 10, verificationLimit: 10 }),
   exportFields: z.array(z.enum(RADAR_EXPORT_FIELDS)).min(1).max(RADAR_EXPORT_FIELDS.length)
     .default([...RADAR_EXPORT_FIELDS]),

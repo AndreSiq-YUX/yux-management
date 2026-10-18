@@ -45,7 +45,7 @@ describe('Radar configurable search', () => {
     expect(buildRadarDiscoveryScopes({ targetStates: ['ES'], searchConfiguration, configurationRevision: 4 })[0].key).not.toBe(scopes[0].key)
   })
   it('validates limits, duplicate locations and fields, query identity, and date range', () => {
-    for (const config of [{ batch: { pageSize: 11 } },{ batch: { verificationLimit: 26 } },
+    for (const config of [{ batch: { pageSize: 0 } },{ batch: { verificationLimit: 1.5 } },
       { braveQueryTemplate: '{segment}' },{ exportFields: ['phone','phone'] },
       { openingFrom:'2026-09-30',openingTo:'2026-01-01' },
       { cities: [{city:'Vitória',state:'ES'},{city:'Vitoria',state:'ES'}] }]) {

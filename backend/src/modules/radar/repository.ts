@@ -36,6 +36,7 @@ import { createRadarDuplicateCandidates } from './dedupe.js'
 import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
 import { buildCnpjaCandidateSnippet, CnpjaSearchHttpError, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
+import {loadRadarOperationalLimits,validateRadarOperationalConfiguration,assertRadarOperationalLimit} from './operational-limits.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { resolveRadarOsmSegment } from './osm-segment-map.js'
 import { checkRadarOsmSite } from './osm-site-check.js'
@@ -183,6 +184,8 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
     && (user.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool, input.organizationId))) {
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
+  const policy=await loadRadarOperationalLimits(pool)
+  validateRadarOperationalConfiguration(resolveRadarSearchConfiguration(input.searchConfiguration),policy.limits,input.dailyLimit)
   const result = await pool.query<RadarCampaignRow>(
     `INSERT INTO public.radar_campaigns (
        organization_id, name, campaign_type, target_segment, target_city, target_state,
@@ -229,6 +232,7 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
     const type = input.campaignType ?? row.campaign_type
     if (type !== row.campaign_type) throw Object.assign(new Error('radar_campaign_type_change_requires_duplicate'), { statusCode: 400 })
     const configuration = resolveRadarSearchConfiguration(input.searchConfiguration)
+    validateRadarOperationalConfiguration(configuration,(await loadRadarOperationalLimits(client)).limits,input.dailyLimit)
     const criteria = (config: RadarSearchConfiguration) => {
       const { batch: _batch, exportFields: _fields, crmDestination:_destination, ...searchCriteria } = config
       return searchCriteria
@@ -310,6 +314,7 @@ export async function updateRadarDataSource(
   patch: { enabled?: boolean; rateLimitPerDay?: number; defaultCostPerUnit?: number; termsNotes?: string },
 ) {
   requireRadarAccess(user)
+  if(patch.rateLimitPerDay!==undefined)assertRadarOperationalLimit(patch.rateLimitPerDay,(await loadRadarOperationalLimits(pool)).limits.maxSourceDailyQueries)
   const protectedSource = await pool.query<{ source_type: string; default_cost_per_unit: string | number }>(
     `SELECT source_type, default_cost_per_unit FROM public.radar_data_sources WHERE id = $1 LIMIT 1`, [sourceId],
   )
@@ -1049,7 +1054,7 @@ export async function runRadarCnpjaAdvancedSearch(
     throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
   }
   let limit = input.limit ?? 5
-  assertSmallBatchLimit(limit)
+  assertRadarOperationalLimit(limit,2_147_483_647)
 
   if (!await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
@@ -1116,8 +1121,8 @@ export async function runRadarCnpjaAdvancedSearch(
         const effective=resolveRadarSearchConfiguration(captureSnapshot.configuration_snapshot.search_configuration).batch
         if((accounting.successfulPagesByScope[scopeKey]??0)>=effective.maxPagesPerScope)throw captureError('radar_capture_page_limit')
       }
-      const cursor = await client.query<{ next_token: string | null; completed: boolean; running_until: Date | null }>(
-        `SELECT next_token, completed, running_until
+      const cursor = await client.query<{ next_token: string | null; completed: boolean; running_until: Date | null;page_size:number }>(
+        `SELECT next_token, completed, running_until,page_size
          FROM public.radar_regional_discovery_cursors
          WHERE campaign_id = $1 AND organization_id = $2 AND scope_key = $3 AND provider = 'cnpja_advanced_search'
          FOR UPDATE`, [input.campaignId, input.organizationId, scopeKey],
@@ -1128,11 +1133,14 @@ export async function runRadarCnpjaAdvancedSearch(
         throw Object.assign(new Error('radar_regional_search_in_progress'), { statusCode: 409 })
       }
       pageToken = previous?.next_token ?? undefined
+      if(pageToken)limit=previous?.page_size??10
     }
+
+    if(!captureSnapshot&&!pageToken)assertRadarOperationalLimit(limit,(await loadRadarOperationalLimits(client)).limits.maxDiscoveryPageSize)
 
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
       [`radar:${input.organizationId}:cnpja_advanced_search`])
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1)
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1,Math.ceil(limit/10))
     estimatedCost = governance.estimatedCost
     const issues = [...governance.issues]
     if (providerIssue) issues.push(providerIssue)
@@ -1180,11 +1188,11 @@ export async function runRadarCnpjaAdvancedSearch(
     if (input.regionalState) {
       await client.query(
         `INSERT INTO public.radar_regional_discovery_cursors
-           (organization_id, campaign_id, state, provider, next_token, lease_id, running_until, scope_key, city)
-         VALUES ($1,$2,$3,'cnpja_advanced_search',$4,$5,NOW() + INTERVAL '2 minutes',$6,$7)
+           (organization_id, campaign_id, state, provider, next_token, lease_id, running_until, scope_key, city,page_size)
+         VALUES ($1,$2,$3,'cnpja_advanced_search',$4,$5,NOW() + INTERVAL '2 minutes',$6,$7,$8)
          ON CONFLICT (campaign_id, scope_key, provider) DO UPDATE
            SET lease_id = EXCLUDED.lease_id, running_until = EXCLUDED.running_until, updated_at = NOW()`,
-        [input.organizationId, input.campaignId, input.regionalState, pageToken ?? null, leaseId, scopeKey, scopeCity ?? null],
+        [input.organizationId, input.campaignId, input.regionalState, pageToken ?? null, leaseId, scopeKey, scopeCity ?? null,limit],
       )
     }
     await client.query('COMMIT')
@@ -1320,9 +1328,9 @@ export async function runRadarCnpjaAdvancedSearch(
     if (input.regionalState) await candidateClient.query(
       `UPDATE public.radar_regional_discovery_cursors
        SET next_token = $4, completed = $5, pages_processed = pages_processed + 1,
-           candidates_seen = candidates_seen + $6, lease_id = NULL, running_until = NULL, updated_at = NOW()
+           candidates_seen = candidates_seen + $6, lease_id = NULL, running_until = NULL, updated_at = NOW(),page_size=$8
        WHERE organization_id = $1 AND campaign_id = $2 AND scope_key = $3 AND lease_id = $7`,
-      [input.organizationId, input.campaignId, scopeKey, nextToken ?? null, !nextToken, results.length, leaseId],
+      [input.organizationId, input.campaignId, scopeKey, nextToken ?? null, !nextToken, results.length, leaseId,limit],
     )
 
     await updateRadarRunCompletion(candidateClient, runId, 'succeeded', { candidateCount: candidates.length, estimatedCost }, null)
@@ -2910,9 +2918,10 @@ export async function evaluateRadarSourceGovernance(
   campaignId: string,
   source: RadarDataSource | null,
   requestedUnits: number,
+  billingUnits: number = requestedUnits,
 ) {
   const sourceType = source?.sourceType ?? 'unknown'
-  const estimatedCost = estimateRadarCost(requestedUnits, source?.defaultCostPerUnit ?? 0)
+  const estimatedCost = estimateRadarCost(billingUnits, source?.defaultCostPerUnit ?? 0)
   if (!source?.enabled) {
     return {
       allowed: false,

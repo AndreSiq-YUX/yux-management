@@ -5,6 +5,7 @@ import {loadRadarCapturePreflight,type PreflightDependencies} from './capture-pr
 import {calculateRadarCaptureCapacity,type CaptureAccountingInput,type RadarCaptureLimits} from './capture-capacity.js'
 import {radarSearchConfigurationSchema} from './search-configuration.js'
 import {findRadarDataSource,evaluateRadarSourceGovernance} from './repository.js'
+import {assertRadarOperationalLimit} from './operational-limits.js'
 export const radarCaptureLimitsSchema=radarSearchConfigurationSchema.shape.batch.unwrap().pick({pageSize:true,maxPagesPerScope:true,maxQueriesPerBatch:true}).required().strict()
 // Campaign and operation are locked by the caller; cursor locks make the consent check and application indivisible.
 export async function authorizeRadarCaptureLimits(client:pg.PoolClient,user:AuthUser,op:CaptureAccountingInput&{requested_count:number},input:{requestId:string;expectedStateId:string;limits:RadarCaptureLimits},deps:PreflightDependencies={}){
@@ -14,11 +15,14 @@ export async function authorizeRadarCaptureLimits(client:pg.PoolClient,user:Auth
  const p=state.preflight
  if(p.stateId!==input.expectedStateId)throw captureError('radar_capture_limits_confirmation_stale')
  if(!p.allowed)throw captureError(p.blockers[0]?.code??'radar_capture_research_unavailable')
+ assertRadarOperationalLimit(limits.pageSize,state.policy.limits.maxDiscoveryPageSize)
+ assertRadarOperationalLimit(limits.maxPagesPerScope,state.policy.limits.maxPagesPerScope)
+ assertRadarOperationalLimit(limits.maxQueriesPerBatch,state.policy.limits.maxDiscoveryQueriesPerLot)
  const capacity=calculateRadarCaptureCapacity({limits,remaining:p.remaining,attemptedQueries:p.attemptedQueries,scopes:state.scopes,successfulPagesByScope:p.successfulPagesByScope,usableOverflowCount:state.overflowCount})
  if(capacity.optimisticAdditionalCapacity<p.remaining)throw captureError('radar_capture_capacity_insufficient')
  if(capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(client as unknown as pg.Pool,op.organization_id,'cnpja_advanced_search')
-  const governance=await evaluateRadarSourceGovernance(client,op.organization_id,op.campaign_id,source,capacity.minimumAdditionalQueries)
+  const governance=await evaluateRadarSourceGovernance(client,op.organization_id,op.campaign_id,source,capacity.minimumAdditionalQueries,capacity.minimumAdditionalQueries*Math.ceil(limits.pageSize/10))
   if(!governance.allowed)throw captureError(governance.issues[0]?.code??'radar_capture_source_unavailable')
  }
  await client.query(`INSERT INTO public.radar_capture_limit_authorizations(organization_id,campaign_id,operation_id,request_id,approved_by,expected_state_id,old_limits,new_limits,counters)

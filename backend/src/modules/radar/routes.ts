@@ -56,6 +56,7 @@ import {resumeRadarCaptureOperation} from './capture-dispatch.js'
 import {RadarCaptureContinuationConsentRequired} from './capture-continuation.js'
 import {getRadarCapturePreflight} from './capture-preflight.js'
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
+import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
 
@@ -77,7 +78,7 @@ const createCampaignSchema = z.object({
   targetCnaes: z.array(z.string().transform(value => value.replace(/\D/g, '')).pipe(z.string().regex(/^\d{7}$/))).max(50).optional(),
   offerType: z.string().min(1),
   budgetLimit: z.number().min(0).optional(),
-  dailyLimit: z.number().int().min(1).max(1000).optional(),
+  dailyLimit: z.number().int().positive().safe().optional(),
 }).superRefine((input, context) => {
   if (input.campaignType === 'regional_b2b') {
     if (!input.targetStates?.length || input.targetCity || input.targetState) {
@@ -117,7 +118,7 @@ const addCompanySchema = z.object({
 const reviewSchema = z.object({ status: z.enum(['approved', 'rejected']) })
 const updateDataSourceSchema = z.object({
   enabled: z.boolean().optional(),
-  rateLimitPerDay: z.number().int().min(1).max(1000).optional(),
+  rateLimitPerDay: z.number().int().positive().safe().optional(),
   defaultCostPerUnit: z.number().min(0).optional(),
   termsNotes: z.string().optional(),
 })
@@ -151,7 +152,7 @@ const searchCnpjaSchema = z.object({
   cnaes: z.array(z.string()).optional(),
   openingFrom: z.iso.date().optional(),
   openingTo: z.iso.date().optional(),
-  limit: z.number().int().min(1).max(10).optional(),
+  limit: z.number().int().positive().safe().optional(),
 }).refine(input => Boolean(input.query || input.city || input.state || input.cnaes?.length || input.openingFrom || input.openingTo), {
   message: 'radar_cnpja_search_requires_filter',
 }).refine(input => !input.city?.trim() || Boolean(input.state), {
@@ -161,7 +162,7 @@ const searchRegionalCnpjaSchema = z.object({
   organizationId: uuid,
   state: radarStateSchema,
   city: z.string().trim().min(1).max(100).optional(),
-  limit: z.number().int().min(1).max(10).optional(),
+  limit: z.number().int().positive().safe().optional(),
 })
 const previewPlacesSchema = z.object({
   organizationId: uuid,
@@ -226,6 +227,16 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const surface=radarCommercialSurface(request.method,request.routeOptions.url??'')
     if(!surface||typeof payload!=='string')return JSON.stringify({})
     return JSON.stringify(projectRadarCommercialResponse(surface,JSON.parse(payload)))
+  })
+  app.get('/admin/operational-limits',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    return getRadarOperationalLimits(app.pg,user)
+  })
+  app.put('/admin/operational-limits',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const body=z.object({expectedVersion:z.number().int().positive(),limits:radarOperationalLimitsSchema}).strict().safeParse(request.body)
+    if(!body.success)return reply.code(400).send({error:'invalid_radar_operational_policy'})
+    return updateRadarOperationalLimits(app.pg,user,body.data)
   })
   app.get('/admin/data-sources', async (request, reply) => {
     const user = await getAuthenticatedUser(request, reply)
@@ -403,14 +414,14 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/campaigns/:id/capture-preflight',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestedCount:z.number().int().min(1).max(1000),operationId:uuid.optional()}).strict().safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestedCount:z.number().int().positive().safe(),operationId:uuid.optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     return getRadarCapturePreflight(app.pg,user,{...body.data,campaignId:params.data.id})
   })
   app.post('/campaigns/:id/capture-operations',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,requestedCount:z.number().int().min(1).max(1000)}).safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,requestedCount:z.number().int().positive().safe()}).safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     const result=await startRadarCaptureOperation(app.pg,user,{...body.data,campaignId:params.data.id})
     // Durable outbox is committed first; lost HTTP/queue acknowledgements are safe.

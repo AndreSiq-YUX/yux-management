@@ -87,7 +87,8 @@ export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): 
   if (!input.apiKey) throw Object.assign(new Error('cnpja_api_key_missing'), { statusCode: 400 })
   if (input.token && !/^[\w-]{1,256}$/.test(input.token)) throw Object.assign(new Error('cnpja_invalid_page_token'), { statusCode: 400 })
   const config = resolveConfig(input.config)
-  const limit = Math.min(Math.max(input.limit ?? config.defaultResultLimit, 1), 10)
+  const limit = input.limit ?? config.defaultResultLimit
+  if(!Number.isSafeInteger(limit)||limit<1)throw new Error('cnpja_invalid_page_size')
   const fetchImpl = input.fetchImpl ?? fetch
   const municipalityCode = input.city && !input.token ? await resolveMunicipalityCode(input.city, input.state, fetchImpl, !input.fetchImpl) : undefined
   const url = buildAdvancedSearchUrl(config, input, limit, municipalityCode)
