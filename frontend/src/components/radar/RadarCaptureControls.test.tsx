@@ -21,6 +21,14 @@ async function render(overrides:Record<string,unknown>={}){
 }
 const operation=(status:RadarCaptureOperation['status'])=>({id:'op',campaignId:'campaign',configurationRevision:1,status,counts:{requested:7,admitted:7,researching:0,completed:0,insufficient:0,blocked:7},blockers:[],items:[],discoveryStopped:true,queries:1})
 describe('direct complete capture controls',()=>{
+ it('recovers a partial admitted lot with no search quota without starting a new lot',async()=>{
+  const ui=await render({available:false,operation:{...operation('partial'),canContinue:true}})
+  expect(ui.input().disabled).toBe(true)
+  expect(ui.container.textContent).toContain('sem repetir a descoberta')
+  await act(async()=>ui.submit())
+  expect(ui.props.onResume).toHaveBeenCalledTimes(1)
+  expect(ui.props.onStart).not.toHaveBeenCalled()
+ })
  it('uses the current policy and releases the quantity after an unsubmitted confirmation',async()=>{
   const onStart=vi.fn(async()=> 'confirmation_required'),ui=await render({maximum:2000,onStart})
   await ui.set('1500');await act(async()=>ui.submit())

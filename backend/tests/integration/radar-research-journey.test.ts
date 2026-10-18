@@ -51,7 +51,9 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
       ON CONFLICT (provider_type,provider_key,environment) DO UPDATE SET status='active',public_config=EXCLUDED.public_config RETURNING id`,
     [JSON.stringify({retentionLicensed:true,credentialPurpose:'licensed_retention',clientDeliveryLicensed:true,webSearchLicensed:true})])
     await storePlatformProviderSecret(pool,{providerConnectionId:provider.rows[0].id,secretKind:'api_key',value:'fixture-not-a-real-key'},`provider-key:${fixtureKey}`)
-    await pool.query(`UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.01,rate_limit_per_day=100 WHERE source_key='brave_web_search'`)
+    // Both paths exercised below must be provisioned by this fixture; never
+    // depend on another test having activated local search in the shared DB.
+    await pool.query(`UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.01,rate_limit_per_day=100 WHERE source_key IN ('brave_web_search','brave_place_search')`)
     await pool.query(`INSERT INTO public.platform_provider_connections (provider_type,provider_key,display_name,status,public_config)
       VALUES ('internal_service','cnpja','Isolated export rights','active','{"clientDeliveryLicensed":true}')
       ON CONFLICT (provider_type,provider_key,environment) DO UPDATE SET public_config=EXCLUDED.public_config`)

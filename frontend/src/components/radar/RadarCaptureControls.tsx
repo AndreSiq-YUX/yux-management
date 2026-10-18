@@ -51,6 +51,7 @@ function CaptureForm({operation,maximum,loading,busy,available,error,onStart,onR
    <Button type="submit" disabled={disabled||!active&&!valid}>{sending||busy?blocked?'Retomando…':'Iniciando…':blocked?'Retomar pesquisa':active?'Pesquisando empresas…':failure?'Tentar novamente sem duplicar':'Pesquisar novas empresas'}</Button>
   </div>
   <p id={`${id}-help`} className="text-sm text-muted-foreground">A pesquisa encontra novas empresas e completa seus dados automaticamente. {maximum?`De 1 a ${maximum.toLocaleString('pt-BR')} empresas; duplicatas não contam.`:'Aguarde o carregamento dos limites administrativos.'}</p>
+  {blocked&&operation?.discoveryStopped&&operation.counts.admitted>=operation.counts.requested&&<p className="text-sm text-muted-foreground">Retomar recupera as etapas pendentes das empresas já encontradas, sem repetir a descoberta nem criar outro lote. Uma nova busca ou análise que exija autorização continua sujeita aos controles da campanha.</p>}
   {!valid&&!active&&maximum&&<p role="alert" className="text-sm text-destructive">Informe um número inteiro de 1 a {maximum.toLocaleString('pt-BR')}.</p>}
   {!available&&!active&&!loading&&<p className="text-sm text-muted-foreground">A pesquisa precisa de liberação. Confira a operação técnica abaixo.</p>}
   {(failure||error)&&<div role="alert" className="flex flex-wrap items-center gap-2 text-sm"><p>{error||failure}</p>{error&&<Button type="button" size="sm" variant="outline" onClick={onRefresh}>Atualizar acompanhamento</Button>}</div>}

@@ -8,7 +8,7 @@ import {runWithDatabaseRequestContext} from '../../src/db/request-context.js'
 import {fixtureIds,fixtureUsers,seedIntegrationFixtures} from '../integration/support/fixtures.js'
 import {createRadarCampaign} from '../../src/modules/radar/repository.js'
 import {advanceRadarCaptureDiscovery} from '../../src/modules/radar/capture-discovery.js'
-import {startRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js'
+import {startRadarCaptureOperation,getRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js'
 import {CnpjaSearchHttpError} from '../../src/modules/radar/cnpjaClient.js'
 import {dispatchRadarCaptureOperation,reconcileRadarCaptureOutbox} from '../../src/modules/radar/capture-dispatch.js'
 import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
@@ -20,6 +20,7 @@ if(target.hostname!=='127.0.0.1'||!['55439','55440'].includes(target.port)||targ
 const pool=new pg.Pool({connectionString:databaseUrl});await seedIntegrationFixtures(pool)
 const staleStart=process.env.YUX_RADAR_QA_STALE_START==='true'
 const exhaustedSource=process.env.YUX_RADAR_QA_SOURCE_EXHAUSTED==='true'
+const recoverSaved=process.env.YUX_RADAR_QA_RECOVER_SAVED==='true'
 const heartbeat=randomUUID()
 const beat=()=>pool.query("INSERT INTO public.worker_process_heartbeats(instance_id,queue_classes,started_at,last_seen_at) VALUES($1,ARRAY['external'],NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET last_seen_at=NOW()",[heartbeat])
 await beat()
@@ -31,7 +32,7 @@ for(const providerKey of ['brave_place','cnpja']){
 }
 await pool.query("UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.025,rate_limit_per_day=10000 WHERE source_key='cnpja_advanced_search'")
 await pool.query("UPDATE public.radar_data_sources SET enabled=TRUE,default_cost_per_unit=.01,rate_limit_per_day=10000 WHERE source_key='brave_web_search'")
-const campaign=await createRadarCampaign(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,name:'QA — Captação completa',campaignType:'regional_b2b',targetStates:['PR'],targetSegment:'Empresas B2B sintéticas',offerType:'Produtos e serviços configuráveis',dailyLimit:100,budgetLimit:10,searchConfiguration:{sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:staleStart?8:2,maxQueriesPerBatch:staleStart?12:2},research:{enabled:true,webSearchEnabled:true}}} as never)
+const campaign=await createRadarCampaign(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,name:'QA — Captação completa',campaignType:'regional_b2b',targetStates:['PR'],targetSegment:'Empresas B2B sintéticas',offerType:'Produtos e serviços configuráveis',dailyLimit:100,budgetLimit:10,searchConfiguration:{sources:{enrichWithBrave:false},batch:{pageSize:10,maxPagesPerScope:staleStart?8:2,maxQueriesPerBatch:staleStart?12:2},research:{enabled:true,webSearchEnabled:true,...(recoverSaved?{contactPurpose:'suppliers'}:{})}}} as never)
 const qaSite='https://empresa-modelo.example/'
 await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Empresa Modelo — Dados sintéticos',$3,$4::jsonb)`,[org,campaign.id,`qa-${campaign.id}`,JSON.stringify({cnpj:String(randomInt(10_000_000_000_000,99_999_999_999_999)),city:'Curitiba',state:'PR',address:'Endereço sintético de teste',legalName:'Empresa Modelo LTDA',researchRevision:1,discoveryRevision:1,websiteStatus:'verified_present',websiteUrl:qaSite,registrationStatus:'Ativa',targetStatus:'confirmed',productFit:'high',
  publicPresence:{version:1,configurationRevision:1,website:{url:qaSite,association:'confirmed',scope:'establishment',readable:true,sourceUrl:qaSite,observedAt:new Date().toISOString()},contacts:[],externalReferences:[]},
@@ -46,6 +47,22 @@ const env=loadEnv({NODE_ENV:'test',DATABASE_URL:databaseUrl,REDIS_URL:'redis://1
 const rejectDiscovery=process.env.YUX_RADAR_QA_REJECT_DISCOVERY==='true'
 const expiredContinuation=process.env.YUX_RADAR_QA_EXPIRED_CONTINUATION==='true'
 const limitContinuation=process.env.YUX_RADAR_QA_LIMIT_CONTINUATION==='true'
+if(recoverSaved){
+ const start=await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20})
+ await advanceRadarCaptureDiscovery(pool,env,{organizationId:org,operationId:start.operationId},{loadSecret:async()=>'fixture',searchPage:async()=>({candidates:Array.from({length:20},(_,index)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),tradeName:`Empresa Sintética ${index+1}`,legalName:`Empresa Sintética ${index+1} LTDA`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))})})
+ const items=(await getRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,org,start.operationId)).items
+ for(const [index,item]of items.entries()){
+  const candidate=(await pool.query('SELECT * FROM public.radar_candidate_records WHERE id=$1',[item.candidateId])).rows[0]
+  const site=`https://sintetica-${index+1}.example/`,text=`Somos ${candidate.title}. CNPJ ${candidate.normalized_payload.cnpj}. Fornecedores compras@empresa.example`
+  const output=index<18?{readingComplete:true,readerVersion:4,discovery:{websiteUrl:site,association:'review',hits:[],suggestions:[],queries:1,limitations:[]},pages:[{url:site,text,observedAt:new Date().toISOString()}]}:{}
+  const run=(await pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,status,stage,output) VALUES($1,$2,$3,$4,1,$5,'partial','review',$6) RETURNING id`,[org,campaign.id,item.candidateId,fixtureUsers.yux_admin.id,item.id,JSON.stringify(output)])).rows[0]
+  await pool.query("UPDATE public.radar_capture_items SET run_id=$2,status=$3,blocker=$4 WHERE id=$1",[item.id,run.id,index===0?'insufficient':'blocked',index===0?null:'source_limit_exceeded'])
+ }
+ await pool.query("UPDATE public.radar_capture_operations SET status='blocked',blockers='[\"source_limit_exceeded\"]' WHERE id=$1",[start.operationId])
+ await pool.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1',[start.operationId])
+ await pool.query("UPDATE public.radar_data_sources SET rate_limit_per_day=1 WHERE source_key='brave_web_search'")
+ await pool.query("INSERT INTO public.radar_source_usage_counters(organization_id,campaign_id,source_type,usage_date,units,estimated_cost) VALUES($1,$2,'brave_web_search',CURRENT_DATE,1,.01) ON CONFLICT(organization_id,campaign_id,source_type,usage_date) DO UPDATE SET units=1",[org,campaign.id])
+}
 const oldCompanies=Array.from({length:40},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa anterior ${i+1} LTDA`,tradeName:`Empresa anterior ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))
 if(limitContinuation||staleStart||exhaustedSource){
  for(const record of oldCompanies)await pool.query("INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search',$3,$4,$5)",[org,campaign.id,record.tradeName,`cnpj:${record.taxId}`,JSON.stringify({cnpj:record.taxId,legalName:record.legalName,city:'Curitiba',state:'PR',discoveryRevision:1})])
@@ -60,7 +77,7 @@ if(expiredContinuation||limitContinuation||staleStart){
  await pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen,token_received_at) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','qa-expired-token',4,40,CASE WHEN $3 THEN NOW()-INTERVAL '10 hours' ELSE NOW() END)`,[org,campaign.id,staleStart])
  if(expiredContinuation&&!limitContinuation&&!staleStart)await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:crypto.randomUUID(),requestedCount:1})
 }
-const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=rejectDiscovery||expiredContinuation||limitContinuation||staleStart,rejectedOnce=false
+const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=recoverSaved||rejectDiscovery||expiredContinuation||limitContinuation||staleStart,rejectedOnce=false
 const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  const id=options?.jobId??`${name}-${Date.now()}`
  if(queued.has(id))return{id};queued.add(id)
@@ -68,6 +85,7 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  setTimeout(()=>void runWithDatabaseRequestContext({role:'client_member',organizationIds:[org],serviceRole:'worker'},async()=>{
   if(name==='radar.advanceCaptureOperation'){
    const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>{
+    if(recoverSaved)throw Error('qa_recovery_must_not_rediscover')
     if(expiredContinuation&&input.token==='qa-expired-token')throw new CnpjaSearchHttpError('HTTP 400: request validation failed; token is invalid or expired',400)
     if(rejectDiscovery&&!rejectedOnce){rejectedOnce=true;throw new CnpjaSearchHttpError('request validation failed',422)}
     if(limitContinuation||staleStart){
@@ -79,7 +97,7 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
    }})
    await dispatchRadarCaptureOperation(workerPool,env,{organizationId:org,operationId:String(data.operationId)},queue,undefined,{discover})
    // Accelerate only this opt-in synthetic journey; normal production dispatch timing is unchanged.
-   if(limitContinuation||staleStart)await workerPool.query('UPDATE public.radar_capture_outbox SET next_dispatch_at=NOW() WHERE operation_id=$1 AND organization_id=$2',[String(data.operationId),org])
+   if(limitContinuation||staleStart||recoverSaved)await workerPool.query('UPDATE public.radar_capture_outbox SET next_dispatch_at=NOW() WHERE operation_id=$1 AND organization_id=$2',[String(data.operationId),org])
   }else{
    const runId=String(data.runId)
    if(!failedOnce){failedOnce=true;blocked.add(runId);await workerPool.query("UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='radar_ai_credits_insufficient' WHERE id=$1",[runId]);return}

@@ -199,6 +199,17 @@ Após reiniciar uma continuação expirada, a previsão de capacidade é **teór
 
 Validação desta correção: 109 testes das oito suítes de captação com PostgreSQL local aprovados, incluindo onze recusas de auditoria inválida e a jornada de quarenta empresas antigas mais vinte novas; suíte geral backend com 1.100 aprovados e 98 ignorados por condições opt-in; type-check e build backend aprovados. Sem mudança de interface, nova migração ou teste pago. A conferência de produção foi somente de leitura; publicação do código não comprova implantação nem conclusão do lote real.
 
+## Recuperação por etapa e capacidade de aprofundamento — 18/10/2026
+
+- **Retomar pesquisa** conserva lote, quantidade, empresas admitidas e recibos. Com a descoberta encerrada, recupera etapas pendentes sem repetir a descoberta. Um lote parcial com execuções recuperáveis oferece a mesma ação; não é preciso pedir outras empresas.
+- Quota de busca esgotada não impede aproveitar páginas/evidências já salvas para leitura, identificação e análise. Cada efeito ainda revalida papel global, módulo contratado, revisão, campanha, aprovação, licença, orçamento, carteira de IA e recibo quando aplicável. Empresas que realmente precisam de novas buscas permanecem com motivo específico; não elevamos quotas nem repetimos efeitos incertos.
+- Para editar limites, acesse **Admin → Integrações → Fontes do Radar** (quota diária por fonte/organização e custo aprovado), **Limites operacionais do Radar** (tetos globais editáveis) e **Editar configuração** da campanha (valores efetivos de consultas/páginas/empresa/lote, limite diário e orçamento). Alterar um teto não compra consultas nem substitui os valores de um lote já autorizado.
+- Antes de iniciar um lote, o preflight verifica a capacidade também do **aprofundamento**, não só da descoberta. O Admin vê um aviso quando a quota restante pode ser menor que o planejamento conservador do lote. A projeção é um retrato, não reserva concorrente nem garantia de cobertura; IA é contabilizada separadamente. Fontes alternativas só entram se selecionadas e autorizadas.
+- Bloqueados não preenchem a barra de pesquisa encerrada. Falta de evidência de identidade, com etapas terminadas e sem efeitos pendentes, é **dados insuficientes**, nunca aprovação. Dados incertos/rejeitados não viram fatos confirmados.
+- Um campo inválido no perfil é rejeitado isoladamente; os demais fatos verificáveis e a qualificação com suporte independente continuam disponíveis. Respostas concluídas e recibos compatíveis são reaproveitados; JSON inválido após chamada permanece sem repetição automática. Erros de formato do pedido antes do provedor são tipados separadamente.
+- Diretórios e publicações de terceiros permanecem como referências, não sites institucionais nem contatos da empresa. O histórico bruto não é apagado.
+- Clientes, operadores e administradores de conta não recebem diagnósticos, fontes, quotas/custos, recibos ou modelos. Essas informações e os controles de limites são exclusivos do Admin global YUX.
+
 ## Continuação durável e limites no Admin — 18/10/2026
 
 ### Base de implantação

@@ -1,21 +1,23 @@
 export type RadarCaptureResearchStage='discovery'|'reading'|'presence'|'qualification'|'profile'
 export type RadarCaptureResearchAssessment={status:'researching'|'completed'|'insufficient'|'blocked';reason?:string;stage?:RadarCaptureResearchStage}
-type Child={status:string;stage?:string;error_code?:string|null;lease_until?:string|Date|null;output?:Record<string,unknown>|null;calls?:Record<string,{status:string}>|null}
-const searchFailures=new Set(['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing','source_disabled','source_cost_required','retention_license_required','web_license_required','radar_research_query_limit'])
-const analysisFailures=new Set(['radar_presence_service_unavailable','radar_qualification_service_unavailable','radar_qualification_failed','radar_presence_failed','radar_ai_wallet_missing','radar_ai_credits_insufficient','radar_llm_route_missing','radar_research_call_uncertain'])
+type Child={status:string;stage?:string;error_code?:string|null;lease_until?:string|Date|null;output?:Record<string,unknown>|null;calls?:Record<string,{status:string;error?:string}>|null}
+const searchFailures=new Set(['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing','source_disabled','source_cost_required','retention_license_required','web_license_required','radar_research_query_limit','candidate_search_limit_reached'])
+const analysisFailures=new Set(['radar_presence_service_unavailable','radar_qualification_service_unavailable','radar_qualification_failed','radar_presence_failed','radar_ai_wallet_missing','radar_ai_credits_insufficient','radar_llm_route_missing','radar_research_call_uncertain',
+ 'radar_presence_explicit_route_required','radar_presence_refresh_authorization_required','radar_presence_previous_request_uncertain',
+ 'radar_qualification_explicit_route_required','radar_qualification_refresh_authorization_required','radar_qualification_previous_request_uncertain','radar_qualification_invalid_json','radar_request_invalid'])
 const safeCode=(value:unknown):value is string=>typeof value==='string'&&/^[a-z][a-z0-9_]{0,159}$/.test(value)
 // Legacy checkpoints embed the safe runtime code in these two exact wrappers.
 // Never parse public excerpts (or arbitrary warning prose) as operational errors.
 function limitationCode(value:string){
  const wrapped=/^(?:Qualificação semântica pendente|Identificação do site pendente) \(([a-z][a-z0-9_]+)\)\./.exec(value)
- return wrapped?.[1]??value
+ return wrapped?.[1]??/^Pesquisa complementar: ([a-z][a-z0-9_]+)\.$/.exec(value)?.[1]??value
 }
 export function assessRadarCaptureResearch(run:Child):RadarCaptureResearchAssessment{
  const blocked=(reason:string,stage:RadarCaptureResearchStage):RadarCaptureResearchAssessment=>({status:'blocked',stage,reason})
  if(run.status==='queued'||run.status==='running')return run.status==='running'&&run.lease_until&&new Date(run.lease_until).getTime()<Date.now()
   ?blocked('radar_research_lease_expired','reading'):{status:'researching'}
  if(['blocked','failed'].includes(run.status))return blocked(safeCode(run.error_code)?run.error_code:'radar_capture_item_requires_review','reading')
- for(const [key,call]of Object.entries(run.calls??{}))if(call.status!=='completed')return blocked('radar_research_call_uncertain',key==='presence'?'presence':key==='semantic'?'qualification':'discovery')
+ for(const [key,call]of Object.entries(run.calls??{}))if(!['completed','failed'].includes(call.status))return blocked(call.status==='rejected_before_provider'&&safeCode(call.error)?call.error:'radar_research_call_uncertain',key==='presence'?'presence':key==='semantic'?'qualification':'discovery')
  const output=run.output??{},quality=output.quality as {readyForReview?:boolean}|undefined
  const limitations=Array.isArray(output.limitations)?output.limitations.filter((v):v is string=>typeof v==='string').map(limitationCode):[]
  const qualification=output.qualification as {targetStatus?:string}|undefined
@@ -23,6 +25,7 @@ export function assessRadarCaptureResearch(run:Child):RadarCaptureResearchAssess
  const complete=output.siteAssociation!=='review'&&quality?.readyForReview!==false&&!requiredPending&&
   (run.status==='succeeded'||quality?.readyForReview===true&&!!qualification&&qualification.targetStatus==='confirmed')
  if(complete)return{status:'completed'}
+ if(Object.values(run.calls??{}).some(call=>call.status==='failed'))return blocked('radar_research_previous_request_failed','discovery')
  const discovery=output.discovery as {association?:string;limitations?:string[]}|undefined
  const searchFailure=[...limitations,...(discovery?.limitations??[])].find(code=>searchFailures.has(code))
  if(searchFailure)return blocked(searchFailure,'discovery')

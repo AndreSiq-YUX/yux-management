@@ -116,9 +116,9 @@ function safeResearchError(cause:unknown) {
   }
   return /^[a-z][a-z0-9_]{2,100}$/.test(code)?code:'radar_qualification_failed'
 }
-const preProviderCreditErrors=new Set(['radar_ai_wallet_missing','radar_ai_credits_insufficient'])
-function canRetryCreditRejection(call:ResearchRun['calls'][string]){
-  return call.status==='rejected_before_provider'&&(call.retryProvenByReceipt===true||!!call.error&&preProviderCreditErrors.has(call.error))
+const preProviderErrors=new Set(['radar_ai_wallet_missing','radar_ai_credits_insufficient','radar_request_invalid'])
+function canRetryPreProviderRejection(call:ResearchRun['calls'][string]){
+  return call.status==='rejected_before_provider'&&(call.retryProvenByReceipt===true||!!call.error&&preProviderErrors.has(call.error))
 }
 
 // The facts pipeline is deliberately independent of offer fit and has no outreach dependency.
@@ -579,8 +579,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       try{return await(dependencies.runtime??invokeAgentRuntime)<T>(env,path,body)}
       catch(cause){
         const message=cause instanceof Error?cause.message:''
-        // Only the runtime's explicit pre-provider reservation denial proves a safe retry.
+        // Explicit wallet denial and typed request-validation rejection prove that
+        // no provider started. Other 422 responses may follow a paid generation.
         const rejection=/^agent_runtime_402:(radar_ai_wallet_missing|radar_ai_credits_insufficient)$/.exec(message)?.[1]
+          ??(message==='agent_runtime_422:radar_request_invalid'?'radar_request_invalid':undefined)
         if(rejection){
           const call=run.calls[key]
           run.calls[key]={...call,status:'rejected_before_provider',error:rejection,
@@ -593,7 +595,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     }
     const recoverAnalysis=async(key:'presence'|'semantic',evidenceHash:string)=>{
       const previous=run.calls[key]
-      if(!previous||previous.status==='completed'||canRetryCreditRejection(previous))return
+      if(!previous||previous.status==='completed'||canRetryPreProviderRejection(previous))return
       const action=key==='presence'?'radar_presence_resolution':'radar_business_qualification'
       const requestId=key==='presence'?`${run.id}:presence:${evidenceHash}`:`${run.id}:${evidenceHash}`
       if(previous.evidenceHash!==evidenceHash)return
@@ -633,7 +635,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         await recoverAnalysis('presence',evidenceHash)
         const previous=run.calls.presence
         if(previous?.status==='completed'&&previous.evidenceHash===evidenceHash)return previous.result
-        if(previous&&previous.status!=='completed'&&!canRetryCreditRejection(previous))throw error('radar_presence_previous_request_uncertain')
+        if(previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous))throw error('radar_presence_previous_request_uncertain')
         if(previous?.status==='completed'&&!previous.refreshAuthorized)throw error('radar_presence_refresh_authorization_required')
         const tenant=await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
@@ -663,7 +665,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         // Dedicated opt-in route; runtime refuses unconfigured global/legacy inheritance for this case.
         const previousSemantic=run.calls.semantic
         if (previousSemantic?.status==='completed'&&previousSemantic.evidenceHash===evidenceHash) return previousSemantic.result as RadarQualification
-        if (previousSemantic&&previousSemantic.status!=='completed'&&!canRetryCreditRejection(previousSemantic)) throw error('radar_qualification_previous_request_uncertain')
+        if (previousSemantic&&previousSemantic.status!=='completed'&&!canRetryPreProviderRejection(previousSemantic)) throw error('radar_qualification_previous_request_uncertain')
         if (previousSemantic?.status==='completed'&&!previousSemantic.refreshAuthorized) throw error('radar_qualification_refresh_authorization_required')
         const tenant = await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE

@@ -195,6 +195,17 @@ it.each(['agent_runtime_402:openrouter_credit_required','agent_runtime_402','age
   expect(runtime).toHaveBeenCalledTimes(1)
   expect(JSON.stringify(pool.run!.output.limitations)).toContain('radar_presence_previous_request_uncertain')
 })
+it('marks a typed request-validation rejection as pre-provider, without treating generic 422 as safe to retry',async()=>{
+ for(const failure of ['agent_runtime_422:radar_request_invalid','agent_runtime_422:radar_qualification_invalid_json']){
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
+  const run=await start(pool)
+  pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+  const runtime=vi.fn().mockRejectedValue(Error(failure))
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime})
+  expect(pool.run!.calls.semantic.status).toBe(failure.endsWith('radar_request_invalid')?'rejected_before_provider':'reserved')
+ }
+})
 it('hides legacy directory contacts from the current dossier without changing stored history',async()=>{
   const pool=new ResearchPool();await start(pool)
   pool.run!.status='partial';pool.run!.output={contacts:[{kind:'social',value:'https://instagram.com/serasa',sourceUrl:'https://serasaexperian.com.br/consulta-gratis/123',observedAt:'2026-09-01',association:'review'}],

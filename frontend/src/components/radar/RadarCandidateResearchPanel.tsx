@@ -28,6 +28,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
 }) {
   const [open,setOpen]=useState(initialOpen),[result,setResult]=useState<RadarResearchResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[refresh,setRefresh]=useState(0)
+  const [loading,setLoading]=useState(initialOpen)
   const [available,setAvailable]=useState(availability)
   const [allowSemanticRefresh,setAllowSemanticRefresh]=useState(false)
   const [tlsConsent,setTlsConsent]=useState(''),[tlsMessage,setTlsMessage]=useState<string|null>(null)
@@ -39,6 +40,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     if(!open)return
     let active=true,timer:ReturnType<typeof setTimeout>|undefined
     const load=async()=>{
+      setLoading(true)
       try {
         const value=await radarService.getCandidateResearch(candidateId,organizationId)
         if(!active)return
@@ -46,6 +48,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
         if(value.run && ['queued','running'].includes(value.run.status))timer=setTimeout(load,4000)
         else if(value.run && value.run.id!==completedId.current) {completedId.current=value.run.id;onCompletedRef.current?.()}
       } catch {if(active){setAvailable(null);setError('Não foi possível verificar a disponibilidade ou carregar o resultado. Tente novamente; seus dados foram preservados.')}}
+      finally{if(active)setLoading(false)}
     }
     void load()
     return()=>{active=false;clearTimeout(timer)}
@@ -176,7 +179,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
           {page.limitation&&<p>{radarResearchMessage(page.limitation)}</p>}
           {page.tlsException&&<p className="text-xs text-amber-800">Página lida sob autorização excepcional por certificado vencido em {new Date(page.tlsException.observedAt).toLocaleString('pt-BR')}.</p>}
         </div>)}</details>:null}
-      </>:<p className="text-slate-600">Ainda não há pesquisa automática registrada. Não é necessário informar URL para iniciar.</p>}
+      </>:loading?<p role="status" className="text-muted-foreground">Carregando dossiê da empresa…</p>:!error&&<p className="text-muted-foreground">Ainda não há pesquisa automática registrada. Não é necessário informar URL para iniciar.</p>}
       <p className="text-xs text-slate-500">Dados públicos observados não comprovam consentimento, número atendido ou intenção de compra. Nenhuma mensagem é enviada.</p>
     </div>}
   </section>

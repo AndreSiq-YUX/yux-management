@@ -7,6 +7,17 @@ const modulePath='../src/modules/radar/capture-dispatch.js'
 const api=await import(modulePath).catch(()=>({}))
 const state=await import('../src/modules/radar/capture-research-state.js')
 describe('capture outcomes',()=>{
+ it.each(['radar_presence_explicit_route_required','radar_presence_refresh_authorization_required','radar_qualification_previous_request_uncertain','radar_qualification_invalid_json','candidate_search_limit_reached'])('explains actionable unfinished-stage restriction %s',reason=>{
+  expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:[reason]}})).toMatchObject({status:'blocked',reason})
+ })
+ it('recognizes a complementary-search quota failure only in its exact checkpoint wrapper',()=>{
+  expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:['Pesquisa complementar: source_limit_exceeded.']}})).toMatchObject({status:'blocked',reason:'source_limit_exceeded'})
+ })
+ it('does not block a finished result on a known failed optional search, but still blocks uncertain effects',()=>{
+  const output={siteAssociation:'confirmed',quality:{readyForReview:true},qualification:{targetStatus:'confirmed'},limitations:[]}
+  expect(api.classifyRadarCaptureResearch({status:'partial',output,calls:{fallback:{status:'failed'}}})).toBe('completed')
+  expect(api.classifyRadarCaptureResearch({status:'partial',output,calls:{fallback:{status:'reserved'}}})).toBe('blocked')
+ })
  it('treats exhausted identity evidence as insufficient, not an execution failure',()=>{
   const run={status:'partial',stage:'review',calls:{presence:{status:'completed'}},output:{siteAssociation:'review',limitations:['radar_qualification_waiting_identity','radar_profile_waiting_identity']}}
   expect(api.classifyRadarCaptureResearch(run)).toBe('insufficient')
@@ -47,7 +58,7 @@ describe.skipIf(!connectionString)('durable capture dispatch',()=>{
     const output=index<18?{discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1},pages:index<10?[{url:'https://empresa.example/',text:'Empresa sintética LTDA',observedAt:new Date().toISOString()}]:[]} : {}
     const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,status,output,calls) VALUES($1,$2,$3,$4,1,$5,'partial',$6,'{"saved":{"status":"completed","source":"brave_web_search","result":[]}}') RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id,item.id,JSON.stringify(output)])).rows[0]
     ids.push(run.id)
-    await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='blocked',blocker='source_limit_exceeded' WHERE id=$1",[item.id,run.id])
+    await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status=$3,blocker='source_limit_exceeded' WHERE id=$1",[item.id,run.id,index===0?'insufficient':'blocked'])
    }
    await f.pool.query("UPDATE public.radar_capture_operations SET status='blocked' WHERE id=$1",[start.operationId])
    await f.pool.query("UPDATE public.radar_data_sources SET rate_limit_per_day=1 WHERE source_key='brave_web_search'")

@@ -3,6 +3,7 @@ import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
 import {Label} from '@/components/ui/label'
 import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from '@/components/ui/dialog'
+import {Alert,AlertDescription} from '@/components/ui/alert'
 import type {RadarCaptureLimits,RadarCapturePreflight} from '@/types/radarResearch'
 type Props={open:boolean;preflight:RadarCapturePreflight;busy:boolean;error?:string;mode?:'start'|'resume';onCancel:()=>void;onConfirm:(limits:RadarCaptureLimits)=>Promise<void>}
 // The parent keys this component by the state receipt: an old approval never carries into a new lot.
@@ -22,6 +23,10 @@ export function RadarCaptureContinuationDialog({open,preflight,busy,error,mode='
  return <Dialog open={open} onOpenChange={next=>{if(!next&&!busy&&!sending)onCancel()}}>
   <DialogContent className="max-h-[90dvh] overflow-y-auto">
    <DialogHeader><DialogTitle>{mode==='start'?'Iniciar um novo lote':'Continuar o mesmo lote'}</DialogTitle><DialogDescription>{mode==='start'?'Serão pesquisadas':'Faltam'} {preflight.remaining} novas empresas. As empresas e os dados já salvos serão preservados; duplicatas não contam como novas.</DialogDescription></DialogHeader>
+   {!!preflight.warnings?.length&&<Alert><AlertDescription className="flex flex-col gap-2">{preflight.warnings.map(warning=><p key={warning.code}>{warning.message}</p>)}
+    {preflight.researchCapacity&&<p>Capacidade diária restante: até {preflight.researchCapacity.remainingQueries} consultas; planejamento conservador do lote: até {preflight.researchCapacity.plannedMaximumQueries} consultas. Não é reserva nem garantia de cobertura. Estimativa máxima de buscas: {preflight.researchCapacity.estimatedMaximumCostBrl.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}, sem IA.</p>}
+    <a href="/admin/integrations" className="text-primary underline">Editar quotas das fontes e tetos operacionais no Admin</a>
+   </AlertDescription></Alert>}
    {preflight.requiresLimitsApproval&&<>
     <p className="text-sm">Limites atuais: {preflight.limits.pageSize} empresas por página, {preflight.limits.maxPagesPerScope} páginas por região e {preflight.limits.maxQueriesPerBatch} consultas no lote. Já foram utilizadas {preflight.attemptedQueries} consultas. Capacidade adicional teórica atual: até {preflight.optimisticAdditionalCapacity} empresas.</p>
     {preflight.campaignLimits&&<><p className="text-sm">Campanha salva: {preflight.campaignLimits.pageSize} empresas por página, {preflight.campaignLimits.maxPagesPerScope} páginas por região e {preflight.campaignLimits.maxQueriesPerBatch} consultas. Esses valores não foram aplicados ao lote.</p><Button type="button" variant="outline" disabled={busy||sending||!caps} onClick={()=>setValues(Object.fromEntries(Object.entries(preflight.campaignLimits!).map(([k,v])=>[k,String(v)])))}>Usar os limites salvos na campanha</Button></>}

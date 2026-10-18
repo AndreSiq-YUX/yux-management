@@ -139,7 +139,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
    if(!input.continuationAuthorizations?.length)await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId,continuationStateId:input.continuationStateId})
    const continuationScopes=scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision}))
    await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
-   const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND (status='blocked' OR ($2 AND status='insufficient' AND run_id IS NOT NULL))",[op.id,recoverPartial])).rows
+   const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND (status='blocked' OR ($2 AND status='insufficient' AND run_id IS NOT NULL))",[op.id,current.discovery_stopped&&!limitPause])).rows
    for(const item of limitPause?[]:items){
     await client.query("UPDATE public.radar_capture_items SET status='queued',blocker=NULL,dispatch_generation=dispatch_generation+1 WHERE id=$1",[item.id])
    }

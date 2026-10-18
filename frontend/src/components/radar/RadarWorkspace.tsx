@@ -681,7 +681,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     if(!captureStartChecked.current.has(input.requestId)){
       const p=await radarService.capturePreflight(selectedCampaign.id,{organizationId,configurationRevision:selectedCampaign.configurationRevision??1,requestedCount:input.requestedCount})
       if(!p.allowed)throw new Error(p.blockers[0]?.code??'radar_capture_research_unavailable')
-      if(!input.continuationAuthorizations?.length&&p.continuations?.some(s=>s.requiresRestartConfirmation)){
+      if(!input.continuationAuthorizations?.length&&(p.continuations?.some(s=>s.requiresRestartConfirmation)||p.warnings?.length)){
         if(scope===sidebarScope.current)setCaptureStartConsent({scope,input:{...input,organizationId,configurationRevision:selectedCampaign.configurationRevision??1},preflight:p})
         return 'confirmation_required' as const
       }
@@ -1331,7 +1331,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
               finally{if(consent.scope===sidebarScope.current)setCaptureBusy(false)}
             }}/>}
             {canEditConfiguration&&captureConsent&&captureConsent.scope===sidebarScope.current&&captureConsent.operationId===captureOperation?.id&&<RadarCaptureContinuationDialog key={captureConsent.preflight.stateId} open preflight={captureConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>setCaptureConsent(null)} onConfirm={async limits=>{await resumeCapture({approvedLimits:limits})}}/>}
-            {captureOperation&&<div className="mt-4"><RadarCaptureProgress operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
+            {captureOperation&&<div className="mt-4"><RadarCaptureProgress showTechnical={context.role?.key==='yux_admin'} operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
             {batchRequestedAt>0&&<p role="status" className="mt-2 text-xs text-slate-600">Busca solicitada. Os resultados serão atualizados automaticamente durante o acompanhamento; a consulta continua em segundo plano.</p>}
             <div className="mt-3 flex items-center gap-3 border-t pt-3">
               <span className="text-sm text-slate-600">{b2bProspects.filter(item => item.approvedAt).length} empresas aprovadas para contato manual</span>

@@ -7,6 +7,16 @@ import type { RadarResearchAvailability, RadarResearchResult } from '@/types/rad
 vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn(),authorizeTlsException:vi.fn(),revokeTlsException:vi.fn(),getResearchFeedback:vi.fn(async()=>[]),saveResearchFeedback:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
+it('does not report absent research while the dossier request is still loading',async()=>{
+ let resolve!:(value:RadarResearchResult)=>void
+ vi.mocked(radarService.getCandidateResearch).mockImplementationOnce(()=>new Promise(done=>{resolve=done}))
+ const view=mount();await view.click('Ver dossiê da empresa')
+ expect(view.container.textContent).toContain('Carregando dossiê')
+ expect(view.container.textContent).not.toContain('Ainda não há pesquisa automática registrada')
+ await act(async()=>resolve(initial))
+ expect(view.container.textContent).toContain('Ainda não há pesquisa automática registrada')
+ view.unmount()
+})
 it('labels historical dossier confirmations with their revision instead of current corroboration',async()=>{
   vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,run:{id:'old',status:'succeeded',stage:'review',updated_at:'2026-10-14',configuration_revision:1,output:{siteAssociation:'confirmed',discovery:{websiteUrl:'https://alfa.example/',association:'confirmed',suggestions:[],limitations:[]},contacts:[{kind:'email',value:'old@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-14',association:'confirmed'}]}}})
   const view=mount();await view.click('Ver dossiê da empresa')

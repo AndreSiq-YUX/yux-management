@@ -3,10 +3,25 @@ import {createRoot} from 'react-dom/client'
 import {describe,it,expect,vi} from 'vitest'
 const modulePath='./RadarCaptureProgress',api=await import(modulePath).catch(()=>({}))
 describe('truthful capture progress',()=>{
+ it.each([true,false])('does not count blocked companies as complete and separates technical guidance: %s',async showTechnical=>{
+  const container=document.createElement('div'),root=createRoot(container)
+  try{
+   await act(async()=>root.render(<api.RadarCaptureProgress showTechnical={showTechnical} operation={{id:'op',status:'blocked',configurationRevision:6,discoveryStopped:true,counts:{requested:20,admitted:20,researching:0,completed:0,insufficient:1,blocked:19},blockers:['source_limit_exceeded'],items:[]}} onRefresh={vi.fn()}/>))
+   expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('5')
+   if(showTechnical){
+    expect(container.textContent).toContain('etapas com dados salvos')
+    expect(container.querySelector('a[href="/admin/integrations"]')).not.toBeNull()
+   }else{
+    expect(container.textContent).toContain('equipe responsável')
+    expect(container.querySelector('a[href="/admin/integrations"]')).toBeNull()
+    expect(container.textContent).not.toMatch(/fonte|quota|Admin|cobrança|certificado/)
+   }
+  }finally{act(()=>root.unmount())}
+ })
  it('shows a rejected discovery reason instead of the generic pending message',async()=>{
   const container=document.createElement('div'),root=createRoot(container)
   try{
-   await act(async()=>root.render(<api.RadarCaptureProgress operation={{id:'op',status:'blocked',configurationRevision:6,discoveryStopped:false,counts:{requested:20,admitted:0,researching:0,completed:0,insufficient:0,blocked:0},blockers:['radar_capture_discovery_request_rejected'],items:[]}} onRefresh={vi.fn()}/>))
+   await act(async()=>root.render(<api.RadarCaptureProgress showTechnical operation={{id:'op',status:'blocked',configurationRevision:6,discoveryStopped:false,counts:{requested:20,admitted:0,researching:0,completed:0,insufficient:0,blocked:0},blockers:['radar_capture_discovery_request_rejected'],items:[]}} onRefresh={vi.fn()}/>))
    expect(container.querySelector('[role="alert"]')?.textContent).toContain('rejeitada')
    expect(container.textContent).not.toContain('Há uma etapa pendente')
    expect(container.textContent).not.toMatch(/CNPJá|Serper|Brave/)
