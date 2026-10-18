@@ -95,7 +95,7 @@ export function KnowledgeCreateDialog({ open, onOpenChange, organizationId, cont
         </Tabs>
         <div className="grid gap-4 border-t pt-4 md:grid-cols-2">
           <div className="space-y-2"><Label htmlFor="document-type">Categoria</Label><select id="document-type" className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={documentType} onChange={event => setDocumentType(event.target.value as CompanyKnowledgeDocumentType)}>{DOCUMENT_TYPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-          <div className="space-y-2"><Label htmlFor="knowledge-visibility">Uso permitido</Label><select id="knowledge-visibility" className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={visibility} onChange={event => setVisibility(event.target.value as CompanyKnowledgeVisibility)}><option value="both">Interno e externo</option><option value="internal">Somente interno</option><option value="external">Agentes externos</option></select></div>
+          <div className="space-y-2"><Label htmlFor="knowledge-visibility">Uso permitido</Label><select id="knowledge-visibility" className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={visibility} onChange={event => setVisibility(event.target.value as CompanyKnowledgeVisibility)}><option value="both">Pode ser usado no atendimento aos seus clientes</option><option value="internal">Só uso interno</option><option value="external">Agentes externos</option></select></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
