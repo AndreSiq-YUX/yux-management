@@ -13,6 +13,33 @@ import {fixtureIds} from './support/fixtures.js'
 import {runRadarCnpjaAdvancedSearch} from '../../src/modules/radar/repository.js'
 
 describe.skipIf(!connectionString)('capture journey with isolated PostgreSQL',()=>{
+ it('executes saved public evidence under the scoped worker after search quota is exhausted',async()=>{
+  const f=await captureFixture(),record=company(),url=new URL(connectionString!);url.username='yux_worker'
+  const raw=new pg.Pool({connectionString:url.toString()}),worker=createContextAwarePool(raw,'worker')
+  const scoped=<T>(fn:()=>Promise<T>)=>runWithDatabaseRequestContext({role:'client_member',organizationIds:[organizationId],serviceRole:'worker'},fn)
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   const input={organizationId,operationId:start.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:[record]}),loadSecret:async()=>'fixture'})
+   const item=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items[0]
+   const page={url:'https://sintetica.example/',text:`Empresa sintética LTDA — CNPJ ${record.taxId}. Contato compras@sintetica.example`,observedAt:new Date().toISOString()}
+   const output={readingComplete:true,readerVersion:4,pages:[page],discovery:{websiteUrl:page.url,association:'review',hits:[],suggestions:[],limitations:[],queries:1}}
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,status,output) VALUES($1,$2,$3,$4,1,$5,'partial',$6) RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id,item.id,JSON.stringify(output)])).rows[0]
+   await f.pool.query("UPDATE public.radar_capture_items SET status='blocked',run_id=$2,blocker='source_limit_exceeded' WHERE id=$1",[item.id,run.id])
+   await f.pool.query("UPDATE public.radar_capture_operations SET status='blocked' WHERE id=$1",[start.operationId])
+   await f.pool.query("UPDATE public.radar_data_sources SET rate_limit_per_day=1 WHERE source_key='brave_web_search'")
+   await f.pool.query("INSERT INTO public.radar_source_usage_counters(organization_id,campaign_id,source_type,usage_date,units,estimated_cost) VALUES($1,$2,'brave_web_search',CURRENT_DATE,1,.01)",[organizationId,f.campaign.id])
+   await resumeRadarCaptureOperation(f.pool,admin,{...input,configurationRevision:1,requestId:randomUUID()})
+   const queue={add:vi.fn(async()=>({id:'queued'}))},discover=vi.fn(),web=vi.fn(),local=vi.fn(),runtime=vi.fn(),collect=vi.fn(async()=>[page])
+   await scoped(()=>dispatchRadarCaptureOperation(worker,{} as never,input,queue,undefined,{discover}))
+   await scoped(()=>executeRadarCandidateResearch(worker,{} as never,{organizationId,runId:run.id},undefined,{web,local,runtime,collect}))
+   await scoped(()=>dispatchRadarCaptureOperation(worker,{} as never,input,queue,undefined,{discover}))
+   expect((await f.pool.query('SELECT output,status FROM public.radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0]).toMatchObject({output:{discoveryLocked:true,siteAssociation:'confirmed'}})
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).counts).toMatchObject({admitted:1,blocked:0})
+   for(const effect of [discover,web,local,runtime])expect(effect).not.toHaveBeenCalled()
+   expect((await f.pool.query("SELECT units FROM public.radar_source_usage_counters WHERE campaign_id=$1 AND source_type='brave_web_search'",[f.campaign.id])).rows[0].units).toBe(1)
+  }finally{await activateCaptureSearch(f.pool);await raw.end();await f.close()}
+ })
  it('lets the scoped read-only worker reserve discovery without granting policy writes',async()=>{
   const f=await captureFixture(),url=new URL(connectionString!);url.username='yux_worker'
   const raw=new pg.Pool({connectionString:url.toString()}),worker=createContextAwarePool(raw,'worker')

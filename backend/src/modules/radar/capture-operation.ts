@@ -11,7 +11,7 @@ import {authorizeRadarContinuations,type ContinuationAuthorization} from './cont
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().max(2_147_483_647).parse(value)
-export type CaptureAvailability={allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>;presence?:{routeConfigured:boolean};semantic?:{routeConfigured:boolean}}
+export type CaptureAvailability={allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>;presence?:{routeConfigured:boolean};semantic?:{routeConfigured:boolean};maxQueriesPerCandidate?:number;estimates?:Array<{sourceType:string;costPerQuery:number;remainingQueries?:number}>}
 export type AvailabilityLoader=(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string)=>Promise<CaptureAvailability>
 export async function assertCaptureAvailability(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string,availability:AvailabilityLoader=getRadarResearchAvailability){
  const result=await availability(pool,user,organizationId,campaignId)
@@ -55,7 +55,7 @@ export async function getRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organi
  await requireRadarScope(pool,user,{organizationId,campaignId:row.campaign_id})
  const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
  const n=(status:string)=>items.filter(item=>item.status===status).length
- return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,items.length)}:{}),
+ return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,items.length)||row.status==='partial'&&row.discovery_stopped&&items.some(item=>item.status==='insufficient'&&item.runId)}:{}),
   counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked')}}
 }
 export async function getLatestRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){

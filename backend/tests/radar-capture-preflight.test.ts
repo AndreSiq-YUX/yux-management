@@ -7,6 +7,16 @@ import {randomUUID} from 'node:crypto'
 import {createRadarCampaign} from '../src/modules/radar/repository.js'
 const path='../src/modules/radar/capture-preflight.js',api=await import(path).catch(()=>({}))
 describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
+ it('warns about enrichment capacity for the entire requested lot before discovery, without raising quotas',async()=>{
+  const f=await limitFixture()
+  try{
+   const {operationId,...input}=f.input
+   const availability=async()=>({...await available(),estimates:[{sourceType:'brave_web_search',costPerQuery:.01,remainingQueries:2}],maxQueriesPerCandidate:3})
+   const result=await api.getRadarCapturePreflight(f.pool,admin,{...input,requestedCount:2},{availability})
+   expect(result).toMatchObject({researchCapacity:{remainingQueries:2,plannedMaximumQueries:6,estimatedMaximumCostBrl:.06},warnings:[{code:'radar_capture_enrichment_capacity_low'}]})
+   expect((await f.pool.query("SELECT rate_limit_per_day FROM public.radar_data_sources WHERE source_key='brave_web_search'")).rows.every(row=>row.rate_limit_per_day===10000)).toBe(true)
+  }finally{await f.close()}
+ })
  it('distinguishes genuinely exhausted regions from an editable page cap',async()=>{
   const f=await limitFixture()
   try{

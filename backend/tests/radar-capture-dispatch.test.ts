@@ -35,6 +35,36 @@ describe('capture outcomes',()=>{
  })
 })
 describe.skipIf(!connectionString)('durable capture dispatch',()=>{
+ it('recovers twenty admitted companies with exhausted search quota without rediscovery or replacing saved runs',async()=>{
+  const f=await captureFixture()
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20},{availability:available})
+   const input={organizationId,operationId:start.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:Array.from({length:20},company)}),loadSecret:async()=>'fixture'})
+   const items=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items
+   const ids:string[]=[]
+   for(const [index,item]of items.entries()){
+    const output=index<18?{discovery:{association:'review',hits:[],suggestions:[],limitations:[],queries:1},pages:index<10?[{url:'https://empresa.example/',text:'Empresa sintética LTDA',observedAt:new Date().toISOString()}]:[]} : {}
+    const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,status,output,calls) VALUES($1,$2,$3,$4,1,$5,'partial',$6,'{"saved":{"status":"completed","source":"brave_web_search","result":[]}}') RETURNING id`,[organizationId,f.campaign.id,item.candidateId,admin.id,item.id,JSON.stringify(output)])).rows[0]
+    ids.push(run.id)
+    await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='blocked',blocker='source_limit_exceeded' WHERE id=$1",[item.id,run.id])
+   }
+   await f.pool.query("UPDATE public.radar_capture_operations SET status='blocked' WHERE id=$1",[start.operationId])
+   await f.pool.query("UPDATE public.radar_data_sources SET rate_limit_per_day=1 WHERE source_key='brave_web_search'")
+   await f.pool.query("INSERT INTO public.radar_source_usage_counters(organization_id,campaign_id,source_type,usage_date,units,estimated_cost) VALUES($1,$2,'brave_web_search',CURRENT_DATE,1,.01) ON CONFLICT(organization_id,campaign_id,source_type,usage_date) DO UPDATE SET units=1",[organizationId,f.campaign.id])
+   const unavailable=async()=>({allowed:false,reasons:[{code:'source_limit_exceeded',message:'Quota esgotada',resolution:'Admin'}]})
+   await api.resumeRadarCaptureOperation(f.pool,admin,{...input,configurationRevision:1,requestId:randomUUID()},{availability:unavailable})
+   const queue={add:vi.fn(async(_name:string,_data:{runId:string})=>({id:'queued'}))},discover=vi.fn()
+   for(let turn=0;turn<3;turn++)await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,queue,undefined,{availability:unavailable,discover})
+   const after=await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)
+   expect(after.counts).toMatchObject({admitted:20,researching:18,blocked:2})
+   expect(after.blockers).toContain('source_limit_exceeded')
+   expect(after.items.map(item=>item.runId).sort()).toEqual(ids.sort())
+   expect(new Set(queue.add.mock.calls.map(call=>call[1].runId)).size).toBe(18)
+   expect(discover).not.toHaveBeenCalled()
+   expect((await f.pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE campaign_id=$1',[f.campaign.id])).rows.every(row=>row.calls.saved.status==='completed')).toBe(true)
+  }finally{await activateCaptureSearch(f.pool);await f.close()}
+ })
  it('redelivers a stale queued child with a new durable queue generation while preserving its run',async()=>{
   const f=await captureFixture()
   try{

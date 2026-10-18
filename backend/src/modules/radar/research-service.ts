@@ -736,7 +736,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       reasons=EXCLUDED.reasons,configuration_revision=EXCLUDED.configuration_revision,updated_at=NOW() WHERE radar_b2b_reviews.approved_at IS NULL`,
     [run.candidate_id,run.organization_id,run.campaign_id,review.targetStatus,review.productFit,review.reasons,run.configuration_revision])
     // HTML is needed for crash-safe crawl checkpoints but is not exposed in the final dossier.
-    const output = {...dossier,quality,...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true}:{}),pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
+    const output = {...dossier,quality,...(run.output.discoveryLocked?{discoveryLocked:true}:{}),...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true}:{}),pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
     await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,stage='review',completed_at=NOW(),updated_at=NOW(),
       lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(output),dossier.limitations.length?'partial':'succeeded'])
     await client.query('COMMIT')

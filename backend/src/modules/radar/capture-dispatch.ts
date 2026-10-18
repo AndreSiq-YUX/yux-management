@@ -38,7 +38,7 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
   // Each turn handles at most ten items. Child jobs keep their own leases/receipts.
   const items=(await pool.query(`SELECT item.*,run.status AS run_status,run.error_code,run.output,run.calls,run.lease_until,run.updated_at AS run_updated_at
    FROM public.radar_capture_items item LEFT JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id
-   WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.status IN ('queued','researching') ORDER BY item.created_at,item.id LIMIT 10`,[op.id,input.organizationId])).rows
+   WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.status IN ('queued','researching') ORDER BY (item.status='queued') DESC,item.created_at,item.id LIMIT 10`,[op.id,input.organizationId])).rows
   for(const item of items){
    signal?.throwIfAborted()
    // Permission and saved revision can change while discovery is in flight.
@@ -48,14 +48,20 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
    if(paused&&(!runId||status==='queued'||expired&&item.status==='queued'))continue
    if(!runId||item.status==='queued'&&(['partial','blocked','failed'].includes(status)||expired)){
     try{
-     await authorizeRadarCapture(pool,input.organizationId,op.id,dependencies.availability)
+     // Admission is already complete. The child authorizes each unfinished effect;
+     // exhausted search quota must not prohibit reading or analysing saved evidence.
+     await authorizeRadarCapture(pool,input.organizationId,op.id,dependencies.availability,false)
      const start=await(dependencies.startResearch??startRadarCandidateResearch)(pool,user,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:op.configuration_revision,requestId:item.id,...(runId?{operation:'resume' as const}:{})})
      runId=start.runId;status=start.status
      await pool.query('UPDATE public.radar_capture_items SET run_id=$3 WHERE id=$1 AND organization_id=$2',[item.id,input.organizationId,runId])
-    }catch(cause){await pool.query("UPDATE public.radar_capture_items SET status='blocked',blocker=$3 WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId,cause instanceof Error&&/^[a-z0-9_]+$/.test(cause.message)?cause.message:'radar_capture_research_unavailable']);continue}
+    }catch(cause){
+     const reasons=(cause as {reasons?:Array<{code:string}>})?.reasons
+     const code=reasons?.[0]?.code??(cause instanceof Error?cause.message:'')
+     await pool.query("UPDATE public.radar_capture_items SET status='blocked',blocker=$3 WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId,/^[a-z0-9_]+$/.test(code)?code:'radar_capture_research_unavailable']);continue
+    }
    }
    if(status==='queued'){
-    await authorizeRadarCapture(pool,input.organizationId,op.id,dependencies.availability)
+    await authorizeRadarCapture(pool,input.organizationId,op.id,dependencies.availability,false)
     // A retained failed queue job must not trap an unclaimed run forever.
     // Only rotate after the full child lease window; duplicate jobs still claim
     // the same DB run and terminal runs cannot execute without explicit resume.
@@ -98,7 +104,7 @@ export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:CaptureQueu
 }
 export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;operationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean;continuationReceiptId?:string;continuationStateId?:string;continuationAuthorizations?:ContinuationAuthorization[];limitsAuthorization?:{expectedStateId:string;limits:RadarCaptureLimits}},dependencies:PreflightDependencies={}){
  z.uuid().parse(input.requestId)
- const {op}=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability)
+ const {op}=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability,false)
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
  const revision=await assertRadarRegionalBatchAccess(pool,user,input.organizationId,op.campaign_id)
  if(revision!==input.configurationRevision||revision!==op.configuration_revision)throw captureError('radar_campaign_configuration_changed')
@@ -120,7 +126,8 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   if(current.status!=='blocked'&&!limitPause&&(input.limitsAuthorization||input.restartExpiredContinuation||input.continuationAuthorizations?.length)){
    throw captureError(input.limitsAuthorization?'radar_capture_limits_confirmation_stale':'radar_capture_continuation_confirmation_stale')
   }
-  if(current.status==='blocked'||limitPause){
+  const recoverPartial=current.status==='partial'&&current.discovery_stopped
+  if(current.status==='blocked'||limitPause||recoverPartial){
    if(input.restartExpiredContinuation){
     const expiry=await inspectExpiredRadarCaptureContinuation(client,current,true)
     if(!expiry||expiry.receiptId!==input.continuationReceiptId)throw captureError('radar_capture_continuation_confirmation_stale')
@@ -132,7 +139,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
    if(!input.continuationAuthorizations?.length)await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId,continuationStateId:input.continuationStateId})
    const continuationScopes=scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision}))
    await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
-   const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND status='blocked'",[op.id])).rows
+   const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND (status='blocked' OR ($2 AND status='insufficient' AND run_id IS NOT NULL))",[op.id,recoverPartial])).rows
    for(const item of limitPause?[]:items){
     await client.query("UPDATE public.radar_capture_items SET status='queued',blocker=NULL,dispatch_generation=dispatch_generation+1 WHERE id=$1",[item.id])
    }

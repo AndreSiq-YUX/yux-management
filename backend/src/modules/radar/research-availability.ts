@@ -37,7 +37,8 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
     if(sourceType!=='brave_place_search'&&provider?.publicConfig.webSearchLicensed!==true)add('web_license_required','Confirme que a chave e o plano permitem busca web com armazenamento.')
     if(!issues.length)availableSearchSources.push(sourceType)
     else blocked.push(...issues)
-    return{sourceType,costPerQuery:source?.defaultCostPerUnit??0,maximumQueries:input.policy.maxSearchQueriesPerCandidate}
+    return{sourceType,costPerQuery:source?.defaultCostPerUnit??0,maximumQueries:input.policy.maxSearchQueriesPerCandidate,
+      ...(source?.remaining!==undefined?{remainingQueries:issues.length?0:source.remaining}:{})}
   })
   if(!availableSearchSources.length)reasons.push(...blocked);else warnings.push(...blocked)
   return{allowed:reasons.length===0,reasons,warnings,availableSearchSources,operations:{reanalyze:radarReanalysisAvailability(reasons)},
@@ -69,7 +70,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
   const result=evaluateRadarResearchAvailability({policy:configuration.research,
     canManage:user.role==='yux_admin'&&await isRadarEnabledOrganization(pool,organizationId),
     campaignActive:!['paused','archived','completed'].includes(campaign.rows[0].status),
-    localEnabled:configuration.sources.enrichWithBrave,providers,sources:sources.flatMap(item=>item.source?[item.source]:[]),
+    localEnabled:configuration.sources.enrichWithBrave,providers,sources:sources.flatMap(item=>item.source?[{...item.source,remaining:item.governance.remainingQueries??0}]:[]),
     sourceIssues:Object.fromEntries(sources.map(item=>[item.key,item.governance.issues.filter(issue=>issue.code!=='source_disabled').map(issue=>({...issue,resolution:'Admin → Integrações → Limites e orçamento'}))]))})
   if(!result.semanticQualificationEnabled)return result
   const routeFor=async(agentType:'radar_business_qualification'|'radar_presence_resolution')=>{

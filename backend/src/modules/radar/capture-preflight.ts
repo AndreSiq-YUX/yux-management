@@ -12,7 +12,7 @@ import {loadRadarOperationalLimits,assertRadarOperationalLimit,validateRadarOper
 import {inspectRadarContinuationState,type RadarContinuationState} from './continuation-state.js'
 export type PreflightInput={organizationId:string;campaignId:string;configurationRevision:number;requestedCount:number;operationId?:string}
 export type PreflightDependencies={availability?:AvailabilityLoader;workerReady?:()=>Promise<boolean>}
-export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;policy:RadarOperationalPolicy;campaignLimits:RadarCaptureLimits;continuations:RadarContinuationState[];attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
+export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;policy:RadarOperationalPolicy;campaignLimits:RadarCaptureLimits;continuations:RadarContinuationState[];attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;warnings:Array<{code:string;message:string}>;researchCapacity?:{remainingQueries:number;plannedMaximumQueries:number;estimatedMaximumCostBrl:number};checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
 export const isRadarCaptureLimitPause=(op:{status:string;discovery_reason?:string;requested_count:number},admitted:number)=>['blocked','partial'].includes(op.status)&&['page_cap','query_cap'].includes(op.discovery_reason??'')&&admitted<op.requested_count
 export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
@@ -65,9 +65,20 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(needsDiscovery&&remaining>overflowCount&&scopes.length>0&&scopes.every(scope=>scope.completed))fail('radar_capture_source_exhausted')
  if(!op&&capacity.optimisticAdditionalCapacity<remaining)fail('radar_capture_capacity_insufficient')
  const availability:CaptureAvailability=await(deps.availability??getRadarResearchAvailability)(db as pg.Pool,user,input.organizationId,input.campaignId)
- if(!availability.allowed)for(const reason of availability.reasons)fail(reason.code,reason.message)
+ const estimates=availability.estimates??[],knownCapacity=estimates.length>0&&estimates.every(item=>item.remainingQueries!==undefined)
+ const plannedMaximumQueries=(availability.maxQueriesPerCandidate??config.research.maxSearchQueriesPerCandidate)*input.requestedCount
+ const researchCapacity=knownCapacity?{remainingQueries:estimates.reduce((sum,item)=>sum+(item.remainingQueries??0),0),plannedMaximumQueries,
+  estimatedMaximumCostBrl:Number((plannedMaximumQueries*Math.max(0,...estimates.map(item=>item.costPerQuery))).toFixed(6))}:undefined
+ const warnings:RadarCapturePreflight['warnings']=researchCapacity&&researchCapacity.remainingQueries<plannedMaximumQueries
+  ?[{code:'radar_capture_enrichment_capacity_low',message:'A capacidade diária de aprofundamento pode ser menor que este lote. Ajuste as quotas das fontes no Admin ou reduza o lote. Etapas salvas continuam recuperáveis; nenhum limite será aumentado automaticamente.'}]:[]
+ // An admitted lot can recover checkpoints independently of new search capacity.
+ // This is not permission to search: children still reserve/recheck every paid effect.
+ const recovering=!!op&&!needsDiscovery
+ const researchBlockers=availability.reasons.filter(reason=>!recovering||!['source_limit_exceeded','source_budget_exceeded'].includes(reason.code))
+ if(!availability.allowed)for(const reason of researchBlockers)fail(reason.code,reason.message)
  if(availability.presence?.routeConfigured===false||availability.semantic?.routeConfigured===false)fail('radar_capture_model_route_missing')
- checks.push({key:'research_configuration',status:availability.allowed?'ok':'blocked'})
+ checks.push({key:'research_configuration',status:availability.allowed||!researchBlockers.length?'ok':'blocked'})
+ if(recovering&&!availability.allowed&&!researchBlockers.length)checks.push({key:'new_search_capacity',status:'blocked',code:'source_limit_exceeded'})
  if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(db as pg.Pool,input.organizationId,'cnpja_advanced_search')
   // With no proposal yet, use optimistic lower bounds for quota/cost. The Admin
@@ -102,7 +113,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  let expired:Awaited<ReturnType<typeof inspectExpiredRadarCaptureContinuation>>=null
  if(op&&!op.discovery_pending&&!op.lease_active){try{expired=await inspectExpiredRadarCaptureContinuation(db,op)}catch{fail('radar_capture_continuation_confirmation_stale')}}
  const stateId=createHash('sha256').update(JSON.stringify({policyVersion:policy.version,continuations,organizationId:input.organizationId,campaignId:input.campaignId,operationId:op?.id??null,revision,requested:input.requestedCount,status:op?.status??null,reason:op?.discovery_reason??null,generation:op?.resume_generation??0,queries:op?.queries??0,items,accounting,limits,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,cursors,latest,overflowCount})).digest('hex')
- const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,policy,continuations,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
+ const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,policy,continuations,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,warnings,researchCapacity,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
  return{preflight,operation:op,campaign,scopes,overflowCount,policy}
 }
 export async function getRadarCapturePreflight(pool:pg.Pool,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){

@@ -27,6 +27,12 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it.each(['yux_admin','yux_operator','client_admin_A','client_member_A','client_admin_B'])('restricts lot capacity diagnostics at the direct HTTP boundary: %s',async user=>{
+  const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/capture-preflight`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,configurationRevision:1,requestedCount:1}})
+  expect(response.statusCode).toBe(user==='yux_admin'?200:403)
+  if(user==='yux_admin')expect(response.json()).toHaveProperty('warnings')
+  else expect(response.body).not.toMatch(/remainingQueries|researchCapacity|plannedMaximumQueries|brave|serper|policy/i)
+ })
  it.each(['yux_operator','client_admin_A','client_member_A'])('withholds catalog and operational diagnostics from %s',async user=>{
   for(const path of [`/data-sources?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/research-availability?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/runs`]){
    const response=await get(path,user);expect(response.statusCode).toBe(403);expect(response.body).not.toMatch(/brave|cnpja|serper|model|cost|provider/i)

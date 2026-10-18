@@ -3002,7 +3002,9 @@ export async function evaluateRadarSourceGovernance(
     })
   }
 
-  return { allowed: issues.length === 0, estimatedCost, issues }
+  const remainingQueries=Math.max(0,Math.min(source.rateLimitPerDay-organizationUsedUnits,campaignDailyLimit-usedUnits,
+    budgetLimit!==undefined&&source.defaultCostPerUnit>0?Math.floor(Math.max(0,budgetLimit-usedCost)/source.defaultCostPerUnit):Number.MAX_SAFE_INTEGER))
+  return { allowed: issues.length === 0, estimatedCost, issues, remainingQueries }
 }
 
 export async function recordRadarSourceUsage(
