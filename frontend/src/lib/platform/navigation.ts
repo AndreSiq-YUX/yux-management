@@ -7,6 +7,8 @@ export interface NavigationItem {
   label: string
   href: string
   moduleKey?: string
+  /** Contador real exibido ao lado do item (ex.: aprovações pendentes). */
+  badge?: 'approvals'
 }
 
 export interface NavigationGroup {
@@ -100,62 +102,54 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
 
   const groups: NavigationGroup[] = [
     {
-      label: 'Visao Geral',
-      items: [{ label: 'Visao Geral', href: href() }],
-    },
-    {
-      label: 'Empresa',
+      label: 'Início',
       items: [
-        { label: 'Perfil da Empresa', href: href('/empresa/perfil') },
-        { label: 'Usuarios e Equipe', href: href('/empresa/usuarios') },
-        { label: 'Base de Conhecimento', href: href('/empresa/conhecimento') },
-        { label: 'Marca e Tom de Voz', href: href('/empresa/marca') },
-        { label: 'Integracoes', href: href('/empresa/integracoes') },
+        { label: 'Visão geral', href: href() },
+        { label: 'Aprovações', href: href('/projetos/aprovacoes'), badge: 'approvals' },
       ],
     },
     {
       label: 'Comercial',
       items: [
         ...moduleItem(context, { label: 'Leads', href: href('/comercial/leads'), moduleKey: 'crm' }),
-        ...moduleItem(context, { label: 'Empresas / Contas', href: href('/comercial/contas'), moduleKey: 'crm' }),
         ...moduleItem(context, { label: 'Funis', href: href('/comercial/funis'), moduleKey: 'crm' }),
-        ...moduleItem(context, { label: 'Tarefas e Follow-ups', href: href('/comercial/tarefas'), moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Tarefas e follow-ups', href: href('/comercial/tarefas'), moduleKey: 'crm' }),
+        ...moduleItem(context, { label: 'Empresas e contas', href: href('/comercial/contas'), moduleKey: 'crm' }),
         ...moduleItem(context, { label: 'Pontuação de leads', href: href('/comercial/scoring'), moduleKey: 'crm' }),
         ...(canShowRadarNavigation(context) ? [{ label: 'Radar Comercial', href: href('/comercial/radar'), moduleKey: 'radar' }] : []),
       ],
     },
     {
-      label: 'Atendimento & IA',
+      label: 'Atendimento',
       items: [
         ...moduleItem(context, { label: 'Conversas', href: href('/atendimento/conversas'), moduleKey: 'whatsapp_ai' }),
         ...moduleItem(context, { label: 'Agente IA', href: href('/atendimento/agente-ia'), moduleKey: 'whatsapp_ai' }),
-        ...moduleItem(context, { label: 'Canais', href: href('/atendimento/canais'), moduleKey: 'whatsapp_ai' }),
-        ...moduleItem(context, { label: 'Filas e Handoff', href: href('/atendimento/filas-handoff'), moduleKey: 'whatsapp_ai' }),
+        ...moduleItem(context, { label: 'Canais conectados', href: href('/atendimento/canais'), moduleKey: 'whatsapp_ai' }),
+        ...moduleItem(context, { label: 'Filas e transferência', href: href('/atendimento/filas-handoff'), moduleKey: 'whatsapp_ai' }),
       ],
     },
     {
       label: 'Marketing',
       items: [
-        ...moduleItem(context, { label: 'Landing Pages', href: href('/marketing/landing-pages'), moduleKey: 'landing_pages' }),
-        ...moduleItem(context, { label: 'Formulários externos', href: href('/marketing/formularios'), moduleKey: 'landing_pages' }),
         ...moduleItem(context, { label: 'Campanhas', href: href('/marketing/campanhas'), moduleKey: 'campaigns' }),
+        ...moduleItem(context, { label: 'Landing pages', href: href('/marketing/landing-pages'), moduleKey: 'landing_pages' }),
+        ...moduleItem(context, { label: 'Formulários externos', href: href('/marketing/formularios'), moduleKey: 'landing_pages' }),
         ...moduleItem(context, { label: 'Marketing Studio', href: href('/marketing/studio'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Central de Conteudo', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Calendario Editorial', href: href('/marketing/calendario'), moduleKey: 'marketing_studio' }),
-        ...moduleItem(context, { label: 'Criativos e Inspiracoes', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Central de conteúdo', href: href('/marketing/conteudo'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Calendário editorial', href: href('/marketing/calendario'), moduleKey: 'marketing_studio' }),
+        ...moduleItem(context, { label: 'Criativos e inspirações', href: href('/marketing/criativos'), moduleKey: 'marketing_studio' }),
       ],
     },
     {
-      label: 'Automacoes',
+      label: 'Automações',
       items: [
         ...moduleItem(context, { label: 'Fluxos', href: href('/automacoes/fluxos'), moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Templates', href: href('/automacoes/templates'), moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Execucoes', href: href('/automacoes/execucoes'), moduleKey: 'automations' }),
-        ...moduleItem(context, { label: 'Logs', href: href('/automacoes/logs'), moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Modelos de fluxo', href: href('/automacoes/templates'), moduleKey: 'automations' }),
+        ...moduleItem(context, { label: 'Execuções', href: href('/automacoes/execucoes'), moduleKey: 'automations' }),
       ],
     },
     {
-      label: 'Execucao YUX',
+      label: 'Execução YUX',
       items: [
         ...moduleItem(context, { label: 'Missões', href: href('/missoes'), moduleKey: 'action_engine' }),
       ],
@@ -163,34 +157,39 @@ function buildPortalNavigationGroups(context: PlatformContext, basePath = '/port
     {
       label: 'Projetos',
       items: [
-        ...moduleItem(context, { label: 'Projetos', href: href('/projetos/projetos'), moduleKey: 'projects' }),
-        ...moduleItem(context, { label: 'Aprovacoes', href: href('/projetos/aprovacoes'), moduleKey: 'projects' }),
+        ...moduleItem(context, { label: 'Projetos e entregas', href: href('/projetos/projetos'), moduleKey: 'projects' }),
         ...moduleItem(context, { label: 'Documentos', href: href('/projetos/documentos'), moduleKey: 'projects' }),
-        ...moduleItem(context, { label: 'Propostas', href: href('/projetos/aprovacoes'), moduleKey: 'proposals' }),
+        ...moduleItem(context, { label: 'Propostas', href: href('/projetos/propostas'), moduleKey: 'proposals' }),
       ],
     },
     {
-      label: 'Relatorios',
-      items: moduleItem(context, { label: 'Relatorios', href: href('/relatorios'), moduleKey: 'bi_reports' }),
+      label: 'Resultados',
+      items: moduleItem(context, { label: 'Relatórios', href: href('/relatorios'), moduleKey: 'bi_reports' }),
     },
     {
-      label: 'Suporte',
-      items: moduleItem(context, { label: 'Suporte', href: href('/suporte'), moduleKey: 'support' }),
-    },
-    {
-      label: 'Financeiro',
-      items: moduleItem(context, { label: 'Financeiro', href: href('/financeiro'), moduleKey: 'finance' }),
-    },
-    {
-      label: 'Configuracoes da Conta',
+      label: 'Empresa',
       items: [
-        { label: 'Conta', href: href('/configuracoes/conta') },
-        ...(context.mode === 'portal' ? [{ label: 'Modelos de Email', href: href('/configuracoes/emails') }] : []),
+        { label: 'Perfil da empresa', href: href('/empresa/perfil') },
+        { label: 'Marca e tom de voz', href: href('/empresa/marca') },
+        { label: 'Base de conhecimento', href: href('/empresa/conhecimento') },
+        { label: 'Equipe', href: href('/empresa/usuarios') },
+        { label: 'Conexões', href: href('/empresa/integracoes') },
+        ...(context.mode === 'portal' ? [{ label: 'Modelos de e-mail', href: href('/configuracoes/emails') }] : []),
       ],
     },
   ]
 
   return groups.filter(group => group.items.length > 0)
+}
+
+function buildPortalNavigationFooter(context: PlatformContext, basePath = '/portal'): NavigationItem[] {
+  const href = (path = '') => `${basePath}${path}`
+
+  return [
+    ...moduleItem(context, { label: 'Financeiro', href: href('/financeiro'), moduleKey: 'finance' }),
+    ...moduleItem(context, { label: 'Ajuda e suporte', href: href('/suporte'), moduleKey: 'support' }),
+    { label: 'Minha conta', href: href('/configuracoes/conta') },
+  ]
 }
 
 export function buildNavigationGroups(context: PlatformContext): NavigationGroup[] {
@@ -204,23 +203,14 @@ export function buildNavigationGroups(context: PlatformContext): NavigationGroup
         {
           label: 'Workspaces dos Clientes',
           items: [
-            { label: 'Selecionar Cliente', href: '/client-workspaces' },
+            { label: 'Selecionar cliente', href: '/client-workspaces' },
           ],
         },
       ]
     }
 
-    const basePath = `/client-workspaces/${context.organization.id}`
-
-    return [
-      {
-        label: 'Workspaces dos Clientes',
-        items: [
-          { label: 'Selecionar Cliente', href: '/client-workspaces' },
-        ],
-      },
-      ...buildPortalNavigationGroups(context, basePath),
-    ]
+    // Com um cliente aberto, a troca de cliente fica no cartão da empresa (Sidebar).
+    return buildPortalNavigationGroups(context, `/client-workspaces/${context.organization.id}`)
   }
 
   return internalModuleGroups.map(group => ({
@@ -232,8 +222,60 @@ export function buildNavigationGroups(context: PlatformContext): NavigationGroup
   }))
 }
 
+/** Itens fixados no rodapé do menu lateral (Financeiro, Ajuda e suporte, Minha conta). */
+export function buildNavigationFooter(context: PlatformContext): NavigationItem[] {
+  if (context.mode === 'portal') {
+    return buildPortalNavigationFooter(context)
+  }
+
+  if (context.mode === 'client_workspace' && context.organization?.id) {
+    return buildPortalNavigationFooter(context, `/client-workspaces/${context.organization.id}`)
+  }
+
+  return []
+}
+
 export function buildNavigation(context: PlatformContext): NavigationItem[] {
-  return buildNavigationGroups(context).flatMap(group => group.items)
+  return [
+    ...buildNavigationGroups(context).flatMap(group => group.items),
+    ...buildNavigationFooter(context),
+  ]
+}
+
+function isRootHref(href: string) {
+  return href === '/portal'
+    || href === '/dashboard'
+    || href === '/client-workspaces'
+    || /^\/client-workspaces\/[^/]+$/.test(href)
+}
+
+function normalizePathname(pathname: string) {
+  return pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+}
+
+/**
+ * Descobre o único item de menu ativo para o endereço atual.
+ * Endereço igual vence; senão vale o prefixo mais específico (ex.: `/portal/missoes/123`
+ * acende "Missões"). Itens raiz (Visão geral, Dashboard) só acendem no endereço exato.
+ */
+export function resolveActiveNavigationItem(items: NavigationItem[], pathname: string): NavigationItem | undefined {
+  const current = normalizePathname(pathname)
+  const exact = items.find(item => item.href === current)
+  if (exact) return exact
+
+  return items
+    .filter(item => !isRootHref(item.href) && current.startsWith(`${item.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]
+}
+
+const sameLabel = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+/** Remove migalhas repetidas em sequência ("Relatórios › Relatórios" vira "Relatórios"). */
+function collapseRepeatedCrumbs(crumbs: BreadcrumbItem[]): BreadcrumbItem[] {
+  return crumbs.filter((crumb, index) => {
+    const next = crumbs[index + 1]
+    return !next || !sameLabel(crumb.label, next.label)
+  })
 }
 
 export function buildBreadcrumbs(context: PlatformContext, pathname: string): BreadcrumbItem[] {
@@ -243,30 +285,22 @@ export function buildBreadcrumbs(context: PlatformContext, pathname: string): Br
       ? { label: 'Workspaces dos Clientes', href: '/client-workspaces' }
       : { label: 'YUX Hub', href: '/dashboard' }
   const groups = buildNavigationGroups(context)
-  const exactMatch = groups
-    .flatMap(group => group.items.map(item => ({ group, item })))
-    .find(({ item }) => item.href === pathname)
+  const footer = buildNavigationFooter(context)
+  const entries: Array<{ groupLabel?: string; item: NavigationItem }> = [
+    ...groups.flatMap(group => group.items.map(item => ({ groupLabel: group.label, item }))),
+    ...footer.map(item => ({ item })),
+  ]
+  const activeItem = resolveActiveNavigationItem(entries.map(entry => entry.item), pathname)
+  const active = entries.find(entry => entry.item === activeItem)
 
-  if (exactMatch) {
-    return [
-      home,
-      { label: exactMatch.group.label },
-      { label: exactMatch.item.label },
-    ]
-  }
+  if (!active) return [home]
 
-  const prefixMatch = groups
-    .flatMap(group => group.items.map(item => ({ group, item })))
-    .filter(({ item }) => item.href !== home.href && pathname.startsWith(`${item.href}/`))
-    .sort((a, b) => b.item.href.length - a.item.href.length)[0]
+  const isExact = active.item.href === normalizePathname(pathname)
+  const trail: BreadcrumbItem[] = [
+    home,
+    ...(active.groupLabel ? [{ label: active.groupLabel }] : []),
+    isExact ? { label: active.item.label } : { label: active.item.label, href: active.item.href },
+  ]
 
-  if (prefixMatch) {
-    return [
-      home,
-      { label: prefixMatch.group.label },
-      { label: prefixMatch.item.label, href: prefixMatch.item.href },
-    ]
-  }
-
-  return [home]
+  return collapseRepeatedCrumbs(trail)
 }
