@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { FolderArchive } from 'lucide-react'
 import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
-import { formatPortalCurrency, formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { billingCycleLabel, formatPortalCurrency, formatPortalDate, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { financeService } from '@/services/financeService'
 import { proposalService } from '@/services/proposalService'
+import { PendingAction } from '@/components/portal-ui'
 import { usePlatformStore } from '@/stores/platformStore'
 import type { PortalFinanceInvoice } from '@/types/finance'
 import type { ProposalDraft } from '@/types/proposal'
 
 export function PortalDocumentsPage() {
+  const portalPath = usePortalWorkspacePath()
   const activeContract = usePlatformStore(state => state.activeContract)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const [proposals, setProposals] = useState<ProposalDraft[]>([])
@@ -50,7 +54,7 @@ export function PortalDocumentsPage() {
         if (!cancelled) {
           setProposals([])
           setInvoices([])
-          setError('Nao foi possivel carregar documentos do portal.')
+          setError('Não foi possível carregar os documentos.')
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -68,7 +72,7 @@ export function PortalDocumentsPage() {
     <PortalJourneyPage
       eyebrow="Projetos"
       title="Documentos"
-      description="Centraliza contratos, propostas, relatorios, arquivos de campanha, manuais, materiais enviados e documentos da empresa."
+      description="Propostas, faturas e arquivos das entregas do seu contrato."
       icon={FolderArchive}
       metrics={[
         { label: 'Propostas', value: String(proposals.length), detail: 'Documentos comerciais vinculados.' },
@@ -76,20 +80,23 @@ export function PortalDocumentsPage() {
         { label: 'Contrato', value: activeContract ? statusLabel(activeContract.status) : 'Sem contrato', detail: activeContract?.name || activeContract?.package?.name || 'Nenhum contrato ativo.' },
       ]}
       capabilities={[
-        'Consultar contratos, propostas, relatorios e documentos de projeto.',
-        'Organizar arquivos de campanha, manuais, materiais enviados e documentos da empresa.',
-        'Separar documentos visiveis ao cliente de materiais internos da YUX.',
-        'Preparar permissoes por papel para financeiro, marketing, comercial e visualizadores.',
+        'Abrir cada proposta para revisar o escopo e registrar sua decisão.',
+        'Acompanhar vencimentos e valores das faturas do contrato.',
       ]}
       secondaryActions={[
         { label: 'Projetos', href: '/portal/projetos/projetos' },
-        { label: 'Aprovacoes', href: '/portal/projetos/aprovacoes' },
+        { label: 'Propostas', href: '/portal/projetos/propostas' },
+        { label: 'Aprovações', href: '/portal/projetos/aprovacoes' },
         { label: 'Financeiro', href: '/portal/financeiro' },
       ]}
     >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-4">
+        <p className="text-sm text-gray-700">Precisa enviar um arquivo para a YUX?</p>
+        <PendingAction code="B14">Enviar arquivo</PendingAction>
+      </div>
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-lg border bg-white p-5">
-          <h2 className="text-base font-semibold text-gray-900">Propostas e contratos</h2>
+          <h2 className="text-base font-semibold text-gray-900">Propostas</h2>
           {loading ? (
             <p className="mt-3 text-sm text-gray-600">Carregando documentos...</p>
           ) : error ? (
@@ -97,15 +104,19 @@ export function PortalDocumentsPage() {
           ) : (
             <div className="mt-4 space-y-3">
               {proposals.slice(0, 6).map(proposal => (
-                <article key={proposal.id} className="rounded-md border bg-gray-50 p-3">
+                <Link
+                  key={proposal.id}
+                  to={`${portalPath('/portal/projetos/propostas')}?proposalId=${encodeURIComponent(proposal.id)}`}
+                  className="block rounded-md border bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-medium text-gray-900">{proposal.title}</p>
                     <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(proposal.status)}</span>
                   </div>
                   <p className="mt-1 text-xs text-gray-500">
-                    {proposal.billingCycle} - {formatPortalCurrency(proposal.finalValue)}
+                    {billingCycleLabel(proposal.billingCycle)} · {formatPortalCurrency(proposal.finalValue)}
                   </p>
-                </article>
+                </Link>
               ))}
               {!proposals.length && (
                 <p className="text-sm text-gray-600">Nenhuma proposta vinculada ao contrato atual.</p>
@@ -118,15 +129,19 @@ export function PortalDocumentsPage() {
           <h2 className="text-base font-semibold text-gray-900">Documentos financeiros</h2>
           <div className="mt-4 space-y-3">
             {invoices.slice(0, 6).map(invoice => (
-              <article key={invoice.id} className="rounded-md border bg-gray-50 p-3">
+              <Link
+                key={invoice.id}
+                to={portalPath('/portal/financeiro')}
+                className="block rounded-md border bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</p>
                   <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(invoice.status)}</span>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
-                  Vencimento {formatPortalDate(invoice.dueDate)} - {formatPortalCurrency(invoice.totalAmount)}
+                  Vencimento {formatPortalDate(invoice.dueDate)} · {formatPortalCurrency(invoice.totalAmount)}
                 </p>
-              </article>
+              </Link>
             ))}
             {!invoices.length && (
               <p className="text-sm text-gray-600">Nenhuma fatura encontrada para este contrato.</p>

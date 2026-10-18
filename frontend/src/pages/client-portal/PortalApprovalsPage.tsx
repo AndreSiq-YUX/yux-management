@@ -1,109 +1,215 @@
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle2, FileText, Megaphone, MousePointerClick } from 'lucide-react'
-import { PortalEmptyState } from '@/components/client-portal/PortalEmptyState'
-import { Button } from '@/components/ui/button'
+import {
+  ArrowRight,
+  CheckCircle2,
+  FileEdit,
+  FileSignature,
+  FolderKanban,
+  Image as ImageIcon,
+  MousePointerClick,
+  type LucideIcon,
+} from 'lucide-react'
+import {
+  DecisionCard,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  portalButtonClasses,
+  SkeletonCard,
+  StatusChip,
+} from '@/components/portal-ui'
 import { usePortalActionSummary } from '@/hooks/usePortalActionSummary'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
-import { formatPortalDateTime, statusLabel } from '@/lib/client-portal/portalDisplay'
+import { formatRelativeTime } from '@/lib/client-portal/portalDisplay'
+import { cn } from '@/lib/utils'
 
-const approvalLinks = [
-  {
-    label: 'Landing Pages',
-    description: 'Revisar previews, aprovar publicacao ou pedir ajustes.',
-    href: '/portal/marketing/landing-pages',
-    icon: MousePointerClick,
-  },
-  {
-    label: 'Campanhas',
-    description: 'Acompanhar criativos, status e aprovacoes de campanha.',
-    href: '/portal/marketing/campanhas',
-    icon: Megaphone,
-  },
-  {
-    label: 'Propostas e documentos',
-    description: 'Consultar propostas, entregaveis e decisoes comerciais pendentes.',
-    href: '/portal/projetos/documentos',
-    icon: FileText,
-  },
-]
+type ApprovalTypeKey = 'deliveries' | 'landing' | 'content' | 'creatives' | 'proposals' | 'other'
+
+interface ApprovalTypeInfo {
+  /** Rótulo do filtro (plural). */
+  label: string
+  /** Módulo onde a decisão é feita. */
+  module: string
+  icon: LucideIcon
+}
+
+const APPROVAL_TYPES: Record<ApprovalTypeKey, ApprovalTypeInfo> = {
+  deliveries: { label: 'Entregas', module: 'Projetos e entregas', icon: FolderKanban },
+  landing: { label: 'Landing pages', module: 'Landing pages', icon: MousePointerClick },
+  content: { label: 'Conteúdos', module: 'Marketing Studio', icon: FileEdit },
+  creatives: { label: 'Criativos', module: 'Criativos', icon: ImageIcon },
+  proposals: { label: 'Propostas', module: 'Propostas', icon: FileSignature },
+  other: { label: 'Outras', module: 'Portal', icon: CheckCircle2 },
+}
+
+/** Qual módulo recebe a decisão, a partir do caminho do link (o módulo decide; esta fila só encaminha). */
+function typeFromHref(href: string): ApprovalTypeKey {
+  if (href.startsWith('/portal/projetos/propostas')) return 'proposals'
+  if (href.startsWith('/portal/projetos')) return 'deliveries'
+  if (href.startsWith('/portal/marketing/landing-pages')) return 'landing'
+  if (href.startsWith('/portal/marketing/studio')) return 'content'
+  if (href.startsWith('/portal/marketing/criativos')) return 'creatives'
+  return 'other'
+}
+
+interface QueueItem {
+  id: string
+  type: ApprovalTypeKey
+  title: string
+  description?: string
+  /** Texto do tempo de espera, quando o dado existe. */
+  wait?: string
+  href: string
+}
+
+const waitText = (value?: string) => {
+  const relative = formatRelativeTime(value)
+  return relative === 'Sem data' ? undefined : `enviada ${relative}`
+}
 
 export function PortalApprovalsPage() {
   const portalPath = usePortalWorkspacePath()
-  const { actions, approvals, loading, error } = usePortalActionSummary()
-  const pendingProjectApprovals = approvals.filter(approval => approval.status === 'pending')
-  const approvalActions = actions.filter(action => action.kind === 'approval' || action.kind === 'marketing')
+  const { actions, approvals, loading, error, reload } = usePortalActionSummary()
+  const [filter, setFilter] = useState<ApprovalTypeKey | 'all'>('all')
+
+  const items = useMemo<QueueItem[]>(() => {
+    const projectItems: QueueItem[] = approvals
+      .filter(approval => approval.status === 'pending')
+      .sort((a, b) => (a.submittedAt || '').localeCompare(b.submittedAt || ''))
+      .map(approval => ({
+        id: `approval-${approval.id}`,
+        type: 'deliveries',
+        title: approval.title,
+        description: approval.instructions || undefined,
+        wait: waitText(approval.submittedAt),
+        href: `/portal/projetos/projetos?projectId=${encodeURIComponent(approval.projectId)}&tab=approvals`,
+      }))
+    // A ação "project-approvals" resume as aprovações de projeto, que já aparecem uma a uma acima.
+    const actionItems: QueueItem[] = actions
+      .filter(action => (action.kind === 'approval' || action.kind === 'marketing') && action.id !== 'project-approvals')
+      .map(action => ({
+        id: `action-${action.id}`,
+        type: typeFromHref(action.href),
+        title: action.title,
+        description: action.description,
+        href: action.href,
+      }))
+    return [...projectItems, ...actionItems]
+  }, [actions, approvals])
+
+  const typeCounts = useMemo(() => {
+    const counts = new Map<ApprovalTypeKey, number>()
+    for (const item of items) counts.set(item.type, (counts.get(item.type) ?? 0) + 1)
+    return counts
+  }, [items])
+
+  // Se o tipo filtrado deixar de existir (ex.: depois de atualizar), volta para "Todos".
+  const activeFilter = filter !== 'all' && typeCounts.has(filter) ? filter : 'all'
+  const visible = activeFilter === 'all' ? items : items.filter(item => item.type === activeFilter)
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Aprovacoes</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Pendencias recorrentes do cliente para aprovar, comentar ou solicitar alteracoes.
-        </p>
-      </div>
+    <div className="w-full space-y-6">
+      <PageHeader
+        title="Aprovações"
+        lead="Veja tudo o que está esperando a sua decisão. Cada decisão é feita na tela do módulo de origem."
+        meta={items.length > 0 && !loading ? <StatusChip variant="warn">{items.length} aguardando você</StatusChip> : undefined}
+      />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {approvalLinks.map(item => {
-          const Icon = item.icon
-          return (
-            <Link key={item.href} to={portalPath(item.href)} className="rounded-lg border bg-white p-4 transition-colors hover:border-yux-300 hover:bg-yux-50">
-              <Icon className="h-5 w-5 text-yux-700" />
-              <h2 className="mt-3 font-semibold text-gray-900">{item.label}</h2>
-              <p className="mt-2 text-sm text-gray-600">{item.description}</p>
-            </Link>
-          )
-        })}
-      </div>
-
-      <section className="rounded-lg border bg-white p-5">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 text-yux-700" />
-            <div>
-              <h2 className="font-semibold text-gray-900">Fila consolidada</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Acompanhe aprovacoes de projetos, criativos e conteudos em um unico lugar.
-              </p>
-            </div>
+      {loading ? (
+        <div>
+          <p role="status" className="sr-only">Carregando aprovações...</p>
+          <div aria-hidden="true" className="grid gap-3">
+            <SkeletonCard lines={2} />
+            <SkeletonCard lines={2} />
           </div>
-          <Button variant="outline" asChild>
-            <Link to={portalPath('/portal')}>Voltar para Visao Geral</Link>
-          </Button>
         </div>
+      ) : error && items.length === 0 ? (
+        <ErrorState
+          title="Não foi possível carregar suas aprovações."
+          description="Verifique sua conexão e tente de novo."
+          onRetry={reload}
+        />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle2}
+          title="Nenhuma aprovação pendente"
+          description="Quando houver entregas, conteúdos ou criativos aguardando a sua decisão, eles aparecem nesta fila."
+        />
+      ) : (
+        <>
+          {error ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yx-warn-line bg-yx-warn-soft px-4 py-3 text-[13px] text-yx-fg"
+            >
+              <span>Algumas aprovações podem não estar aparecendo. Atualize para conferir.</span>
+              <button type="button" onClick={reload} className={portalButtonClasses('ghost')}>
+                Tentar novamente
+              </button>
+            </div>
+          ) : null}
 
-        {loading ? (
-          <p className="mt-4 text-sm text-gray-600">Carregando aprovacoes...</p>
-        ) : error ? (
-          <p className="mt-4 text-sm text-amber-700">{error}</p>
-        ) : approvalActions.length > 0 || pendingProjectApprovals.length > 0 ? (
-          <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            {approvalActions.map(action => (
-              <Link key={action.id} to={portalPath(action.href)} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
-                <p className="text-sm font-semibold text-gray-900">{action.title}</p>
-                <p className="mt-1 text-sm text-gray-600">{action.description}</p>
-              </Link>
-            ))}
-            {pendingProjectApprovals.slice(0, 6).map(approval => (
-              <Link key={approval.id} to={portalPath(`/portal/projetos/projetos?projectId=${encodeURIComponent(approval.projectId)}&tab=approvals`)} className="rounded-md border bg-gray-50 p-4 hover:border-yux-300 hover:bg-yux-50">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-gray-900">{approval.title}</p>
-                  <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">{statusLabel(approval.status)}</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">Solicitado em {formatPortalDateTime(approval.submittedAt)}</p>
-                {approval.instructions && <p className="mt-2 text-sm text-gray-600">{approval.instructions}</p>}
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-5">
-            <PortalEmptyState
-              icon={CheckCircle2}
-              title="Nenhuma aprovacao pendente"
-              description="Quando houver entregaveis, criativos, conteudos ou documentos aguardando decisao, eles aparecem nesta fila."
-            />
-          </div>
-        )}
-      </section>
+          {typeCounts.size > 1 ? (
+            <div role="group" aria-label="Filtrar por tipo" className="flex flex-wrap gap-2">
+              <FilterChip active={activeFilter === 'all'} onClick={() => setFilter('all')} label="Todas" count={items.length} />
+              {(Object.keys(APPROVAL_TYPES) as ApprovalTypeKey[])
+                .filter(key => typeCounts.has(key))
+                .map(key => (
+                  <FilterChip
+                    key={key}
+                    active={activeFilter === key}
+                    onClick={() => setFilter(key)}
+                    label={APPROVAL_TYPES[key].label}
+                    count={typeCounts.get(key) ?? 0}
+                  />
+                ))}
+            </div>
+          ) : null}
+
+          <ul aria-label="Fila de aprovações" className="m-0 grid list-none gap-3 p-0">
+            {visible.map(item => {
+              const info = APPROVAL_TYPES[item.type]
+              return (
+                <li key={item.id}>
+                  <DecisionCard
+                    tone="warn"
+                    module={{ label: info.module, icon: info.icon }}
+                    wait={item.wait}
+                    title={item.title}
+                    description={item.description}
+                    actions={
+                      <Link to={portalPath(item.href)} className={portalButtonClasses('primary')}>
+                        Revisar e decidir
+                        <ArrowRight aria-hidden="true" />
+                      </Link>
+                    }
+                  />
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
     </div>
+  )
+}
+
+function FilterChip({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        'inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 font-sans text-[13px] font-semibold transition-colors sm:min-h-[34px]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yx-blue focus-visible:ring-offset-2 focus-visible:ring-offset-yx-surface',
+        'border-yx-line-strong bg-yx-surface text-yx-fg-2 hover:border-yx-blue hover:text-yx-blue',
+        'aria-pressed:border-yx-blue aria-pressed:bg-yx-blue-soft aria-pressed:text-yx-blue',
+      )}
+    >
+      {label}
+      <span className="font-mono text-[11.5px] tabular-nums">{count}</span>
+    </button>
   )
 }

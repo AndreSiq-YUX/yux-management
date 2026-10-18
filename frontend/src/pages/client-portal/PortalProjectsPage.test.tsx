@@ -98,6 +98,17 @@ const click = async (text: string) => {
     await flush()
   })
 }
+const dialogButton = (text: string) =>
+  [...document.body.querySelectorAll('[role="dialog"] button')].find(
+    (b) => b.textContent === text
+  ) as HTMLButtonElement
+const clickDialog = async (text: string) => {
+  await act(async () => {
+    dialogButton(text).click()
+    await flush()
+    await flush()
+  })
+}
 const setComment = async (value: string) => {
   await act(async () => {
     const input = container.querySelector('textarea')!
@@ -126,7 +137,7 @@ describe('PortalProjectsPage', () => {
       organizationId,
       'project-a'
     )
-    expect(container.textContent).toContain('Em Andamento')
+    expect(container.textContent).toContain('Em andamento')
     expect(container.textContent).toContain('1 aprovação aguardando você')
   })
   it('does not show old project details while a new selection is loading', async () => {
@@ -220,6 +231,16 @@ describe('PortalProjectsPage', () => {
     approved.deliverables[0].status = 'approved'
     vi.mocked(projectDeliveryService.details).mockResolvedValue(approved)
     await click('Aprovar')
+    expect(projectDeliveryService.decide).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Aprovar esta entrega?')
+    await clickDialog('Confirmar aprovação')
+    expect(projectDeliveryService.decide).toHaveBeenCalledWith(
+      organizationId,
+      'project-a',
+      'approval-a',
+      'approved',
+      ''
+    )
     expect(projectDeliveryService.details).toHaveBeenCalledTimes(2)
     expect(container.querySelector('textarea')).toBeNull()
     expect(container.textContent).toContain('Aprovado')
@@ -237,6 +258,7 @@ describe('PortalProjectsPage', () => {
     await mount()
     await click('Aprovações (1)')
     await click('Aprovar')
+    await clickDialog('Confirmar aprovação')
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
     await act(async () => {
       button('Solicitar ajustes').click()
@@ -247,5 +269,97 @@ describe('PortalProjectsPage', () => {
       resolve({ success: true })
       await flush()
     })
+  })
+  it('does not register anything when the approval dialog is cancelled', async () => {
+    await mount()
+    await click('Aprovações (1)')
+    await click('Aprovar')
+    await clickDialog('Cancelar')
+    expect(projectDeliveryService.decide).not.toHaveBeenCalled()
+    expect(document.body.textContent).not.toContain('Aprovar esta entrega?')
+  })
+  it('keeps the approval dialog open with the error when registering fails', async () => {
+    vi.mocked(projectDeliveryService.decide).mockRejectedValueOnce(
+      new Error('offline')
+    )
+    await mount()
+    await click('Aprovações (1)')
+    await click('Aprovar')
+    await clickDialog('Confirmar aprovação')
+    expect(document.body.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(
+      document.body.querySelector('[role="dialog"] [role="alert"]')?.textContent
+    ).toContain('Não foi possível registrar sua decisão')
+  })
+  it('renders a native project select for mobile and switches project with it', async () => {
+    await mount()
+    const select = container.querySelector<HTMLSelectElement>(
+      'select#portal-project-select'
+    )!
+    expect(select).toBeTruthy()
+    expect([...select.options].map((o) => o.value)).toEqual([
+      'project-a',
+      'project-b',
+    ])
+    expect(select.value).toBe('project-a')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        'value'
+      )!.set!.call(select, 'project-b')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      await flush()
+      await flush()
+    })
+    expect(projectDeliveryService.details).toHaveBeenLastCalledWith(
+      organizationId,
+      'project-b'
+    )
+  })
+  it('does not nest main landmarks', async () => {
+    await mount()
+    expect(container.querySelector('main')).toBeNull()
+  })
+  it('shows a thumbnail for image deliverables and an icon otherwise', async () => {
+    const withImage = snapshot()
+    withImage.deliverables = [
+      ...withImage.deliverables,
+      {
+        id: 'delivery-img',
+        title: 'Arte final',
+        status: 'delivered',
+        isClientVisible: true,
+        externalUrl: 'https://cdn.example.com/arte.PNG?v=2',
+      } as never,
+    ]
+    vi.mocked(projectDeliveryService.details).mockResolvedValue(withImage)
+    await mount()
+    await click('Entregas (2)')
+    const images = container.querySelectorAll('article img')
+    expect(images).toHaveLength(1)
+    expect(images[0].getAttribute('src')).toBe(
+      'https://cdn.example.com/arte.PNG?v=2'
+    )
+  })
+  it('lists pending approvals before decided ones', async () => {
+    const mixed = snapshot()
+    mixed.approvals = [
+      {
+        id: 'approval-old',
+        targetId: 'delivery-a',
+        title: 'Aprovação antiga',
+        status: 'approved',
+        submittedAt: '2026-10-20',
+      } as never,
+      ...mixed.approvals,
+    ]
+    vi.mocked(projectDeliveryService.details).mockResolvedValue(mixed)
+    await mount('/?tab=approvals')
+    const titles = [...container.querySelectorAll('h3')].map(
+      (h) => h.textContent
+    )
+    expect(titles.indexOf('Entrega A')).toBeLessThan(
+      titles.indexOf('Aprovação antiga')
+    )
   })
 })
