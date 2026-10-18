@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { radarService } from '@/services/radarService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
 import { RadarSourceManagementPanel } from './RadarSourceManagementPanel'
+import {radarPolicyFixture} from '@/test/fixtures/radarOperationalPolicy'
 
-vi.mock('@/services/radarService', () => ({ radarService: { getAdminDataSources: vi.fn(), updateDataSource: vi.fn() } }))
+vi.mock('@/services/radarService', () => ({ radarService: { getOperationalPolicy:vi.fn(),getAdminDataSources: vi.fn(), updateDataSource: vi.fn() } }))
 type Source = Awaited<ReturnType<typeof radarService.getAdminDataSources>>[number]
 const source = (patch: Partial<Source> = {}): Source => ({ id: 'cnpja', sourceKey: 'cnpja_advanced_search',
   sourceType: 'cnpja_advanced_search', displayName: 'CNPJá pesquisa', enabled: false, isPaid: true,
@@ -21,6 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   vi.mocked(radarService.getAdminDataSources).mockResolvedValue([source()])
+  vi.mocked(radarService.getOperationalPolicy).mockResolvedValue(radarPolicyFixture)
   vi.mocked(radarService.updateDataSource).mockImplementation(async (_id, patch) => source(patch))
   container = document.createElement('div')
   document.body.append(container)
@@ -36,7 +38,7 @@ async function click(name: string) {
   await act(async () => button!.click())
 }
 async function change(label: string, value: string) {
-  const input = [...container.querySelectorAll('label')].find(element => element.textContent?.includes(label))!.querySelector('input')!
+  const input = [...container.querySelectorAll('label')].find(element => element.textContent?.includes(label.startsWith('Custo estimado')?'Custo estimado':label))!.querySelector('input')!
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))

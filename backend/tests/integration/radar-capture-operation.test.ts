@@ -10,8 +10,21 @@ import {dispatchRadarCaptureOperation,reconcileRadarCaptureOutbox,resumeRadarCap
 import {startRadarCandidateResearch,executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
 import {storePlatformProviderSecret} from '../../src/modules/platform/adminRepository.js'
 import {fixtureIds} from './support/fixtures.js'
+import {runRadarCnpjaAdvancedSearch} from '../../src/modules/radar/repository.js'
 
 describe.skipIf(!connectionString)('capture journey with isolated PostgreSQL',()=>{
+ it('lets the scoped read-only worker reserve discovery without granting policy writes',async()=>{
+  const f=await captureFixture(),url=new URL(connectionString!);url.username='yux_worker'
+  const raw=new pg.Pool({connectionString:url.toString()}),worker=createContextAwarePool(raw,'worker')
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   await runWithDatabaseRequestContext({role:'client_member',serviceRole:'worker',organizationIds:[organizationId]},async()=>{
+    const result=await runRadarCnpjaAdvancedSearch(worker,admin,{organizationId,campaignId:f.campaign.id,captureOperationId:start.operationId,expectedRevision:1,regionalState:'PR',limit:1,secretKeyMaterial:'fake'},{loadSecret:async()=>'fake',searchPage:async()=>({candidates:[company()]})})
+    expect(result.candidates).toHaveLength(1)
+    await expect(worker.query('UPDATE public.radar_operational_limits SET version=version+1 WHERE singleton=TRUE')).rejects.toThrow('permission denied')
+   })
+  }finally{await raw.end();await f.close()}
+ })
  it('does not execute a terminal blocked child when a late duplicate queue job arrives',async()=>{
   const f=await captureFixture()
   try{

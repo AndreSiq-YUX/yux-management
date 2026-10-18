@@ -5,6 +5,21 @@ const operationPath='../src/modules/radar/capture-operation.js',discoveryPath='.
 const operations=await import(operationPath).catch(()=>({})),discovery=await import(discoveryPath).catch(()=>({}))
 describe('capture discovery interface',()=>{it('provides bounded durable discovery',()=>expect(discovery.advanceRadarCaptureDiscovery).toBeTypeOf('function'))})
 describe.skipIf(!connectionString)('capture admission with real PostgreSQL',()=>{
+  it('drains paid overflow across bounded turns before buying another page',async()=>{
+    const f=await captureFixture(),old=company(),fresh=company()
+    try{
+      await f.pool.query("INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key) VALUES($1,$2,'cnpja_advanced_search','Anterior',$3)",[organizationId,f.campaign.id,`cnpj:${old.taxId}`])
+      const run=(await f.pool.query("INSERT INTO public.radar_enrichment_runs(organization_id,campaign_id,provider,status) VALUES($1,$2,'cnpja_advanced_search','succeeded') RETURNING id",[organizationId,f.campaign.id])).rows[0]
+      await f.pool.query("INSERT INTO public.radar_capture_overflow(organization_id,campaign_id,configuration_revision,scope_key,enrichment_run_id,candidate) SELECT $1,$2,1,'v1:PR:all',$3,$4::jsonb FROM generate_series(1,1000)",[organizationId,f.campaign.id,run.id,JSON.stringify(old)])
+      await f.pool.query("INSERT INTO public.radar_capture_overflow(organization_id,campaign_id,configuration_revision,scope_key,enrichment_run_id,candidate) VALUES($1,$2,1,'v1:PR:all',$3,$4)",[organizationId,f.campaign.id,run.id,JSON.stringify(fresh)])
+      const op=await operations.startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+      const searchPage=vi.fn(async()=>({candidates:[]})),input={organizationId,operationId:op.operationId}
+      await discovery.advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage,loadSecret:async()=>'fake'})
+      expect(searchPage).not.toHaveBeenCalled()
+      const result=await discovery.advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage,loadSecret:async()=>'fake'})
+      expect(result.counts.admitted).toBe(1);expect(searchPage).not.toHaveBeenCalled()
+    }finally{await f.close()}
+  },20_000)
   it('admits exactly seven new companies, preserves overflow and skips duplicates without changing old facts',async()=>{
     expect(discovery.advanceRadarCaptureDiscovery).toBeTypeOf('function')
     const f=await captureFixture(),old=company(),fresh=Array.from({length:10},company)

@@ -7,7 +7,7 @@ import {executeRadarCandidateResearch} from '../src/modules/radar/research-servi
 import {getRadarCapturePreflight} from '../src/modules/radar/capture-preflight.js'
 import {runRadarCnpjaAdvancedSearch} from '../src/modules/radar/repository.js'
 import {advanceRadarCaptureDiscovery} from '../src/modules/radar/capture-discovery.js'
-const api=await import('../src/modules/radar/continuation-state.js').catch(()=>({} as any))
+const api=await import('../src/modules/radar/continuation-state.js')
 
 describe.skipIf(!connectionString)('durable continuation before paid reservation',()=>{
  it('never repeats a first page with unknown response, even without a continuation token',async()=>{

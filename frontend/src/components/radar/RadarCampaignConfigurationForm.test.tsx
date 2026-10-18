@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RadarCampaignConfigurationForm } from './RadarCampaignConfigurationForm'
 import { defaultRadarSearchConfiguration, radarBrazilStates } from '@/lib/radar/radarSearchConfiguration'
 import type { RadarCampaign } from '@/types/radar'
+import {radarService} from '@/services/radarService'
+import {radarPolicyFixture} from '@/test/fixtures/radarOperationalPolicy'
+import {publishRadarOperationalPolicy} from '@/lib/radar/useRadarOperationalPolicy'
 
 function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
   return { id:'campaign', organizationId:'org',name:'Pesquisa',targetSegment:'Empresas',
@@ -13,7 +16,16 @@ function campaignFixture(patch: Partial<RadarCampaign>): RadarCampaign {
 }
 
 describe('Radar campaign configuration panel', () => {
-  beforeEach(()=>sessionStorage.clear())
+  beforeEach(()=>{sessionStorage.clear();vi.spyOn(radarService,'getOperationalPolicy').mockResolvedValue(radarPolicyFixture)})
+  it('updates campaign ceilings after an Admin policy save, without starting a search',async()=>{
+    const submit=vi.fn(async()=>{}),host=document.createElement('div'),root=createRoot(host)
+    await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" canConfigureProviders initialCampaign={campaignFixture({targetStates:['PE']})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+    const page=()=>[...host.querySelectorAll('label')].find(label=>label.textContent?.includes('Páginas por região no lote'))!.querySelector('input')!
+    expect(page().max).toBe('10')
+    await act(async()=>publishRadarOperationalPolicy({...radarPolicyFixture,version:2,limits:{...radarPolicyFixture.limits,maxPagesPerScope:40}}))
+    expect(page().max).toBe('40');expect(submit).not.toHaveBeenCalled()
+    act(()=>root.unmount())
+  })
   it('lets each campaign define completion requirements without requiring a website',async()=>{
     const config=defaultRadarSearchConfiguration(),submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
     await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaignFixture({targetStates:['PE'],searchConfiguration:config})} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))

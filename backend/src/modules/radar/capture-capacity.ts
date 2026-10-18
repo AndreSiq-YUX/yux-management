@@ -19,6 +19,7 @@ export async function loadRadarCapturePageAccounting(client:RadarQueryable,op:Ca
    &&output.candidateCount===0&&(!output.discoveryOutcome||output.discoveryOutcome==='rejected')
    &&Array.isArray(output.issues)&&output.issues.some((issue:{code?:string;sourceType?:string})=>issue?.code==='provider_failed'&&issue.sourceType==='cnpja_advanced_search')
   if(input?.captureOperationId!==op.id&&!auditedLegacy){historyCertain=false;continue}
+  if(row.status==='failed'&&output?.discoveryOutcome==='not_dispatched')continue
   if(!auditedLegacy&&row.status!=='succeeded'&&!row.output_payload?.discoveryOutcome&&row.status!=='running')continue // Governance rejected before a request reservation.
   attempts++
   const matching=scopes.filter(scope=>scope.state===input.regionalState&&(scope.city??null)===(input.regionalCity??null))
@@ -27,10 +28,14 @@ export async function loadRadarCapturePageAccounting(client:RadarQueryable,op:Ca
  }
  return{successfulPagesByScope,historyCertain:historyCertain&&attempts===op.queries}
 }
-export function calculateRadarCaptureCapacity(input:{limits:RadarCaptureLimits;remaining:number;attemptedQueries:number;scopes:Array<{key:string;completed:boolean}>;successfulPagesByScope:Record<string,number>;usableOverflowCount:number}){
+export function calculateRadarCaptureCapacity(input:{limits:RadarCaptureLimits;remaining:number;attemptedQueries:number;scopes:Array<{key:string;completed:boolean;inheritedPageSize?:number}>;successfulPagesByScope:Record<string,number>;usableOverflowCount:number}){
  const queries=Math.max(0,input.limits.maxQueriesPerBatch-input.attemptedQueries),unfinished=input.scopes.filter(scope=>!scope.completed)
  const pages=unfinished.reduce((n,scope)=>n+Math.max(0,input.limits.maxPagesPerScope-(input.successfulPagesByScope[scope.key]??0)),0)
- return{optimisticAdditionalCapacity:Math.min(input.remaining,Math.max(0,input.usableOverflowCount)+Math.min(queries,pages)*input.limits.pageSize),
-  minimumAdditionalQueries:Math.ceil(Math.max(0,input.remaining-input.usableOverflowCount)/input.limits.pageSize),
+ const slots=unfinished.map(scope=>({pages:Math.max(0,input.limits.maxPagesPerScope-(input.successfulPagesByScope[scope.key]??0)),size:scope.inheritedPageSize??input.limits.pageSize})).sort((a,b)=>b.size-a.size)
+ let availableQueries=queries,volume=0
+ for(const slot of slots){const count=Math.min(availableQueries,slot.pages);volume+=count*slot.size;availableQueries-=count}
+ const maximumPageSize=Math.max(input.limits.pageSize,...slots.map(slot=>slot.size))
+ return{optimisticAdditionalCapacity:Math.min(input.remaining,Math.max(0,input.usableOverflowCount)+volume),
+  minimumAdditionalQueries:Math.ceil(Math.max(0,input.remaining-input.usableOverflowCount)/maximumPageSize),
   exhausted:queries===0?'query_cap' as const:unfinished.length>0&&pages===0?'page_cap' as const:null}
 }

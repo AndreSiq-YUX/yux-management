@@ -34,8 +34,8 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
   if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
   const revision=campaign.configuration_revision
   const saveRequest=async(operationId:string)=>client.query(`INSERT INTO public.radar_capture_requests(organization_id,request_id,operation_id,campaign_id,configuration_revision,requested_count) VALUES($1,$2,$3,$4,$5,$6)`,[input.organizationId,input.requestId,operationId,input.campaignId,revision,count])
-  const active=(await client.query(`SELECT id,status FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked')`,[input.organizationId,input.campaignId,revision])).rows[0]
-  if(active){await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
+  const active=(await client.query(`SELECT id,status,requested_count FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked')`,[input.organizationId,input.campaignId,revision])).rows[0]
+  if(active){if(active.requested_count!==count)throw captureError('radar_capture_request_conflict');await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
   await assertCaptureAvailability(client as unknown as pg.Pool,user,input.organizationId,input.campaignId,dependencies.availability)
   await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
   const {preflight,policy,scopes}=await loadRadarCapturePreflight(client,user,input,dependencies)

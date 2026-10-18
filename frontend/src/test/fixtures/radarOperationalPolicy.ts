@@ -1,0 +1,2 @@
+import type {RadarOperationalPolicy} from '@/types/radarResearch'
+export const radarPolicyFixture:RadarOperationalPolicy={version:1,updatedBy:null,updatedAt:null,limits:{maxNewCompaniesPerLot:1000,maxPagesPerScope:10,maxDiscoveryQueriesPerLot:100,maxDiscoveryPageSize:10,maxVerificationBatch:25,maxSearchQueriesPerCompany:5,maxPublicPagesPerCompany:10,maxCampaignDailyQueries:1000,maxSourceDailyQueries:1000,maxResearchFreshnessDays:30,maxContinuationIdleMinutes:60}}

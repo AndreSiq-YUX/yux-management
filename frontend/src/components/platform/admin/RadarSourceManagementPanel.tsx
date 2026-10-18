@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { radarService } from '@/services/radarService'
 import { getRadarSourceBlockedReason } from '@/lib/radar/radarSourceRules'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
+import {useRadarOperationalPolicy} from '@/lib/radar/useRadarOperationalPolicy'
 
 type AdminSource = Awaited<ReturnType<typeof radarService.getAdminDataSources>>[number]
 const providerKeys: Partial<Record<AdminSource['sourceType'], string>> = {
@@ -10,6 +11,7 @@ const providerKeys: Partial<Record<AdminSource['sourceType'], string>> = {
 const buttonClass = 'rounded-md border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50'
 
 export function RadarSourceManagementPanel({ providers }: { providers: PlatformProviderConnection[] }) {
+  const {policy,error:policyError,reload:reloadPolicy}=useRadarOperationalPolicy(true)
   const [sources, setSources] = useState<AdminSource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -38,17 +40,18 @@ export function RadarSourceManagementPanel({ providers }: { providers: PlatformP
     <p className="text-xs text-gray-500">Fontes globais valem para organizações com o módulo Radar liberado. Um registro específico da organização prevalece sobre a fonte global. Jina e fontes futuras não são ativadas por este painel.</p>
     {loading && <p className="text-sm text-gray-600">Carregando fontes...</p>}
     {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+    {policyError&&<p role="alert">{policyError} <button type="button" onClick={reloadPolicy}>Atualizar limites</button></p>}
     {!loading && !error && sources.length === 0 && <p className="text-sm text-gray-600">Nenhuma fonte implementada cadastrada. Confira as migrações do Radar.</p>}
     {!loading && !error && <div className="grid gap-4 lg:grid-cols-2">
       {sources.map(source => <SourceControl key={source.id}
-        source={source} provider={providers.find(provider => provider.providerKey === providerKeys[source.sourceType] && provider.environment === 'production')}
+        source={source} maximum={policy?.limits.maxSourceDailyQueries} provider={providers.find(provider => provider.providerKey === providerKeys[source.sourceType] && provider.environment === 'production')}
         onUpdated={updated => setSources(current => current.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />)}
     </div>}
   </section>
 }
 
-function SourceControl({ source, provider, onUpdated }: {
-  source: AdminSource; provider?: PlatformProviderConnection; onUpdated: (source: AdminSource) => void
+function SourceControl({ source, provider,maximum, onUpdated }: {
+  source: AdminSource;maximum?:number; provider?: PlatformProviderConnection; onUpdated: (source: AdminSource) => void
 }) {
   const [cost, setCost] = useState(String(source.defaultCostPerUnit))
   const [limit, setLimit] = useState(String(source.rateLimitPerDay))
@@ -58,7 +61,7 @@ function SourceControl({ source, provider, onUpdated }: {
   const costValue = Number(cost)
   const limitValue = Number(limit)
   const validCost = cost.trim() !== '' && Number.isFinite(costValue) && costValue >= 0 && (!source.isPaid || costValue > 0)
-  const validLimit = limit.trim() !== '' && Number.isInteger(limitValue) && limitValue >= 1 && limitValue <= 1000
+  const validLimit = !!maximum&&limit.trim() !== '' && Number.isSafeInteger(limitValue) && limitValue >= 1 && limitValue <= maximum
   const providerReady = (!source.requiresSecret || (provider?.status === 'active' && Boolean(provider.secretReference)))
     && (!['brave_web_search','serper_web_search'].includes(source.sourceType) || provider?.publicConfig.webSearchLicensed === true)
   const activationBlocked = getRadarSourceBlockedReason({ ...source, enabled: true })
@@ -111,18 +114,18 @@ function SourceControl({ source, provider, onUpdated }: {
     {source.sourceType === 'serper_web_search' && <p className="text-xs text-gray-500">Pesquisa orgânica do Google, separada de Places. Usa a chave Serper existente e exige confirmação de busca web com armazenamento no provedor abaixo.</p>}
     {source.sourceType === 'osm_extract' && <p className="text-xs text-gray-500">Índice local de dados abertos. Exige extrato disponível; não comprova ausência de site ou contato.</p>}
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="space-y-1 text-xs text-gray-700">Custo estimado por consulta (R$)
+      <label className="space-y-1 text-xs text-gray-700">{source.sourceType==='cnpja_advanced_search'?'Custo estimado por bloco de até 10 empresas (R$)':'Custo estimado por consulta (R$)'}
         <input type="number" min={source.isPaid ? '0.000001' : '0'} step="0.000001" value={cost}
           readOnly={!source.isPaid} disabled={saving} onChange={event => setCost(event.target.value)}
           className="block w-full rounded-md border px-3 py-2 text-sm" />
       </label>
       <label className="space-y-1 text-xs text-gray-700">Máximo de consultas por dia na organização
-        <input type="number" min="1" max="1000" step="1" value={limit} disabled={saving}
+        <input type="number" min="1" max={maximum} step="1" value={limit} disabled={saving||!maximum}
           onChange={event => setLimit(event.target.value)} className="block w-full rounded-md border px-3 py-2 text-sm" />
       </label>
     </div>
     {!validCost && <p className="text-xs text-amber-800">Informe um custo estimado maior que zero para fontes pagas.</p>}
-    {!validLimit && <p className="text-xs text-amber-800">O limite deve ser um número inteiro de 1 a 1000.</p>}
+    {!validLimit && <p className="text-xs text-amber-800">{maximum?`O limite deve ser um número inteiro de 1 a ${maximum}.`:'Carregue os limites operacionais antes de alterar a fonte.'}</p>}
     {!source.enabled && hasUnsavedChanges && <p className="text-xs text-gray-600">Salve as alterações de custo e limite antes de ativar.</p>}
     <div className="flex flex-wrap gap-2">
       <button type="button" className={buttonClass} disabled={saving || !validCost || !validLimit}

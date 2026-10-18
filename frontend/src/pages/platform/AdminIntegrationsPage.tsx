@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import { RadarSourceManagementPanel } from '@/components/platform/admin/RadarSourceManagementPanel'
+import { RadarOperationalLimitsPanel } from '@/components/platform/admin/RadarOperationalLimitsPanel'
+import {useAuthStore} from '@/stores/authStore'
 import {
   cnpjaProviderDefaults,
   serperPlacesProviderDefaults,
@@ -15,6 +17,7 @@ import { adminPlatformService } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
 
 export function AdminIntegrationsPage() {
+  const isAdmin=useAuthStore(state=>state.user?.role==='admin')
   const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -75,7 +78,7 @@ export function AdminIntegrationsPage() {
       )}
 
       {!loading && !error && (
-        <RadarSourceManagementPanel providers={providers} />
+        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} /></>
       )}
 
       {!loading && !error && (

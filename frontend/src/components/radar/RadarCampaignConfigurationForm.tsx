@@ -8,6 +8,7 @@ import type { RadarCampaign } from '@/types/radar'
 import { RadarSizeConfiguration } from './RadarSizeConfiguration'
 import {radarService} from '@/services/radarService'
 import {Select,SelectContent,SelectGroup,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select'
+import {useRadarOperationalPolicy} from '@/lib/radar/useRadarOperationalPolicy'
 
 type Props = { organizationId: string; initialCampaign?: RadarCampaign; busy: boolean;canUseCrm?:boolean;readOnly?:boolean;draftKey?:string;canConfigureProviders?:boolean;
   onSubmit: (input: RadarCampaignInput) => Promise<void>; onCancel: () => void }
@@ -18,6 +19,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function RadarCampaignConfigurationForm({ organizationId, initialCampaign, busy,canUseCrm=false,readOnly=false,draftKey,canConfigureProviders=false, onSubmit, onCancel }: Props) {
+  const {policy,error:policyError,reload:reloadPolicy}=useRadarOperationalPolicy(canConfigureProviders&&!readOnly)
+  const caps=policy?.limits
   const local=!!initialCampaign&&initialCampaign.campaignType!=='regional_b2b'
   const [destinations,setDestinations]=useState<Awaited<ReturnType<typeof radarService.getCrmDestinations>>>([])
   const [destinationError,setDestinationError]=useState(false)
@@ -68,7 +71,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if(readOnly)return
+    if(readOnly||canConfigureProviders&&!policy)return
     setError(null)
     try {
       if (!states.length) throw new Error('Selecione pelo menos uma UF.')
@@ -102,7 +105,8 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
     {draftNotice&&<div role="status" className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">Rascunho recuperado — revise e salve para aplicar.<Button type="button" variant="ghost" onClick={discardDraft}>Descartar rascunho</Button></div>}
     {draftError&&<p role="alert" className="text-sm text-amber-800">Não foi possível preservar o rascunho nesta aba. Salve antes de sair.</p>}
     {readOnly&&<p className="text-sm text-slate-600">Configuração disponível para consulta. Alterações são feitas pelo responsável autorizado pela campanha.</p>}
-    <fieldset disabled={busy||readOnly} className="space-y-5">
+    {policyError&&<p role="alert">{policyError} <Button type="button" variant="outline" onClick={reloadPolicy}>Atualizar limites</Button></p>}
+    <fieldset disabled={busy||readOnly||canConfigureProviders&&!policy} className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Nome da pesquisa"><Input required maxLength={160} value={name} onChange={e => setName(e.target.value)} /></Field>
         <Field label="Segmento ou público desejado"><Input required maxLength={160} value={segment} onChange={e => setSegment(e.target.value)} /></Field>
@@ -160,7 +164,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         </select></Field>
         <div className="space-y-2">{(['enabled','webSearchEnabled','presenceResolutionEnabled','semanticQualificationEnabled'] as const).map((key, index) => <label key={key} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={research[key]??false} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Aprofundar a busca na internet','Identificar site e canais oficiais por IA','Analisar adequação ao objetivo comercial'][index]}</label>)}</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas totais por empresa',5],['maxPagesPerCandidate','Páginas públicas por empresa',10],['freshnessDays','Validade da pesquisa (dias)',30]] as const).map(([key,label,max]) => <Field key={key} label={label}>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas totais por empresa',caps?.maxSearchQueriesPerCompany],['maxPagesPerCandidate','Páginas públicas por empresa',caps?.maxPublicPagesPerCompany],['freshnessDays','Validade da pesquisa (dias)',caps?.maxResearchFreshnessDays]] as const).map(([key,label,max]) => <Field key={key} label={label}>
           <Input type="number" min={1} max={max} required value={research[key]} onChange={e => changeResearch({ [key]: Number(e.target.value) })} /></Field>)}</div>
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.profileEnabled??false} onChange={e=>changeResearch({profileEnabled:e.target.checked})}/>Gerar perfil aprofundado da empresa (incluído na análise por IA)</label>
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.inspectLinkedSocialProfiles??false} onChange={e=>changeResearch({inspectLinkedSocialProfiles:e.target.checked})}/>Consultar informações públicas dos perfis vinculados pelo site</label>
@@ -195,11 +199,11 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
       </fieldset>
       <fieldset className="rounded-md border p-3"><legend className="px-1 text-sm font-semibold">Limites e controle de custo</legend>
         <div className="grid gap-3 md:grid-cols-3">{([
-          ['pageSize','Empresas por página de descoberta',10], ['maxPagesPerScope','Páginas por região no lote',10],
-          ['maxQueriesPerBatch','Máximo de consultas de descoberta por lote',100], ['verificationLimit','Empresas por lote de verificação',25],
+          ['pageSize','Empresas por página de descoberta',caps?.maxDiscoveryPageSize], ['maxPagesPerScope','Páginas por região no lote',caps?.maxPagesPerScope],
+          ['maxQueriesPerBatch','Máximo de consultas de descoberta por lote',caps?.maxDiscoveryQueriesPerLot], ['verificationLimit','Empresas por lote de verificação',caps?.maxVerificationBatch],
         ] as const).map(([key,label,max]) => <Field key={key} label={label}><Input type="number" min={1} max={max} required value={config.batch[key]}
           onChange={e => setConfig(current => ({ ...current, batch: { ...current.batch, [key]: Number(e.target.value) } }))} /></Field>)}
-          <Field label="Limite diário da campanha"><Input type="number" min={1} max={1000} required value={dailyLimit} onChange={e => setDailyLimit(Number(e.target.value))} /></Field>
+          <Field label="Limite diário da campanha"><Input type="number" min={1} max={caps?.maxCampaignDailyQueries} required value={dailyLimit} onChange={e => setDailyLimit(Number(e.target.value))} /></Field>
           <Field label="Orçamento máximo (R$), opcional"><Input type="number" min={0} step="0.01" value={budget} onChange={e => setBudget(e.target.value)} /></Field>
         </div>
       </fieldset>

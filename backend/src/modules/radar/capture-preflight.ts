@@ -30,8 +30,8 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const {pageSize,maxPagesPerScope,maxQueriesPerBatch}=config.batch,limits={pageSize,maxPagesPerScope,maxQueriesPerBatch}
  const items=op?(await db.query('SELECT COUNT(*)::int AS n FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows[0].n:0
  const remaining=Math.max(0,input.requestedCount-items)
- const cursors=(await db.query("SELECT scope_key,next_token,completed,lease_id,running_until,running_until>NOW() AS lease_active FROM public.radar_regional_discovery_cursors WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY scope_key",[input.organizationId,input.campaignId])).rows
- const scopes=buildRadarDiscoveryScopes({targetStates:snapshot.target_states,configurationRevision:revision,searchConfiguration:config}).map(scope=>({...scope,completed:cursors.some(row=>row.scope_key===scope.key&&row.completed)}))
+ const cursors=(await db.query("SELECT scope_key,next_token,page_size,completed,lease_id,running_until,running_until>NOW() AS lease_active FROM public.radar_regional_discovery_cursors WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY scope_key",[input.organizationId,input.campaignId])).rows
+ const scopes=buildRadarDiscoveryScopes({targetStates:snapshot.target_states,configurationRevision:revision,searchConfiguration:config}).map(scope=>({...scope,inheritedPageSize:undefined as number|undefined,completed:cursors.some(row=>row.scope_key===scope.key&&row.completed)}))
  const overflowCount=Number((await db.query(`SELECT COUNT(DISTINCT candidate->>'taxId') AS n FROM public.radar_capture_overflow overflow
   WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND candidate->>'taxId' IS NOT NULL
   AND NOT EXISTS(SELECT 1 FROM public.radar_candidate_records candidate WHERE candidate.campaign_id=$2 AND candidate.dedupe_key='cnpj:'||(overflow.candidate->>'taxId'))
@@ -41,6 +41,13 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const accounting=op?await loadRadarCapturePageAccounting(db,op):{successfulPagesByScope:{},historyCertain:true}
  // The narrow legacy rejection proof accounts for one failed attempt, never an obtained page.
  if(rejected&&rejected.legacy)accounting.historyCertain=true
+ const limitPause=op&&isRadarCaptureLimitPause(op,items),needsDiscovery=remaining>0&&(!op?.discovery_stopped||limitPause)
+ const continuations:RadarContinuationState[]=[]
+ if(needsDiscovery&&remaining>overflowCount)for(const scope of scopes.filter(s=>!s.completed)){
+  const state=await inspectRadarContinuationState(db,{...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision},policy)
+  if(state)continuations.push(state)
+  if(state?.reason==='ready')scope.inheritedPageSize=cursors.find(row=>row.scope_key===scope.key)?.page_size??10
+ }
  const capacity=calculateRadarCaptureCapacity({limits,remaining,attemptedQueries:op?.queries??0,scopes,successfulPagesByScope:accounting.successfulPagesByScope,usableOverflowCount:overflowCount})
  const blockers:RadarCapturePreflight['blockers']=[],checks:RadarCapturePreflight['checks']=[]
  const fail=(code:string,message=code)=>{if(!blockers.some(item=>item.code===code))blockers.push({code,message})}
@@ -50,12 +57,8 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(['paused','archived','completed'].includes(campaign.status))fail('radar_capture_campaign_inactive')
  const other=(await db.query("SELECT id FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked') AND ($4::uuid IS NULL OR id<>$4) LIMIT 1",[input.organizationId,input.campaignId,revision,op?.id??null])).rows[0]
  if(other)fail('radar_capture_other_active_lot')
- const limitPause=op&&isRadarCaptureLimitPause(op,items),needsDiscovery=remaining>0&&(!op?.discovery_stopped||limitPause)
  const requiresLimitsApproval=!!op&&!!needsDiscovery&&(!!limitPause||capacity.optimisticAdditionalCapacity<remaining)
- const continuations:RadarContinuationState[]=[]
- if(needsDiscovery&&remaining>overflowCount)for(const scope of scopes.filter(s=>!s.completed)){
-  const state=await inspectRadarContinuationState(db,{...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision},policy)
-  if(state)continuations.push(state)
+ for(const state of continuations){
   if(state?.reason==='uncertain')fail('radar_capture_discovery_uncertain')
   if(state?.reason==='running')fail('radar_capture_in_progress')
  }
@@ -67,7 +70,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(db as pg.Pool,input.organizationId,'cnpja_advanced_search')
   // Preview the best allowed proposal; authorization rechecks its exact cost.
-  const previewPageSize=requiresLimitsApproval?policy.limits.maxDiscoveryPageSize:pageSize
+  const previewPageSize=Math.max(requiresLimitsApproval?policy.limits.maxDiscoveryPageSize:pageSize,...scopes.map(scope=>scope.inheritedPageSize??0))
   const minimumQueries=requiresLimitsApproval?Math.ceil(Math.max(0,remaining-overflowCount)/previewPageSize):capacity.minimumAdditionalQueries
   const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,minimumQueries,minimumQueries*Math.ceil(previewPageSize/10))
   for(const issue of governance.issues)fail(issue.code,issue.message)

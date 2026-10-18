@@ -2,8 +2,9 @@ import {act} from 'react'
 import {createRoot} from 'react-dom/client'
 import {afterEach,describe,it,expect,vi} from 'vitest'
 const path='./RadarCaptureContinuationDialog',api=await import(path).catch(()=>({}))
+import {radarPolicyFixture} from '@/test/fixtures/radarOperationalPolicy'
 let clean=()=>{};afterEach(()=>clean())
-const preflight={stateId:'a'.repeat(64),allowed:true,requiresLimitsApproval:true,remaining:20,limits:{pageSize:10,maxPagesPerScope:1,maxQueriesPerBatch:5},attemptedQueries:1,successfulPagesByScope:{},optimisticAdditionalCapacity:10,minimumAdditionalQueries:2,blockers:[],checks:[],expiredContinuation:{receiptId:'receipt',scopeLabel:'Paraná'}}
+const preflight={stateId:'a'.repeat(64),policy:radarPolicyFixture,allowed:true,requiresLimitsApproval:true,remaining:20,limits:{pageSize:10,maxPagesPerScope:1,maxQueriesPerBatch:5},attemptedQueries:1,successfulPagesByScope:{},optimisticAdditionalCapacity:10,minimumAdditionalQueries:2,blockers:[],checks:[],expiredContinuation:{receiptId:'receipt',scopeLabel:'Paraná'}}
 async function render(overrides:Record<string,unknown>={}){
  expect(api.RadarCaptureContinuationDialog).toBeTypeOf('function')
  const host=document.createElement('div'),root=createRoot(host);document.body.append(host)
@@ -16,6 +17,15 @@ async function render(overrides:Record<string,unknown>={}){
  return{props,dialog,set,confirm}
 }
 describe('same-lot continuation confirmation',()=>{
+ it('uses the persisted ceilings and offers explicit adoption of campaign limits',async()=>{
+  const policy={version:2,limits:{maxDiscoveryPageSize:25,maxPagesPerScope:30,maxDiscoveryQueriesPerLot:500}}
+  const ui=await render({preflight:{...preflight,policy,campaignLimits:{pageSize:25,maxPagesPerScope:20,maxQueriesPerBatch:200},continuations:[{scopeKey:'PR',scopeLabel:'Paraná',reason:'idle',requiresRestartConfirmation:true,replayEstimate:3}]}})
+  expect(ui.dialog().textContent).toContain('3 páginas')
+  const adopt=[...ui.dialog().querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='Usar os limites salvos na campanha')!
+  expect(adopt).toBeDefined();await act(async()=>adopt.click())
+  expect([...ui.dialog().querySelectorAll<HTMLInputElement>('input')].map(i=>i.value)).toEqual(['25','20','200'])
+  expect(ui.confirm().disabled).toBe(false)
+ })
  it('combines limits and expired pagination in one dialog without automatic increases',async()=>{
   const ui=await render();expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
   expect(ui.dialog().textContent).toContain('20');expect(ui.dialog().textContent).toContain('Paraná')

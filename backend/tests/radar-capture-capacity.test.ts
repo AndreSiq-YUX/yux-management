@@ -29,7 +29,19 @@ describe('capture capacity',()=>{
   expect(api.calculateRadarCaptureCapacity({limits:{pageSize:10,maxPagesPerScope:row.pages,maxQueriesPerBatch:row.queries},remaining:20,attemptedQueries:row.attempts,scopes:[{key:'v1:PR:all',completed:false}],successfulPagesByScope:{'v1:PR:all':row.obtained},usableOverflowCount:0})).toEqual({optimisticAdditionalCapacity:row.capacity,minimumAdditionalQueries:2,exhausted:row.exhausted})
  })
 })
+it('accounts for an inherited transport page instead of truncating it to the next lot preference',()=>{
+ expect(api.calculateRadarCaptureCapacity({limits:{pageSize:3,maxPagesPerScope:1,maxQueriesPerBatch:1},remaining:20,attemptedQueries:0,scopes:[{key:'PR',completed:false,inheritedPageSize:25}],successfulPagesByScope:{},usableOverflowCount:0})).toMatchObject({optimisticAdditionalCapacity:20,minimumAdditionalQueries:1})
+})
 describe.skipIf(!connectionString)('capture accounting and limit pause with PostgreSQL',()=>{
+ it('does not count a request rejected by governance before dispatch as a paid attempt',async()=>{
+  const f=await captureFixture()
+  try{
+   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   const op=(await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[started.operationId])).rows[0]
+   await f.pool.query("INSERT INTO public.radar_enrichment_runs(organization_id,campaign_id,provider,status,input_payload,output_payload,completed_at) VALUES($1,$2,'cnpja_advanced_search','failed',$3,'{\"candidateCount\":0,\"discoveryOutcome\":\"not_dispatched\"}',NOW())",[organizationId,f.campaign.id,JSON.stringify({captureOperationId:op.id,configurationRevision:1,regionalState:'PR',scopeKey:'v1:PR:all'})])
+   expect(await api.loadRadarCapturePageAccounting(f.pool,op)).toEqual({historyCertain:true,successfulPagesByScope:{}})
+  }finally{await f.close()}
+ })
  async function setup(){
   const f=await captureFixture()
   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20},{availability:available})

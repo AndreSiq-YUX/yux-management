@@ -13,12 +13,21 @@ describe('capture operation contract',()=>{
   })
 })
 describe.skipIf(!connectionString)('capture operation persistence',()=>{
+  it('never turns a new quantity into a silent continuation of a different lot',async()=>{
+    const f=await captureFixture()
+    try{
+      const input={organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20}
+      await api.startRadarCaptureOperation(f.pool,admin,input,{availability:available})
+      await expect(api.startRadarCaptureOperation(f.pool,admin,{...input,requestId:randomUUID(),requestedCount:10},{availability:available})).rejects.toThrow('radar_capture_request_conflict')
+      expect((await f.pool.query('SELECT * FROM public.radar_capture_requests WHERE campaign_id=$1',[f.campaign.id])).rows).toHaveLength(1)
+    }finally{await f.close()}
+  })
   it('keeps a request associated with the reused active operation after that operation finishes',async()=>{
     const f=await captureFixture()
     try{
       const input={organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:7}
       const first=await api.startRadarCaptureOperation(f.pool,admin,input,{availability:available})
-      const second={...input,requestId:randomUUID(),requestedCount:5}
+      const second={...input,requestId:randomUUID()}
       expect((await api.startRadarCaptureOperation(f.pool,admin,second,{availability:available})).operationId).toBe(first.operationId)
       await f.pool.query("UPDATE public.radar_capture_operations SET status='completed' WHERE id=$1",[first.operationId])
       expect((await api.startRadarCaptureOperation(f.pool,admin,second,{availability:available})).operationId).toBe(first.operationId)
@@ -42,7 +51,7 @@ describe.skipIf(!connectionString)('capture operation persistence',()=>{
       const retry=await api.startRadarCaptureOperation(f.pool,admin,input,{availability:available})
       expect(retry).toMatchObject({operationId:first.operationId,reused:true})
       await expect(api.startRadarCaptureOperation(f.pool,admin,{...input,requestedCount:5},{availability:available})).rejects.toThrow('radar_capture_request_conflict')
-      const concurrent=await Promise.all([5,9].map(requestedCount=>api.startRadarCaptureOperation(f.pool,admin,{...input,requestId:randomUUID(),requestedCount},{availability:available})))
+      const concurrent=await Promise.all([7,7].map(requestedCount=>api.startRadarCaptureOperation(f.pool,admin,{...input,requestId:randomUUID(),requestedCount},{availability:available})))
       expect(concurrent.map(x=>x.operationId)).toEqual([first.operationId,first.operationId])
       const state=await api.getRadarCaptureOperation(f.pool,admin,organizationId,first.operationId)
       expect(state.counts).toMatchObject({requested:7,admitted:0,completed:0})

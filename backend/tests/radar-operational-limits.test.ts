@@ -62,6 +62,10 @@ describe.skipIf(!connectionString)('Radar persisted policy with isolated Postgre
    const first=await runRadarCnpjaAdvancedSearch(f.pool,admin,input,{loadSecret:async()=>'fake',searchPage:async request=>{expect(request.limit).toBe(25);return{candidates:Array.from({length:25},company),nextToken:'page-two'}}})
    const usage=(await f.pool.query('SELECT units,estimated_cost FROM public.radar_source_usage_counters WHERE campaign_id=$1',[f.campaign.id])).rows[0]
    expect(Number(usage.units)).toBe(1);expect(Number(usage.estimated_cost)).toBe(.075)
+   await f.pool.query("UPDATE public.radar_campaigns SET budget_limit=.1,search_configuration=jsonb_set(search_configuration,'{batch,pageSize}','3') WHERE id=$1",[f.campaign.id])
+   const preflight=await getRadarCapturePreflight(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount:1},{availability,workerReady:async()=>true})
+   expect(preflight.blockers).toContainEqual(expect.objectContaining({code:'source_budget_exceeded'}))
+   await f.pool.query('UPDATE public.radar_campaigns SET budget_limit=100 WHERE id=$1',[f.campaign.id])
    await runRadarCnpjaAdvancedSearch(f.pool,admin,{...input,limit:3},{loadSecret:async()=>'fake',searchPage:async request=>{expect(request.limit).toBe(25);expect(request.token).toBe('page-two');return{candidates:[]}}})
    expect(first.candidates).toHaveLength(25)
   }finally{if(before&&updated)await api.updateRadarOperationalLimits(f.pool,admin,{expectedVersion:updated.version,limits:before.limits});await f.close()}

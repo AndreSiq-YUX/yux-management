@@ -45,6 +45,10 @@ export async function advanceRadarCaptureDiscovery(pool:pg.Pool,env:AppEnv,input
  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
  let state=await getRadarCaptureOperation(pool,user,input.organizationId,op.id)
  if(state.discoveryStopped)return state
+ // The bounded in-memory chunk is not a discovery quota. Finish draining paid
+ // surplus on the next turn before reserving another provider request.
+ const surplus=(await pool.query('SELECT EXISTS(SELECT 1 FROM public.radar_capture_overflow WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3) AS pending',[input.organizationId,op.campaign_id,op.configuration_revision])).rows[0]?.pending
+ if(surplus)return state
  const cursors=(await pool.query('SELECT scope_key,completed FROM public.radar_regional_discovery_cursors WHERE organization_id=$1 AND campaign_id=$2',[input.organizationId,op.campaign_id])).rows
  const unfinished=scopes.filter(scope=>!cursors.some(row=>row.scope_key===scope.key&&row.completed))
  const accounting=await loadRadarCapturePageAccounting(pool,op)

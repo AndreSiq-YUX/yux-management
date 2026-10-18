@@ -10,7 +10,7 @@ async function render(overrides:Record<string,unknown>={}){
  expect(api.RadarCaptureControls).toBeTypeOf('function')
  const container=document.createElement('div'),root=createRoot(container)
  document.body.append(container)
- const props={scopeKey:'org:campaign:1',operation:null,loading:false,busy:false,available:true,error:'',onStart:vi.fn(async()=>{}),onResume:vi.fn(async()=>{}),onRefresh:vi.fn(),...overrides}
+ const props={scopeKey:'org:campaign:1',maximum:1000,operation:null,loading:false,busy:false,available:true,error:'',onStart:vi.fn(async()=>{}),onResume:vi.fn(async()=>{}),onRefresh:vi.fn(),...overrides}
  cleanup=()=>{act(()=>root.unmount());container.remove()}
  const update=async(next:Record<string,unknown>)=>{Object.assign(props,next);await act(async()=>root.render(<api.RadarCaptureControls {...props}/>))}
  await update({})
@@ -21,6 +21,12 @@ async function render(overrides:Record<string,unknown>={}){
 }
 const operation=(status:RadarCaptureOperation['status'])=>({id:'op',campaignId:'campaign',configurationRevision:1,status,counts:{requested:7,admitted:7,researching:0,completed:0,insufficient:0,blocked:7},blockers:[],items:[],discoveryStopped:true,queries:1})
 describe('direct complete capture controls',()=>{
+ it('uses the current policy and releases the quantity after an unsubmitted confirmation',async()=>{
+  const onStart=vi.fn(async()=> 'confirmation_required'),ui=await render({maximum:2000,onStart})
+  await ui.set('1500');await act(async()=>ui.submit())
+  expect(onStart).toHaveBeenCalledTimes(1);expect(ui.input().disabled).toBe(false)
+  expect(ui.input().max).toBe('2000');expect(ui.input().value).toBe('1500')
+ })
  it('allows adjusting a rejected quantity when preflight proves no work was submitted',async()=>{
   const onStart=vi.fn().mockRejectedValueOnce(Object.assign(Error('Os limites não comportam este lote. Edite a configuração.'),{captureNotStarted:true})).mockResolvedValue(undefined)
   const ui=await render({onStart});await ui.set('20');await act(async()=>ui.submit())

@@ -7,6 +7,7 @@ import { RadarResultsTable } from './RadarResultsTable'
 import {radarComplementError,radarResearchMessage} from '@/lib/radar/radarResearchMessages'
 import {RadarCaptureControls} from './RadarCaptureControls'
 import {RadarCaptureContinuationDialog} from './RadarCaptureContinuationDialog'
+import {useRadarOperationalPolicy} from '@/lib/radar/useRadarOperationalPolicy'
 import {ApiClientError} from '@/lib/apiClient'
 import {RadarAdminOperations} from './RadarAdminOperations'
 import {RadarCommercialWorkspace,type RadarWorkspaceProps} from './RadarCommercialWorkspace'
@@ -256,6 +257,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   const [captureRefresh,setCaptureRefresh]=useState(0),[captureBusy,setCaptureBusy]=useState(false)
   const captureResumeRequest=useRef<{operationId:string;requestId:string;continuationReceiptId?:string;approvedInput?:Parameters<typeof radarService.resumeCaptureOperation>[1]}|null>(null)
   const [captureConsent,setCaptureConsent]=useState<{scope:string;operationId:string;preflight:RadarCapturePreflight}|null>(null)
+  const [captureStartConsent,setCaptureStartConsent]=useState<{scope:string;input:Parameters<typeof radarService.startCaptureOperation>[1];preflight:RadarCapturePreflight}|null>(null)
   const captureCurrent=useRef({scope:sidebarScope.current,operationId:captureOperation?.id})
   captureCurrent.current={scope:sidebarScope.current,operationId:captureOperation?.id}
   const captureStartChecked=useRef(new Set<string>())
@@ -296,6 +298,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   const canAccess = canShowRadarNavigation(context)
   const canManage = canManageRadar(context)
   const canEditConfiguration=canManage&&context.role?.key==='yux_admin'
+  const {policy:operationalPolicy,error:operationalPolicyError,reload:reloadOperationalPolicy}=useRadarOperationalPolicy(canEditConfiguration)
   const canUseCrm = context.organization?.isInternalGrowthWorkspace
     || (context.enabledModuleKeys?.includes('crm') && (context.role?.permissions.includes('leads.write')
       || (context.role?.scope === 'internal' && context.role.permissions.includes('platform.manage'))))
@@ -670,7 +673,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   }
   refreshCaptureResults.current=refreshCampaignSidebars
 
-  const startCapture=async(input:{requestedCount:number;requestId:string})=>{
+  const startCapture=async(input:{requestedCount:number;requestId:string;continuationAuthorizations?:Array<{scopeKey:string;expectedStateId:string}>})=>{
     if(!organizationId||!selectedCampaign)throw new Error('radar_campaign_not_found')
     const scope=sidebarScope.current
     let submitted=false
@@ -678,6 +681,10 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     if(!captureStartChecked.current.has(input.requestId)){
       const p=await radarService.capturePreflight(selectedCampaign.id,{organizationId,configurationRevision:selectedCampaign.configurationRevision??1,requestedCount:input.requestedCount})
       if(!p.allowed)throw new Error(p.blockers[0]?.code??'radar_capture_research_unavailable')
+      if(!input.continuationAuthorizations?.length&&p.continuations?.some(s=>s.requiresRestartConfirmation)){
+        if(scope===sidebarScope.current)setCaptureStartConsent({scope,input:{...input,organizationId,configurationRevision:selectedCampaign.configurationRevision??1},preflight:p})
+        return 'confirmation_required' as const
+      }
       captureStartChecked.current.add(input.requestId)
     }
     if(scope!==sidebarScope.current)return
@@ -685,8 +692,12 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     const started=await radarService.startCaptureOperation(selectedCampaign.id,{...input,organizationId,configurationRevision:selectedCampaign.configurationRevision??1})
     const operation=await radarService.getCaptureOperation(started.operationId,organizationId)
     if(scope!==sidebarScope.current)return
-    setCaptureOperation(operation);setCaptureError('');refreshCampaignSidebars()
-    }catch(cause){throw Object.assign(new Error(radarResearchMessage(cause instanceof Error?cause.message:'radar_capture_research_unavailable')),{captureNotStarted:!submitted})}
+    setCaptureOperation(operation);setCaptureStartConsent(null);setCaptureError('');refreshCampaignSidebars()
+    }catch(cause){
+      const rejected=cause instanceof ApiClientError&&cause.status>=400&&cause.status<500
+      if(rejected){captureStartChecked.current.delete(input.requestId);if(scope===sidebarScope.current)setCaptureStartConsent(null)}
+      throw Object.assign(new Error(radarResearchMessage(cause instanceof Error?cause.message:'radar_capture_research_unavailable')),{captureNotStarted:!submitted||rejected})
+    }
   }
   const resumeCapture=async(options?:{restartExpiredContinuation?:boolean;approvedLimits?:RadarCaptureLimits})=>{
     if(!captureOperation||!organizationId||captureResumeSending.current)return
@@ -705,12 +716,12 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
         }else p=await radarService.capturePreflight(captureOperation.campaignId,{organizationId,configurationRevision:captureOperation.configurationRevision,requestedCount:captureOperation.counts.requested,operationId:captureOperation.id})
         if(!isCurrent())return
         if(!p.allowed)throw new Error(p.blockers[0]?.code??'radar_capture_research_unavailable')
-        if(!options?.approvedLimits&&!options?.restartExpiredContinuation&&(p.requiresLimitsApproval||p.expiredContinuation)){
+        if(!options?.approvedLimits&&!options?.restartExpiredContinuation&&(p.requiresLimitsApproval||p.expiredContinuation||p.continuations?.some(s=>s.requiresRestartConfirmation))){
           setCaptureConsent({scope,operationId:captureOperation.id,preflight:p});return
         }
         payload={organizationId,configurationRevision:captureOperation.configurationRevision,requestId:resumeRequest.requestId,
           ...(options?.approvedLimits&&p.requiresLimitsApproval?{limitsAuthorization:{expectedStateId:p.stateId,limits:options.approvedLimits}}:{}),
-          ...(options?.approvedLimits&&p.expiredContinuation?{restartExpiredContinuation:true,continuationReceiptId:p.expiredContinuation.receiptId}:options?.restartExpiredContinuation?{restartExpiredContinuation:true,continuationReceiptId:resumeRequest.continuationReceiptId}:{})}
+          ...(options?.approvedLimits&&p.continuations?.some(s=>s.requiresRestartConfirmation)?{continuationAuthorizations:p.continuations.filter(s=>s.requiresRestartConfirmation).map(s=>({scopeKey:s.scopeKey,expectedStateId:s.stateId}))}:options?.approvedLimits&&p.expiredContinuation?{restartExpiredContinuation:true,continuationReceiptId:p.expiredContinuation.receiptId}:options?.restartExpiredContinuation?{restartExpiredContinuation:true,continuationReceiptId:resumeRequest.continuationReceiptId}:{})}
         resumeRequest.approvedInput=payload
       }
       const operation=await radarService.resumeCaptureOperation(captureOperation.id,payload)
@@ -1310,7 +1321,15 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
             <h2 className="font-semibold text-slate-950">Pesquisa da campanha</h2>
             <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-600">Ver público, oferta e critérios utilizados</summary><p className="mt-1 text-sm text-slate-600">Público: {selectedCampaign.targetSegment}. Oferta: {selectedCampaign.offerType}. CNAEs: {selectedCampaign.targetCnaes.join(', ') || 'sem filtro'}. A coleta não inicia contatos automáticos.</p>
             <p className="mt-1 text-xs text-slate-500">Produtos e serviços: {selectedCampaign.productFocus.join(', ') || 'não informados'}. Os critérios completos podem ser editados antes de executar a pesquisa.</p></details>
-            {canEditConfiguration&&<RadarCaptureControls scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&!getSourceBlockedReason(cnpjaSource)} error={captureError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>setCaptureRefresh(value=>value+1)}/>}
+            {canEditConfiguration&&<RadarCaptureControls maximum={operationalPolicy?.limits.maxNewCompaniesPerLot} scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading||!operationalPolicy&&!operationalPolicyError} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&!getSourceBlockedReason(cnpjaSource)} error={captureError||operationalPolicyError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>{reloadOperationalPolicy();setCaptureRefresh(value=>value+1)}}/>}
+            {canEditConfiguration&&captureStartConsent&&captureStartConsent.scope===sidebarScope.current&&<RadarCaptureContinuationDialog key={`start:${captureStartConsent.preflight.stateId}`} mode="start" open preflight={captureStartConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>{setCaptureStartConsent(null);setCaptureError('')}} onConfirm={async()=>{
+              const consent=captureStartConsent
+              const input={...consent.input,continuationAuthorizations:consent.preflight.continuations?.filter(s=>s.requiresRestartConfirmation).map(s=>({scopeKey:s.scopeKey,expectedStateId:s.stateId}))}
+              captureStartChecked.current.add(input.requestId)
+              setCaptureBusy(true);setCaptureError('')
+              try{await startCapture(input)}catch(cause){if(consent.scope===sidebarScope.current)setCaptureError(cause instanceof Error?cause.message:'Não foi possível confirmar. Tente novamente sem duplicar.')}
+              finally{if(consent.scope===sidebarScope.current)setCaptureBusy(false)}
+            }}/>}
             {canEditConfiguration&&captureConsent&&captureConsent.scope===sidebarScope.current&&captureConsent.operationId===captureOperation?.id&&<RadarCaptureContinuationDialog key={captureConsent.preflight.stateId} open preflight={captureConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>setCaptureConsent(null)} onConfirm={async limits=>{await resumeCapture({approvedLimits:limits})}}/>}
             {captureOperation&&<div className="mt-4"><RadarCaptureProgress operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
             {batchRequestedAt>0&&<p role="status" className="mt-2 text-xs text-slate-600">Busca solicitada. Os resultados serão atualizados automaticamente durante o acompanhamento; a consulta continua em segundo plano.</p>}

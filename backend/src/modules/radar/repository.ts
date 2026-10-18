@@ -1123,7 +1123,9 @@ export async function runRadarCnpjaAdvancedSearch(
         const effective=resolveRadarSearchConfiguration(captureSnapshot.configuration_snapshot.search_configuration).batch
         if((accounting.successfulPagesByScope[scopeKey]??0)>=effective.maxPagesPerScope)throw captureError('radar_capture_page_limit')
       }
-      await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
+      // Reservation reads the current precaution policy; it never writes it.
+      // Row-locking this global table would require UPDATE privilege for the
+      // deliberately read-only worker. Consent mutations lock it in the API.
       const cursor = await client.query<{ next_token: string | null; completed: boolean; running_until: Date | null;page_size:number }>(
         `SELECT next_token, completed, running_until,page_size
          FROM public.radar_regional_discovery_cursors

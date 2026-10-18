@@ -22,7 +22,8 @@ export async function authorizeRadarCaptureLimits(client:pg.PoolClient,user:Auth
  if(capacity.optimisticAdditionalCapacity<p.remaining)throw captureError('radar_capture_capacity_insufficient')
  if(capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(client as unknown as pg.Pool,op.organization_id,'cnpja_advanced_search')
-  const governance=await evaluateRadarSourceGovernance(client,op.organization_id,op.campaign_id,source,capacity.minimumAdditionalQueries,capacity.minimumAdditionalQueries*Math.ceil(limits.pageSize/10))
+  const transportPageSize=Math.max(limits.pageSize,...state.scopes.map(scope=>scope.inheritedPageSize??0))
+  const governance=await evaluateRadarSourceGovernance(client,op.organization_id,op.campaign_id,source,capacity.minimumAdditionalQueries,capacity.minimumAdditionalQueries*Math.ceil(transportPageSize/10))
   if(!governance.allowed)throw captureError(governance.issues[0]?.code??'radar_capture_source_unavailable')
  }
  await client.query(`INSERT INTO public.radar_capture_limit_authorizations(organization_id,campaign_id,operation_id,request_id,approved_by,expected_state_id,old_limits,new_limits,counters)

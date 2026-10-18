@@ -3,6 +3,7 @@ import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionG
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import type {RadarCommercialCampaign,RadarCommercialCandidate,RadarCommercialCapture,RadarCommercialResearch,RadarCommercialMetrics,CommercialHistory,CommercialOpportunity,CommercialFeedback} from '@/types/radarCommercial'
+import type {RadarOperationalPolicy,RadarOperationalLimits,RadarContinuationAuthorization} from '@/types/radarResearch'
 
 export type RadarCampaignInput = Pick<RadarCampaign, 'organizationId' | 'name' | 'campaignType' | 'targetSegment' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & {
   targetCity?: string; targetState?: string; targetStates?: string[]; productFocus?: string[]; budgetLimit?: number
@@ -29,6 +30,8 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  getOperationalPolicy(){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits')},
+  updateOperationalPolicy(input:{expectedVersion:number;limits:RadarOperationalLimits}){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits',{method:'PUT',body:input})},
   getCommercialCampaigns(organizationId:string){return apiRequest<RadarCommercialCampaign[]>(`/radar/campaigns${buildQuery({organizationId})}`)},
   getCommercialCandidates(campaignId:string){return apiRequest<RadarCommercialCandidate[]>(`/radar/campaigns/${campaignId}/candidates`)},
   getCommercialCapture(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCommercialCapture|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},
@@ -44,11 +47,11 @@ export const radarService = {
   commercialCandidateAction(id:string,action:'import'|'discard',input:{analyzeAfterImport:boolean}){
     return apiRequest<unknown>(`/radar/candidates/${id}/${action}`,{method:'POST',body:action==='import'?input:undefined})
   },
-  startCaptureOperation(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;requestedCount:number}){return apiRequest<{operationId:string;status:RadarCaptureOperation['status'];reused:boolean}>(`/radar/campaigns/${campaignId}/capture-operations`,{method:'POST',body:input})},
+  startCaptureOperation(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;requestedCount:number;continuationAuthorizations?:RadarContinuationAuthorization[]}){return apiRequest<{operationId:string;status:RadarCaptureOperation['status'];reused:boolean}>(`/radar/campaigns/${campaignId}/capture-operations`,{method:'POST',body:input})},
   getCaptureOperation(operationId:string,organizationId:string){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}${buildQuery({organizationId})}`)},
   getLatestCaptureOperation(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCaptureOperation|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},
   capturePreflight(campaignId:string,input:{organizationId:string;configurationRevision:number;requestedCount:number;operationId?:string}){return apiRequest<RadarCapturePreflight>(`/radar/campaigns/${campaignId}/capture-preflight`,{method:'POST',body:input})},
-  resumeCaptureOperation(operationId:string,input:{organizationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean;continuationReceiptId?:string;limitsAuthorization?:{expectedStateId:string;limits:RadarCaptureLimits}}){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}/resume`,{method:'POST',body:input})},
+  resumeCaptureOperation(operationId:string,input:{organizationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean;continuationReceiptId?:string;continuationAuthorizations?:RadarContinuationAuthorization[];limitsAuthorization?:{expectedStateId:string;limits:RadarCaptureLimits}}){return apiRequest<RadarCaptureOperation>(`/radar/capture-operations/${operationId}/resume`,{method:'POST',body:input})},
   getResearchMetrics(campaignId:string,organizationId:string,from:string,to:string){return apiRequest<RadarResearchMetrics>(`/radar/campaigns/${campaignId}/research-metrics${buildQuery({organizationId,from,to})}`)},
   getResearchFeedback(candidateId:string,organizationId:string){return apiRequest<RadarResearchFeedback[]>(`/radar/candidates/${candidateId}/feedback${buildQuery({organizationId})}`)},
   saveResearchFeedback(candidateId:string,input:{organizationId:string;requestId:string;configurationRevision:number;kind:RadarResearchFeedback['kind'];contact?:{kind:string;value:string};note?:string}){return apiRequest<RadarResearchFeedback>(`/radar/candidates/${candidateId}/feedback`,{method:'POST',body:input})},
