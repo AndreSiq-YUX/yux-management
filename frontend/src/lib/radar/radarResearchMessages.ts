@@ -1,5 +1,6 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_capture_source_exhausted:'Não há novas páginas disponíveis nas regiões e nos critérios atuais. Aumentar o limite de páginas não reabre uma fonte esgotada. Revise o público ou as regiões em Editar configuração para uma nova pesquisa; os resultados anteriores foram preservados.',
   radar_operational_limit_exceeded:'Um valor ultrapassa o teto operacional do Radar. O Admin YUX pode ajustar os tetos em Admin → Integrações → Limites operacionais do Radar; depois revise os limites da campanha e confirme a retomada do lote.',
   radar_capture_request_conflict:'Já existe um lote com outra quantidade ou configuração. Atualize o acompanhamento para retomar o lote correto; nenhum pedido novo foi iniciado.',
   radar_capture_capacity_insufficient:'Os limites deste lote não comportam a quantidade solicitada, mesmo sem duplicatas. Edite a configuração da campanha: empresas por página, páginas por região e consultas por lote. Para um lote já salvo, use Retomar pesquisa e aprove os novos totais.',

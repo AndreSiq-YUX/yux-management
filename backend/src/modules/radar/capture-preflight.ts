@@ -62,6 +62,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
   if(state?.reason==='uncertain')fail('radar_capture_discovery_uncertain')
   if(state?.reason==='running')fail('radar_capture_in_progress')
  }
+ if(needsDiscovery&&remaining>overflowCount&&scopes.length>0&&scopes.every(scope=>scope.completed))fail('radar_capture_source_exhausted')
  if(!op&&capacity.optimisticAdditionalCapacity<remaining)fail('radar_capture_capacity_insufficient')
  const availability:CaptureAvailability=await(deps.availability??getRadarResearchAvailability)(db as pg.Pool,user,input.organizationId,input.campaignId)
  if(!availability.allowed)for(const reason of availability.reasons)fail(reason.code,reason.message)

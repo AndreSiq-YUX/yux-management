@@ -19,6 +19,7 @@ const databaseUrl=process.env.YUX_RADAR_TEST_DATABASE_URL??'',target=new URL(dat
 if(target.hostname!=='127.0.0.1'||!['55439','55440'].includes(target.port)||target.pathname!=='/yux_radar_research_test')throw Error('isolated_radar_test_database_required')
 const pool=new pg.Pool({connectionString:databaseUrl});await seedIntegrationFixtures(pool)
 const staleStart=process.env.YUX_RADAR_QA_STALE_START==='true'
+const exhaustedSource=process.env.YUX_RADAR_QA_SOURCE_EXHAUSTED==='true'
 const heartbeat=randomUUID()
 const beat=()=>pool.query("INSERT INTO public.worker_process_heartbeats(instance_id,queue_classes,started_at,last_seen_at) VALUES($1,ARRAY['external'],NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET last_seen_at=NOW()",[heartbeat])
 await beat()
@@ -46,9 +47,10 @@ const rejectDiscovery=process.env.YUX_RADAR_QA_REJECT_DISCOVERY==='true'
 const expiredContinuation=process.env.YUX_RADAR_QA_EXPIRED_CONTINUATION==='true'
 const limitContinuation=process.env.YUX_RADAR_QA_LIMIT_CONTINUATION==='true'
 const oldCompanies=Array.from({length:40},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa anterior ${i+1} LTDA`,tradeName:`Empresa anterior ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))
-if(limitContinuation||staleStart){
+if(limitContinuation||staleStart||exhaustedSource){
  for(const record of oldCompanies)await pool.query("INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search',$3,$4,$5)",[org,campaign.id,record.tradeName,`cnpj:${record.taxId}`,JSON.stringify({cnpj:record.taxId,legalName:record.legalName,city:'Curitiba',state:'PR',discoveryRevision:1})])
 }
+if(exhaustedSource)await pool.query("INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,completed,pages_processed,candidates_seen) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all',TRUE,4,40)",[org,campaign.id])
 if(limitContinuation){
  const started=await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20})
  await pool.query("UPDATE public.radar_capture_operations SET status='partial',discovery_stopped=TRUE,discovery_reason='page_cap',queries=1,scope_pages='{\"v1:PR:all\":1}',configuration_snapshot=jsonb_set(configuration_snapshot,'{search_configuration,batch,maxPagesPerScope}','1') WHERE id=$1",[started.operationId])

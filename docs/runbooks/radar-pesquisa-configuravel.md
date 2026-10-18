@@ -198,3 +198,40 @@ O cenário de regressão usa PostgreSQL isolado e reproduz três tentativas (a p
 Após reiniciar uma continuação expirada, a previsão de capacidade é **teórica**, não desconta as empresas antigas que podem reaparecer. Quatro páginas anteriores mais vinte empresas novas, com dez por página e mesma ordenação, podem exigir pelo menos seis páginas bem-sucedidas. Três páginas autorizadas podem terminar só com duplicatas. O Admin deve conferir e aprovar limites suficientes no diálogo de retomada; não aumentamos cotas, orçamento ou créditos automaticamente. Os limites por fonte do aprofundamento também são independentes dos limites de descoberta. Chaves presentes e disponibilidade local não comprovam saldo/aceitação externa sem uma chamada real autorizada.
 
 Validação desta correção: 109 testes das oito suítes de captação com PostgreSQL local aprovados, incluindo onze recusas de auditoria inválida e a jornada de quarenta empresas antigas mais vinte novas; suíte geral backend com 1.100 aprovados e 98 ignorados por condições opt-in; type-check e build backend aprovados. Sem mudança de interface, nova migração ou teste pago. A conferência de produção foi somente de leitura; publicação do código não comprova implantação nem conclusão do lote real.
+
+## Continuação durável e limites no Admin — 18/10/2026
+
+### Base de implantação
+
+A integração `ddf64e9` preserva como ancestrais o portal visual `03244fb` e o Radar de `main@b3151b2`. As correções posteriores precisam ser implantadas junto dessa integração. Não selecionar a antiga branch visual isoladamente nem voltar ao main anterior: isso deixa parte das correções ou do portal de fora. A publicação em main não modifica a branch selecionada no Dokploy.
+
+### Onde editar
+
+Somente o Admin global YUX acessa **Admin → Integrações → Limites operacionais do Radar** (`/admin/integrations#radar-operational-limits`). Ali estão os tetos de empresas por lote, registros por página, páginas por região, consultas de descoberta, verificações, consultas/páginas por empresa, consultas diárias por campanha/fonte, validade da pesquisa e pausa administrativa da continuação.
+
+1. Salvar essa política cria uma versão e auditoria. Não inicia buscas, não troca chaves/modelos e não aumenta limites de campanhas ou lotes existentes.
+2. Em **Editar configuração** da campanha, escolha os limites operacionais desejados dentro dos tetos. Fontes mantêm ainda suas cotas diárias na mesma área Admin.
+3. Para um lote já salvo, use **Retomar pesquisa**. O diálogo compara os limites autorizados no lote com os da campanha. **Usar os limites salvos na campanha** apenas preenche a proposta: revise os totais e confirme. A quantidade e os critérios daquele lote permanecem os originais.
+4. Um novo pedido com quantidade diferente não é associado silenciosamente ao lote ativo. Atualize o acompanhamento e retome o lote correto.
+5. Em caso de conflito de versão ou confirmação obsoleta, recarregue e revise de novo. Falha ao ler a política não é substituída por defaults apresentados como salvos.
+
+Os valores iniciais da política preservam os tetos anteriores. A nova pausa de 60 minutos é uma precaução configurável, **não uma afirmação sobre o prazo de validade do provedor**. Permanecem as proteções de rede, TLS, robots, tamanho de resposta, leases, idempotência, credenciais e direitos de entrega. Os limites físicos de inteiros e o contrato externo não são ampliados por preencher um campo no Admin.
+
+### Continuação e consumo
+
+O preflight de início/retomada e a reserva verificam organização, campanha, revisão, região e geração da continuação. Token legado sem emissão confiável, pausa acima da política ou rejeição comprovada exigem confirmação antes de outra chamada. A autorização é vinculada ao estado exibido e auditada; uma aba antiga não autoriza outro cursor. Reiniciar preserva empresas, revisões, páginas anteriores e contadores, mas pode revisitar páginas e consumir novas consultas. A estimativa de páginas anteriores não garante que a ordenação externa permaneça igual.
+
+Resposta desconhecida, timeout ou persistência incerta não permitem repetição automática. Recibos de bloqueio anterior ao despacho não contam como chamadas compradas. Excedentes já pagos são consumidos primeiro, inclusive quando precisam de vários turnos limitados do worker. Uma continuação herda o tamanho da página original: uma página de 25 registros reserva três blocos de dez no custo, mas apenas uma chamada na quota diária. O preflight considera esse custo herdado; registros excedentes não são truncados nem descartados.
+
+Somente Admin YUX vê política, fontes, licenças, modelos, custos e diagnósticos. Operador, Admin de conta e membro continuam recebendo projeções comerciais permitidas; nenhuma nova informação técnica é liberada a esses papéis.
+
+### Checklist de release e recuperação
+
+- Aplicar as migrações forward-only **0194** e **0195** com o migrador do release. O replay limpo das 92 migrações foi validado em PostgreSQL 17 isolado.
+- Implantar backend, worker e frontend do **mesmo commit consolidado em main**, registrando o SHA exato que será publicado. Depois conferir a identidade de release nos endpoints de saúde e a presença das novas rotas/DTOs; a mensagem de sucesso do deploy, isoladamente, não prova isso.
+- Conferir as carteiras/rotas de IA, cotas das fontes e orçamento da campanha sem testar provedores pagos por conta própria. Política salva e chave testada não comprovam capacidade financeira externa.
+- Consultar o preflight do lote real antes de retomar. Confirmar explicitamente qualquer reinício e alteração de limites; não herdar aumentos temporários autorizados para outro piloto.
+- Para conter falhas, desativar novas chamadas, preservar recibos/outbox e reconciliar efeitos incertos. Não apagar cursores, resultados ou histórico para destravar o fluxo.
+- Rollback de banco não é necessário nem recomendado. Uma imagem antiga que impõe os antigos tetos pode não ler campanhas/lotes com valores maiores: usar somente código comprovadamente compatível com os novos campos e autorizações; caso contrário, manter novas pesquisas pausadas e corrigir para frente. Não reduzir snapshots ou excluir dados para adaptar a imagem antiga.
+
+Validação local: política Admin com persistência e auditoria, HTTP/RLS para diferentes papéis, reserva pelo worker com permissão somente de leitura na política, retomada de 40 empresas anteriores + 20 novas e início de sete novas com continuação de dez horas. Os dois lotes passaram por pesquisa e leitura simuladas até estado terminal, preservados após recarga. Como os dados sintéticos não comprovam toda a qualificação, a interface mantém o resultado parcial em vez de marcar aprovação artificial. Desktop e 390×844 verificados, sem erro de aplicação no console; avisos preexistentes de futura atualização do React Router permanecem. Isso **não comprova deploy, aceitação externa ou qualidade comercial em produção**. Deploy e piloto pago exigem autorização específica e orçamento novo.

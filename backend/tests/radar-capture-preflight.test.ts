@@ -7,6 +7,15 @@ import {randomUUID} from 'node:crypto'
 import {createRadarCampaign} from '../src/modules/radar/repository.js'
 const path='../src/modules/radar/capture-preflight.js',api=await import(path).catch(()=>({}))
 describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
+ it('distinguishes genuinely exhausted regions from an editable page cap',async()=>{
+  const f=await limitFixture()
+  try{
+   await f.pool.query("INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,completed) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all',TRUE)",[f.input.organizationId,f.campaign.id])
+   const result=await api.getRadarCapturePreflight(f.pool,admin,f.input,{availability:available})
+   expect(result.allowed).toBe(false)
+   expect(result.blockers[0].code).toBe('radar_capture_source_exhausted')
+  }finally{await f.close()}
+ })
  it('explains legacy lot capacity without changing limits or queueing work',async()=>{
   const f=await limitFixture()
   try{
