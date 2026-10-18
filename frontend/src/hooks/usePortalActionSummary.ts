@@ -6,7 +6,7 @@ import { usePlatformStore } from '@/stores/platformStore'
 import type { PortalFinanceInvoice } from '@/types/finance'
 import type { ApprovalRequest, Project } from '@/types/project'
 import { usePortalCrmContext } from './usePortalCrmContext'
-import { usePortalMarketingContext } from './usePortalMarketingContext'
+import { usePortalMarketingContext, type PortalMarketingContextResource } from './usePortalMarketingContext'
 
 export type PortalActionKind = 'approval' | 'commercial' | 'finance' | 'project' | 'marketing'
 export type PortalActionPriority = 'critical' | 'high' | 'normal'
@@ -18,6 +18,8 @@ export interface PortalNextAction {
   title: string
   description: string
   href: string
+  /** Desde quando o item espera (ISO), quando existe uma data real. */
+  since?: string
 }
 
 interface ProjectActionState {
@@ -36,6 +38,12 @@ const emptyProjectActionState: ProjectActionState = {
   error: null,
 }
 
+/** Data mais antiga de uma lista (ISO), ignorando valores vazios ou inválidos. */
+const oldest = (dates: Array<string | undefined>) => {
+  const valid = dates.filter((value): value is string => Boolean(value) && !Number.isNaN(new Date(value as string).getTime()))
+  return valid.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0]
+}
+
 const byPriority = (action: PortalNextAction) => {
   if (action.priority === 'critical') return 0
   if (action.priority === 'high') return 1
@@ -48,9 +56,17 @@ export function usePortalActionSummary() {
   const enabledModuleKeys = usePlatformStore(state => state.enabledModuleKeys)
   const isPlatformLoading = usePlatformStore(state => state.isLoading)
   const crm = usePortalCrmContext()
-  const marketing = usePortalMarketingContext({ resources: ['reviews', 'creativeSuggestions'] })
+  // Campanhas, conteúdos e execuções só são pedidos quando o módulo correspondente está contratado.
+  const marketingResources = useMemo(() => {
+    const resources: PortalMarketingContextResource[] = ['reviews', 'creativeSuggestions']
+    if (enabledModuleKeys.includes('campaigns')) resources.push('campaigns')
+    if (enabledModuleKeys.includes('marketing_studio')) resources.push('contents', 'workflowRuns')
+    return resources
+  }, [enabledModuleKeys])
+  const marketing = usePortalMarketingContext({ resources: marketingResources })
   const [projectState, setProjectState] = useState<ProjectActionState>(emptyProjectActionState)
   const [projectRefreshKey, setProjectRefreshKey] = useState(0)
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null)
 
   const reload = useCallback(() => {
     void crm.reload()
@@ -131,58 +147,75 @@ export function usePortalActionSummary() {
         id: 'project-approvals',
         kind: 'approval',
         priority: 'critical',
-        title: `${pendingProjectApprovals.length} aprovacao de projeto pendente${pendingProjectApprovals.length > 1 ? 's' : ''}`,
-        description: 'Entregaveis e documentos aguardando decisao do cliente.',
+        title: `${pendingProjectApprovals.length} ${pendingProjectApprovals.length > 1 ? 'aprovações de projeto pendentes' : 'aprovação de projeto pendente'}`,
+        description: 'Entregáveis e documentos aguardando a sua decisão.',
         href: '/portal/projetos/projetos?tab=approvals',
+        since: oldest(pendingProjectApprovals.map(approval => approval.submittedAt)),
       } : null,
       pendingContentReviews.length > 0 ? {
         id: 'content-reviews',
         kind: 'marketing',
         priority: 'high',
-        title: `${pendingContentReviews.length} conteudo${pendingContentReviews.length > 1 ? 's' : ''} aguardando revisao`,
-        description: 'Conteudos do Marketing Studio precisam de aprovacao ou ajustes.',
+        title: `${pendingContentReviews.length} ${pendingContentReviews.length > 1 ? 'conteúdos aguardando revisão' : 'conteúdo aguardando revisão'}`,
+        description: 'Conteúdos do Marketing Studio precisam de aprovação ou ajustes.',
         href: '/portal/marketing/studio',
+        since: oldest(pendingContentReviews.map(review => review.createdAt)),
       } : null,
       pendingCampaignCreatives.length > 0 ? {
         id: 'campaign-creatives',
         kind: 'approval',
         priority: 'high',
-        title: `${pendingCampaignCreatives.length} criativo${pendingCampaignCreatives.length > 1 ? 's' : ''} em aprovacao`,
-        description: 'Sugestoes de campanha aguardam revisao antes da publicacao.',
+        title: `${pendingCampaignCreatives.length} ${pendingCampaignCreatives.length > 1 ? 'criativos em aprovação' : 'criativo em aprovação'}`,
+        description: 'Sugestões de campanha aguardam revisão antes da publicação.',
         href: '/portal/marketing/criativos',
+        since: oldest(pendingCampaignCreatives.map(suggestion => suggestion.updatedAt || suggestion.createdAt)),
       } : null,
       overdueTasks.length > 0 ? {
         id: 'crm-overdue',
         kind: 'commercial',
         priority: 'critical',
-        title: `${overdueTasks.length} follow-up${overdueTasks.length > 1 ? 's' : ''} atrasado${overdueTasks.length > 1 ? 's' : ''}`,
-        description: 'Tarefas comerciais passaram do prazo e precisam de acao.',
+        title: `${overdueTasks.length} ${overdueTasks.length > 1 ? 'follow-ups atrasados' : 'follow-up atrasado'}`,
+        description: 'Tarefas comerciais passaram do prazo e precisam de ação.',
         href: '/portal/comercial/tarefas',
+        since: oldest(overdueTasks.map(task => task.dueAt)),
       } : null,
       dueSoonInvoices.length > 0 ? {
         id: 'finance-due',
         kind: 'finance',
         priority: dueSoonInvoices.some(invoice => ['overdue', 'partial_overdue'].includes(getInvoicePaymentState(invoice))) ? 'critical' : 'normal',
-        title: `${dueSoonInvoices.length} fatura${dueSoonInvoices.length > 1 ? 's' : ''} para acompanhar`,
-        description: 'Existe vencimento proximo ou valor em aberto no financeiro.',
+        title: `${dueSoonInvoices.length} ${dueSoonInvoices.length > 1 ? 'faturas para acompanhar' : 'fatura para acompanhar'}`,
+        description: 'Existe vencimento próximo ou valor em aberto no financeiro.',
         href: '/portal/financeiro',
+        since: oldest(dueSoonInvoices.map(invoice => invoice.dueDate)),
       } : null,
       reviewProjects.length > 0 ? {
         id: 'projects-review',
         kind: 'project',
         priority: 'normal',
-        title: `${reviewProjects.length} projeto${reviewProjects.length > 1 ? 's' : ''} em revisao`,
-        description: 'Confira andamento, entregaveis e timeline dos projetos.',
+        title: `${reviewProjects.length} ${reviewProjects.length > 1 ? 'projetos em revisão' : 'projeto em revisão'}`,
+        description: 'Confira andamento, entregáveis e linha do tempo dos projetos.',
         href: '/portal/projetos/projetos',
+        since: oldest(reviewProjects.map(project => project.updatedAt)),
       } : null,
     ].filter(Boolean).sort((a, b) => byPriority(a as PortalNextAction) - byPriority(b as PortalNextAction)) as PortalNextAction[]
   }, [crm.tasks, marketing.creativeSuggestions, marketing.reviews, projectState.approvals, projectState.invoices, projectState.projects])
 
+  const loading = crm.loading || marketing.loading || projectState.loading
+  const error = crm.error || marketing.error || projectState.error
+
+  // Registra o momento da última carga concluída sem erro; em falha mantém o horário anterior.
+  useEffect(() => {
+    if (!loading && !error) setLoadedAt(new Date())
+  }, [loading, error])
+
   return {
     actions,
     pendingApprovalCount: actions.filter(action => action.kind === 'approval').length,
-    loading: crm.loading || marketing.loading || projectState.loading,
-    error: crm.error || marketing.error || projectState.error,
+    loading,
+    error,
+    loadedAt,
+    projectsLoading: projectState.loading,
+    projectsError: projectState.error,
     projects: projectState.projects,
     approvals: projectState.approvals,
     invoices: projectState.invoices,

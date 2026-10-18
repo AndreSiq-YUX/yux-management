@@ -1,471 +1,290 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowRight,
-  Briefcase,
+  BarChart3,
   CheckCircle2,
-  Clock3,
+  Filter,
   FileText,
-  Gauge,
-  LayoutGrid,
-  Loader2,
-  PackagePlus,
-  Phone,
-  RefreshCw,
-  ShieldCheck,
+  FolderKanban,
+  LayoutTemplate,
+  LifeBuoy,
+  Megaphone,
+  MessageSquare,
+  Search,
   Sparkles,
+  Target,
   TrendingUp,
+  Wallet,
+  Workflow,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { PortalEmptyState } from '@/components/client-portal/PortalEmptyState'
+import {
+  AttentionItem,
+  BarList,
+  DecisionCard,
+  EmptyState,
+  ErrorState,
+  FunnelBars,
+  KpiCard,
+  KpiGrid,
+  PageHeader,
+  PendingAction,
+  PeriodSelector,
+  ProgressRow,
+  SectionCard,
+  SkeletonCard,
+  SkeletonKpiGrid,
+  StatusChip,
+  Timeline,
+  TimelineItem,
+  portalButtonClasses,
+  sectionLinkClasses,
+  type PortalPeriod,
+  type StatusChipVariant,
+} from '@/components/portal-ui'
 import { usePortalActionSummary } from '@/hooks/usePortalActionSummary'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import {
   buildPortalDashboardModel,
-  type PortalAttentionItem,
+  getModuleGridColumns,
   type PortalDashboardDataStatus,
-  type PortalDashboardTone,
   type PortalDashboardWindow,
-  type PortalExecutiveDashboardModel,
-  type PortalExpansionSuggestion,
   type PortalMainResult,
   type PortalModuleSummary,
-  type PortalPulseMetric,
-  type PortalRecommendationItem,
-  type PortalYuxActivityItem,
+  type PortalSectionState,
+  type PortalStatusView,
+  type PortalYourTurnItem,
 } from '@/lib/client-portal/portalDashboardRules'
+import { useAuthStore } from '@/stores/authStore'
 import { usePlatformStore } from '@/stores/platformStore'
 
-const timeWindows: PortalDashboardWindow[] = ['Hoje', '7 dias', '30 dias']
-
-const attentionClass: Record<PortalAttentionItem['priority'], string> = {
-  critical: 'border-l-red-600 bg-red-50/40',
-  high: 'border-l-amber-500 bg-amber-50/40',
-  normal: 'border-l-[#2563EB] bg-white',
-}
-
-const moduleStatusClass: Record<PortalModuleSummary['statusLabel'], string> = {
-  Ativo: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  'Precisa de atencao': 'border-amber-200 bg-amber-50 text-amber-800',
-  'Sem dados': 'border-slate-200 bg-slate-50 text-slate-700',
-  'Em implantacao': 'border-indigo-200 bg-indigo-50 text-indigo-800',
+const periodToWindow: Record<PortalPeriod, PortalDashboardWindow> = {
+  today: 'Hoje',
+  '7d': '7 dias',
+  '30d': '30 dias',
 }
 
 const moduleIcon: Record<string, LucideIcon> = {
-  automations: Sparkles,
-  bi_reports: Gauge,
-  campaigns: TrendingUp,
-  crm: Phone,
-  finance: FileText,
-  landing_pages: LayoutGrid,
+  action_engine: Target,
+  automations: Workflow,
+  bi_reports: BarChart3,
+  campaigns: Megaphone,
+  crm: Filter,
+  finance: Wallet,
+  landing_pages: LayoutTemplate,
   marketing_studio: Sparkles,
-  projects: Briefcase,
+  projects: FolderKanban,
   proposals: FileText,
-  support: ShieldCheck,
-  whatsapp_ai: Phone,
+  radar: Search,
+  support: LifeBuoy,
+  whatsapp_ai: MessageSquare,
 }
 
-function dataStatusClass(status: PortalDashboardDataStatus) {
-  if (status === 'Completo') {
-    return 'inline-flex items-center gap-2 text-sm text-emerald-800 before:h-2 before:w-2 before:rounded-full before:bg-emerald-500'
-  }
-  if (status === 'Parcial') {
-    return 'inline-flex items-center gap-2 text-sm text-amber-800 before:h-2 before:w-2 before:rounded-full before:bg-amber-500'
-  }
-  return 'inline-flex items-center gap-2 text-sm text-red-800 before:h-2 before:w-2 before:rounded-full before:bg-red-500'
+const moduleStatusVariant: Record<PortalModuleSummary['statusLabel'], StatusChipVariant> = {
+  Ativo: 'ok',
+  'Em dia': 'ok',
+  Atenção: 'warn',
+  'Sem dados': 'neutral',
 }
 
-function metricDetailClass(tone: PortalDashboardTone) {
-  if (tone === 'critical') return 'text-red-600'
-  if (tone === 'attention') return 'text-amber-700'
-  if (tone === 'positive' || tone === 'healthy') return 'text-emerald-700'
-  return 'text-slate-600'
+const yourTurnIcon: Record<PortalYourTurnItem['kind'], LucideIcon> = {
+  approval: FolderKanban,
+  invoice: Wallet,
+  content: FileText,
 }
 
-function pulseIcon(metric: PortalPulseMetric) {
-  if (metric.id === 'followups') return Phone
-  if (metric.id === 'proposals' || metric.id === 'approvals') return FileText
-  if (metric.id === 'conversion' || metric.id === 'mroi' || metric.id === 'result') return TrendingUp
-  if (metric.id === 'health') return ShieldCheck
-  if (metric.id === 'projects' || metric.id === 'delivery') return Briefcase
-  return Sparkles
+const yourTurnColumns: Record<number, string> = {
+  1: '',
+  2: 'min-[1024px]:grid-cols-2',
+  3: 'min-[1024px]:grid-cols-3',
 }
 
-function toneAccentClass(tone: PortalDashboardTone) {
-  if (tone === 'critical') return 'text-red-600'
-  if (tone === 'attention') return 'text-amber-600'
-  if (tone === 'positive' || tone === 'healthy') return 'text-[#2563EB]'
-  return 'text-slate-500'
+const duoGrid = 'grid gap-5 min-[1181px]:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]'
+
+const retryNote = 'Parte das informações desta seção não pôde ser carregada.'
+
+function lowercaseFirst(text: string) {
+  return text.charAt(0).toLowerCase() + text.slice(1)
 }
 
-function toneSoftClass(tone: PortalDashboardTone) {
-  if (tone === 'critical') return 'bg-red-100 text-red-600'
-  if (tone === 'attention') return 'bg-amber-100 text-amber-600'
-  if (tone === 'positive' || tone === 'healthy') return 'bg-emerald-100 text-emerald-700'
-  return 'bg-[#eff6ff] text-[#2563EB]'
+function statusChip(status: PortalStatusView) {
+  return <StatusChip variant={status.variant}>{status.label}</StatusChip>
 }
 
-function sectionTitle(title: string) {
-  return (
-    <div className="border-b border-slate-200 px-4 py-3">
-      <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">{title}</h2>
-    </div>
-  )
-}
-
-function mainMetricParts(headline: string) {
-  const revenueMatch = headline.match(/^(R\$\s?[\d.,]+)(.*)$/)
-  if (revenueMatch) {
-    return {
-      metric: revenueMatch[1],
-      qualifier: revenueMatch[2].trim(),
-    }
-  }
-
-  const countMatch = headline.match(/^(\d+\s+\S+)(.*)$/)
-  if (countMatch) {
-    return {
-      metric: countMatch[1],
-      qualifier: countMatch[2].trim(),
-    }
-  }
-
-  return {
-    metric: headline,
-    qualifier: '',
-  }
-}
-
-function attentionActionLabel(item: PortalAttentionItem) {
-  if (item.kind === 'commercial') return 'Retomar'
-  if (item.kind === 'approval') return 'Aprovar'
-  if (item.kind === 'project' || item.kind === 'marketing') return 'Revisar'
-  if (item.kind === 'finance') return 'Abrir'
-  return item.actionLabel.replace('Abrir ', '') || 'Abrir'
-}
-
-function PulseCard({ metric, portalPath }: { metric: PortalPulseMetric; portalPath: (href?: string) => string }) {
-  const Icon = pulseIcon(metric)
-  const content = (
-    <article className="flex min-h-[108px] items-center gap-5 px-5 py-5">
-      <span className={`flex h-8 w-8 shrink-0 items-center justify-center ${toneAccentClass(metric.tone)}`}>
-        <Icon className="h-6 w-6 stroke-[2.2]" />
-      </span>
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{metric.label}</p>
-        <p className="mt-2 text-[1.75rem] font-semibold leading-none tracking-[-0.01em] text-slate-950">{metric.value}</p>
-        <p className={`mt-2 text-xs font-medium ${metricDetailClass(metric.tone)}`}>{metric.detail}</p>
-      </div>
-    </article>
-  )
-
-  if (!metric.href) return content
-
-  return (
-    <Link to={portalPath(metric.href)} className="block h-full hover:bg-slate-50">
-      {content}
-    </Link>
-  )
-}
-
-function MainResultPanel({ result, portalPath }: { result: PortalMainResult; portalPath: (href?: string) => string }) {
-  const headline = mainMetricParts(result.headlineMetric)
-
-  return (
-    <section className="rounded-sm border border-slate-300 bg-white">
-      {sectionTitle(result.title)}
-      <div className="grid gap-0 p-5 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="flex flex-col items-start justify-center border-b border-slate-200 pb-5 pr-0 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8">
-          <p className="text-[3rem] font-semibold leading-none tracking-[-0.03em] text-[#141821]">{headline.metric}</p>
-          <p className="mt-3 text-lg font-medium text-[#141821]">{headline.qualifier || result.headlineDetail}</p>
-          {headline.qualifier && <p className="mt-1 text-sm text-slate-600">{result.headlineDetail}</p>}
-          <p className="mt-4 max-w-md text-sm leading-6 text-slate-600">{result.narrative}</p>
-          <Link
-            to={portalPath(result.ctaHref)}
-            className="mt-5 inline-flex items-center justify-center gap-2 rounded-sm bg-[#2563EB] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1d4ed8]"
-          >
-            {result.ctaLabel}
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-
-        <div className="divide-y divide-slate-200 pt-2 lg:pl-6 lg:pt-0">
-          {result.signals.map(signal => (
-            <div key={`${signal.label}-${signal.value}`} className="grid grid-cols-[40px_1fr_auto] items-center gap-4 py-4 first:pt-0 last:pb-0">
-              <span className={`flex h-9 w-9 items-center justify-center rounded-full ${toneSoftClass(signal.tone)}`}>
-                {signal.tone === 'critical' ? <Phone className="h-4 w-4" /> : signal.tone === 'attention' ? <Clock3 className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
-              </span>
-              <div>
-                <h3 className="text-sm font-semibold text-[#141821]">{signal.label} {signal.value}</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{signal.detail}</p>
-              </div>
-              <span className={`h-2 w-2 rounded-full ${signal.tone === 'critical' ? 'bg-red-500' : signal.tone === 'attention' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function AttentionPanel({ items, portalPath }: { items: PortalAttentionItem[]; portalPath: (href?: string) => string }) {
-  return (
-    <section className="rounded-sm border border-slate-300 bg-white">
-      {sectionTitle('Pontos de atencao')}
-      <div className="space-y-3 p-4">
-        {items.length === 0 ? (
-          <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
-              <div>
-                <h3 className="font-semibold text-emerald-950">Nada urgente agora</h3>
-                <p className="mt-1 text-sm leading-6 text-emerald-800">Acoes, aprovacoes e vencimentos principais nao indicam risco imediato.</p>
-              </div>
-            </div>
-          </div>
-        ) : items.map(item => (
-          <article key={item.id} className={`rounded-sm border border-slate-200 border-l-2 ${attentionClass[item.priority]}`}>
-            <div className="grid grid-cols-[44px_1fr] gap-4 px-4 py-3 2xl:grid-cols-[44px_1fr_220px_auto] 2xl:items-center">
-              <span className={`flex h-9 w-9 items-center justify-center rounded-full border ${item.priority === 'critical' ? 'border-red-200 text-red-600' : 'border-amber-200 text-amber-600'}`}>
-                {item.kind === 'commercial' ? <Phone className="h-4 w-4" /> : item.kind === 'approval' ? <FileText className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-              </span>
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold leading-5 text-[#141821]">{item.title}</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
-              </div>
-              <div className="col-span-2 grid grid-cols-2 gap-4 border-t border-slate-200 pt-3 2xl:col-span-1 2xl:border-t-0 2xl:pt-0">
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Impacto</p>
-                  <p className={`mt-1 text-xs font-semibold ${item.priority === 'critical' ? 'text-red-600' : 'text-amber-700'}`}>
-                    {item.priority === 'critical' ? 'Alto' : item.priority === 'high' ? 'Medio' : 'Normal'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Responsavel</p>
-                  <p className="mt-1 text-xs font-semibold text-[#141821]">{item.expectedOwner}</p>
-                </div>
-              </div>
-              <Link
-                to={portalPath(item.href)}
-                className="col-start-2 inline-flex h-9 w-fit items-center justify-center rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-[#2563EB] hover:text-[#2563EB] 2xl:col-start-auto"
-              >
-                {attentionActionLabel(item)}
-              </Link>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function ActivityRow({
-  item,
-  portalPath,
-  variant,
-}: {
-  item: PortalYuxActivityItem | PortalRecommendationItem
-  portalPath: (href?: string) => string
-  variant: 'activity' | 'recommendation'
-}) {
-  const isHigh = item.impactLabel.toLowerCase().includes('alto') || item.impactLabel.toLowerCase().includes('acelera')
-
-  return (
-    <Link to={portalPath(item.href)} className="grid gap-3 px-3 py-3 transition-colors hover:bg-slate-50 sm:grid-cols-[36px_1fr_92px] sm:items-center">
-      <span className="flex h-8 w-8 items-center justify-center rounded-sm bg-[#eff6ff] text-[#2563EB]">
-        {variant === 'activity' ? <Sparkles className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
-      </span>
-      <div className="min-w-0">
-        <h3 className="truncate text-sm font-semibold text-[#141821]">{item.title}</h3>
-        <p className="mt-1 truncate text-xs text-slate-500">{item.detail}</p>
-      </div>
-      <div className="sm:text-right">
-        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">{variant === 'activity' ? 'Impacto' : 'Impacto esperado'}</p>
-        <p className={`mt-1 text-xs font-semibold ${isHigh ? 'text-emerald-700' : 'text-amber-700'}`}>
-          {item.impactLabel}
-        </p>
-      </div>
-    </Link>
-  )
-}
-
-function CompactList({
-  emptyIcon: EmptyIcon,
-  emptyText,
-  items,
-  portalPath,
-  title,
-  variant,
-}: {
-  emptyIcon: LucideIcon
-  emptyText: string
-  items: Array<PortalYuxActivityItem | PortalRecommendationItem>
-  portalPath: (href?: string) => string
+interface DashSectionProps {
+  id: string
   title: string
-  variant: 'activity' | 'recommendation'
-}) {
+  description?: ReactNode
+  action?: ReactNode
+  state: PortalSectionState
+  /** Não há nada para mostrar (nem dado, nem estado vazio dedicado). */
+  isEmpty: boolean
+  empty: ReactNode
+  onRetry: () => void
+  skeleton?: ReactNode
+  skeletonLines?: number
+  bodyClassName?: string
+  children: ReactNode
+}
+
+/**
+ * Cartão de seção com os três estados: esqueleto no carregamento, erro com "Tentar novamente"
+ * (sem derrubar o resto da página) e vazio honesto. Com erro parcial, mostra o que há e um aviso.
+ */
+function DashSection({
+  id,
+  title,
+  description,
+  action,
+  state,
+  isEmpty,
+  empty,
+  onRetry,
+  skeleton,
+  skeletonLines = 4,
+  bodyClassName,
+  children,
+}: DashSectionProps) {
+  if (state.loading) return <>{skeleton ?? <SkeletonCard lines={skeletonLines} />}</>
+
+  const failed = state.error && isEmpty
   return (
-    <div className="rounded-sm border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">{title}</p>
-      </div>
-      {items.length === 0 ? (
-        <div className="p-4">
-          <div className="flex items-start gap-3 rounded-sm border border-slate-200 bg-[#fafafa] p-4">
-            <EmptyIcon className="mt-0.5 h-5 w-5 text-slate-500" />
-            <p className="text-sm leading-6 text-slate-600">{emptyText}</p>
-          </div>
-        </div>
+    <SectionCard id={id} title={title} description={description} action={action} bodyClassName={bodyClassName}>
+      {failed ? (
+        <ErrorState
+          title="Não foi possível carregar esta seção."
+          description="O resto da página continua disponível. Tente novamente em instantes."
+          onRetry={onRetry}
+        />
+      ) : isEmpty ? (
+        empty
       ) : (
-        <div className="divide-y divide-slate-200">
-          {items.slice(0, 3).map(item => (
-            <ActivityRow key={item.id} item={item} portalPath={portalPath} variant={variant} />
-          ))}
-        </div>
+        children
       )}
-      {items.length > 0 && (
-        <div className="border-t border-slate-200 px-4 py-3">
-          <Link to={portalPath(variant === 'activity' ? '/portal/projetos/projetos' : '/portal/relatorios')} className="inline-flex items-center gap-2 text-xs font-semibold text-[#2563EB]">
-            {variant === 'activity' ? 'Ver todas as atividades' : 'Ver todas as recomendacoes'}
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      )}
-    </div>
+      {state.error && !isEmpty ? (
+        <p className="mt-3 text-xs text-yx-fg-3">
+          {retryNote}{' '}
+          <button type="button" onClick={onRetry} className="font-semibold text-yx-blue underline underline-offset-2">
+            Tentar novamente
+          </button>
+        </p>
+      ) : null}
+    </SectionCard>
   )
 }
 
-function YuxWorkPanel({
-  model,
-  portalPath,
-}: {
-  model: PortalExecutiveDashboardModel
-  portalPath: (href?: string) => string
-}) {
+function SectionLink({ href, children, portalPath }: { href: string; children: ReactNode; portalPath: (href?: string) => string }) {
   return (
-    <section className="rounded-sm border border-slate-300 bg-white">
-      {sectionTitle('Trabalho da YUX e recomendacoes')}
-      <div className="grid gap-4 p-4 xl:grid-cols-2">
-        <CompactList
-          emptyIcon={Briefcase}
-          emptyText="Nenhuma atividade recente registrada para este contrato."
-          items={model.yuxActivity}
-          portalPath={portalPath}
-          title="Executado pela YUX"
-          variant="activity"
-        />
-        <CompactList
-          emptyIcon={Sparkles}
-          emptyText="Sem novas recomendacoes operacionais no momento."
-          items={model.recommendations}
-          portalPath={portalPath}
-          title="Recomendado agora"
-          variant="recommendation"
-        />
+    <Link to={portalPath(href)} className={sectionLinkClasses}>
+      {children}
+      <ArrowRight aria-hidden="true" />
+    </Link>
+  )
+}
+
+function dataStatusChip(status: PortalDashboardDataStatus, sources: string[]) {
+  if (status === 'Completo') {
+    return <StatusChip variant="ok" icon={CheckCircle2}>Todos os dados carregados</StatusChip>
+  }
+  const detail = sources.length > 0 ? `: ${sources.join(', ')}` : ''
+  if (status === 'Parcial') {
+    return <StatusChip variant="warn" icon={AlertTriangle}>{`Dados parciais${detail}`}</StatusChip>
+  }
+  return <StatusChip variant="crit" icon={AlertTriangle}>{`Não foi possível carregar os dados${detail}`}</StatusChip>
+}
+
+function MainResultBody({ result }: { result: PortalMainResult }) {
+  const chart = result.funnel ? (
+    <FunnelBars
+      aria-label="Leads por etapa do funil"
+      header={{ left: 'Etapa', right: 'Leads que chegaram · valor' }}
+      stages={result.funnel.stages}
+      bottleneckIndex={result.funnel.bottleneckIndex}
+    />
+  ) : result.bars ? (
+    <BarList aria-label="Leads por campanha" items={result.bars} />
+  ) : result.progress ? (
+    <ul aria-label="Progresso dos projetos" className="m-0 grid list-none gap-4 p-0">
+      {result.progress.map(row => (
+        <li key={row.id}>
+          <ProgressRow title={row.title} subtitle={row.subtitle} percent={row.percent} status={statusChip(row.status)} />
+        </li>
+      ))}
+    </ul>
+  ) : null
+
+  return (
+    <div className={chart ? 'grid gap-6 min-[1360px]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]' : 'grid'}>
+      <div className="min-w-0">
+        {result.eyebrow ? (
+          <span className="font-mono text-[11px] font-medium uppercase tracking-[0.07em] text-yx-fg-3">{result.eyebrow}</span>
+        ) : null}
+        <p className="mb-1.5 mt-1.5 whitespace-nowrap font-display text-[clamp(28px,2.8vw,44px)] font-semibold leading-none tracking-[-0.03em] tabular-nums">
+          {result.headline}
+        </p>
+        <p className="text-sm tabular-nums text-yx-fg-2">{result.headlineDetail}</p>
+        {result.narrative ? <p className="mb-4 mt-3.5 max-w-[46ch] text-[13.5px] leading-normal text-yx-fg-2">{result.narrative}</p> : null}
+        {result.won ? (
+          <div
+            className={
+              result.won.hasWins
+                ? 'flex items-center gap-2.5 rounded-lg border border-yx-ok-line bg-yx-ok-soft px-3 py-2.5 text-[13px] text-yx-fg'
+                : 'flex items-center gap-2.5 rounded-lg border border-yx-line bg-yx-surface-2 px-3 py-2.5 text-[13px] text-yx-fg-2'
+            }
+          >
+            <CheckCircle2 aria-hidden="true" className={result.won.hasWins ? 'h-4 w-4 shrink-0 text-yx-ok' : 'h-4 w-4 shrink-0 text-yx-fg-3'} />
+            <span className="tabular-nums">{result.won.text}</span>
+          </div>
+        ) : null}
       </div>
-    </section>
+      {chart ? <div className="min-w-0">{chart}</div> : null}
+    </div>
   )
 }
 
-function ModulesPanel({
-  modules,
-  portalPath,
-  suggestions,
-}: {
-  modules: PortalModuleSummary[]
-  portalPath: (href?: string) => string
-  suggestions: PortalExpansionSuggestion[]
-}) {
+function ModuleCard({ module, portalPath, spanLast }: { module: PortalModuleSummary; portalPath: (href?: string) => string; spanLast: boolean }) {
+  const Icon = moduleIcon[module.moduleKey] || Sparkles
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
-      <section className="rounded-sm border border-slate-300 bg-white">
-        {sectionTitle('Modulos contratados')}
-        <div className="grid gap-3 p-4 sm:grid-cols-2 2xl:grid-cols-4">
-          {modules.map(module => {
-            const Icon = moduleIcon[module.moduleKey] || LayoutGrid
-
-            return (
-              <Link key={module.moduleKey} to={portalPath(module.href)} className="rounded-sm border border-slate-200 bg-white p-3 transition-colors hover:border-[#2563EB]">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-[#eff6ff] text-[#2563EB]">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="truncate text-sm font-semibold text-[#141821]">{module.title}</h3>
-                      <span className={`shrink-0 rounded-sm border px-2 py-0.5 text-[10px] font-semibold ${moduleStatusClass[module.statusLabel]}`}>
-                        {module.statusLabel === 'Precisa de atencao' ? 'Atencao' : module.statusLabel}
-                      </span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{module.signal}</p>
-                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB]">
-                      Abrir {module.title.toLowerCase()}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
+    <li className={spanLast ? 'min-[640px]:max-[1179px]:last:col-span-2' : undefined}>
+      <Link
+        to={portalPath(module.href)}
+        className="grid h-full content-start gap-2 rounded-lg border border-yx-line bg-yx-surface p-3.5 text-yx-fg no-underline transition-colors hover:border-yx-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yx-blue max-[639px]:min-h-[56px] max-[639px]:grid-cols-[auto_minmax(0,1fr)_auto] max-[639px]:items-center max-[639px]:gap-x-3 max-[639px]:gap-y-0.5 max-[639px]:px-3 max-[639px]:py-2.5"
+      >
+        <div className="flex items-center justify-between gap-2 max-[639px]:contents">
+          <span className="grid h-8 w-8 place-items-center rounded-[7px] bg-yx-blue-soft text-yx-blue max-[639px]:col-start-1 max-[639px]:row-span-2 max-[639px]:row-start-1">
+            <Icon aria-hidden="true" className="h-4 w-4" />
+          </span>
+          <StatusChip variant={moduleStatusVariant[module.statusLabel]} className="max-[639px]:col-start-3 max-[639px]:row-start-1 max-[639px]:justify-self-end">{module.statusLabel}</StatusChip>
         </div>
-      </section>
-
-      <section className="rounded-sm border border-slate-300 bg-white">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">Expansao recomendada</h2>
-          <Link to={portalPath('/portal/suporte')} className="hidden items-center gap-2 text-xs font-semibold text-[#2563EB] sm:inline-flex">
-            Ver todas as oportunidades
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+        <h3 className="font-display text-sm font-semibold leading-[1.3] max-[639px]:col-start-2 max-[639px]:row-start-1 max-[639px]:min-w-0">{module.title}</h3>
+        <div className="flex items-center justify-between gap-2 text-[13px] text-yx-fg-2 max-[639px]:contents">
+          <span className="tabular-nums max-[639px]:col-start-2 max-[639px]:row-start-2 max-[639px]:min-w-0 max-[639px]:text-xs">{module.signal}</span>
+          <ArrowRight aria-hidden="true" className="h-[15px] w-[15px] shrink-0 text-yx-fg-3 max-[639px]:col-start-3 max-[639px]:row-start-2 max-[639px]:justify-self-end" />
         </div>
-        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-          {suggestions.length === 0 ? (
-            <div className="rounded-sm border border-slate-200 bg-[#fafafa] p-4">
-              <PackagePlus className="h-5 w-5 text-slate-500" />
-              <p className="mt-3 text-sm leading-6 text-slate-600">Nao ha sugestao prioritaria de modulo adicional para o estado atual do contrato.</p>
-            </div>
-          ) : suggestions.map(suggestion => {
-            const Icon = moduleIcon[suggestion.moduleKey] || PackagePlus
-
-            return (
-              <Link key={suggestion.id} to={portalPath(suggestion.href)} className="rounded-sm border border-slate-200 bg-white p-4 transition-colors hover:border-[#2563EB]">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-indigo-50 text-[#635BFF]">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-[#141821]">{suggestion.moduleName}</h3>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">{suggestion.reason}</p>
-                    <p className="mt-2 text-xs font-semibold text-slate-700">{suggestion.expectedGain}</p>
-                    <span className="mt-3 inline-flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700">
-                      {suggestion.ctaLabel}
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      </section>
-    </div>
+      </Link>
+    </li>
   )
 }
 
 export function PortalDashboardPage() {
   const portalPath = usePortalWorkspacePath()
-  const [selectedWindow, setSelectedWindow] = useState<PortalDashboardWindow>('7 dias')
-  const {
-    activeContract,
-    enabledModuleKeys,
-    isLoading,
-    organization,
-  } = usePlatformStore(state => ({
+  const [period, setPeriod] = useState<PortalPeriod>('7d')
+  const selectedWindow = periodToWindow[period]
+  // Reavalia janelas e o rótulo "Dados atualizados há..." a cada minuto.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const { activeContract, enabledModuleKeys, isLoading, organization } = usePlatformStore(state => ({
     activeContract: state.activeContract,
     enabledModuleKeys: state.enabledModuleKeys,
     isLoading: state.isLoading,
     organization: state.organization,
   }))
+  const userName = useAuthStore(state => state.user?.name)
   const actionSummary = usePortalActionSummary()
 
   const model = useMemo(() => buildPortalDashboardModel({
@@ -479,6 +298,7 @@ export function PortalDashboardPage() {
     crm: {
       leads: actionSummary.crm.leads,
       tasks: actionSummary.crm.tasks,
+      pipelines: actionSummary.crm.pipelines,
       loading: actionSummary.crm.loading,
       error: actionSummary.crm.error,
     },
@@ -491,129 +311,295 @@ export function PortalDashboardPage() {
       loading: actionSummary.marketing.loading,
       error: actionSummary.marketing.error,
     },
-    actionLoading: actionSummary.loading,
-    actionError: actionSummary.error,
+    actionLoading: Boolean(actionSummary.projectsLoading),
+    actionError: actionSummary.projectsError ?? null,
     windowLabel: selectedWindow,
-  }), [activeContract, actionSummary, enabledModuleKeys, organization, selectedWindow])
+    now,
+    loadedAt: actionSummary.loadedAt,
+    userName,
+  }), [activeContract, actionSummary, enabledModuleKeys, now, organization, selectedWindow, userName])
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[320px] items-center gap-3 text-sm text-slate-600">
-        <Loader2 className="h-4 w-4 animate-spin text-[#2563EB]" />
-        Carregando portal...
+      <div className="mx-auto grid max-w-[1440px] gap-5" aria-busy="true">
+        <SkeletonCard lines={2} />
+        <SkeletonCard lines={3} />
+        <SkeletonKpiGrid />
       </div>
     )
   }
 
   if (!activeContract) {
     return (
-      <PortalEmptyState
-        title="Nenhum contrato ativo encontrado"
-        description="Entre em contato com a YUX para revisar o acesso ao portal e liberar os modulos contratados."
-      />
+      <div className="mx-auto max-w-2xl">
+        <EmptyState
+          icon={FileText}
+          title="Nenhum contrato ativo encontrado"
+          description="Entre em contato com a YUX para revisar o acesso ao portal e liberar os módulos contratados."
+        />
+      </div>
     )
   }
 
+  const retry = actionSummary.reload
+  const { yourTurn, lead, sections } = model
+  const result = model.mainResult
+  const pulseLink = enabledModuleKeys.includes('bi_reports')
+    ? <SectionLink href="/portal/relatorios" portalPath={portalPath}>Abrir relatórios</SectionLink>
+    : undefined
+  const suggestion = model.expansionSuggestions[0]
+  const modulesCount = model.activeModules.length
+
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-4rem)] space-y-4 bg-[#f4f4f4] px-4 py-5 text-[#141821] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-6">
-      <header className="flex flex-col gap-5 border-b border-slate-200/80 pb-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="max-w-3xl">
-          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.01em] text-[#141821]">
-            Visao Geral do Cliente
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-700">
-            Saude, resultado e proximas decisoes do contrato ativo.
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-700">
-            <span className="inline-flex h-8 items-center gap-2 rounded-sm border border-slate-300 bg-white px-3">
-              <Briefcase className="h-3.5 w-3.5 text-slate-500" />
-              Contrato: {model.contractName}
+    <div className="mx-auto grid max-w-[1440px] gap-5">
+      <PageHeader
+        eyebrow="Visão geral"
+        live={{ label: lowercaseFirst(model.generatedAtLabel) }}
+        title={model.greeting}
+        lead={(
+          <>
+            {lead.before}
+            <span className="bg-brand-gradient bg-clip-text pr-[.06em] font-accent text-[1.38em] italic leading-none tracking-[-0.01em] text-transparent">
+              {lead.accent}
             </span>
-            <span className="text-slate-400">+</span>
-            <span className="inline-flex h-8 items-center gap-2">
-              <Gauge className="h-3.5 w-3.5 text-slate-500" />
-              {model.focusLabel}
-            </span>
-            <span className="inline-flex h-8 items-center gap-2">
-              <Clock3 className="h-3.5 w-3.5 text-slate-500" />
-              {model.generatedAtLabel}
-            </span>
-            <span className={`inline-flex h-8 items-center gap-2 rounded-sm border border-slate-300 bg-white px-3 ${dataStatusClass(model.dataStatus)}`}>
-              {model.dataStatus}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-          <div className="inline-flex overflow-hidden rounded-sm border border-slate-300 bg-white text-sm text-slate-700">
-            {timeWindows.map(label => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setSelectedWindow(label)}
-                className={label === model.windowLabel
-                  ? 'min-w-16 border-x border-[#050816] bg-[#050816] px-4 py-2 font-semibold text-white first:border-l-0'
-                  : 'min-w-16 border-r border-slate-200 px-4 py-2 font-normal hover:bg-slate-50 last:border-r-0'}
-                aria-pressed={label === model.windowLabel}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={actionSummary.reload}
-            className="inline-flex items-center gap-2 rounded-sm border border-[#2563eb] bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Atualizar visao
-          </button>
-        </div>
-      </header>
-
-        {model.dataStatus !== 'Completo' && (
-          <section className="rounded-sm border border-amber-200 bg-amber-50 p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
-              <div>
-                <h2 className="font-semibold text-amber-950">Nao foi possivel carregar todos os indicadores do cliente.</h2>
-                <p className="mt-1 text-sm leading-6 text-amber-800">
-                  Fontes indisponiveis: {model.unavailableSources.join(', ')}.
-                </p>
-              </div>
-            </div>
-          </section>
+            {lead.after}
+          </>
         )}
+        meta={(
+          <>
+            <StatusChip icon={FileText}>{/^contrato\b/i.test(model.contractName) ? model.contractName : `Contrato ${model.contractName}`}</StatusChip>
+            <StatusChip icon={Target}>{model.focusLabel}</StatusChip>
+            {dataStatusChip(model.dataStatus, model.unavailableSources)}
+          </>
+        )}
+        actions={<PeriodSelector value={period} onChange={setPeriod} caption={model.periodCaption} />}
+      />
 
-        <section className="rounded-sm border border-slate-300 bg-white">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-950">Pulso Executivo</p>
-              <h2 className="sr-only">Indicadores adaptados ao contrato e ao foco atual do cliente</h2>
-            </div>
-            {actionSummary.loading ? (
-              <span className="inline-flex items-center gap-2 text-sm text-slate-500">
-                <Loader2 className="h-4 w-4 animate-spin text-[#2563EB]" />
-                Atualizando dados
-              </span>
-            ) : (
-              <Gauge className="hidden h-5 w-5 text-slate-400 sm:block" />
-            )}
-          </div>
-          <div className="grid divide-y divide-slate-200 md:grid-cols-5 md:divide-x md:divide-y-0">
-            {model.pulse.map(metric => (
-              <PulseCard key={metric.id} metric={metric} portalPath={portalPath} />
+      <DashSection
+        id="sua-vez"
+        title="Sua vez"
+        description={yourTurn.total > yourTurn.items.length
+          ? `Mostrando ${yourTurn.items.length} de ${yourTurn.total} decisões que dependem de você.`
+          : 'Itens que só andam com a sua decisão.'}
+        action={yourTurn.approvalCount > 0
+          ? <SectionLink href="/portal/projetos/aprovacoes" portalPath={portalPath}>Ver todas as aprovações</SectionLink>
+          : undefined}
+        state={sections.yourTurn}
+        isEmpty={yourTurn.items.length === 0}
+        empty={(
+          <EmptyState
+            icon={CheckCircle2}
+            title="Nada depende de você agora."
+            description="Quando houver aprovações, faturas ou conteúdos esperando a sua decisão, eles aparecem aqui."
+          />
+        )}
+        onRetry={retry}
+        skeletonLines={3}
+      >
+        <div className={`grid gap-3 ${yourTurnColumns[yourTurn.items.length] ?? ''}`}>
+          {yourTurn.items.map(item => (
+            <DecisionCard
+              key={item.id}
+              tone={item.tone}
+              module={{ label: item.moduleLabel, icon: yourTurnIcon[item.kind] }}
+              wait={item.wait}
+              title={item.title}
+              description={item.description}
+              actions={(
+                <>
+                  <Link to={portalPath(item.primary.href)} className={portalButtonClasses('primary')}>
+                    {item.primary.label}
+                  </Link>
+                  {item.payInvoice ? <PendingAction code="B1">Pagar fatura</PendingAction> : null}
+                </>
+              )}
+            />
+          ))}
+        </div>
+      </DashSection>
+
+      <DashSection
+        id="pulso"
+        title="Pulso do período"
+        description={model.periodDescription}
+        action={pulseLink}
+        state={sections.pulse}
+        isEmpty={model.pulse.length === 0}
+        empty={(
+          <EmptyState
+            icon={TrendingUp}
+            title="Os indicadores aparecem aqui"
+            description="Assim que houver leads, campanhas, projetos ou faturas no seu contrato, mostramos os números do período com a comparação."
+          />
+        )}
+        onRetry={retry}
+        skeleton={(
+          <SectionCard id="pulso" title="Pulso do período" description={model.periodDescription} bodyClassName="px-0 pb-0 pt-3.5">
+            <SkeletonKpiGrid count={model.pulse.length || 6} />
+          </SectionCard>
+        )}
+        bodyClassName="px-0 pb-0 pt-3.5"
+      >
+        <KpiGrid aria-label="Indicadores do período" count={model.pulse.length}>
+          {model.pulse.map(metric => (
+            <KpiCard
+              key={metric.id}
+              label={metric.label}
+              value={metric.value}
+              delta={metric.delta}
+              comparison={metric.delta ? (metric.comparison ?? metric.detail) : metric.detail}
+              spark={metric.spark}
+              href={metric.href}
+            />
+          ))}
+        </KpiGrid>
+      </DashSection>
+
+      <div className={duoGrid}>
+        <DashSection
+          id="resultado"
+          title={result.title}
+          description={result.description}
+          action={<SectionLink href={result.ctaHref} portalPath={portalPath}>{result.ctaLabel}</SectionLink>}
+          state={sections.mainResult}
+          isEmpty={result.kind === 'empty'}
+          empty={(
+            <EmptyState
+              icon={TrendingUp}
+              title={result.emptyTitle ?? 'Sem dados por enquanto'}
+              description={result.emptyDescription}
+            />
+          )}
+          onRetry={retry}
+          skeletonLines={6}
+        >
+          <MainResultBody result={result} />
+        </DashSection>
+
+        <DashSection
+          id="atencao"
+          title="Pontos de atenção"
+          description="Ordenados pela prioridade."
+          state={sections.attention}
+          isEmpty={model.attentionItems.length === 0}
+          empty={(
+            <EmptyState
+              icon={CheckCircle2}
+              title="Nada urgente agora"
+              description="Follow-ups, entregas e prazos principais não indicam risco imediato."
+            />
+          )}
+          onRetry={retry}
+          skeletonLines={5}
+        >
+          <div className="grid gap-2.5">
+            {model.attentionItems.map(item => (
+              <AttentionItem
+                key={item.id}
+                priority={item.priority}
+                title={item.title}
+                description={item.description}
+                owner={item.owner}
+                ownerIsYux={item.ownerIsYux}
+                wait={item.wait}
+                action={(
+                  <Link to={portalPath(item.href)} className={portalButtonClasses('ghost')}>
+                    {item.actionLabel}
+                  </Link>
+                )}
+              />
             ))}
           </div>
+        </DashSection>
+      </div>
+
+      <div className={model.hasProjects ? duoGrid : 'grid gap-5'}>
+        <DashSection
+          id="executado-yux"
+          title="Executado pela YUX"
+          description="O que a equipe e os agentes fizeram por você neste período."
+          state={sections.activity}
+          isEmpty={model.yuxActivity.length === 0}
+          empty={(
+            <EmptyState
+              icon={Sparkles}
+              title="Nenhuma atividade registrada no período."
+              description="Quando a YUX ou os agentes executarem algo por você, aparece aqui com data e hora."
+            />
+          )}
+          onRetry={retry}
+          skeletonLines={5}
+        >
+          <Timeline aria-label="Atividades executadas pela YUX">
+            {model.yuxActivity.map(item => (
+              <TimelineItem key={item.id} variant="yux" when={item.when} title={item.title} description={item.description} tag={item.tag} />
+            ))}
+          </Timeline>
+          {model.activityHistoryHref ? (
+            <div className="mt-1">
+              <SectionLink href={model.activityHistoryHref} portalPath={portalPath}>Ver histórico completo</SectionLink>
+            </div>
+          ) : null}
+        </DashSection>
+
+        {model.hasProjects ? (
+          <DashSection
+            id="proximas-entregas"
+            title="Próximas entregas"
+            description="Etapas em andamento nos seus projetos."
+            action={<SectionLink href="/portal/projetos/projetos" portalPath={portalPath}>Projetos</SectionLink>}
+            state={sections.deliveries}
+            isEmpty={model.deliveries.length === 0}
+            empty={(
+              <EmptyState
+                icon={FolderKanban}
+                title="Nenhuma entrega em andamento"
+                description="Quando um projeto estiver em andamento, mostramos aqui o progresso, a previsão e o que depende de você."
+              />
+            )}
+            onRetry={retry}
+            skeletonLines={5}
+          >
+            <ul aria-label="Próximas entregas" className="m-0 grid list-none gap-3.5 p-0">
+              {model.deliveries.map(item => (
+                <li key={item.id}>
+                  <ProgressRow title={item.title} subtitle={item.subtitle} percent={item.percent} status={statusChip(item.status)} />
+                </li>
+              ))}
+            </ul>
+          </DashSection>
+        ) : null}
+      </div>
+
+      {modulesCount > 0 ? (
+        <SectionCard id="modulos" title="Seus módulos" description="Situação de cada área contratada.">
+          <ul aria-label="Módulos contratados" className={`m-0 grid list-none gap-3 p-0 ${getModuleGridColumns(modulesCount)}`}>
+            {model.activeModules.map(module => (
+              <ModuleCard key={module.moduleKey} module={module} portalPath={portalPath} spanLast={modulesCount % 2 === 1 && modulesCount > 1} />
+            ))}
+          </ul>
+        </SectionCard>
+      ) : null}
+
+      {suggestion ? (
+        <section
+          aria-labelledby="sugestao-title"
+          className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-[10px] border border-dashed border-yx-line-strong px-[18px] py-3.5"
+        >
+          <div className="flex min-w-0 flex-1 basis-[420px] items-start gap-3">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[7px] border border-yx-line-strong text-brand-violet-500">
+              <Sparkles aria-hidden="true" className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="sugestao-title" className="font-sans text-sm font-semibold leading-[1.35]">
+                {`Sugestão para o seu momento: ${suggestion.moduleName}`}
+              </h2>
+              <p className="mt-0.5 text-[13px] text-yx-fg-2">{suggestion.reason}</p>
+            </div>
+          </div>
+          <SectionLink href={suggestion.href} portalPath={portalPath}>{suggestion.ctaLabel}</SectionLink>
         </section>
-
-        <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
-          <MainResultPanel result={model.mainResult} portalPath={portalPath} />
-          <AttentionPanel items={model.attentionItems} portalPath={portalPath} />
-        </div>
-
-        <YuxWorkPanel model={model} portalPath={portalPath} />
-        <ModulesPanel modules={model.activeModules} suggestions={model.expansionSuggestions} portalPath={portalPath} />
+      ) : null}
     </div>
   )
 }
