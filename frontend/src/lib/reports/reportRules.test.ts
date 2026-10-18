@@ -109,7 +109,7 @@ describe('reportRules', () => {
   it('adds attribution caveat when AI insight has no attribution data', () => {
     const insight = buildReportAiInsight({ ...report, crmAttribution: undefined })
 
-    expect(insight.dataGaps).toContain('Atribuicao CRM/MROI indisponivel para confirmar origem de receita.')
-    expect(insight.attributionCaveat).toContain('nao causalidade')
+    expect(insight.dataGaps).toContain('Atribuição CRM/MROI indisponível para confirmar origem de receita.')
+    expect(insight.attributionCaveat).toContain('não causalidade')
   })
 })

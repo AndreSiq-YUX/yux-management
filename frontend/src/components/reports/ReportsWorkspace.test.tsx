@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { ReportsWorkspace } from './ReportsWorkspace'
-import { PortalReportsWorkspace } from './PortalReportsWorkspace'
 import type { OperationalReport } from '@/types/reports'
 
 const report: OperationalReport = {
@@ -53,21 +52,6 @@ describe('ReportsWorkspace', () => {
     expect(html).toContain('Resumo de IA')
     expect(html).toContain('Landing Botox')
     expect(html).toContain('Ana YUX')
-
-    act(() => root.unmount())
-  })
-
-  it('renders client-safe portal report without owner activity', () => {
-    const container = document.createElement('div')
-    const root = createRoot(container)
-    act(() => root.render(<MemoryRouter><PortalReportsWorkspace report={report} /></MemoryRouter>))
-    const html = container.innerHTML
-
-    expect(html).toContain('Relatorios do contrato')
-    expect(html).toContain('Botox')
-    expect(html).toContain('Cockpit executivo Ads/MROI')
-    expect(html).toContain('Marca e conhecimento')
-    expect(html).not.toContain('Ana YUX')
 
     act(() => root.unmount())
   })

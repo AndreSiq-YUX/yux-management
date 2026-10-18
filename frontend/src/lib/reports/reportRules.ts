@@ -75,50 +75,50 @@ export function buildReportPresets(): ReportPreset[] {
   return [
     {
       key: 'campaign_performance',
-      label: 'Performance de campanhas',
-      description: 'Investimento, cliques, leads, CPL, clientes, receita e MROI.',
+      label: 'Desempenho das campanhas',
+      description: 'Investimento, cliques, leads, custo por lead, clientes, receita e retorno sobre marketing.',
       moduleKey: 'campaigns',
       portalVisible: true,
     },
     {
       key: 'lead_source_roi',
-      label: 'ROI por origem de lead',
-      description: 'Compara origens, conversao, receita atribuida e custo de aquisicao.',
+      label: 'Retorno por origem de lead',
+      description: 'Compara origens, conversão, receita atribuída e custo de aquisição.',
       moduleKey: 'crm',
       portalVisible: true,
     },
     {
       key: 'landing_page_conversion',
-      label: 'Conversao de landing pages',
-      description: 'Visitas, leads e gargalos por pagina de captura.',
+      label: 'Conversão das páginas de captura',
+      description: 'Visitas, leads e gargalos por página de captura.',
       moduleKey: 'landing_pages',
       portalVisible: true,
     },
     {
       key: 'whatsapp_follow_up',
       label: 'Follow-up WhatsApp',
-      description: 'SLA, respostas, handoff e tarefas comerciais derivadas de conversas.',
+      description: 'Prazo de resposta, respostas, transferências para atendente e tarefas comerciais geradas pelas conversas.',
       moduleKey: 'whatsapp_ai',
       portalVisible: true,
     },
     {
       key: 'automation_impact',
-      label: 'Impacto das automacoes',
-      description: 'Execucoes, falhas, tarefas criadas e impacto no funil comercial.',
+      label: 'Impacto das automações',
+      description: 'Execuções, falhas, tarefas criadas e impacto no funil comercial.',
       moduleKey: 'automations',
       portalVisible: true,
     },
     {
       key: 'sector_onboarding_progress',
       label: 'Onboarding por setor',
-      description: 'Progresso de implantacao do modelo setorial e proximas pendencias.',
+      description: 'Progresso da implantação do modelo do seu setor e próximas pendências.',
       moduleKey: 'projects',
       portalVisible: true,
     },
     {
       key: 'brand_knowledge_readiness',
       label: 'Marca e conhecimento',
-      description: 'Prontidao da marca e da base de conhecimento para IA, campanhas e conteudo.',
+      description: 'Preparo da marca e da base de conhecimento para IA, campanhas e conteúdo.',
       moduleKey: 'marketing_studio',
       portalVisible: true,
     },
@@ -129,33 +129,33 @@ export function buildReportAiInsight(report: Pick<OperationalReport, 'campaignMe
   const executive = summarizeExecutiveCampaignMetrics(buildExecutiveCampaignMetrics(report.campaignMetrics))
   const dataGaps: string[] = []
 
-  if (!report.crmAttribution) dataGaps.push('Atribuicao CRM/MROI indisponivel para confirmar origem de receita.')
-  if (executive.clients === 0) dataGaps.push('Clientes fechados nao vinculados as campanhas no periodo.')
-  if (report.proposalMetrics.sent === 0) dataGaps.push('Propostas comerciais sem volume suficiente para leitura de conversao.')
-  if (report.landingPageMetrics.length === 0) dataGaps.push('Landing pages sem metricas conectadas ao relatorio.')
+  if (!report.crmAttribution) dataGaps.push('Atribuição CRM/MROI indisponível para confirmar origem de receita.')
+  if (executive.clients === 0) dataGaps.push('Clientes fechados não vinculados às campanhas no período.')
+  if (report.proposalMetrics.sent === 0) dataGaps.push('Propostas comerciais sem volume suficiente para leitura de conversão.')
+  if (report.landingPageMetrics.length === 0) dataGaps.push('Páginas de captura sem métricas conectadas ao relatório.')
 
   return {
     topOpportunity: executive.cpl > 0 && executive.clients === 0
-      ? 'Reduzir o intervalo entre lead e proposta: ha investimento e leads, mas nenhum cliente atribuido.'
+      ? 'Reduzir o intervalo entre lead e proposta: há investimento e leads, mas nenhum cliente atribuído.'
       : executive.mroi < 1 && executive.spend > 0
-        ? 'Revisar criativos, publico e landing page das campanhas com baixo retorno.'
+        ? 'Revisar criativos, público e página de captura das campanhas com baixo retorno.'
         : 'Manter o acompanhamento de CPL, propostas e clientes para proteger o MROI.',
     periodChange: report.campaignMetrics.length
-      ? `${report.campaignMetrics.length} campanha(s) analisadas com CPL medio de ${executive.cpl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`
-      : 'Sem campanhas com metricas suficientes neste periodo.',
+      ? `${report.campaignMetrics.length} campanha(s) analisada(s) com CPL médio de ${executive.cpl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`
+      : 'Sem campanhas com métricas suficientes neste período.',
     dataGaps,
     attributionCaveat: report.crmAttribution
       ? undefined
-      : 'Sem atribuicao conectada, o relatorio mostra correlacao operacional e nao causalidade de receita.',
+      : 'Sem atribuição conectada, o relatório mostra correlação operacional e não causalidade de receita.',
   }
 }
 
 function recommendCampaignAction(campaign: CampaignReportMetric) {
-  if (campaign.syncStatus === 'needs_reauth') return 'Reconectar o provedor antes de otimizar ou publicar alteracoes.'
-  if (campaign.leads === 0 && campaign.spend > 0) return 'Revisar publico, criativo e pagina: houve gasto sem leads.'
-  if (campaign.clients === 0 && campaign.proposals && campaign.proposals > 0) return 'Acompanhar propostas abertas e reforcar follow-up comercial.'
-  if (campaign.mroi < 1 && campaign.spend > 0) return 'Reavaliar budget e segmentacao antes de aumentar investimento.'
-  return 'Acompanhar CPL, propostas e clientes antes de mudar budget.'
+  if (campaign.syncStatus === 'needs_reauth') return 'Reconectar o provedor antes de otimizar ou publicar alterações.'
+  if (campaign.leads === 0 && campaign.spend > 0) return 'Revisar público, criativo e página: houve gasto sem leads.'
+  if (campaign.clients === 0 && campaign.proposals && campaign.proposals > 0) return 'Acompanhar propostas abertas e reforçar o acompanhamento comercial.'
+  if (campaign.mroi < 1 && campaign.spend > 0) return 'Reavaliar orçamento e segmentação antes de aumentar o investimento.'
+  return 'Acompanhar CPL, propostas e clientes antes de mudar o orçamento.'
 }
 
 function sum(metrics: ExecutiveCampaignMetric[], key: keyof Pick<ExecutiveCampaignMetric, 'spend' | 'impressions' | 'clicks' | 'leads' | 'opportunities' | 'proposals' | 'clients' | 'revenue'>) {
@@ -175,5 +175,5 @@ function pickExecutiveRecommendation(metrics: ExecutiveCampaignMetric[]) {
   if (critical) return critical.aiRecommendation
   const expensiveWithoutClients = metrics.find(metric => metric.spend > 0 && metric.clients === 0)
   if (expensiveWithoutClients) return expensiveWithoutClients.aiRecommendation
-  return metrics[0]?.aiRecommendation || 'Conectar campanhas, propostas e clientes para consolidar recomendacoes.'
+  return metrics[0]?.aiRecommendation || 'Conectar campanhas, propostas e clientes para consolidar recomendações.'
 }
