@@ -36,8 +36,8 @@ export function AutomationVersionPanel({ flow, onRollback }: AutomationVersionPa
 
   if (!flow) {
     return (
-      <section className="rounded-md border bg-white p-4">
-        <p className="text-sm text-gray-500">Selecione um fluxo para ver o historico de versoes.</p>
+      <section className="rounded-md border bg-yx-surface p-4">
+        <p className="text-sm text-yx-fg-3">Selecione um fluxo para ver o histórico de versões.</p>
       </section>
     )
   }
@@ -54,19 +54,19 @@ export function AutomationVersionPanel({ flow, onRollback }: AutomationVersionPa
   }
 
   return (
-    <section className="rounded-md border bg-white p-4 space-y-3">
+    <section className="rounded-md border bg-yx-surface p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <History className="h-4 w-4 text-slate-600" />
-          <h2 className="text-base font-semibold text-slate-950">Historico de versoes</h2>
+          <History className="h-4 w-4 text-yx-fg-2" />
+          <h2 className="text-base font-semibold text-yx-fg">Histórico de versões</h2>
         </div>
         <Badge variant="outline">{flow.publishedVersion || 0} publicadas</Badge>
       </div>
 
-      {loading && <p className="text-xs text-gray-500">Carregando versoes...</p>}
+      {loading && <p className="text-xs text-yx-fg-3">Carregando versões...</p>}
 
       {!loading && versions.length === 0 && (
-        <p className="text-xs text-gray-500">Nenhuma versao salva. Publique o fluxo para criar a primeira versao.</p>
+        <p className="text-xs text-yx-fg-3">Nenhuma versão salva. Publique o fluxo para criar a primeira versão.</p>
       )}
 
       {versions.length > 0 && (
@@ -76,17 +76,17 @@ export function AutomationVersionPanel({ flow, onRollback }: AutomationVersionPa
             return (
               <div
                 key={version.id}
-                className={`flex items-center justify-between rounded-md border p-3 ${isActive ? 'border-blue-300 bg-blue-50' : 'bg-slate-50'}`}
+                className={`flex items-center justify-between rounded-md border p-3 ${isActive ? 'border-yx-line-strong bg-yx-blue-soft' : 'bg-yx-surface-2'}`}
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-900">v{version.version_number}</span>
+                    <span className="text-sm font-semibold text-yx-fg">v{version.version_number}</span>
                     <Badge variant={version.status === 'published' ? 'default' : 'secondary'} className="text-xs">
                       {version.status}
                     </Badge>
                     {isActive && <Badge variant="outline" className="text-xs">ativa</Badge>}
                   </div>
-                  <p className="text-xs text-slate-600">{formatDate(version.published_at || version.created_at)}</p>
+                  <p className="text-xs text-yx-fg-2">{formatDate(version.published_at || version.created_at)}</p>
                 </div>
                 {!isActive && ['published', 'archived'].includes(version.status) && (
                   <Button

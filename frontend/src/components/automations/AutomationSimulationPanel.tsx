@@ -51,18 +51,18 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
         blockedReasons: simResult.blockedReasons,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payload JSON invalido')
+      setError(err instanceof Error ? err.message : 'JSON inválido')
       setResult(null)
     }
   }
 
   return (
-    <section className="rounded-md border bg-white p-4 space-y-4">
+    <section className="rounded-md border bg-yx-surface p-4 space-y-4">
       <div className="flex items-start gap-2">
-        <FlaskConical className="mt-0.5 h-4 w-4 text-slate-600" />
+        <FlaskConical className="mt-0.5 h-4 w-4 text-yx-fg-2" />
         <div className="flex-1">
-          <h2 className="text-base font-semibold text-slate-950">Simulacao</h2>
-          <p className="text-sm text-slate-600">
+          <h2 className="text-base font-semibold text-yx-fg">Simulação</h2>
+          <p className="text-sm text-yx-fg-2">
             {flow ? `Testar ${flow.name} sem executar de verdade` : 'Selecione um fluxo para simular'}
           </p>
         </div>
@@ -71,7 +71,7 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
       {flow && (
         <div className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-700">Evento de teste</label>
+            <label className="text-xs font-medium text-yx-fg-2">Evento de teste</label>
             <Select value={eventType} onValueChange={setEventType}>
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Selecione um evento" />
@@ -87,7 +87,7 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-700">Payload (JSON)</label>
+            <label className="text-xs font-medium text-yx-fg-2">Dados do evento (JSON)</label>
             <Textarea
               className="min-h-[100px] font-mono text-xs"
               placeholder='{"leadId": "lead-123", "source": "instagram"}'
@@ -97,8 +97,8 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
           </div>
 
           {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-2">
-              <p className="text-xs text-red-800">{error}</p>
+            <div className="rounded-md border border-yx-crit-line bg-yx-crit-soft p-2">
+              <p className="text-xs text-yx-crit">{error}</p>
             </div>
           )}
 
@@ -119,36 +119,36 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
           <div className="flex items-center gap-2">
             {result.matched ? (
               <>
-                <CheckCircle className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-semibold text-green-900">Fluxo seria executado</span>
+                <CheckCircle className="h-5 w-5 text-yx-ok" />
+                <span className="text-sm font-semibold text-yx-ok">Fluxo seria executado</span>
               </>
             ) : (
               <>
-                <XCircle className="h-5 w-5 text-red-600" />
-                <span className="text-sm font-semibold text-red-900">Fluxo NAO seria executado</span>
+                <XCircle className="h-5 w-5 text-yx-crit" />
+                <span className="text-sm font-semibold text-yx-crit">Fluxo NÃO seria executado</span>
               </>
             )}
           </div>
 
           <div className="space-y-2">
             <div className="text-xs">
-              <span className="font-semibold text-slate-700">Trigger: </span>
-              <span className={result.triggerMatched ? 'text-green-700' : 'text-red-700'}>
+              <span className="font-semibold text-yx-fg-2">Trigger: </span>
+              <span className={result.triggerMatched ? 'text-yx-ok' : 'text-yx-crit'}>
                 {result.triggerDetails}
               </span>
             </div>
 
             {result.conditionResults.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-700">Condicoes:</p>
+                <p className="text-xs font-semibold text-yx-fg-2">Condições:</p>
                 {result.conditionResults.map((cr, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     {cr.passed ? (
-                      <CheckCircle className="h-3 w-3 text-green-600" />
+                      <CheckCircle className="h-3 w-3 text-yx-ok" />
                     ) : (
-                      <XCircle className="h-3 w-3 text-red-600" />
+                      <XCircle className="h-3 w-3 text-yx-crit" />
                     )}
-                    <span className={cr.passed ? 'text-green-700' : 'text-red-700'}>{cr.reason}</span>
+                    <span className={cr.passed ? 'text-yx-ok' : 'text-yx-crit'}>{cr.reason}</span>
                   </div>
                 ))}
               </div>
@@ -156,7 +156,7 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
 
             {result.blockedReasons.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-700">Bloqueios:</p>
+                <p className="text-xs font-semibold text-yx-fg-2">Bloqueios:</p>
                 <div className="flex flex-wrap gap-1">
                   {result.blockedReasons.map(reason => (
                     <Badge key={reason} variant="destructive" className="text-xs">
@@ -169,12 +169,12 @@ export function AutomationSimulationPanel({ flow, onSimulate }: AutomationSimula
 
             {result.plannedActions.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-700">Acoes que seriam executadas:</p>
+                <p className="text-xs font-semibold text-yx-fg-2">Ações que seriam executadas:</p>
                 {result.plannedActions.map(action => (
-                  <div key={action.id} className="rounded-md bg-slate-100 px-2 py-1 text-xs">
+                  <div key={action.id} className="rounded-md bg-yx-surface-2 px-2 py-1 text-xs">
                     <span className="font-semibold">{action.orderIndex}.</span> {action.actionType}
                     {Object.keys(action.payload).length > 0 && (
-                      <span className="ml-2 text-slate-600">
+                      <span className="ml-2 text-yx-fg-2">
                         ({Object.entries(action.payload).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})
                       </span>
                     )}

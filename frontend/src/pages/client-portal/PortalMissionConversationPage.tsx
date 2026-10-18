@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { MissionConversationWorkspace } from '@/components/action-engine/MissionConversationWorkspace'
+import { ErrorState } from '@/components/portal-ui'
 import { usePortalWorkspacePath } from '@/hooks/usePortalWorkspacePath'
 import { canManageMissionsInWorkspace } from '@/lib/platform/accessControl'
 import { useAuthStore } from '@/stores/authStore'
@@ -13,7 +14,7 @@ export function PortalMissionConversationPage() {
   const role = usePlatformStore(state => state.role)
   const authenticatedRole = useAuthStore(state => state.user?.role)
   const portalPath = usePortalWorkspacePath()
-  if (!organization || !conversationId) return <p className="text-sm text-slate-500">Conversa indisponível.</p>
+  if (!organization || !conversationId) return <ErrorState title="Conversa indisponível." description="Volte para a lista de missões e abra o item novamente." />
   const correctionTarget = (missing: MissionConversationMissingContext) => {
     const resolved = resolveCorrectionTarget(missionMissingCorrectionTarget({ missing, organizationId: organization.id, conversationId }))
     return resolved.path ? { ...resolved, path: portalPath(resolved.path) } : resolved

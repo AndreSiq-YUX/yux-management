@@ -14,11 +14,11 @@ export function AutomationDryRunToggle({ flow, onToggle }: AutomationDryRunToggl
   const isDryRun = flow.riskLevel === 'test'
 
   return (
-    <section className="rounded-md border bg-white p-4 space-y-3">
+    <section className="rounded-md border bg-yx-surface p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <FlaskConical className="h-4 w-4 text-slate-600" />
-          <h2 className="text-base font-semibold text-slate-950">Modo Teste</h2>
+          <FlaskConical className="h-4 w-4 text-yx-fg-2" />
+          <h2 className="text-base font-semibold text-yx-fg">Modo de teste</h2>
         </div>
         <Badge variant={isDryRun ? 'default' : 'outline'} className="text-xs">
           {isDryRun ? 'Ativo' : 'Inativo'}
@@ -26,16 +26,16 @@ export function AutomationDryRunToggle({ flow, onToggle }: AutomationDryRunToggl
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs text-slate-600">
+        <p className="text-xs text-yx-fg-2">
           Quando ativado, o fluxo registrará o que faria sem executar as ações de verdade.
           Útil para testar a lógica antes de publicar.
         </p>
 
-        <div className="flex items-center justify-between rounded-md bg-slate-50 p-3">
+        <div className="flex items-center justify-between rounded-md bg-yx-surface-2 p-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-slate-900">Ativar modo teste</p>
-            <p className="text-xs text-slate-600">
-              O fluxo será executado em modo "dry-run", registrando as ações que seriam tomadas.
+            <p className="text-sm font-medium text-yx-fg">Ativar modo de teste</p>
+            <p className="text-xs text-yx-fg-2">
+              O fluxo será executado em modo de teste, registrando as ações que seriam tomadas.
             </p>
           </div>
           <Switch
@@ -45,9 +45,9 @@ export function AutomationDryRunToggle({ flow, onToggle }: AutomationDryRunToggl
         </div>
 
         {isDryRun && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="text-xs text-amber-900">
-              <span className="font-semibold">Modo teste ativo.</span> As ações não serão executadas, apenas registradas.
+          <div className="rounded-md border border-yx-warn-line bg-yx-warn-soft p-3">
+            <p className="text-xs text-yx-warn">
+              <span className="font-semibold">Modo de teste ativo.</span> As ações não serão executadas, apenas registradas.
               Verifique o histórico de execuções para ver o que o fluxo faria.
             </p>
           </div>

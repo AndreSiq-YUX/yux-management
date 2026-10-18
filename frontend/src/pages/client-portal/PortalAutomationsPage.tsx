@@ -1,3 +1,5 @@
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { EmptyState, ErrorState, SkeletonCard, SkeletonKpiGrid } from '@/components/portal-ui'
 import { AutomationsPage } from '@/pages/automations/AutomationsPage'
 import { usePlatformStore } from '@/stores/platformStore'
 
@@ -11,26 +13,29 @@ export function PortalAutomationsPage({ section }: { section: PortalAutomationSe
   }))
 
   if (isLoading) {
-    return <p className="text-sm text-gray-600">Carregando automacoes...</p>
+    return (
+      <div className="grid gap-6">
+        <SkeletonKpiGrid count={3} />
+        <SkeletonCard lines={4} />
+      </div>
+    )
   }
 
   if (!workspaceContext) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Automacoes</h1>
-        <p className="text-gray-600">{error || 'O contexto deste workspace nao esta disponivel.'}</p>
-      </div>
+      <PortalPage eyebrow="Automações" title="Automações">
+        <ErrorState title="Não foi possível abrir as automações" description={error || 'O contexto deste workspace não está disponível.'} />
+      </PortalPage>
     )
   }
 
   if (!workspaceContext.moduleKeys.includes('automations')) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Automacoes</h1>
-        <p className="text-gray-600">Modulo nao disponivel para este acesso.</p>
-      </div>
+      <PortalPage eyebrow="Automações" title="Automações">
+        <EmptyState title="Módulo não disponível para este acesso" description="As automações não fazem parte do plano contratado. Fale com a equipe YUX para incluí-las." />
+      </PortalPage>
     )
   }
 
-  return <AutomationsPage workspaceContext={workspaceContext} initialSection={section} />
+  return <AutomationsPage variant="portal" workspaceContext={workspaceContext} initialSection={section} />
 }

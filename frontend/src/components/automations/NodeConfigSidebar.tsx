@@ -419,17 +419,17 @@ export function NodeConfigSidebar({ open, onOpenChange, node, onUpdate, organiza
         </div>
 
         {attachments.length === 0 ? (
-          <p className="text-[10px] text-slate-500 italic">Nenhum arquivo anexado a este envio.</p>
+          <p className="text-[10px] text-yx-fg-3 italic">Nenhum arquivo anexado a este envio.</p>
         ) : (
           <div className="space-y-1">
             {attachments.map((file: any) => (
               <div
                 key={file.id}
-                className="flex items-center justify-between rounded border bg-slate-50 p-2 text-xs"
+                className="flex items-center justify-between rounded border bg-yx-surface-2 p-2 text-xs"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-4 w-4 text-slate-400 shrink-0" />
-                  <span className="truncate text-[11px] font-medium text-slate-700" title={file.name}>
+                  <FileText className="h-4 w-4 text-yx-fg-3 shrink-0" />
+                  <span className="truncate text-[11px] font-medium text-yx-fg-2" title={file.name}>
                     {file.name}
                   </span>
                 </div>
@@ -437,7 +437,7 @@ export function NodeConfigSidebar({ open, onOpenChange, node, onUpdate, organiza
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                  className="h-6 w-6 p-0 text-yx-crit hover:text-yx-crit"
                   onClick={() => handleRemoveAttachment(file.id)}
                 >
                   <X className="h-3.5 w-3.5" />
@@ -465,9 +465,9 @@ export function NodeConfigSidebar({ open, onOpenChange, node, onUpdate, organiza
 
   return (
     <>
-      <div className="fixed inset-y-0 right-0 z-40 w-80 border-l bg-white shadow-xl flex flex-col">
+      <div className="fixed inset-y-0 right-0 z-40 w-80 border-l bg-yx-surface shadow-xl flex flex-col">
         <header className="flex h-14 items-center justify-between border-b px-4">
-          <h3 className="text-sm font-bold text-slate-900">{translateTitle()}</h3>
+          <h3 className="text-sm font-bold text-yx-fg">{translateTitle()}</h3>
           <Button
             type="button"
             size="sm"
@@ -480,8 +480,8 @@ export function NodeConfigSidebar({ open, onOpenChange, node, onUpdate, organiza
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="text-[10px] text-slate-500">
-            <span className="font-semibold">ID do Bloco:</span> <code className="bg-slate-100 px-1 rounded">{node.id.slice(0, 8)}</code>
+          <div className="text-[10px] text-yx-fg-3">
+            <span className="font-semibold">ID do Bloco:</span> <code className="bg-yx-surface-2 px-1 rounded">{node.id.slice(0, 8)}</code>
           </div>
           {renderConfigFields()}
         </div>

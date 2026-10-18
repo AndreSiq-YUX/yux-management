@@ -39,6 +39,7 @@ describe('PortalAutomationsPage', () => {
     expect(automationPageSpy.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       workspaceContext,
       initialSection: 'Templates',
+      variant: 'portal',
     }))
     expect(document.body.textContent).toContain('workspace-real')
     act(() => root.unmount())
@@ -55,7 +56,7 @@ describe('PortalAutomationsPage', () => {
     act(() => root.render(<PortalAutomationsPage section="Automacoes" />))
 
     expect(automationPageSpy).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('Modulo nao disponivel')
+    expect(document.body.textContent).toContain('Módulo não disponível')
     act(() => root.unmount())
   })
 })

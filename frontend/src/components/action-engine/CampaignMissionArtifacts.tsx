@@ -23,18 +23,18 @@ export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalPro
   const providerState = String(providerData.providerState ?? 'preparing')
 
   return (
-    <section aria-labelledby="campaign-artifacts-title" className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-5 py-4">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">Campaign Launch</p>
-        <h2 id="campaign-artifacts-title" className="mt-1 font-semibold text-slate-950">Campanha preparada para revisão</h2>
-        <p className="mt-1 text-xs text-slate-500">Estratégia, peças, captação, tracking e estado no provedor em uma única revisão.</p>
+    <section aria-labelledby="campaign-artifacts-title" className="border border-yx-line bg-yx-surface">
+      <div className="border-b border-yx-line px-5 py-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-yx-blue">Campaign Launch</p>
+        <h2 id="campaign-artifacts-title" className="mt-1 font-semibold text-yx-fg">Campanha preparada para revisão</h2>
+        <p className="mt-1 text-xs text-yx-fg-3">Estratégia, peças, captação, tracking e estado no provedor em uma única revisão.</p>
       </div>
-      {!canWrite ? <p className="border-b border-blue-100 bg-blue-50 px-5 py-3 text-xs text-blue-800">Visualização somente leitura. A operação YUX controla publicação, orçamento e ativação.</p> : null}
+      {!canWrite ? <p className="border-b border-yx-line-strong bg-yx-blue-soft px-5 py-3 text-xs text-yx-blue">Visualização somente leitura. A operação YUX controla publicação, orçamento e ativação.</p> : null}
 
-      <div className="grid gap-px bg-slate-200 lg:grid-cols-3">
+      <div className="grid gap-px bg-yx-bar-track lg:grid-cols-3">
         <ArtifactSection icon={Megaphone} title="Brief e oferta" className="lg:col-span-2">
-          <p className="text-lg font-semibold text-slate-950">{String(briefData.name ?? brief?.title ?? 'Campanha')}</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{String(briefData.offer ?? 'Oferta aguardando definição.')}</p>
+          <p className="text-lg font-semibold text-yx-fg">{String(briefData.name ?? brief?.title ?? 'Campanha')}</p>
+          <p className="mt-2 text-sm leading-6 text-yx-fg-2">{String(briefData.offer ?? 'Oferta aguardando definição.')}</p>
           <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
             <Fact label="Objetivo" value={humanize(String(briefData.objective ?? ''))} />
             <Fact label="Plataforma" value={providerLabel(String(briefData.platform ?? providerData.provider ?? ''))} />
@@ -47,25 +47,25 @@ export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalPro
 
         <ArtifactSection icon={Gauge} title="Estado no provedor">
           <p className={`inline-flex border px-2.5 py-1 text-xs font-semibold ${providerTone(providerState)}`}>{providerStateLabel(providerState)}</p>
-          <p className="mt-3 text-xs leading-5 text-slate-600">A criação externa acontece pausada. A veiculação só começa depois da aprovação exata.</p>
+          <p className="mt-3 text-xs leading-5 text-yx-fg-2">A criação externa acontece pausada. A veiculação só começa depois da aprovação exata.</p>
           {providerData.providerReference ? <Fact label="Referência externa" value={String(providerData.providerReference)} mono={showTechnicalProof} /> : null}
           <Fact label="Aprovação de ativação" value={approvalLabel(String(providerData.activationApprovalStatus ?? 'not_requested'))} />
           {showTechnicalProof && providerData.activationSubjectHash ? <Fact label="Prova técnica" value={String(providerData.activationSubjectHash)} mono /> : null}
         </ArtifactSection>
 
         <ArtifactSection icon={Users} title="Público">
-          <p className="text-sm leading-6 text-slate-700">{String(audience?.data.rationale ?? 'Segmentação fundamentada no ICP publicado.')}</p>
+          <p className="text-sm leading-6 text-yx-fg-2">{String(audience?.data.rationale ?? 'Segmentação fundamentada no ICP publicado.')}</p>
           <KeyValues value={record(audience?.data.targeting)} />
-          {strings(audience?.data.exclusions).length ? <p className="mt-3 text-xs text-slate-500">Exclusões: {strings(audience?.data.exclusions).join(', ')}</p> : null}
+          {strings(audience?.data.exclusions).length ? <p className="mt-3 text-xs text-yx-fg-3">Exclusões: {strings(audience?.data.exclusions).join(', ')}</p> : null}
         </ArtifactSection>
 
         <ArtifactSection icon={Image} title={`Criativos (${creatives.length})`} className="lg:col-span-2">
           <div className="grid gap-3 sm:grid-cols-2">
             {creatives.map(creative => (
-              <article key={creative.key} className="border border-slate-200 bg-slate-50 p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{humanize(String(creative.data.format ?? 'peça'))}</p>
-                <h4 className="mt-2 text-sm font-semibold text-slate-900">{String(creative.data.headline ?? creative.title)}</h4>
-                <p className="mt-2 text-xs leading-5 text-slate-600">{String(creative.data.body ?? '')}</p>
+              <article key={creative.key} className="border border-yx-line bg-yx-surface-2 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-yx-fg-3">{humanize(String(creative.data.format ?? 'peça'))}</p>
+                <h4 className="mt-2 text-sm font-semibold text-yx-fg">{String(creative.data.headline ?? creative.title)}</h4>
+                <p className="mt-2 text-xs leading-5 text-yx-fg-2">{String(creative.data.body ?? '')}</p>
               </article>
             ))}
           </div>
@@ -77,7 +77,7 @@ export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalPro
         </ArtifactSection>
 
         <ArtifactSection icon={ShieldCheck} title="Tracking" className="lg:col-span-2">
-          <p className={`inline-flex border px-2.5 py-1 text-xs font-semibold ${tracking ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{tracking ? 'Plano de mensuração validado' : 'Tracking pendente'}</p>
+          <p className={`inline-flex border px-2.5 py-1 text-xs font-semibold ${tracking ? 'border-yx-ok-line bg-yx-ok-soft text-yx-ok' : 'border-yx-warn-line bg-yx-warn-soft text-yx-warn'}`}>{tracking ? 'Plano de mensuração validado' : 'Tracking pendente'}</p>
           <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
             <Fact label="UTM source" value={String(tracking?.data.utm_source ?? '—')} mono={showTechnicalProof} />
             <Fact label="UTM medium" value={String(tracking?.data.utm_medium ?? '—')} mono={showTechnicalProof} />
@@ -87,8 +87,8 @@ export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalPro
         </ArtifactSection>
 
         <ArtifactSection icon={ShieldCheck} title="Risco de ativação">
-          <p className="text-sm leading-6 text-slate-700">Ativar inicia gasto real no provedor. Alterações de orçamento e nova ativação exigem outra decisão.</p>
-          <p className="mt-3 text-xs font-semibold text-amber-800">Impacto: {creatives.length} criativo(s), 1 landing page, 1 formulário e mídia até {formatBrl(String(briefData.totalBudgetBrl ?? providerData.totalBudgetBrl ?? ''))}.</p>
+          <p className="text-sm leading-6 text-yx-fg-2">Ativar inicia gasto real no provedor. Alterações de orçamento e nova ativação exigem outra decisão.</p>
+          <p className="mt-3 text-xs font-semibold text-yx-warn">Impacto: {creatives.length} criativo(s), 1 landing page, 1 formulário e mídia até {formatBrl(String(briefData.totalBudgetBrl ?? providerData.totalBudgetBrl ?? ''))}.</p>
         </ArtifactSection>
       </div>
     </section>
@@ -96,11 +96,11 @@ export function CampaignMissionArtifacts({ artifacts, canWrite, showTechnicalPro
 }
 
 function ArtifactSection({ icon: Icon, title, children, className = '' }: { icon: typeof Megaphone; title: string; children: ReactNode; className?: string }) {
-  return <div className={`bg-white p-5 ${className}`}><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Icon className="h-4 w-4 text-blue-600" />{title}</div><div className="mt-4">{children}</div></div>
+  return <div className={`bg-yx-surface p-5 ${className}`}><div className="flex items-center gap-2 text-sm font-semibold text-yx-fg"><Icon className="h-4 w-4 text-yx-blue" />{title}</div><div className="mt-4">{children}</div></div>
 }
 
 function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <div className="mt-3 first:mt-0"><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</dt><dd className={`mt-1 break-all text-xs text-slate-700 ${mono ? 'font-mono' : 'font-medium'}`}>{value || '—'}</dd></div>
+  return <div className="mt-3 first:mt-0"><dt className="text-[10px] font-bold uppercase tracking-wide text-yx-fg-3">{label}</dt><dd className={`mt-1 break-all text-xs text-yx-fg-2 ${mono ? 'font-mono' : 'font-medium'}`}>{value || '—'}</dd></div>
 }
 
 function KeyValues({ value }: { value: Record<string, unknown> }) {
@@ -110,10 +110,10 @@ function KeyValues({ value }: { value: Record<string, unknown> }) {
 }
 
 function AssetLink({ icon: Icon, label, artifact, href }: { icon: typeof FileText; label: string; artifact?: MissionArtifact; href?: string }) {
-  const content = <><Icon className="h-4 w-4 text-blue-600" /><span><strong className="block text-xs text-slate-900">{label}</strong><span className="text-xs text-slate-500">{artifact ? `${artifact.title} · ${statusLabel(artifact.status)}` : 'Aguardando rascunho'}</span></span>{href ? <ExternalLink className="ml-auto h-3.5 w-3.5 text-slate-400" /> : null}</>
+  const content = <><Icon className="h-4 w-4 text-yx-blue" /><span><strong className="block text-xs text-yx-fg">{label}</strong><span className="text-xs text-yx-fg-3">{artifact ? `${artifact.title} · ${statusLabel(artifact.status)}` : 'Aguardando rascunho'}</span></span>{href ? <ExternalLink className="ml-auto h-3.5 w-3.5 text-yx-fg-3" /> : null}</>
   return href
-    ? <a className="mb-2 flex items-center gap-3 border border-slate-200 p-3 hover:border-blue-300" href={href} target="_blank" rel="noreferrer">{content}</a>
-    : <div className="mb-2 flex items-center gap-3 border border-slate-200 p-3">{content}</div>
+    ? <a className="mb-2 flex items-center gap-3 border border-yx-line p-3 hover:border-yx-line-strong" href={href} target="_blank" rel="noreferrer">{content}</a>
+    : <div className="mb-2 flex items-center gap-3 border border-yx-line p-3">{content}</div>
 }
 
 function byKind(artifacts: MissionArtifact[], kind: MissionArtifact['kind']) { return artifacts.find(artifact => artifact.kind === kind) }
@@ -124,5 +124,5 @@ function humanize(value: string) { return value.replace(/_/g, ' ').replace(/^./,
 function providerLabel(value: string) { return value.toLowerCase() === 'meta' ? 'Meta Ads' : value.toLowerCase() === 'google' ? 'Google Ads' : value || '—' }
 function statusLabel(value: MissionArtifact['status']) { return value === 'published' ? 'publicado' : value === 'draft' ? 'rascunho' : 'proposto' }
 function providerStateLabel(value: string) { return value === 'active' ? 'Ativa' : value === 'provider_paused' || value === 'paused' ? 'Criada e pausada' : 'Em preparação' }
-function providerTone(value: string) { return value === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : value.includes('paused') ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-700' }
+function providerTone(value: string) { return value === 'active' ? 'border-yx-ok-line bg-yx-ok-soft text-yx-ok' : value.includes('paused') ? 'border-yx-warn-line bg-yx-warn-soft text-yx-warn' : 'border-yx-line bg-yx-surface-2 text-yx-fg-2' }
 function approvalLabel(value: string) { return value === 'approved' ? 'Aprovada' : value === 'pending' ? 'Aguardando sua decisão' : 'Ainda não solicitada' }

@@ -30,13 +30,37 @@ describe('AutomationWorkspace', () => {
       root.render(<AutomationWorkspace flows={[]} />)
     })
 
-    expect(container.innerHTML).toContain('Automacoes Inteligentes')
-    expect(container.innerHTML).toContain('Dashboard')
-    expect(container.innerHTML).toContain('Automacoes')
-    expect(container.innerHTML).toContain('Sequencias')
-    expect(container.innerHTML).toContain('Templates')
-    expect(container.innerHTML).toContain('Execucoes')
-    expect(container.innerHTML).toContain('Configuracoes')
+    expect(container.innerHTML).toContain('Automações Inteligentes')
+    expect(container.textContent).toContain('Fluxos, sequências, modelos, execuções e e-mails.')
+    expect(container.textContent).not.toContain('YUX Hub')
+    expect(container.innerHTML).toContain('Painel')
+    expect(container.innerHTML).toContain('Automações')
+    expect(container.innerHTML).toContain('Sequências')
+    expect(container.innerHTML).toContain('Modelos')
+    expect(container.innerHTML).toContain('Execuções')
+    expect(container.innerHTML).toContain('Configurações')
+
+    act(() => root.unmount())
+  })
+
+  it('marks the run reprocess action as pending without executing anything', () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<AutomationWorkspace flows={[flow]} />)
+    })
+    act(() => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Execuções'))!.click()
+    })
+    act(() => {
+      container.querySelector<HTMLElement>('article div.cursor-pointer')!.click()
+    })
+
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Reprocessar'))
+    expect(retry).toBeTruthy()
+    expect(retry!.textContent).toContain('Pendente')
+    expect(container.textContent).not.toContain('Tentar novamente')
 
     act(() => root.unmount())
   })
@@ -50,12 +74,12 @@ describe('AutomationWorkspace', () => {
     })
 
     act(() => {
-      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Configuracoes'))!.click()
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Configurações'))!.click()
     })
     expect(container.innerHTML).toContain('Configuracoes de email')
 
     act(() => {
-      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Templates'))!.click()
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Modelos'))!.click()
     })
     expect(container.innerHTML).toContain('Modelos setoriais')
 

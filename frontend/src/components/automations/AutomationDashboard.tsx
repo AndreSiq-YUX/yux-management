@@ -52,7 +52,7 @@ export function AutomationDashboard({ flows }: AutomationDashboardProps) {
       }))
   }, [flows])
 
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6b7280']
+  const COLORS = ['var(--yx-blue)', 'var(--yx-ok)', 'var(--yx-warn)', 'var(--yx-crit)', 'var(--yx-fg-3)']
 
   return (
     <section className="space-y-4">
@@ -60,33 +60,33 @@ export function AutomationDashboard({ flows }: AutomationDashboardProps) {
         <MetricCard
           label="Fluxos ativos"
           value={metrics.activeFlows}
-          icon={<Activity className="h-5 w-5 text-blue-600" />}
+          icon={<Activity className="h-5 w-5 text-yx-blue" />}
           color="blue"
         />
         <MetricCard
           label="Execuções hoje"
           value={metrics.totalExecutions}
-          icon={<TrendingUp className="h-5 w-5 text-green-600" />}
+          icon={<TrendingUp className="h-5 w-5 text-yx-ok" />}
           color="green"
         />
         <MetricCard
           label="Taxa de sucesso"
           value={`${metrics.successRate}%`}
-          icon={<CheckCircle className="h-5 w-5 text-emerald-600" />}
+          icon={<CheckCircle className="h-5 w-5 text-yx-ok" />}
           color="emerald"
         />
         <MetricCard
           label="Último erro"
           value={metrics.lastError ? 'Sim' : 'Não'}
-          icon={<AlertCircle className="h-5 w-5 text-red-600" />}
+          icon={<AlertCircle className="h-5 w-5 text-yx-crit" />}
           color="red"
           subtitle={metrics.lastError}
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-md border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">Fluxos por status</h3>
+        <div className="rounded-md border bg-yx-surface p-4">
+          <h3 className="mb-3 text-sm font-semibold text-yx-fg">Fluxos por status</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie
@@ -107,16 +107,16 @@ export function AutomationDashboard({ flows }: AutomationDashboardProps) {
           </ResponsiveContainer>
         </div>
 
-        <div className="rounded-md border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">Top 5 fluxos por execuções</h3>
+        <div className="rounded-md border bg-yx-surface p-4">
+          <h3 className="mb-3 text-sm font-semibold text-yx-fg">Top 5 fluxos por execuções</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={executionsByFlow}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip />
-              <Bar dataKey="success" fill="#10b981" name="Sucesso" />
-              <Bar dataKey="failed" fill="#ef4444" name="Falha" />
+              <Bar dataKey="success" fill="var(--yx-ok)" name="Sucesso" />
+              <Bar dataKey="failed" fill="var(--yx-crit)" name="Falha" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -139,19 +139,19 @@ function MetricCard({
   subtitle?: string
 }) {
   const colorClasses = {
-    blue: 'bg-blue-50 border-blue-200',
-    green: 'bg-green-50 border-green-200',
-    emerald: 'bg-emerald-50 border-emerald-200',
-    red: 'bg-red-50 border-red-200',
+    blue: 'bg-yx-blue-soft border-yx-line-strong',
+    green: 'bg-yx-ok-soft border-yx-ok-line',
+    emerald: 'bg-yx-ok-soft border-yx-ok-line',
+    red: 'bg-yx-crit-soft border-yx-crit-line',
   }
 
   return (
     <div className={`rounded-md border p-4 ${colorClasses[color]}`}>
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-xs font-medium text-slate-600">{label}</p>
-          <p className="text-2xl font-bold text-slate-900">{value}</p>
-          {subtitle && <p className="text-xs text-slate-500 truncate max-w-[200px]">{subtitle}</p>}
+          <p className="text-xs font-medium text-yx-fg-2">{label}</p>
+          <p className="text-2xl font-bold text-yx-fg">{value}</p>
+          {subtitle && <p className="text-xs text-yx-fg-3 truncate max-w-[200px]">{subtitle}</p>}
         </div>
         {icon}
       </div>

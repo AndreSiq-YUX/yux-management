@@ -17,6 +17,7 @@ import { AutomationVersionPanel } from './AutomationVersionPanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { CrmIntegrationPreview } from './CrmIntegrationPreview'
 import { EmailSettingsPanel } from './EmailSettingsPanel'
+import { PortalAutomationWorkspace } from './PortalAutomationWorkspace'
 import { SequencesWorkspace } from './SequencesWorkspace'
 import { GrowthTemplateLibrary } from '@/components/growth-workspace/GrowthTemplateLibrary'
 import { automationObjectiveTemplates, getSectorTemplate } from '@/lib/automations/sectorTemplateCatalog'
@@ -26,7 +27,9 @@ import type { WorkspaceContextV1 } from '@/types/generated/workspace'
 
 import type { ReactNode } from 'react'
 
-interface AutomationWorkspaceProps {
+export interface AutomationWorkspaceProps {
+  /** `portal` = visual do Portal do Cliente (porta de entrada por modelos + Modo avançado); `default` = tela interna (Hub YUX). */
+  variant?: 'default' | 'portal'
   flows: AutomationFlow[]
   workspaceContext?: WorkspaceContextV1
   initialSection?: AutomationSection
@@ -52,7 +55,6 @@ interface AutomationWorkspaceProps {
   onReorderActions?: (flowId: string, actions: AutomationAction[]) => void
   onSaveSimulation?: (result: { flowId: string; eventType: string; samplePayload: Record<string, unknown>; matched: boolean; conditionResults: unknown[]; plannedActions: unknown[]; blockedReasons: string[] }) => void
   onRollbackVersion?: (flowId: string, versionId: string, versionNumber: number) => void
-  onRetryExecution?: (runId: string) => void
   onCreateFromTemplate?: (templateKey: string) => void
   onToggleDryRun?: (flowId: string, dryRun: boolean) => void
   onCreateSequence?: (input: { name: string; description?: string; channel: AutomationSequenceChannel }) => void
@@ -66,16 +68,30 @@ interface AutomationWorkspaceProps {
 }
 
 const sections = ['Dashboard', 'Automacoes', 'Sequencias', 'Templates', 'Execucoes', 'Configuracoes'] as const
-type AutomationSection = typeof sections[number]
+export type AutomationSection = typeof sections[number]
+
+const sectionLabels: Record<AutomationSection, string> = {
+  Dashboard: 'Painel',
+  Automacoes: 'Automações',
+  Sequencias: 'Sequências',
+  Templates: 'Modelos',
+  Execucoes: 'Execuções',
+  Configuracoes: 'Configurações',
+}
 
 const AutomationDashboard = lazy(() => import('./AutomationDashboard').then(module => ({ default: module.AutomationDashboard })))
 const AutomationNodeEditor = lazy(() => import('./AutomationNodeEditor').then(module => ({ default: module.AutomationNodeEditor })))
 
 function HeavyPanelFallback({ label }: { label: string }) {
-  return <div role="status" aria-live="polite" className="grid min-h-72 place-items-center rounded-md border bg-slate-50 text-sm text-slate-500">{label}</div>
+  return <div role="status" aria-live="polite" className="grid min-h-72 place-items-center rounded-md border bg-yx-surface-2 text-sm text-yx-fg-3">{label}</div>
 }
 
-export function AutomationWorkspace({
+export function AutomationWorkspace(props: AutomationWorkspaceProps) {
+  if (props.variant === 'portal') return <PortalAutomationWorkspace {...props} />
+  return <InternalAutomationWorkspace {...props} />
+}
+
+function InternalAutomationWorkspace({
   flows,
   workspaceContext,
   initialSection = 'Automacoes',
@@ -101,7 +117,6 @@ export function AutomationWorkspace({
   onReorderActions,
   onSaveSimulation,
   onRollbackVersion,
-  onRetryExecution,
   onCreateFromTemplate,
   onToggleDryRun,
   onCreateSequence,
@@ -174,8 +189,8 @@ export function AutomationWorkspace({
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Automacoes Inteligentes</h1>
-          <p className="text-sm text-gray-600">Fluxos, sequencias, templates, execucoes e emails do YUX Hub.</p>
+          <h1 className="text-2xl font-bold text-yx-fg">Automações Inteligentes</h1>
+          <p className="text-sm text-yx-fg-2">Fluxos, sequências, modelos, execuções e e-mails.</p>
         </div>
         <Button type="button" title="Criar fluxo" disabled={actionsDisabled} onClick={() => setCreateDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
@@ -183,7 +198,7 @@ export function AutomationWorkspace({
         </Button>
       </header>
 
-      <nav className="flex flex-wrap gap-2 rounded-md border bg-white p-2" aria-label="Areas de automacao">
+      <nav className="flex flex-wrap gap-2 rounded-md border bg-yx-surface p-2" aria-label="Áreas de automação">
         {sections.map(section => (
           <Button
             key={section}
@@ -193,7 +208,7 @@ export function AutomationWorkspace({
             aria-pressed={section === activeSection}
             onClick={() => setActiveSection(section)}
           >
-            {section}
+            {sectionLabels[section]}
           </Button>
         ))}
       </nav>
@@ -207,20 +222,20 @@ export function AutomationWorkspace({
       )}
 
       {workspaceContext && !workspaceContext.canConfigure && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="rounded-md border border-yx-warn-line bg-yx-warn-soft px-3 py-2 text-sm text-yx-warn">
           Este workspace permite consultar automações, mas somente um administrador pode alterá-las.
         </div>
       )}
 
-      <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-white lg:grid-cols-[340px_1fr]">
+      <div className="grid min-h-[680px] overflow-hidden rounded-md border bg-yx-surface lg:grid-cols-[340px_1fr]">
         <aside className="border-r">
           <div className="border-b p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-900">Fluxos</h2>
-              <p className="text-xs text-gray-500">{flows.length} total</p>
+              <h2 className="text-sm font-semibold text-yx-fg">Fluxos</h2>
+              <p className="text-xs text-yx-fg-3">{flows.length} total</p>
             </div>
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-yx-fg-3" />
               <Input
                 className="h-8 pl-7 text-xs"
                 placeholder="Buscar fluxos..."
@@ -246,8 +261,8 @@ export function AutomationWorkspace({
           </div>
 
           {selectedFlowIds.size > 0 && (
-            <div className="flex items-center justify-between border-b bg-blue-50 px-3 py-2">
-              <span className="text-xs font-medium text-blue-900">{selectedFlowIds.size} selecionado(s)</span>
+            <div className="flex items-center justify-between border-b bg-yx-blue-soft px-3 py-2">
+              <span className="text-xs font-medium text-yx-blue">{selectedFlowIds.size} selecionado(s)</span>
               <div className="flex gap-1">
                 <Button
                   type="button"
@@ -288,7 +303,7 @@ export function AutomationWorkspace({
 
           <div className="divide-y overflow-y-auto max-h-[calc(680px-180px)]">
             {filteredFlows.length === 0 && (
-              <div className="p-4 text-center text-sm text-gray-500">
+              <div className="p-4 text-center text-sm text-yx-fg-3">
                 {flows.length === 0 ? (
                   <div className="space-y-2">
                     <p>Nenhum fluxo criado.</p>
@@ -302,7 +317,7 @@ export function AutomationWorkspace({
             {filteredFlows.map(flow => (
               <article
                 key={flow.id}
-                className={`cursor-pointer space-y-2 p-3 transition-colors hover:bg-slate-50 ${selected?.id === flow.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''}`}
+                className={`cursor-pointer space-y-2 p-3 transition-colors hover:bg-yx-surface-2 ${selected?.id === flow.id ? 'bg-yx-blue-soft border-l-2 border-l-blue-500' : ''}`}
                 onClick={() => handleSelectFlow(flow.id)}
               >
                 <div className="flex items-start gap-2">
@@ -312,23 +327,23 @@ export function AutomationWorkspace({
                     onClick={e => { e.stopPropagation(); toggleFlowSelection(flow.id) }}
                   >
                     {selectedFlowIds.has(flow.id) ? (
-                      <CheckSquare className="h-4 w-4 text-blue-600" />
+                      <CheckSquare className="h-4 w-4 text-yx-blue" />
                     ) : (
-                      <Square className="h-4 w-4 text-gray-400" />
+                      <Square className="h-4 w-4 text-yx-fg-3" />
                     )}
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">{flow.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{flow.description || 'Sem descricao'}</p>
+                        <p className="text-sm font-medium text-yx-fg truncate">{flow.name}</p>
+                        <p className="text-xs text-yx-fg-3 truncate">{flow.description || 'Sem descricao'}</p>
                       </div>
                       <Badge variant={flow.status === 'published' ? 'default' : 'secondary'} className="shrink-0">{flow.status}</Badge>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                      <span className={flow.isEnabled ? 'text-green-600' : 'text-gray-400'}>{flow.isEnabled ? 'Ativo' : 'Inativo'}</span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-yx-fg-2">
+                      <span className={flow.isEnabled ? 'text-yx-ok' : 'text-yx-fg-3'}>{flow.isEnabled ? 'Ativo' : 'Inativo'}</span>
                       {flow.sectorTemplateKey && <Badge variant="outline" className="text-xs">{flow.sectorTemplateKey}</Badge>}
-                      {flow.lastError && <span className="text-red-600 truncate">{flow.lastError}</span>}
+                      {flow.lastError && <span className="text-yx-crit truncate">{flow.lastError}</span>}
                     </div>
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                       <Button type="button" size="sm" variant="outline" title="Alternar fluxo" disabled={actionsDisabled} onClick={() => onToggleFlow?.(flow.id, !flow.isEnabled)}>
@@ -339,11 +354,11 @@ export function AutomationWorkspace({
                         <Play className="mr-1 h-3 w-3" />
                         Publicar
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" title="Duplicar" disabled={actionsDisabled} onClick={() => onDuplicateFlow?.(flow.id)}>
+                      <Button type="button" size="sm" variant="ghost" title="Duplicar" aria-label="Duplicar fluxo" disabled={actionsDisabled} onClick={() => onDuplicateFlow?.(flow.id)}>
                         <Copy className="h-3 w-3" />
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" title="Excluir" disabled={actionsDisabled} onClick={() => { setDeleteConfirmFlowId(flow.id); setDeleteConfirmOpen(true) }}>
-                        <Trash2 className="h-3 w-3 text-red-500" />
+                      <Button type="button" size="sm" variant="ghost" title="Excluir" aria-label="Excluir fluxo" disabled={actionsDisabled} onClick={() => { setDeleteConfirmFlowId(flow.id); setDeleteConfirmOpen(true) }}>
+                        <Trash2 className="h-3 w-3 text-yx-crit" />
                       </Button>
                     </div>
                   </div>
@@ -366,7 +381,7 @@ export function AutomationWorkspace({
           )}
         </aside>
 
-        <main className="min-w-0 overflow-y-auto p-4">
+        <div className="min-w-0 overflow-y-auto p-4">
           {activeSection === 'Dashboard' && (
             <Suspense fallback={<HeavyPanelFallback label="Carregando indicadores..." />}>
               <AutomationDashboard flows={flows} />
@@ -383,8 +398,8 @@ export function AutomationWorkspace({
               {selected && (
                 <div className="flex flex-wrap items-center justify-between border-b pb-3 gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase">Modo de Edição:</span>
-                    <div className="flex rounded border bg-slate-50 p-0.5">
+                    <span className="text-xs font-semibold text-yx-fg-3 uppercase">Modo de Edição:</span>
+                    <div className="flex rounded border bg-yx-surface-2 p-0.5">
                       <Button
                         type="button"
                         size="sm"
@@ -454,8 +469,8 @@ export function AutomationWorkspace({
                 onRollback={(versionId, versionNumber) => selected && onRollbackVersion?.(selected.id, versionId, versionNumber)}
               />
               <AutomationAuditTrail flow={selected || flows[0]} />
-              {selected ? <FlowDetails flow={selected} onRetryExecution={onRetryExecution} /> : (
-                <section className="flex min-h-[320px] items-center justify-center rounded-md border bg-slate-50 text-sm text-gray-500">Nenhum fluxo configurado.</section>
+              {selected ? <FlowDetails flow={selected} /> : (
+                <section className="flex min-h-[320px] items-center justify-center rounded-md border bg-yx-surface-2 text-sm text-yx-fg-3">Nenhum fluxo configurado.</section>
               )}
               {selected && <AutomationRealtime flowId={selected.id} />}
             </div>
@@ -472,9 +487,9 @@ export function AutomationWorkspace({
             />
           )}
           {activeSection === 'Templates' && <AutomationTemplatesPanel onCreateFromTemplate={onCreateFromTemplate} />}
-          {activeSection === 'Execucoes' && <AutomationExecutionsWorkspace runs={selected?.executionRuns || []} onRetry={onRetryExecution} />}
+          {activeSection === 'Execucoes' && <AutomationExecutionsWorkspace runs={selected?.executionRuns || []} />}
           {activeSection === 'Configuracoes' && <EmailSettingsPanel />}
-        </main>
+        </div>
       </div>
 
       <AutomationCreateDialog
@@ -544,11 +559,11 @@ function AutomationObjectivePanel({
   disabled?: boolean
 }) {
   return (
-    <section className="rounded-md border bg-slate-50 p-4">
+    <section className="rounded-md border bg-yx-surface-2 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold text-slate-950">O que voce deseja automatizar?</h2>
-          <p className="mt-1 text-sm text-slate-600">Escolha primeiro o objetivo. Depois ajuste trigger, condicoes e acoes no builder.</p>
+          <h2 className="font-semibold text-yx-fg">O que você deseja automatizar?</h2>
+          <p className="mt-1 text-sm text-yx-fg-2">Escolha primeiro o objetivo. Depois ajuste gatilho, condições e ações no construtor.</p>
         </div>
         <Badge variant="secondary">{automationObjectiveTemplates.length} objetivos</Badge>
       </div>
@@ -556,16 +571,16 @@ function AutomationObjectivePanel({
         {automationObjectiveTemplates.map(template => (
           <article
             key={template.key}
-            className={`rounded-md border bg-white p-3 ${selectedKey === template.key ? 'border-slate-950 shadow-sm' : ''}`}
+            className={`rounded-md border bg-yx-surface p-3 ${selectedKey === template.key ? 'border-yx-fg-3 shadow-sm' : ''}`}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="font-medium text-slate-950">{template.label}</p>
-                <p className="mt-1 text-xs text-slate-500">{template.channel || 'crm'} - {template.requiredModuleKeys?.join(', ')}</p>
+                <p className="font-medium text-yx-fg">{template.label}</p>
+                <p className="mt-1 text-xs text-yx-fg-3">{template.channel || 'crm'} - {template.requiredModuleKeys?.join(', ')}</p>
               </div>
               {!template.portalVisible && <Badge variant="outline">Interno</Badge>}
             </div>
-            <p className="mt-2 min-h-[48px] text-sm text-slate-600">{template.description}</p>
+            <p className="mt-2 min-h-[48px] text-sm text-yx-fg-2">{template.description}</p>
             <div className="mt-3 flex gap-2">
               <Button type="button" size="sm" variant="outline" onClick={() => onSelect(template.key)}>
                 Selecionar
@@ -591,14 +606,14 @@ function AutomationNotice({
   onRetry?: () => void
 }) {
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-yx-warn-line bg-yx-warn-soft p-3">
       <div className="flex items-start gap-2">
-        <AlertCircle className="mt-0.5 h-4 w-4 text-amber-700" />
+        <AlertCircle className="mt-0.5 h-4 w-4 text-yx-warn" />
         <div>
-          <h2 className="text-sm font-semibold text-amber-950">
+          <h2 className="text-sm font-semibold text-yx-warn">
             {backendUnavailable ? 'Backend de automacoes pendente' : 'Automacoes indisponiveis neste contexto'}
           </h2>
-          <p className="text-sm text-amber-800">{description}</p>
+          <p className="text-sm text-yx-warn">{description}</p>
         </div>
       </div>
       {onRetry && (
@@ -617,12 +632,12 @@ function AutomationTemplatesPanel({ onCreateFromTemplate }: { onCreateFromTempla
         initialFilters={{ moduleKey: 'automations', portalVisibleOnly: true }}
         onSelectTemplate={template => onCreateFromTemplate?.(template.id)}
       />
-      <section className="rounded-md border bg-white p-4 space-y-4">
+      <section className="rounded-md border bg-yx-surface p-4 space-y-4">
         <div className="flex items-start gap-2">
-          <Layers3 className="mt-0.5 h-4 w-4 text-slate-600" />
+          <Layers3 className="mt-0.5 h-4 w-4 text-yx-fg-2" />
           <div>
-            <h2 className="text-base font-semibold text-slate-950">Modelos setoriais</h2>
-            <p className="text-sm text-slate-600">Modelos setoriais prontos para uso. Clique para criar um fluxo a partir do template.</p>
+            <h2 className="text-base font-semibold text-yx-fg">Modelos setoriais</h2>
+            <p className="text-sm text-yx-fg-2">Modelos setoriais prontos para uso. Clique para criar um fluxo a partir do template.</p>
           </div>
         </div>
         <div className="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-3">
@@ -630,13 +645,13 @@ function AutomationTemplatesPanel({ onCreateFromTemplate }: { onCreateFromTempla
             const template = getSectorTemplate(templateKey)
             if (!template) return null
             return (
-              <div key={templateKey} className="rounded-md border bg-slate-50 p-3 space-y-2">
+              <div key={templateKey} className="rounded-md border bg-yx-surface-2 p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="font-semibold text-slate-900">{template.label}</p>
+                  <p className="font-semibold text-yx-fg">{template.label}</p>
                   <Badge variant="outline" className="text-xs">{templateKey}</Badge>
                 </div>
-                <p className="text-xs text-slate-600">{template.description}</p>
-                <div className="text-xs text-slate-500">
+                <p className="text-xs text-yx-fg-2">{template.description}</p>
+                <div className="text-xs text-yx-fg-3">
                   {template.triggers.length} trigger(s), {template.conditions.length} condicao(oes), {template.actions.length} acao(oes)
                 </div>
                 <Button
@@ -658,17 +673,17 @@ function AutomationTemplatesPanel({ onCreateFromTemplate }: { onCreateFromTempla
   )
 }
 
-function FlowDetails({ flow, onRetryExecution }: { flow: AutomationFlow; onRetryExecution?: (runId: string) => void }) {
+function FlowDetails({ flow }: { flow: AutomationFlow }) {
   const crmActions = flow.actions.filter(a => ['change_stage', 'assign_owner', 'create_task'].includes(a.actionType))
   const aiActions = flow.actions.filter(a => a.actionType.startsWith('ai_'))
 
   return (
     <div className="space-y-4">
-      <section className="rounded-md border bg-gray-50 p-4">
+      <section className="rounded-md border bg-yx-surface-2 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">{flow.name}</h2>
-            <p className="text-sm text-gray-600">{flow.description || 'Fluxo sem descricao.'}</p>
+            <h2 className="text-lg font-semibold text-yx-fg">{flow.name}</h2>
+            <p className="text-sm text-yx-fg-2">{flow.description || 'Fluxo sem descricao.'}</p>
           </div>
           <div className="flex gap-2">
             <Badge>{flow.status}</Badge>
@@ -679,13 +694,13 @@ function FlowDetails({ flow, onRetryExecution }: { flow: AutomationFlow; onRetry
 
       <div className="grid gap-4 lg:grid-cols-3">
         <BlockList title="Trigger" icon={<GitBranch className="h-4 w-4" />} items={flow.triggers.map(trigger => `${trigger.triggerType} ${formatPayload(trigger.config)}`)} />
-        <BlockList title="Condicoes" icon={<Workflow className="h-4 w-4" />} items={flow.conditions.map(condition => `${condition.field} ${condition.operator} ${condition.value ?? ''}`)} />
-        <BlockList title="Acoes" icon={<Play className="h-4 w-4" />} items={flow.actions.sort((left, right) => left.orderIndex - right.orderIndex).map(action => `${action.orderIndex}. ${action.actionType} ${formatPayload(action.payload)}`)} />
+        <BlockList title="Condições" icon={<Workflow className="h-4 w-4" />} items={flow.conditions.map(condition => `${condition.field} ${condition.operator} ${condition.value ?? ''}`)} />
+        <BlockList title="Ações" icon={<Play className="h-4 w-4" />} items={flow.actions.sort((left, right) => left.orderIndex - right.orderIndex).map(action => `${action.orderIndex}. ${action.actionType} ${formatPayload(action.payload)}`)} />
       </div>
 
       {crmActions.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-slate-900">Integrações CRM</h3>
+          <h3 className="text-sm font-semibold text-yx-fg">Integrações CRM</h3>
           {crmActions.map(action => (
             <CrmIntegrationPreview key={action.id} action={action} />
           ))}
@@ -694,24 +709,24 @@ function FlowDetails({ flow, onRetryExecution }: { flow: AutomationFlow; onRetry
 
       {aiActions.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-slate-900">Ações de IA</h3>
+          <h3 className="text-sm font-semibold text-yx-fg">Ações de IA</h3>
           {aiActions.map(action => (
             <AiActionPreview key={action.id} action={action} />
           ))}
         </div>
       )}
 
-      <AutomationExecutionsWorkspace runs={flow.executionRuns} onRetry={onRetryExecution} />
+      <AutomationExecutionsWorkspace runs={flow.executionRuns} />
     </div>
   )
 }
 
 function BlockList({ title, icon, items }: { title: string; icon: ReactNode; items: string[] }) {
   return (
-    <section className="rounded-md border bg-white">
-      <header className="flex items-center gap-2 border-b px-3 py-2 text-sm font-semibold text-gray-900">{icon}{title}</header>
-      <div className="space-y-2 p-3 text-sm text-gray-600">
-        {items.length ? items.map(item => <div key={item} className="rounded-md bg-gray-50 px-2 py-1">{item}</div>) : <div>Sem bloco configurado</div>}
+    <section className="rounded-md border bg-yx-surface">
+      <header className="flex items-center gap-2 border-b px-3 py-2 text-sm font-semibold text-yx-fg">{icon}{title}</header>
+      <div className="space-y-2 p-3 text-sm text-yx-fg-2">
+        {items.length ? items.map(item => <div key={item} className="rounded-md bg-yx-surface-2 px-2 py-1">{item}</div>) : <div>Sem bloco configurado</div>}
       </div>
     </section>
   )

@@ -51,9 +51,9 @@ export function AutomationCreateDialog({ open, onOpenChange, onSubmit, disabled 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Novo fluxo de automacao</DialogTitle>
+          <DialogTitle>Novo fluxo de automação</DialogTitle>
           <DialogDescription>
-            Configure o nome, descricao e template inicial do fluxo.
+            Configure o nome, a descrição e o modelo inicial do fluxo.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -68,7 +68,7 @@ export function AutomationCreateDialog({ open, onOpenChange, onSubmit, disabled 
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="flow-description">Descricao</Label>
+            <Label htmlFor="flow-description">Descrição</Label>
             <Textarea
               id="flow-description"
               placeholder="Descreva o objetivo deste fluxo..."
@@ -77,10 +77,10 @@ export function AutomationCreateDialog({ open, onOpenChange, onSubmit, disabled 
             />
           </div>
           <div className="space-y-2">
-            <Label>Template setorial</Label>
+            <Label>Modelo por setor</Label>
             <Select value={sectorTemplateKey} onValueChange={setSectorTemplateKey}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione um template ou comece do zero" />
+                <SelectValue placeholder="Selecione um modelo ou comece do zero" />
               </SelectTrigger>
               <SelectContent>
                 {sectorTemplates.map(template => (
@@ -93,11 +93,11 @@ export function AutomationCreateDialog({ open, onOpenChange, onSubmit, disabled 
           </div>
 
           {selectedTemplate && (
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2">
-              <p className="text-xs font-semibold text-blue-900">{selectedTemplate.label}</p>
-              <p className="text-xs text-blue-800">{selectedTemplate.description}</p>
-              <div className="text-xs text-blue-700">
-                <p>{selectedTemplate.triggers.length} trigger(s), {selectedTemplate.conditions.length} condicao(oes), {selectedTemplate.actions.length} acao(oes)</p>
+            <div className="rounded-md border border-yx-line-strong bg-yx-blue-soft p-3 space-y-2">
+              <p className="text-xs font-semibold text-yx-blue">{selectedTemplate.label}</p>
+              <p className="text-xs text-yx-blue">{selectedTemplate.description}</p>
+              <div className="text-xs text-yx-blue">
+                <p>{selectedTemplate.triggers.length} gatilho(s), {selectedTemplate.conditions.length} condição(ões), {selectedTemplate.actions.length} ação(ões)</p>
               </div>
             </div>
           )}

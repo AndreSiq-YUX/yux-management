@@ -17,20 +17,20 @@ interface AutomationOnboardingProps {
 const steps = [
   {
     icon: GitBranch,
-    title: '1. Escolha o Trigger (Quando)',
+    title: '1. Escolha o gatilho (Quando)',
     description: 'Selecione o evento que inicia a automação. Ex: quando um lead é criado, quando muda de etapa, quando uma proposta é aprovada.',
     tip: 'Dica: Comece com "Lead criado" para automações simples de follow-up.',
   },
   {
     icon: Workflow,
-    title: '2. Defina as Condições (Se)',
+    title: '2. Defina as condições (Se)',
     description: 'Adicione filtros para controlar quando a automação deve executar. Ex: apenas se a origem for Instagram, apenas se o valor for maior que 1000.',
-    tip: 'Dica: Condições são opcionais. Sem condições, a automação executa sempre que o trigger ocorre.',
+    tip: 'Dica: Condições são opcionais. Sem condições, a automação executa sempre que o gatilho ocorre.',
   },
   {
     icon: Play,
-    title: '3. Configure as Ações (Então)',
-    description: 'Defina o que acontece quando o trigger dispara e as condições são satisfeitas. Ex: criar tarefa, enviar WhatsApp, mover etapa.',
+    title: '3. Configure as ações (Então)',
+    description: 'Defina o que acontece quando o gatilho dispara e as condições são satisfeitas. Ex: criar tarefa, enviar WhatsApp, mover etapa.',
     tip: 'Dica: Você pode adicionar múltiplas ações. Elas executam na ordem definida.',
   },
 ]
@@ -61,8 +61,8 @@ export function AutomationOnboarding({ open, onOpenChange, onCreateFlow }: Autom
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-lg">Bem-vindo às Automações Inteligentes</DialogTitle>
-            <Button type="button" variant="ghost" size="sm" onClick={handleSkip}>
+            <DialogTitle className="text-lg">Bem-vindo às automações</DialogTitle>
+            <Button type="button" variant="ghost" size="sm" onClick={handleSkip} aria-label="Pular a introdução">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -75,7 +75,7 @@ export function AutomationOnboarding({ open, onOpenChange, onCreateFlow }: Autom
               <div
                 key={index}
                 className={`h-1 flex-1 rounded-full ${
-                  index <= currentStep ? 'bg-blue-600' : 'bg-slate-200'
+                  index <= currentStep ? 'bg-yx-blue' : 'bg-yx-bar-track'
                 }`}
               />
             ))}
@@ -84,17 +84,17 @@ export function AutomationOnboarding({ open, onOpenChange, onCreateFlow }: Autom
           {/* Step content */}
           <div className="space-y-4">
             <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100">
-                <Icon className="h-6 w-6 text-blue-600" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-yx-blue-soft">
+                <Icon className="h-6 w-6 text-yx-blue" />
               </div>
               <div className="space-y-2">
-                <h3 className="font-semibold text-slate-900">{step.title}</h3>
-                <p className="text-sm text-slate-600">{step.description}</p>
+                <h3 className="font-semibold text-yx-fg">{step.title}</h3>
+                <p className="text-sm text-yx-fg-2">{step.description}</p>
               </div>
             </div>
 
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-              <p className="text-xs text-amber-900">{step.tip}</p>
+            <div className="rounded-lg bg-yx-warn-soft border border-yx-warn-line p-3">
+              <p className="text-xs text-yx-warn">{step.tip}</p>
             </div>
           </div>
 
@@ -120,7 +120,7 @@ export function AutomationOnboarding({ open, onOpenChange, onCreateFlow }: Autom
             </Button>
           </div>
 
-          <p className="text-center text-xs text-slate-500">
+          <p className="text-center text-xs text-yx-fg-3">
             Passo {currentStep + 1} de {steps.length}
           </p>
         </div>

@@ -15,51 +15,51 @@ export interface SectorTemplate {
 export const sectorTemplateCatalog: SectorTemplate[] = [
   {
     key: 'clinic',
-    label: 'Clinica',
-    description: 'Follow-up para pacientes apos consulta. Cria tarefa e envia WhatsApp.',
+    label: 'Clínica',
+    description: 'Follow-up para pacientes após a consulta. Cria tarefa e envia WhatsApp.',
     triggers: [{ triggerType: 'lead.stage_changed', config: {} }],
     conditions: [{ field: 'source', operator: 'equals', value: 'clinic' }],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Follow-up pos-consulta', description: 'Verificar satisfacao do paciente' } },
-      { actionType: 'send_whatsapp', payload: { body: 'Ola! Como esta se sentindo apos a consulta?' } },
+      { actionType: 'create_task', payload: { title: 'Follow-up pós-consulta', description: 'Verificar satisfação do paciente' } },
+      { actionType: 'send_whatsapp', payload: { body: 'Olá! Como está se sentindo após a consulta?' } },
     ],
   },
   {
     key: 'real_estate',
-    label: 'Imobiliaria',
-    description: 'Lead de imovel visitado. Cria tarefa para corretor e registra atividade.',
+    label: 'Imobiliária',
+    description: 'Lead de imóvel visitado. Cria tarefa para corretor e registra atividade.',
     triggers: [{ triggerType: 'lead.stage_changed', config: {} }],
     conditions: [{ field: 'source', operator: 'equals', value: 'real_estate' }],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Contato pos-visita', description: 'Ligar para o lead em 24h' } },
+      { actionType: 'create_task', payload: { title: 'Contato pós-visita', description: 'Ligar para o lead em 24h' } },
       { actionType: 'register_activity', payload: { activityType: 'property_visit', description: 'Visita realizada' } },
     ],
   },
   {
     key: 'dealer',
     label: 'Revenda',
-    description: 'Lead de test-drive. Atribui responsavel e envia WhatsApp com catalogo.',
+    description: 'Lead de test-drive. Atribui responsável e envia WhatsApp com catálogo.',
     triggers: [{ triggerType: 'lead.created', config: {} }],
     conditions: [{ field: 'source', operator: 'equals', value: 'dealer' }],
     actions: [
       { actionType: 'assign_owner', payload: { ownerId: 'sales-team' } },
-      { actionType: 'send_whatsapp', payload: { body: 'Obrigado pelo interesse! Segue nosso catalogo de veiculos.' } },
+      { actionType: 'send_whatsapp', payload: { body: 'Obrigado pelo interesse! Segue nosso catálogo de veículos.' } },
     ],
   },
   {
     key: 'workshop',
     label: 'Oficina',
-    description: 'Servico concluido. Cria tarefa de follow-up e envia WhatsApp.',
+    description: 'Serviço concluído. Cria tarefa de follow-up e envia WhatsApp.',
     triggers: [{ triggerType: 'lead.stage_changed', config: {} }],
     conditions: [{ field: 'source', operator: 'equals', value: 'workshop' }],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Follow-up pos-servico', description: 'Ligar em 7 dias' } },
-      { actionType: 'send_whatsapp', payload: { body: 'Seu veiculo esta pronto! Quando pode retirar?' } },
+      { actionType: 'create_task', payload: { title: 'Follow-up pós-serviço', description: 'Ligar em 7 dias' } },
+      { actionType: 'send_whatsapp', payload: { body: 'Seu veículo está pronto! Quando pode retirar?' } },
     ],
   },
   {
     key: 'agency',
-    label: 'Agencia',
+    label: 'Agência',
     description: 'Lead de proposta. Cria tarefa comercial e registra atividade.',
     triggers: [{ triggerType: 'proposal.approved', config: {} }],
     conditions: [],
@@ -83,14 +83,14 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     triggers: [{ triggerType: 'lead.created', config: {} }],
     conditions: [],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Responder lead novo', description: 'Contato inicial em ate 15 minutos' } },
+      { actionType: 'create_task', payload: { title: 'Responder lead novo', description: 'Contato inicial em até 15 minutos' } },
       { actionType: 'register_activity', payload: { activityType: 'new_lead_response', description: 'Resposta inicial planejada' } },
     ],
   },
   {
     key: 'objective:proposal_follow_up',
     label: 'Follow-up de proposta',
-    description: 'Acompanhar proposta visualizada ou enviada e criar proxima acao comercial.',
+    description: 'Acompanhar proposta visualizada ou enviada e criar a próxima ação comercial.',
     objectiveKey: 'proposal_follow_up',
     moduleKey: 'automations',
     channel: 'email',
@@ -100,7 +100,7 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     conditions: [{ field: 'status', operator: 'not_equals', value: 'won' }],
     actions: [
       { actionType: 'create_task', payload: { title: 'Follow-up de proposta', description: 'Entrar em contato sobre a proposta aberta' } },
-      { actionType: 'send_email', payload: { subject: 'Podemos seguir com a proposta?', body: 'Oi, queria confirmar se ficou alguma duvida sobre a proposta.' } },
+      { actionType: 'send_email', payload: { subject: 'Podemos seguir com a proposta?', body: 'Oi, queria confirmar se ficou alguma dúvida sobre a proposta.' } },
     ],
   },
   {
@@ -115,14 +115,14 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     triggers: [{ triggerType: 'lead.stage_changed', config: {} }],
     conditions: [{ field: 'days_in_stage', operator: 'greater_than', value: 30 }],
     actions: [
-      { actionType: 'send_whatsapp', payload: { body: 'Ola! Podemos retomar sua avaliacao?' } },
-      { actionType: 'create_task', payload: { title: 'Reativar lead parado', description: 'Revisar historico antes do contato' } },
+      { actionType: 'send_whatsapp', payload: { body: 'Olá! Podemos retomar sua avaliação?' } },
+      { actionType: 'create_task', payload: { title: 'Reativar lead parado', description: 'Revisar histórico antes do contato' } },
     ],
   },
   {
     key: 'objective:confirm_appointment',
     label: 'Confirmar agendamento',
-    description: 'Enviar lembrete e preparar handoff quando uma reuniao ou visita for marcada.',
+    description: 'Enviar lembrete e preparar a transferência para atendente quando uma reunião ou visita for marcada.',
     objectiveKey: 'confirm_appointment',
     moduleKey: 'automations',
     channel: 'whatsapp',
@@ -132,13 +132,13 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     conditions: [],
     actions: [
       { actionType: 'send_whatsapp', payload: { body: 'Confirmando nosso atendimento agendado. Posso ajudar com algo antes?' } },
-      { actionType: 'register_activity', payload: { activityType: 'appointment_confirmation', description: 'Confirmacao automatica enviada' } },
+      { actionType: 'register_activity', payload: { activityType: 'appointment_confirmation', description: 'Confirmação automática enviada' } },
     ],
   },
   {
     key: 'objective:remind_service',
     label: 'Lembrar atendimento',
-    description: 'Gerar lembrete para atendimento pendente e manter SLA visivel.',
+    description: 'Gerar lembrete para atendimento pendente e manter o prazo de resposta visível.',
     objectiveKey: 'remind_service',
     moduleKey: 'automations',
     channel: 'crm',
@@ -148,13 +148,13 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     conditions: [],
     actions: [
       { actionType: 'create_task', payload: { title: 'Atendimento pendente', description: 'Responder conversa sem retorno' } },
-      { actionType: 'register_activity', payload: { activityType: 'sla_reminder', description: 'Lembrete de SLA criado' } },
+      { actionType: 'register_activity', payload: { activityType: 'sla_reminder', description: 'Lembrete de prazo criado' } },
     ],
   },
   {
     key: 'objective:create_seller_task',
     label: 'Criar tarefa para vendedor',
-    description: 'Transformar mudanca de etapa ou qualificacao em tarefa clara para o responsavel.',
+    description: 'Transformar mudança de etapa ou qualificação em tarefa clara para o responsável.',
     objectiveKey: 'create_seller_task',
     moduleKey: 'automations',
     channel: 'crm',
@@ -163,7 +163,7 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     triggers: [{ triggerType: 'lead.stage_changed', config: {} }],
     conditions: [{ field: 'stage', operator: 'contains', value: 'qualificado' }],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Proxima acao comercial', description: 'Executar follow-up da etapa atual' } },
+      { actionType: 'create_task', payload: { title: 'Próxima ação comercial', description: 'Executar follow-up da etapa atual' } },
     ],
   },
   {
@@ -178,13 +178,13 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     triggers: [{ triggerType: 'campaign.cpl_above_threshold', config: {} }],
     conditions: [{ field: 'cpl', operator: 'greater_than', value: 100 }],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Revisar campanha com CPL alto', description: 'Checar criativo, publico, budget e landing page' } },
+      { actionType: 'create_task', payload: { title: 'Revisar campanha com CPL alto', description: 'Checar criativo, público, orçamento e landing page' } },
     ],
   },
   {
     key: 'objective:creative_approval',
-    label: 'Pedir aprovacao de criativo',
-    description: 'Enviar tarefa de aprovacao quando um criativo estiver pronto para revisao.',
+    label: 'Pedir aprovação de criativo',
+    description: 'Enviar tarefa de aprovação quando um criativo estiver pronto para revisão.',
     objectiveKey: 'creative_approval',
     moduleKey: 'automations',
     channel: 'dashboard',
@@ -193,7 +193,7 @@ export const automationObjectiveTemplates: SectorTemplate[] = [
     triggers: [{ triggerType: 'creative.approval_requested', config: {} }],
     conditions: [],
     actions: [
-      { actionType: 'create_task', payload: { title: 'Aprovar criativo', description: 'Revisar copy, imagem, canal e restricoes antes da publicacao' } },
+      { actionType: 'create_task', payload: { title: 'Aprovar criativo', description: 'Revisar copy, imagem, canal e restrições antes da publicação' } },
     ],
   },
 ]
