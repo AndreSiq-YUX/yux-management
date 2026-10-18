@@ -54,7 +54,12 @@ def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dic
           dict(role='user', content=json.dumps(dict(criteria=criteria, evidence=bounded), ensure_ascii=False))])
     raw = str(response.get('content') or '').strip()
     raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.I)
-    payload = json.loads(raw)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ValueError('radar_qualification_invalid_json') from error
+    if not isinstance(payload, dict):
+        raise ValueError('radar_qualification_invalid_json')
     status, fit = payload.get('targetStatus'), payload.get('productFit')
     if status not in {'confirmed','review','not_target','insufficient'} or fit not in {'high','possible','low','unknown'}:
         raise ValueError('radar_qualification_invalid_status')
@@ -73,20 +78,37 @@ def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dic
                 evidenceSources=[dict(id=item['id'],sourceUrl=item['source_url']) for item in bounded if item['id'] in ids],
                 buyingIntent='unknown', provider=response.get('provider'), model=response.get('model'), usage=radar_usage(response))
     if profile_enabled:
-        profile = payload.get('profile')
-        if not isinstance(profile, dict):
-            raise ValueError('radar_profile_required')
-        claims = [profile['summary']] if profile.get('summary') is not None else []
+        raw_profile = payload.get('profile')
+        profile, rejections = {}, []
+        if not isinstance(raw_profile, dict):
+            rejections.append(dict(field='profile', code='radar_profile_unverifiable'))
+            raw_profile = {}
+        def verified(claim, field):
+            if isinstance(claim, dict):
+                excerpt = str(claim.get('excerpt') or '').strip()
+                evidence_id = claim.get('evidenceId')
+                if isinstance(evidence_id, str) and len(excerpt) >= 8 and excerpt in by_id.get(evidence_id, ''):
+                    return claim
+            rejections.append(dict(field=field, code='radar_profile_unverifiable'))
+            return None
+        if raw_profile.get('summary') is not None:
+            summary = verified(raw_profile['summary'], 'summary')
+            if summary is not None:
+                profile['summary'] = summary
         for key in ('services', 'customerSegments', 'operatingRegions', 'scaleSignals'):
-            items = profile.get(key, [])
-            if not isinstance(items, list) or len(items) > 20:
-                raise ValueError('radar_profile_unverifiable')
-            claims.extend(items)
-        for claim in claims:
-            if not isinstance(claim, dict):
-                raise ValueError('radar_profile_unverifiable')
-            excerpt = str(claim.get('excerpt') or '').strip()
-            if len(excerpt) < 8 or excerpt not in by_id.get(claim.get('evidenceId'), ''):
-                raise ValueError('radar_profile_unverifiable')
+            items = raw_profile.get(key, [])
+            profile[key] = []
+            if not isinstance(items, list):
+                rejections.append(dict(field=key, code='radar_profile_unverifiable'))
+                continue
+            if len(items) > 20:
+                rejections.append(dict(field=key, code='radar_profile_unverifiable'))
+            for index, item in enumerate(items[:20]):
+                claim = verified(item, f'{key}.{index}')
+                if claim is not None:
+                    profile[key].append(claim)
         result['profile'] = profile
+        if rejections:
+            result['profileRejections'] = rejections
+            result['limitations'].append('radar_profile_claims_rejected')
     return result

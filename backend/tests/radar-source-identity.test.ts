@@ -7,6 +7,16 @@ import {classifyRadarSource,isRadarInstitutionalSource} from '../src/modules/rad
 const identity={name:'Empresa Brasileira de Refeicoes',legalName:'Embrare Empresa Brasileira de Refeicoes LTDA',cnpj:'01128426000198'}
 const directory={url:'https://empresas.serasaexperian.com.br/consulta-gratis/EMBRARE-01128426000198',title:identity.legalName,snippets:[identity.cnpj],observedAt:'2026-10-13'}
 it.each([
+ ['https://listatudo.com.br/sao-paulo/empresa','Maior site de busca de empresas do Brasil'],
+ ['https://www1.folha.uol.com.br/fsp/cotidian/empresa.shtml','DA REPORTAGEM LOCAL. Copyright Folha'],
+ ['https://publisher.example/fsp/edicao/empresa.shtml','DA REPORTAGEM LOCAL. Jornal publica notícias'],
+ ['https://catalogo.example/empresa-alfa','Encontre empresas por cidade e segmento. Catálogo de empresas'],
+])('does not publish a directory or newspaper footer as the company contact: %s',(url,publisher)=>{
+ const text=`${publisher}. ${identity.legalName} CNPJ ${identity.cnpj}. editor@publisher.example`
+ expect(isRadarInstitutionalSource(url,{text})).toBe(false)
+ expect(extractRadarContacts({url,text,observedAt:'2026-10-18'},'confirmed')).toEqual([])
+})
+it.each([
   ['https://associacao.example/associados/alfa','Associação Comercial. Conheça nossa associada'],
   ['https://agencia.example/clientes/alfa','Conheça nosso cliente'],
   ['https://portal.example.gov.br/registro/alfa','Fornecedor contratado pelo município'],

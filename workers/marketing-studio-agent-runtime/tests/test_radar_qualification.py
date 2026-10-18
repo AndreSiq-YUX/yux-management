@@ -51,11 +51,26 @@ def test_profiles_use_the_same_authorized_call_and_require_verifiable_sources():
     assert calls[0]['max_tokens'] == 4000
     assert result['profile']['summary']['evidenceId'] == 'page-0'
 
-def test_profile_cannot_invent_a_source():
+def test_profile_cannot_invent_a_source_but_preserves_independent_qualification():
     class Client:
         def chat_completion(self, **kwargs):
             return dict(content=json.dumps(dict(targetStatus='review',productFit='unknown',claims=[],
                 profile=dict(summary=dict(value='Grande empresa', evidenceId='invented', excerpt='refeições coletivas para empresas')))))
-    with pytest.raises(ValueError, match='radar_profile_unverifiable'):
+    result = qualify_radar_business(InMemoryAgentRuntimeStore({'model_routing_rules':[ROUTE]}), enabled=True, context={},
+        criteria={'profileEnabled':True}, evidence=EVIDENCE, llm_client=Client())
+    assert result['targetStatus'] == 'review'
+    assert result['productFit'] == 'unknown'
+    assert 'summary' not in result['profile']
+    assert result['profileRejections'] == [dict(field='summary',code='radar_profile_unverifiable')]
+
+@pytest.mark.parametrize('raw', ['{"targetStatus":', 'not JSON', '[]'])
+def test_malformed_model_json_has_a_safe_typed_error_after_one_provider_call(raw):
+    calls = []
+    class Client:
+        def chat_completion(self, **kwargs):
+            calls.append(1)
+            return dict(content=raw)
+    with pytest.raises(ValueError, match='^radar_qualification_invalid_json$'):
         qualify_radar_business(InMemoryAgentRuntimeStore({'model_routing_rules':[ROUTE]}), enabled=True, context={},
-            criteria={'profileEnabled':True}, evidence=EVIDENCE, llm_client=Client())
+            criteria={}, evidence=EVIDENCE, llm_client=Client())
+    assert calls == [1]

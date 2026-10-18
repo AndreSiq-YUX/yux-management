@@ -52,3 +52,25 @@ export function validateRadarCompanyProfile(raw:unknown,evidence:RadarSiteEviden
       return result
     })}
 }
+
+// Every accepted claim passes the original strict citation/metric validator.
+export function validateRadarCompanyProfileClaims(raw:unknown,evidence:RadarSiteEvidence[]):{profile:RadarCompanyProfile;rejections:Array<{field:string;code:string}>}{
+ const profile:RadarCompanyProfile={services:[],customerSegments:[],operatingRegions:[],scaleSignals:[]},rejections:Array<{field:string;code:string}>=[]
+ const reject=(field:string)=>rejections.push({field,code:'radar_profile_unverifiable'})
+ if(!raw||typeof raw!=='object'||Array.isArray(raw)){reject('profile');return{profile,rejections}}
+ const value=raw as Record<string,unknown>
+ if(value.summary!==undefined)try{profile.summary=validateRadarCompanyProfile({summary:value.summary},evidence).summary}catch{reject('summary')}
+ for(const field of ['services','customerSegments','operatingRegions','scaleSignals'] as const){
+  const items=value[field]??[]
+  if(!Array.isArray(items)){reject(field);continue}
+  if(items.length>20)reject(field)
+  items.slice(0,20).forEach((item,index)=>{
+   try{
+    const checked=validateRadarCompanyProfile({[field]:[item]},evidence)
+    if(field==='scaleSignals')profile.scaleSignals.push(checked.scaleSignals[0])
+    else profile[field].push(checked[field][0])
+   }catch{reject(`${field}.${index}`)}
+  })
+ }
+ return{profile,rejections}
+}

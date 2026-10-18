@@ -50,6 +50,23 @@ class ResearchPool {
     throw new Error(`Unexpected fixture query: ${sql}`)
   }
 }
+it('revalidates a completed raw profile receipt claim by claim without another AI or search call',async()=>{
+ const pool=new ResearchPool()
+ pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true,profileEnabled:true}}
+ const run=await start(pool)
+ pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+ const runtime=vi.fn().mockRejectedValue(Error('response lost'))
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime})
+ pool.receiptResult={targetStatus:'review',productFit:'unknown',reasons:[],evidenceIds:[],limitations:[],profile:{services:[],scaleSignals:[{value:'900 unidades',evidenceId:'page-0',excerpt:pages[0].text,metric:'units',amount:900}]}}
+ await start(pool)
+ const web=vi.fn()
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web})
+ expect(runtime).toHaveBeenCalledTimes(1)
+ expect(web).not.toHaveBeenCalled()
+ expect(pool.run!.output.qualification).toMatchObject({targetStatus:'review',productFit:'unknown'})
+ expect(pool.run!.output.profile.scaleSignals).toEqual([])
+ expect(pool.run!.output.limitations).toContain('radar_profile_claims_rejected')
+})
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
 it('consolidates legacy dossier contacts on read, retaining sources without rewriting history',async()=>{

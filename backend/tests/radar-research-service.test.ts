@@ -4,6 +4,19 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('keeps verified qualification and valid profile facts when one optional metric is rejected',async()=>{
+ const url='https://alfa.example/',page={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90. Fornecemos refeições para empresas.',observedAt:'2026-10-18'}
+ const claim={value:'Alimentação empresarial',evidenceId:'page-0',excerpt:'Fornecemos refeições para empresas.'}
+ const qualify=vi.fn(async()=>({targetStatus:'confirmed' as const,productFit:'high' as const,reasons:['Atende empresas'],evidenceIds:['page-0'],limitations:[],
+  profile:{summary:claim,services:[claim],scaleSignals:[{...claim,metric:'units',amount:900}]}}))
+ const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{semanticQualificationEnabled:true,profileEnabled:true}}),
+  {readingComplete:true,readerVersion:4,discoveryLocked:true,pages:[page],discovery:{websiteUrl:url,association:'confirmed',hits:[],suggestions:[],queries:1,limitations:[]}},
+  {web:vi.fn(),checkpoint:async()=>{},qualify:qualify as never})
+ expect(result.qualification).toMatchObject({targetStatus:'confirmed',productFit:'high'})
+ expect(result.profile?.summary?.value).toBe(claim.value)
+ expect(result.profile?.scaleSignals).toEqual([])
+ expect(result.limitations).toContain('radar_profile_claims_rejected')
+})
 it('reads canonical pending cached hits even when the old discovery has no limitations',async()=>{
   const old={url:'https://alfa.example/',text:'Marca Alfa',observedAt:'2026-10-15'},fresh='https://new.example/'
   const collect=vi.fn(async(url:string)=>[{url,text:'Marca Alfa',observedAt:old.observedAt}])

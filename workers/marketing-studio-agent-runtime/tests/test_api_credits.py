@@ -53,6 +53,35 @@ class EstimateWorkflowCreditsTest(unittest.TestCase):
 
 
 class ApiCreditsTest(unittest.TestCase):
+    def test_radar_invalid_request_is_typed_and_sanitized_before_any_provider_or_receipt(self):
+        store = BillingStore()
+        with patch('yux_agent_runtime.api.qualify_radar_business') as analysis:
+            response = self._client(store).post('/radar/qualify', headers=AUTH, json=dict(
+                organization_id='org', enabled=True, request_id='bad-request', criteria={},
+                evidence=[dict(id='p', source_url='https://example.test', text='private evidence ' * 1000)]))
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json(), dict(detail='radar_request_invalid'))
+        self.assertNotIn('private evidence', response.text)
+        self.assertEqual(analysis.call_count, 0)
+        self.assertEqual(store.list('radar_analysis_receipts'), [])
+
+    def test_radar_post_provider_invalid_json_is_typed_but_not_automatically_retried(self):
+        store = BillingStore()
+        payload = dict(organization_id='org', enabled=True, request_id='invalid-output', criteria={},
+                       evidence=[dict(id='p', source_url='https://example.test', text='Empresa teste')])
+        def process(_store, **kwargs):
+            kwargs['before_call']()
+            raise ValueError('radar_qualification_invalid_json')
+        with patch('yux_agent_runtime.api.qualify_radar_business', side_effect=process) as analysis:
+            client = self._client(store)
+            first = client.post('/radar/qualify', headers=AUTH, json=payload)
+            second = client.post('/radar/qualify', headers=AUTH, json=payload)
+        self.assertEqual(first.status_code, 422)
+        self.assertEqual(first.json(), dict(detail='radar_qualification_invalid_json'))
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(analysis.call_count, 1)
+        self.assertEqual(store.list('radar_analysis_receipts')[0]['status'], 'uncertain')
+
     def test_completed_radar_request_is_recovered_without_another_analysis_or_credit(self):
         store = BillingStore()
         payload = dict(organization_id='org', client_id='client', contract_id='contract', enabled=True,

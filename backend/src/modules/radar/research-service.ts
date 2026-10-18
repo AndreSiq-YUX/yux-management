@@ -18,7 +18,7 @@ import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { assertLicensedBraveRetention } from './licensed-brave.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import { triageRadarBusiness } from './business-triage.js'
-import { validateRadarCompanyProfile, type RadarCompanyProfile } from './company-profile.js'
+import { validateRadarCompanyProfileClaims, type RadarCompanyProfile } from './company-profile.js'
 import { assessRadarCompanySize, registryRadarSizeFacts, type RadarSizeFact } from './company-size.js'
 import {getRadarTlsReadOptions,listRadarTlsExceptions,radarTlsDiagnosticId} from './tls-exception-service.js'
 import type {RadarTlsReadOptions} from './site-tls-exception.js'
@@ -30,7 +30,19 @@ import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
-  reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile;usage?:RadarPresenceResolution['usage'] }
+  reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile;profileRejections?:Array<{field:string;code:string}>;usage?:RadarPresenceResolution['usage'] }
+function validatedQualificationProfile(result:RadarQualification,pages:RadarSiteEvidence[]){
+ if(result.profile){
+  const checked=validateRadarCompanyProfileClaims(result.profile,pages)
+  // A rejected profile cannot serve as the only support for a positive/negative
+  // verdict. Only an independently evidenced qualification can survive it.
+  if(checked.rejections.length&&(result.targetStatus==='confirmed'||result.targetStatus==='not_target'||result.productFit!=='unknown')
+    &&(!result.reasons.length||!result.evidenceIds.some(id=>/^page-\d+$/.test(id)&&!!pages[Number(id.slice(5))]?.text)))throw new Error('radar_profile_unverifiable')
+  result={...result,profile:checked.profile}
+  if(checked.rejections.length)result={...result,profileRejections:checked.rejections,limitations:[...new Set([...(result.limitations??[]),'radar_profile_claims_rejected'])]}
+ }
+ return result
+}
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
   historicalDerivedConclusions?:{presenceResolution?:RadarPresenceResolution;qualification?:RadarQualification;profile?:RadarCompanyProfile;sizeAssessment?:ReturnType<typeof assessRadarCompanySize>};
   quality?:RadarResearchQuality;targetedQueries?:string[];
@@ -321,7 +333,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     else if (dependencies.qualify) {
       try {
         qualification = await dependencies.qualify(qualifiedEvidence,evidenceHash)
-        if(qualification.profile)qualification.profile=validateRadarCompanyProfile(qualification.profile,qualifiedEvidence)
+        qualification=validatedQualificationProfile(qualification,qualifiedEvidence)
         output.qualification = qualification;output.qualificationEvidenceHash=evidenceHash
       }
       catch (cause) { qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
@@ -671,10 +683,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
             profileEnabled:configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled},
           evidence:pages.map((page,index)=>({id:`page-${index}`,source_url:page.url,text:page.text.slice(0,12000)})),
         })
-        if(result.profile)result.profile=validateRadarCompanyProfile(result.profile,pages)
-        run.calls.semantic={status:'completed',source:'radar_business_qualification',result,evidenceHash,previous:run.calls.semantic.previous,rejections:run.calls.semantic.rejections}
+        const checked=validatedQualificationProfile(result,pages)
+        run.calls.semantic={status:'completed',source:'radar_business_qualification',result:checked,evidenceHash,previous:run.calls.semantic.previous,rejections:run.calls.semantic.rejections}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
-        return result
+        return checked
       },
     })
     await persistDossier(pool,run,lease,context,dossier)

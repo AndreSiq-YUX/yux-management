@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .queue import AgentEventQueue
@@ -162,6 +164,10 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def log_mission_request_validation(request: Request, error: RequestValidationError):
+        if request.url.path in ('/radar/qualify', '/radar/resolve-presence'):
+            # Do not echo evidence/prompts from Pydantic's input field. This error
+            # is pre-provider, unlike a rejected response with an existing receipt.
+            return JSONResponse(status_code=422, content=dict(detail='radar_request_invalid'))
         if request.url.path == "/missions/conversations/turn":
             context = error.body if isinstance(error.body, dict) else {}
             logger.error("%s", json.dumps(mission_failure_diagnostic(
@@ -298,7 +304,8 @@ def create_app(
         except ProviderRequestError as error:
             raise provider_http_exception(error) from error
         except ValueError as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
+            code = str(error)
+            raise HTTPException(status_code=422, detail=code if re.fullmatch(r'radar_[a-z0-9_]+', code) else 'radar_qualification_invalid_response') from error
 
     @app.post("/workflows/execute", dependencies=[Depends(require_runtime_token)])
     def execute_workflow(request: ExecuteWorkflowRequest) -> dict[str, Any]:
