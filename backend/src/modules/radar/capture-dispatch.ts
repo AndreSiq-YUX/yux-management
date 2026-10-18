@@ -13,6 +13,7 @@ import {recoverExpiredRadarCaptureContinuation,inspectExpiredRadarCaptureContinu
 import {loadRadarCapturePreflight,isRadarCaptureLimitPause,type PreflightDependencies} from './capture-preflight.js'
 import {authorizeRadarCaptureLimits} from './capture-limit-authorization.js'
 import type {RadarCaptureLimits} from './capture-capacity.js'
+import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
 
 type Child={status:string;error_code?:string;lease_until?:string;output?:Record<string,unknown>;calls?:Record<string,{status:string}>}
 export function classifyRadarCaptureResearch(run:Child):'researching'|'completed'|'insufficient'|'blocked'{
@@ -105,7 +106,7 @@ export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:CaptureQueu
  for(const row of rows)await queue.add('radar.advanceCaptureOperation',{organizationId:row.organization_id,operationId:row.operation_id},{jobId:`radar-capture-${row.operation_id}-${window}`})
  return{enqueued:rows.length}
 }
-export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;operationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean;continuationReceiptId?:string;limitsAuthorization?:{expectedStateId:string;limits:RadarCaptureLimits}},dependencies:PreflightDependencies={}){
+export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;operationId:string;configurationRevision:number;requestId:string;restartExpiredContinuation?:boolean;continuationReceiptId?:string;continuationAuthorizations?:ContinuationAuthorization[];limitsAuthorization?:{expectedStateId:string;limits:RadarCaptureLimits}},dependencies:PreflightDependencies={}){
  z.uuid().parse(input.requestId)
  const {op}=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability)
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
@@ -120,12 +121,13 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   const current=(await client.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,input.organizationId])).rows[0]
   if(!current)throw captureError('radar_capture_not_found',404)
   if(current.resume_request_id===input.requestId){await client.query('COMMIT');return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
+  await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
   if(current.lease_active&&!current.discovery_pending)throw captureError('radar_capture_in_progress')
   if(current.discovery_pending&&!await recoverRejectedRadarCaptureDiscovery(client,current))throw captureError('radar_capture_discovery_uncertain')
   current.discovery_pending=false
   const admitted=Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
   const limitPause=isRadarCaptureLimitPause(current,admitted)
-  if(current.status!=='blocked'&&!limitPause&&(input.limitsAuthorization||input.restartExpiredContinuation)){
+  if(current.status!=='blocked'&&!limitPause&&(input.limitsAuthorization||input.restartExpiredContinuation||input.continuationAuthorizations?.length)){
    throw captureError(input.limitsAuthorization?'radar_capture_limits_confirmation_stale':'radar_capture_continuation_confirmation_stale')
   }
   if(current.status==='blocked'||limitPause){
@@ -133,11 +135,13 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
     const expiry=await inspectExpiredRadarCaptureContinuation(client,current,true)
     if(!expiry||expiry.receiptId!==input.continuationReceiptId)throw captureError('radar_capture_continuation_confirmation_stale')
    }
-   const {preflight}=await loadRadarCapturePreflight(client,user,{organizationId:input.organizationId,campaignId:op.campaign_id,operationId:op.id,configurationRevision:input.configurationRevision,requestedCount:current.requested_count},dependencies)
+   const {preflight,policy,scopes}=await loadRadarCapturePreflight(client,user,{organizationId:input.organizationId,campaignId:op.campaign_id,operationId:op.id,configurationRevision:input.configurationRevision,requestedCount:current.requested_count},dependencies)
    if(!preflight.allowed)throw captureError(preflight.blockers[0]?.code??'radar_capture_research_unavailable')
    if(preflight.requiresLimitsApproval&&!input.limitsAuthorization)throw captureError('radar_capture_limits_confirmation_required')
    if(input.limitsAuthorization)await authorizeRadarCaptureLimits(client,user,current,{...input.limitsAuthorization,requestId:input.requestId},dependencies)
-   await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId})
+   if(!input.continuationAuthorizations?.length)await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId})
+   const continuationScopes=scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision}))
+   await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
    const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND status='blocked'",[op.id])).rows
    for(const item of limitPause?[]:items){
     await client.query("UPDATE public.radar_capture_items SET status='queued',blocker=NULL,dispatch_generation=dispatch_generation+1 WHERE id=$1",[item.id])

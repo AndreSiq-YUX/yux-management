@@ -7,6 +7,7 @@ import {getRadarResearchAvailability} from './research-availability.js'
 import type {RadarCaptureOperation} from './types.js'
 import {buildCnpjaCandidateSnippet,type CnpjaCandidate} from './cnpjaClient.js'
 import {loadRadarCapturePreflight,isRadarCaptureLimitPause} from './capture-preflight.js'
+import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().max(2_147_483_647).parse(value)
@@ -17,7 +18,7 @@ export async function assertCaptureAvailability(pool:pg.Pool,user:AuthUser,organ
  if(!result.allowed)throw Object.assign(captureError('radar_capture_research_unavailable'),{reasons:result.reasons})
  if(result.presence?.routeConfigured===false||result.semantic?.routeConfigured===false)throw captureError('radar_capture_model_route_missing')
 }
-export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;campaignId:string;configurationRevision:number;requestId:string;requestedCount:number},dependencies:{availability?:AvailabilityLoader}={}){
+export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;campaignId:string;configurationRevision:number;requestId:string;requestedCount:number;continuationAuthorizations?:ContinuationAuthorization[]},dependencies:{availability?:AvailabilityLoader}={}){
  const count=parseRadarCaptureCount(input.requestedCount);z.uuid().parse(input.requestId)
  await assertRadarRegionalBatchAccess(pool,user,input.organizationId,input.campaignId)
  const client=await pool.connect()
@@ -36,8 +37,10 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
   const active=(await client.query(`SELECT id,status FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked')`,[input.organizationId,input.campaignId,revision])).rows[0]
   if(active){await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
   await assertCaptureAvailability(client as unknown as pg.Pool,user,input.organizationId,input.campaignId,dependencies.availability)
-  const {preflight,policy}=await loadRadarCapturePreflight(client,user,input,dependencies)
+  await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
+  const {preflight,policy,scopes}=await loadRadarCapturePreflight(client,user,input,dependencies)
   if(!preflight.allowed)throw captureError(preflight.blockers[0]?.code??'radar_capture_research_unavailable')
+  await authorizeRadarContinuations(client,scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision})),policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
   const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot)
    VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify({...campaign,operationalPolicy:policy})])).rows[0]
   await client.query('INSERT INTO public.radar_capture_outbox(operation_id,organization_id,campaign_id) VALUES($1,$2,$3)',[row.id,input.organizationId,input.campaignId])

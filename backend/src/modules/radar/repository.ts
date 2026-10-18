@@ -2,6 +2,7 @@ import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import {admitRadarCapturePage,captureError} from './capture-operation.js'
 import {loadRadarCapturePageAccounting,type CaptureAccountingInput} from './capture-capacity.js'
+import {inspectRadarContinuationState} from './continuation-state.js'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
@@ -1074,6 +1075,7 @@ export async function runRadarCnpjaAdvancedSearch(
   let pageToken: string | undefined
   let scopeKey: string | undefined
   let captureSnapshot:CaptureAccountingInput|undefined
+  let continuationGeneration=0
   let scopeCity: string | undefined
   let campaignSnapshot: RadarCampaignRow | undefined
   let searchConfiguration = resolveRadarSearchConfiguration()
@@ -1121,6 +1123,7 @@ export async function runRadarCnpjaAdvancedSearch(
         const effective=resolveRadarSearchConfiguration(captureSnapshot.configuration_snapshot.search_configuration).batch
         if((accounting.successfulPagesByScope[scopeKey]??0)>=effective.maxPagesPerScope)throw captureError('radar_capture_page_limit')
       }
+      await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
       const cursor = await client.query<{ next_token: string | null; completed: boolean; running_until: Date | null;page_size:number }>(
         `SELECT next_token, completed, running_until,page_size
          FROM public.radar_regional_discovery_cursors
@@ -1134,6 +1137,11 @@ export async function runRadarCnpjaAdvancedSearch(
       }
       pageToken = previous?.next_token ?? undefined
       if(pageToken)limit=previous?.page_size??10
+      const continuation=await inspectRadarContinuationState(client,{organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:campaignSnapshot.configuration_revision??1,key:scopeKey,label:scopes[0].label,state:input.regionalState,city:scopeCity},await loadRadarOperationalLimits(client))
+      if(continuation?.reason==='uncertain')throw captureError('radar_capture_discovery_uncertain')
+      if(continuation?.requiresRestartConfirmation)throw captureError('radar_capture_continuation_confirmation_required')
+      // Generation survives even when an approved cursor currently has no token.
+      continuationGeneration=Number((await client.query("SELECT generation FROM public.radar_regional_discovery_cursors WHERE organization_id=$1 AND campaign_id=$2 AND scope_key=$3 AND provider='cnpja_advanced_search'",[input.organizationId,input.campaignId,scopeKey])).rows[0]?.generation??0)
     }
 
     if(!captureSnapshot&&!pageToken)assertRadarOperationalLimit(limit,(await loadRadarOperationalLimits(client)).limits.maxDiscoveryPageSize)
@@ -1171,13 +1179,14 @@ export async function runRadarCnpjaAdvancedSearch(
           pageToken,
           captureOperationId: input.captureOperationId,
           scopeKey,
+          continuationGeneration,
         }),
       ],
     )
     runId = run.rows[0].id
 
     if (issues.length > 0) {
-      await updateRadarRunCompletion(client, run.rows[0].id, 'failed', { candidateCount: 0, estimatedCost: governance.estimatedCost, issues }, issues.map(issue => issue.message).join('; '))
+      await updateRadarRunCompletion(client, run.rows[0].id, 'failed', { candidateCount: 0, estimatedCost: governance.estimatedCost, issues,discoveryOutcome:'not_dispatched' }, issues.map(issue => issue.message).join('; '))
       await client.query('COMMIT')
       return { candidates: [], issues, runId: run.rows[0].id }
     }
@@ -1246,6 +1255,7 @@ export async function runRadarCnpjaAdvancedSearch(
       // A crash after COMMIT must not allow the outbox to retry discovery
       // before explicit resume. Persist the paused state with the receipt.
       if (rejected && input.captureOperationId) await receipt.query("UPDATE public.radar_capture_operations SET discovery_pending=FALSE,status='blocked',blockers=$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2",[input.captureOperationId,input.organizationId,JSON.stringify(failedIssues.map(issue=>issue.code))])
+      if(pageToken&&error instanceof CnpjaSearchHttpError&&error.statusCode===400&&/\btoken is invalid or expired\b/i.test(message))await receipt.query(`UPDATE public.radar_regional_discovery_cursors SET rejected_token_hash=encode(sha256(convert_to(next_token,'UTF8')),'hex'),rejected_receipt_id=$5 WHERE organization_id=$1 AND campaign_id=$2 AND scope_key=$3 AND lease_id=$4`,[input.organizationId,input.campaignId,scopeKey,leaseId,runId])
       if (input.regionalState) await receipt.query(
         `UPDATE public.radar_regional_discovery_cursors SET lease_id = NULL, running_until = NULL, updated_at = NOW()
          WHERE campaign_id = $1 AND organization_id=$4 AND scope_key = $2 AND lease_id = $3`, [input.campaignId, scopeKey, leaseId,input.organizationId])
@@ -1328,7 +1338,8 @@ export async function runRadarCnpjaAdvancedSearch(
     if (input.regionalState) await candidateClient.query(
       `UPDATE public.radar_regional_discovery_cursors
        SET next_token = $4, completed = $5, pages_processed = pages_processed + 1,
-           candidates_seen = candidates_seen + $6, lease_id = NULL, running_until = NULL, updated_at = NOW(),page_size=$8
+           candidates_seen = candidates_seen + $6, lease_id = NULL, running_until = NULL, updated_at = NOW(),page_size=$8,
+           token_received_at=CASE WHEN $4::text IS NULL THEN NULL ELSE NOW() END,rejected_token_hash=NULL,rejected_receipt_id=NULL
        WHERE organization_id = $1 AND campaign_id = $2 AND scope_key = $3 AND lease_id = $7`,
       [input.organizationId, input.campaignId, scopeKey, nextToken ?? null, !nextToken, results.length, leaseId,limit],
     )

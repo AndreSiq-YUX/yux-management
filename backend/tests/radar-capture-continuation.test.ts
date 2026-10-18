@@ -14,7 +14,7 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
  async function setup(error:Error=new CnpjaSearchHttpError('HTTP 400: request validation failed; token is invalid or expired',400)){
   const f=await captureFixture(),old=company()
   await f.pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'cnpja_advanced_search','Anterior',$3,'{"websiteUrl":"https://old.example/"}')`,[organizationId,f.campaign.id,`cnpj:${old.taxId}`])
-  await f.pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','expired-token',4,40)`,[organizationId,f.campaign.id])
+  await f.pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen,token_received_at) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','expired-token',4,40,NOW())`,[organizationId,f.campaign.id])
   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20},{availability:available})
   const input={organizationId,operationId:started.operationId},resume={...input,configurationRevision:1,requestId:randomUUID()}
   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{throw error}})

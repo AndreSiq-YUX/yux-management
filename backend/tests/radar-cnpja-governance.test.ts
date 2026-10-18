@@ -12,7 +12,7 @@ class PoolFixture {
   pendingUsed = 0
   failCandidateWrite = false
   regional = false
-  regionalCursor: { next_token: string | null; completed: boolean; running_until: null } | null = null
+  regionalCursor: { next_token: string | null; completed: boolean; running_until: null;token_received_at?:Date } | null = null
   queries: string[] = []
   async connect() { return { query: this.query.bind(this), release() {} } }
   async query(sql: string, params: unknown[] = []) {
@@ -38,7 +38,7 @@ class PoolFixture {
     if (sql.includes('INSERT INTO public.radar_regional_discovery_cursors')) return { rows: [] }
     if (sql.includes('UPDATE public.radar_regional_discovery_cursors')) {
       if (sql.includes('pages_processed')) this.regionalCursor = { next_token: params[3] as string | null,
-        completed: params[4] as boolean, running_until: null }
+        completed: params[4] as boolean, running_until: null,token_received_at:new Date() }
       return { rows: [] }
     }
     if (sql.includes('FROM public.radar_source_usage_counters')) return { rows: [{ units: this.used, estimated_cost: this.used * 0.025 }] }

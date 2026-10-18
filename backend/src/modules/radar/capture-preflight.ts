@@ -9,9 +9,10 @@ import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './searc
 import {calculateRadarCaptureCapacity,loadRadarCapturePageAccounting,type RadarCaptureLimits,type RadarQueryable} from './capture-capacity.js'
 import {inspectExpiredRadarCaptureContinuation} from './capture-continuation.js'
 import {loadRadarOperationalLimits,assertRadarOperationalLimit,validateRadarOperationalConfiguration,type RadarOperationalPolicy} from './operational-limits.js'
+import {inspectRadarContinuationState,type RadarContinuationState} from './continuation-state.js'
 export type PreflightInput={organizationId:string;campaignId:string;configurationRevision:number;requestedCount:number;operationId?:string}
 export type PreflightDependencies={availability?:AvailabilityLoader;workerReady?:()=>Promise<boolean>}
-export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;policy:RadarOperationalPolicy;campaignLimits:RadarCaptureLimits;attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
+export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;policy:RadarOperationalPolicy;campaignLimits:RadarCaptureLimits;continuations:RadarContinuationState[];attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
 export const isRadarCaptureLimitPause=(op:{status:string;discovery_reason?:string;requested_count:number},admitted:number)=>['blocked','partial'].includes(op.status)&&['page_cap','query_cap'].includes(op.discovery_reason??'')&&admitted<op.requested_count
 export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){
  if(user.role!=='yux_admin')throw captureError('radar_source_admin_required',403)
@@ -51,6 +52,13 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(other)fail('radar_capture_other_active_lot')
  const limitPause=op&&isRadarCaptureLimitPause(op,items),needsDiscovery=remaining>0&&(!op?.discovery_stopped||limitPause)
  const requiresLimitsApproval=!!op&&!!needsDiscovery&&(!!limitPause||capacity.optimisticAdditionalCapacity<remaining)
+ const continuations:RadarContinuationState[]=[]
+ if(needsDiscovery&&remaining>overflowCount)for(const scope of scopes.filter(s=>!s.completed)){
+  const state=await inspectRadarContinuationState(db,{...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision},policy)
+  if(state)continuations.push(state)
+  if(state?.reason==='uncertain')fail('radar_capture_discovery_uncertain')
+  if(state?.reason==='running')fail('radar_capture_in_progress')
+ }
  if(!op&&capacity.optimisticAdditionalCapacity<remaining)fail('radar_capture_capacity_insufficient')
  const availability:CaptureAvailability=await(deps.availability??getRadarResearchAvailability)(db as pg.Pool,user,input.organizationId,input.campaignId)
  if(!availability.allowed)for(const reason of availability.reasons)fail(reason.code,reason.message)
@@ -86,8 +94,8 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const latest=(await db.query("SELECT id FROM public.radar_enrichment_runs WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY started_at DESC NULLS LAST,id DESC LIMIT 1",[input.organizationId,input.campaignId])).rows[0]?.id??null
  let expired:Awaited<ReturnType<typeof inspectExpiredRadarCaptureContinuation>>=null
  if(op&&!op.discovery_pending&&!op.lease_active){try{expired=await inspectExpiredRadarCaptureContinuation(db,op)}catch{fail('radar_capture_continuation_confirmation_stale')}}
- const stateId=createHash('sha256').update(JSON.stringify({policyVersion:policy.version,organizationId:input.organizationId,campaignId:input.campaignId,operationId:op?.id??null,revision,requested:input.requestedCount,status:op?.status??null,reason:op?.discovery_reason??null,generation:op?.resume_generation??0,queries:op?.queries??0,items,accounting,limits,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,cursors,latest,overflowCount})).digest('hex')
- const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,policy,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
+ const stateId=createHash('sha256').update(JSON.stringify({policyVersion:policy.version,continuations,organizationId:input.organizationId,campaignId:input.campaignId,operationId:op?.id??null,revision,requested:input.requestedCount,status:op?.status??null,reason:op?.discovery_reason??null,generation:op?.resume_generation??0,queries:op?.queries??0,items,accounting,limits,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,cursors,latest,overflowCount})).digest('hex')
+ const preflight:RadarCapturePreflight={stateId,allowed:!blockers.length,requiresLimitsApproval,remaining,limits,policy,continuations,campaignLimits:resolveRadarSearchConfiguration(campaign.search_configuration).batch,attemptedQueries:op?.queries??0,successfulPagesByScope:accounting.successfulPagesByScope,optimisticAdditionalCapacity:capacity.optimisticAdditionalCapacity,minimumAdditionalQueries:capacity.minimumAdditionalQueries,blockers,checks,...(expired?{expiredContinuation:{receiptId:expired.receiptId,scopeLabel:expired.scopeLabel}}:{})}
  return{preflight,operation:op,campaign,scopes,overflowCount,policy}
 }
 export async function getRadarCapturePreflight(pool:pg.Pool,user:AuthUser,input:PreflightInput,deps:PreflightDependencies={}){

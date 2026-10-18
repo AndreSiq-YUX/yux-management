@@ -55,6 +55,7 @@ import {startRadarCaptureOperation,getRadarCaptureOperation,getLatestRadarCaptur
 import {resumeRadarCaptureOperation} from './capture-dispatch.js'
 import {RadarCaptureContinuationConsentRequired} from './capture-continuation.js'
 import {getRadarCapturePreflight} from './capture-preflight.js'
+const continuationAuthorizationsSchema=z.array(z.object({scopeKey:z.string().min(1).max(256),expectedStateId:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional()
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
 import type {AuthUser} from '../../auth/routes.js'
@@ -421,7 +422,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/campaigns/:id/capture-operations',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,requestedCount:z.number().int().positive().safe()}).safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,requestedCount:z.number().int().positive().safe(),continuationAuthorizations:continuationAuthorizationsSchema}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     const result=await startRadarCaptureOperation(app.pg,user,{...body.data,campaignId:params.data.id})
     // Durable outbox is committed first; lost HTTP/queue acknowledgements are safe.
@@ -443,7 +444,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/capture-operations/:id/resume',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional(),limitsAuthorization:z.object({expectedStateId:z.string().regex(/^[a-f0-9]{64}$/),limits:radarCaptureLimitsSchema}).strict().optional()}).strict().safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional(),continuationAuthorizations:continuationAuthorizationsSchema,limitsAuthorization:z.object({expectedStateId:z.string().regex(/^[a-f0-9]{64}$/),limits:radarCaptureLimitsSchema}).strict().optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     let operation:Awaited<ReturnType<typeof resumeRadarCaptureOperation>>
     try{operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})}

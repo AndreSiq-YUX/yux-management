@@ -2,6 +2,8 @@ import type pg from 'pg'
 import {captureError} from './capture-operation.js'
 import {buildRadarDiscoveryScopes} from './search-configuration.js'
 import type {RadarQueryable} from './capture-capacity.js'
+import {inspectRadarContinuationState,approveRadarContinuationRestart} from './continuation-state.js'
+import {loadRadarOperationalLimits} from './operational-limits.js'
 
 type ContinuationCapture={
  id:string;organization_id:string;campaign_id:string;configuration_revision:number
@@ -46,10 +48,11 @@ export async function recoverExpiredRadarCaptureContinuation(client:pg.PoolClien
  const scope={key:expired.scopeKey},run={id:expired.receiptId}
  if(approval.confirmed&&approval.continuationReceiptId!==run.id)throw captureError('radar_capture_continuation_confirmation_stale')
  if(!approval.confirmed)throw new RadarCaptureContinuationConsentRequired(run.id)
- await client.query(`UPDATE public.radar_regional_discovery_cursors
-  SET next_token=NULL,completed=FALSE,lease_id=NULL,running_until=NULL,updated_at=NOW()
-  WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' AND scope_key=$3`,
-  [op.organization_id,op.campaign_id,scope.key])
+ const definition=buildRadarDiscoveryScopes({targetStates:op.configuration_snapshot.target_states,searchConfiguration:op.configuration_snapshot.search_configuration,configurationRevision:op.configuration_revision}).find(s=>s.key===scope.key)!
+ const durableScope={...definition,organizationId:op.organization_id,campaignId:op.campaign_id,configurationRevision:op.configuration_revision}
+ const policy=await loadRadarOperationalLimits(client),state=await inspectRadarContinuationState(client,durableScope,policy)
+ if(!state?.requiresRestartConfirmation)throw captureError('radar_capture_continuation_confirmation_stale')
+ await approveRadarContinuationRestart(client,durableScope,{expectedStateId:state.stateId,requestId:approval.requestId,approvedBy:approval.approvedBy},policy)
  await client.query(`UPDATE public.radar_enrichment_runs SET output_payload=output_payload||jsonb_build_object('captureContinuationRecovery',
   jsonb_build_object('operationId',$2::text,'requestId',$3::text,'approvedBy',$4::text,'scopeKey',$5::text,'recoveredAt',NOW())),updated_at=NOW()
   WHERE id=$1 AND organization_id=$6`,[run.id,op.id,approval.requestId,approval.approvedBy,scope.key,op.organization_id])
