@@ -25,7 +25,7 @@ interface ConversationDetailsProps {
 }
 
 // Local mapping helpers to avoid import issues
-const mapStage = (row: any): CrmPipelineStage => ({
+export const mapStage = (row: any): CrmPipelineStage => ({
   id: row.id,
   pipelineId: row.pipeline_id,
   key: row.key,
@@ -37,7 +37,7 @@ const mapStage = (row: any): CrmPipelineStage => ({
   isActive: row.is_active,
 })
 
-const mapLead = (row: any): CrmLead => ({
+export const mapLead = (row: any): CrmLead => ({
   id: row.id,
   organizationId: row.organization_id,
   crmInstanceId: row.crm_instance_id || undefined,

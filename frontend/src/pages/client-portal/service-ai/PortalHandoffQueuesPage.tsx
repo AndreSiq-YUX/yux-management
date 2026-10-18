@@ -1,29 +1,54 @@
-import { MessageCircle } from 'lucide-react'
-import { PortalJourneyPage } from '@/components/client-portal/PortalJourneyPage'
+import { PortalPage } from '@/components/client-portal/PortalPage'
+import { PortalQueuesWorkspace } from '@/components/omnichannel/PortalQueuesWorkspace'
+import { useCanConfigureOmnichannel } from '@/components/omnichannel/useCanConfigureOmnichannel'
+import { usePortalQueuesData } from '@/components/omnichannel/usePortalQueuesData'
+import { usePlatformStore } from '@/stores/platformStore'
 
 export function PortalHandoffQueuesPage() {
+  const canConfigure = useCanConfigureOmnichannel()
+  const organizationId = usePlatformStore(state => state.organization?.id || state.activeContract?.clientId)
+  const { teams, queues, rules, loading, error, reload } = usePortalQueuesData(organizationId)
+
+  const ready = !loading && !error
+  const metrics = ready
+    ? [
+        { label: 'Equipes ativas', value: String(teams.filter(team => team.isActive).length), detail: 'Equipes que recebem conversas.' },
+        { label: 'Filas ativas', value: String(queues.filter(queue => queue.isActive).length), detail: 'Filas que distribuem conversas.' },
+        {
+          label: 'Atendentes',
+          value: String(new Set(teams.flatMap(team => team.members.map(member => member.id))).size),
+          detail: 'Pessoas nas equipes.',
+        },
+      ]
+    : []
+
   return (
-    <PortalJourneyPage
-      eyebrow="Atendimento & IA"
-      title="Filas e Handoff"
-      description="Define equipes, filas, regras de transferencia, horario comercial, prioridade e SLA de atendimento."
-      icon={MessageCircle}
-      metrics={[
-        { label: 'Equipes', value: 'Atendimento', detail: 'Distribuicao entre atendentes.' },
-        { label: 'SLA', value: 'Prioridade', detail: 'Regras por tipo de demanda.' },
-        { label: 'Handoff', value: 'Humano', detail: 'Quando a IA transfere a conversa.' },
+    <PortalPage
+      eyebrow="Atendimento"
+      title="Filas e transferência para atendente"
+      description="Veja quem atende as conversas que a IA transfere e como elas são distribuídas."
+      metrics={metrics}
+      help={[
+        'Equipes reúnem as pessoas que atendem os clientes.',
+        'Filas decidem como as conversas transferidas são distribuídas entre os atendentes.',
+        'Os gatilhos que fazem a IA transferir a conversa ficam no Agente IA.',
       ]}
-      capabilities={[
-        'Gerenciar equipes de atendimento e filas operacionais.',
-        'Configurar regras de transferencia, prioridade e horario comercial.',
-        'Definir SLA e distribuicao entre atendentes.',
-        'Separar governanca de atendimento da tela de mensagens.',
-      ]}
-      primaryAction={{ label: 'Abrir Conversas', href: '/portal/atendimento/conversas' }}
-      secondaryActions={[
+      related={[
+        { label: 'Conversas', href: '/portal/atendimento/conversas' },
         { label: 'Agente IA', href: '/portal/atendimento/agente-ia' },
-        { label: 'Canais', href: '/portal/atendimento/canais' },
+        { label: 'Canais conectados', href: '/portal/atendimento/canais' },
       ]}
-    />
+    >
+      <PortalQueuesWorkspace
+        organizationId={organizationId}
+        teams={teams}
+        queues={queues}
+        rules={rules}
+        loading={loading}
+        error={error}
+        canConfigure={canConfigure}
+        onChanged={() => { void reload() }}
+      />
+    </PortalPage>
   )
 }

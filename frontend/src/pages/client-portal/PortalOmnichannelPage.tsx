@@ -1,6 +1,8 @@
 import { canAccessModule } from '@/lib/platform/accessControl'
 import { getPlatformModule } from '@/lib/platform/moduleRegistry'
 import { PortalOmnichannelWorkspace } from '@/components/omnichannel/PortalOmnichannelWorkspace'
+import { useCanConfigureOmnichannel } from '@/components/omnichannel/useCanConfigureOmnichannel'
+import { PageHeader } from '@/components/portal-ui'
 import { usePlatformStore } from '@/stores/platformStore'
 
 export function PortalOmnichannelPage() {
@@ -17,34 +19,37 @@ export function PortalOmnichannelPage() {
     organization: state.organization,
     role: state.role,
   }))
+  const canConfigure = useCanConfigureOmnichannel()
   const module = getPlatformModule('whatsapp_ai')
 
   if (isLoading) {
-    return <p className="text-sm text-gray-600">Carregando conversas...</p>
+    return <p className="text-sm text-yx-fg-2">Carregando conversas...</p>
   }
 
   if (!activeContract) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Conversas e IA</h1>
-        <p className="text-gray-600">Nenhum contrato ativo encontrado para este usuario.</p>
-      </div>
+      <PageHeader
+        eyebrow="Atendimento"
+        title="Conversas"
+        lead="Nenhum contrato ativo foi encontrado para este acesso."
+      />
     )
   }
 
   if (!module || !canAccessModule(module, role, enabledModuleKeys)) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Conversas e IA</h1>
-        <p className="text-gray-600">Modulo nao disponivel para este acesso.</p>
-      </div>
+      <PageHeader
+        eyebrow="Atendimento"
+        title="Conversas"
+        lead="Este módulo não está disponível para o seu acesso."
+      />
     )
   }
 
   return (
     <PortalOmnichannelWorkspace
       organizationId={organization?.id || activeContract.clientId}
-      canConfigure={Boolean(role?.permissions.includes('omnichannel.configure') || role?.permissions.includes('platform.manage'))}
+      canConfigure={canConfigure}
     />
   )
 }

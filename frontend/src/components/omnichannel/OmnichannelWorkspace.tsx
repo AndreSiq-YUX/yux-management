@@ -221,7 +221,7 @@ export function OmnichannelWorkspace({
           onFilterChange={setFilters}
           onSelect={setSelectedId}
         />
-        <main className="grid min-w-0 grid-rows-[1fr_auto_auto]">
+        <div className="grid min-w-0 grid-rows-[1fr_auto_auto]">
           <ConversationDetails
             conversation={selectedConversation}
             messages={messages}
@@ -255,7 +255,7 @@ export function OmnichannelWorkspace({
               onSimulateEvent={onSimulateEvent || (event => invokeOrToast('Evento simulado', () => omnichannelService.simulateChannelEvent(event)))}
             />
           )}
-        </main>
+        </div>
       </div>
 
       {/* Settings Panel Tabs */}
