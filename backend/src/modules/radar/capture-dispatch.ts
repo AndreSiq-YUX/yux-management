@@ -125,6 +125,9 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   current.discovery_pending=false
   const admitted=Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
   const limitPause=isRadarCaptureLimitPause(current,admitted)
+  if(current.status!=='blocked'&&!limitPause&&(input.limitsAuthorization||input.restartExpiredContinuation)){
+   throw captureError(input.limitsAuthorization?'radar_capture_limits_confirmation_stale':'radar_capture_continuation_confirmation_stale')
+  }
   if(current.status==='blocked'||limitPause){
    if(input.restartExpiredContinuation){
     const expiry=await inspectExpiredRadarCaptureContinuation(client,current,true)

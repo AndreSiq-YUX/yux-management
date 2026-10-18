@@ -66,6 +66,28 @@ describe.skipIf(!connectionString)('capture limits consent with PostgreSQL',()=>
    expect(await f.op()).toEqual(before)
   }finally{await f.close()}
  })
+ it('allows proposing a larger page when the old page size would exceed the remaining quota',async()=>{
+  const f=await limitFixture()
+  try{
+   await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{search_configuration,batch,pageSize}','1') WHERE id=$1",[f.input.operationId])
+   await f.pool.query('UPDATE public.radar_campaigns SET daily_limit=5 WHERE id=$1',[f.campaign.id])
+   const p=await api.getRadarCapturePreflight(f.pool,admin,f.input,{availability:available})
+   expect(p).toMatchObject({allowed:true,requiresLimitsApproval:true,minimumAdditionalQueries:20})
+   await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,limitsAuthorization:{expectedStateId:p.stateId,limits}},{availability:available})).resolves.toMatchObject({id:f.input.operationId,status:'queued',counts:{requested:20}})
+  }finally{await f.close()}
+ })
+ it('rejects a second tab approval after another request already queued this lot',async()=>{
+  const f=await limitFixture()
+  try{
+   const p=await api.getRadarCapturePreflight(f.pool,admin,f.input,{availability:available})
+   const approval={expectedStateId:p.stateId,limits}
+   await resumeRadarCaptureOperation(f.pool,admin,{...f.resume,requestId:randomUUID(),limitsAuthorization:approval},{availability:available})
+   const before=await f.op()
+   await expect(resumeRadarCaptureOperation(f.pool,admin,{...f.resume,limitsAuthorization:approval},{availability:available})).rejects.toThrow('radar_capture_limits_confirmation_stale')
+   expect(await f.op()).toEqual(before)
+   expect((await f.pool.query('SELECT id FROM public.radar_capture_limit_authorizations WHERE operation_id=$1',[f.input.operationId])).rows).toHaveLength(1)
+  }finally{await f.close()}
+ })
  it.each([{pageSize:0,maxPagesPerScope:4,maxQueriesPerBatch:8},{pageSize:10,maxPagesPerScope:11,maxQueriesPerBatch:8},{pageSize:10,maxPagesPerScope:4,maxQueriesPerBatch:101},{pageSize:1,maxPagesPerScope:1,maxQueriesPerBatch:1},{maxPagesPerScope:4,maxQueriesPerBatch:8}])('rejects invalid or insufficient approved limits %j',async proposed=>{
   const f=await limitFixture()
   try{
@@ -97,6 +119,8 @@ describe.skipIf(!connectionString)('capture limits consent with PostgreSQL',()=>
    const resume={organizationId:f.input.organizationId,configurationRevision:1,requestId:f.resume.requestId,limitsAuthorization:{expectedStateId:stateId,limits}}
    const resumed=await app.inject({method:'POST',url:`/api/radar/capture-operations/${f.input.operationId}/resume`,headers:{cookie},payload:resume})
    expect(resumed.statusCode).toBe(202);expect(resumed.json()).toMatchObject({id:f.input.operationId,counts:{requested:20}});expect(dispatched).toBe(1)
+   const stale=await app.inject({method:'POST',url:`/api/radar/capture-operations/${f.input.operationId}/resume`,headers:{cookie},payload:{...resume,requestId:randomUUID()}})
+   expect(stale.statusCode).toBe(409);expect(stale.json().error).toBe('radar_capture_limits_confirmation_stale');expect(dispatched).toBe(1)
    await runWithDatabaseRequestContext({role:'client_member',serviceRole:'worker',organizationIds:[fixtureIds.organizationB]},async()=>{
     expect((await worker.query('SELECT id FROM public.radar_capture_limit_authorizations WHERE operation_id=$1',[f.input.operationId])).rows).toHaveLength(0)
    })

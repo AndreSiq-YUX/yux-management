@@ -54,7 +54,11 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  checks.push({key:'research_configuration',status:availability.allowed?'ok':'blocked'})
  if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(db as pg.Pool,input.organizationId,'cnpja_advanced_search')
-  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,capacity.minimumAdditionalQueries)
+  // An approval may increase pageSize up to the schema ceiling of10. Do not
+  // reject that proposal using an obsolete smaller page size. Authorization
+  // rechecks quota/budget against the exact proposed page size before writing.
+  const minimumQueries=requiresLimitsApproval?Math.ceil(Math.max(0,remaining-overflowCount)/10):capacity.minimumAdditionalQueries
+  const governance=await evaluateRadarSourceGovernance(db,input.organizationId,input.campaignId,source,minimumQueries)
   for(const issue of governance.issues)fail(issue.code,issue.message)
   const provider=(await db.query(`SELECT status,EXISTS(SELECT 1 FROM public.platform_provider_secrets secret WHERE secret.provider_connection_id=provider.id AND secret.secret_kind='api_key') AS has_secret
    FROM public.platform_provider_connections provider WHERE provider_key='cnpja' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)).rows[0]

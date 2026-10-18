@@ -111,10 +111,22 @@ This is one continuity feature with three reviewable deliverables, not a redesig
 
 ## Verification — 2026-10-17
 
-- Backend: 219 suites / 1,183 tests passed with isolated PostgreSQL17; separate capture/commercial integration: 17 tests passed.
+- Backend: 219 suites / 1,185 tests passed with isolated PostgreSQL17; separate capture/commercial integration: 17 tests passed.
 - Frontend: 165 suites / 737 tests passed; both TypeScript builds and frontend bundle budget passed.
 - Migration0193 applied locally with stop-on-error; HTTP tests exercise scoped API consent, tenant isolation, worker SELECT-only audit access, atomic rollback and duplicate approvals. Release migration inventory updated without promoting production gates.
 - Browser plugin not available; local Playwright1.63 / Chrome fallback. Tested localhost4174/API4182 at1440×1000 and390×844: identity, meaningful render, no framework overlay, cancellation, Escape, edited limits, one combined dialog, one resume POST, reload and preserved previous companies.
 - Synthetic journey starts with40 prior companies and a legacy partial20/0 lot, one proven expired-token rejection and insufficient limits. Approval of8 pages/8 queries preserves the same operation/target. Four duplicate pages do not admit companies; two subsequent pages admit20 distinct new companies. Total7 attempts including the earlier rejection; all20 real child jobs reach review. Their deliberately incomplete evidence remains `insufficient`, not falsely completed. No automatic review approval, CRM conversion or contact.
 - Browser warnings: existing React Router future flags and two expected unauthenticated `/auth/me`401 checks before login. No page runtime error or failed Radar request in the accepted journey. Screenshots/JSON are outside the repository at `C:/Users/andre/.codex/visualizations/2026/10/17/radar-limites-capacidade/`.
 - External balances, actual credential acceptance, provider/network quality and production execution remain untested. No paid call, deployment, credential change or real campaign limit change.
+
+### Final independent review and decisions
+
+One fresh read-only whole-branch review identified two Important issues and no Critical/Minor findings. Both were reproduced with failing tests and fixed in one pass: preflight now permits evaluating an authorized larger page without an obsolete quota estimate blocking the dialog; the exact proposed quota/budget is still enforced before commit. A second tab's stale approval is rejected even after another request queued the operation, without a new dispatch; replay of the same accepted UUID remains idempotent. Final backend1,185, frontend737 and separate integration17 tests passed; backend build passed and frontend build/budget remained green. Frontend lint baseline passed at558 errors/25 warnings versus the existing ceiling560/27, without changing that baseline.
+
+Decisions carried from execution:
+
+1. `canContinue` is optional in shared TypeScript DTOs, always supplied to Admin by the new backend; absent means false for backward compatibility. Cost if wrong: an old backend still needs the new deployment to expose legacy continuation.
+2. Historic counters inconsistent with receipts block continuation instead of queueing another no-op. Cost: such inconsistent lots need administrative reconciliation rather than automatic retry.
+3. The review deliberately did not test live providers, balances or production. These remain `not_checked` because this development approval excludes paid calls/deployment. Cost: actual credential, balance or connectivity faults can still block production; local success is not claimed as production success.
+
+No deferred Minor findings. Main publication is authorized by the user; it does not authorize deployment or a paid production pilot.
