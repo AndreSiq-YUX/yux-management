@@ -7,6 +7,20 @@ const modulePath='../src/modules/radar/capture-dispatch.js'
 const api=await import(modulePath).catch(()=>({}))
 const state=await import('../src/modules/radar/capture-research-state.js')
 describe('capture outcomes',()=>{
+ it('completes policy-ready research without inventing an AI qualification, despite an incidental quota warning',()=>{
+  const output={siteAssociation:'confirmed',quality:{readyForReview:true},limitations:['source_limit_exceeded']}
+  expect(state.assessRadarCaptureResearch({status:'partial',output})).toEqual({status:'completed'})
+  expect(output).not.toHaveProperty('qualification')
+ })
+ it('keeps a required AI failure blocked even when contact and identity quality are ready',()=>{
+  const output={siteAssociation:'confirmed',quality:{readyForReview:true},limitations:['radar_qualification_explicit_route_required']}
+  expect(state.assessRadarCaptureResearch({status:'partial',output})).toEqual({status:'blocked',stage:'qualification',reason:'radar_qualification_explicit_route_required'})
+ })
+ it('does not require positive commercial fit to finish policy-ready research',()=>{
+  const output={siteAssociation:'confirmed',quality:{readyForReview:true},qualification:{targetStatus:'review',productFit:'unknown'},limitations:['source_limit_exceeded']}
+  expect(state.assessRadarCaptureResearch({status:'partial',output})).toEqual({status:'completed'})
+  expect(output.qualification.targetStatus).toBe('review')
+ })
  it.each(['radar_presence_explicit_route_required','radar_presence_refresh_authorization_required','radar_qualification_previous_request_uncertain','radar_qualification_invalid_json','candidate_search_limit_reached'])('explains actionable unfinished-stage restriction %s',reason=>{
   expect(state.assessRadarCaptureResearch({status:'partial',output:{limitations:[reason]}})).toMatchObject({status:'blocked',reason})
  })

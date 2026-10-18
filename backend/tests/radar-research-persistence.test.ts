@@ -6,7 +6,7 @@ import { executeRadarCandidateResearch, startRadarCandidateResearch, getRadarCan
 const admin={id:'admin',role:'yux_admin'} as AuthUser
 class ResearchPool {
   queries:Array<{sql:string;params:unknown[]}>=[]
-  enabled=true; quota=0; revision=2; approved=false
+  enabled=true; quota=0; revision=2; approved=false; routesEnabled=true
   researchConfiguration:Record<string,unknown>={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true}}
   run:Record<string,any>|undefined
   payload:Record<string,unknown>={cnpj:'12345678000190',tradeName:'Empresa Alfa',city:'Curitiba',state:'PR',phoneRaw:'4133334444',analysisRevision:1,discoveryRevision:1}
@@ -18,10 +18,10 @@ class ResearchPool {
     if(sql.includes('FROM public.radar_analysis_receipts'))return{rows:this.receiptResult||this.receiptStatus==='rejected_before_provider'?[{result:this.receiptResult,status:this.receiptStatus}]:[]}
     if(/^(BEGIN|COMMIT|ROLLBACK)/.test(sql)||sql.includes('pg_advisory_xact_lock'))return{rows:[]}
     if(sql.includes('SELECT candidate.*, campaign.search_configuration'))return{rows:params[1]==='org'?[{id:'candidate',organization_id:'org',campaign_id:'campaign',title:'Empresa Alfa',status:'pending_review',normalized_payload:this.payload,search_configuration:this.researchConfiguration,configuration_revision:this.revision,campaign_status:'draft',target_segment:'Serviços',offer_type:'Automação',product_focus:[],target_cnaes:[]}]:[]}
-    if(sql.includes('JOIN public.model_routing_rules rule'))return{rows:[{model_name:'fixture-admin-model',provider:'openrouter',max_input_tokens:16000,max_output_tokens:4000,fallback_routes:[]}]}
+    if(sql.includes('JOIN public.model_routing_rules rule'))return{rows:this.routesEnabled?[{model_name:'fixture-admin-model',provider:'openrouter',max_input_tokens:16000,max_output_tokens:4000,fallback_routes:[]}]:[]}
     if(sql.includes('SELECT organization.client_id'))return{rows:[{client_id:'client',contract_id:'contract'}]}
-    if(sql.includes("agent_type='radar_business_qualification'"))return{rows:[{id:'route'}]}
-    if(sql.includes("agent_type='radar_presence_resolution'"))return{rows:[{id:'route'}]}
+    if(sql.includes("agent_type='radar_business_qualification'"))return{rows:this.routesEnabled?[{id:'route'}]:[]}
+    if(sql.includes("agent_type='radar_presence_resolution'"))return{rows:this.routesEnabled?[{id:'route'}]:[]}
     if(sql.includes("kind = 'yux'"))return{rows:[{allowed:true}]}
     if(sql.includes('FROM public.app_users'))return{rows:[admin]}
     if(sql.includes('FROM public.radar_campaigns'))return{rows:[{search_configuration:this.researchConfiguration,configuration_revision:this.revision,status:'draft',daily_limit:10,budget_limit:1}]}
@@ -111,7 +111,7 @@ it.each(['presence','semantic'] as const)('recovers a lost pre-provider %s rejec
   expect(pool.run!.calls[key].status).toBe('completed')
   expect(web).not.toHaveBeenCalled()
 })
-it('recovers a completed durable analysis receipt after a lost runtime response without replay',async()=>{
+it.each([true,false])('recovers a completed durable analysis receipt without replay even with routes enabled=%s',async routesEnabled=>{
   const pool=new ResearchPool()
   pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
   const run=await start(pool)
@@ -121,10 +121,23 @@ it('recovers a completed durable analysis receipt after a lost runtime response 
   pool.run!.status='partial';pool.run!.calls.semantic={...pool.run!.calls.semantic,status:'reserved',result:undefined}
   pool.run!.output.qualification=undefined;pool.run!.output.qualificationEvidenceHash=undefined
   pool.receiptResult=result
+  pool.routesEnabled=routesEnabled
   await start(pool)
   const runtime=vi.fn(async()=>{throw Error('must_not_call_provider')})
   await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime})
   expect(pool.run!.output.qualification).toMatchObject({productFit:'possible'})
+  expect(runtime).not.toHaveBeenCalled()
+})
+it('still rejects a new analysis without its route before contacting the runtime',async()=>{
+  const pool=new ResearchPool()
+  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
+  const run=await start(pool)
+  pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+  pool.routesEnabled=false
+  const runtime=vi.fn(async()=>{throw Error('must_not_call_provider')})
+  await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime})
+  expect(pool.run!.output.limitations).toContain('Qualificação semântica pendente (radar_qualification_explicit_route_required). Os fatos foram preservados.')
+  expect(pool.run!.output.qualification).toBeUndefined()
   expect(runtime).not.toHaveBeenCalled()
 })
 it('tries the authorized fallback when the first source only returns external references, preserving both sources',async()=>{

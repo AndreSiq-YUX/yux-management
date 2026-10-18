@@ -20,10 +20,11 @@ export function assessRadarCaptureResearch(run:Child):RadarCaptureResearchAssess
  for(const [key,call]of Object.entries(run.calls??{}))if(!['completed','failed'].includes(call.status))return blocked(call.status==='rejected_before_provider'&&safeCode(call.error)?call.error:'radar_research_call_uncertain',key==='presence'?'presence':key==='semantic'?'qualification':'discovery')
  const output=run.output??{},quality=output.quality as {readyForReview?:boolean}|undefined
  const limitations=Array.isArray(output.limitations)?output.limitations.filter((v):v is string=>typeof v==='string').map(limitationCode):[]
- const qualification=output.qualification as {targetStatus?:string}|undefined
- const requiredPending=limitations.some(code=>/^radar_(?:presence|qualification|profile)_(?:waiting_|service_unavailable|failed|unverifiable)/.test(code))
+ const requiredPending=limitations.some(code=>analysisFailures.has(code)||/^agent_runtime_\d{3}(?:_[a-z0-9_]+)?$/.test(code)||/^radar_(?:presence|qualification|profile)_(?:waiting_|service_unavailable|failed|unverifiable)/.test(code))
+ // Quality already applies the campaign's completion policy. A positive AI
+ // verdict is neither required when disabled nor equivalent to research done.
  const complete=output.siteAssociation!=='review'&&quality?.readyForReview!==false&&!requiredPending&&
-  (run.status==='succeeded'||quality?.readyForReview===true&&!!qualification&&qualification.targetStatus==='confirmed')
+  (run.status==='succeeded'||quality?.readyForReview===true)
  if(complete)return{status:'completed'}
  if(Object.values(run.calls??{}).some(call=>call.status==='failed'))return blocked('radar_research_previous_request_failed','discovery')
  const discovery=output.discovery as {association?:string;limitations?:string[]}|undefined

@@ -79,7 +79,10 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const recovering=!!op&&!needsDiscovery
  const researchBlockers=availability.reasons.filter(reason=>!recovering||!['source_limit_exceeded','source_budget_exceeded'].includes(reason.code))
  if(!availability.allowed)for(const reason of researchBlockers)fail(reason.code,reason.message)
- if(availability.presence?.routeConfigured===false||availability.semantic?.routeConfigured===false)fail('radar_capture_model_route_missing')
+ if(!recovering&&(availability.presence?.routeConfigured===false||availability.semantic?.routeConfigured===false))fail('radar_capture_model_route_missing')
+ // Resuming can consume completed receipts without contacting a model. Each
+ // child checks its route and the runtime checks credits before any new call.
+ if(recovering)checks.push({key:'ai_model_route',status:'not_checked'})
  checks.push({key:'research_configuration',status:availability.allowed||!researchBlockers.length?'ok':'blocked'})
  if(recovering&&!availability.allowed&&!researchBlockers.length)checks.push({key:'new_search_capacity',status:'blocked',code:'source_limit_exceeded'})
  if(needsDiscovery&&capacity.minimumAdditionalQueries>0){
@@ -102,7 +105,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(!worker)fail('radar_capture_worker_unavailable')
  checks.push({key:'external_worker',status:worker?'ok':'blocked'})
  const ai=config.research.presenceResolutionEnabled||config.research.semanticQualificationEnabled||config.research.profileEnabled||config.research.sizeAssessment.enabled
- if(ai){
+ if(ai&&!recovering){
   const context=(await db.query(`SELECT organization.client_id,contract.id AS contract_id FROM public.organizations organization
    LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE WHERE organization.id=$1`,[input.organizationId])).rows[0]
   if(context?.client_id&&context.contract_id){
@@ -110,7 +113,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
    const code=!wallet?'radar_ai_wallet_missing':!wallet.is_unlimited&&Number(wallet.current_balance)<1?'radar_ai_credits_insufficient':undefined
    if(code)fail(code);checks.push({key:'ai_wallet',status:code?'blocked':'ok',...(code?{code}:{})})
   }else checks.push({key:'ai_wallet',status:'not_applicable'})
- }else checks.push({key:'ai_wallet',status:'not_applicable'})
+ }else checks.push({key:'ai_wallet',status:ai?'not_checked':'not_applicable'})
  checks.push({key:'external_credit',status:'not_checked'},{key:'runtime_connectivity',status:'not_checked'})
  const latest=(await db.query("SELECT id FROM public.radar_enrichment_runs WHERE organization_id=$1 AND campaign_id=$2 AND provider='cnpja_advanced_search' ORDER BY started_at DESC NULLS LAST,id DESC LIMIT 1",[input.organizationId,input.campaignId])).rows[0]?.id??null
  let expired:Awaited<ReturnType<typeof inspectExpiredRadarCaptureContinuation>>=null

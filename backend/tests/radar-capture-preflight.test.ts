@@ -1,10 +1,11 @@
 import {describe,it,expect} from 'vitest'
-import {connectionString,admin,available,organizationId} from './support/radar-capture-fixture.js'
+import {connectionString,admin,available,organizationId,company} from './support/radar-capture-fixture.js'
 import {fixtureUsers} from './integration/support/fixtures.js'
 import {limitFixture} from './support/radar-capture-limit-fixture.js'
 import {startRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
 import {randomUUID} from 'node:crypto'
 import {createRadarCampaign} from '../src/modules/radar/repository.js'
+import {advanceRadarCaptureDiscovery} from '../src/modules/radar/capture-discovery.js'
 const path='../src/modules/radar/capture-preflight.js',api=await import(path).catch(()=>({}))
 describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
  it('warns about enrichment capacity for the entire requested lot before discovery, without raising quotas',async()=>{
@@ -86,7 +87,7 @@ describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
    expect(p.allowed).toBe(false);expect(p.blockers.length).toBeGreaterThan(0)
   }finally{await f.close()}
  })
- it('checks the exact client contract wallet only for enabled AI stages',async()=>{
+ it('checks the exact client contract wallet for new work but defers AI gates to each effect when recovering admitted research',async()=>{
   const f=await limitFixture(),clientId=randomUUID(),orgId=randomUUID(),contractId=randomUUID()
   try{
    await f.pool.query("INSERT INTO public.clients(id,company_name,contact_name,email,sector,size,lead_source,status) VALUES($1,'Wallet QA','QA',$2,'QA','small','test','active')",[clientId,`${clientId}@example.test`])
@@ -102,6 +103,21 @@ describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
    await f.pool.query('UPDATE public.ai_credit_wallets SET is_unlimited=TRUE WHERE contract_id=$1',[contractId])
    expect((await check()).checks).toContainEqual({key:'ai_wallet',status:'ok'})
    expect((await f.pool.query('SELECT current_balance FROM public.ai_credit_wallets WHERE contract_id=$1',[contractId])).rows[0].current_balance).toBe(0)
+   const started=await startRadarCaptureOperation(f.pool,admin,{...input,requestId:randomUUID()},{availability:available})
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,{organizationId:orgId,operationId:started.operationId},{availability:available,searchPage:async()=>({candidates:[company()]}),loadSecret:async()=>'fixture'})
+   const item=(await f.pool.query('SELECT * FROM public.radar_capture_items WHERE operation_id=$1',[started.operationId])).rows[0]
+   const run=(await f.pool.query(`INSERT INTO public.radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,output,calls)
+    VALUES($1,$2,$3,$4,1,'partial','{"readingComplete":true,"discovery":{"association":"confirmed","hits":[]},"pages":[]}','{"semantic":{"status":"completed","source":"radar_business_qualification","evidenceHash":"saved","result":{"targetStatus":"review"}}}') RETURNING id`,[orgId,campaign.id,item.candidate_id,admin.id])).rows[0]
+   await f.pool.query("UPDATE public.radar_capture_items SET status='blocked',run_id=$2 WHERE id=$1",[item.id,run.id])
+   await f.pool.query("UPDATE public.radar_capture_operations SET status='blocked' WHERE id=$1",[started.operationId])
+   await f.pool.query('UPDATE public.ai_credit_wallets SET is_unlimited=FALSE WHERE contract_id=$1',[contractId])
+   const unavailableAI=async()=>({...await available(),semantic:{routeConfigured:false}})
+   const recovered=await api.getRadarCapturePreflight(f.pool,admin,{...input,operationId:started.operationId},{availability:unavailableAI})
+   expect(recovered.allowed).toBe(true)
+   expect(recovered.checks).toContainEqual({key:'ai_wallet',status:'not_checked'})
+   expect(recovered.checks).toContainEqual({key:'ai_model_route',status:'not_checked'})
+   expect((await api.getRadarCapturePreflight(f.pool,admin,input,{availability:unavailableAI})).blockers.map((b:{code:string})=>b.code)).toEqual(expect.arrayContaining(['radar_ai_credits_insufficient','radar_capture_model_route_missing']))
+   expect((await f.pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0].calls.semantic.status).toBe('completed')
    await f.pool.query("INSERT INTO public.radar_data_sources(organization_id,source_key,source_type,display_name,enabled) VALUES($1,'cnpja_advanced_search','cnpja_advanced_search','Own disabled fixture',FALSE)",[orgId])
    expect((await check()).allowed).toBe(false)
    expect((await check()).blockers.map((b:{code:string})=>b.code)).toContain('source_disabled')
