@@ -39,7 +39,8 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
   signal?.throwIfAborted()
   if(!op.discovery_stopped&&op.status!=='blocked')await (dependencies.discover??advanceRadarCaptureDiscovery)(pool,env,input,{availability:dependencies.availability})
   const discoveryState=await getRadarCaptureOperation(pool,user,input.organizationId,op.id)
-  const paused=discoveryState.status==='blocked'
+  const limitPause=['page_cap','query_cap'].includes(discoveryState.discoveryReason??'')
+  const paused=discoveryState.status==='blocked'&&!limitPause
   // Each turn handles at most ten items. Child jobs keep their own leases/receipts.
   const items=(await pool.query(`SELECT item.*,run.status AS run_status,run.error_code,run.output,run.calls,run.lease_until,run.updated_at AS run_updated_at
    FROM public.radar_capture_items item LEFT JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id
@@ -83,8 +84,9 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
   }
   const state=await getRadarCaptureOperation(pool,user,input.organizationId,op.id)
   const ongoing=!state.discoveryStopped||state.counts.researching>0
-  const status=ongoing?(paused?'blocked':state.discoveryStopped?'researching':'discovering'):state.counts.blocked?'blocked':state.counts.admitted<state.counts.requested||state.counts.insufficient?'partial':'completed'
-  const blockers=[...(paused&&ongoing?discoveryState.blockers:[]),...state.items.filter(item=>item.blocker).map(item=>item.blocker!)]
+  const capped=limitPause&&state.counts.admitted<state.counts.requested
+  const status=ongoing?(paused?'blocked':state.discoveryStopped?'researching':'discovering'):state.counts.blocked||capped?'blocked':state.counts.admitted<state.counts.requested||state.counts.insufficient?'partial':'completed'
+  const blockers=[...(paused&&ongoing?discoveryState.blockers:[]),...(capped?[state.discoveryReason==='page_cap'?'radar_capture_page_limit':'radar_capture_query_limit']:[]),...state.items.filter(item=>item.blocker).map(item=>item.blocker!)]
   await pool.query('UPDATE public.radar_capture_operations SET status=$3,blockers=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,status,JSON.stringify([...new Set(blockers)])])
   const pendingChild=(await pool.query(`SELECT EXISTS(SELECT 1 FROM public.radar_capture_items item JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.status IN ('queued','researching') AND run.status IN ('queued','running')) AS pending`,[op.id,input.organizationId])).rows[0]?.pending
   if(['completed','partial'].includes(status)||status==='blocked'&&!pendingChild)await pool.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])

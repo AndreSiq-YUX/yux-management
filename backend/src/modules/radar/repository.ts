@@ -1,6 +1,7 @@
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import {admitRadarCapturePage,captureError} from './capture-operation.js'
+import {loadRadarCapturePageAccounting,type CaptureAccountingInput} from './capture-capacity.js'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { radarCompanyExportFields } from './research-export.js'
@@ -1067,6 +1068,7 @@ export async function runRadarCnpjaAdvancedSearch(
   let estimatedCost = 0
   let pageToken: string | undefined
   let scopeKey: string | undefined
+  let captureSnapshot:CaptureAccountingInput|undefined
   let scopeCity: string | undefined
   let campaignSnapshot: RadarCampaignRow | undefined
   let searchConfiguration = resolveRadarSearchConfiguration()
@@ -1096,15 +1098,24 @@ export async function runRadarCnpjaAdvancedSearch(
         const op=(await client.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3 FOR UPDATE',[input.captureOperationId,input.organizationId,input.campaignId])).rows[0]
         if(!op||op.configuration_revision!==campaignSnapshot.configuration_revision)throw captureError('radar_campaign_configuration_changed')
         if(op.discovery_pending)throw captureError('radar_capture_discovery_uncertain')
+        captureSnapshot=op
+        const effective=resolveRadarSearchConfiguration(op.configuration_snapshot.search_configuration).batch
+        if(op.queries>=effective.maxQueriesPerBatch)throw captureError('radar_capture_query_limit')
         const admitted=Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
         if(op.discovery_stopped||admitted>=op.requested_count)throw captureError('radar_capture_target_reached')
-        limit=Math.min(limit,op.requested_count-admitted)
+        limit=Math.min(limit,op.requested_count-admitted,effective.pageSize)
       }
       const scopes = buildRadarDiscoveryScopes(mapCampaign(campaignSnapshot)).filter(scope => scope.state === input.regionalState
         && (!input.regionalCity || scope.city?.toLocaleLowerCase('pt-BR') === input.regionalCity.toLocaleLowerCase('pt-BR')))
       if (scopes.length !== 1) throw Object.assign(new Error('radar_discovery_scope_required'), { statusCode: 400 })
       scopeKey = scopes[0].key
       scopeCity = scopes[0].city
+      if(captureSnapshot){
+        const accounting=await loadRadarCapturePageAccounting(client,captureSnapshot)
+        if(!accounting.historyCertain)throw captureError('radar_capture_history_uncertain')
+        const effective=resolveRadarSearchConfiguration(captureSnapshot.configuration_snapshot.search_configuration).batch
+        if((accounting.successfulPagesByScope[scopeKey]??0)>=effective.maxPagesPerScope)throw captureError('radar_capture_page_limit')
+      }
       const cursor = await client.query<{ next_token: string | null; completed: boolean; running_until: Date | null }>(
         `SELECT next_token, completed, running_until
          FROM public.radar_regional_discovery_cursors
@@ -1151,6 +1162,7 @@ export async function runRadarCnpjaAdvancedSearch(
           searchConfiguration: input.regionalState ? searchConfiguration : undefined,
           pageToken,
           captureOperationId: input.captureOperationId,
+          scopeKey,
         }),
       ],
     )
