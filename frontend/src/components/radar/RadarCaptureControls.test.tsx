@@ -21,6 +21,15 @@ async function render(overrides:Record<string,unknown>={}){
 }
 const operation=(status:RadarCaptureOperation['status'])=>({id:'op',campaignId:'campaign',configurationRevision:1,status,counts:{requested:7,admitted:7,researching:0,completed:0,insufficient:0,blocked:7},blockers:[],items:[],discoveryStopped:true,queries:1})
 describe('direct complete capture controls',()=>{
+ it('passes the explicit analysis approval when resuming an existing lot',async()=>{
+  const ui=await render({operation:operation('blocked'),canAuthorizeAnalysisRefresh:true})
+  const approval=ui.container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  expect(approval).not.toBeNull()
+  await act(async()=>approval!.click())
+  await act(async()=>ui.submit())
+  expect(ui.props.onResume).toHaveBeenCalledWith({allowSemanticRefresh:true})
+  expect(ui.props.onStart).not.toHaveBeenCalled()
+ })
  it('recovers a partial admitted lot with no search quota without starting a new lot',async()=>{
   const ui=await render({available:false,operation:{...operation('partial'),canContinue:true}})
   expect(ui.input().disabled).toBe(true)

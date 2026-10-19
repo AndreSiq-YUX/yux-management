@@ -4,22 +4,23 @@ import {Input} from '@/components/ui/input'
 import {Label} from '@/components/ui/label'
 import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from '@/components/ui/dialog'
 import type {RadarCaptureOperation} from '@/types/radarResearch'
-type Props={scopeKey:string;maximum?:number;operation:RadarCaptureOperation|null;loading:boolean;busy:boolean;available:boolean;error?:string;
- onStart:(input:{requestedCount:number;requestId:string})=>Promise<'confirmation_required'|void>;onResume:(options?:{restartExpiredContinuation?:boolean})=>Promise<'confirmation_required'|void>;onRefresh:()=>void}
+type Props={scopeKey:string;maximum?:number;operation:RadarCaptureOperation|null;loading:boolean;busy:boolean;available:boolean;error?:string;canAuthorizeAnalysisRefresh?:boolean;
+ onStart:(input:{requestedCount:number;requestId:string})=>Promise<'confirmation_required'|void>;onResume:(options?:{restartExpiredContinuation?:boolean;allowSemanticRefresh?:boolean})=>Promise<'confirmation_required'|void>;onRefresh:()=>void}
 export function RadarCaptureControls(props:Props){
  const terminal=props.operation&&!props.operation.canContinue&&['partial','completed'].includes(props.operation.status)?props.operation.id:'active'
  return <CaptureForm key={`${props.scopeKey}:${props.operation?.id??'none'}:${terminal}`} {...props}/>
 }
-function CaptureForm({operation,maximum,loading,busy,available,error,onStart,onResume,onRefresh}:Props){
+function CaptureForm({operation,maximum,loading,busy,available,error,onStart,onResume,onRefresh,canAuthorizeAnalysisRefresh=false}:Props){
  const id=useId(),[quantity,setQuantity]=useState('10'),[sending,setSending]=useState(false),[failure,setFailure]=useState(''),[acknowledged,setAcknowledged]=useState(false)
  const [confirmRestart,setConfirmRestart]=useState(false)
+ const [allowSemanticRefresh,setAllowSemanticRefresh]=useState(false)
  const request=useRef<{requestedCount:number;requestId:string}|null>(null),inFlight=useRef(false),alive=useRef(true)
  useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
  const active=!!operation&&(operation.canContinue||['queued','discovering','researching','blocked'].includes(operation.status)),blocked=operation?.status==='blocked'||operation?.canContinue
  const count=Number(quantity),valid=!!maximum&&quantity.trim()!==''&&Number.isSafeInteger(count)&&count>=1&&count<=maximum
  const disabled=loading||busy||sending||active&&!blocked||acknowledged&&!active||!active&&!available||!!error&&!blocked
  const resume=async(confirmed=false)=>{
-  const result=confirmed?await onResume({restartExpiredContinuation:true}):await onResume()
+  const result=confirmed?await onResume({restartExpiredContinuation:true,...(allowSemanticRefresh?{allowSemanticRefresh:true}:{})}):allowSemanticRefresh?await onResume({allowSemanticRefresh:true}):await onResume()
   if(alive.current)setConfirmRestart(result==='confirmation_required')
  }
  const confirm=async()=>{
@@ -50,6 +51,7 @@ function CaptureForm({operation,maximum,loading,busy,available,error,onStart,onR
    </div>
    <Button type="submit" disabled={disabled||!active&&!valid}>{sending||busy?blocked?'Retomando…':'Iniciando…':blocked?'Retomar pesquisa':active?'Pesquisando empresas…':failure?'Tentar novamente sem duplicar':'Pesquisar novas empresas'}</Button>
   </div>
+  {blocked&&canAuthorizeAnalysisRefresh&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} disabled={sending||busy} onChange={event=>setAllowSemanticRefresh(event.target.checked)}/>Autorizar nova análise quando as evidências mudaram. Pode consumir créditos; chamadas anteriores de resultado incerto não serão repetidas.</label>}
   <p id={`${id}-help`} className="text-sm text-muted-foreground">A pesquisa encontra novas empresas e completa seus dados automaticamente. {maximum?`De 1 a ${maximum.toLocaleString('pt-BR')} empresas; duplicatas não contam.`:'Aguarde o carregamento dos limites administrativos.'}</p>
   {blocked&&operation?.discoveryStopped&&operation.counts.admitted>=operation.counts.requested&&<p className="text-sm text-muted-foreground">Retomar recupera as etapas pendentes das empresas já encontradas, sem repetir a descoberta nem criar outro lote. Uma nova busca ou análise que exija autorização continua sujeita aos controles da campanha.</p>}
   {!valid&&!active&&maximum&&<p role="alert" className="text-sm text-destructive">Informe um número inteiro de 1 a {maximum.toLocaleString('pt-BR')}.</p>}

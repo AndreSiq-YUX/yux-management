@@ -255,7 +255,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   const [captureOperation,setCaptureOperation]=useState<RadarCaptureOperation|null>(null)
   const [captureLoading,setCaptureLoading]=useState(false),[captureError,setCaptureError]=useState('')
   const [captureRefresh,setCaptureRefresh]=useState(0),[captureBusy,setCaptureBusy]=useState(false)
-  const captureResumeRequest=useRef<{operationId:string;requestId:string;continuationReceiptId?:string;approvedInput?:Parameters<typeof radarService.resumeCaptureOperation>[1]}|null>(null)
+  const captureResumeRequest=useRef<{operationId:string;requestId:string;allowSemanticRefresh?:boolean;continuationReceiptId?:string;approvedInput?:Parameters<typeof radarService.resumeCaptureOperation>[1]}|null>(null)
   const [captureConsent,setCaptureConsent]=useState<{scope:string;operationId:string;preflight:RadarCapturePreflight}|null>(null)
   const [captureStartConsent,setCaptureStartConsent]=useState<{scope:string;input:Parameters<typeof radarService.startCaptureOperation>[1];preflight:RadarCapturePreflight}|null>(null)
   const captureCurrent=useRef({scope:sidebarScope.current,operationId:captureOperation?.id})
@@ -632,14 +632,15 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     const selected=candidates.filter(candidate=>selectedCandidateIds.includes(candidate.id)&&candidate.status==='pending_review')
     if(!selected.length||!researchAvailability||!(operation==='reanalyze'?researchAvailability.operations?.reanalyze.allowed??researchAvailability.allowed:researchAvailability.allowed))return
     const cost=operation==='reanalyze'?0:selected.length*researchAvailability.maximumCostPerCandidate
-    if(!window.confirm(`${selected.length} empresas selecionadas. ${operation==='reanalyze'?'Reavaliar somente os dados salvos, sem novas buscas.':'Consultas de busca até '+cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4})+'.'} ${researchAvailability.semanticQualificationEnabled?'A análise por IA pode consumir créditos adicionais.':''} Nenhum contato será iniciado. Continuar?`))return
+    if(!window.confirm(`${selected.length} empresas selecionadas. ${operation==='reanalyze'?'Reavaliar somente os dados salvos, sem novas buscas.':'Consultas de busca até '+cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4})+'.'} ${researchAvailability.semanticQualificationEnabled?'Ao continuar, você autoriza nova análise quando as evidências mudaram; isso pode consumir créditos adicionais.':''} Chamadas anteriores de resultado incerto não serão repetidas. Nenhum contato será iniciado. Continuar?`))return
     setActionLoading('research-selected');setResearchBatchStatus([])
     const queued:string[]=[]
     for(const candidate of selected){
       try{
-        const result=await radarService.startCandidateResearch(candidate.id,{organizationId,configurationRevision:selectedCampaign.configurationRevision??1,requestId:crypto.randomUUID(),operation})
+        const result=await radarService.startCandidateResearch(candidate.id,{organizationId,configurationRevision:selectedCampaign.configurationRevision??1,requestId:crypto.randomUUID(),operation,
+          allowSemanticRefresh:operation!=='reanalyze'&&researchAvailability.semanticQualificationEnabled})
         if(['queued','running'].includes(result.status))queued.push(candidate.id)
-        setResearchBatchStatus(current=>[...current,`${candidate.title}: ${result.reused?'execução existente reaproveitada':'pesquisa solicitada'}`])
+        setResearchBatchStatus(current=>[...current,`${candidate.title}: ${['queued','running'].includes(result.status)?'pesquisa em andamento':result.reused?'pesquisa já finalizada; use Atualizar pesquisa para novas verificações':'pesquisa solicitada'}`])
       }catch{setResearchBatchStatus(current=>[...current,`${candidate.title}: não foi possível iniciar; confira aprovação, disponibilidade e limites.`])}
     }
     setTrackedResearchCandidates(current=>[...new Set([...current,...queued])])
@@ -699,11 +700,12 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
       throw Object.assign(new Error(radarResearchMessage(cause instanceof Error?cause.message:'radar_capture_research_unavailable')),{captureNotStarted:!submitted||rejected})
     }
   }
-  const resumeCapture=async(options?:{restartExpiredContinuation?:boolean;approvedLimits?:RadarCaptureLimits})=>{
+  const resumeCapture=async(options?:{restartExpiredContinuation?:boolean;approvedLimits?:RadarCaptureLimits;allowSemanticRefresh?:boolean})=>{
     if(!captureOperation||!organizationId||captureResumeSending.current)return
     const scope=sidebarScope.current
     if(captureResumeRequest.current?.operationId!==captureOperation.id)captureResumeRequest.current={operationId:captureOperation.id,requestId:crypto.randomUUID()}
     const resumeRequest=captureResumeRequest.current
+    if(options?.allowSemanticRefresh!==undefined)resumeRequest.allowSemanticRefresh=options.allowSemanticRefresh
     captureResumeSending.current=true;setCaptureBusy(true);setCaptureError('')
     const isCurrent=()=>scope===captureCurrent.current.scope&&captureOperation.id===captureCurrent.current.operationId
     try{
@@ -719,7 +721,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
         if(!options?.approvedLimits&&!options?.restartExpiredContinuation&&(p.requiresLimitsApproval||p.expiredContinuation||p.continuations?.some(s=>s.requiresRestartConfirmation))){
           setCaptureConsent({scope,operationId:captureOperation.id,preflight:p});return
         }
-        payload={organizationId,configurationRevision:captureOperation.configurationRevision,requestId:resumeRequest.requestId,
+        payload={organizationId,configurationRevision:captureOperation.configurationRevision,requestId:resumeRequest.requestId,...(resumeRequest.allowSemanticRefresh?{allowSemanticRefresh:true}:{}),
           ...(options?.approvedLimits&&p.requiresLimitsApproval?{limitsAuthorization:{expectedStateId:p.stateId,limits:options.approvedLimits}}:{}),
           ...(options?.approvedLimits&&p.continuations?.some(s=>s.requiresRestartConfirmation)?{continuationAuthorizations:p.continuations.filter(s=>s.requiresRestartConfirmation).map(s=>({scopeKey:s.scopeKey,expectedStateId:s.stateId}))}:options?.approvedLimits&&p.expiredContinuation?{restartExpiredContinuation:true,continuationReceiptId:p.expiredContinuation.receiptId}:options?.restartExpiredContinuation?{restartExpiredContinuation:true,continuationReceiptId:resumeRequest.continuationReceiptId}:{})}
         resumeRequest.approvedInput=payload
@@ -1321,7 +1323,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
             <h2 className="font-semibold text-slate-950">Pesquisa da campanha</h2>
             <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-600">Ver público, oferta e critérios utilizados</summary><p className="mt-1 text-sm text-slate-600">Público: {selectedCampaign.targetSegment}. Oferta: {selectedCampaign.offerType}. CNAEs: {selectedCampaign.targetCnaes.join(', ') || 'sem filtro'}. A coleta não inicia contatos automáticos.</p>
             <p className="mt-1 text-xs text-slate-500">Produtos e serviços: {selectedCampaign.productFocus.join(', ') || 'não informados'}. Os critérios completos podem ser editados antes de executar a pesquisa.</p></details>
-            {canEditConfiguration&&<RadarCaptureControls maximum={operationalPolicy?.limits.maxNewCompaniesPerLot} scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading||!operationalPolicy&&!operationalPolicyError} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&!getSourceBlockedReason(cnpjaSource)} error={captureError||operationalPolicyError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>{reloadOperationalPolicy();setCaptureRefresh(value=>value+1)}}/>}
+            {canEditConfiguration&&<RadarCaptureControls canAuthorizeAnalysisRefresh={researchAvailability?.semanticQualificationEnabled===true} maximum={operationalPolicy?.limits.maxNewCompaniesPerLot} scopeKey={`${organizationId}:${selectedCampaign.id}:${selectedCampaign.configurationRevision??1}`} operation={captureOperation} loading={captureLoading||!operationalPolicy&&!operationalPolicyError} busy={captureBusy||Boolean(actionLoading)} available={!!researchAvailability?.allowed&&!!selectedCampaign.searchConfiguration?.research?.enabled&&!getSourceBlockedReason(cnpjaSource)} error={captureError||operationalPolicyError} onStart={startCapture} onResume={resumeCapture} onRefresh={()=>{reloadOperationalPolicy();setCaptureRefresh(value=>value+1)}}/>}
             {canEditConfiguration&&captureStartConsent&&captureStartConsent.scope===sidebarScope.current&&<RadarCaptureContinuationDialog key={`start:${captureStartConsent.preflight.stateId}`} mode="start" open preflight={captureStartConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>{setCaptureStartConsent(null);setCaptureError('')}} onConfirm={async()=>{
               const consent=captureStartConsent
               const input={...consent.input,continuationAuthorizations:consent.preflight.continuations?.filter(s=>s.requiresRestartConfirmation).map(s=>({scopeKey:s.scopeKey,expectedStateId:s.stateId}))}

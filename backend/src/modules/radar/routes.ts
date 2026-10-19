@@ -444,7 +444,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.post('/capture-operations/:id/resume',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params)
-    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional(),continuationStateId:z.string().regex(/^[a-f0-9]{64}$/).optional(),continuationAuthorizations:continuationAuthorizationsSchema,limitsAuthorization:z.object({expectedStateId:z.string().regex(/^[a-f0-9]{64}$/),limits:radarCaptureLimitsSchema}).strict().optional()}).strict().safeParse(request.body)
+    const body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid,allowSemanticRefresh:z.boolean().optional(),restartExpiredContinuation:z.boolean().optional(),continuationReceiptId:uuid.optional(),continuationStateId:z.string().regex(/^[a-f0-9]{64}$/).optional(),continuationAuthorizations:continuationAuthorizationsSchema,limitsAuthorization:z.object({expectedStateId:z.string().regex(/^[a-f0-9]{64}$/),limits:radarCaptureLimitsSchema}).strict().optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_capture_payload'})
     let operation:Awaited<ReturnType<typeof resumeRadarCaptureOperation>>
     try{operation=await resumeRadarCaptureOperation(app.pg,user,{...body.data,operationId:params.data.id})}

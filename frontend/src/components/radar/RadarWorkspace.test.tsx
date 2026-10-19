@@ -43,6 +43,26 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('carries the confirmed analysis authorization to every company selected for completion',async()=>{
+    const config=defaultRadarSearchConfiguration();config.research!.enabled=true
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:100,createdAt:'',updatedAt:'',configurationRevision:2,searchConfiguration:config} as RadarCampaign])
+    vi.mocked(radarService.getCandidates).mockResolvedValue(Array.from({length:4},(_,index)=>({id:`selected-${index}`,campaignId:'campaign',organizationId:'org',title:`Empresa ${index}`,status:'pending_review',sourceType:'cnpja_advanced_search',normalizedPayload:{},rawPayload:{},createdAt:'',updatedAt:''})) as never)
+    vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.1,maxQueriesPerCandidate:3,semanticQualificationEnabled:true})
+    const confirm=vi.spyOn(window,'confirm').mockReturnValue(true),container=document.body.appendChild(document.createElement('div')),root=createRoot(container)
+    try{
+      await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+      const select=container.querySelector<HTMLInputElement>('[aria-label="Selecionar empresas desta página"]')
+      expect(select).not.toBeNull()
+      await act(async()=>select!.click())
+      const complete=[...container.querySelectorAll('button')].find(button=>button.textContent==='Completar dados')!
+      await act(async()=>complete.click())
+      const calls=vi.mocked(radarService.startCandidateResearch).mock.calls
+      expect(calls).toHaveLength(4)
+      expect(calls.map(call=>call[0]).sort()).toEqual(['selected-0','selected-1','selected-2','selected-3'])
+      expect(calls.every(call=>call[1].allowSemanticRefresh===true&&call[1].configurationRevision===2)).toBe(true)
+      expect(container.textContent).not.toContain('execução existente reaproveitada')
+    }finally{act(()=>root.unmount());container.remove();confirm.mockRestore();vi.mocked(radarService.getCandidates).mockResolvedValue([]);vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})}
+  })
   it.each(['continuation','capacity'])('confirms new-lot %s warnings once and preserves consent on retry',async mode=>{
     const config=defaultRadarSearchConfiguration();config.research!.enabled=true
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',configurationRevision:2,dailyLimit:100,createdAt:'',updatedAt:'',searchConfiguration:config} as RadarCampaign])

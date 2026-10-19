@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto'
 import {captureFixture,connectionString,admin,organizationId,available,company,activateCaptureSearch} from './support/radar-capture-fixture.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
 import {advanceRadarCaptureDiscovery,blockRadarCapture} from '../src/modules/radar/capture-discovery.js'
+import {startRadarCandidateResearch} from '../src/modules/radar/research-service.js'
 const modulePath='../src/modules/radar/capture-dispatch.js'
 const api=await import(modulePath).catch(()=>({}))
 const state=await import('../src/modules/radar/capture-research-state.js')
@@ -60,6 +61,31 @@ describe('capture outcomes',()=>{
  })
 })
 describe.skipIf(!connectionString)('durable capture dispatch',()=>{
+ it('persists a scoped refresh authorization on resume and carries it to children after another dispatch',async()=>{
+  const f=await captureFixture()
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:2},{availability:available})
+   const input={organizationId,operationId:start.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:[company(),company()]}),loadSecret:async()=>'fixture'})
+   const items=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items
+   for(const item of items){
+    const run=await startRadarCandidateResearch(f.pool,admin,{organizationId,candidateId:item.candidateId,configurationRevision:1,requestId:item.id})
+    await f.pool.query(`UPDATE public.radar_candidate_research_runs SET status='partial',calls=$2 WHERE id=$1`,[run.runId,JSON.stringify({presence:{source:'radar_presence_resolution',status:'completed',evidenceHash:'old',result:{}},semantic:{source:'radar_business_qualification',status:'uncertain'}})])
+    await f.pool.query("UPDATE public.radar_capture_items SET run_id=$2,status='blocked',blocker='radar_presence_refresh_authorization_required' WHERE id=$1",[item.id,run.runId])
+   }
+   await f.pool.query("UPDATE public.radar_capture_operations SET status='blocked' WHERE id=$1",[start.operationId])
+   const request={...input,configurationRevision:1,requestId:randomUUID(),allowSemanticRefresh:true}
+   await api.resumeRadarCaptureOperation(f.pool,admin,request,{availability:available})
+   await api.resumeRadarCaptureOperation(f.pool,admin,request,{availability:available})
+   const row=(await f.pool.query("SELECT to_jsonb(operation)->'analysis_refresh_authorizations' AS grants FROM public.radar_capture_operations operation WHERE id=$1",[start.operationId])).rows[0]
+   expect(row.grants).toEqual([expect.objectContaining({requestId:request.requestId,approvedBy:admin.id,configurationRevision:1,candidateIds:items.map(item=>item.candidateId).sort()})])
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,{add:async()=>({id:'fixture'})},undefined,{availability:available})
+   const runs=(await f.pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE campaign_id=$1',[f.campaign.id])).rows
+   expect(runs).toHaveLength(2)
+   expect(runs.every(row=>row.calls.presence.refreshAuthorized===true)).toBe(true)
+   expect(runs.every(row=>row.calls.semantic.status==='uncertain'&&!row.calls.semantic.refreshAuthorized)).toBe(true)
+  }finally{await f.close()}
+ })
  it('recovers twenty admitted companies with exhausted search quota without rediscovery or replacing saved runs',async()=>{
   const f=await captureFixture()
   try{

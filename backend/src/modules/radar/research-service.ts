@@ -429,6 +429,7 @@ export async function reopenRadarResearchReview(pool:pg.Pool,user:AuthUser,input
   }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
 }
 export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,input:{organizationId:string;candidateId:string;configurationRevision:number;requestId?:string;allowSemanticRefresh?:boolean;operation?:'complete'|'resume'|'refresh'|'reanalyze'}) {
+  if(input.allowSemanticRefresh&&user.role!=='yux_admin')throw error('research_admin_required',403)
   await requireRadarScope(pool,user,{ organizationId:input.organizationId,candidateId:input.candidateId },true)
   const context = await loadContext(pool,input.organizationId,input.candidateId)
   if (context.configuration_revision !== input.configurationRevision) throw error('radar_campaign_configuration_changed')
