@@ -57,6 +57,27 @@ describe('Radar campaign configuration panel', () => {
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({webSearchProviders:['serper_web_search','brave_web_search'],presenceResolutionEnabled:true})})}))
     act(()=>root.unmount())
   })
+  it('lets only the system admin edit per-source research caps and an optional aggregate cap',async()=>{
+    const submit=vi.fn(async()=>undefined),container=document.createElement('div'),root=createRoot(container)
+    const campaign=campaignFixture({targetStates:['SP']})
+    try{
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" canConfigureProviders initialCampaign={campaign} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+      const source=container.querySelector<HTMLInputElement>('input[aria-label="Consultas Serper Web por empresa"]')
+      const total=container.querySelector<HTMLInputElement>('input[aria-label="Teto total de consultas por empresa"]')
+      expect(source).not.toBeNull();expect(total).not.toBeNull()
+      await act(async()=>{
+        for(const [input,value] of [[source,'4'],[total,'9']] as const){
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value)
+          input!.dispatchEvent(new Event('input',{bubbles:true}))
+        }
+      })
+      await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+      expect(submit).toHaveBeenCalledWith(expect.objectContaining({searchConfiguration:expect.objectContaining({research:expect.objectContaining({maxSearchQueriesBySource:{serper_web_search:4},maxSearchQueriesTotalPerCandidate:9})})}))
+      await act(async()=>root.render(<RadarCampaignConfigurationForm organizationId="org" initialCampaign={campaign} busy={false} onSubmit={submit} onCancel={vi.fn()}/>))
+      expect(container.querySelector('[aria-label="Consultas Serper Web por empresa"]')).toBeNull()
+      expect(container.querySelector('[aria-label="Teto total de consultas por empresa"]')).toBeNull()
+    }finally{act(()=>root.unmount())}
+  })
   it('restores unsaved edits after route unmount, isolates campaign drafts and clears after saving',async()=>{
     const container=document.createElement('div'),submit=vi.fn(async()=>undefined),campaign=campaignFixture({targetStates:['PE']})
     let root=createRoot(container)

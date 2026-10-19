@@ -50,6 +50,7 @@ export function validateRadarOperationalConfiguration(config:RadarSearchConfigur
   [config.research.maxSearchQueriesPerCandidate,limits.maxSearchQueriesPerCompany],[config.research.maxPagesPerCandidate,limits.maxPublicPagesPerCompany],
   [config.research.freshnessDays,limits.maxResearchFreshnessDays],
  ]
+ for(const value of Object.values(config.research.maxSearchQueriesBySource??{}))if(value>0)pairs.push([value,limits.maxSearchQueriesPerCompany])
  if(dailyLimit!==undefined)pairs.push([dailyLimit,limits.maxCampaignDailyQueries])
  for(const [value,max]of pairs)assertRadarOperationalLimit(value,max)
 }

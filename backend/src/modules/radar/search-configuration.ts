@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import {RADAR_SEARCH_SOURCES} from './search-capacity.js'
 
 export const RADAR_BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'] as const
 export const radarStateSchema = z.enum(RADAR_BRAZIL_STATES)
@@ -35,6 +36,8 @@ export const radarResearchPolicySchema = z.object({
     }).default(()=>({enabled:false,requireIdentity:true,requireSegment:false,requireWebsite:false,contactTypes:['email' as const,'phone' as const,'whatsapp' as const,'contact_form' as const],contactPurposes:[],minimumUsefulContacts:1})),
   webSearchProviders:z.array(z.enum(['brave_web_search','serper_web_search'])).min(1).max(2).refine(value=>new Set(value).size===value.length,'duplicate_search_provider').default(['brave_web_search']),
   maxSearchQueriesPerCandidate: z.number().int().positive().safe().default(3),
+  maxSearchQueriesBySource:z.partialRecord(z.enum(RADAR_SEARCH_SOURCES),z.number().int().nonnegative().max(2_147_483_647)).default({}),
+  maxSearchQueriesTotalPerCandidate:z.number().int().nonnegative().max(2_147_483_647).nullable().default(null),
   maxPagesPerCandidate: z.number().int().positive().safe().default(4),
   freshnessDays: z.number().int().positive().safe().default(7),
   semanticQualificationEnabled: z.boolean().default(false),

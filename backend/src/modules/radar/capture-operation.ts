@@ -11,7 +11,7 @@ import {authorizeRadarContinuations,type ContinuationAuthorization} from './cont
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().max(2_147_483_647).parse(value)
-export type CaptureAvailability={allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>;presence?:{routeConfigured:boolean};semantic?:{routeConfigured:boolean};maxQueriesPerCandidate?:number;estimates?:Array<{sourceType:string;costPerQuery:number;remainingQueries?:number}>}
+export type CaptureAvailability={allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>;presence?:{routeConfigured:boolean};semantic?:{routeConfigured:boolean};maxQueriesPerCandidate?:number;maximumCostPerCandidate?:number;estimates?:Array<{sourceType:string;costPerQuery:number;maximumQueries?:number;available?:boolean;remainingQueries?:number}>}
 export type AvailabilityLoader=(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string)=>Promise<CaptureAvailability>
 export async function assertCaptureAvailability(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string,availability:AvailabilityLoader=getRadarResearchAvailability){
  const result=await availability(pool,user,organizationId,campaignId)

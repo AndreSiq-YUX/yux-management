@@ -33,13 +33,36 @@ it('preserves_existing_campaign_configuration', () => {
   expect(config.research.enabled).toBe(false)
   expect(config.qualification.includeAnyTerms).toEqual(['serviços'])
 })
-it('limits_apply_across_all_search_endpoints', () => {
+it('inherits the configured cap independently for each eligible search endpoint', () => {
   const result = evaluateRadarResearchAvailability({ policy, canManage: true, localEnabled: true,
     provider: { status: 'active', hasSecret: true, publicConfig: { retentionLicensed: true, credentialPurpose: 'licensed_retention', webSearchLicensed: true } },
     sources: ['brave_place_search','brave_web_search'].map(sourceType => ({ sourceType, enabled: true, defaultCostPerUnit: .01, remaining: 10 })) })
   expect(result.allowed).toBe(true)
-  expect(result.maxQueriesPerCandidate).toBe(3)
-  expect(result.maximumCostPerCandidate).toBeCloseTo(.03)
+  expect(result.maxQueriesPerCandidate).toBe(6)
+  expect(result.maximumCostPerCandidate).toBeCloseTo(.06)
   expect(evaluateRadarResearchAvailability({ policy: { ...policy, enabled: false }, canManage: false, sources: [] }).reasons.map(item => item.code))
     .toEqual(expect.arrayContaining(['campaign_research_disabled', 'research_admin_required']))
+})
+it('allows saved-evidence analysis when an explicit search cap is zero',()=>{
+  const result=evaluateRadarResearchAvailability({policy:{...policy,maxSearchQueriesTotalPerCandidate:0} as never,canManage:true,
+    sources:[{sourceType:'brave_web_search',enabled:true,defaultCostPerUnit:.01}],provider:{status:'active',hasSecret:true,publicConfig:{retentionLicensed:true,credentialPurpose:'licensed_retention',webSearchLicensed:true}}})
+  expect(result.allowed).toBe(false)
+  expect(result.operations.reanalyze.allowed).toBe(true)
+})
+it('estimates eligible searches by source price and cap instead of a shared maximum',()=>{
+  const configured={...policy,webSearchProviders:['brave_web_search','serper_web_search'],maxSearchQueriesPerCandidate:5,
+    maxSearchQueriesBySource:{brave_web_search:3,serper_web_search:5},maxSearchQueriesTotalPerCandidate:null}
+  const result=evaluateRadarResearchAvailability({policy:configured as never,canManage:true,
+    sources:[{sourceType:'brave_web_search',enabled:true,defaultCostPerUnit:.02},{sourceType:'serper_web_search',enabled:true,defaultCostPerUnit:.01}],
+    providers:{brave_place:{status:'active',hasSecret:true,publicConfig:{retentionLicensed:true,credentialPurpose:'licensed_retention',webSearchLicensed:true}},serper:{status:'active',hasSecret:true,publicConfig:{webSearchLicensed:true}}}})
+  expect(result.estimates.map(item=>item.maximumQueries)).toEqual([3,5])
+  expect(result.maxQueriesPerCandidate).toBe(8)
+  expect(result.maximumCostPerCandidate).toBeCloseTo(.11)
+})
+it('does not reserve research budget for a source that cannot run',()=>{
+  const result=evaluateRadarResearchAvailability({policy:{...policy,webSearchProviders:['brave_web_search','serper_web_search']} as never,canManage:true,
+    sources:[{sourceType:'brave_web_search',enabled:false,defaultCostPerUnit:5},{sourceType:'serper_web_search',enabled:true,defaultCostPerUnit:.01}],
+    providers:{serper:{status:'active',hasSecret:true,publicConfig:{webSearchLicensed:true}}}})
+  expect(result.maxQueriesPerCandidate).toBe(3)
+  expect(result.maximumCostPerCandidate).toBeCloseTo(.03)
 })

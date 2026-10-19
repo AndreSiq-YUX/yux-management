@@ -76,6 +76,8 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
     try {
       if (!states.length) throw new Error('Selecione pelo menos uma UF.')
       if(research.sizeAssessment)validateRadarSizePolicy(research.sizeAssessment)
+      if(Object.values(research.maxSearchQueriesBySource??{}).some(value=>!Number.isSafeInteger(value)||value<0||(caps&&value>caps.maxSearchQueriesPerCompany))
+        ||research.maxSearchQueriesTotalPerCandidate!=null&&(!Number.isSafeInteger(research.maxSearchQueriesTotalPerCandidate)||research.maxSearchQueriesTotalPerCandidate<0))throw new Error('Revise os limites de consultas por fonte e o teto total opcional.')
       if (geographicScope === 'cities' && !cities.trim()) throw new Error('Informe pelo menos uma cidade ou escolha Estados inteiros.')
       if (!config.exportFields.length) throw new Error('Selecione pelo menos um campo de entrega.')
       const codes = splitRadarTerms(cnaes).map(value => value.replace(/\D/g, ''))
@@ -164,8 +166,18 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
         </select></Field>
         <div className="space-y-2">{(['enabled','webSearchEnabled','presenceResolutionEnabled','semanticQualificationEnabled'] as const).map((key, index) => <label key={key} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={research[key]??false} onChange={e => changeResearch({ [key]: e.target.checked })} />{['Permitir pesquisa automática nesta campanha','Aprofundar a busca na internet','Identificar site e canais oficiais por IA','Analisar adequação ao objetivo comercial'][index]}</label>)}</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas totais por empresa',caps?.maxSearchQueriesPerCompany],['maxPagesPerCandidate','Páginas públicas por empresa',caps?.maxPublicPagesPerCompany],['freshnessDays','Validade da pesquisa (dias)',caps?.maxResearchFreshnessDays]] as const).map(([key,label,max]) => <Field key={key} label={label}>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">{([['maxSearchQueriesPerCandidate','Consultas por empresa, por fonte',caps?.maxSearchQueriesPerCompany],['maxPagesPerCandidate','Páginas públicas por empresa',caps?.maxPublicPagesPerCompany],['freshnessDays','Validade da pesquisa (dias)',caps?.maxResearchFreshnessDays]] as const).map(([key,label,max]) => <Field key={key} label={label}>
           <Input type="number" min={1} max={max} required value={research[key]} onChange={e => changeResearch({ [key]: Number(e.target.value) })} /></Field>)}</div>
+        {canConfigureProviders&&!readOnly&&<fieldset className="mt-3 flex flex-col gap-3"><legend className="text-sm font-semibold">Admin — capacidade por fonte</legend>
+          <p className="text-xs text-muted-foreground">Cada fonte tem sua própria capacidade. Campo vazio herda o limite acima; zero impede novas consultas dessa fonte. Salvar não inicia pesquisa.</p>
+          {([['serper_web_search','Serper Web'],['brave_web_search','Brave Web'],['brave_place_search','Brave Places']] as const).map(([source,label])=><Field key={source} label={`Consultas ${label} por empresa`}>
+            <Input aria-label={`Consultas ${label} por empresa`} type="number" min={0} max={caps?.maxSearchQueriesPerCompany} step={1} placeholder={`Herdar ${research.maxSearchQueriesPerCandidate}`} value={research.maxSearchQueriesBySource?.[source]??''}
+              onChange={event=>{const values={...research.maxSearchQueriesBySource};if(event.target.value==='')delete values[source];else values[source]=Number(event.target.value);changeResearch({maxSearchQueriesBySource:values})}}/>
+          </Field>)}
+          <Field label="Teto total de consultas por empresa"><Input aria-label="Teto total de consultas por empresa" type="number" min={0} max={2_147_483_647} step={1} placeholder="Sem teto adicional" value={research.maxSearchQueriesTotalPerCandidate??''}
+            onChange={event=>changeResearch({maxSearchQueriesTotalPerCandidate:event.target.value===''?null:Number(event.target.value)})}/></Field>
+          <p className="text-xs text-muted-foreground">O teto total é opcional. Orçamento e cotas diárias continuam valendo, inclusive quando este campo está vazio.</p>
+        </fieldset>}
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.profileEnabled??false} onChange={e=>changeResearch({profileEnabled:e.target.checked})}/>Gerar perfil aprofundado da empresa (incluído na análise por IA)</label>
         <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={research.inspectLinkedSocialProfiles??false} onChange={e=>changeResearch({inspectLinkedSocialProfiles:e.target.checked})}/>Consultar informações públicas dos perfis vinculados pelo site</label>
         <p className="text-xs text-muted-foreground">Usa o mesmo limite de páginas da empresa. Não acessa contas privadas, não faz login nem envia mensagens.</p>

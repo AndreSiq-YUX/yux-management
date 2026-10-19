@@ -29,6 +29,8 @@ export function validateRadarSizePolicy(value:RadarSizePolicy) {
 export type RadarSearchConfiguration = {
   crmDestination?:{crmInstanceId:string;pipelineId:string;stageId:string}
   research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
+    maxSearchQueriesBySource?:Partial<Record<'brave_place_search'|'brave_web_search'|'serper_web_search',number>>;
+    maxSearchQueriesTotalPerCandidate?:number|null;
     webSearchProviders?:Array<'brave_web_search'|'serper_web_search'>;
     localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled';
     completion?:RadarCompletionPolicy;

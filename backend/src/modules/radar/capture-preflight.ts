@@ -65,10 +65,10 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(needsDiscovery&&remaining>overflowCount&&scopes.length>0&&scopes.every(scope=>scope.completed))fail('radar_capture_source_exhausted')
  if(!op&&capacity.optimisticAdditionalCapacity<remaining)fail('radar_capture_capacity_insufficient')
  const availability:CaptureAvailability=await(deps.availability??getRadarResearchAvailability)(db as pg.Pool,user,input.organizationId,input.campaignId)
- const estimates=availability.estimates??[],knownCapacity=estimates.length>0&&estimates.every(item=>item.remainingQueries!==undefined)
+ const estimates=(availability.estimates??[]).filter(item=>item.available!==false),knownCapacity=estimates.length>0&&estimates.every(item=>item.remainingQueries!==undefined)
  const plannedMaximumQueries=(availability.maxQueriesPerCandidate??config.research.maxSearchQueriesPerCandidate)*input.requestedCount
  const researchCapacity=knownCapacity?{remainingQueries:estimates.reduce((sum,item)=>sum+(item.remainingQueries??0),0),plannedMaximumQueries,
-  estimatedMaximumCostBrl:Number((plannedMaximumQueries*Math.max(0,...estimates.map(item=>item.costPerQuery))).toFixed(6))}:undefined
+  estimatedMaximumCostBrl:Number((availability.maximumCostPerCandidate!==undefined?availability.maximumCostPerCandidate*input.requestedCount:plannedMaximumQueries*Math.max(0,...estimates.map(item=>item.costPerQuery))).toFixed(6))}:undefined
  const spent=researchCapacity&&campaign.budget_limit!==null&&campaign.budget_limit!==undefined
   ?Number((await db.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[input.organizationId,input.campaignId])).rows[0]?.cost??0):0
  const budgetCapacity=campaign.budget_limit===null||campaign.budget_limit===undefined?undefined:Math.max(0,Number(campaign.budget_limit)-spent)

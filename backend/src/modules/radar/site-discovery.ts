@@ -2,6 +2,7 @@ import { normalizeRadarText } from './search-configuration.js'
 import { publicRadarUrl, type RadarWebHit } from './web-search.js'
 import {classifyRadarSource,isRadarInstitutionalSource} from './source-identity.js'
 import {radarResearchQueries} from './research-planner.js'
+import {hasRadarSearchCapacity,type RadarSearchCapacity,type RadarSearchSource,type RadarWebSearchSource} from './search-capacity.js'
 export type RadarBusinessIdentity = { name: string; legalName?: string; cnpj?: string; city?: string; state?: string; address?: string; phone?: string; websiteUrl?: string }
 export type RadarPresenceDiscovery = { association: 'confirmed' | 'review' | 'not_found_in_consulted_sources' | 'blocked';
   websiteUrl?: string; hits: RadarWebHit[]; suggestions: RadarWebHit[]; limitations: string[]; queries: number }
@@ -41,8 +42,9 @@ export function isRadarReferenceUrl(value:string) {
   return classifyRadarSource(value).kind!=='institutional_candidate'
 }
 export async function discoverRadarBusinessPresence(identity: RadarBusinessIdentity,
-  policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean;localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled' },
-  dependencies: { search: (query: string) => Promise<RadarWebHit[]>; local?: () => Promise<RadarWebHit[]>;
+  policy: { maxSearchQueriesPerCandidate: number; webSearchEnabled: boolean;webSearchProviders?:RadarWebSearchSource[];localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled' },
+  dependencies: { search: (query: string,source?:RadarWebSearchSource) => Promise<RadarWebHit[]>; local?: () => Promise<RadarWebHit[]>;
+    searchCapacity?:()=>RadarSearchCapacity;searchAttempted?:(source:RadarSearchSource,query:string)=>boolean;
     inspectCandidates?:(hits:RadarWebHit[])=>Promise<boolean>;
     checkpoint?: (hits: RadarWebHit[], queries: number) => Promise<void>; initialHits?: RadarWebHit[]; initialQueries?: number;queriesUsed?:()=>number }): Promise<RadarPresenceDiscovery> {
   const hits = [...(dependencies.initialHits ?? [])]
@@ -53,6 +55,33 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
   const webBudget=order==='after_web_if_needed'&&dependencies.local?Math.max(1,policy.maxSearchQueriesPerCandidate-1):policy.maxSearchQueriesPerCandidate
   let plausible=false
   const confirmed = () => hits.filter(hit => isRadarInstitutionalSource(hit.url,{title:hit.title,text:hit.snippets.join(' ')})&&matchRadarBusinessIdentity(identity, `${hit.title} ${hit.snippets.join(' ')}`) === 'confirmed')
+  if(dependencies.searchCapacity){
+    const attempted=new Set<string>()
+    const canSearch=(source:RadarSearchSource,query:string)=>hasRadarSearchCapacity(dependencies.searchCapacity!(),source)
+      &&!attempted.has(`${source}:${query}`)&&!dependencies.searchAttempted?.(source,query)
+    const local=async()=>{
+      if(!dependencies.local||!canSearch('brave_place_search',identity.name))return
+      attempted.add(`brave_place_search:${identity.name}`)
+      queries++
+      try{hits.push(...await dependencies.local())}catch(cause){limitations.push(cause instanceof Error?cause.message:'local_search_failed')}
+      queries=dependencies.queriesUsed?.()??queries
+      await dependencies.checkpoint?.(hits,queries)
+    }
+    if(order==='before_web')await local()
+    if(policy.webSearchEnabled)for(const query of queriesText){
+      for(const source of policy.webSearchProviders??['brave_web_search']){
+        if(confirmed().length||plausible)break
+        if(!canSearch(source,query))continue
+        attempted.add(`${source}:${query}`);queries++
+        try{hits.push(...await dependencies.search(query,source))}catch(cause){limitations.push(cause instanceof Error?cause.message:'web_search_failed')}
+        queries=dependencies.queriesUsed?.()??queries
+        await dependencies.checkpoint?.(hits,queries)
+        plausible=await dependencies.inspectCandidates?.(hits)??false
+      }
+      if(confirmed().length||plausible)break
+    }
+    if(order==='after_web_if_needed'&&!plausible&&!confirmed().length)await local()
+  }else{
   // One local query plus complementary web queries share a single cap, including previously reserved attempts.
   if (dependencies.local && order==='before_web' && queries === 0) {
     queries++
@@ -73,6 +102,7 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
     try{hits.push(...await dependencies.local())}catch(error){limitations.push(error instanceof Error?error.message:'local_search_failed')}
     queries=dependencies.queriesUsed?.()??queries
     await dependencies.checkpoint?.(hits,queries)
+  }
   }
   const unique = [...new Map(hits.map(hit => [hit.url, hit])).values()].sort((a,b)=>Number(isRadarInstitutionalSource(b.url,{title:b.title,text:b.snippets.join(' ')}))-Number(isRadarInstitutionalSource(a.url,{title:a.title,text:a.snippets.join(' ')})))
   const sites = [...new Map(confirmed().filter(hit => !isRadarReferenceUrl(hit.url)).map(hit => [new URL(hit.url).hostname.replace(/^www\./, ''), hit])).values()]

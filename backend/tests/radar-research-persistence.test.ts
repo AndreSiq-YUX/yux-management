@@ -291,10 +291,10 @@ it('persists evidence-bound brand identity and does not replay an uncertain pres
     else expect(pool.run!.output.limitations).toContainEqual(expect.stringContaining('radar_presence_previous_request_uncertain'))
   }
 })
-it('uses the selected Serper key, preserves provenance and respects the shared fallback cap',async()=>{
+it('uses the selected Serper key, preserves provenance and respects an explicit aggregate cap',async()=>{
   for(const cap of [1,2]){
     const pool=new ResearchPool()
-    pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search','brave_web_search'],maxSearchQueriesPerCandidate:cap}}
+    pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search','brave_web_search'],maxSearchQueriesPerCandidate:cap,maxSearchQueriesTotalPerCandidate:cap}}
     const run=await start(pool),attempts:string[]=[]
     await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{loadSecret:async()=> 'fixture',collect:async()=>pages,
       web:async input=>{attempts.push(input.provider!);if(input.provider==='serper_web_search')throw Error('radar_serper_web_http_503');return[{url:pages[0].url,title:'Empresa Alfa',snippets:['12.345.678/0001-90'],observedAt:'2026-10-13'}]}})

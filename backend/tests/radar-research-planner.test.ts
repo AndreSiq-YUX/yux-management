@@ -19,3 +19,13 @@ it('uses the associated domain for a missing supplier contact rather than repeat
   expect(planRadarResearch({identity,policy:{...policy,contactPurpose:'suppliers'},hits:[],pages:[page],queriesUsed:1,missing:['contact']}).next)
     .toEqual({kind:'web',query:'site:alfa.example fornecedores compras contato'})
 })
+it('keeps an unused search source eligible after another source reaches its cap',()=>{
+  const result=planRadarResearch({identity,policy:{...policy,maxSearchQueriesPerCandidate:5,webSearchProviders:['serper_web_search','brave_web_search']},
+    hits:[],pages:[],queriesUsed:5,missing:['identity'],searchCapacity:{bySource:{serper_web_search:{used:5,remaining:0},brave_web_search:{used:0,remaining:5}},totalRemaining:null},attemptedSearches:[] } as never)
+  expect(result.next).toMatchObject({kind:'web',source:'brave_web_search',query:'Marca Alfa'})
+})
+it('keeps paid search capacity separate from a pending public read',()=>{
+  const result=planRadarResearch({identity,policy,hits:[{url:'https://alfa.example/',title:'Empresa Alfa',snippets:['Contato'],observedAt:''}],pages:[],queriesUsed:9,missing:['contact'],
+    searchCapacity:{bySource:{brave_web_search:{used:9,remaining:0}},totalRemaining:0}} as never)
+  expect(result.next).toEqual({kind:'read',url:'https://alfa.example/'})
+})

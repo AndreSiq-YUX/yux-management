@@ -10,7 +10,7 @@ import type {RadarOperationalLimits} from '@/types/radarResearch'
 const fields:Array<[keyof RadarOperationalLimits,string]>=[
  ['maxNewCompaniesPerLot','Empresas novas por lote'],['maxDiscoveryPageSize','Empresas por página de descoberta'],
  ['maxPagesPerScope','Páginas por região'],['maxDiscoveryQueriesPerLot','Consultas de descoberta por lote'],
- ['maxVerificationBatch','Empresas por lote de verificação'],['maxSearchQueriesPerCompany','Consultas por empresa'],
+ ['maxVerificationBatch','Empresas por lote de verificação'],['maxSearchQueriesPerCompany','Consultas por empresa, por fonte'],
  ['maxPublicPagesPerCompany','Páginas públicas por empresa'],['maxCampaignDailyQueries','Consultas diárias por campanha'],
  ['maxSourceDailyQueries','Consultas diárias por fonte'],['maxResearchFreshnessDays','Validade da pesquisa (dias)'],
  ['maxContinuationIdleMinutes','Pausa da continuação antes de confirmar reinício (minutos)'],

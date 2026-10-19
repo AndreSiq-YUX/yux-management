@@ -3,12 +3,13 @@ import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { findRadarDataSource, evaluateRadarSourceGovernance, isRadarEnabledOrganization } from './repository.js'
 import { resolveRadarSearchConfiguration, type RadarResearchPolicy } from './search-configuration.js'
+import {radarSearchSourceLimit,estimateRadarSearchCapacity} from './search-capacity.js'
 
 export type ResearchBlocker = { code: string; message: string; sourceType?: string; resolution: string }
 type Source = { sourceType: string; enabled: boolean; defaultCostPerUnit: number; remaining?: number }
 type Provider = { status: string; hasSecret: boolean; publicConfig: Record<string, unknown> }
 const searchOnlyBlockers=new Set(['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing',
-  'retention_license_required','web_license_required','source_disabled','source_cost_required','search_not_selected'])
+  'retention_license_required','web_license_required','source_disabled','source_cost_required','search_not_selected','candidate_search_limit_reached'])
 export function radarReanalysisAvailability(reasons:ResearchBlocker[]) {
   const blocking=reasons.filter(reason=>!searchOnlyBlockers.has(reason.code))
   return {allowed:blocking.length===0,reasons:blocking}
@@ -31,19 +32,19 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
     if(!source?.enabled)add('source_disabled',`Fonte ${sourceType} desativada no catálogo.`)
     if(!source||source.defaultCostPerUnit<=0)add('source_cost_required',`Custo aprovado não definido para ${sourceType}.`)
     if(source?.remaining!==undefined&&source.remaining<1)add('source_limit_exceeded',`Quota diária esgotada para ${sourceType}.`)
+    if(radarSearchSourceLimit(input.policy,sourceType)===0||input.policy.maxSearchQueriesTotalPerCandidate===0)add('candidate_search_limit_reached',`Busca sem capacidade autorizada para ${sourceType}.`)
     if(provider?.status!=='active')add('provider_inactive',`Conexão ${serper?'Serper':'Brave'} não ativa.`)
     if(!provider?.hasSecret)add('provider_secret_missing',`Chave ${serper?'Serper':'Brave'} não cadastrada.`)
     if(!serper&&(provider?.publicConfig.retentionLicensed!==true||provider.publicConfig.credentialPurpose!=='licensed_retention'))add('retention_license_required','Retenção dos resultados Brave não confirmada.')
     if(sourceType!=='brave_place_search'&&provider?.publicConfig.webSearchLicensed!==true)add('web_license_required','Confirme que a chave e o plano permitem busca web com armazenamento.')
     if(!issues.length)availableSearchSources.push(sourceType)
     else blocked.push(...issues)
-    return{sourceType,costPerQuery:source?.defaultCostPerUnit??0,maximumQueries:input.policy.maxSearchQueriesPerCandidate,
+    return{sourceType,costPerQuery:source?.defaultCostPerUnit??0,maximumQueries:radarSearchSourceLimit(input.policy,sourceType),available:issues.length===0,
       ...(source?.remaining!==undefined?{remainingQueries:issues.length?0:source.remaining}:{})}
   })
   if(!availableSearchSources.length)reasons.push(...blocked);else warnings.push(...blocked)
   return{allowed:reasons.length===0,reasons,warnings,availableSearchSources,operations:{reanalyze:radarReanalysisAvailability(reasons)},
-    estimates,maxQueriesPerCandidate:input.policy.maxSearchQueriesPerCandidate,
-    maximumCostPerCandidate:Math.max(0,...estimates.map(item=>item.costPerQuery))*input.policy.maxSearchQueriesPerCandidate,
+    estimates,...estimateRadarSearchCapacity(estimates,input.policy.maxSearchQueriesTotalPerCandidate),
     presenceResolutionEnabled:input.policy.presenceResolutionEnabled,
     semanticQualificationEnabled:input.policy.semanticQualificationEnabled||input.policy.profileEnabled||input.policy.sizeAssessment.enabled||input.policy.presenceResolutionEnabled}
 }

@@ -2,6 +2,7 @@ import type pg from 'pg'
 import {classifyRadarSource,isRadarInstitutionalSource,hasRadarOwnershipSignal} from './source-identity.js'
 import {validateRadarPresenceResolution,type RadarPresenceEvidence,type RadarPresenceResolution} from './presence-resolution.js'
 import { createHash, randomUUID } from 'node:crypto'
+import {resolveRadarSearchCapacity,hasRadarSearchCapacity,type RadarSearchCapacity,type RadarSearchSource,type RadarWebSearchSource} from './search-capacity.js'
 import type { AppEnv } from '../../config/env.js'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
@@ -54,7 +55,8 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
 type Output = Partial<RadarResearchDossier> & { historicalRevision?:number;analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
-type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string) => Promise<RadarWebHit[]>;
+type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string,source?:RadarWebSearchSource) => Promise<RadarWebHit[]>;
+  searchCapacity?:()=>RadarSearchCapacity;searchAttempted?:(source:RadarSearchSource,query:string)=>boolean;
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string) => Promise<RadarQualification>;
   registrySizeFacts?:RadarSizeFact[];
@@ -144,6 +146,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
       search: dependencies.web, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
       queriesUsed:dependencies.queriesUsed,
+      searchCapacity:dependencies.searchCapacity,searchAttempted:dependencies.searchAttempted,
       checkpoint: async (hits, queries) => { output.discoveryHits = hits; output.discoveryQueries = queries; await checkpoint('discovery') },
       inspectCandidates:output.analysisOnly?undefined:async hits=>{
         if(pendingRadarReadUrls(hits,pages,configuration.research.maxPagesPerCandidate).length)output.readingComplete=false
@@ -294,12 +297,13 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   if(configuration.research.completion.enabled&&!output.analysisOnly&&associatedOrigin&&presenceResolution?.scope!=='group'
     &&usefulRadarDeliveryContacts({contacts:uniqueContacts},configuration.research).length<configuration.research.completion.minimumUsefulContacts){
     const next=planRadarResearch({identity,policy:configuration.research,hits:[],pages:associatedPages,
-      queriesUsed:dependencies.queriesUsed?.()??output.discoveryQueries??discovery.queries,missing:['contact'],attemptedQueries:output.targetedQueries??[]}).next
+      queriesUsed:dependencies.queriesUsed?.()??output.discoveryQueries??discovery.queries,missing:['contact'],attemptedQueries:output.targetedQueries??[],
+      searchCapacity:dependencies.searchCapacity?.(),searchAttempted:dependencies.searchAttempted}).next
     if(next?.kind==='web'&&next.query?.startsWith('site:')){
       output.targetedQueries=[...(output.targetedQueries??[]),next.query]
       await checkpoint('discovery')
       try{
-        const hits=await dependencies.web(next.query)
+        const hits=next.source?await dependencies.web(next.query,next.source):await dependencies.web(next.query)
         output.discovery={...discovery,hits:[...discovery.hits,...hits],suggestions:[...discovery.suggestions,...hits]}
         output.discoveryQueries=dependencies.queriesUsed?.()??(output.discoveryQueries??discovery.queries)+1
         const pending=pendingRadarReadUrls(hits,pages,configuration.research.maxPagesPerCandidate).filter(url=>sameRadarOrigin(url,associatedOrigin))
@@ -514,6 +518,14 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const str = (key:string) => typeof payload[key] === 'string' ? payload[key] as string : undefined
     const identity:RadarBusinessIdentity = {name:str('tradeName') || context.title,legalName:str('legalName'),cnpj:str('cnpj'),
       city:str('city'),state:str('state'),address:str('address'),phone:str('phoneRaw'),websiteUrl:str('websiteUrl')}
+    const searchCapacity=()=>{
+      const capacity=resolveRadarSearchCapacity({calls:run.calls,policy:configuration.research})
+      const selected=new Set<string>(configuration.research.webSearchEnabled?configuration.research.webSearchProviders:[])
+      if(configuration.sources.enrichWithBrave&&configuration.research.localSearchOrder!=='disabled'&&identity.city&&identity.state)selected.add('brave_place_search')
+      for(const source of Object.keys(capacity.bySource))if(!selected.has(source))capacity.bySource[source].remaining=0
+      return capacity
+    }
+    const searchAttempted=(source:RadarSearchSource,query:string)=>!!run.calls[createHash('sha256').update(`${source}:${query}`).digest('hex')]
     const assertEffectAuthorization=async(queryable:Pick<pg.Pool,'query'>=pool)=>{
       signal?.throwIfAborted()
       const requester=(await queryable.query('SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE',[run.requested_by])).rows[0]
@@ -546,7 +558,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         if (!source || source.defaultCostPerUnit <= 0) throw error('source_cost_required')
         const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1)
         if (!governance.allowed) throw error(governance.issues[0].code)
-        if (Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length >= configuration.research.maxSearchQueriesPerCandidate) throw error('candidate_search_limit_reached')
+        if (!hasRadarSearchCapacity(searchCapacity(),sourceKey)) throw error('candidate_search_limit_reached')
         const spent = await reservation.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[run.organization_id,run.campaign_id])
         const budget = currentCampaign.rows[0]?.budget_limit
         if (budget !== null && budget !== undefined && Number(spent.rows[0]?.cost ?? 0) + source.defaultCostPerUnit > Number(budget)) throw error('source_budget_exceeded')
@@ -612,24 +624,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length},{
       signal,checkpoint,registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
       queriesUsed:()=>Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length,
+      searchCapacity,searchAttempted,
       tlsOptions:hostname=>getRadarTlsReadOptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision},hostname),
       local:configuration.sources.enrichWithBrave && configuration.research.localSearchOrder!=='disabled' && identity.city && identity.state ? async () => {
         const places = await paid('brave_place_search',identity.name,key => (dependencies.local ?? searchRadarPlaces)({provider:'brave_place_search',apiKey:key,query:identity.name,city:identity.city!,state:identity.state!,limit:5}))
         return places.flatMap(place => place.sourceUrl ? [{url:place.websiteUrl || place.sourceUrl,title:place.name,
           snippets:[place.address,place.phone,place.email].filter((value):value is string => !!value),observedAt:place.observedAt}] : [])
       } : undefined,
-      web: async query => {
-        let failure:unknown
-        const collected:RadarWebHit[]=[]
-        for(const source of configuration.research.webSearchProviders){
-          try{
-            const hits=await paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5}))
-            collected.push(...hits)
-            if(hasUsefulRadarHits(identity,hits))return collected
-          }catch(cause){failure=cause}
-        }
-        if(failure&&!collected.length)throw failure
-        return collected
+      web: async (query,selectedSource) => {
+        const source=selectedSource??configuration.research.webSearchProviders.find(source=>hasRadarSearchCapacity(searchCapacity(),source))
+        if(!source||!configuration.research.webSearchProviders.includes(source))throw error('candidate_search_limit_reached')
+        return paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5}))
       },
       resolvePresence:async(evidence,evidenceHash)=>{
         await recoverAnalysis('presence',evidenceHash)

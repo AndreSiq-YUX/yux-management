@@ -1,6 +1,15 @@
 import { expect, it, vi } from 'vitest'
 import { compareRadarBusinessIdentity, discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl } from '../src/modules/radar/site-discovery.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city: 'Curitiba', state: 'PR', address: 'Rua Azul 123', phone: '4133334444' }
+it('continues the plain-name lookup on an unused provider despite historical usage elsewhere',async()=>{
+  const requests:Array<{query:string;source?:string}>=[]
+  const result=await discoverRadarBusinessPresence(identity,{maxSearchQueriesPerCandidate:5,webSearchEnabled:true,localSearchOrder:'disabled',webSearchProviders:['serper_web_search','brave_web_search']} as never,{
+    initialQueries:5,searchCapacity:()=>({bySource:{serper_web_search:{used:5,remaining:0},brave_web_search:{used:0,remaining:5}},totalRemaining:null}),
+    search:async(query:string,source?:string)=>{requests.push({query,source});return[{url:'https://alfa.example/',title:identity.name,snippets:[identity.cnpj],observedAt:'2026-10-19'}]},
+  } as never)
+  expect(requests).toEqual([{query:'Empresa Alfa',source:'brave_web_search'}])
+  expect(result.websiteUrl).toBe('https://alfa.example/')
+})
 it('can defer local research until web research fails to find a credible website',async()=>{
   const local=vi.fn(async()=>[])
   const result=await discoverRadarBusinessPresence(identity,{maxSearchQueriesPerCandidate:3,webSearchEnabled:true,localSearchOrder:'after_web_if_needed'} as never,
