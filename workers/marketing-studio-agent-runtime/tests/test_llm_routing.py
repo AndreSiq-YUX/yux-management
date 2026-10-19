@@ -1,5 +1,29 @@
 import pytest
 
+def test_decision_kind_inherits_only_compatible_scoped_default_not_chat():
+    from yux_agent_runtime.llm_routing import resolve_route
+    rows=[dict(agent_type='radar_initial_triage',kind='decision',protocol='openrouter-decisions-alpha-v1',provider='openrouter',model_name='fixture/scoped',organization_id='mine',fallback_routes=[dict(provider='openrouter',modelName='fixture/fallback')]),
+          dict(agent_type='radar_decision_default',kind='decision',protocol='openrouter-decisions-alpha-v1',provider='openrouter',model_name='fixture/default'),
+          dict(agent_type='global_llm',kind='chat',provider='openrouter',model_name='never-chat')]
+    result=resolve_route(rows,'radar_initial_triage',context=dict(organization_id='mine'),kind='decision')
+    assert [attempt['modelName'] for attempt in result['attempts']]==['fixture/scoped','fixture/fallback','fixture/default']
+    rows[0]['status']='paused'
+    with pytest.raises(ProviderAuthorizationError,match='llm_route_not_active'):
+        resolve_route(rows,'radar_initial_triage',context=dict(organization_id='mine'),kind='decision')
+
+@pytest.mark.parametrize('key,kind,message',[('radar_initial_triage','decision','decision_unconfigured'),('radar_initial_trage','decision','llm_use_case_unknown'),('radar_deep_research','research','research_unconfigured')])
+def test_new_capabilities_never_fall_back_to_global_chat_or_environment(key,kind,message):
+    from yux_agent_runtime.llm_routing import resolve_route
+    with pytest.raises(ProviderAuthorizationError,match=message):
+        resolve_route([dict(agent_type='global_llm',provider='openrouter',model_name='never-chat')],key,kind=kind)
+
+def test_explicitly_unclassified_legacy_row_is_not_silently_chat_and_new_embedding_kind_uses_catalog():
+    from yux_agent_runtime.llm_routing import resolve_route
+    with pytest.raises(ProviderAuthorizationError,match='llm_route_classification_required'):
+        resolve_route([dict(agent_type='old_unknown',kind=None,provider='openrouter',model_name='fixture')],'old_unknown')
+    resolved=resolve_route([dict(agent_type='new_vector',kind='embedding',provider='openrouter',model_name='vector')],'new_vector',kind='embedding',registered_definitions={'new_vector':'embedding'})
+    assert [item['modelName'] for item in resolved['attempts']]==['vector']
+
 def test_radar_presence_requires_its_own_admin_route_not_global_or_environment():
     from yux_agent_runtime.llm_routing import resolve_route
     from yux_agent_runtime.providers import ProviderAuthorizationError

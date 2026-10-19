@@ -79,11 +79,17 @@ export interface AdminLlmUseCaseDefinition {
   key: string
   title: string
   description: string
-  kind: 'chat' | 'embedding'
+  kind: 'chat' | 'embedding' | 'decision' | 'research' | null
+  classificationStatus?:'registered'|'pending'
   group: string
 }
 
 export interface AdminLlmRoute {
+  kind?:'chat'|'embedding'|'decision'|'research'|null
+  protocol?:string|null
+  adapterVersion?:string|null
+  decisionConfig?:Record<string,unknown>
+  version?:number
   id?: string
   agentType: AdminLlmUseCase | null
   organizationId?: string | null
@@ -106,7 +112,7 @@ export interface AdminLlmRoute {
   updatedAt?: string
 }
 
-export type AdminLlmRouteInput = Omit<AdminLlmRoute, 'createdAt' | 'updatedAt' | 'origin' | 'originDetail'>
+export type AdminLlmRouteInput = Omit<AdminLlmRoute, 'createdAt' | 'updatedAt' | 'origin' | 'originDetail'|'kind'|'protocol'> & {kind?:'chat'|'embedding'|'decision'|'research';protocol?:string}
 
 export interface AdminLlmRouteTestResult {
   ok: boolean

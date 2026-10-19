@@ -153,6 +153,9 @@ const providerSecretSchema = z.object({
 
 const llmRouteParams = z.object({ routeId: z.string().uuid() })
 const llmRouteSchema = z.object({
+  kind:z.enum(['chat','embedding','decision','research']).optional(),
+  protocol:z.string().min(1).max(100).optional(),
+  decisionConfig:z.record(z.string(),z.unknown()).optional(),
   id: z.string().uuid().optional(),
   agentType: z.string().trim().min(1).max(200).nullable(),
   organizationId: z.string().uuid().nullable().optional(),
@@ -392,6 +395,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     try {
       return await upsertAdminLlmRoute(app.pg, parsed.data)
     } catch (error) {
+      if(error instanceof Error&&['llm_use_case_unknown','llm_route_capability_incompatible','llm_route_fallback_cycle','llm_route_classification_required'].includes(error.message))return reply.code(error.message==='llm_route_classification_required'?409:400).send({error:error.message})
       if (error instanceof Error && error.message === 'llm_route_not_found_or_scope_mismatch') {
         return reply.code(409).send({ error: error.message })
       }

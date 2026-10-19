@@ -9,6 +9,8 @@ from .providers import ProviderAuthorizationError, ProviderRequestError
 
 SCOPES = ("organization_id", "client_id", "contract_id", "agent_id")
 PROVIDERS = {"openrouter", "openai_direct"}
+DECISION_CASES={'radar_decision_default','radar_initial_triage','radar_next_action','radar_quality_gate'}
+CAPABILITIES={**{key:'decision' for key in DECISION_CASES},'radar_deep_research':'research','knowledge_embeddings':'embedding','global_embeddings':'embedding'}
 
 
 def _matches(route: dict[str, Any], context: dict[str, Any]) -> bool:
@@ -47,11 +49,24 @@ def legacy_route(key: str, kind: str = "chat") -> dict[str, Any]:
                 temperature=temperature, max_cost_per_run=0, origin="environment", origin_detail=variable)
 
 
-def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "default", context: dict[str, Any] | None = None, kind: str = "chat") -> dict[str, Any]:
+def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "default", context: dict[str, Any] | None = None, kind: str | None = None, registered_definitions:dict[str,str] | None=None) -> dict[str, Any]:
     context = context or {}
-    global_key = "global_embeddings" if kind == "embedding" else "global_llm"
+    definitions={**CAPABILITIES,**(registered_definitions or {})}
+    declared=definitions.get(key)
+    kind=kind or declared or 'chat'
+    if kind not in {'chat','embedding','decision','research'} or declared and declared!=kind:
+        raise ProviderAuthorizationError('llm_route_capability_incompatible')
+    if kind=='decision' and key not in DECISION_CASES and declared!='decision' or kind=='research' and declared!='research':
+        raise ProviderAuthorizationError('llm_use_case_unknown')
+    if key.startswith('radar_') and key not in {*CAPABILITIES,'radar_presence_resolution','radar_business_qualification','radar_discovery_extraction'} and not declared:
+        raise ProviderAuthorizationError('llm_use_case_unknown')
+    global_key = "global_embeddings" if kind == "embedding" else 'radar_decision_default' if kind=='decision' else None if kind=='research' else "global_llm"
     function_key = key
     route = _pick(routes, key, tier, context, kind=kind)
+    if kind=='decision' and route is None:
+        route=_pick(routes,'radar_decision_default',tier,context,kind=kind)
+    if kind in {'decision','research'} and route is None:
+        raise ProviderAuthorizationError(f'{kind}_unconfigured')
     if key == "radar_business_qualification" and route is None:
         raise ProviderAuthorizationError("radar_qualification_explicit_route_required")
     if key == 'radar_presence_resolution' and route is None:
@@ -68,21 +83,30 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
         if route is not None:
             function_key = "mission_supervisor"
     general_route = _pick(routes, function_key, "default", {}, kind=kind)
-    global_route = _pick(routes, global_key, tier, context, kind=kind)
+    global_route = _pick(routes, global_key, tier, context, kind=kind) if global_key else None
     if route is None:
         route = global_route or legacy_route(key, kind)
     if route.get("status", "active") != "active":
         raise ProviderAuthorizationError("llm_route_not_active")
+    def compatible(item):
+        if 'kind' in item and item['kind'] is None:
+            raise ProviderAuthorizationError('llm_route_classification_required')
+        if item.get('kind',kind)!=kind or kind=='decision' and (item.get('provider')!='openrouter' or item.get('protocol')!='openrouter-decisions-alpha-v1'):
+            raise ProviderAuthorizationError('llm_route_capability_incompatible')
+    compatible(route)
     attempts: list[dict[str, str]] = []
     def append(item):
         provider = str(item.get("provider") or "")
         model = str(item.get("modelName") or item.get("model_name") or "").strip()
         if provider not in PROVIDERS or not model:
             raise ProviderAuthorizationError("invalid_llm_route")
+        if kind == 'decision' and provider != 'openrouter':
+            raise ProviderAuthorizationError('llm_route_capability_incompatible')
         value = {"provider": provider, "modelName": model}
         if value not in attempts:
             attempts.append(value)
     def extend(item):
+        compatible(item)
         append(item)
         for fallback in item.get("fallback_routes") or []:
             append(fallback)
@@ -93,7 +117,7 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
         extend(general_route)
     if global_route and global_route.get("status", "active") == "active":
         extend(global_route)
-    return {**route, "attempts": attempts}
+    return {**route, "kind":kind,"attempts": attempts}
 
 
 @dataclass
@@ -105,10 +129,12 @@ class RoutedLlmClient:
     tier: str = "default"
     kind: str = "chat"
     radar_fallback_limit_loader: Callable[[], int] | None = None
+    definition_loader: Callable[[], dict[str, str]] | None = None
 
     def configuration(self) -> tuple[dict[str, Any], dict[str, Any]]:
         routes = self.route_loader()
-        route = resolve_route(routes, self.use_case, tier=self.tier, context=self.context, kind=self.kind)
+        route = resolve_route(routes, self.use_case, tier=self.tier, context=self.context, kind=self.kind,
+                              registered_definitions=self.definition_loader() if self.definition_loader else None)
         if self.radar_fallback_limit_loader is not None:
             limit = self.radar_fallback_limit_loader()
             if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:

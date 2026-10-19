@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import type pg from 'pg'
+import {getAdminLlmUseCases,validateLlmRouteCapability,type LlmRouteKind} from './llm-routing.js'
 
 const numberValue = (value: number | string | null | undefined) => Number(value || 0)
 const objectValue = (value: unknown): Record<string, unknown> =>
@@ -53,6 +54,9 @@ export type PlatformProviderSecretInput = {
 }
 
 export type AdminLlmRouteInput = {
+  kind?:LlmRouteKind
+  protocol?:string
+  decisionConfig?:Record<string,unknown>
   id?: string
   agentType: string | null
   organizationId?: string | null
@@ -142,7 +146,7 @@ export async function getAdminLlmRoutes(pool: pg.Pool) {
     `SELECT id, agent_type, organization_id, client_id, contract_id, agent_id,
             routing_tier, provider, model_name, fallback_model_name, fallback_routes,
             max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
-            created_at, updated_at
+            created_at, updated_at,kind,protocol,adapter_version,decision_config,version
      FROM public.model_routing_rules
      ORDER BY agent_type NULLS LAST, routing_tier, updated_at DESC, id`,
   )
@@ -154,7 +158,7 @@ export async function getAdminLlmRouteById(pool: pg.Pool, id: string) {
     `SELECT id, agent_type, organization_id, client_id, contract_id, agent_id,
             routing_tier, provider, model_name, fallback_model_name, fallback_routes,
             max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status,
-            created_at, updated_at
+            created_at, updated_at,kind,protocol,adapter_version,decision_config,version
      FROM public.model_routing_rules
      WHERE id = $1::uuid
      LIMIT 1`,
@@ -188,12 +192,14 @@ export async function upsertAdminLlmRoute(pool: pg.Pool, input: AdminLlmRouteInp
     AND agent_id IS NOT DISTINCT FROM $14::uuid`
   const returning = `id, agent_type, organization_id, client_id, contract_id, agent_id,
     routing_tier, provider, model_name, fallback_model_name, fallback_routes,
-    max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status, created_at, updated_at`
+    max_input_tokens, max_output_tokens, temperature, max_cost_per_run, status, created_at, updated_at,kind,protocol,adapter_version,decision_config,version`
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
     // Serialize saves for one logical scope. Do not delete historical duplicates.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify([values[0], values[1], ...values.slice(10, 14)])])
+    const capability=validateLlmRouteCapability(input,await getAdminLlmUseCases(client,{sequential:true}))
+    const extra=[capability.kind,capability.protocol,capability.adapterVersion,input.decisionConfig===undefined?null:JSON.stringify(input.decisionConfig)]
     let id = input.id
     if (!id) {
       const existing = await client.query(`SELECT id FROM public.model_routing_rules
@@ -207,13 +213,14 @@ export async function upsertAdminLlmRoute(pool: pg.Pool, input: AdminLlmRouteInp
       ? await client.query(`UPDATE public.model_routing_rules
           SET provider = $3, model_name = $4, fallback_model_name = $5, max_input_tokens = $6,
               max_output_tokens = $7, temperature = $8, max_cost_per_run = $9, status = $10,
-              fallback_routes = COALESCE($15::jsonb, fallback_routes), updated_at = NOW()
-          WHERE id = $16::uuid AND ${scope} RETURNING ${returning}`, [...values, id])
+              fallback_routes = COALESCE($15::jsonb, fallback_routes),kind=$17,protocol=$18,adapter_version=$19,
+              decision_config=COALESCE($20::jsonb,decision_config),version=version+1,updated_at = NOW()
+          WHERE id = $16::uuid AND ${scope} RETURNING ${returning}`, [...values, id,...extra])
       : await client.query(`INSERT INTO public.model_routing_rules (
           agent_type, routing_tier, provider, model_name, fallback_model_name, max_input_tokens,
           max_output_tokens, temperature, max_cost_per_run, status, organization_id, client_id,
-          contract_id, agent_id, fallback_routes
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::jsonb, '[]'::jsonb)) RETURNING ${returning}`, values)
+          contract_id, agent_id, fallback_routes,kind,protocol,adapter_version,decision_config
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::jsonb, '[]'::jsonb),$16,$17,$18,COALESCE($19::jsonb,'{}')) RETURNING ${returning}`, [...values,...extra])
     if (!result.rows[0]) throw new Error('llm_route_not_found_or_scope_mismatch')
     await client.query('COMMIT')
     return mapAdminLlmRoute(result.rows[0])
@@ -767,6 +774,7 @@ function mapProviderConnection(row: any) {
 
 function mapAdminLlmRoute(row: any) {
   return {
+    kind:row.kind??null,protocol:row.protocol??null,adapterVersion:row.adapter_version??null,decisionConfig:objectValue(row.decision_config),version:Number(row.version??1),
     id: row.id,
     agentType: row.agent_type,
     organizationId: row.organization_id ?? null,

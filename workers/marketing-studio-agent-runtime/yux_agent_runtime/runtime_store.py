@@ -207,7 +207,7 @@ class PostgresAgentRuntimeStore:
         "agent_outcomes", "agent_learning_signals", "yux_strategy_retrieval_queries",
     }
     readable_tables = writable_tables | {
-        "yux_strategy_agent_profiles", "marketing_agent_global_prompts", "model_routing_rules",
+        "yux_strategy_agent_profiles", "marketing_agent_global_prompts", "model_routing_rules","llm_use_case_definitions",
         "marketing_agent_tool_policies", "agent_budget_policies", "strategy_workflow_specs",
         "agent_autonomy_policies", "yux_strategy_concept_cards", "yux_strategy_source_chunks",
         "yux_strategy_source_assets", "yux_strategy_profile_tool_policies",

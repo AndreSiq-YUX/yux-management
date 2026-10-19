@@ -28,6 +28,8 @@
 
 ## Dependência e base
 
+**Atualização autorizada pelo usuário em 19/10, após `dcef51b`:** implementar agora B1–B4 e a integração operacional B5 abaixo, sem aguardar o comparativo pago E0. Isso altera o gate de implementação, não aprova modelos, calibrações, gastos, publicação ou descarte automático. O produto fica configurável e testável com transportes simulados; na ausência de calibração correspondente, observa e preserva a coleta atual. O benchmark humano continua requisito para aprovar exclusão automática. Perplexity e a descoberta multi-fonte C3.3/C4 continuam entregas independentes; não são pré-requisito para conectar decisões ao fluxo atual de aprofundamento. Execução sequencial, sem subagentes, preservando a infraestrutura nativa.
+
 Executar após A0, E0 e recibos A1, não antes do comparativo de modelos. A0 continua liberável independentemente de B. Base e migrações estão na main remota, conforme o índice; reservar número novo apenas depois de conferir a base na execução. Âncoras abaixo são da revisão `2ae380a`.
 
 ### Task B1 Capacidade de rota compatível e herança administrativa
@@ -87,3 +89,14 @@ Troca de principal, fallback, snapshot servido, perguntas ou versão de contexto
 - [ ] **Step 2:** Rodar testes frontend do painel e backend administrativos antes da implementação; confirmar falhas das capacidades novas.
 - [ ] **Step 3:** Implementar campos por capacidade e validação server-side, preservando o visual YUX. Mostrar modelo novo como não testado, permitir teste manual com ID compatível e informar incompatibilidade antes de operação comercial quando conhecida. Não preencher nem ativar silenciosamente um modelo pago.
 - [ ] **Step 4:** Testar no navegador local com transportes simulados, quatro papéis, mudança de escopo e tentativa em andamento; rodar suítes completas platform/runtime/frontend e builds; commit do painel. Comparação paga de qualidade é etapa futura autorizada, não substituída por este teste sintético.
+
+### Task B5 Integração real no aprofundamento e prontidão operacional
+
+**Files:** modificar `backend/src/modules/radar/research-service.ts`, `research-planner.ts`, `research-availability.ts`, `capture-research-state.ts`, `commercial-view.ts`, testes correspondentes; criar `backend/tests/integration/radar-decisions-journey.test.ts`, `frontend/tests/journeys/browser/radar-decision-routing.pw.ts`; atualizar `docs/runbooks/radar-pesquisa-configuravel.md`.
+
+**Interfaces:** o fluxo existente usa `decideRadarAction` em triagem inicial, seleção entre ações já elegíveis e qualidade final. Registro por estágio/conteúdo/rota, recibos A1 por tentativa, orçamento A4 e reconciliação A3. Decisão nunca recebe poder de comprar sem autorização ou de dispensar requisitos mínimos. Modo observação/função sem rota mantém o fluxo atual. Mudança de evidência permite próxima decisão dentro do orçamento, nunca repetição infinita do mesmo contexto. Revisão humana prevalece.
+
+- [ ] **Step 1:** Testar um lote existente retomado e uma atualização individual com os três estágios, principal/fallback, timeout incerto e recuperação sem rede; provar que escolhas calibradas alteram a ação elegível, não apenas geram logs. Ausência de rota, carteira/limite insuficiente, troca de modelo e falta de calibração não apagam fatos nem inventam aprovação.
+- [ ] **Step 2:** Implementar os hooks duráveis e projeções comerciais por allowlist; informações técnicas apenas no Admin global. Não comprar substitutas num lote v1 retomado, não repetir descoberta e não alterar CRM/WhatsApp/embeddings/missões.
+- [ ] **Step 3:** Rodar suítes completas backend/frontend/runtime, PostgreSQL isolado e navegador desktop/mobile. Conferir quatro papéis, migração de rotas anteriores, cadastro/edição da cadeia, teste explícito e leitura da cadeia efetiva após reabrir.
+- [ ] **Step 4:** Documentar configuração exata, limites, observação/calibração e checklist de implantação coordenada; revisão final sequencial e commits locais. Sem ativação paga, push ou deploy. Não chamar de pronto se apenas o adaptador estiver implementado e o fluxo não o consumir.
