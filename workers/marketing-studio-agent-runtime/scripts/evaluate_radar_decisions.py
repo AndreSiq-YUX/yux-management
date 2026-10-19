@@ -5,7 +5,7 @@ explicit dependencies for tests/controlled evaluation, never inferred from env.
 """
 from __future__ import annotations
 import argparse
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import time
@@ -62,6 +62,39 @@ def evaluate_cases(cases, evaluators, *, provenance='synthetic_fixture'):
                                     latencyMs=(time.perf_counter() - started) * 1000, provenance=provenance))
     return dict(schemaVersion=1, qualityStatus='not_evaluated', results=results, skippedCaseIds=skipped,
                 note='Offline plumbing is not model-quality evidence. Reviewed/frozen labels, approved budgets and real response provenance are required.')
+
+
+def decision_scope_gate(baseline, contender, *, dataset_ready=False):
+    def result(decision, code):
+        return dict(decision=decision, reasonCodes=[code], automaticDiscardAllowed=False, requiresProductReview=True)
+    required = ('sampleSize', 'confirmedPositiveCases', 'correct', 'investigations', 'falseDiscards', 'thirdPartyContacts', 'technicalLeaks', 'uncertainReplays', 'modelSnapshot', 'contextVersion', 'datasetVersion', 'partition')
+    if not dataset_ready or any(any(key not in item or item[key] is None for key in required) or item.get('provenance') != 'real_response' for item in (baseline, contender)):
+        return result('inconclusive', 'reviewed_real_validation_required')
+    if any(item['sampleSize'] != 40 or item['confirmedPositiveCases'] != 12 or item['partition'] != 'validation' for item in (baseline, contender)) or baseline['datasetVersion'] != contender['datasetVersion'] or baseline['contextVersion'] != contender['contextVersion']:
+        return result('inconclusive', 'validation_cohort_mismatch')
+    for item in (baseline, contender):
+        if any(type(item[key]) is not int or not 0 <= item[key] <= item['sampleSize'] for key in ('correct', 'investigations', 'falseDiscards', 'thirdPartyContacts', 'technicalLeaks', 'uncertainReplays')) or item['falseDiscards'] > item['confirmedPositiveCases'] or not item['modelSnapshot']:
+            return result('inconclusive', 'invalid_validation_measurements')
+    if any(contender[key] != 0 for key in ('falseDiscards', 'thirdPartyContacts', 'technicalLeaks', 'uncertainReplays')):
+        return result('keep_current', 'safety_regression')
+    if contender['correct'] < baseline['correct'] or contender['investigations'] > baseline['investigations']:
+        return result('keep_current', 'classification_regression')
+    if contender['correct'] > baseline['correct'] or contender['falseDiscards'] < baseline['falseDiscards']:
+        return result('proceed', 'classification_improvement_requires_review')
+    if any(item.get('totalCostUsd') is None or item.get('p95LatencyMs') is None for item in (baseline, contender)):
+        return result('inconclusive', 'comparable_cost_and_latency_required')
+    try:
+        costs = [Decimal(str(item['totalCostUsd'])) for item in (baseline, contender)]
+        latency = [Decimal(str(item['p95LatencyMs'])) for item in (baseline, contender)]
+    except (InvalidOperation, TypeError, ValueError):
+        return result('inconclusive', 'comparable_cost_and_latency_required')
+    if any(not value.is_finite() or value < 0 for value in [*costs, *latency]):
+        return result('inconclusive', 'comparable_cost_and_latency_required')
+    if costs[0] > 0 and costs[1] <= costs[0] * Decimal('.8') and latency[1] <= latency[0]:
+        return result('proceed', 'cost_improvement_without_regression')
+    if latency[0] > 0 and latency[1] <= latency[0] * Decimal('.8') and costs[1] <= costs[0]:
+        return result('proceed', 'latency_improvement_without_regression')
+    return result('keep_current', 'no_material_advantage')
 
 
 def main(argv=None):

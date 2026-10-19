@@ -30,3 +30,18 @@ def test_baseline_text_confidence_is_not_a_probability_and_production_prompt_is_
     result = baseline_decide(client=Client(), model='fixture-baseline-model', state=dict(evidence=[dict(id='source')]), questions={})
     assert result['probabilities'] is None
     assert result['choice'] == 'investigate'
+
+
+def test_gate_requires_real_reviewed_validation_and_never_enables_automatic_discard():
+    from scripts.evaluate_radar_decisions import decision_scope_gate
+    baseline = dict(sampleSize=40, confirmedPositiveCases=12, correct=35, investigations=12, falseDiscards=0, thirdPartyContacts=0, technicalLeaks=0, uncertainReplays=0,
+                    p95LatencyMs=1000, totalCostUsd='0.01', provenance='real_response', modelSnapshot='fixture-baseline-snapshot', contextVersion='v1', datasetVersion='v1', partition='validation')
+    contender = {**baseline, 'modelSnapshot': 'fixture-decision-snapshot'}
+    assert decision_scope_gate(baseline, contender, dataset_ready=False)['decision'] == 'inconclusive'
+    assert decision_scope_gate(baseline, contender, dataset_ready=True)['decision'] == 'keep_current'
+    assert decision_scope_gate(baseline, {**contender, 'totalCostUsd': None}, dataset_ready=True)['decision'] == 'inconclusive'
+    assert decision_scope_gate(baseline, {**contender, 'falseDiscards': 1, 'totalCostUsd': '0.001'}, dataset_ready=True)['decision'] == 'keep_current'
+    assert decision_scope_gate(baseline, {**contender, 'totalCostUsd': '0.008'}, dataset_ready=True) == dict(decision='proceed', reasonCodes=['cost_improvement_without_regression'], automaticDiscardAllowed=False, requiresProductReview=True)
+    assert decision_scope_gate(baseline, {**contender, 'provenance': 'synthetic_fixture', 'totalCostUsd': '0.001'}, dataset_ready=True)['decision'] == 'inconclusive'
+    assert decision_scope_gate(baseline, {**contender, 'correct': 500}, dataset_ready=True)['decision'] == 'inconclusive'
+    assert decision_scope_gate(baseline, {**contender, 'totalCostUsd': 'missing'}, dataset_ready=True)['decision'] == 'inconclusive'

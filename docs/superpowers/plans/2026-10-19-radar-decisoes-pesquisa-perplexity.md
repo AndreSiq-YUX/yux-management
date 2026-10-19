@@ -82,3 +82,9 @@ Cada tarefa segue teste que falha, implementação, teste verde e commit pequeno
 - [ ] Primeiro provar recuperação de uma empresa e do lote v1 existente; só depois testar novo lote v2 e comparar estratégias de pesquisa.
 
 Revisão final do conjunto antes de publicação. Não há delegação nem implementação nesta revisão documental. Os testes citados são critérios futuros, não testes da aplicação executados neste turno.
+
+## Execução local autorizada em 19 de outubro de 2026
+
+A0 implementada em quatro commits pequenos: `ff3f3ca`, `7573ec2`, `45d4277`, `e47ed00`. Migração aditiva usada: **0196**. Os testes locais incluem PostgreSQL isolado, worker individual com transportes simulados, preservação das vinte admitidas e dos efeitos incertos; não houve recuperação do lote de produção, implantação ou compra externa.
+
+E0 tem conjunto pendente, validador, contexto/adaptador offline e protocolo de custo/cobertura. A [decisão de escopo](../reports/2026-10-19-radar-benchmark-decision.md) é **inconclusiva**, pois não há cem rótulos humanos nem comparação paga autorizada. Não promover B a produção por testes simulados. A recuperação A e a descoberta C não são concluídas por esta preparação.
