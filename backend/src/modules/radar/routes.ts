@@ -46,6 +46,7 @@ import {
 } from './repository.js'
 import { radarSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
 import { getRadarCandidateResearch, startRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
+import {authorizeRadarAnalysisRetries,radarAnalysisRetryAuthorizationSchema} from './analysis-retry-authorizations.js'
 import { getRadarResearchAvailability } from './research-availability.js'
 import {deliverRadarCompaniesToCrm,listRadarCrmDestinations} from './crm-delivery.js'
 import {authorizeRadarTlsException,revokeRadarTlsException} from './tls-exception-service.js'
@@ -440,6 +441,15 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params=z.object({id:uuid}).safeParse(request.params),query=campaignQuerySchema.safeParse(request.query)
     if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_capture_query'})
     return getRadarCaptureOperation(app.pg,user,query.data.organizationId,params.data.id)
+  })
+  app.post('/campaigns/:id/analysis-retries',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_forbidden'})
+    const params=z.object({id:uuid}).safeParse(request.params)
+    const body=radarAnalysisRetryAuthorizationSchema.omit({campaignId:true}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_analysis_retry_payload'})
+    // Approval only: request orchestration must separately consume the grant.
+    return authorizeRadarAnalysisRetries(app.pg,user,{...body.data,campaignId:params.data.id})
   })
   app.post('/capture-operations/:id/resume',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

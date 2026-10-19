@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
@@ -18,9 +18,9 @@ from .strategy_curation import StrategyCurationService
 from .providers import ProviderRequestError
 from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine, build_routed_client
 from .llm_routing import effective_legacy_routes
-from .radar_qualification import qualify_radar_business
-from .radar_presence import resolve_radar_presence
-from .radar_receipts import execute_radar_receipt
+from .radar_qualification import qualify_radar_business, validate_radar_qualification_response
+from .radar_presence import resolve_radar_presence, validate_radar_presence_response
+from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -67,6 +67,16 @@ class RadarPresenceRequest(BaseModel):
     request_id: str = Field(min_length=1,max_length=200)
     identity: dict[str,Any]
     evidence: list[RadarPresenceEvidence] = Field(min_length=1,max_length=10)
+
+
+class RadarRevalidationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    organization_id: str
+    client_id: str | None = None
+    contract_id: str | None = None
+    action: Literal['radar_presence_resolution', 'radar_business_qualification']
+    request_id: str = Field(min_length=1, max_length=200)
+    input_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 class IngestEventRequest(BaseModel):
     organization_id: str | None = None
@@ -164,7 +174,7 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def log_mission_request_validation(request: Request, error: RequestValidationError):
-        if request.url.path in ('/radar/qualify', '/radar/resolve-presence'):
+        if request.url.path in ('/radar/qualify', '/radar/resolve-presence', '/radar/revalidate'):
             # Do not echo evidence/prompts from Pydantic's input field. This error
             # is pre-provider, unlike a rejected response with an existing receipt.
             return JSONResponse(status_code=422, content=dict(detail='radar_request_invalid'))
@@ -274,6 +284,23 @@ def create_app(
             logger.warning('%s', json.dumps(dict(event='radar_credit_reservation_rejected', stage='before_provider',
                                                  request_id=request.request_id[:200], code=code)))
             raise HTTPException(status_code=402, detail=code) from error
+
+    @app.post('/radar/revalidate', dependencies=[Depends(require_runtime_token)])
+    def radar_revalidate(request: RadarRevalidationRequest) -> dict[str, Any]:
+        validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key=request.action, audience='internal_operator')
+        def validate(response, saved):
+            if saved.get('client_id') != request.client_id or saved.get('contract_id') != request.contract_id:
+                raise HTTPException(status_code=403, detail='radar_analysis_tenant_changed')
+            if request.action == 'radar_presence_resolution':
+                return validate_radar_presence_response(response, evidence=saved['evidence'])
+            return validate_radar_qualification_response(response, criteria=saved['criteria'], evidence=saved['evidence'])
+        try:
+            return revalidate_radar_receipt(runtime_store, organization_id=request.organization_id, action=request.action, request_id=request.request_id, input_hash=request.input_hash, validate=validate, tenant_context=dict(client_id=request.client_id, contract_id=request.contract_id))
+        except ValueError as cause:
+            code = str(cause)
+            if code == 'radar_analysis_tenant_changed':
+                raise HTTPException(status_code=403, detail=code) from None
+            raise HTTPException(status_code=422, detail=code if re.fullmatch(r'(?:radar_[a-z0-9_]+|output_truncated)', code) else 'radar_analysis_response_invalid') from None
 
     @app.post('/radar/resolve-presence', dependencies=[Depends(require_runtime_token)])
     def radar_resolve_presence(request: RadarPresenceRequest) -> dict[str,Any]:

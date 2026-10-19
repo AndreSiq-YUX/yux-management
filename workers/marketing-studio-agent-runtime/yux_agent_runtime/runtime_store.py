@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from contextvars import ContextVar
 import json
@@ -58,17 +58,40 @@ class InMemoryAgentRuntimeStore:
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _radar_lock: Any = field(default_factory=RLock, repr=False)
 
-    def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token):
+    def begin_radar_effect(self, *, organization_id, action, request_id, analysis_receipt_id, owner_token, input_hash, provider, model_snapshot, lease_until):
         with self._radar_lock:
+            parent = self.list('radar_analysis_receipts', dict(id=analysis_receipt_id, organization_id=organization_id, owner_token=owner_token, status='reserved'))
+            if not parent:
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
+            key = f'{action}:{request_id}'
+            attempt = max([row['attempt'] for row in self.list('radar_effect_receipts', dict(organization_id=organization_id, effect_key=key))] or [0]) + 1
+            return self.insert('radar_effect_receipts', dict(organization_id=organization_id, effect_key=key, attempt=attempt, analysis_receipt_id=analysis_receipt_id,
+                owner_token=owner_token, input_hash=input_hash, provider=provider, model_snapshot=model_snapshot, lease_until=lease_until,
+                transport_outcome='not_started', validation_outcome='pending', billing_outcome='uncertain', response_body=None, usage=None, failure_code=None))
+
+    def update_radar_effect(self, effect_id, *, owner_token, **changes):
+        with self._radar_lock:
+            effects = self.list('radar_effect_receipts', dict(id=effect_id, owner_token=owner_token))
+            if not effects or not self.list('radar_analysis_receipts', dict(id=effects[0]['analysis_receipt_id'], organization_id=effects[0]['organization_id'], owner_token=owner_token, status='reserved')) or datetime.fromisoformat(effects[0]['lease_until']) <= datetime.now().astimezone():
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
+            for key in ('response_body', 'usage'):
+                if key in changes and effects[0].get(key) is not None and effects[0][key] != changes[key]:
+                    raise RuntimeError('radar_effect_response_conflict')
+            return self.update('radar_effect_receipts', effect_id, changes)
+
+    def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token, input_request=None):
+        with self._radar_lock:
+            lease = (datetime.now().astimezone() + timedelta(minutes=6)).isoformat()
+            snapshot = json.loads(json.dumps(input_request))
             key = dict(organization_id=organization_id, action=action, request_id=request_id)
             rows = self.list('radar_analysis_receipts', key)
             if rows:
                 row = rows[0]
                 if row['input_hash'] != input_hash or row['status'] != 'rejected_before_provider':
                     return row, False
-                row = self.update('radar_analysis_receipts', row['id'], dict(status='reserved', owner_token=owner_token))
+                row = self.update('radar_analysis_receipts', row['id'], dict(status='reserved', owner_token=owner_token, input_request=row.get('input_request') or snapshot, lease_until=lease))
             else:
-                row = self.insert('radar_analysis_receipts', dict(**key, input_hash=input_hash, owner_token=owner_token, status='reserved'))
+                row = self.insert('radar_analysis_receipts', dict(**key, input_hash=input_hash, owner_token=owner_token, status='reserved', input_request=snapshot, lease_until=lease))
             return row, True
 
     def finish_radar_receipt(self, *, organization_id, action, request_id, owner_token, status, result, usage):
@@ -76,7 +99,26 @@ class InMemoryAgentRuntimeStore:
             rows = self.list('radar_analysis_receipts', dict(organization_id=organization_id, action=action, request_id=request_id, owner_token=owner_token, status='reserved'))
             if not rows:
                 raise RuntimeError('radar_analysis_receipt_lease_lost')
-            self.update('radar_analysis_receipts', rows[0]['id'], dict(status=status, result=result, usage=usage))
+            self.update('radar_analysis_receipts', rows[0]['id'], dict(status=status, result=result, usage=usage, lease_until=None))
+
+    def claim_radar_revalidation(self, *, organization_id, action, request_id, input_hash, owner_token, tenant_context=None):
+        with self._radar_lock:
+            rows = self.list('radar_analysis_receipts', dict(organization_id=organization_id, action=action, request_id=request_id))
+            row = rows[0] if rows else None
+            if not row or row['input_hash'] != input_hash:
+                return row, None
+            if tenant_context is not None and (not row.get('input_request') or any(row['input_request'].get(key) != tenant_context.get(key) for key in ('client_id','contract_id'))):
+                raise ValueError('radar_analysis_tenant_changed')
+            if row['status'] == 'completed':
+                return row, None
+            effects = sorted(self.list('radar_effect_receipts', dict(organization_id=organization_id, analysis_receipt_id=row['id'], transport_outcome='received')), key=lambda effect: effect['attempt'], reverse=True)
+            lease_until = row.get('lease_until')
+            if not effects or not row.get('input_request') or row['status'] == 'reserved' and (not lease_until or datetime.fromisoformat(lease_until) > datetime.now().astimezone()):
+                return row, None
+            lease = (datetime.now().astimezone() + timedelta(minutes=6)).isoformat()
+            row = self.update('radar_analysis_receipts', row['id'], dict(status='reserved', owner_token=owner_token, lease_until=lease))
+            effect = self.update('radar_effect_receipts', effects[0]['id'], dict(owner_token=owner_token, lease_until=lease))
+            return row, effect
 
     def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         record = _with_id(dict(payload))
@@ -198,7 +240,41 @@ class PostgresAgentRuntimeStore:
     def set_internal_scope(self) -> None:
         _runtime_database_scope.set(RuntimeDatabaseScope(role="yux_operator", organization_ids=()))
 
-    def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token):
+    def begin_radar_effect(self, *, organization_id, action, request_id, analysis_receipt_id, owner_token, input_hash, provider, model_snapshot, lease_until):
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute("SELECT id FROM public.radar_analysis_receipts WHERE id=%s AND organization_id=%s AND action=%s AND request_id=%s AND input_hash=%s AND owner_token=%s AND status='reserved' FOR UPDATE",[analysis_receipt_id,organization_id,action,request_id,input_hash,owner_token])
+            if not cursor.fetchone():
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
+            key = f'{action}:{request_id}'
+            cursor.execute('SELECT COALESCE(MAX(attempt),0)+1 AS attempt FROM public.radar_effect_receipts WHERE organization_id=%s AND effect_key=%s',[organization_id,key])
+            attempt = cursor.fetchone()['attempt']
+            cursor.execute("INSERT INTO public.radar_effect_receipts(organization_id,effect_key,attempt,analysis_receipt_id,owner_token,input_hash,provider,model_snapshot,lease_until) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",[organization_id,key,attempt,analysis_receipt_id,owner_token,input_hash,provider,model_snapshot,lease_until])
+            return dict(cursor.fetchone())
+
+    def update_radar_effect(self, effect_id, *, owner_token, **changes):
+        allowed = {'transport_outcome','validation_outcome','billing_outcome','response_body','usage','failure_code','model_snapshot','external_request_id'}
+        if not changes or set(changes) - allowed:
+            raise ValueError('radar_effect_update_invalid')
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute("SELECT analysis.id FROM public.radar_analysis_receipts analysis JOIN public.radar_effect_receipts effect ON effect.analysis_receipt_id=analysis.id AND effect.organization_id=analysis.organization_id WHERE effect.id=%s AND analysis.owner_token=%s AND analysis.status='reserved' FOR UPDATE OF analysis",[effect_id,owner_token])
+            if not cursor.fetchone():
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
+            clauses, values = [], []
+            for key, value in changes.items():
+                clauses.append(f'{key}=%s' + ('::jsonb' if key in ('response_body','usage') else ''))
+                values.append(json.dumps(value) if key in ('response_body','usage') and value is not None else value)
+            guards, immutable = [], []
+            for key in ('response_body', 'usage'):
+                if key in changes:
+                    guards.append(f'AND ({key} IS NULL OR {key}=%s::jsonb)')
+                    immutable.append(json.dumps(changes[key]) if changes[key] is not None else None)
+            cursor.execute(f"UPDATE public.radar_effect_receipts SET {','.join(clauses)},updated_at=NOW() WHERE id=%s AND owner_token=%s AND lease_until>NOW() {' '.join(guards)} RETURNING *",[*values,effect_id,owner_token,*immutable])
+            row = cursor.fetchone()
+            if not row:
+                raise RuntimeError('radar_analysis_receipt_lease_lost')
+            return dict(row)
+
+    def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token, input_request=None):
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
             cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', [f'radar-receipt:{organization_id}:{action}:{request_id}'])
             cursor.execute('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=%s AND action=%s AND request_id=%s FOR UPDATE', [organization_id, action, request_id])
@@ -206,17 +282,36 @@ class PostgresAgentRuntimeStore:
             if row and (row['input_hash'] != input_hash or row['status'] != 'rejected_before_provider'):
                 return dict(row), False
             if row:
-                cursor.execute("UPDATE public.radar_analysis_receipts SET status='reserved',owner_token=%s,updated_at=NOW() WHERE id=%s RETURNING *", [owner_token, row['id']])
+                cursor.execute("UPDATE public.radar_analysis_receipts SET status='reserved',owner_token=%s,input_request=COALESCE(input_request,%s::jsonb),lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW() WHERE id=%s RETURNING *", [owner_token,json.dumps(input_request),row['id']])
             else:
-                cursor.execute("INSERT INTO public.radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status) VALUES(%s,%s,%s,%s,%s,'reserved') RETURNING *", [organization_id, action, request_id, input_hash, owner_token])
+                cursor.execute("INSERT INTO public.radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status,input_request,lease_until) VALUES(%s,%s,%s,%s,%s,'reserved',%s::jsonb,NOW()+INTERVAL '6 minutes') RETURNING *", [organization_id, action, request_id, input_hash, owner_token,json.dumps(input_request)])
             return dict(cursor.fetchone()), True
 
     def finish_radar_receipt(self, *, organization_id, action, request_id, owner_token, status, result, usage):
         with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute("UPDATE public.radar_analysis_receipts SET status=%s,result=%s::jsonb,usage=%s::jsonb,updated_at=NOW() WHERE organization_id=%s AND action=%s AND request_id=%s AND owner_token=%s AND status='reserved' RETURNING id",
+            cursor.execute("UPDATE public.radar_analysis_receipts SET status=%s,result=%s::jsonb,usage=%s::jsonb,lease_until=NULL,updated_at=NOW() WHERE organization_id=%s AND action=%s AND request_id=%s AND owner_token=%s AND status='reserved' RETURNING id",
                            [status, json.dumps(result) if result is not None else None, json.dumps(usage) if usage is not None else None, organization_id, action, request_id, owner_token])
             if not cursor.fetchone():
                 raise RuntimeError('radar_analysis_receipt_lease_lost')
+
+    def claim_radar_revalidation(self, *, organization_id, action, request_id, input_hash, owner_token, tenant_context=None):
+        with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            cursor.execute('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=%s AND action=%s AND request_id=%s FOR UPDATE',[organization_id,action,request_id])
+            row = cursor.fetchone()
+            if not row or row['input_hash'] != input_hash:
+                return dict(row) if row else None, None
+            if tenant_context is not None and (not row.get('input_request') or any(row['input_request'].get(key) != tenant_context.get(key) for key in ('client_id','contract_id'))):
+                raise ValueError('radar_analysis_tenant_changed')
+            if row['status'] == 'completed' or row['status'] == 'reserved' and (row['lease_until'] is None or row['lease_until'] > datetime.now().astimezone()):
+                return dict(row), None
+            cursor.execute("SELECT * FROM public.radar_effect_receipts WHERE analysis_receipt_id=%s AND organization_id=%s AND transport_outcome='received' AND response_body IS NOT NULL ORDER BY attempt DESC LIMIT 1 FOR UPDATE",[row['id'],organization_id])
+            effect = cursor.fetchone()
+            if not effect or not row.get('input_request'):
+                return dict(row), None
+            cursor.execute("UPDATE public.radar_analysis_receipts SET status='reserved',owner_token=%s,lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW() WHERE id=%s RETURNING *",[owner_token,row['id']])
+            updated = dict(cursor.fetchone())
+            cursor.execute("UPDATE public.radar_effect_receipts SET owner_token=%s,lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW() WHERE id=%s RETURNING *",[owner_token,effect['id']])
+            return updated,dict(cursor.fetchone())
 
     def set_tenant_scope(
         self,

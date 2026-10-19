@@ -1,0 +1,165 @@
+{
+  "provenance": "synthetic_contract_fixture",
+  "valid": [
+    {
+      "schemaVersion": 1,
+      "id": "fixture-source",
+      "sourceUrl": "https://empresa.example/",
+      "text": "Conteúdo sintético para validar contrato; não é evidência real.",
+      "observedAt": "2026-10-19T12:00:00Z",
+      "kind": "institutional_candidate",
+      "scope": "unresolved"
+    },
+    {
+      "schemaVersion": 1,
+      "organizationId": "10000000-0000-4000-8000-000000000001",
+      "effectKey": "radar_presence_resolution:fixture-request",
+      "attempt": 1,
+      "analysisReceiptId": "10000000-0000-4000-8000-000000000002",
+      "ownerToken": "10000000-0000-4000-8000-000000000003",
+      "leaseUntil": "2026-10-19T16:00:00Z",
+      "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "transportOutcome": "received",
+      "validationOutcome": "invalid",
+      "billingOutcome": "known",
+      "responseBody": {
+        "content": "{",
+        "finish_reason": "length",
+        "raw_response_id": "fixture-not-real"
+      },
+      "usage": {
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "costUsd": 0.001
+      },
+      "failureCode": "output_truncated"
+    },
+    {
+      "schemaVersion": 1,
+      "status": "incomplete",
+      "updatedFields": [
+        "phone"
+      ],
+      "unresolvedFields": [
+        {
+          "field": "identity",
+          "reason": "identity_unresolved"
+        }
+      ],
+      "lastAttemptAt": "2026-10-19T12:00:00Z",
+      "nextAction": "review_source"
+    }
+  ],
+  "invalid": [
+    {
+      "schemaVersion": 1,
+      "organizationId": "10000000-0000-4000-8000-000000000001",
+      "effectKey": "radar_presence_resolution:fixture-request",
+      "attempt": 1,
+      "analysisReceiptId": "10000000-0000-4000-8000-000000000002",
+      "ownerToken": "10000000-0000-4000-8000-000000000003",
+      "leaseUntil": "2026-10-19T16:00:00Z",
+      "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "transportOutcome": "received",
+      "validationOutcome": "invalid",
+      "billingOutcome": "known",
+      "responseBody": null,
+      "usage": {
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "costUsd": 0.001
+      },
+      "failureCode": "output_truncated"
+    },
+    {
+      "schemaVersion": 1,
+      "status": "incomplete",
+      "updatedFields": [
+        "phone"
+      ],
+      "unresolvedFields": [
+        {
+          "field": "identity",
+          "reason": "identity_unresolved"
+        }
+      ],
+      "lastAttemptAt": "2026-10-19T12:00:00Z",
+      "nextAction": "review_source",
+      "provider": "must-not-be-commercial"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "fixture-source",
+      "sourceUrl": "file:///private",
+      "text": "Conteúdo sintético para validar contrato; não é evidência real.",
+      "observedAt": "2026-10-19T12:00:00Z",
+      "kind": "institutional_candidate",
+      "scope": "unresolved"
+    },
+    {
+      "schemaVersion": 1,
+      "organizationId": "10000000-0000-4000-8000-000000000001",
+      "effectKey": "radar_presence_resolution:fixture-request",
+      "attempt": 0,
+      "analysisReceiptId": "10000000-0000-4000-8000-000000000002",
+      "ownerToken": "10000000-0000-4000-8000-000000000003",
+      "leaseUntil": "2026-10-19T16:00:00Z",
+      "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "transportOutcome": "received",
+      "validationOutcome": "invalid",
+      "billingOutcome": "known",
+      "responseBody": {
+        "content": "{",
+        "finish_reason": "length",
+        "raw_response_id": "fixture-not-real"
+      },
+      "usage": {
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "costUsd": 0.001
+      },
+      "failureCode": "output_truncated"
+    },
+    {
+      "schemaVersion": 1,
+      "organizationId": "10000000-0000-4000-8000-000000000001",
+      "effectKey": "radar_presence_resolution:fixture-request",
+      "attempt": 1,
+      "analysisReceiptId": "10000000-0000-4000-8000-000000000002",
+      "ownerToken": "10000000-0000-4000-8000-000000000003",
+      "leaseUntil": "2026-10-19T16:00:00Z",
+      "inputHash": "not-a-hash",
+      "transportOutcome": "received",
+      "validationOutcome": "invalid",
+      "billingOutcome": "known",
+      "responseBody": {
+        "content": "{",
+        "finish_reason": "length",
+        "raw_response_id": "fixture-not-real"
+      },
+      "usage": {
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "costUsd": 0.001
+      },
+      "failureCode": "output_truncated"
+    },
+    {
+      "schemaVersion": true,
+      "status": "unchanged",
+      "updatedFields": [],
+      "unresolvedFields": [],
+      "lastAttemptAt": null,
+      "nextAction": "none"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "fixture-naive-date",
+      "sourceUrl": "https://empresa.example/",
+      "text": "Conteúdo de contrato sintético.",
+      "observedAt": "2026-10-19T12:00:00",
+      "kind": "institutional_candidate",
+      "scope": "unresolved"
+    }
+  ]
+}

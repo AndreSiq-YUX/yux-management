@@ -125,11 +125,22 @@ class RoutedLlmClient:
                 if route.get("temperature") is not None:
                     options["temperature"] = float(route["temperature"])
             try:
-                result = getattr(client, method)(*args, **options)
+                from .radar_receipts import radar_effect_recorder, capture_radar_provider_attempt
+                recorder = radar_effect_recorder(self.use_case)
+                if recorder:
+                    recorder.begin(attempt['provider'], attempt['modelName'])
+                with capture_radar_provider_attempt(recorder):
+                    result = getattr(client, method)(*args, **options)
+                if recorder:
+                    recorder.received({**result, 'provider': attempt['provider'], 'model': result.get('model') or attempt['modelName']})
                 return {**result, "provider": attempt["provider"], "model": result.get("model") or attempt["modelName"]}
-            except ProviderAuthorizationError:
+            except ProviderAuthorizationError as error:
+                if recorder:
+                    recorder.failed(error, provider_started=False)
                 raise
             except ProviderRequestError as error:
+                if recorder and recorder.failed(error) == 'uncertain':
+                    raise
                 last_error = error
         raise last_error or ProviderRequestError("llm_route_unavailable")
 

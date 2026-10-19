@@ -52,6 +52,14 @@ def qualify_radar_business(store, *, enabled: bool, context: dict, criteria: dic
             'Aderência à oferta não significa intenção de compra. Sem suporte suficiente, use review/unknown. '
             'Não afirme funcionamento atual, consentimento de contato ou telefone válido. Responda em português correto.' + profile_prompt)),
           dict(role='user', content=json.dumps(dict(criteria=criteria, evidence=bounded), ensure_ascii=False))])
+    return validate_radar_qualification_response(response, criteria=criteria, evidence=bounded)
+
+
+def validate_radar_qualification_response(response, *, criteria, evidence):
+    bounded = [dict(item, text=str(item.get('text') or '')[:12000]) for item in evidence]
+    profile_enabled = criteria.get('profileEnabled') is True
+    if response.get('finish_reason') == 'length':
+        raise ValueError('output_truncated')
     raw = str(response.get('content') or '').strip()
     raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.I)
     try:

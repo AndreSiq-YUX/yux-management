@@ -17,7 +17,7 @@ export function assessRadarCaptureResearch(run:Child):RadarCaptureResearchAssess
  if(run.status==='queued'||run.status==='running')return run.status==='running'&&run.lease_until&&new Date(run.lease_until).getTime()<Date.now()
   ?blocked('radar_research_lease_expired','reading'):{status:'researching'}
  if(['blocked','failed'].includes(run.status))return blocked(safeCode(run.error_code)?run.error_code:'radar_capture_item_requires_review','reading')
- for(const [key,call]of Object.entries(run.calls??{}))if(!['completed','failed'].includes(call.status))return blocked(call.status==='rejected_before_provider'&&safeCode(call.error)?call.error:'radar_research_call_uncertain',key==='presence'?'presence':key==='semantic'?'qualification':'discovery')
+ for(const [key,call]of Object.entries(run.calls??{}))if(!['completed','failed'].includes(call.status))return blocked(['rejected_before_provider','received_invalid','received_pending_validation'].includes(call.status)&&safeCode(call.error)?call.error:'radar_research_call_uncertain',key==='presence'?'presence':key==='semantic'?'qualification':'discovery')
  const output=run.output??{},quality=output.quality as {readyForReview?:boolean}|undefined
  const limitations=Array.isArray(output.limitations)?output.limitations.filter((v):v is string=>typeof v==='string').map(limitationCode):[]
  const requiredPending=limitations.some(code=>analysisFailures.has(code)||/^agent_runtime_\d{3}(?:_[a-z0-9_]+)?$/.test(code)||/^radar_(?:presence|qualification|profile)_(?:waiting_|service_unavailable|failed|unverifiable)/.test(code))

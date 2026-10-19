@@ -34,6 +34,15 @@ def resolve_radar_presence(store, *, enabled: bool, context: dict, identity: dic
             'Escolha somente uma página institutional_candidate fornecida, nunca directory/social/third_party. Cite a própria página escolhida; explique o vínculo com a identidade procurada. '
             'Se não houver suporte suficiente, candidateId=null,scope=unresolved. Não inclua campos adicionais nem invente evidências.')),
         dict(role='user',content=json.dumps(dict(identity=identity,evidence=bounded),ensure_ascii=False))])
+    return validate_radar_presence_response(response, evidence=bounded)
+
+
+def validate_radar_presence_response(response, *, evidence):
+    by_id = {item['id']: item for item in evidence}
+    if not evidence or len(by_id) != len(evidence):
+        raise ValueError('radar_presence_evidence_required')
+    if response.get('finish_reason') == 'length':
+        raise ValueError('output_truncated')
     try:
         raw=re.sub(r'^```(?:json)?\s*|\s*```$','',str(response.get('content') or '').strip(),flags=re.I)
         value=json.loads(raw)

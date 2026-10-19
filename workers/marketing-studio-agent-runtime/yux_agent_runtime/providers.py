@@ -131,6 +131,8 @@ class OpenRouterClient:
             payload,
             "POST",
         )
+        from .radar_receipts import capture_radar_raw_response
+        capture_radar_raw_response(response)
         if not isinstance(response, dict):
             raise ProviderRequestError("invalid_openrouter_response")
 

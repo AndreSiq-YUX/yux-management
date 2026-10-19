@@ -27,7 +27,7 @@ import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from './publi
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
-import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,type RadarEvidenceVersion} from './evidence-version.js'
+import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
 import {hasUsefulRadarHits,planRadarResearch} from './research-planner.js'
 import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
@@ -407,7 +407,7 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
   target_segment: string; offer_type: string; product_focus: string[]; target_cnaes: string[] }
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
   operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
-  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;
+  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;
     rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
@@ -647,12 +647,33 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       const action=key==='presence'?'radar_presence_resolution':'radar_business_qualification'
       const requestId=key==='presence'?`${run.id}:presence:${evidenceHash}`:`${run.id}:${evidenceHash}`
       if(previous.evidenceHash!==evidenceHash)return
-      const recovered=await pool.query("SELECT result,status FROM public.radar_analysis_receipts WHERE organization_id=$1 AND action=$2 AND request_id=$3 AND status IN ('completed','rejected_before_provider')",[run.organization_id,action,requestId])
+      const recovered=await pool.query(`SELECT analysis.*,effect.id AS effect_id,effect.transport_outcome,effect.validation_outcome,effect.failure_code
+        FROM public.radar_analysis_receipts analysis LEFT JOIN LATERAL(SELECT id,transport_outcome,validation_outcome,failure_code FROM public.radar_effect_receipts WHERE analysis_receipt_id=analysis.id AND organization_id=analysis.organization_id AND transport_outcome='received' AND response_body IS NOT NULL ORDER BY attempt DESC LIMIT 1) effect ON TRUE
+        WHERE analysis.organization_id=$1 AND analysis.action=$2 AND analysis.request_id=$3`,[run.organization_id,action,requestId])
       // Exact tenant/action/request/evidence identity; the runtime also verifies its
       // full input hash before reclaiming a rejection, before debit/provider access.
       const receipt=recovered.rows[0]
-      if(receipt?.status==='rejected_before_provider'||receipt?.status==='completed'&&receipt.result){run.calls[key]=receipt.status==='completed'?{...previous,status:'completed',result:receipt.result}:{...previous,status:'rejected_before_provider',retryProvenByReceipt:true,error:'radar_analysis_rejected_before_provider'}
+      const requestBindings=previous.requestBindings??(previous.evidenceVersion&&previous.evidenceHash===previous.evidenceVersion.hash
+        ?[...previous.evidenceVersion.bindings].sort((a,b)=>a.key.localeCompare(b.key)).map((binding,index)=>({...binding,id:`page-${index}`})):undefined)
+      const bindResult=(result:unknown)=>requestBindings&&previous.evidenceVersion?remapRadarEvidenceResult(result,requestBindings,previous.evidenceVersion.bindings):result
+      if(receipt?.status==='rejected_before_provider'||receipt?.status==='completed'&&receipt.result){run.calls[key]=receipt.status==='completed'?{...previous,status:'completed',result:bindResult(receipt.result)}:{...previous,status:'rejected_before_provider',retryProvenByReceipt:true,error:'radar_analysis_rejected_before_provider'}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])}
+      else if(receipt?.transport_outcome==='received'&&receipt.input_hash&&receipt.input_request){
+        await assertEffectAuthorization()
+        try{
+          const result=await(dependencies.runtime??invokeAgentRuntime)<unknown>(env,'/radar/revalidate',{
+            organization_id:run.organization_id,action,request_id:requestId,input_hash:receipt.input_hash,
+            client_id:receipt.input_request.client_id??null,contract_id:receipt.input_request.contract_id??null})
+          run.calls[key]={...previous,status:'completed',result:bindResult(result),effectReceiptId:String(receipt.effect_id)}
+        }catch(cause){
+          const message=cause instanceof Error?cause.message:''
+          const failure=/^agent_runtime_422:((?:radar_[a-z0-9_]+)|output_truncated)$/.exec(message)?.[1]
+          run.calls[key]={...previous,status:failure&&failure!=='radar_request_invalid'?'received_invalid':'received_pending_validation',
+            error:!failure||failure==='radar_request_invalid'?'radar_analysis_revalidation_unavailable':failure==='output_truncated'?'radar_analysis_output_truncated':failure,effectReceiptId:String(receipt.effect_id)}
+        }
+        const updated=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
+        if(!updated.rows[0])throw error('radar_research_lease_lost')
+      }
     }
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
@@ -683,7 +704,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
           return result
         }
-        if(previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous))throw error('radar_presence_previous_request_uncertain')
+        if(previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous))throw error(previous.status.startsWith('received_')?previous.error??'radar_analysis_response_invalid':'radar_presence_previous_request_uncertain')
         if(previous?.status==='completed'&&!previous.refreshAuthorized)throw error(!previous.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':'radar_presence_refresh_authorization_required')
         const tenant=await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
@@ -694,11 +715,11 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_presence_explicit_route_required')
         await assertEffectAuthorization()
-        run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),rejections:previous?.rejections}
+        const requestEvidence=canonicalRadarAnalysisEvidence(evidence)
+        run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previous?.rejections}
         const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
         if(!reserved.rows[0])throw error('radar_research_lease_lost')
         signal?.throwIfAborted()
-        const requestEvidence=canonicalRadarAnalysisEvidence(evidence)
         const {websiteUrl:_suggested,...requestIdentity}=identity
         const rawResult=await invokeAnalysis<unknown>('presence','/radar/resolve-presence',{
           organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,
@@ -707,7 +728,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         })
         const result=remapRadarEvidenceResult(rawResult,radarEvidenceBindings(requestEvidence),version.bindings)
         validateRadarPresenceResolution(result,identity,evidence)
-        run.calls.presence={status:'completed',source:'radar_presence_resolution',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),result,rejections:run.calls.presence.rejections}
+        run.calls.presence={status:'completed',source:'radar_presence_resolution',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:run.calls.presence.requestBindings,result,rejections:run.calls.presence.rejections}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return result
       },
@@ -722,7 +743,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
           return result
         }
-        if (previousSemantic&&previousSemantic.status!=='completed'&&!canRetryPreProviderRejection(previousSemantic)) throw error('radar_qualification_previous_request_uncertain')
+        if (previousSemantic&&previousSemantic.status!=='completed'&&!canRetryPreProviderRejection(previousSemantic)) throw error(previousSemantic.status.startsWith('received_')?previousSemantic.error??'radar_analysis_response_invalid':'radar_qualification_previous_request_uncertain')
         if (previousSemantic?.status==='completed'&&!previousSemantic.refreshAuthorized) throw error(!previousSemantic.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':'radar_qualification_refresh_authorization_required')
         const tenant = await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
@@ -733,10 +754,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_qualification_explicit_route_required')
         await assertEffectAuthorization()
-        run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),rejections:previousSemantic?.rejections,
+        const requestEvidence=canonicalRadarAnalysisEvidence(pages.map(page=>({...page,text:page.text.slice(0,12000)})))
+        run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previousSemantic?.rejections,
           previous:previousSemantic?.status==='completed'?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:previousSemantic?.previous}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
-        const requestEvidence=canonicalRadarAnalysisEvidence(pages.map(page=>({...page,text:page.text.slice(0,12000)})))
         const rawResult = await invokeAnalysis<RadarQualification>('semantic','/radar/qualify',{
           organization_id:run.organization_id,client_id:tenant.rows[0]?.client_id,contract_id:tenant.rows[0]?.contract_id,enabled:true,request_id:`${run.id}:${evidenceHash}`,
           criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,qualification:configuration.qualification,
@@ -745,7 +766,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         })
         const result=remapRadarEvidenceResult(rawResult,radarEvidenceBindings(requestEvidence),version.bindings)
         const checked=validatedQualificationProfile(result,pages)
-        run.calls.semantic={status:'completed',source:'radar_business_qualification',result:checked,evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),previous:run.calls.semantic.previous,rejections:run.calls.semantic.rejections}
+        run.calls.semantic={status:'completed',source:'radar_business_qualification',result:checked,evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:run.calls.semantic.requestBindings,previous:run.calls.semantic.previous,rejections:run.calls.semantic.rejections}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return checked
       },

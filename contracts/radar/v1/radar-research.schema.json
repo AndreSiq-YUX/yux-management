@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yux.com.br/contracts/radar/v1/radar-research.schema.json",
+  "title": "RadarResearchContractV1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ResearchEvidenceV1"
+    },
+    {
+      "$ref": "#/$defs/EffectReceiptV1"
+    },
+    {
+      "$ref": "#/$defs/CommercialResearchStatusV1"
+    }
+  ],
+  "$defs": {
+    "ResearchEvidenceV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "sourceUrl",
+        "text",
+        "observedAt",
+        "kind",
+        "scope"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "sourceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48000
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kind": {
+          "enum": [
+            "institutional_candidate",
+            "directory",
+            "social",
+            "third_party",
+            "registry"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "establishment",
+            "group",
+            "unresolved"
+          ]
+        }
+      }
+    },
+    "EffectReceiptV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "organizationId",
+        "effectKey",
+        "attempt",
+        "analysisReceiptId",
+        "ownerToken",
+        "leaseUntil",
+        "inputHash",
+        "transportOutcome",
+        "validationOutcome",
+        "billingOutcome",
+        "responseBody",
+        "usage",
+        "failureCode"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "organizationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "effectKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "analysisReceiptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "ownerToken": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "leaseUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "inputHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "transportOutcome": {
+          "enum": [
+            "not_started",
+            "rejected",
+            "received",
+            "uncertain"
+          ]
+        },
+        "validationOutcome": {
+          "enum": [
+            "pending",
+            "valid",
+            "invalid"
+          ]
+        },
+        "billingOutcome": {
+          "enum": [
+            "known",
+            "estimated",
+            "uncertain"
+          ]
+        },
+        "responseBody": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSnapshot": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "externalRequestId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "costUsd"
+              ],
+              "properties": {
+                "inputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "outputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "costUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,159}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transportOutcome": {
+                "const": "received"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "responseBody": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "validationOutcome": {
+                "const": "valid"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "transportOutcome": {
+                "const": "received"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "CommercialResearchStatusV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "status",
+        "updatedFields",
+        "unresolvedFields",
+        "lastAttemptAt",
+        "nextAction"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "status": {
+          "enum": [
+            "researching",
+            "complete",
+            "incomplete",
+            "waiting",
+            "unchanged"
+          ]
+        },
+        "updatedFields": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "website",
+              "email",
+              "phone",
+              "whatsapp",
+              "social",
+              "supplierChannel",
+              "companyProfile",
+              "companySize",
+              "activity",
+              "identity",
+              "fit"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "unresolvedFields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "reason"
+            ],
+            "properties": {
+              "field": {
+                "enum": [
+                  "website",
+                  "email",
+                  "phone",
+                  "whatsapp",
+                  "social",
+                  "supplierChannel",
+                  "companyProfile",
+                  "companySize",
+                  "activity",
+                  "identity",
+                  "fit"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_found",
+                  "reading_restricted",
+                  "identity_unresolved",
+                  "verification_pending",
+                  "outside_profile"
+                ]
+              }
+            }
+          }
+        },
+        "lastAttemptAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAction": {
+          "enum": [
+            "continue",
+            "review_source",
+            "review_result",
+            "wait",
+            "none"
+          ]
+        }
+      }
+    }
+  }
+}
