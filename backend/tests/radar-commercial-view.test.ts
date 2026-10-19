@@ -4,6 +4,13 @@ const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
 describe('Radar commercial data boundary',()=>{
+ it('exposes dated known facts through allowlists without technical metadata or foreign identity history',()=>{
+  const previousResearch={belongsToCurrentIdentity:true,runId:'internal-run',configurationRevision:1,websiteUrl:'https://alfa.example/',siteCheckedAt:'2026-10-18',publicContacts:[{kind:'email',value:'compras@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-18',association:'confirmed',scope:'group',...internal}],...internal}
+  const result=project('candidates',[{normalizedPayload:{previousResearch,researchRefreshIncomplete:true,...internal}}])
+  expect(result).toMatchObject([{facts:{refreshIncomplete:true,previousResearch:{websiteUrl:'https://alfa.example/',observedAt:'2026-10-18',contacts:[{value:'compras@alfa.example',scope:'group'}]}}}])
+  expect(JSON.stringify(result)).not.toMatch(/internal-run|OpenRouter|costUsd|secret-model|futureInternalField/)
+  expect(project('candidates',[{normalizedPayload:{previousResearch:{...previousResearch,belongsToCurrentIdentity:false}}}])[0].facts.previousResearch).toBeUndefined()
+ })
  it('preserves sourced company claims rather than treating its name or domain as a tool',()=>{
   expect(project('candidates',[{title:'Brave Transportes',normalizedPayload:{tradeName:'Brave Transportes',websiteUrl:'https://brave.com.br/',publicContacts:[{kind:'email',value:'compras@brave.com.br',sourceUrl:'https://brave.com.br/',association:'confirmed'}],companyProfile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'},services:[{value:'Transporte de cargas',sourceUrl:'https://brave.com.br/'}]}}}])).toMatchObject([{facts:{contacts:[{value:'compras@brave.com.br'}],profile:{summary:{value:'Brave Transportes atende fabricantes',sourceUrl:'https://brave.com.br/'}}}}])
  })

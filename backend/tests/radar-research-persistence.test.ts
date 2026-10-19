@@ -49,7 +49,7 @@ class ResearchPool {
       return{rows:[this.run]}
     }
     if(sql.includes('SELECT status,normalized_payload FROM public.radar_candidate_records'))return{rows:[{status:'pending_review',normalized_payload:this.payload}]}
-    if(sql.includes('UPDATE public.radar_candidate_records')){this.payload=JSON.parse(String(params[2]));return{rows:[]}}
+    if(sql.includes('UPDATE public.radar_candidate_records')){if(params[3]&&JSON.stringify(this.payload)!==String(params[3]))return{rows:[]};this.payload=JSON.parse(String(params[2]));return{rows:[{id:'candidate'}]}}
     if(sql.includes('INSERT INTO public.radar_b2b_'))return{rows:[]}
     if(sql.includes('FROM public.radar_site_tls_exceptions'))return{rows:[]}
     throw new Error(`Unexpected fixture query: ${sql}`)
@@ -74,6 +74,16 @@ it('revalidates a completed raw profile receipt claim by claim without another A
 })
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it('does not publish over a human correction made while research was running',async()=>{
+ const pool=new ResearchPool(),run=await start(pool)
+ pool.run!.output={readingComplete:true,readerVersion:4,discoveryLocked:true,pages,discovery:{association:'confirmed',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+ pool.researchConfiguration={research:{enabled:true,semanticQualificationEnabled:true}}
+ const runtime=vi.fn(async()=>{pool.payload={...pool.payload,manualNote:'Correção humana preservada'};return{targetStatus:'review',productFit:'unknown',reasons:[],evidenceIds:[],limitations:[]}})
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime:runtime as never})
+ expect(pool.payload.manualNote).toBe('Correção humana preservada')
+ expect(pool.queries.some(item=>item.sql.includes('UPDATE public.radar_candidate_records'))).toBe(false)
+ expect(pool.run).toMatchObject({status:'blocked',error_code:'radar_research_projection_changed'})
+})
 it.each([false,true])('recovers received analysis/citation bindings without another paid call (pre-A1 metadata=%s)',async oldMetadata=>{
  const pool=new ResearchPool()
  pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}

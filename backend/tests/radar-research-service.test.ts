@@ -332,6 +332,22 @@ it('does not persist an unverifiable profile as a valid qualification',async()=>
   expect(result.qualification).toBeUndefined();expect(result.profile).toBeUndefined()
   expect(result.limitations.join(' ')).toContain('radar_profile_unverifiable')
 })
+it('revalidates ownership and qualification dependencies after a contact-only change without new AI, but not after identity changes',async()=>{
+ const config=resolveRadarSearchConfiguration({research:{enabled:true,presenceResolutionEnabled:true,semanticQualificationEnabled:true}})
+ const page={url:'https://brand.example/',text:'Marca Beta. Atendemos empresas. Telefone (41) 3333-4444.',observedAt:'2026-10-18'}
+ const resolvePresence=vi.fn(async()=>({candidateId:'page-0',scope:'group',reason:'Marca associada ao grupo nas fontes consultadas.',claims:[{evidenceId:'page-0',excerpt:'Marca Beta. Atendemos empresas.'}]}))
+ const qualify=vi.fn(async()=>({targetStatus:'confirmed' as const,productFit:'possible' as const,reasons:['Atende empresas'],evidenceIds:['page-0'],claims:[{reason:'Atende empresas',evidenceId:'page-0',excerpt:'Atendemos empresas.'}],limitations:[]}))
+ const saved={readingComplete:true,pages:[page],discovery:{association:'review' as const,hits:[],suggestions:[],limitations:[],queries:1}}
+ const dependencies={web:vi.fn(),resolvePresence,qualify,checkpoint:async()=>{}}
+ const first=await runRadarResearchPipeline(identity,config,saved,dependencies)
+ const next=await runRadarResearchPipeline({...identity,phone:'4199999999'},config,{...first,readingComplete:true,pages:[{...page,text:page.text.replace('3333-4444','9999-9999'),observedAt:'2026-10-19'}]},dependencies)
+ expect(resolvePresence).toHaveBeenCalledTimes(1);expect(qualify).toHaveBeenCalledTimes(1)
+ expect(next.siteAssociation).toBe('confirmed');expect(next.qualification?.targetStatus).toBe('confirmed')
+ expect(next.contacts.some(item=>item.value.includes('99999999'))).toBe(true)
+ expect(next.contacts.some(item=>item.value.includes('33334444'))).toBe(false)
+ await runRadarResearchPipeline({...identity,cnpj:'99999999000199'},config,{...next,readingComplete:true},dependencies)
+ expect(resolvePresence).toHaveBeenCalledTimes(2)
+})
 it('lists financial PDFs as unread sources and never treats their link as a size measurement',async()=>{
   const config=resolveRadarSearchConfiguration({research:{sizeAssessment:{enabled:true,criteria:[{metric:'annualRevenue',weight:1,bands:[{min:0,points:0}]}]}}})
   const result=await runRadarResearchPipeline(identity,config,{readingComplete:true,pages:[{url:'https://alfa.example/',observedAt:'2026-10-12',

@@ -27,12 +27,14 @@ import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from './publi
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
-import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
+import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,radarAnalysisDependencies,radarDependencyBindingMatch,radarResearchDependencyVersions,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
+import {mergeRadarCompanyResearch,radarCompanyProjectionVersion,projectRadarCompanyFacts,radarPayloadIdentityHash} from './company-projection.js'
 import {hasUsefulRadarHits,planRadarResearch} from './research-planner.js'
 import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
+  claims?:Array<{reason:string;evidenceId:string;excerpt:string}>;
   reasons: string[]; evidenceIds: string[]; evidenceSources?:Array<{id:string;sourceUrl:string}>; limitations: string[]; provider?: string; model?: string; profile?:RadarCompanyProfile;profileRejections?:Array<{field:string;code:string}>;usage?:RadarPresenceResolution['usage'] }
 function validatedQualificationProfile(result:RadarQualification,pages:RadarSiteEvidence[]){
  if(result.profile){
@@ -88,7 +90,7 @@ function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
   return !!expected&&[...text.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)]
     .some(match=>{const value=match[0].replace(/\D/g,'');return group?value.slice(0,8)!==expected.slice(0,8):value!==expected})
 }
-function currentDossierProjection(output:Output,currentRevision?:number,dossierRevision?:number,contactPurpose:RadarSearchConfiguration['research']['contactPurpose']='general',identity?:RadarBusinessIdentity):Output{
+function currentDossierProjection(output:Output,currentRevision?:number,dossierRevision?:number,contactPurpose:RadarSearchConfiguration['research']['contactPurpose']='general',identity?:RadarBusinessIdentity,identityChanged=false):Output{
   const historical=currentRevision!==undefined&&dossierRevision!==currentRevision
   const unprovenOwnership=identity&&output.siteAssociation==='confirmed'&&radarPublicPresenceFromDossier(output,dossierRevision??0,identity)?.website?.association!=='confirmed'
   const contacts=(Array.isArray(output.contacts)?output.contacts:[]).filter(contact=>{
@@ -99,7 +101,7 @@ function currentDossierProjection(output:Output,currentRevision?:number,dossierR
     return isRadarInstitutionalSource(contact.sourceUrl,{text:page?.text})||!!page?.linkedFromUrl&&page.linkedFromUrl===contact.linkedFromUrl&&isRadarContactSource(contact,output.discovery?.websiteUrl)
     }).map(contact=>historical||unprovenOwnership?{...contact,association:'review' as const,scope:'unresolved' as const,preferred:false}:contact)
   const selectedEvidence=output.pages?.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(output.discovery?.websiteUrl??''))
-  const invalid=output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl,{text:selectedEvidence?.text,html:selectedEvidence?.html})
+  const invalid=identityChanged||output.discovery?.websiteUrl&&!isRadarInstitutionalSource(output.discovery.websiteUrl,{text:selectedEvidence?.text,html:selectedEvidence?.html})
   const readable=(output.pages??[]).filter(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
   const associated=!historical&&!unprovenOwnership&&output.siteAssociation==='confirmed'&&!invalid?readable.filter(page=>output.discovery?.websiteUrl&&new URL(page.url).origin===new URL(output.discovery.websiteUrl).origin):[]
   const activity=assessRadarBusinessActivity(associated,contacts??[],{pages:readable,scope:output.presenceResolution?.scope})
@@ -227,23 +229,28 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const buildPresenceEvidence=()=>presenceMaterial(pages,discovery.hits)
   let presenceEvidence=buildPresenceEvidence()
   const {websiteUrl:_inferredWebsite,...stableIdentity}=identity
+  const dependencyInput=(evidence:RadarPresenceEvidence[],criteria:unknown)=>({identity:stableIdentity,criteria,evidence,contacts:pages.flatMap(page=>extractRadarContacts(page,'review'))})
   const oldPresence=presenceMaterial(saved.pages??[],saved.discovery?.hits??saved.discoveryHits??[])
-  const presenceVersion=():RadarEvidenceVersion=>({hashVersion:2,hash:radarEvidenceContentHash({identity:stableIdentity,criteria:{},purpose:'presence',evidence:presenceEvidence}),bindings:radarEvidenceBindings(presenceEvidence),
+  const presenceVersion=():RadarEvidenceVersion=>({hashVersion:2,hash:radarEvidenceContentHash({identity:stableIdentity,criteria:{},purpose:'presence',evidence:presenceEvidence}),bindings:radarEvidenceBindings(presenceEvidence),dependencies:radarAnalysisDependencies(dependencyInput(presenceEvidence,{}),'presence'),
     ...(oldPresence.length?{legacy:{hashVersion:1 as const,hash:createHash('sha256').update(JSON.stringify({identity:stableIdentity,evidence:oldPresence})).digest('hex'),contentHash:radarEvidenceContentHash({identity:stableIdentity,criteria:{},purpose:'presence',evidence:oldPresence}),bindings:radarEvidenceBindings(oldPresence)}}:{})})
   let presenceContext=presenceVersion(),presenceEvidenceHash=presenceContext.hash
+  let presenceOriginHash=saved.analysisEvidence?.presence?.derivedFromHash??saved.presenceEvidenceHash
   let presenceResolution:RadarPresenceResolution|undefined
   const savedPresenceBindings=radarEvidenceBindingMatch({evidenceHash:saved.presenceEvidenceHash,evidenceVersion:saved.analysisEvidence?.presence},presenceContext)
-  if(saved.presenceResolution&&savedPresenceBindings)try{
-    const mapped=remapRadarEvidenceResult(saved.presenceResolution,savedPresenceBindings,presenceContext.bindings)
+  const presenceDependencies=radarDependencyBindingMatch(saved.analysisEvidence?.presence,presenceContext)
+  if(saved.presenceResolution&&(savedPresenceBindings||presenceDependencies))try{
+    const mapped=savedPresenceBindings?remapRadarEvidenceResult(saved.presenceResolution,savedPresenceBindings,presenceContext.bindings):remapRadarEvidenceResult(saved.presenceResolution,presenceDependencies!.from,presenceDependencies!.to)
     presenceResolution=validateRadarPresenceResolution({candidateId:presenceEvidence.find(item=>item.url===mapped.websiteUrl)?.id??null,scope:mapped.scope,reason:mapped.reason,
       claims:mapped.claims.map(claim=>({evidenceId:claim.evidenceId,excerpt:claim.excerpt})),provider:mapped.provider,model:mapped.model,usage:mapped.usage},identity,presenceEvidence)
   }catch{limits.push('radar_analysis_saved_citations_require_review')}
-  if(presenceResolution)output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion(presenceContext,saved.presenceEvidenceHash)}
+  // A dependency-derived validation is not an alias for a different paid input.
+  if(presenceResolution)output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion({...presenceContext,...(!savedPresenceBindings?{derivedFromHash:saved.presenceEvidenceHash}:{})},savedPresenceBindings?saved.presenceEvidenceHash:undefined)}
   let directlyAssociated=pages.find(directlyOwns)
   if(configuration.research.presenceResolutionEnabled&&!directlyAssociated&&!presenceResolution){
     if(dependencies.resolvePresence&&presenceEvidence.some(item=>item.kind==='institutional_candidate')){
       try{
         presenceResolution=validateRadarPresenceResolution(await dependencies.resolvePresence(presenceEvidence,presenceEvidenceHash,presenceContext),identity,presenceEvidence)
+        presenceOriginHash=presenceEvidenceHash
         output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceEvidenceHash
         output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion(presenceContext)}
         await checkpoint('identity')
@@ -277,7 +284,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         presenceResolution=undefined;directlyAssociated=undefined;limits.push('As páginas adicionais contradizem a identidade procurada. Site e contatos exigem revisão.')
       }
       output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceResolution?presenceEvidenceHash:undefined
-      if(presenceResolution)output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion(presenceContext,saved.presenceEvidenceHash)}
+      if(presenceResolution)output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion({...presenceContext,...(presenceOriginHash&&presenceOriginHash!==presenceContext.hash?{derivedFromHash:presenceOriginHash}:{})})}
       await checkpoint('consolidation')
     }
   }
@@ -300,7 +307,12 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const contacts:RadarContactEvidence[] = pages.filter(candidatePage).flatMap(page => extractRadarContacts(page, associatedPages.includes(page) ? 'confirmed' : 'review').map(contact=>({...contact,
     scope:associatedPages.includes(page)?presenceResolution?.scope??'establishment': 'unresolved' as const})))
   // Link-only contacts are preserved as sourced facts: stored pages intentionally omit raw HTML.
-  contacts.push(...(output.contacts??[]).filter(contact=>pages.some(page=>page.url===contact.sourceUrl&&candidatePage(page))&&(output.analysisOnly||saved.pages?.some(old=>old.url===contact.sourceUrl&&pages.some(page=>page.url===old.url&&!page.html&&page.text===old.text&&page.observedAt===old.observedAt)))).map(contact=>({...contact,
+  const unchangedContactPage=(page:RadarSiteEvidence)=>{
+    const prior=saved.analysisEvidence?.presence
+    if(prior)return radarEvidenceBindings(presenceMaterial([page],[])).some(binding=>prior.bindings.some(old=>old.key===binding.key))
+    return saved.pages?.some(old=>old.url===page.url&&page.text===old.text&&page.observedAt===old.observedAt)===true
+  }
+  contacts.push(...(output.contacts??[]).filter(contact=>pages.some(page=>page.url===contact.sourceUrl&&candidatePage(page)&&!page.html&&unchangedContactPage(page))).map(contact=>({...contact,
     association:associatedPages.some(page=>page.url===contact.sourceUrl)?'confirmed' as const:'review' as const,
     scope:associatedPages.some(page=>page.url===contact.sourceUrl)?presenceResolution?.scope??'establishment':'unresolved' as const})))
   for(const page of pages.filter(page=>!page.limitation&&!!page.linkedFromUrl&&isRadarPublicProfile(page.url))) {
@@ -311,11 +323,12 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     if(!parentLinks&&!priorLinks)continue
     const association=associatedPages.includes(parent)?'confirmed' as const:'review' as const
     const extracted=extractRadarContacts(page,association,{linkedFromUrl:parent.url})
-    const prior=page.html?[]:(saved.contacts??[]).filter(contact=>contact.sourceUrl===page.url&&contact.linkedFromUrl===parent.url)
+    const prior=page.html||!unchangedContactPage(page)?[]:(saved.contacts??[]).filter(contact=>contact.sourceUrl===page.url&&contact.linkedFromUrl===parent.url)
     contacts.push(...[...extracted,...prior].map(contact=>({...contact,association,scope:association==='confirmed'?presenceResolution?.scope??'establishment':'unresolved' as const})))
   }
   // Contacts in search snippets remain useful when there is no website; identity must be corroborated independently.
   const trustedSearchHits=discovery.hits.filter(hit=>sameInstitutionalOrigin(hit.url)&&matchRadarBusinessIdentity(identity,`${hit.title} ${hit.snippets.join(' ')}`)==='confirmed'
+    &&!pages.some(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(hit.url)&&!page.limitation&&!!page.text)
     &&!pages.some(page=>page.url===hit.url&&!page.limitation&&cnpjConflict(identity,page.text,presenceResolution?.scope==='group')))
   for (const hit of trustedSearchHits) contacts.push(...extractRadarContacts({ url:hit.url, text:`${hit.title} ${hit.snippets.join(' ')}`, observedAt:hit.observedAt }, 'confirmed')
     .map(contact=>({...contact,scope:presenceResolution?.scope??'establishment' as const})))
@@ -357,13 +370,26 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   const semanticMaterial=(value:RadarSiteEvidence[])=>value.map(page=>({...page,text:page.text.slice(0,12000)}))
   const semanticHash=(value:RadarSiteEvidence[])=>radarEvidenceContentHash({identity:stableIdentity,criteria,purpose:'qualification',evidence:semanticMaterial(value)})
   const oldQualified=legacyQualifiedMaterial(identity,saved)
-  const semanticContext:RadarEvidenceVersion={hashVersion:2,hash:semanticHash(qualifiedEvidence),bindings:radarEvidenceBindings(semanticMaterial(qualifiedEvidence)),
+  const semanticContext:RadarEvidenceVersion={hashVersion:2,hash:semanticHash(qualifiedEvidence),bindings:radarEvidenceBindings(semanticMaterial(qualifiedEvidence)),dependencies:radarAnalysisDependencies({identity:stableIdentity,criteria,evidence:semanticMaterial(qualifiedEvidence),contacts:uniqueContacts},'qualification'),
     ...(oldQualified.length?{legacy:{hashVersion:1 as const,hash:createHash('sha256').update(JSON.stringify({pages:oldQualified.map(page=>({url:page.url,text:page.text.slice(0,12000)})),profile:configuration.research.profileEnabled,size:configuration.research.sizeAssessment.enabled})).digest('hex'),contentHash:semanticHash(oldQualified),bindings:radarEvidenceBindings(semanticMaterial(oldQualified))}}:{})}
   const evidenceHash=semanticContext.hash
   let qualification:RadarQualification|undefined
   const savedQualificationBindings=radarEvidenceBindingMatch({evidenceHash:saved.qualificationEvidenceHash,evidenceVersion:saved.analysisEvidence?.semantic},semanticContext)
   if(saved.qualification&&savedQualificationBindings)try{qualification=validatedQualificationProfile(remapRadarEvidenceResult(saved.qualification,savedQualificationBindings,semanticContext.bindings),qualifiedEvidence)}catch{limits.push('radar_analysis_saved_citations_require_review')}
-  if(qualification)output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion(semanticContext,saved.qualificationEvidenceHash)}
+  const qualificationDependencies=radarDependencyBindingMatch(saved.analysisEvidence?.semantic,semanticContext)
+  if(!qualification&&saved.qualification?.claims?.length&&qualificationDependencies)try{
+    const mapped=remapRadarEvidenceResult(saved.qualification,qualificationDependencies.from,qualificationDependencies.to)
+    if(mapped.claims!.some(claim=>!qualifiedEvidence[Number(claim.evidenceId.replace('page-',''))]?.text.includes(claim.excerpt)))throw Error('radar_analysis_saved_citations_require_review')
+    if(mapped.reasons.some(reason=>!mapped.claims!.some(claim=>claim.reason===reason)))throw Error('radar_analysis_saved_citations_require_review')
+    // Reasons are generated narrative, not necessarily literal excerpts. Never
+    // carry an obsolete email/phone inside that narrative into the new result.
+    const currentText=qualifiedEvidence.map(page=>page.text).join(' ').replace(/\D/g,'')
+    const obsolete=(saved.contacts??[]).filter(contact=>!uniqueContacts.some(current=>current.kind===contact.kind&&current.value===contact.value))
+    if(obsolete.some(contact=>mapped.reasons.some(reason=>contact.kind==='email'?reason.toLowerCase().includes(contact.value.toLowerCase()):['phone','whatsapp'].includes(contact.kind)&&reason.replace(/\D/g,'').includes(contact.value.replace(/\D/g,'').replace(/^55/,''))&&!currentText.includes(contact.value.replace(/\D/g,'').replace(/^55/,'')))))throw Error('radar_analysis_saved_citations_require_review')
+    qualification=validatedQualificationProfile(mapped,qualifiedEvidence)
+    if(qualification.profileRejections?.length)throw Error('radar_analysis_saved_citations_require_review')
+  }catch{qualification=undefined;limits.push('radar_analysis_saved_citations_require_review')}
+  if(qualification)output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion({...semanticContext,...(!savedQualificationBindings?{derivedFromHash:saved.qualificationEvidenceHash}:{})},savedQualificationBindings?saved.qualificationEvidenceHash:undefined)}
   const readableInstitutional=pages.some(page=>!!page.text&&!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text}))
   if ((configuration.research.semanticQualificationEnabled||configuration.research.profileEnabled||configuration.research.sizeAssessment.enabled) && !qualification) {
     if(!readableInstitutional)limits.push('radar_qualification_waiting_public_read')
@@ -429,6 +455,9 @@ async function loadContext(pool: Pick<pg.Pool,'query'>, organizationId:string, c
 export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, organizationId:string, candidateId:string) {
   await requireRadarScope(pool,user,{ organizationId,candidateId })
   const context = await loadContext(pool,organizationId,candidateId)
+  const candidateProjection=projectRadarCompanyFacts(context.normalized_payload)
+  const recordedIdentity=context.normalized_payload.researchDependencyVersions as {version?:number;identityHash?:string}|undefined
+  const identityChanged=recordedIdentity?.version===1&&recordedIdentity.identityHash!==radarPayloadIdentityHash(context.normalized_payload,context.title)
   const [runs, availability] = await Promise.all([
     pool.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id = $1 AND organization_id = $2
       ORDER BY created_at DESC LIMIT 5`, [candidateId, organizationId]),
@@ -440,7 +469,12 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
     .map(page=>({diagnosticId:radarTlsDiagnosticId(latest.id,page),...page.certificate!}))??[]
   const expired=latest?.status==='running'&&latest.lease_until&&Date.parse(latest.lease_until)<Date.now()
   const available=cachedReadAvailability(availability,latest,context.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.freshnessDays)
-  return { companyIdentity:{tradeName:context.normalized_payload.tradeName??context.title,legalName:context.normalized_payload.legalName}, methodVersion:RADAR_RESEARCH_METHOD_VERSION,availability:{...available,operations:{...available.operations,refresh:{allowed:availability.allowed,reasons:availability.reasons}}}, configurationRevision:context.configuration_revision, run:latest ? {...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:currentDossierProjection(latest.output,context.configuration_revision,latest.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,{name:String(context.normalized_payload.tradeName||context.title),legalName:typeof context.normalized_payload.legalName==='string'?context.normalized_payload.legalName:undefined,cnpj:typeof context.normalized_payload.cnpj==='string'?context.normalized_payload.cnpj:undefined})} : null,
+  const identity={name:String(context.normalized_payload.tradeName||context.title),legalName:typeof context.normalized_payload.legalName==='string'?context.normalized_payload.legalName:undefined,cnpj:typeof context.normalized_payload.cnpj==='string'?context.normalized_payload.cnpj:undefined}
+  const projectedOutput=latest?currentDossierProjection(latest.output,context.configuration_revision,latest.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,identity,identityChanged):undefined
+  return { companyIdentity:{tradeName:context.normalized_payload.tradeName??context.title,legalName:context.normalized_payload.legalName},methodVersion:RADAR_RESEARCH_METHOD_VERSION,
+    availability:{...available,operations:{...available.operations,refresh:{allowed:availability.allowed,reasons:availability.reasons}}},configurationRevision:context.configuration_revision,
+    run:latest?{...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:projectedOutput!}:null,
+    previousResearch:candidateProjection.previousResearch,researchRefreshIncomplete:context.normalized_payload.researchRefreshIncomplete,
     tlsExceptions,tlsDiagnostics,tlsCanAuthorize:user.role==='yux_admin'&&context.status==='pending_review'&&latest?.configuration_revision===context.configuration_revision,
     history:runs.rows.slice(1).map(run => ({ id:run.id, status:run.status, updated_at:run.updated_at })) }
 }
@@ -803,6 +837,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     if (candidate.rows[0]?.status !== 'pending_review') throw error('radar_candidate_not_pending')
     const approval = await client.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 FOR UPDATE',[run.candidate_id])
     if (approval.rows[0]?.approved_at) throw error('radar_research_approved_candidate_requires_review')
+    if(radarCompanyProjectionVersion(candidate.rows[0].normalized_payload)!==radarCompanyProjectionVersion(context.normalized_payload))throw error('radar_research_projection_changed')
     const known = dossier.contacts.filter(contact => contact.association === 'confirmed')
     for (const contact of known) await client.query(`INSERT INTO public.radar_b2b_evidence (organization_id,campaign_id,candidate_id,kind,value,source_url,observed_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (candidate_id,kind,value,source_url) DO UPDATE SET observed_at=EXCLUDED.observed_at`,
@@ -821,8 +856,10 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       desiredCnaes:context.target_cnaes,cnaes:Array.isArray(context.normalized_payload.cnaes) ? context.normalized_payload.cnaes as string[]:[],
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})
     const quality=evaluateRadarResearchQuality({dossier:{...dossier,qualification:dossier.qualification??{...review,evidenceIds:[],limitations:[]}},policy:resolveRadarSearchConfiguration(context.search_configuration).research,currentRevision:true})
-    const payload = {...candidate.rows[0].normalized_payload,researchRunId:run.id,researchRevision:run.configuration_revision,
-      publicPresence:projectRadarPublicPresence({configurationRevision:run.configuration_revision,...dossier}),
+    const configuration=resolveRadarSearchConfiguration(context.search_configuration)
+    const dependencies=radarResearchDependencyVersions({identity,criteria:configuration.qualification,evidence:dossier.pages,contacts:known})
+    const payload = mergeRadarCompanyResearch(candidate.rows[0].normalized_payload,{researchRunId:run.id,researchRevision:run.configuration_revision,researchDependencyVersions:dependencies,
+      publicPresence:projectRadarPublicPresence({configurationRevision:run.configuration_revision,identity,...dossier}),
       researchComplete:dossier.limitations.length===0,researchUsesBrave:run.operation==='reanalyze'
         ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
@@ -835,8 +872,11 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       sitePhones:known.filter(item=>item.kind==='phone').map(item=>item.value),
       ...(verified ? {websiteUrl:associatedPage.url,siteFinalUrl:associatedPage.url,siteCheckedAt:associatedPage.observedAt}:
         {websiteUrl:undefined,siteFinalUrl:undefined,siteCheckedAt:undefined}),
-      targetStatus:review.targetStatus,productFit:review.productFit,triageReasons:review.reasons,analysisRevision:run.configuration_revision}
-    await client.query('UPDATE public.radar_candidate_records SET normalized_payload=$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[run.candidate_id,run.organization_id,JSON.stringify(payload)])
+      targetStatus:review.targetStatus,productFit:review.productFit,triageReasons:review.reasons,analysisRevision:run.configuration_revision},
+      {identityHash:dependencies.identityHash,identityCnpj:identity.cnpj,configurationRevision:run.configuration_revision,freshnessDays:configuration.research.freshnessDays,
+       identityConflict:dossier.pages.some(page=>!page.limitation&&dossier.discovery.websiteUrl&&sameRadarOrigin(page.url,dossier.discovery.websiteUrl)&&cnpjConflict(identity,page.text,dossier.presenceResolution?.scope==='group'))})
+    const published=await client.query('UPDATE public.radar_candidate_records SET normalized_payload=$3::jsonb,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND normalized_payload=$4::jsonb RETURNING id',[run.candidate_id,run.organization_id,JSON.stringify(payload),JSON.stringify(candidate.rows[0].normalized_payload)])
+    if(!published.rows[0])throw error('radar_research_projection_changed')
     await client.query(`INSERT INTO public.radar_b2b_reviews (candidate_id,organization_id,campaign_id,target_status,product_fit,reasons,configuration_revision)
       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (candidate_id) DO UPDATE SET target_status=EXCLUDED.target_status,product_fit=EXCLUDED.product_fit,
       reasons=EXCLUDED.reasons,configuration_revision=EXCLUDED.configuration_revision,updated_at=NOW() WHERE radar_b2b_reviews.approved_at IS NULL`,

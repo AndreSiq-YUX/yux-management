@@ -51,10 +51,12 @@ Executar depois de [A0](2026-10-19-radar-destravamento-a0.md), consultando o [in
 
 **Exemplo e âncora:** `research-service.ts:212` calculava hash incluindo observação; A0 já o estabiliza. Agora, mudar só contato invalida análise de contato, não cursor ou domínio confirmado; mudar CNPJ requer rever a associação. Nunca refazer efeito só porque tipos TS foram gerados.
 
-- [ ] **Step 1:** Fixtures devem satisfazer `hash(t1,ordemA)===hash(t2,ordemB)` para mesmo conteúdo; mudança de contato invalida análise de contato, não cursor; novo orçamento não invalida identidade; mudança de CNPJ invalida associação. Dossiê anterior válido permanece acessível e datado durante refresh incompleto. Grupo e estabelecimento continuam diferentes.
-- [ ] **Step 2:** Rodar `npm test -- tests/radar-evidence-version.test.ts tests/radar-research-persistence.test.ts tests/radar-company-projection.test.ts`; observar falhas nas assertions novas.
-- [ ] **Step 3:** Registrar quais campos cada análise usa e comparar somente esses campos. Gravar resultado somente se a versão lida ainda é atual (`UPDATE ... WHERE version=expectedVersion`); se outra atualização venceu, recarregar sem publicar resultado antigo. Converter evidência legada apenas quando lida e com material suficiente, mantendo vínculo do recibo. Não retirar correção humana, apagar auditoria ou confundir `site encontrado` com `associação confirmada`.
-- [ ] **Step 4:** Rodar unitários, persistência PostgreSQL e `npm run type-check`. Confirmar zero chamada paga por mera releitura; commit de versionamento/projeção.
+- [x] **Step 1:** Fixtures devem satisfazer `hash(t1,ordemA)===hash(t2,ordemB)` para mesmo conteúdo; mudança de contato invalida análise de contato, não cursor; novo orçamento não invalida identidade; mudança de CNPJ invalida associação. Dossiê anterior válido permanece acessível e datado durante refresh incompleto. Grupo e estabelecimento continuam diferentes.
+- [x] **Step 2:** Rodar `npm test -- tests/radar-evidence-version.test.ts tests/radar-research-persistence.test.ts tests/radar-company-projection.test.ts`; observar falhas nas assertions novas.
+- [x] **Step 3:** Registrar quais campos cada análise usa e comparar somente esses campos. Gravar resultado somente se a versão lida ainda é atual (`UPDATE ... WHERE version=expectedVersion`); se outra atualização venceu, recarregar sem publicar resultado antigo. Converter evidência legada apenas quando lida e com material suficiente, mantendo vínculo do recibo. Não retirar correção humana, apagar auditoria ou confundir `site encontrado` com `associação confirmada`.
+- [x] **Step 4:** Rodar unitários, persistência PostgreSQL e `npm run type-check`. Confirmar zero chamada paga por mera releitura; commit de versionamento/projeção.
+
+Verificado localmente: 1.177 testes backend, 326 runtime, 18 testes PostgreSQL/HTTP e type-check. Nenhum piloto pago ou recuperação em produção executado. `radar-company-projection.test.ts` demonstra datas/grupo/CNPJ/CAS; `radar-research-service.test.ts` demonstra contato novo sem refazer identificação e qualificação com citações válidas. Reuso dependente mantém `derivedFromHash`, não cria alias de recibo pago para conteúdo diferente.
 
 ### Task A3 Intenção durável única e reconciliação de lote
 

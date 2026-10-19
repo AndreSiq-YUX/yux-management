@@ -41,7 +41,9 @@ const activity=z.object({status:text,limitation:narrative,signals:z.array(z.obje
  presenceSignals:z.array(z.object({kind:text,excerpt:narrative,sourceUrl:url,observedAt:text,association:text,scope:text}).strip()).optional().catch(undefined)}).strip()
 const size=z.object({score:number,evidenceCoverage:number,direction:text,contributions:z.array(z.object({metric:text,amount:number,points:number,weight:number,sourceUrl:url,referenceDate:text}).strip()).optional().catch(undefined)}).strip()
 const quality=z.object({identity:text,contactability:text,fit:text,readyForReview:bool,missing:texts,potential:z.object({score:number,coverage:number}).strip().optional().catch(undefined)}).strip()
+const previousFacts=z.object({websiteUrl:url,observedAt:text,contacts,profile:profile.optional().catch(undefined)}).strip()
 const factsSchema=z.object({cnpj:text,legalName:text,tradeName:text,city:text,state:text,address:text,cnaes:texts,cnaeMain:text,registrationStatus:text,openingDate:text,
+ refreshIncomplete:bool,siteObservedAt:text,previousResearch:previousFacts.optional().catch(undefined),
  websiteUrl:url,websiteStatus:text,registryPhone:text,contacts,profile:profile.optional().catch(undefined),activity:activity.optional().catch(undefined),sizeAssessment:size.optional().catch(undefined),
  documents:z.array(z.object({url,sourceUrl:url}).strip()).optional().catch(undefined),
  targetStatus:text,productFit:text,quality:quality.optional().catch(undefined),reasons:narratives}).strip()
@@ -57,7 +59,9 @@ export function radarCommercialFactsSchemaForCompany(identities:string[]){
 export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFacts{
  const data=projectRadarCompanyFacts(object(payload)),presence=object(data.publicPresence),website=object(presence.website)
  const identities=[data.legalName,data.tradeName].filter((value):value is string=>typeof value==='string')
+ const prior=object(data.previousResearch)
  return radarCommercialFactsSchemaForCompany(identities).parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
+  siteObservedAt:website.observedAt??data.siteCheckedAt,refreshIncomplete:data.researchRefreshIncomplete,previousResearch:prior.belongsToCurrentIdentity===true?{websiteUrl:prior.websiteUrl,observedAt:prior.siteCheckedAt,contacts:prior.publicContacts,profile:prior.companyProfile}:undefined,
   contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
 const base={id:text,organizationId:text,campaignId:text,status:text,createdAt:text,updatedAt:text}
@@ -107,8 +111,9 @@ export function projectRadarCommercialResponse(surface:RadarCommercialSurface,pa
   case 'capture':if('operation' in row)return{operation:row.operation===null?null:projectRadarCommercialResponse('capture',row.operation)}
    return captureSchema.parse({...row,pendingMessage:row.status==='blocked'?pending:undefined})
   case 'research':{const run=object(row.run),out=object(run.output),qualification=object(out.qualification),identity=object(row.companyIdentity)
+   const priorFacts=projectRadarCommercialFacts({previousResearch:row.previousResearch,researchRefreshIncomplete:row.researchRefreshIncomplete})
    const facts=projectRadarCommercialFacts({tradeName:identity.tradeName,legalName:identity.legalName,websiteUrl:object(out.discovery).websiteUrl,websiteStatus:object(out.discovery).websiteUrl?(out.siteAssociation==='confirmed'?'verified_present':'unverified'):undefined,phoneRaw:out.registryPhone,documents:out.documents,publicContacts:out.contacts,companyProfile:out.profile,activityAssessment:out.activity,sizeAssessment:out.sizeAssessment,researchQuality:out.quality})
-   return {...researchSchema.omit({facts:true}).parse({configurationRevision:row.configurationRevision,status:run.status,updatedAt:run.updated_at,pendingMessage:run.status==='blocked'||run.status==='failed'?pending:undefined,assessment:qualification}),facts}}
+   return {...researchSchema.omit({facts:true}).parse({configurationRevision:row.configurationRevision,status:run.status,updatedAt:run.updated_at,pendingMessage:run.status==='blocked'||run.status==='failed'?pending:undefined,assessment:qualification}),facts:{...facts,previousResearch:priorFacts.previousResearch,refreshIncomplete:priorFacts.refreshIncomplete}}}
   case 'researchHistory':return map(payload,item=>{const r=object(item);return historySchema.parse({...r,actionLabel:({complete:'Pesquisa completa',resume:'Retomada da pesquisa',refresh:'Atualização da pesquisa',reanalyze:'Reavaliação dos dados salvos'} as Record<string,string>)[String(r.operation)]??'Pesquisa da empresa'})})
   case 'feedback':return map(payload,item=>{const r=object(item);return feedbackSchema.parse({...r,candidateId:r.candidateId??r.candidate_id,configurationRevision:r.configurationRevision??r.configuration_revision,createdAt:r.createdAt??r.created_at})})
   case 'duplicates':return map(payload,item=>z.object({...base,duplicateType:text,companyRecordId:text,matchedCompanyRecordId:text,confidence:number}).strip().parse(item))

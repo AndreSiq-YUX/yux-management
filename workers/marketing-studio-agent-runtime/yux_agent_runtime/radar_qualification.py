@@ -72,16 +72,17 @@ def validate_radar_qualification_response(response, *, criteria, evidence):
     if status not in {'confirmed','review','not_target','insufficient'} or fit not in {'high','possible','low','unknown'}:
         raise ValueError('radar_qualification_invalid_status')
     by_id = {item['id']: item['text'] for item in bounded}
-    reasons, ids = [], []
+    reasons, ids, validated_claims = [], [], []
     for claim in payload.get('claims', [])[:20]:
         source = by_id.get(claim.get('evidenceId'))
         excerpt, reason = str(claim.get('excerpt') or '').strip(), str(claim.get('reason') or '').strip()
         if not source or len(excerpt) < 8 or excerpt not in source or not reason:
             raise ValueError('radar_qualification_unverifiable_claim')
         reasons.append(reason[:1000]); ids.append(claim['evidenceId'])
+        validated_claims.append(dict(reason=reason[:1000],evidenceId=claim['evidenceId'],excerpt=excerpt))
     if (status in {'confirmed','not_target'} or fit != 'unknown') and not reasons:
         raise ValueError('radar_qualification_evidence_required')
-    result = dict(targetStatus=status, productFit=fit, reasons=reasons, evidenceIds=list(dict.fromkeys(ids)),
+    result = dict(targetStatus=status, productFit=fit, reasons=reasons, evidenceIds=list(dict.fromkeys(ids)), claims=validated_claims,
                 limitations=[str(item)[:1000] for item in payload.get('limitations', [])[:20]],
                 evidenceSources=[dict(id=item['id'],sourceUrl=item['source_url']) for item in bounded if item['id'] in ids],
                 buyingIntent='unknown', provider=response.get('provider'), model=response.get('model'), usage=radar_usage(response))

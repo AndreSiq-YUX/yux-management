@@ -29,6 +29,7 @@ def test_uses_admin_route_and_configured_fallbacks_and_ignores_embedded_instruct
     assert attempts == ['fixture-primary','fixture-fallback']
     assert result['model'] == 'fixture-fallback'
     assert result['buyingIntent'] == 'unknown'
+    assert result['claims'] == [dict(reason='Atende empresas', evidenceId='page-0', excerpt='refeições coletivas para empresas')]
 
 @pytest.mark.parametrize('evidence_id,excerpt', [('invented','refeições'), ('page-0','compra agora')])
 def test_rejects_invented_evidence_ids_and_unverifiable_claims(evidence_id, excerpt):

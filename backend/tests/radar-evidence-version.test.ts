@@ -29,3 +29,16 @@ it('keeps a new provider request ordered identically when input evidence order c
  const project=(items:typeof values)=>api.canonicalRadarAnalysisEvidence(items).map(({id,url,text,kind}:typeof values[number])=>({id,url,text,kind}))
  expect(project(values)).toEqual(project([...values].reverse()))
 })
+it('separates identity/contact/qualification dependencies without changing the v2 paid content hash',()=>{
+ expect(api.radarResearchDependencyVersions).toBeTypeOf('function')
+ const base={identity:{name:'Empresa Alfa',cnpj:'12345678000190',phone:'4133334444'},criteria:{segment:'Serviços'},evidence:[{url:'https://alfa.example/',text:'Empresa Alfa atende empresas. Telefone (41) 3333-4444.'}],contacts:[{kind:'phone',value:'+554133334444',sourceUrl:'https://alfa.example/',scope:'group'}]}
+ const changed={...base,identity:{...base.identity,phone:'4199999999'},evidence:[{url:'https://alfa.example/',text:'Empresa Alfa atende empresas. Telefone (41) 9999-9999.'}],contacts:[{...base.contacts[0],value:'+554199999999'}]}
+ const first=api.radarResearchDependencyVersions(base),second=api.radarResearchDependencyVersions(changed)
+ expect(second.identityHash).toBe(first.identityHash)
+ expect(second.presenceHash).toBe(first.presenceHash)
+ expect(second.qualificationHash).toBe(first.qualificationHash)
+ expect(second.contactsHash).not.toBe(first.contactsHash)
+ expect(api.radarResearchDependencyVersions({...base,identity:{...base.identity,cnpj:'98765432000190'}}).identityHash).not.toBe(first.identityHash)
+ expect(api.radarResearchDependencyVersions({...base,criteria:{segment:'Outro'}}).qualificationHash).not.toBe(first.qualificationHash)
+ expect(api.radarEvidenceContentHash({...base,purpose:'presence'})).not.toBe(api.radarEvidenceContentHash({...changed,purpose:'presence'}))
+})
