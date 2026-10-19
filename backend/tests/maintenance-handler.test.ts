@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { purgeExpiredTraces } from '../src/jobs/handlers/maintenance.js'
+import { purgeExpiredTraces,reconcileRadarCaptureOutbox } from '../src/jobs/handlers/maintenance.js'
 
 describe('trace retention maintenance', () => {
+  it('still runs metadata diagnosis and preserves even a non-Error queue failure',async()=>{
+    const queries:string[]=[],pool={query:async(sql:string)=>{queries.push(sql);return{rows:sql.includes('SELECT operation_id,research_request_id,organization_id')?[{operation_id:'operation',organization_id:'organization'}]:[]}}}
+    await expect(reconcileRadarCaptureOutbox(pool as never,{add:async()=>{throw null}},1)).rejects.toBeNull()
+    expect(queries.some(sql=>sql.includes('radar_research_watchdog_scopes'))).toBe(true)
+  })
   it('purges runs, dependent trace tables, raw events and messages using each organization retention setting', async () => {
     const queries: string[] = []
     const pool = {

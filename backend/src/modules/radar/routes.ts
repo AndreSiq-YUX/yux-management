@@ -65,6 +65,7 @@ import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,rad
 import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
+import {getRadarStalledResearch} from './stalled-research.js'
 
 const uuid = z.string().uuid()
 
@@ -233,6 +234,10 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const surface=radarCommercialSurface(request.method,request.routeOptions.url??'')
     if(!surface||typeof payload!=='string')return JSON.stringify({})
     return JSON.stringify(projectRadarCommercialResponse(surface,JSON.parse(payload)))
+  })
+  app.get('/admin/stalled-research',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    return getRadarStalledResearch(app.pg,user)
   })
   app.get('/admin/research-operations',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

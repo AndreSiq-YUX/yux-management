@@ -4,6 +4,7 @@ import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderCon
 import { RadarSourceManagementPanel } from '@/components/platform/admin/RadarSourceManagementPanel'
 import { RadarOperationalLimitsPanel } from '@/components/platform/admin/RadarOperationalLimitsPanel'
 import {RadarResearchOperationsPanel} from '@/components/platform/admin/RadarResearchOperationsPanel'
+import {RadarStalledResearchPanel} from '@/components/platform/admin/RadarStalledResearchPanel'
 import {useAuthStore} from '@/stores/authStore'
 import {
   cnpjaProviderDefaults,
@@ -84,7 +85,7 @@ export function AdminIntegrationsPage() {
       )}
 
       {!loading && !error && (
-        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} /></>
+        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarStalledResearchPanel isSystemAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} /></>
       )}
 
       {!loading && !error && (

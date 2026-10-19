@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client'
 import {afterEach,it,expect,vi} from 'vitest'
 import {radarService} from '@/services/radarService'
 const api=await import('./RadarOperationalLimitsPanel')
-export const policyFixture={version:3,updatedBy:'admin',updatedAt:null,limits:{maxNewCompaniesPerLot:2000,maxPagesPerScope:30,maxDiscoveryQueriesPerLot:500,maxDiscoveryPageSize:25,maxVerificationBatch:80,maxSearchQueriesPerCompany:20,maxPublicPagesPerCompany:50,maxCampaignDailyQueries:5000,maxSourceDailyQueries:5000,maxResearchFreshnessDays:60,maxContinuationIdleMinutes:60,maxDecisionCallsPerCompany:3,maxDeepSearchesPerCompany:1,maxFallbackAttemptsPerEffect:1}}
+export const policyFixture={version:3,updatedBy:'admin',updatedAt:null,limits:{maxNewCompaniesPerLot:2000,maxPagesPerScope:30,maxDiscoveryQueriesPerLot:500,maxDiscoveryPageSize:25,maxVerificationBatch:80,maxSearchQueriesPerCompany:20,maxPublicPagesPerCompany:50,maxCampaignDailyQueries:5000,maxSourceDailyQueries:5000,maxResearchFreshnessDays:60,maxContinuationIdleMinutes:60,maxDecisionCallsPerCompany:3,maxDeepSearchesPerCompany:1,maxFallbackAttemptsPerEffect:1,stalledAfterMinutes:10}}
 let clean=()=>{};afterEach(()=>{clean();vi.restoreAllMocks()})
 it('saves the exact versioned ceiling without starting a search',async()=>{
  expect(api.RadarOperationalLimitsPanel).toBeTypeOf('function')
@@ -13,6 +13,7 @@ it('saves the exact versioned ceiling without starting a search',async()=>{
  const host=document.body.appendChild(document.createElement('div')),root=createRoot(host)
  clean=()=>{act(()=>root.unmount());host.remove()}
  await act(async()=>root.render(<api.RadarOperationalLimitsPanel isAdmin/>))
+ expect(host.querySelector('[name="stalledAfterMinutes"]')).not.toBeNull()
  const input=host.querySelector<HTMLInputElement>('[name="maxPagesPerScope"]')!
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'40');input.dispatchEvent(new Event('input',{bubbles:true}))})
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))

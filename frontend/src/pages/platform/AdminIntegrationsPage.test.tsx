@@ -20,6 +20,7 @@ describe('AdminIntegrationsPage', () => {
     vi.spyOn(adminPlatformService,'getProviderConnections').mockResolvedValue([])
     vi.spyOn(radarService,'getAdminDataSources').mockResolvedValue([])
     vi.spyOn(radarService,'getOperationalPolicy').mockResolvedValue(radarPolicyFixture)
+    vi.spyOn(radarService,'getStalledResearch').mockResolvedValue({stalledAfterMinutes:10,items:[]})
     window.history.replaceState({},'',`/admin/integrations?radarOrganization=${organizationId}&radarCampaign=${campaignId}`)
     const host=document.body.appendChild(document.createElement('div')),root=createRoot(host)
     try{

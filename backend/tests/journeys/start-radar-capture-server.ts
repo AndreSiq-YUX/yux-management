@@ -63,6 +63,9 @@ if(recoverSaved){
  await pool.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1',[start.operationId])
  await pool.query("UPDATE public.radar_data_sources SET rate_limit_per_day=1 WHERE source_key='brave_web_search'")
  await pool.query("INSERT INTO public.radar_source_usage_counters(organization_id,campaign_id,source_type,usage_date,units,estimated_cost) VALUES($1,$2,'brave_web_search',CURRENT_DATE,1,.01) ON CONFLICT(organization_id,campaign_id,source_type,usage_date) DO UPDATE SET units=1",[org,campaign.id])
+ if(process.env.YUX_RADAR_QA_WATCHDOG==='true'){
+  for(const table of ['radar_capture_operations','radar_capture_items','radar_candidate_research_runs'])await pool.query(`UPDATE public.${table} SET last_progress_at=NOW()-INTERVAL '1 hour' WHERE campaign_id=$1`,[campaign.id])
+ }
 }
 const oldCompanies=Array.from({length:40},(_,i)=>({taxId:String(randomInt(10_000_000_000_000,99_999_999_999_999)),legalName:`Empresa anterior ${i+1} LTDA`,tradeName:`Empresa anterior ${i+1}`,city:'Curitiba',state:'PR',cnaes:[],websiteStatus:'unknown' as const,rawPayload:{}}))
 if(limitContinuation||staleStart||exhaustedSource){

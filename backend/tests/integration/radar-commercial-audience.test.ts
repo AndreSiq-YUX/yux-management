@@ -112,7 +112,7 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
   else expect(response.body).not.toMatch(/remainingQueries|researchCapacity|plannedMaximumQueries|brave|serper|policy/i)
  })
  it.each(['yux_operator','client_admin_A','client_member_A'])('withholds catalog and operational diagnostics from %s',async user=>{
-  for(const path of [`/data-sources?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/research-availability?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/runs`]){
+  for(const path of ['/admin/stalled-research',`/data-sources?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/research-availability?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/runs`]){
    const response=await get(path,user);expect(response.statusCode).toBe(403);expect(response.body).not.toMatch(/brave|cnpja|serper|model|cost|provider/i)
   }
  })

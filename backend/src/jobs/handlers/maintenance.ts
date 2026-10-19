@@ -1,5 +1,15 @@
 import type pg from 'pg'
-export {reconcileRadarCaptureOutbox} from '../../modules/radar/capture-dispatch.js'
+import {reconcileRadarCaptureOutbox as dispatchRadarOutbox} from '../../modules/radar/capture-dispatch.js'
+import {runRadarResearchWatchdog} from '../../modules/radar/stalled-research.js'
+export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:Parameters<typeof dispatchRadarOutbox>[1],window:number){
+ let result:Awaited<ReturnType<typeof dispatchRadarOutbox>>|undefined,deliveryFailure:unknown,deliveryFailed=false
+ try{result=await dispatchRadarOutbox(pool,queue,window)}catch(cause){deliveryFailure=cause;deliveryFailed=true}
+ // Still diagnose when queue delivery failed; the watchdog never enqueues or
+ // repeats provider effects. Existing outbox delivery retains its stable IDs.
+ await runRadarResearchWatchdog(pool,deliveryFailed?false:undefined)
+ if(deliveryFailed)throw deliveryFailure
+ return result!
+}
 
 export async function purgeExpiredTraces(pool: Pick<pg.Pool, 'query'>) {
   // agent_execution_steps, agent_context_snapshots, agent_verification_results
