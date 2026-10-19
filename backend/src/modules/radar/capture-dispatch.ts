@@ -16,6 +16,7 @@ import type {RadarCaptureLimits} from './capture-capacity.js'
 import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
 import {assessRadarCaptureResearch} from './capture-research-state.js'
 import {radarCaptureRefreshAuthorized} from './capture-analysis-authorization.js'
+import {reconcileRadarCaptureSummary} from './capture-reconciliation.js'
 
 export const classifyRadarCaptureResearch=(run:Parameters<typeof assessRadarCaptureResearch>[0])=>assessRadarCaptureResearch(run).status
 type CaptureQueue=Pick<RegisteredJobQueue,'add'>
@@ -55,11 +56,11 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
      const allowSemanticRefresh=await radarCaptureRefreshAuthorized(pool,op,item.candidate_id)
      const start=await(dependencies.startResearch??startRadarCandidateResearch)(pool,user,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:op.configuration_revision,requestId:item.id,...(runId?{operation:'resume' as const}:{}),...(allowSemanticRefresh?{allowSemanticRefresh:true}:{})})
      runId=start.runId;status=start.status
-     await pool.query('UPDATE public.radar_capture_items SET run_id=$3 WHERE id=$1 AND organization_id=$2',[item.id,input.organizationId,runId])
+     await pool.query('UPDATE public.radar_capture_items SET run_id=$3 WHERE id=$1 AND organization_id=$2 AND (run_id IS NOT DISTINCT FROM $4::uuid OR run_id=$3)',[item.id,input.organizationId,runId,item.run_id])
     }catch(cause){
      const reasons=(cause as {reasons?:Array<{code:string}>})?.reasons
      const code=reasons?.[0]?.code??(cause instanceof Error?cause.message:'')
-     await pool.query("UPDATE public.radar_capture_items SET status='blocked',blocker=$3 WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId,/^[a-z0-9_]+$/.test(code)?code:'radar_capture_research_unavailable']);continue
+     await pool.query("UPDATE public.radar_capture_items SET status='blocked',blocker=$3 WHERE id=$1 AND organization_id=$2 AND run_id IS NOT DISTINCT FROM $4::uuid",[item.id,input.organizationId,/^[a-z0-9_]+$/.test(code)?code:'radar_capture_research_unavailable',runId]);continue
     }
    }
    if(status==='queued'){
@@ -77,21 +78,20 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
     }
     try{
      await queue.add('radar.researchCandidate',{organizationId:input.organizationId,runId},{jobId:`radar-capture-item-${item.id}-${item.dispatch_generation}`})
-     await pool.query("UPDATE public.radar_capture_items SET status='researching',blocker=NULL WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId])
-    }catch{await pool.query("UPDATE public.radar_capture_items SET blocker='radar_capture_queue_unavailable' WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId])}
+     await pool.query("UPDATE public.radar_capture_items SET status='researching',blocker=NULL WHERE id=$1 AND organization_id=$2 AND run_id=$3",[item.id,input.organizationId,runId])
+    }catch{await pool.query("UPDATE public.radar_capture_items SET blocker='radar_capture_queue_unavailable' WHERE id=$1 AND organization_id=$2 AND run_id=$3",[item.id,input.organizationId,runId])}
    }else{
     const assessment=assessRadarCaptureResearch({...item,status})
-    await pool.query('UPDATE public.radar_capture_items SET status=$3,blocker=$4 WHERE id=$1 AND organization_id=$2',[item.id,input.organizationId,assessment.status,assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null])
+    await pool.query('UPDATE public.radar_capture_items SET status=$3,blocker=$4 WHERE id=$1 AND organization_id=$2 AND run_id=$5',[item.id,input.organizationId,assessment.status,assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null,runId])
    }
   }
-  const state=await getRadarCaptureOperation(pool,user,input.organizationId,op.id)
-  const ongoing=!state.discoveryStopped||state.counts.researching>0
-  const capped=limitPause&&state.counts.admitted<state.counts.requested
-  const status=ongoing?(paused?'blocked':state.discoveryStopped?'researching':'discovering'):state.counts.blocked||capped?'blocked':state.counts.admitted<state.counts.requested||state.counts.insufficient?'partial':'completed'
-  const blockers=[...(paused&&ongoing?discoveryState.blockers:[]),...(capped?[state.discoveryReason==='page_cap'?'radar_capture_page_limit':'radar_capture_query_limit']:[]),...state.items.filter(item=>item.blocker).map(item=>item.blocker!)]
-  await pool.query('UPDATE public.radar_capture_operations SET status=$3,blockers=$4,updated_at=NOW() WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,status,JSON.stringify([...new Set(blockers)])])
-  const pendingChild=(await pool.query(`SELECT EXISTS(SELECT 1 FROM public.radar_capture_items item JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.status IN ('queued','researching') AND run.status IN ('queued','running')) AS pending`,[op.id,input.organizationId])).rows[0]?.pending
-  if(['completed','partial'].includes(status)||status==='blocked'&&!pendingChild)await pool.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])
+  const summary=await pool.connect()
+  try{
+   await summary.query('BEGIN')
+   await summary.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.campaign_id,input.organizationId])
+   await reconcileRadarCaptureSummary(summary,{organizationId:input.organizationId,operationId:op.id,discoveryBlockers:paused?discoveryState.blockers:[]})
+   await summary.query('COMMIT')
+  }catch(cause){await summary.query('ROLLBACK');throw cause}finally{summary.release()}
  }catch(cause){await blockRadarCapture(pool,input.organizationId,op.id,cause)}finally{
   await pool.query('UPDATE public.radar_capture_operations SET lease_id=NULL,lease_until=NULL WHERE id=$1 AND organization_id=$2 AND lease_id=$3',[op.id,input.organizationId,lease])
   await pool.query("UPDATE public.radar_capture_outbox SET next_dispatch_at=NOW()+INTERVAL '20 seconds' WHERE operation_id=$1 AND organization_id=$2",[op.id,input.organizationId])

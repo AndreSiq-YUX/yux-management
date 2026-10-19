@@ -26,6 +26,7 @@ import type {RadarTlsReadOptions} from './site-tls-exception.js'
 import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from './public-presence.js'
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
+import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
 import {hasUsefulRadarHits,planRadarResearch} from './research-planner.js'
 import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
@@ -450,13 +451,13 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     if(['refresh','reanalyze'].includes(operation)&&!input.requestId)throw error('radar_research_request_id_required',400)
     if(input.requestId){
       const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
-      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running','succeeded'].includes(duplicate.rows[0].status))){await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
+      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running','succeeded'].includes(duplicate.rows[0].status))){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:duplicate.rows[0].id});await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
     }
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
       WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation])
     let run = previous.rows[0]
     const activeRun=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND status IN ('queued','running') AND configuration_revision=$3 ORDER BY created_at DESC LIMIT 1`,[input.candidateId,input.organizationId,input.configurationRevision])
-    if(activeRun.rows[0]){await client.query('COMMIT');return{runId:activeRun.rows[0].id,status:activeRun.rows[0].status,reused:true}}
+    if(activeRun.rows[0]){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:activeRun.rows[0].id});await client.query('COMMIT');return{runId:activeRun.rows[0].id,status:activeRun.rows[0].status,reused:true}}
     if(operation==='reanalyze'&&(!run?.output.discovery||!run.output.pages?.some(page=>!!page.text&&!page.limitation)))throw error('radar_research_saved_evidence_required')
     const available=operation==='refresh'?availability:operation==='reanalyze'?{...availability,allowed:availability.operations.reanalyze.allowed}
       :cachedReadAvailability(availability,run,input.configurationRevision,configuration.research.freshnessDays)
@@ -486,6 +487,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
         (organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,operation,output) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING *`,
       [input.organizationId,context.campaign_id,input.candidateId,user.id,input.configurationRevision,input.requestId??null,operation,JSON.stringify(inherited)]); run = inserted.rows[0]
     }
+    await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:run.id})
     await client.query('COMMIT')
     return { runId:run.id,status:run.status,reused:!!fresh }
   } catch (cause) { await client.query('ROLLBACK'); throw cause } finally { client.release() }
@@ -502,9 +504,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
   if (!run) return { status:'already_running_or_completed' }
   const checkpoint = async (stage:string, output:Output) => {
     signal?.throwIfAborted()
-    const updated = await pool.query(`UPDATE public.radar_candidate_research_runs SET stage=$3,output=$4::jsonb,updated_at=NOW()
-      WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,stage,JSON.stringify(output)])
-    if (!updated.rows[0]) throw error('radar_research_lease_lost')
+    await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET stage=$3,output=$4::jsonb,updated_at=NOW()
+      WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,stage,JSON.stringify(output)]))
   }
   try {
     const userResult = await pool.query<{id:string;role:string}>(`SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE`,[run.requested_by])
@@ -701,10 +702,22 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     return {runId:run.id,status:dossier.limitations.length ? 'partial':'succeeded'}
   } catch (cause) {
     const code = cause instanceof Error ? cause.message : 'research_failed'
-    await pool.query(`UPDATE public.radar_candidate_research_runs SET status='blocked',error_code=$3,lease_id=NULL,lease_until=NULL,updated_at=NOW()
-      WHERE id=$1 AND lease_id=$2`,[run.id,lease,code])
+    await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET status='blocked',error_code=$3,lease_id=NULL,lease_until=NULL,updated_at=NOW()
+      WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,code]),false)
     return {runId:run.id,status:'blocked',error:code}
   }
+}
+
+async function updateResearchProgress(pool:pg.Pool,run:ResearchRun,update:(client:pg.PoolClient)=>Promise<pg.QueryResult>,requireLease=true){
+ const client=await pool.connect()
+ try{
+  await client.query('BEGIN')
+  await client.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[run.campaign_id,run.organization_id])
+  const result=await update(client)
+  if(!result.rows[0]&&requireLease)throw error('radar_research_lease_lost')
+  if(result.rows[0])await reconcileRadarCaptureItems(client,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id})
+  await client.query('COMMIT')
+ }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
 }
 
 async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:ResearchContext,dossier:RadarResearchDossier) {
@@ -757,8 +770,10 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     [run.candidate_id,run.organization_id,run.campaign_id,review.targetStatus,review.productFit,review.reasons,run.configuration_revision])
     // HTML is needed for crash-safe crawl checkpoints but is not exposed in the final dossier.
     const output = {...dossier,quality,...(run.output.discoveryLocked?{discoveryLocked:true}:{}),...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true}:{}),pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
-    await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,stage='review',completed_at=NOW(),updated_at=NOW(),
-      lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(output),dossier.limitations.length?'partial':'succeeded'])
+    const updated=await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,stage='review',completed_at=NOW(),updated_at=NOW(),
+      lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,JSON.stringify(output),dossier.limitations.length?'partial':'succeeded'])
+    if(!updated.rows[0])throw error('radar_research_lease_lost')
+    await reconcileRadarCaptureItems(client,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id})
     await client.query('COMMIT')
   } catch(cause) {await client.query('ROLLBACK');throw cause} finally {client.release()}
 }

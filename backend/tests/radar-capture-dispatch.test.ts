@@ -61,6 +61,26 @@ describe('capture outcomes',()=>{
  })
 })
 describe.skipIf(!connectionString)('durable capture dispatch',()=>{
+ it('does not overwrite a newer individual result when an older queue acknowledgement arrives late',async()=>{
+  const f=await captureFixture()
+  try{
+   const start=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   const input={organizationId,operationId:start.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:[company()]}),loadSecret:async()=>'fixture'})
+   const item=(await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items[0]
+   let newId=''
+   const queue={add:async(_name:string,data:{runId:string})=>{
+    await f.pool.query("UPDATE public.radar_candidate_research_runs SET status='succeeded' WHERE id=$1",[data.runId])
+    const fresh=await startRadarCandidateResearch(f.pool,admin,{organizationId,candidateId:item.candidateId,configurationRevision:1,requestId:randomUUID(),operation:'refresh'})
+    newId=fresh.runId
+    await f.pool.query("UPDATE public.radar_candidate_research_runs SET status='succeeded',output='{\"quality\":{\"readyForReview\":true}}' WHERE id=$1",[newId])
+    await f.pool.query("UPDATE public.radar_capture_items SET status='completed' WHERE id=$1",[item.id])
+    return{id:'late-ack'}
+   }}
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,queue,undefined,{availability:available})
+   expect((await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).items[0]).toMatchObject({runId:newId,status:'completed'})
+  }finally{await f.close()}
+ })
  it('persists a scoped refresh authorization on resume and carries it to children after another dispatch',async()=>{
   const f=await captureFixture()
   try{
