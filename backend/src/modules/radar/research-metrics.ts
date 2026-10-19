@@ -41,10 +41,10 @@ export async function getRadarResearchMetrics(pool:pg.Pool,user:AuthUser,input:{
   const policy=resolveRadarSearchConfiguration(campaign.search_configuration).research
   const receiptIds=new Set(receiptRows.rows.map(row=>row.request_id))
   const analyses=receiptRows.rows.filter(row=>row.status!=='rejected_before_provider').map(row=>({id:row.request_id,costUsd:typeof row.usage?.costUsd==='number'?row.usage.costUsd:null}))
-  for(const run of analysisRows.rows)for(const key of ['presence','semantic']){
-    const call=run.calls?.[key]
+  for(const run of analysisRows.rows)for(const [key,call]of Object.entries(run.calls??{}) as Array<[string,{source?:string;status:string;requestId?:string;evidenceHash?:string}]>){
+    if(!['presence','semantic'].includes(key)&&call.source!=='openrouter_decision')continue
     if(!call||call.status==='rejected_before_provider')continue
-    const id=key==='presence'?`${run.id}:presence:${call.evidenceHash}`:`${run.id}:${call.evidenceHash}`
+    const id=call.requestId??(key==='presence'?`${run.id}:presence:${call.evidenceHash}`:`${run.id}:${call.evidenceHash}`)
     if(!receiptIds.has(id))analyses.push({id,costUsd:null})
   }
   const result=summarizeRadarResearchMetrics({companies:runRows.rows.map(run=>{

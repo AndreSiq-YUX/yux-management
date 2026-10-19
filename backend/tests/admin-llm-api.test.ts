@@ -16,6 +16,12 @@ async function setup(role: AuthUser['role'] = 'yux_admin', options: { runtime?: 
 }
 const payload = { agentType: 'support_assistant', provider: 'openrouter', modelName: 'main:free' }
 describe('Admin-only central routing API', () => {
+  it.each(['yux_operator','client_admin','client_member'] as const)('keeps all decision administration unavailable to %s even through direct HTTP',async(role)=>{
+    const server=await setup(role),id='10000000-0000-4000-8000-000000000001'
+    for(const [method,url] of [['GET',`/api/platform/admin/llm-routes/${id}/decision-status`],['POST',`/api/platform/admin/llm-routes/${id}/test`],['GET','/api/platform/admin/radar-decision-calibrations'],['POST','/api/platform/admin/radar-decision-calibrations']] as const){
+      const response=await server.inject({method,url,cookies:{yux_session:'token'}});expect(response.statusCode).toBe(403);expect(response.body).not.toMatch(/openrouter|snapshot|cost|usage|fixture/i)
+    }
+  })
   it('forbids operators from changing models and reading central credentials/configuration', async () => {
     const server = await setup('yux_operator')
     for (const url of ['/api/platform/admin/llm-routes', '/api/platform/admin/llm-use-cases', '/api/platform/admin/llm-configuration']) {

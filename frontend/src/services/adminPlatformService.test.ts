@@ -15,6 +15,13 @@ vi.mock('@/lib/apiClient', () => ({
 const apiRequestMock = vi.mocked(apiRequest)
 
 describe('adminPlatformService', () => {
+  it('passes decision confirmation and calibration as objects for the shared JSON encoder',async()=>{
+    const input={confirmPaid:true as const,requestId:'request',expectedFingerprint:'fingerprint',expectedPolicyVersion:1,approvedPriceBrl:'0.01'}
+    await adminPlatformService.testLlmRoute('route',input)
+    expect(apiRequestMock).toHaveBeenLastCalledWith('/platform/admin/llm-routes/route/test',{method:'POST',body:input})
+    const calibration={datasetVersion:'synthetic-no-quality-claim'};await adminPlatformService.approveDecisionCalibration(calibration)
+    expect(apiRequestMock).toHaveBeenLastCalledWith('/platform/admin/radar-decision-calibrations',{method:'POST',body:calibration})
+  })
   beforeEach(() => {
     apiRequestMock.mockReset()
   })

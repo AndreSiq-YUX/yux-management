@@ -25,7 +25,7 @@ async function analyses(pool:pg.Pool,input:Scope,ids?:string[]){
   jsonb_typeof(receipt.input_request)='object' AS has_saved_input,
   receipt.input_request->>'client_id' AS client_id,receipt.input_request->>'contract_id' AS contract_id,
   candidate.id AS candidate_id,candidate.title AS company_name,run.configuration_revision,
-  run.calls->(CASE WHEN receipt.action='radar_presence_resolution' THEN 'presence' ELSE 'semantic' END) AS current_call,
+  COALESCE((SELECT value FROM jsonb_each(run.calls) WHERE value->>'requestId'=receipt.request_id LIMIT 1),run.calls->(CASE WHEN receipt.action='radar_presence_resolution' THEN 'presence' ELSE 'semantic' END)) AS current_call,
   run.configuration_revision=campaign.configuration_revision AND candidate.status='pending_review'
    AND run.id=(SELECT newer.id FROM public.radar_candidate_research_runs newer WHERE newer.organization_id=$1 AND newer.candidate_id=candidate.id ORDER BY newer.created_at DESC,newer.id DESC LIMIT 1)
    AND NOT EXISTS(SELECT 1 FROM public.radar_b2b_reviews review WHERE review.candidate_id=candidate.id AND review.organization_id=$1 AND review.approved_at IS NOT NULL) AS current_scope,
@@ -37,7 +37,7 @@ async function analyses(pool:pg.Pool,input:Scope,ids?:string[]){
   JOIN public.radar_campaigns campaign ON campaign.id=run.campaign_id AND campaign.organization_id=run.organization_id
   LEFT JOIN LATERAL(SELECT transport_outcome,validation_outcome,billing_outcome,failure_code,provider,model_snapshot,usage,response_body FROM public.radar_effect_receipts effect
    WHERE effect.analysis_receipt_id=receipt.id AND effect.organization_id=receipt.organization_id ORDER BY effect.attempt DESC LIMIT 1) effect ON TRUE
-  WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification')
+  WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification','radar_initial_triage','radar_next_action','radar_quality_gate')
    AND (($3::uuid[] IS NULL AND receipt.status<>'completed') OR receipt.id=ANY($3::uuid[]))
   ORDER BY receipt.created_at DESC,receipt.id DESC`,[input.organizationId,input.campaignId,ids??null])).rows
 }

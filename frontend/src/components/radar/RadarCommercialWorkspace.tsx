@@ -61,7 +61,7 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
   catch{if(originalScope===currentScope.current)setError('Não foi possível concluir a ação. Confira a revisão e as permissões.')}
   finally{actionSending.current=false;setActionBusy(false)}
  }
- async function candidateAction(candidateId:string,action:'import'|'discard',input:{analyzeAfterImport:boolean}){
+ async function candidateAction(candidateId:string,action:'import'|'discard'|'restore-profile',input:{analyzeAfterImport:boolean}){
   const candidate=candidates.find(item=>item.id===candidateId)
   if(!canReview||actionSending.current||candidate?.status!=='pending_review'||action==='import'&&(campaign?.campaignType==='regional_b2b'||candidate.importedOpportunityId))return
   const originalScope=currentScope.current;actionSending.current=true;setActionBusy(true)

@@ -151,8 +151,8 @@ describe.skipIf(!connectionString)('durable research request outbox',()=>{
    receipts.push(old.id)
    await f.pool.query('UPDATE public.radar_candidate_research_runs SET calls=$2 WHERE id=$1',[run.runId,JSON.stringify({presence:{status:'uncertain',evidenceHash:'old-hash'}})])
    const authorization=await authorizeRadarAnalysisRetries(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),expiresAt:new Date(Date.now()+3600000).toISOString(),acknowledgePreviousChargeMayExist:true,items:[{candidateId:item.candidateId,previousReceiptId:old.id}]})
-   const grant=(await f.pool.query('SELECT * FROM public.radar_analysis_retry_authorizations WHERE id=$1',[authorization.items[0].authorizationId])).rows[0]
-   const retry={authorization_id:grant.id,candidate_id:item.candidateId,campaign_id:f.campaign.id,configuration_revision:1,policy_hash:grant.policy_hash}
+   let grant=(await f.pool.query('SELECT * FROM public.radar_analysis_retry_authorizations WHERE id=$1',[authorization.items[0].authorizationId])).rows[0]
+   let retry={authorization_id:grant.id,candidate_id:item.candidateId,campaign_id:f.campaign.id,configuration_revision:1,policy_hash:grant.policy_hash}
    const consume=async(overrides:object={},role='yux_runtime')=>{
     const client=await f.pool.connect(),receiptId=randomUUID(),owner=randomUUID()
     try{
@@ -175,6 +175,13 @@ describe.skipIf(!connectionString)('durable research request outbox',()=>{
    await expect(consume()).rejects.toThrow('radar_analysis_retry_policy_changed')
    await f.pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[extraRouteId]);extraRouteId=undefined
    expect((await f.pool.query('SELECT consumed_at FROM public.radar_analysis_retry_authorizations WHERE id=$1',[grant.id])).rows[0].consumed_at).toBeNull()
+   // Returning to the same model is still a new route revision. An old paid
+   // authorization must not silently become valid again after configuration edits.
+   await expect(consume()).rejects.toThrow('radar_analysis_retry_policy_changed')
+   await f.pool.query("UPDATE public.radar_analysis_retry_authorizations SET approved_at=NOW()-INTERVAL '2 hours',expires_at=NOW()-INTERVAL '1 hour' WHERE id=$1",[grant.id])
+   const renewed=await authorizeRadarAnalysisRetries(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),expiresAt:new Date(Date.now()+3600000).toISOString(),acknowledgePreviousChargeMayExist:true,items:[{candidateId:item.candidateId,previousReceiptId:old.id}]})
+   grant=(await f.pool.query('SELECT * FROM public.radar_analysis_retry_authorizations WHERE id=$1',[renewed.items[0].authorizationId])).rows[0]
+   retry={...retry,authorization_id:grant.id,policy_hash:grant.policy_hash}
    const receiptId=await consume()
    expect((await f.pool.query('SELECT consumed_by_analysis_receipt_id FROM public.radar_analysis_retry_authorizations WHERE id=$1',[grant.id])).rows[0].consumed_by_analysis_receipt_id).toBe(receiptId)
    await expect(consume()).rejects.toThrow('radar_analysis_retry_authorization_invalid')

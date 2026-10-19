@@ -22,6 +22,7 @@ from .radar_qualification import qualify_radar_business, validate_radar_qualific
 from .radar_presence import resolve_radar_presence, validate_radar_presence_response
 from .radar_discovery_extraction import extract_radar_businesses, validate_radar_discovery_extraction_response, public_discovery_url
 from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
+from .radar_decisions import decide_radar_action, validate_saved_decision, TASKS as DECISION_TASKS
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -130,9 +131,35 @@ class RadarRevalidationRequest(BaseModel):
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
-    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction']
+    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate']
     request_id: str = Field(min_length=1, max_length=200)
     input_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class RadarDecisionEvidence(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    id: str = Field(min_length=1,max_length=80)
+    source_url: str = Field(min_length=1,max_length=2000)
+    text: str = Field(min_length=1,max_length=20000)
+    role: Literal['identity','activity','domain','contact']='activity'
+    primary: bool=False
+    contradictory: bool=False
+    scope: Literal['establishment','group','unresolved']='unresolved'
+
+
+class RadarDecisionRequest(RadarAnalysisRequest):
+    model_config = ConfigDict(extra='forbid')
+    organization_id: str
+    client_id: str | None=None
+    contract_id: str | None=None
+    request_id: str=Field(min_length=1,max_length=200)
+    task: Literal['radar_initial_triage','radar_next_action','radar_quality_gate']
+    enabled: bool=False
+    identity: dict[str,Any]
+    criteria: dict[str,Any]
+    evidence: list[RadarDecisionEvidence]=Field(max_length=30)
+    options: list[dict[str,str]]=Field(default_factory=list,max_length=8)
+    route_snapshot: dict[str,Any]
 
 class IngestEventRequest(BaseModel):
     organization_id: str | None = None
@@ -223,6 +250,7 @@ def create_app(
     strategy_curation_service: StrategyCurationService | None = None,
     mission_supervisor: MissionSupervisor | None = None,
     mission_conversation_workflow: MissionConversationWorkflow | None = None,
+    decision_transport=None,
 ) -> FastAPI:
     if not _runtime_token():
         raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
@@ -230,7 +258,7 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def log_mission_request_validation(request: Request, error: RequestValidationError):
-        if request.url.path in ('/radar/qualify', '/radar/resolve-presence', '/radar/revalidate'):
+        if request.url.path.startswith('/radar/'):
             # Do not echo evidence/prompts from Pydantic's input field. This error
             # is pre-provider, unlike a rejected response with an existing receipt.
             return JSONResponse(status_code=422, content=dict(detail='radar_request_invalid'))
@@ -341,12 +369,30 @@ def create_app(
                                                  request_id=request.request_id[:200], code=code)))
             raise HTTPException(status_code=402, detail=code) from error
 
+    @app.post('/radar/decide', dependencies=[Depends(require_runtime_token)])
+    def radar_decide(request: RadarDecisionRequest) -> dict[str,Any]:
+        validate_tenant(request.organization_id,request.client_id,request.contract_id,profile_key=request.task,audience='internal_operator')
+        data=request.model_dump()
+        if len(json.dumps(data,ensure_ascii=False).encode('utf-8'))>2500000 or any(set(item)!= {'id','description'} or not re.fullmatch(r'[a-z][a-z0-9_]{0,79}',item.get('id','')) or len(item.get('description',''))>1000 for item in request.options):
+            raise HTTPException(status_code=422,detail='radar_request_invalid')
+        try:
+            return execute_radar_receipt(runtime_store,action=request.task,request=request,validate_effect=False,
+                debit=lambda:reserve_radar_credits(request,request.task),
+                compute=lambda before:decide_radar_action(runtime_store,data=data,before_call=before,transport=decision_transport))
+        except ProviderRequestError as cause:
+            code=str(cause)
+            raise HTTPException(status_code=502,detail=code if re.fullmatch(r'(?:decision_|provider_|llm_)[a-z0-9_]{1,100}',code) else 'radar_decision_unavailable') from None
+        except (ValueError,KeyError,TypeError):
+            raise HTTPException(status_code=422,detail='radar_decision_context_invalid') from None
+
     @app.post('/radar/revalidate', dependencies=[Depends(require_runtime_token)])
     def radar_revalidate(request: RadarRevalidationRequest) -> dict[str, Any]:
         validate_tenant(request.organization_id, request.client_id, request.contract_id, profile_key=request.action, audience='internal_operator')
         def validate(response, saved):
             if saved.get('client_id') != request.client_id or saved.get('contract_id') != request.contract_id:
                 raise HTTPException(status_code=403, detail='radar_analysis_tenant_changed')
+            if request.action in DECISION_TASKS:
+                return validate_saved_decision(response,saved)
             if request.action == 'radar_presence_resolution':
                 return validate_radar_presence_response(response, evidence=saved['evidence'])
             if request.action == 'radar_discovery_extraction':

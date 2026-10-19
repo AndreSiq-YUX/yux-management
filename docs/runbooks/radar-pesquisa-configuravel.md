@@ -2,6 +2,50 @@
 
 O Radar não impõe setor, CNAE, produto ou região. Cozinhas industriais são um caso configurável, não um modo fixo do executor. O módulo pode ser contratado por cliente; pesquisas pagas são iniciadas pelo Admin YUX, com contato manual e entrega por CSV ou encaminhamento revisado ao CRM. As seções datadas abaixo registram a evolução e suas limitações na data da verificação.
 
+## IAs de decisão via OpenRouter — configuração de 19/10/2026
+
+A integração usa o protocolo nativo **POST `https://openrouter.ai/api/alpha/decisions`**, não chat nem `/api/v1/systemone`. O mesmo cadastro administrativo de modelos gerencia principal, reservas ordenadas e escopos. Não existe modelo pago padrão instalado ou ativado por migração. A chave é a da integração OpenRouter já existente; não há outra chave “Decisions”. [Contrato oficial da API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).
+
+### Como configurar e testar
+
+1. Como **Admin global YUX**, abra **Admin → IA / Modelos / Custos**. No grupo Radar Comercial, escolha **Radar — decisão geral e reserva** (`radar_decision_default`). É a reserva compatível para triagem, próximo passo e qualidade. As três funções também podem receber rotas próprias por organização, cliente ou contrato. Sem rota própria, só herdam a decisão geral — nunca texto/embeddings. Uma rota própria pausada não é substituída silenciosamente pela geral.
+2. Informe o **ID exato** do modelo compatível no catálogo atual do OpenRouter e o fallback desejado. Não há lista fixa de 22 modelos. Somente OpenRouter é aceito nesta capacidade. Modelos, fallback e limites não são transmitidos como instruções ao cliente.
+3. Informe **Custo estimado por tentativa (USD)** de cada modelo que possa ser usado, inclusive reservas herdadas. É uma estimativa aprovada pelo Admin, não a tarifa garantida do provedor. Em **Admin → Integrações → Limites operacionais do Radar**, configure a cotação USD/BRL, data e margem. Preço/cotação ausente significa **desconhecido**, não grátis. Não se mistura dólar com créditos internos nem com o orçamento de buscas.
+4. Comece em **Observação**. Salvar não executa teste. Para usar comercialmente, são necessários **Status ativo** e a opção **Autorizar uso desta rota no Radar** marcada. É possível testar a rota ativa antes de marcar esse uso comercial. Saldo externo e carteira do contrato continuam sendo verificados quando aplicáveis.
+5. Use **Conferir cadeia, calibração e estimativa**: é uma consulta gratuita ao sistema. Na função geral, selecione a etapa que deseja conferir/testar/calibrar. Uma rota específica pode sobrepor a geral nessa etapa; não se testa outro modelo em silêncio. O teste explícito mostra a estimativa em **reais**, pede confirmação e conserva revisão da rota, limite de tentativas e política financeira. Se mudarem antes do envio, confira novamente. O teste sintético verifica protocolo, opção objetiva, modelo efetivo, tempo, tentativas e uso; **não comprova precisão comercial nem calibra** o modelo.
+6. Depois de validar a configuração, autorize um piloto real separado e acompanhe uma empresa antes do lote. Nesta implementação, os testes externos foram substituídos por transportes simulados. Não foi feita compra, ativação, alteração do lote real ou implantação de produção.
+
+### O que a decisão faz no fluxo
+
+- **Triagem inicial:** classifica a compatibilidade com os critérios da campanha. Nome/CNAE isolados ou falta de site não autorizam exclusão. Exclusão automática depende também de evidência institucional associada ao estabelecimento e de calibração correspondente. A empresa não é apagada: fica no filtro **Fora do perfil / Incluir empresas fora do público**, com **Reincluir para revisão**. A reinclusão é uma correção humana preservada.
+- **Próximo passo:** pode priorizar uma leitura ou uma fonte de pesquisa já disponibilizada pelo servidor. Quotas, licença, chave, revisão, autorização e orçamento são revalidados antes de executar. O modelo não cria ferramentas, URLs ou contatos. A decisão não tem autorização independente para comprar pesquisas.
+- **Qualidade final:** pode solicitar conferência, mas não dispensar identidade, aderência ou contatos mínimos definidos na campanha e não aprova CRM/contato. O fluxo atual de identificação/qualificação continua disponível.
+- Sem rota habilitada, sem preço, sem calibração ou com orçamento de decisão esgotado, a coleta atual continua. **Observação não aplica escolhas ou descartes**. Falhas de decisão não apagam fatos. Uma chamada com desfecho incerto permanece na auditoria e pode exigir atenção administrativa antes de outra compra.
+
+### Contexto, modelo e calibração
+
+O modelo recebe somente texto selecionado: até **24.000 bytes UTF-8** na requisição completa, **16.000 bytes de estado**, **seis trechos** de até **1.500 bytes**, com limites redutíveis por modelo. O limite de entrada também é aplicado conservadoramente em bytes. As páginas públicas já lidas chegam ao seletor interno até o limite do leitor (20.000 caracteres/página); não são reduzidas aos primeiros 12.000 caracteres antes de procurar os trechos relevantes. Identidade, contradições e instruções comerciais são preservadas; se não couberem, a resposta é contexto insuficiente, sem descarte. Modelos não recebem páginas completas. Textos das fontes não são instruções.
+
+Campos `includeTerms` (qualquer termo), `includeAllTerms` (todos), exclusões, oferta/produtos, CNAEs e finalidade/quantidade de contatos são distintos. Nenhum setor ou cidade está codificado como preset. Versões iniciais: adaptador `openrouter-decisions-alpha-v1`, contexto `radar-decision-context-v1`, perguntas `radar-decisions-questions-v1` e rubrica `radar-decisions-rubric-v1`.
+
+Uma calibração se vincula a gateway, fornecedor efetivo, modelo pedido, snapshot servido, adaptador, tarefa, perguntas, contexto, rubrica, dataset e revisão/cadeia autorizada. Não há limiar global 0,90/0,98. A probabilidade da opção e `confidence` são métricas diferentes; ausência de `confidence` não é inventada. Principal/fallback/snapshot novo sem correspondência operam em observação. Alterar a revisão exige nova aprovação correspondente; aprove a calibração **depois** de salvar o modo desejado. O fallback usa sua própria calibração.
+
+Em **Aprovar calibração após benchmark humano**, informe o JSON validado com `provider:"openrouter"`, `upstreamProvider`, `requestedModel`, `resolvedModelSnapshot`, `adapterVersion`, `task`, `questionVersion`, `contextVersion`, `criteriaRubricVersion`, `datasetVersion`, `metric`, `thresholds` por opção e `validation:{sampleCount,falseExclusions,reviewedBy,evidenceReference}`. A interface vincula rota/revisão e pede confirmação. Exigem-se ao menos 100 casos e dois revisores distintos. Os números e a referência precisam vir de avaliação real; não copie valores de fixtures. A API não transforma a declaração administrativa em evidência estatística. Use o protocolo de produção e os recibos reais para essa avaliação; o comparativo E0 com pergunta `fit` não é calibração automática das perguntas de produção. O conjunto E0 permanece sem rótulos humanos e seu CLI continua sem compras automáticas.
+
+### Tentativas e retomada
+
+Os limites globais **Decisões por empresa** e **Fallbacks por efeito** ficam em Integrações. Por rota, é possível reduzir tentativas e editar tempo por tentativa/decisão (padrões 15/45 segundos). Os tetos de 45/120 segundos são proteções de execução; a tarefa Radar recebeu prazo total compatível e renova sua posse nos checkpoints. As demais tarefas não tiveram prazo alterado. Três etapas não significam três reservas adicionais por entrega repetida: a mesma entrada/revisão reutiliza seu registro. Chamadas recursivas de coleta não repetem as decisões iniciais.
+
+Uma resposta válida “investigar” **não** aciona fallback. Rejeição técnica confirmada ou resposta recebida inválida podem usar somente as reservas autorizadas, uma vez cada. A requisição contém um único modelo. O corpo recebido é salvo antes da interpretação; cada tentativa conserva modelo, uso e estado de cobrança. Uso ausente continua desconhecido, inclusive em rejeição HTTP; não é contabilizado como zero. A estimativa congelada não cresce se alguém aumentar o teto global depois. Falta de carteira no fallback não reclassifica a primeira tentativa paga como repetível.
+
+Timeout após envio não compra novamente. No Admin → Integrações → operação do Radar, primeiro use **Revalidar respostas salvas**; isso não chama modelo nem debita crédito. Quando não houver resposta aproveitável, **Autorizar nova tentativa e retomar** exige reconhecimento de cobrança anterior possível, revisão atual e autorização expiráveis, consumidas uma vez. O recibo antigo permanece intacto. Se as páginas mudarem depois de uma resposta concluída, recupera-se o efeito antigo sem aplicar sua decisão aos fatos novos.
+
+### Implantação coordenada
+
+Aplicar migrações **0217–0220** com o migrador e publicar **backend, worker, runtime e frontend da mesma revisão**, somente após autorização de implantação. Elas classificam capacidades e criam registros de calibração/recuperação; não ativam modelos nem alteram candidatos. Rotas antigas conhecidas de chat/embeddings permanecem compatíveis; nomes antigos desconhecidos ficam pendentes de classificação, não viram chat silenciosamente. Antes de liberar, verificar a chave OpenRouter, sua capacidade real, as carteiras, o modelo principal/reserva, preços, cotação e as três etapas em observação.
+
+Para conter um problema, desmarque o uso da rota no Radar ou pause-a, preserve registros e reconcilie as tentativas. Não apague respostas, empresas, contadores ou autorizações para destravar. Clientes/operadores/administradores de conta não recebem ferramentas, modelos, custos ou diagnósticos. **Não houve push, deploy ou teste pago nesta entrega local.** Perplexity e a orquestração adaptativa C continuam entregas separadas, não pré-requisitos desta integração.
+
 ## Qualidade e entrega — 15/10/2026
 
 ### Operação direta e visão comercial

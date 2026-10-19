@@ -72,7 +72,7 @@ def build_radar_decision_context(data: dict, *, model: str, policy: dict | None 
     if any(type(value) is not int or value <= 0 for value in limits.values()):
         raise ValueError('decision_context_policy_invalid')
     identity = {key: value for key, value in (data.get('identity') or {}).items() if key in ('name', 'legalName', 'cnpj', 'city', 'state', 'address')}
-    criteria = {key: value for key, value in (data.get('criteria') or {}).items() if key in ('segment', 'offer', 'products', 'includeTerms', 'excludeTerms', 'requiredContacts')}
+    criteria = {key: value for key, value in (data.get('criteria') or {}).items() if key in ('segment', 'offer', 'products', 'includeTerms','includeAllTerms', 'excludeTerms', 'requiredContacts','minimumUsefulContacts','contactPurpose','desiredCnaes','cnaeRule')}
     if len(canonical_json(dict(identity=identity, criteria=criteria))) > limits['stateBytes']:
         raise ContextIncomplete('context_incomplete')
     terms = sorted(set(re.findall(r'[^\W\d_]{4,}', json.dumps(criteria, ensure_ascii=False).casefold())))

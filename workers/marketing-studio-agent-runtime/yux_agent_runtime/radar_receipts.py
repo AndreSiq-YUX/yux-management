@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 _active_recorder = ContextVar('radar_effect_recorder', default=None)
 _provider_recorder = ContextVar('radar_provider_recorder', default=None)
-_actions = {'radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction'}
+_actions = {'radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate'}
 
 
 def radar_effect_recorder(action):
@@ -45,7 +45,7 @@ def capture_radar_raw_response(response):
 
 def _safe_failure(cause):
     code = str(cause)
-    return code if re.fullmatch(r'(?:radar_|provider_|invalid_openrouter_)[a-z0-9_]{1,130}|output_truncated', code) else 'radar_analysis_response_invalid'
+    return code if re.fullmatch(r'(?:radar_|provider_|decision_|invalid_openrouter_)[a-z0-9_]{1,130}|output_truncated', code) else 'radar_analysis_response_invalid'
 
 
 def _protected_body(value):
@@ -73,7 +73,7 @@ class RadarEffectRecorder:
             self.begin(self.provider, self.model)
         if self.current.get('transport_outcome') == 'received':
             return  # preserve the first response, including its upstream envelope
-        allowed = ('content', 'finish_reason', 'input_tokens', 'output_tokens', 'cost_usd', 'raw_response_id', 'model', 'provider', 'upstream_response')
+        allowed = ('content', 'finish_reason', 'input_tokens', 'output_tokens', 'cost_usd', 'raw_response_id', 'model', 'provider', 'upstream_response','decision_context')
         protected = _protected_body({key: response[key] for key in allowed if key in response})
         protected['provider'] = response.get('provider') or self.provider
         protected['model'] = response.get('model') or self.model
@@ -118,7 +118,7 @@ def radar_usage(response):
     return dict(inputTokens=tokens('input_tokens'), outputTokens=tokens('output_tokens'), costUsd=cost)
 
 
-def execute_radar_receipt(store, *, action, request, compute, debit):
+def execute_radar_receipt(store, *, action, request, compute, debit, validate_effect=True):
     input_hash = sha256(json.dumps(request.model_dump(), sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
     key = dict(organization_id=request.organization_id, action=action, request_id=request.request_id)
     owner_token = str(uuid4())
@@ -146,7 +146,8 @@ def execute_radar_receipt(store, *, action, request, compute, debit):
     try:
         try:
             result = compute(before_call)
-            recorder.valid()
+            if validate_effect:
+                recorder.valid()
         except Exception as cause:
             recorder.failed(cause, provider_started=provider_started)
             store.finish_radar_receipt(**key, owner_token=owner_token,

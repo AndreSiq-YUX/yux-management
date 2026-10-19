@@ -1,6 +1,8 @@
 {
   "provenance": "synthetic_contract_fixture",
   "valid": [
+    {"schemaVersion":1,"task":"radar_initial_triage","status":"unavailable","choice":null,"reasonCode":"more_evidence_needed","evidenceIds":[],"attempts":[],"usage":{"costUsd":null,"inputTokens":null,"outputTokens":null}},
+    {"schemaVersion":1,"organizationId":"10000000-0000-4000-8000-000000000001","campaignId":"10000000-0000-4000-8000-000000000002","candidateId":"10000000-0000-4000-8000-000000000003","configurationRevision":1,"task":"radar_initial_triage","identity":{"name":"Empresa sintética"},"criteria":{"segment":"Segmento configurável"},"evidence":[],"options":[],"humanReviewed":false},
     {
       "schemaVersion": 1,
       "id": "fixture-source",

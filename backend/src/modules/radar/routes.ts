@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
+import {restoreRadarDecisionExclusion} from './decision-review.js'
 import { hashSessionToken } from '../../auth/session.js'
 import {
   addRadarCompanyToCampaign,
@@ -736,6 +737,10 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const params = z.object({ id: uuid }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_radar_candidate_id' })
     return discardRadarCandidate(app.pg, user, params.data.id)
+  })
+  app.post('/candidates/:id/restore-profile',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    return restoreRadarDecisionExclusion(app.pg,user,z.object({id:uuid}).parse(request.params).id)
   })
 
   app.get('/campaigns/:id/duplicates', async (request, reply) => {

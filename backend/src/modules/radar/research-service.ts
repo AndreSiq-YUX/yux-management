@@ -39,6 +39,8 @@ import {estimateRadarCostBrl,compareRadarDecimal,addRadarDecimal,radarReportedCo
 import {hasUsefulRadarHits,planRadarResearch} from './research-planner.js'
 import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
+import {decideRadarAction,radarDecisionHash} from './decision-service.js'
+import type {DecisionContextV1} from './decision-contracts.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   claims?:Array<{reason:string;evidenceId:string;excerpt:string}>;
@@ -56,6 +58,7 @@ function validatedQualificationProfile(result:RadarQualification,pages:RadarSite
  return result
 }
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
+  decisionExcluded?:boolean;decisionReview?:boolean;
   historicalDerivedConclusions?:{presenceResolution?:RadarPresenceResolution;qualification?:RadarQualification;profile?:RadarCompanyProfile;sizeAssessment?:ReturnType<typeof assessRadarCompanySize>};
   quality?:RadarResearchQuality;targetedQueries?:string[];
   historicalEvidence?:{pages:RadarSiteEvidence[];contacts:RadarContactEvidence[]};
@@ -68,6 +71,8 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
 type Output = Partial<RadarResearchDossier> & { historicalRevision?:number;analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string,source?:RadarWebSearchSource) => Promise<RadarWebHit[]>;
+  decisionMemo?:Map<DecisionContextV1['task'],{action:string}>;
+  decide?:(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'])=>Promise<{action:string}>;
   searchCapacity?:()=>RadarSearchCapacity;searchAttempted?:(source:RadarSearchSource,query:string)=>boolean;
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string,version:RadarEvidenceVersion)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string,version:RadarEvidenceVersion) => Promise<RadarQualification>;
@@ -165,14 +170,33 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
   }
   const limits: string[] = []
   const checkpoint = async (stage: string) => { dependencies.signal?.throwIfAborted(); await dependencies.checkpoint(stage, output) }
+  const decisionMemo=dependencies.decisionMemo??new Map<DecisionContextV1['task'],{action:string}>()
+  const decide=async(task:DecisionContextV1['task'],material:RadarSiteEvidence[],options:DecisionContextV1['options'])=>{
+    if(!dependencies.decide)return undefined
+    if(!decisionMemo.has(task))decisionMemo.set(task,await dependencies.decide(task,material,options))
+    return decisionMemo.get(task)
+  }
   let pages = [...(output.pages ?? [])]
+  const triageDecision=await decide('radar_initial_triage',pages,[])
+  if(triageDecision?.action==='exclude'){
+    const excluded:RadarResearchDossier={...output,decisionExcluded:true,discovery:output.discovery??{hits:[],suggestions:[],queries:0,association:'review',limitations:[]},pages,contacts:output.contacts??[],siteAssociation:output.siteAssociation??'review',activity:output.activity??assessRadarBusinessActivity([],[]),limitations:['A atividade comprovada não atende ao público configurado; a classificação pode ser revista.']}
+    Object.assign(output,excluded);await checkpoint('review');return excluded
+  }
+  const sourceOptions=configuration.research.webSearchEnabled?configuration.research.webSearchProviders.filter(source=>!dependencies.searchCapacity||hasRadarSearchCapacity(dependencies.searchCapacity(),source)).map(source=>({id:source,description:`Pesquisa web elegível: ${source}; usar apenas a capacidade e licenças já autorizadas.`})):[]
+  const readOptions=pages.filter(page=>!page.limitation).slice(0,Math.max(0,8-sourceOptions.length)).map(page=>({id:`read_${radarDecisionHash(page.url).slice(0,16)}`,description:`Priorizar leitura da página pública ${page.url}`}))
+  const nextDecision=await decide('radar_next_action',pages,[...sourceOptions,...readOptions])
+  const decisionSource=sourceOptions.some(item=>item.id===nextDecision?.action)?nextDecision!.action as RadarWebSearchSource:undefined
+  const search=(query:string,source?:RadarWebSearchSource)=>{
+    const selected=decisionSource&&(!dependencies.searchCapacity||hasRadarSearchCapacity(dependencies.searchCapacity(),decisionSource))&&!dependencies.searchAttempted?.(decisionSource,query)?decisionSource:source
+    return selected?dependencies.web(query,selected):dependencies.web(query)
+  }
   if(!output.analysisOnly&&pendingRadarReadUrls([...(output.discoveryHits??[]),...(output.discovery?.hits??[]),...(output.discovery?.suggestions??[])],pages,configuration.research.maxPagesPerCandidate).length)
     output.readingComplete=false
   const mentionsIdentity=(text:string)=>!cnpjConflict(identity,text,true)&&[identity.name,identity.legalName].some(name=>!!name&&normalizeRadarText(name).length>=5&&normalizeRadarText(text).includes(normalizeRadarText(name)))
   const directlyOwns=(page:RadarSiteEvidence)=>!page.limitation&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'&&hasRadarOwnershipSignal(page.url,identity,page)
   if (!output.discovery || !output.discoveryLocked && output.discovery.limitations.length) {
     output.discovery = await discoverRadarBusinessPresence(identity, configuration.research, {
-      search: dependencies.web, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
+      search, local: dependencies.local, initialHits: output.discoveryHits ?? output.discovery?.hits, initialQueries: output.discoveryQueries,
       queriesUsed:dependencies.queriesUsed,
       searchCapacity:dependencies.searchCapacity,searchAttempted:dependencies.searchAttempted,
       checkpoint: async (hits, queries) => { output.discoveryHits = hits; output.discoveryQueries = queries; await checkpoint('discovery') },
@@ -207,6 +231,9 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     const pending=pendingRadarReadUrls([...discovery.hits,...discovery.suggestions,...(website?[{url:website,title:identity.name,snippets:[],observedAt:''}]:[])],pages,configuration.research.maxPagesPerCandidate)
     const pendingUrls=pending.flatMap(value=>{const root=new URL('/',value).toString();return pages.some(page=>canonicalRadarReadUrl(page.url)===root)?[value]:[root,value]})
     const urls = [...new Set([...pendingUrls,...(!saved.readingComplete||readerUpgrade?candidates.flatMap(value=>{try{return [new URL('/',value).toString(),value]}catch{return []}}):[])])]
+    const options=urls.slice(0,8).map(url=>({id:`read_${radarDecisionHash(url).slice(0,16)}`,description:`Ler a página pública elegível ${url}`}))
+    const selectedIndex=options.findIndex(item=>item.id===nextDecision?.action)
+    if(selectedIndex>0)urls.unshift(...urls.splice(selectedIndex,1))
     for (const url of urls) {
       if(deferAmbiguousDepth)break
       if (pages.filter(page=>!page.limitation).length >= configuration.research.maxPagesPerCandidate || pages.length>=configuration.research.maxPagesPerCandidate*2 || dependencies.signal?.aborted) break
@@ -349,7 +376,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
       output.targetedQueries=[...(output.targetedQueries??[]),next.query]
       await checkpoint('discovery')
       try{
-        const hits=next.source?await dependencies.web(next.query,next.source):await dependencies.web(next.query)
+        const hits=await search(next.query,next.source)
         output.discovery={...discovery,hits:[...discovery.hits,...hits],suggestions:[...discovery.suggestions,...hits]}
         output.discoveryQueries=dependencies.queriesUsed?.()??(output.discoveryQueries??discovery.queries)+1
         const pending=pendingRadarReadUrls(hits,pages,configuration.research.maxPagesPerCandidate).filter(url=>sameRadarOrigin(url,associatedOrigin))
@@ -359,7 +386,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
             {signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline})])
         }
         output.pages=pages;output.discoveryLocked=true;output.readingComplete=true
-        return runRadarResearchPipeline(identity,configuration,output,dependencies)
+        return runRadarResearchPipeline(identity,configuration,output,{...dependencies,decisionMemo})
       }catch(cause){limits.push(`Pesquisa complementar: ${safeResearchError(cause)}.`)}
     }
   }
@@ -430,7 +457,9 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     historicalEvidence:output.historicalEvidence,targetedQueries:output.targetedQueries,analysisEvidence:output.analysisEvidence,
     discovery:{...discovery,websiteUrl:associatedOrigin??(discovery.websiteUrl&&isRadarInstitutionalSource(discovery.websiteUrl,{text:pages.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(discovery.websiteUrl!))?.text})?discovery.websiteUrl:undefined),association:associatedOrigin?'confirmed' as const:discovery.websiteUrl?'review' as const:discovery.association}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
     qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
-  const result={...dossier,quality:evaluateRadarResearchQuality({dossier,policy:configuration.research,currentRevision:true})}
+  const qualityDecision=await decide('radar_quality_gate',pages,[])
+  const result={...dossier,decisionReview:qualityDecision?.action==='review',quality:evaluateRadarResearchQuality({dossier,policy:configuration.research,currentRevision:true})}
+  if(result.decisionReview){result.quality={...result.quality,readyForReview:false};result.limitations.push('A avaliação encontrou evidências que precisam de conferência antes da aprovação.')}
   Object.assign(output, result); await checkpoint('review')
   return result
 }
@@ -582,8 +611,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
   if (!run) return { status:'already_running_or_completed' }
   const checkpoint = async (stage:string, output:Output) => {
     signal?.throwIfAborted()
-    await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET stage=$3,output=$4::jsonb,updated_at=NOW()
-      WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,stage,JSON.stringify(output)]))
+    await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET stage=$3,output=$4::jsonb,lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW()
+      WHERE id=$1 AND lease_id=$2 AND lease_until>NOW() RETURNING id`,[run.id,lease,stage,JSON.stringify(output)]))
   }
   try {
     const userResult = await pool.query<{id:string;role:string}>(`SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE`,[run.requested_by])
@@ -728,11 +757,32 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         if(!updated.rows[0])throw error('radar_research_lease_lost')
       }
     }
+    const decisionRequester=(await pool.query('SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE',[run.requested_by])).rows[0] as AuthUser
+    const decide=async(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'])=>{
+      if(run.operation==='reanalyze')return{action:'continue'}
+      try{
+        const {websiteUrl:_website,phone:_phone,...decisionIdentity}=identity
+        const result=await decideRadarAction(pool,decisionRequester,{schemaVersion:1,organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,configurationRevision:run.configuration_revision,task,
+          identity:decisionIdentity,criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,includeTerms:configuration.qualification.includeAnyTerms,includeAllTerms:configuration.qualification.includeAllTerms,excludeTerms:configuration.qualification.excludeTerms,desiredCnaes:context.target_cnaes,cnaeRule:configuration.qualification.requireCnaeMatch?'required':'advisory',requiredContacts:configuration.research.completion.contactTypes,minimumUsefulContacts:String(configuration.research.completion.minimumUsefulContacts),contactPurpose:configuration.research.contactPurpose},
+          evidence:pages.filter(page=>!!page.text&&!page.limitation).slice(0,30).map(page=>({id:`ev_${radarDecisionHash({url:page.url,text:page.text}).slice(0,24)}`,sourceUrl:page.url,text:page.text,role:'activity',primary:isRadarInstitutionalSource(page.url,{text:page.text}),contradictory:cnpjConflict(identity,page.text),scope:!cnpjConflict(identity,page.text)&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'?'establishment':'unresolved'})),options,humanReviewed:payload.manualDecisionOverride===true||payload.braveMatchStatus==='manual_matched'},
+          {env,runId:run.id,leaseId:lease,runtime:dependencies.runtime,authorize:assertEffectAuthorization})
+        return{action:result.action}
+      }catch(cause){
+        signal?.throwIfAborted()
+        // Optional decisions must not stop facts collection. Uncertain effects
+        // remain in their receipts/calls and are never silently repurchased.
+        if(cause instanceof Error&&cause.message==='radar_research_lease_lost')throw cause
+        return{action:'continue'}
+      }finally{
+        const savedCalls=(await pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE id=$1 AND lease_id=$2',[run.id,lease])).rows[0]?.calls
+        if(savedCalls)run.calls=savedCalls
+      }
+    }
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
       discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length},{
-      signal,checkpoint,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
+      signal,checkpoint,decide,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
       queriesUsed:()=>Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length,
       searchCapacity,searchAttempted,
       tlsOptions:hostname=>getRadarTlsReadOptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision},hostname),
@@ -885,7 +935,9 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     const review = dossier.qualification ?? triageRadarBusiness({name:context.title,cnpj:String(context.normalized_payload.cnpj ?? ''),
       desiredCnaes:context.target_cnaes,cnaes:Array.isArray(context.normalized_payload.cnaes) ? context.normalized_payload.cnaes as string[]:[],
       configuration:resolveRadarSearchConfiguration(context.search_configuration),website:{status:verified?'verified_present':'unknown',checkedAt:new Date().toISOString(),text:associatedPages.map(page=>page.text).join(' '),emails:[],phones:[]}})
+    if(dossier.decisionExcluded){review.targetStatus='not_target';review.productFit='low';review.reasons=['A atividade comprovada não atende ao público configurado. A classificação pode ser revista.']}
     const quality=evaluateRadarResearchQuality({dossier:{...dossier,qualification:dossier.qualification??{...review,evidenceIds:[],limitations:[]}},policy:resolveRadarSearchConfiguration(context.search_configuration).research,currentRevision:true})
+    if(dossier.decisionReview||dossier.decisionExcluded)quality.readyForReview=false
     const configuration=resolveRadarSearchConfiguration(context.search_configuration)
     const dependencies=radarResearchDependencyVersions({identity,criteria:configuration.qualification,evidence:dossier.pages,contacts:known})
     const payload = mergeRadarCompanyResearch(candidate.rows[0].normalized_payload,{researchRunId:run.id,researchRevision:run.configuration_revision,researchDependencyVersions:dependencies,
@@ -895,6 +947,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
       researchQuality:quality,researchIdentityName:identity.name,
+      ...(dossier.decisionExcluded&&context.normalized_payload.manualDecisionOverride!==true?{decisionExclusion:{active:true,revision:run.configuration_revision,reason:'outside_profile',runId:run.id}}:context.normalized_payload.decisionExclusion?{decisionExclusion:{...(context.normalized_payload.decisionExclusion as Record<string,unknown>),active:false}}:{}),
       researchLimitations:dossier.limitations,
       researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),
       researchContactPurpose:resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,

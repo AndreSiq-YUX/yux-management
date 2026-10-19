@@ -189,7 +189,9 @@ export function AdminAiPage() {
             setLlmRoutes(current => [...current.filter(item => item.id !== saved.id && !(item.origin === 'environment' && item.agentType === saved.agentType && item.routingTier === saved.routingTier && !saved.organizationId && !saved.clientId && !saved.contractId && !saved.agentId)), saved])
             return saved
           }}
-          onTest={routeId => adminPlatformService.testLlmRoute(routeId)}
+          onTest={(routeId,input) => adminPlatformService.testLlmRoute(routeId,input)}
+          onDecisionStatus={(routeId,task)=>adminPlatformService.decisionRouteStatus(routeId,task)}
+          onApproveCalibration={input=>adminPlatformService.approveDecisionCalibration(input)}
         />
       )}
 

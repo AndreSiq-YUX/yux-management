@@ -1,4 +1,4 @@
-"""Versioned Decisions alpha adapter. Unwired from production routing.
+"""Versioned Decisions alpha adapter. Caller owns authorization and receipts.
 
 Source contract: https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request
 No retry or fallback: received-invalid and uncertain effects belong to the caller's ledger.
@@ -36,9 +36,9 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def _transport(url, headers, payload, method):
+def _transport(url, headers, payload, method, *, timeout_seconds=45):
     request = Request(url, data=canonical_json(payload), method=method, headers=headers)
-    with build_opener(_NoRedirect()).open(request, timeout=45) as response:
+    with build_opener(_NoRedirect()).open(request, timeout=timeout_seconds) as response:
         return json.loads(response.read(256001).decode('utf-8'))
 
 
@@ -47,9 +47,11 @@ def _number(value):
 
 
 class OpenRouterDecisionsAlphaV1Provider:
-    def __init__(self, *, api_key=None, transport=None, allow_paid=False, approved_models=(), authorize=None):
+    def __init__(self, *, api_key=None, transport=None, allow_paid=False, approved_models=(), authorize=None, received=None,timeout_seconds=45):
         self.api_key, self.transport = api_key, transport
         self.allow_paid, self.approved_models, self.authorize = allow_paid, frozenset(approved_models), authorize
+        self.received = received
+        self.timeout_seconds = timeout_seconds
 
     def decide(self, *, model: str, state: dict, questions: dict) -> dict:
         if not isinstance(model, str) or not 1 <= len(model) <= 200 or model.startswith('~'):
@@ -67,17 +69,26 @@ class OpenRouterDecisionsAlphaV1Provider:
                 raise ProviderAuthorizationError('decision_budget_authorization_required')
             self.authorize(model=model, payload=payload)
         try:
-            raw = (self.transport or _transport)(ENDPOINT, {'Content-Type': 'application/json', **({'Authorization': f'Bearer {self.api_key}'} if self.api_key else {})}, payload, 'POST')
+            args=(ENDPOINT, {'Content-Type': 'application/json', **({'Authorization': f'Bearer {self.api_key}'} if self.api_key else {})}, payload, 'POST')
+            raw = self.transport(*args) if self.transport else _transport(*args,timeout_seconds=self.timeout_seconds)
         except HTTPError as error:
-            raise ProviderRequestError(f'decision_http_{error.code}') from None
+            raise ProviderRequestError(f'provider_http_{error.code}') from None
         except (TimeoutError, OSError) as error:
             raise DecisionEffectUncertain('decision_effect_uncertain') from None
         except (json.JSONDecodeError, UnicodeDecodeError):
+            if self.received:
+                self.received(dict(received=True, invalidEncoding=True))
             raise DecisionContractError(dict(received=True, invalidEncoding=True)) from None
+        if self.received:
+            self.received(raw)  # durable before any alpha/domain validation
+        return normalize_decisions_response(raw, model=model, questions=questions)
+
+
+def normalize_decisions_response(raw, *, model, questions):
         if not isinstance(raw, dict):
             raise DecisionContractError(raw)
         snapshot, answers, usage = raw.get('model'), raw.get('answers'), raw.get('usage')
-        if not isinstance(snapshot, str) or not (snapshot == model or snapshot.startswith(model + '-')) or not raw.get('id') or not raw.get('provider') or not isinstance(answers, dict) or set(answers) != set(questions) or not isinstance(usage, dict):
+        if not isinstance(snapshot, str) or not 1<=len(snapshot)<=200 or not (snapshot == model or snapshot.startswith(model + '-')) or any(not isinstance(raw.get(key),str) or not 1<=len(raw[key])<=200 for key in ('id','provider')) or not isinstance(answers, dict) or set(answers) != set(questions) or not isinstance(usage, dict):
             raise DecisionContractError(raw)
         normalized = {}
         for key, question in questions.items():

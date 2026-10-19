@@ -47,6 +47,7 @@ export function validateLlmRouteCapability(input:{agentType:string|null;agentId?
  const protocol=kind==='decision'?'openrouter-decisions-alpha-v1':kind==='research'?'perplexity-agent-v1':'openai-compatible-v1'
  if(input.protocol&&input.protocol!==protocol||kind==='decision'&&(input.provider!=='openrouter'||input.fallbackRoutes?.some(item=>item.provider!=='openrouter'))||kind==='research')throw Object.assign(Error('llm_route_capability_incompatible'),{statusCode:400})
  const fallbacks=[...(input.fallbackRoutes??[]),...(input.fallbackModelName?[{provider:input.provider,modelName:input.fallbackModelName}]:[])]
+ if(kind==='decision'&&[input.modelName,...fallbacks.map(item=>item.modelName)].some(model=>model.trim().length>200||model.trim().startsWith('~')))throw Object.assign(Error('llm_route_capability_incompatible'),{statusCode:400})
  const seen=new Set([`${input.provider}:${input.modelName.trim()}`])
  for(const fallback of fallbacks){const key=`${fallback.provider}:${fallback.modelName.trim()}`;if(seen.has(key))throw Object.assign(Error('llm_route_fallback_cycle'),{statusCode:400});seen.add(key)}
  return{kind,protocol,adapterVersion:kind==='decision'?'openrouter-decisions-alpha-v1':'v1'}

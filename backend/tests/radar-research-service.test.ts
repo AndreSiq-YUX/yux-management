@@ -4,6 +4,17 @@ import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-con
 import { validateRadarCompanyProfile } from '../src/modules/radar/company-profile.js'
 const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city:'Curitiba',state:'PR',phone:'4133334444' }
 const configuration = resolveRadarSearchConfiguration({ research: { enabled:true, webSearchEnabled:true } })
+it('consumes three decision stages and can change only the eligible search source, without fabricating approval',async()=>{
+ const url='https://alfa.example/',page={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90. contato@alfa.example',observedAt:'2026-10-19'},stages:string[]=[]
+ const web=vi.fn(async()=>[{url,title:'Empresa Alfa',snippets:[page.text],observedAt:page.observedAt}])
+ const decide=vi.fn(async(task:string,_pages:unknown,options:Array<{id:string}>)=>{stages.push(task);if(task==='radar_next_action'){expect(options.some(item=>item.id==='serper_web_search')).toBe(true);return{action:'serper_web_search'}}return{action:'continue'}})
+ const result=await runRadarResearchPipeline(identity,resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,webSearchProviders:['brave_web_search','serper_web_search'],semanticQualificationEnabled:false,completion:{enabled:false}}}),{},
+  {web,collect:async()=>[page],checkpoint:async()=>{},decide})
+ expect(stages).toEqual(['radar_initial_triage','radar_next_action','radar_quality_gate'])
+ expect(web.mock.calls[0]).toEqual(['Empresa Alfa','serper_web_search'])
+ expect(result.siteAssociation).toBe('confirmed');expect(result.contacts.some(item=>item.value==='contato@alfa.example')).toBe(true)
+ expect(result.qualification?.targetStatus).not.toBe('confirmed')
+})
 it('keeps verified qualification and valid profile facts when one optional metric is rejected',async()=>{
  const url='https://alfa.example/',page={url,text:'Empresa Alfa CNPJ 12.345.678/0001-90. Fornecemos refeições para empresas.',observedAt:'2026-10-18'}
  const claim={value:'Alimentação empresarial',evidenceId:'page-0',excerpt:'Fornecemos refeições para empresas.'}

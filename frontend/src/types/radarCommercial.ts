@@ -1,7 +1,7 @@
 // Commercial HTTP contracts. These are not aliases/casts of administrative Radar payloads.
 export type CommercialClaim={value?:string;sourceUrl?:string;observedAt?:string;referenceDate?:string;scope?:string}
 export type CommercialContact={kind?:string;value?:string;association?:string;scope?:string;sourceUrl?:string;observedAt?:string;purpose?:string;preferred?:boolean;sources?:Array<{sourceUrl?:string;observedAt?:string}>}
-export type RadarCommercialFacts={cnpj?:string;legalName?:string;tradeName?:string;city?:string;state?:string;address?:string;cnaes?:string[];cnaeMain?:string;registrationStatus?:string;openingDate?:string;
+export type RadarCommercialFacts={outsideProfile?:boolean;outsideProfileRevision?:number;cnpj?:string;legalName?:string;tradeName?:string;city?:string;state?:string;address?:string;cnaes?:string[];cnaeMain?:string;registrationStatus?:string;openingDate?:string;
  websiteUrl?:string;websiteStatus?:string;siteObservedAt?:string;refreshIncomplete?:boolean;previousResearch?:{websiteUrl?:string;observedAt?:string;contacts?:CommercialContact[];profile?:RadarCommercialFacts['profile']};registryPhone?:string;contacts?:CommercialContact[];
  profile?:{summary?:CommercialClaim;services?:CommercialClaim[];customerSegments?:CommercialClaim[];operatingRegions?:CommercialClaim[];scaleSignals?:CommercialClaim[]};
  activity?:{status?:string;limitation?:string;signals?:Array<{excerpt?:string;sourceUrl?:string;observedAt?:string;publishedDate?:string}>;presenceSignals?:Array<{kind?:string;excerpt?:string;sourceUrl?:string;observedAt?:string;association?:string;scope?:string}>};

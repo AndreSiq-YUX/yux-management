@@ -46,7 +46,7 @@ export const radarService = {
     const suffix={analyze:'run-analysis',approve:'review',reject:'review',optOut:'opt-out',convert:'convert-to-lead'}[action]
     return apiRequest<unknown>(`/radar/opportunities/${id}/${suffix}`,{method:action==='approve'||action==='reject'?'PATCH':'POST',body:action==='approve'||action==='reject'?{status:action==='approve'?'approved':'rejected'}:undefined})
   },
-  commercialCandidateAction(id:string,action:'import'|'discard',input:{analyzeAfterImport:boolean}){
+  commercialCandidateAction(id:string,action:'import'|'discard'|'restore-profile',input:{analyzeAfterImport:boolean}){
     return apiRequest<unknown>(`/radar/candidates/${id}/${action}`,{method:'POST',body:action==='import'?input:undefined})
   },
   startCaptureOperation(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;requestedCount:number;continuationAuthorizations?:RadarContinuationAuthorization[]}){return apiRequest<{operationId:string;status:RadarCaptureOperation['status'];reused:boolean}>(`/radar/campaigns/${campaignId}/capture-operations`,{method:'POST',body:input})},
@@ -270,6 +270,7 @@ export const radarService = {
   async discardCandidate(candidateId: string) {
     return apiRequest<RadarCandidateRecord>(`/radar/candidates/${candidateId}/discard`, { method: 'POST' })
   },
+  async restoreProfile(candidateId:string){return apiRequest<{candidateId:string;status:'restored'}>(`/radar/candidates/${candidateId}/restore-profile`,{method:'POST'})},
 
   async reviewOpportunity(opportunityId: string, status: 'approved' | 'rejected') {
     return apiRequest<RadarOpportunity>(`/radar/opportunities/${opportunityId}/review`, { method: 'PATCH', body: { status } })

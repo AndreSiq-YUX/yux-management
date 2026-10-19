@@ -1,7 +1,12 @@
 /* Generated from contracts/radar/v1/radar-research.schema.json. Do not edit manually. */
 
 export type RadarResearchContractV1 =
-  ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1
+  | ResearchEvidenceV1
+  | EffectReceiptV1
+  | CommercialResearchStatusV1
+  | BusinessMentionV1
+  | DecisionContextV1
+  | DecisionResultV1
 export type EffectReceiptV1 = {
   [k: string]: unknown
 } & {
@@ -28,6 +33,737 @@ export type EffectReceiptV1 = {
     costUsd: number | null
   } | null
   failureCode: string | null
+}
+export type DecisionResultV1 = {
+  [k: string]: unknown
+} & {
+  schemaVersion: 1
+  task: 'radar_initial_triage' | 'radar_next_action' | 'radar_quality_gate'
+  status: 'decided' | 'unavailable' | 'context_incomplete'
+  choice: string | null
+  reasonCode:
+    | 'fit_supported'
+    | 'outside_activity'
+    | 'identity_unresolved'
+    | 'more_evidence_needed'
+    | 'action_selected'
+    | 'quality_review'
+  /**
+   * @maxItems 6
+   */
+  evidenceIds:
+    | []
+    | [string]
+    | [string, string]
+    | [string, string, string]
+    | [string, string, string, string]
+    | [string, string, string, string, string]
+    | [string, string, string, string, string, string]
+  probabilities?: {
+    [k: string]: number
+  }
+  confidence?: number | null
+  requestedModel?: string
+  resolvedModel?: string
+  provider?: 'openrouter'
+  upstreamProvider?: string
+  externalRequestId?: string
+  adapterVersion?: 'openrouter-decisions-alpha-v1'
+  contextVersion?: 'radar-decision-context-v1'
+  questionVersion?: 'radar-decisions-questions-v1'
+  criteriaRubricVersion?: 'radar-decisions-rubric-v1'
+  contextBytes?: number
+  omittedEvidenceIds?: string[]
+  /**
+   * @maxItems 10
+   */
+  attempts:
+    | []
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+    | [
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+        {
+          requestedModel: string
+          resolvedModel: string | null
+          status: 'valid' | 'received' | 'rejected'
+          latencyMs: number
+          failureCode?: string
+          usage: {
+            inputTokens: number | null
+            outputTokens: number | null
+            costUsd: (number | string) | null
+          }
+        },
+      ]
+  usage: {
+    inputTokens: number | null
+    outputTokens: number | null
+    costUsd: number | null
+  }
 }
 
 export interface ResearchEvidenceV1 {
@@ -444,4 +1180,361 @@ export interface BusinessMentionV1 {
       excerpt: string
     }[],
   ]
+}
+export interface DecisionContextV1 {
+  schemaVersion: 1
+  organizationId: string
+  campaignId: string
+  candidateId: string
+  configurationRevision: number
+  task: 'radar_initial_triage' | 'radar_next_action' | 'radar_quality_gate'
+  identity: {
+    name: string
+    legalName?: string
+    cnpj?: string
+    city?: string
+    state?: string
+    address?: string
+  }
+  criteria: {
+    segment?: string
+    offer?: string
+    /**
+     * @maxItems 50
+     */
+    products?: string[]
+    /**
+     * @maxItems 50
+     */
+    includeTerms?: string[]
+    /**
+     * @maxItems 50
+     */
+    includeAllTerms?: string[]
+    /**
+     * @maxItems 50
+     */
+    excludeTerms?: string[]
+    /**
+     * @maxItems 20
+     */
+    requiredContacts?:
+      | []
+      | [string]
+      | [string, string]
+      | [string, string, string]
+      | [string, string, string, string]
+      | [string, string, string, string, string]
+      | [string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string, string, string]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+        ]
+    minimumUsefulContacts?: string
+    contactPurpose?: string
+    /**
+     * @maxItems 50
+     */
+    desiredCnaes?: string[]
+    cnaeRule?: 'required' | 'advisory'
+  }
+  /**
+   * @maxItems 30
+   */
+  evidence: {
+    id: string
+    sourceUrl: string
+    text: string
+    role: 'identity' | 'activity' | 'domain' | 'contact'
+    primary: boolean
+    contradictory: boolean
+    scope: 'establishment' | 'group' | 'unresolved'
+  }[]
+  /**
+   * @maxItems 8
+   */
+  options:
+    | []
+    | [
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+    | [
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+        {
+          id: string
+          description: string
+        },
+      ]
+  humanReviewed: boolean
 }

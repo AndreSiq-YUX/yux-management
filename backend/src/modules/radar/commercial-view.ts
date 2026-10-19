@@ -44,7 +44,7 @@ const size=z.object({score:number,evidenceCoverage:number,direction:text,contrib
 const quality=z.object({identity:text,contactability:text,fit:text,readyForReview:bool,missing:texts,potential:z.object({score:number,coverage:number}).strip().optional().catch(undefined)}).strip()
 const previousFacts=z.object({websiteUrl:url,observedAt:text,contacts,profile:profile.optional().catch(undefined)}).strip()
 const factsSchema=z.object({cnpj:text,legalName:text,tradeName:text,city:text,state:text,address:text,cnaes:texts,cnaeMain:text,registrationStatus:text,openingDate:text,
- refreshIncomplete:bool,siteObservedAt:text,previousResearch:previousFacts.optional().catch(undefined),
+ refreshIncomplete:bool,siteObservedAt:text,previousResearch:previousFacts.optional().catch(undefined),outsideProfile:bool,outsideProfileRevision:number,
  websiteUrl:url,websiteStatus:text,registryPhone:text,contacts,profile:profile.optional().catch(undefined),activity:activity.optional().catch(undefined),sizeAssessment:size.optional().catch(undefined),
  documents:z.array(z.object({url,sourceUrl:url}).strip()).optional().catch(undefined),
  targetStatus:text,productFit:text,quality:quality.optional().catch(undefined),reasons:narratives}).strip()
@@ -62,6 +62,7 @@ export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFact
  const identities=[data.legalName,data.tradeName].filter((value):value is string=>typeof value==='string')
  const prior=object(data.previousResearch)
  return radarCommercialFactsSchemaForCompany(identities).parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
+  outsideProfile:object(data.decisionExclusion).active===true,outsideProfileRevision:object(data.decisionExclusion).revision,
   siteObservedAt:website.observedAt??data.siteCheckedAt,refreshIncomplete:data.researchRefreshIncomplete,previousResearch:prior.belongsToCurrentIdentity===true?{websiteUrl:prior.websiteUrl,observedAt:prior.siteCheckedAt,contacts:prior.publicContacts,profile:prior.companyProfile}:undefined,
   contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
@@ -99,11 +100,12 @@ const opportunity=(value:unknown)=>{const row=object(value),message=object(row.l
  return opportunitySchema.parse({...row,canConvertToLead:row.status==='approved'&&!row.convertedLeadId&&message.status==='approved'&&policy.canSendAutomatically===false&&policy.canConvertToLead===true,...(object(row.company).sourceType==='osm_extract'?{company:undefined}: {})})}
 const historySchema=z.object({id:text,candidateId:text,companyName:text,configurationRevision:number,status:text,updatedAt:text,actionLabel:text}).strip()
 const feedbackSchema=z.object({id:text,candidateId:text,configurationRevision:number,kind:text,note:narrative,createdAt:text,contact:z.object({kind:text,value:text}).strip().optional().catch(undefined)}).strip()
-export type RadarCommercialSurface='campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'|'latestResearchRequest'
+export type RadarCommercialSurface='restore'|'campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'|'latestResearchRequest'
 export function projectRadarCommercialResponse(surface:RadarCommercialSurface,payload:unknown):unknown{
  if(payload===null)return null
  const row=object(payload)
  switch(surface){
+  case 'restore':return z.object({candidateId:z.uuid(),status:z.literal('restored')}).strip().parse(row)
   case 'latestResearchRequest':return{request:row.request?projectRadarCommercialResponse('researchRequest',row.request):null}
   case 'researchRequest':return z.object({requestId:z.uuid(),campaignId:z.uuid().optional(),state:z.enum(['accepted','running','waiting','unchanged','completed']),items:z.array(z.object({candidateId:z.uuid(),state:z.enum(['accepted','running','waiting','unchanged','completed']),message:narrative,feedback:radarCommercialStatusSchema.optional().catch(undefined)}).strip())}).strip().parse(row)
   case 'campaigns':if('campaign' in row)return{campaign:projectRadarCommercialResponse('campaigns',row.campaign),criteriaChanged:row.criteriaChanged===true}
@@ -135,6 +137,7 @@ const surfaces:Record<string,RadarCommercialSurface>={
  'POST /campaigns/:id/research-requests':'researchRequest','GET /campaigns/:id/research-requests/:requestId':'researchRequest','POST /candidates/:id/research':'researchRequest',
  'GET /campaigns/:id/research-requests/latest':'latestResearchRequest',
  'GET /campaigns/:id/candidates':'candidates','GET /campaigns/:id/b2b-prospects':'candidates','POST /candidates/:id/discard':'candidates',
+ 'POST /candidates/:id/restore-profile':'restore',
  'GET /campaigns/:id/capture-operations/latest':'capture','GET /capture-operations/:id':'capture','GET /candidates/:id/research':'research',
  'GET /campaigns/:id/research-history':'researchHistory','GET /campaigns/:id/metrics':'metrics','GET /campaigns/:id/research-metrics':'researchMetrics',
  'GET /campaigns/:id/b2b-progress':'progress','GET /campaigns/:id/opportunities':'opportunities','GET /campaigns/:id/duplicates':'duplicates','PATCH /duplicates/:id':'duplicates',

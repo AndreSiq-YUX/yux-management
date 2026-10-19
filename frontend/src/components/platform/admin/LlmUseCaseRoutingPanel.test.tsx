@@ -72,4 +72,18 @@ describe('central model editor', () => {
     expect(container.textContent).toContain('campos sem rota não confirmam qual modelo legado está ativo')
     expect(onTest).not.toHaveBeenCalled()
   })
+  it('separates decisions from chat, preserves the manual model/fallback and requires a BRL quote before an explicit test',async()=>{
+    const definitions=[...useCases,{key:'radar_initial_triage',title:'Radar — Triagem',description:'Decisão objetiva',kind:'decision' as const,group:'Radar'}]
+    const decision={...base,id:'decision-route',agentType:'radar_initial_triage',kind:'decision' as const,protocol:'openrouter-decisions-alpha-v1',modelName:'fixture/jev',fallbackModelName:null,fallbackRoutes:[{provider:'openrouter',modelName:'fixture/luna'}],decisionConfig:{enabled:false,mode:'observe',maxAttempts:2,modelPolicies:{}}}
+    const status=vi.fn(async()=>({kind:'decision' as const,task:'radar_initial_triage',policyVersion:7,route:{id:'decision-route',fingerprint:'a'.repeat(64),attempts:[{provider:'openrouter',modelName:'fixture/jev'},{provider:'openrouter',modelName:'fixture/luna'}]},price:{amountBrl:'0.02'},maxAttempts:2,calibrationState:'uncalibrated',protocol:'openrouter-decisions-alpha-v1',calibrations:[]}))
+    await act(async()=>root.render(<LlmUseCaseRoutingPanel providers={[]} routes={[base,decision]} useCases={definitions} onSave={onSave} onTest={onTest} onDecisionStatus={status}/>))
+    await act(async()=>button('Radar — Triagem').click())
+    expect(container.textContent).toContain('/api/alpha/decisions');expect(container.textContent).not.toContain('Temperatura');expect(input('Modelo principal').value).toBe('fixture/jev');expect(input('Modelo do fallback 1').value).toBe('fixture/luna')
+    expect(onTest).not.toHaveBeenCalled();expect(status).not.toHaveBeenCalled()
+    const confirm=vi.spyOn(window,'confirm').mockReturnValue(true)
+    await act(async()=>button('Testar modelo').click())
+    expect(confirm.mock.calls[0][0]).toContain('R$ 0.02');expect(onTest).toHaveBeenCalledWith('decision-route',expect.objectContaining({confirmPaid:true,expectedFingerprint:'a'.repeat(64),expectedPolicyVersion:7,approvedPriceBrl:'0.02'}))
+    await act(async()=>container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    expect(onSave.mock.calls[0][0]).toMatchObject({kind:'decision',modelName:'fixture/jev',fallbackRoutes:decision.fallbackRoutes,decisionConfig:{enabled:false,mode:'observe'}})
+  })
 })

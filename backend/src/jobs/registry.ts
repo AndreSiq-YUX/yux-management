@@ -177,7 +177,7 @@ export const jobRegistry = {
     organizationId: uuid,
   }).passthrough()),
   'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
-  'radar.researchCandidate': registered('external', 300_000, ({pool,env,signal},data) => executeRadarCandidateResearch(pool,env,{runId:String(data.runId),organizationId:String(data.organizationId)},signal), z.object({runId:uuid,organizationId:uuid})),
+  'radar.researchCandidate': registered('external', 600_000, ({pool,env,signal},data) => executeRadarCandidateResearch(pool,env,{runId:String(data.runId),organizationId:String(data.organizationId)},signal), z.object({runId:uuid,organizationId:uuid})),
   'radar.advanceCaptureOperation': registered('external',180_000,({pool,env,queue,signal},data)=>handleRadarCaptureOperation(pool,env,{organizationId:String(data.organizationId),operationId:String(data.operationId)},queue,signal),z.object({organizationId:uuid,operationId:uuid})),
   'radar.advanceResearchRequest': registered('external',180_000,({pool,env,queue},data)=>dispatchRadarResearchRequest(pool,env,{organizationId:String(data.organizationId),researchRequestId:String(data.researchRequestId)},queue),z.object({organizationId:uuid,researchRequestId:uuid})),
   'radar.runRegionalDiscovery': registered('external', 300_000, ({ pool, env, signal }, data) =>

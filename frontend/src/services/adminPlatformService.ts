@@ -120,7 +120,21 @@ export interface AdminLlmRouteTestResult {
   model: string
   provider: string
   checkedAt: string
+  kind?:'chat'|'embedding'|'decision'
+  selectedOption?:string|null
+  contractValid?:boolean
+  resolvedModel?:string
+  requestedModel?:string
+  adapterVersion?:string
+  calibrationState?:string
+  latencyMs?:number
+  usage?:{costUsd:number|null;inputTokens:number|null;outputTokens:number|null}
+  attempts?:Array<{requestedModel:string;resolvedModel:string|null;status:string}>
 }
+export type RadarDecisionModelPolicy={requestBytes?:number;stateBytes?:number;evidenceCount?:number;excerptBytes?:number;estimatedUsdPerAttempt?:number;priceReference?:string}
+export type RadarDecisionRoutingConfig={enabled:boolean;mode:'observe'|'route'|'auto_exclude';maxAttempts:number;timeoutSeconds?:number;deadlineSeconds?:number;modelPolicies:Record<string,RadarDecisionModelPolicy>}
+export type AdminDecisionTestInput={task?:string;confirmPaid:true;requestId:string;expectedFingerprint:string;expectedPolicyVersion:number;approvedPriceBrl:string}
+export type AdminDecisionRouteStatus={kind:'decision';task:string;policyVersion:number;route:{id:string;fingerprint:string;attempts:Array<{provider:string;modelName:string}>};price:{amountBrl:string|null;reason?:string};maxAttempts:number;calibrationState:string;protocol:string;calibrations:Array<{requestedModel:string;resolvedModelSnapshot:string;task:string;metric:string;thresholds:Record<string,number>;datasetVersion:string;approvedAt:string}>}
 
 export interface EmailProviderConnectionInput {
   id?: string
@@ -393,8 +407,10 @@ export class AdminPlatformService {
     return apiRequest<AdminLlmRoute>('/platform/admin/llm-routes', { method: 'POST', body: input })
   }
 
-  async testLlmRoute(routeId: string): Promise<AdminLlmRouteTestResult> {
-    return apiRequest<AdminLlmRouteTestResult>(`/platform/admin/llm-routes/${routeId}/test`, { method: 'POST' })
+  async decisionRouteStatus(routeId:string,task?:string):Promise<AdminDecisionRouteStatus>{return apiRequest(`/platform/admin/llm-routes/${routeId}/decision-status${task?`?task=${encodeURIComponent(task)}`:''}`)}
+  async approveDecisionCalibration(input:Record<string,unknown>){return apiRequest('/platform/admin/radar-decision-calibrations',{method:'POST',body:input})}
+  async testLlmRoute(routeId: string,input?:AdminDecisionTestInput): Promise<AdminLlmRouteTestResult> {
+    return apiRequest<AdminLlmRouteTestResult>(`/platform/admin/llm-routes/${routeId}/test`, { method: 'POST',...(input?{body:input}:{}) })
   }
 
   async getEmailProviderConnections(): Promise<EmailProviderConnection[]> {

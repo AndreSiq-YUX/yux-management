@@ -57,11 +57,13 @@ export function RadarCommercialCompanyDetails({facts,assessment,feedback}:{facts
 type Props={campaign:RadarCommercialCampaign;candidates:RadarCommercialCandidate[];operation:RadarCommercialCapture|null;screen:RadarScreen;history?:CommercialHistory[];opportunities?:CommercialOpportunity[];researchActions?:ReactNode;
  onNavigate:(path:string)=>void;onOpenDetails:(id:string)=>void;onSelect?:(ids:string[])=>void;selectedIds?:string[];onSendCrm?:()=>void;canReview?:boolean;busy?:boolean;
  onOpportunityAction?:(id:string,action:'analyze'|'approve'|'reject'|'optOut'|'convert')=>void;
- onCandidateAction?:(id:string,action:'import'|'discard',input:{analyzeAfterImport:boolean})=>void}
+ onCandidateAction?:(id:string,action:'import'|'discard'|'restore-profile',input:{analyzeAfterImport:boolean})=>void}
 export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],researchActions,onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,onCandidateAction,busy=false}:Props){
  const [query,setQuery]=useState(''),[page,setPage]=useState(0),[expanded,setExpanded]=useState<string|null>(null)
  const [analyzeAfterImport,setAnalyzeAfterImport]=useState(false)
- const filtered=candidates.filter(item=>`${item.title} ${item.facts.cnpj} ${item.facts.city} ${item.facts.state}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))
+ const [showOutside,setShowOutside]=useState(false)
+ const isOutside=(item:RadarCommercialCandidate)=>item.facts.outsideProfile===true&&item.facts.outsideProfileRevision===campaign.configurationRevision
+ const filtered=candidates.filter(item=>(showOutside||!isOutside(item))&&`${item.title} ${item.facts.cnpj} ${item.facts.city} ${item.facts.state}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))
  const pageCount=Math.max(1,Math.ceil(filtered.length/25)),currentPage=Math.min(page,pageCount-1),visible=filtered.slice(currentPage*25,(currentPage+1)*25)
  const c=operation?.counts,finished=c?.completed??0
  return <div className="flex min-w-0 flex-col gap-5">
@@ -94,6 +96,8 @@ export function RadarCommercialResults({campaign,candidates,operation,screen,his
        {open&&<tr><td colSpan={onSelect?5:4} className="border-t bg-muted/20 p-4"><RadarCommercialCompanyDetails facts={item.facts}/>{item.id&&<Button size="sm" variant="outline" className="mt-4" onClick={()=>onOpenDetails(item.id!)}>Ver detalhes completos</Button>}</td></tr>}
       </Fragment>})}
     </tbody></table></div>
+    {candidates.some(isOutside)&&<label className="mt-3 flex gap-2 text-sm"><input type="checkbox" checked={showOutside} onChange={event=>{setShowOutside(event.target.checked);setPage(0)}}/>Incluir empresas fora do público</label>}
+    {showOutside&&onCandidateAction&&candidates.filter(isOutside).map(item=><div key={item.id} className="mt-2 flex flex-wrap items-center gap-2 text-sm"><span>{item.title} · Fora do público</span><Button size="sm" variant="outline" disabled={busy} onClick={()=>onCandidateAction(item.id!,'restore-profile',{analyzeAfterImport:false})}>Reincluir para revisão</Button></div>)}
     {!filtered.length&&<p className="mt-3 text-sm text-muted-foreground">Nenhuma empresa encontrada para este filtro.</p>}
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><Button size="sm" variant="outline" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Anterior</Button><p className="text-sm">Página {currentPage+1} de {pageCount} · {filtered.length} empresas</p><Button size="sm" variant="outline" disabled={currentPage+1>=pageCount} onClick={()=>setPage(currentPage+1)}>Próxima</Button></div>
    </section>

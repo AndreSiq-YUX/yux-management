@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import type pg from 'pg'
 import {getAdminLlmUseCases,validateLlmRouteCapability,type LlmRouteKind} from './llm-routing.js'
+import {decisionConfigSchema} from '../radar/decision-contracts.js'
 
 const numberValue = (value: number | string | null | undefined) => Number(value || 0)
 const objectValue = (value: unknown): Record<string, unknown> =>
@@ -199,6 +200,7 @@ export async function upsertAdminLlmRoute(pool: pg.Pool, input: AdminLlmRouteInp
     // Serialize saves for one logical scope. Do not delete historical duplicates.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify([values[0], values[1], ...values.slice(10, 14)])])
     const capability=validateLlmRouteCapability(input,await getAdminLlmUseCases(client,{sequential:true}))
+    if(capability.kind==='decision'&&input.decisionConfig!==undefined)input.decisionConfig=decisionConfigSchema.parse(input.decisionConfig)
     const extra=[capability.kind,capability.protocol,capability.adapterVersion,input.decisionConfig===undefined?null:JSON.stringify(input.decisionConfig)]
     let id = input.id
     if (!id) {

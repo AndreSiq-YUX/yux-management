@@ -135,4 +135,80 @@ class BusinessMentionV1(_Contract):
         return value
 
 
-radar_contract = TypeAdapter(ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1)
+class _DecisionEvidence(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    id: str=Field(min_length=1,max_length=80)
+    sourceUrl: HttpUrl
+    text: str=Field(min_length=1,max_length=20000)
+    role: Literal['identity','activity','domain','contact']='activity'
+    primary: bool=False
+    contradictory: bool=False
+    scope: Literal['establishment','group','unresolved']='unresolved'
+
+
+class _DecisionOption(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    id: str=Field(pattern=r'^[a-z][a-z0-9_]{0,79}$')
+    description: str=Field(min_length=1,max_length=1000)
+
+
+class DecisionContextV1(_Contract):
+    organizationId: UUID
+    campaignId: UUID
+    candidateId: UUID
+    configurationRevision: int=Field(gt=0,strict=True)
+    task: Literal['radar_initial_triage','radar_next_action','radar_quality_gate']
+    identity: dict[str,str]
+    criteria: dict[str,str|list[str]]
+    evidence: list[_DecisionEvidence]=Field(max_length=30)
+    options: list[_DecisionOption]=Field(max_length=8)
+    humanReviewed: bool=False
+
+    @model_validator(mode='after')
+    def known_fields(self):
+        if set(self.identity)-{'name','legalName','cnpj','city','state','address'} or 'name' not in self.identity or set(self.criteria)-{'segment','offer','products','includeTerms','includeAllTerms','excludeTerms','requiredContacts','minimumUsefulContacts','contactPurpose','desiredCnaes','cnaeRule'}:
+            raise ValueError('radar_decision_context_invalid')
+        return self
+
+
+class _DecisionAttempt(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    requestedModel: str=Field(max_length=200)
+    resolvedModel: str | None=Field(max_length=200)
+    status: Literal['valid','received','rejected']
+    latencyMs: int=Field(ge=0,strict=True)
+    failureCode: str | None=Field(default=None,pattern=r'^(decision_|provider_)[a-z0-9_]+$')
+    usage: dict[str,int|float|str|None]
+
+
+class DecisionResultV1(_Contract):
+    task: Literal['radar_initial_triage','radar_next_action','radar_quality_gate']
+    status: Literal['decided','unavailable','context_incomplete']
+    choice: str | None
+    reasonCode: Literal['fit_supported','outside_activity','identity_unresolved','more_evidence_needed','action_selected','quality_review']
+    evidenceIds: list[str]=Field(max_length=6)
+    attempts: list[_DecisionAttempt]=Field(max_length=10)
+    usage: _Usage
+    probabilities: dict[str,float] | None=None
+    confidence: float | None=Field(default=None,ge=0,le=1,allow_inf_nan=False)
+    requestedModel: str | None=Field(default=None,max_length=200)
+    resolvedModel: str | None=Field(default=None,max_length=200)
+    provider: Literal['openrouter'] | None=None
+    upstreamProvider: str | None=Field(default=None,max_length=200)
+    externalRequestId: str | None=Field(default=None,max_length=200)
+    adapterVersion: Literal['openrouter-decisions-alpha-v1'] | None=None
+    contextVersion: Literal['radar-decision-context-v1'] | None=None
+    questionVersion: Literal['radar-decisions-questions-v1'] | None=None
+    criteriaRubricVersion: Literal['radar-decisions-rubric-v1'] | None=None
+    contextBytes: int | None=Field(default=None,ge=1,le=24000,strict=True)
+    omittedEvidenceIds: list[str] | None=None
+
+    @model_validator(mode='after')
+    def decided_has_contract(self):
+        import math
+        if self.status=='decided' and (not self.choice or not self.probabilities or self.choice not in self.probabilities or any(not math.isfinite(p) or p<0 or p>1 for p in self.probabilities.values()) or abs(sum(self.probabilities.values())-1)>.01 or not all((self.requestedModel,self.resolvedModel,self.adapterVersion,self.contextVersion,self.questionVersion,self.criteriaRubricVersion))):
+            raise ValueError('radar_decision_contract_invalid')
+        return self
+
+
+radar_contract = TypeAdapter(ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1 | DecisionContextV1 | DecisionResultV1)

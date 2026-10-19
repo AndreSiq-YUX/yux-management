@@ -14,6 +14,12 @@
     },
     {
       "$ref": "#/$defs/BusinessMentionV1"
+    },
+    {
+      "$ref": "#/$defs/DecisionContextV1"
+    },
+    {
+      "$ref": "#/$defs/DecisionResultV1"
     }
   ],
   "$defs": {
@@ -291,28 +297,138 @@
     "BusinessMentionV1": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion","name","contacts","sourceUrl","evidenceSpans","subjectScope","needsVerification"],
+      "required": [
+        "schemaVersion",
+        "name",
+        "contacts",
+        "sourceUrl",
+        "evidenceSpans",
+        "subjectScope",
+        "needsVerification"
+      ],
       "properties": {
-        "schemaVersion": {"const": 1},
-        "name": {"type":"string","minLength":2,"maxLength":240},
-        "location": {"type":"object","additionalProperties":false,"properties":{
-          "city":{"type":"string","minLength":1,"maxLength":200},
-          "state":{"type":"string","minLength":1,"maxLength":80},
-          "address":{"type":"string","minLength":1,"maxLength":500}
-        }},
-        "claimedTaxId":{"type":"string","minLength":1,"maxLength":24},
-        "claimedWebsite":{"type":"string","format":"uri","pattern":"^https?://"},
-        "contacts":{"type":"array","maxItems":12,"items":{"type":"object","additionalProperties":false,"required":["kind","value"],"properties":{
-          "kind":{"enum":["email","phone","whatsapp","social"]},"value":{"type":"string","minLength":1,"maxLength":300}
-        }}},
-        "sourceUrl":{"type":"string","format":"uri","pattern":"^https?://"},
-        "observedAt":{"type":"string","format":"date-time"},
-        "subjectScope":{"enum":["company","group","establishment"]},
-        "needsVerification":{"const":true},
-        "evidenceSpans":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["field","evidenceId","excerpt"],"properties":{
-          "field":{"enum":["name","city","state","address","claimedTaxId","claimedWebsite","contact"]},
-          "evidenceId":{"type":"string","minLength":1,"maxLength":80},"excerpt":{"type":"string","minLength":2,"maxLength":1200}
-        }}}
+        "schemaVersion": {
+          "const": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 240
+        },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "city": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "state": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "address": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          }
+        },
+        "claimedTaxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "claimedWebsite": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "contacts": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "email",
+                  "phone",
+                  "whatsapp",
+                  "social"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            }
+          }
+        },
+        "sourceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "subjectScope": {
+          "enum": [
+            "company",
+            "group",
+            "establishment"
+          ]
+        },
+        "needsVerification": {
+          "const": true
+        },
+        "evidenceSpans": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "evidenceId",
+              "excerpt"
+            ],
+            "properties": {
+              "field": {
+                "enum": [
+                  "name",
+                  "city",
+                  "state",
+                  "address",
+                  "claimedTaxId",
+                  "claimedWebsite",
+                  "contact"
+                ]
+              },
+              "evidenceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "excerpt": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 1200
+              }
+            }
+          }
+        }
       }
     },
     "CommercialResearchStatusV1": {
@@ -416,6 +532,587 @@
           ]
         }
       }
+    },
+    "DecisionContextV1": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "organizationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "campaignId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "candidateId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "task": {
+          "type": "string",
+          "enum": [
+            "radar_initial_triage",
+            "radar_next_action",
+            "radar_quality_gate"
+          ]
+        },
+        "identity": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "legalName": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "cnpj": {
+              "type": "string",
+              "maxLength": 24
+            },
+            "city": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "state": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "address": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "criteria": {
+          "type": "object",
+          "properties": {
+            "segment": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "offer": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "products": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "includeTerms": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "includeAllTerms": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "excludeTerms": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "requiredContacts": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "minimumUsefulContacts": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "contactPurpose": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "desiredCnaes": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 20
+              }
+            },
+            "cnaeRule": {
+              "type": "string",
+              "enum": [
+                "required",
+                "advisory"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "evidence": {
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "sourceUrl": {
+                "type": "string",
+                "maxLength": 2000,
+                "format": "uri"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "role": {
+                "default": "activity",
+                "type": "string",
+                "enum": [
+                  "identity",
+                  "activity",
+                  "domain",
+                  "contact"
+                ]
+              },
+              "primary": {
+                "default": false,
+                "type": "boolean"
+              },
+              "contradictory": {
+                "default": false,
+                "type": "boolean"
+              },
+              "scope": {
+                "default": "unresolved",
+                "type": "string",
+                "enum": [
+                  "establishment",
+                  "group",
+                  "unresolved"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "sourceUrl",
+              "text",
+              "role",
+              "primary",
+              "contradictory",
+              "scope"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "options": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,79}$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "id",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "humanReviewed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "organizationId",
+        "campaignId",
+        "candidateId",
+        "configurationRevision",
+        "task",
+        "identity",
+        "criteria",
+        "evidence",
+        "options",
+        "humanReviewed"
+      ],
+      "additionalProperties": false
+    },
+    "DecisionResultV1": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "task": {
+          "type": "string",
+          "enum": [
+            "radar_initial_triage",
+            "radar_next_action",
+            "radar_quality_gate"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "decided",
+            "unavailable",
+            "context_incomplete"
+          ]
+        },
+        "choice": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,79}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "enum": [
+            "fit_supported",
+            "outside_activity",
+            "identity_unresolved",
+            "more_evidence_needed",
+            "action_selected",
+            "quality_review"
+          ]
+        },
+        "evidenceIds": {
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "probabilities": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,79}$"
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedModel": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "resolvedModel": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "provider": {
+          "type": "string",
+          "const": "openrouter"
+        },
+        "upstreamProvider": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "externalRequestId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "adapterVersion": {
+          "type": "string",
+          "const": "openrouter-decisions-alpha-v1"
+        },
+        "contextVersion": {
+          "type": "string",
+          "const": "radar-decision-context-v1"
+        },
+        "questionVersion": {
+          "type": "string",
+          "const": "radar-decisions-questions-v1"
+        },
+        "criteriaRubricVersion": {
+          "type": "string",
+          "const": "radar-decisions-rubric-v1"
+        },
+        "contextBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24000
+        },
+        "omittedEvidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "attempts": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "requestedModel": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "resolvedModel": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "valid",
+                  "received",
+                  "rejected"
+                ]
+              },
+              "latencyMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "failureCode": {
+                "type": "string",
+                "pattern": "^(decision_|provider_)[a-z0-9_]+$"
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "inputTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "outputTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "costUsd": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\d+(?:\\.\\d+)?(?:[eE]-?\\d+)?$"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "inputTokens",
+                  "outputTokens",
+                  "costUsd"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "requestedModel",
+              "resolvedModel",
+              "status",
+              "latencyMs",
+              "usage"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "inputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costUsd": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "inputTokens",
+            "outputTokens",
+            "costUsd"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "task",
+        "status",
+        "choice",
+        "reasonCode",
+        "evidenceIds",
+        "attempts",
+        "usage"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "decided"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "probabilities",
+              "requestedModel",
+              "resolvedModel",
+              "provider",
+              "upstreamProvider",
+              "externalRequestId",
+              "adapterVersion",
+              "contextVersion",
+              "questionVersion",
+              "criteriaRubricVersion",
+              "contextBytes",
+              "omittedEvidenceIds"
+            ],
+            "properties": {
+              "probabilities": {},
+              "requestedModel": {},
+              "resolvedModel": {},
+              "provider": {},
+              "upstreamProvider": {},
+              "externalRequestId": {},
+              "adapterVersion": {},
+              "contextVersion": {},
+              "questionVersion": {},
+              "criteriaRubricVersion": {},
+              "contextBytes": {},
+              "omittedEvidenceIds": {},
+              "choice": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

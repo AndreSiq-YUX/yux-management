@@ -15,7 +15,7 @@ if DATABASE:
 
 
 @pytest.mark.skipif(not DATABASE, reason='isolated PostgreSQL URL required')
-@pytest.mark.parametrize('action',['radar_presence_resolution','radar_discovery_extraction'])
+@pytest.mark.parametrize('action',['radar_presence_resolution','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate'])
 def test_runtime_writer_and_free_revalidation_with_real_postgres_lease_and_tenant_scope(action):
     import psycopg
     target = urlsplit(DATABASE)

@@ -8,6 +8,9 @@ import { testCnpjaProvider } from '../radar/cnpjaClient.js'
 import { testRadarPlaceProvider } from '../radar/place-providers.js'
 import { getAdminLlmUseCases, isEmbeddingUseCase, LLM_PROVIDERS } from './llm-routing.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
+import {decisionConfigSchema} from '../radar/decision-contracts.js'
+import {getRadarDecisionRouteStatus,testRadarDecisionRoute} from '../radar/decision-admin.js'
+import {approveRadarDecisionCalibration,listRadarDecisionCalibrations} from '../radar/decision-calibration.js'
 import {
   getAdminChannelConnections,
   getAdminLlmRouteById,
@@ -155,7 +158,7 @@ const llmRouteParams = z.object({ routeId: z.string().uuid() })
 const llmRouteSchema = z.object({
   kind:z.enum(['chat','embedding','decision','research']).optional(),
   protocol:z.string().min(1).max(100).optional(),
-  decisionConfig:z.record(z.string(),z.unknown()).optional(),
+  decisionConfig:decisionConfigSchema.optional(),
   id: z.string().uuid().optional(),
   agentType: z.string().trim().min(1).max(200).nullable(),
   organizationId: z.string().uuid().nullable().optional(),
@@ -411,14 +414,26 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: params.error.flatten() })
     const route = await getAdminLlmRouteById(app.pg, params.data.routeId)
     if (!route) return reply.code(404).send({ error: 'llm_route_not_found' })
+    if(route.kind==='decision')return testRadarDecisionRoute(app.pg,app.config,user,route,request.body)
+    if(route.kind!=='chat'&&route.kind!=='embedding')return reply.code(409).send({error:'llm_route_classification_required'})
     const provider = await getProviderConnectionByKey(app.pg, route.provider)
     if (!provider) return reply.code(409).send({ error: 'llm_provider_not_configured' })
     const apiKey = await loadPlatformProviderSecret(app.pg, provider.id, 'api_key', providerSecretKeyMaterial(app.config))
       ?? providerCredentialFromEnvironment(app.config, provider.providerKey)
     if (route.status !== 'active') return reply.code(409).send({ error: 'llm_route_inactive' })
-    const result = await testLlmRoute(provider.providerKey, apiKey, provider.publicConfig, route.modelName, isEmbeddingUseCase(route.agentType))
+    const result = await testLlmRoute(provider.providerKey, apiKey, provider.publicConfig, route.modelName, route.kind==='embedding')
     return { ...result, model: route.modelName, provider: provider.providerKey, checkedAt: new Date().toISOString() }
   })
+
+  app.get('/admin/llm-routes/:routeId/decision-status',async(request,reply)=>{
+    requireAdminRole(request);const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=llmRouteParams.parse(request.params),route=await getAdminLlmRouteById(app.pg,params.routeId)
+    if(!route)return reply.code(404).send({error:'llm_route_not_found'})
+    const query=z.object({task:z.enum(['radar_initial_triage','radar_next_action','radar_quality_gate']).optional()}).parse(request.query)
+    return getRadarDecisionRouteStatus(app.pg,user,route,query.task)
+  })
+  app.get('/admin/radar-decision-calibrations',async(request,reply)=>{requireAdminRole(request);const user=await getAuthenticatedUser(request,reply);if(!user)return reply;return listRadarDecisionCalibrations(app.pg,user)})
+  app.post('/admin/radar-decision-calibrations',async(request,reply)=>{requireAdminRole(request);const user=await getAuthenticatedUser(request,reply);if(!user)return reply;return approveRadarDecisionCalibration(app.pg,user,request.body)})
 
   app.get('/admin/email-provider-connections', async (request, reply) => {
     requireAdminRole(request)

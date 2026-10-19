@@ -34,13 +34,14 @@ export async function resolveRadarAnalysisRetry(db:Pick<pg.Pool,'query'>,input:{
 }
 
 export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,organizationId:string,searchConfiguration:unknown,actions:string[],campaignOperationalVersion=1){
+ if(actions.some(action=>['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(action)))actions=[...actions,'radar_decision_default']
  const policy=await loadRadarOperationalLimits(db),research=resolveRadarSearchConfiguration(searchConfiguration).research
  const rows=(await db.query(`SELECT rule.* FROM public.organizations organization
   LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
   JOIN public.model_routing_rules rule ON rule.agent_type=ANY($2::text[]) AND rule.status='active' AND rule.routing_tier='default'
    AND (rule.organization_id IS NULL OR rule.organization_id=organization.id) AND (rule.client_id IS NULL OR rule.client_id=organization.client_id)
    AND (rule.contract_id IS NULL OR rule.contract_id=contract.id) AND rule.agent_id IS NULL WHERE organization.id=$1 ORDER BY rule.id`,[organizationId,[...new Set(actions)].sort()])).rows
- const routes=rows.map(rule=>({id:rule.id,version:rule.version,action:rule.agent_type,organizationId:rule.organization_id,clientId:rule.client_id,contractId:rule.contract_id,
+ const routes=rows.map(rule=>({id:rule.id,version:numericSnapshot(rule.version),action:rule.agent_type,organizationId:rule.organization_id,clientId:rule.client_id,contractId:rule.contract_id,
   provider:rule.provider,model:rule.model_name,fallbackModel:rule.fallback_model_name,
   fallbacks:Array.isArray(rule.fallback_routes)?rule.fallback_routes.map(fallbackSnapshot):[],
   maxInputTokens:rule.max_input_tokens,maxOutputTokens:rule.max_output_tokens,maxCostPerRun:numericSnapshot(rule.max_cost_per_run),temperature:numericSnapshot(rule.temperature)}))
@@ -75,7 +76,8 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
   const runs=(await client.query('SELECT id,candidate_id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND campaign_id=$2 AND candidate_id=ANY($3::uuid[])',[input.organizationId,input.campaignId,items.map(item=>item.candidateId)])).rows
   const bound=items.map(item=>{
    const receipt=receipts.find(row=>row.id===item.previousReceiptId),key=receipt?.action==='radar_presence_resolution'?'presence':'semantic'
-   if(!receipt||!runs.some(run=>run.candidate_id===item.candidateId&&run.calls[key]?.evidenceHash&&(run.calls[key].requestId??`${run.id}${key==='presence'?':presence':''}:${run.calls[key].evidenceHash}`)===receipt.request_id))throw fail('radar_analysis_retry_scope_invalid',403)
+   const decision=['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(receipt?.action)
+   if(!receipt||!runs.some(run=>run.candidate_id===item.candidateId&&(decision?Object.values(run.calls).some((call:any)=>call.source==='openrouter_decision'&&call.requestId===receipt.request_id):run.calls[key]?.evidenceHash&&(run.calls[key].requestId??`${run.id}${key==='presence'?':presence':''}:${run.calls[key].evidenceHash}`)===receipt.request_id)))throw fail('radar_analysis_retry_scope_invalid',403)
    if(receipt.status==='completed'||receipt.status==='rejected_before_provider')throw fail('radar_analysis_retry_not_required')
    if(receipt.status==='reserved'&&receipt.lease_until&&new Date(receipt.lease_until).getTime()>now)throw fail('radar_analysis_still_running')
    return{...item,action:receipt.action}
@@ -84,9 +86,9 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
   if(active)throw fail('radar_analysis_retry_already_authorized')
   const policy=await radarAnalysisRetryPolicy(client,input.organizationId,campaign.search_configuration,bound.map(item=>item.action),Number(campaign.operational_policy_version??1))
   if(new Set(items.map(item=>item.candidateId)).size>policy.policy.limits.maxNewCompaniesPerLot)throw fail('radar_operational_limit_exceeded')
-  if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action)))throw fail('radar_analysis_retry_route_missing')
+  if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action||['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(item.action)&&route.action==='radar_decision_default')))throw fail('radar_analysis_retry_route_missing')
   const research=policy.snapshot.research
-  if(bound.some(item=>item.action==='radar_presence_resolution'?!research.presenceResolutionEnabled:!(research.semanticQualificationEnabled||research.profileEnabled||research.sizeAssessment.enabled)))throw fail('radar_analysis_retry_stage_disabled')
+  if(bound.some(item=>['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(item.action)?!research.enabled:item.action==='radar_presence_resolution'?!research.presenceResolutionEnabled:!(research.semanticQualificationEnabled||research.profileEnabled||research.sizeAssessment.enabled)))throw fail('radar_analysis_retry_stage_disabled')
   const rows=[]
   for(const item of bound)rows.push((await client.query(`INSERT INTO public.radar_analysis_retry_authorizations(organization_id,campaign_id,candidate_id,request_id,batch_hash,configuration_revision,previous_analysis_receipt_id,action,approved_by,expires_at,acknowledged_previous_charge,policy_snapshot,policy_hash)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12) RETURNING *`,[input.organizationId,input.campaignId,item.candidateId,input.requestId,batchHash,input.configurationRevision,item.previousReceiptId,item.action,user.id,input.expiresAt,JSON.stringify(policy.snapshot),policy.hash])).rows[0])
