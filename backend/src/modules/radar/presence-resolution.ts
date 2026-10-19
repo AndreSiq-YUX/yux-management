@@ -1,6 +1,7 @@
 import {z} from 'zod'
 import {isRadarInstitutionalSource} from './source-identity.js'
 import type {RadarBusinessIdentity} from './site-discovery.js'
+import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 export type RadarPresenceEvidence={id:string;url:string;text:string;observedAt:string;kind:'institutional_candidate'|'directory'|'social'|'third_party'}
 const schema=z.object({candidateId:z.string().max(80).nullable(),scope:z.enum(['establishment','group','unresolved']),reason:z.string().min(8).max(1500),
   claims:z.array(z.object({evidenceId:z.string().max(80),excerpt:z.string().min(8).max(1500)}).strict()).max(8),provider:z.string().optional(),model:z.string().optional(),
@@ -16,8 +17,8 @@ export function validateRadarPresenceResolution(value:unknown,identity:RadarBusi
   if(result.candidateId===null)return{scope:'unresolved',reason:result.reason,claims,usage:result.usage}
   const page=byId.get(result.candidateId)
   if(!page||page.kind!=='institutional_candidate'||!isRadarInstitutionalSource(page.url,{text:page.text})||!claims.some(claim=>claim.evidenceId===page.id))return fail()
-  const cnpjs=[...page.text.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)].map(match=>match[0].replace(/\D/g,''))
-  const expected=identity.cnpj?.replace(/\D/g,'')
+  const cnpjs=extractRadarCnpjIdentifiers(page.text)
+  const expected=normalizeRadarCnpjIdentifier(identity.cnpj)
   if(expected&&cnpjs.some(value=>value!==expected&&(result.scope==='establishment'||value.slice(0,8)!==expected.slice(0,8))))return fail('radar_presence_scope_conflict')
   return{websiteUrl:result.scope==='unresolved'?undefined:page.url,scope:result.scope,reason:result.reason,claims,provider:result.provider,model:result.model,usage:result.usage}
 }

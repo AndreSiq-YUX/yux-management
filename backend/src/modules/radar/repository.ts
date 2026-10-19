@@ -1,5 +1,6 @@
 import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
+import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 import {admitRadarCapturePage,captureError} from './capture-operation.js'
 import {loadRadarCapturePageAccounting,type CaptureAccountingInput} from './capture-capacity.js'
 import {inspectRadarContinuationState} from './continuation-state.js'
@@ -162,7 +163,8 @@ export function buildRadarDedupeKey(input: {
   city?: string | null
   state?: string | null
 }) {
-  if (input.cnpj) return `cnpj:${input.cnpj.replace(/\D/g, '')}`
+  const cnpj=normalizeRadarCnpjIdentifier(input.cnpj)
+  if (cnpj) return `cnpj:${cnpj}`
   if (input.websiteUrl) return `domain:${normalizeDomain(input.websiteUrl)}`
   if (input.phoneRaw) return `phone:${input.phoneRaw.replace(/\D/g, '')}`
   return `name_city:${normalizeToken(input.tradeName || input.legalName || 'empresa')}:${normalizeToken(input.city || '')}:${normalizeToken(input.state || '')}`

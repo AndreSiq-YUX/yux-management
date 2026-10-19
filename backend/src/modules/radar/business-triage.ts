@@ -1,5 +1,6 @@
 import type { RadarBusinessSiteInspection } from './b2b-site-inspection.js'
 import { normalizeRadarText, type RadarSearchConfiguration } from './search-configuration.js'
+import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 
 export type RadarBusinessTriage = {
   targetStatus: 'confirmed' | 'review' | 'not_target' | 'insufficient'
@@ -16,9 +17,9 @@ export function triageRadarBusiness(input: { name: string; legalName?: string; c
   const hasTerm = (term: string) => (` ${text} `).includes(` ${normalizeRadarText(term)} `)
   const names = [input.name, input.legalName].filter((value): value is string => Boolean(value))
     .map(value => normalizeRadarText(value).replace(/\b(?:ltda|eireli|epp|me|sa)\b/g, '').trim())
-  const cnpj = input.cnpj?.replace(/\D/g, '')
+  const cnpj = normalizeRadarCnpjIdentifier(input.cnpj)
   const identity = names.some(name => name.length >= 3 && text.includes(name))
-    || Boolean(cnpj && cnpj.length === 14 && input.website?.text?.replace(/\D/g, '').includes(cnpj))
+    || Boolean(cnpj && extractRadarCnpjIdentifiers(input.website?.text??'').includes(cnpj))
   const expectedCnaes = input.desiredCnaes.map(value => value.replace(/\D/g, ''))
   const cnaeMatch = expectedCnaes.length > 0 && input.cnaes.some(value => expectedCnaes.includes(value.replace(/\D/g, '')))
   const evidenceUrls = input.website?.status === 'verified_present' && input.website.finalUrl ? [input.website.finalUrl] : []

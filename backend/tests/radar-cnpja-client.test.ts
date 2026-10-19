@@ -2,6 +2,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildCnpjaCandidateSnippet, lookupCnpjaOffice, searchCnpjaAdvanced, searchCnpjaAdvancedPage, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
 
 describe('radar CNPJa client', () => {
+  it('preserves the alphanumeric identifier in lookups and normalized discovery without silently stripping letters', async () => {
+    const fetchImpl=vi.fn(async()=>({ok:true,json:async()=>({records:[{taxId:'12.ABC.345/01DE-35',company:{name:'Empresa de teste'}}]})})) as unknown as typeof fetch
+    await lookupCnpjaOffice({apiKey:'fixture',taxId:'12.abc.345/01de-35',fetchImpl})
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('/office/12ABC34501DE35?'),expect.anything())
+    expect((await searchCnpjaAdvanced({apiKey:'fixture',fetchImpl}))[0].taxId).toBe('12ABC34501DE35')
+  })
+  it('rejects malformed lookup identifiers before sending a request, without adding checksum rules to legacy callers', async () => {
+    const fetchImpl=vi.fn() as unknown as typeof fetch
+    await expect(lookupCnpjaOffice({apiKey:'fixture',taxId:'../../../foo?key=secret',fetchImpl})).rejects.toThrow('cnpja_invalid_tax_id')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
   it('searches advanced company records and normalizes candidates', async () => {
     const fetchImpl = vi.fn(async (url: string, _init: RequestInit) => ({
       ok: true,
@@ -192,7 +203,7 @@ describe('radar CNPJa client', () => {
     const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({message:'request validation failed',
       constraints:[`invalid authorization ${apiKey}`,'taxId must have 14 digits'],
     }),{status:400})) as typeof fetch
-    const error=await lookupCnpjaOffice({apiKey,taxId:'123',fetchImpl}).catch(error=>error)
+    const error=await lookupCnpjaOffice({apiKey,taxId:'12345678000190',fetchImpl}).catch(error=>error)
     expect(error.message).toContain('taxId must have 14 digits')
     expect(error.message).not.toContain(apiKey)
   })

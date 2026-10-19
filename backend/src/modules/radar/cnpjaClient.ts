@@ -1,3 +1,5 @@
+import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
+
 export type CnpjaProviderConfig = {
   baseUrl?: string
   advancedSearchPath?: string
@@ -121,7 +123,8 @@ export async function lookupCnpjaOffice(input: CnpjaOfficeLookupInput) {
   if (!input.apiKey) throw Object.assign(new Error('cnpja_api_key_missing'), { statusCode: 400 })
   const config = resolveConfig(input.config)
   const fetchImpl = input.fetchImpl ?? fetch
-  const taxId = input.taxId.replace(/\D/g, '')
+  const taxId = normalizeRadarCnpjIdentifier(input.taxId)
+  if(!taxId)throw Object.assign(new Error('cnpja_invalid_tax_id'),{statusCode:400})
   const path = config.officeLookupPath.replace(':taxId', taxId)
   const url = new URL(`${config.baseUrl}${path.startsWith('/') ? path : `/${path}`}`)
   url.searchParams.set('strategy', config.defaultStrategy)
@@ -272,7 +275,7 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
   const openingDate = stringValue(record.founded) || stringValue(record.openingDate) || stringValue(record.dataAbertura)
   const email = firstContact(emails)
   const phone = firstPhone(phones)
-  const cleanedTaxId = taxId ? taxId.replace(/\D/g, '') : undefined
+  const cleanedTaxId = normalizeRadarCnpjIdentifier(taxId)
   const sideActivities = arrayValue(record.sideActivities) || arrayValue(record.secondaryActivities) || []
   const cnaes = [mainActivity, ...sideActivities]
     .map(activity => objectValue(activity))

@@ -9,6 +9,7 @@ import { requireRadarScope } from './access.js'
 import { findRadarDataSource, evaluateRadarSourceGovernance, recordRadarSourceUsage, isRadarEnabledOrganization } from './repository.js'
 import { getRadarResearchAvailability } from './research-availability.js'
 import { normalizeRadarText,resolveRadarSearchConfiguration, type RadarSearchConfiguration } from './search-configuration.js'
+import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 import { discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl, type RadarBusinessIdentity, type RadarPresenceDiscovery } from './site-discovery.js'
 import { collectRadarSiteEvidence, radarHtmlLinks, isRetryableRadarPage, RADAR_READER_VERSION, type RadarSiteEvidence } from './site-evidence.js'
 import { extractRadarContacts,isRadarContactSource, type RadarContactEvidence } from './contact-evidence.js'
@@ -92,9 +93,9 @@ function uniqueRadarPages(pages:RadarSiteEvidence[]){
   return [...byUrl.values()]
 }
 function cnpjConflict(identity:RadarBusinessIdentity,text:string,group=false){
-  const expected=identity.cnpj?.replace(/\D/g,'')
-  return !!expected&&[...text.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)]
-    .some(match=>{const value=match[0].replace(/\D/g,'');return group?value.slice(0,8)!==expected.slice(0,8):value!==expected})
+  const expected=normalizeRadarCnpjIdentifier(identity.cnpj)
+  return !!expected&&extractRadarCnpjIdentifiers(text)
+    .some(value=>group?value.slice(0,8)!==expected.slice(0,8):value!==expected)
 }
 function currentDossierProjection(output:Output,currentRevision?:number,dossierRevision?:number,contactPurpose:RadarSearchConfiguration['research']['contactPurpose']='general',identity?:RadarBusinessIdentity,identityChanged=false):Output{
   const historical=currentRevision!==undefined&&dossierRevision!==currentRevision

@@ -3,6 +3,7 @@ import type {RadarContactEvidence} from './contact-evidence.js'
 import {isRadarContactSource} from './contact-evidence.js'
 import {createHash} from 'node:crypto'
 import {radarResearchDependencyVersions} from './evidence-version.js'
+import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
 export function radarPayloadIdentityHash(payload:Record<string,unknown>,title?:string):string{
@@ -29,7 +30,7 @@ export function mergeRadarCompanyResearch(previous:Record<string,unknown>,incomi
   :previous.researchRunId&&(prior.websiteUrl||Array.isArray(prior.publicContacts)&&prior.publicContacts.length)?snapshot:Object.keys(historical).length?{...historical,belongsToCurrentIdentity:sameIdentity&&historical.belongsToCurrentIdentity===true}:snapshot
  result.researchRefreshIncomplete=incomplete
  if(incomplete&&!incoming.websiteUrl&&prior.websiteUrl&&previous.braveMatchStatus==='manual_matched'&&!options.identityConflict
-   &&(!options.identityCnpj||String(previous.cnpj??'').replace(/\D/g,'')===options.identityCnpj.replace(/\D/g,''))&&fresh(previous.braveObservedAt)){
+   &&(!options.identityCnpj||!!normalizeRadarCnpjIdentifier(options.identityCnpj)&&normalizeRadarCnpjIdentifier(previous.cnpj)===normalizeRadarCnpjIdentifier(options.identityCnpj))&&fresh(previous.braveObservedAt)){
   result.websiteUrl=prior.websiteUrl;result.websiteStatus='unverified';result.researchAssociationNeedsReview=true
  }
  if(!incomplete||!sameIdentity)return result

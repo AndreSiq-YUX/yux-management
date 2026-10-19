@@ -1,9 +1,10 @@
 import type { RadarResearchPolicy } from './search-configuration.js'
 import type { RadarScaleSignal } from './company-profile.js'
+import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 export type RadarSizeFact=Omit<RadarScaleSignal,'scope'>&{scope:'establishment'|'group'|'unresolved'}
 export function registryRadarSizeFacts(payload:Record<string,unknown>,now=new Date()):RadarSizeFact[] {
-  const cnpj=typeof payload.cnpj==='string'?payload.cnpj.replace(/\D/g,''):''
-  if(cnpj.length!==14)return []
+  const cnpj=normalizeRadarCnpjIdentifier(payload.cnpj)
+  if(!cnpj)return []
   const sourceUrl=`https://cnpja.com/office/${cnpj}`,facts:RadarSizeFact[]=[]
   const opening=typeof payload.openingDate==='string'?payload.openingDate:''
   if(/^\d{4}-\d{2}-\d{2}$/.test(opening)&&Number.isFinite(Date.parse(opening))&&Date.parse(opening)<=now.getTime()) {

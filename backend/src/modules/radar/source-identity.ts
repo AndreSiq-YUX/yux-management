@@ -1,4 +1,5 @@
 import {normalizeRadarText} from './search-configuration.js'
+import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 
 export function classifyRadarSource(value:string,evidence:{title?:string;text?:string;html?:string}={}) {
   type Role='institutional_candidate'|'government_reference'|'directory_reference'|'editorial_reference'|'social_profile'|'external_reference'
@@ -20,7 +21,7 @@ export function classifyRadarSource(value:string,evidence:{title?:string;text?:s
       &&/(?:diario oficial|publicado por|reportagem|noticia sobre|jornal publica)/.test(text))return result('third_party','Publicação de terceiro; usar como evidência, não como site da empresa.','editorial_reference')
     const known=/(^|\.)(serasaexperian\.com\.br|empresadois\.com\.br|dardus\.com\.br|econodata\.com\.br|cnpja\.com|cnpj\.biz|casadosdados\.com\.br|solutudo\.com\.br|telelistas\.net|cadastroempresa\.com\.br|restaurantepertodemim\.com|diariocidade\.com|balancos\.com\.br|listatudo\.com\.br|empresaqui\.com\.br|emis\.com)$/.test(host)
     const structured=/\/(?:cnpj|consulta[-_]?gratis|consulta[-_]?empresa|consulta[-_]?cnpj|empresas?\/\d)(?:\/|-|$|\d)/i.test(path)
-      ||/\/(?:fornecedor|empresa)\/[^/]*\d{14}/i.test(path)
+      ||/\/(?:fornecedor|empresa)\/[^/]*[A-Z0-9]{12}\d{2}/i.test(path)
       ||/\/(?:guia|diretorio|lista[-_]?completa)\/.+/i.test(path)
     const directoryText=/consulta (?:gratis|gratuita|cnpj)|consultar cnpj|dados cadastrais da empresa|este nao e o site da empresa|(?:maior )?site de busca de empresas|catalogo de empresas|encontre empresas por cidade e segmento/.test(text)
     if(known||structured||directoryText)return result('directory','Cadastro de terceiro: citar o CNPJ não comprova propriedade da página ou de seus contatos.')
@@ -44,6 +45,6 @@ export function hasRadarOwnershipSignal(url:string,identity:{name:string;legalNa
   const text=normalizeRadarText(evidence.text)
   if(names.some(name=>text.includes(`somos ${name}`)||text.includes(`${name} e nossa razao social`)))return true
   const footer=normalizeRadarText((evidence.html?.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/i)?.[1]??'').replace(/<[^>]+>/g,' '))
-  const cnpj=identity.cnpj?.replace(/\D/g,'')
-  return !!cnpj&&footer.replace(/\D/g,'').includes(cnpj)&&names.some(name=>footer.includes(name))
+  const cnpj=normalizeRadarCnpjIdentifier(identity.cnpj)
+  return !!cnpj&&extractRadarCnpjIdentifiers(footer).includes(cnpj)&&names.some(name=>footer.includes(name))
 }

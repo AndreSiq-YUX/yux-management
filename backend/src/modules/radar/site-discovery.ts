@@ -3,15 +3,17 @@ import { publicRadarUrl, type RadarWebHit } from './web-search.js'
 import {classifyRadarSource,isRadarInstitutionalSource} from './source-identity.js'
 import {radarResearchQueries} from './research-planner.js'
 import {hasRadarSearchCapacity,type RadarSearchCapacity,type RadarSearchSource,type RadarWebSearchSource} from './search-capacity.js'
+import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 export type RadarBusinessIdentity = { name: string; legalName?: string; cnpj?: string; city?: string; state?: string; address?: string; phone?: string; websiteUrl?: string }
 export type RadarPresenceDiscovery = { association: 'confirmed' | 'review' | 'not_found_in_consulted_sources' | 'blocked';
   websiteUrl?: string; hits: RadarWebHit[]; suggestions: RadarWebHit[]; limitations: string[]; queries: number }
 export type RadarIdentityMatch = { association: 'confirmed' | 'review'; scope: 'establishment' | 'group' | 'unresolved'; reasons: string[] }
 export function compareRadarBusinessIdentity(identity: RadarBusinessIdentity, content: string): RadarIdentityMatch {
   const text = normalizeRadarText(content)
-  const cnpjs = [...content.matchAll(/\b\d{2}[. ]?\d{3}[. ]?\d{3}[/ ]?\d{4}[- ]?\d{2}\b/g)].map(match => match[0].replace(/\D/g, ''))
+  const cnpjs = extractRadarCnpjIdentifiers(content)
   if (identity.cnpj && cnpjs.length) {
-    const expected = identity.cnpj.replace(/\D/g, '')
+    const expected = normalizeRadarCnpjIdentifier(identity.cnpj)
+    if(!expected)return {association:'review',scope:'unresolved',reasons:['Identificador cadastral inválido; conferir a identidade.']}
     if (cnpjs.every(value => value === expected)) return {association:'confirmed',scope:'establishment',reasons:['CNPJ do estabelecimento presente na fonte.']}
     return {association:'review',scope:cnpjs.some(value=>value.slice(0,8)===expected.slice(0,8))?'group':'unresolved',reasons:['A fonte menciona CNPJ diferente; conferir estabelecimento e grupo.']}
   }
