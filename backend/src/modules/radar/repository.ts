@@ -235,8 +235,10 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
     const configuration = resolveRadarSearchConfiguration(input.searchConfiguration)
     validateRadarOperationalConfiguration(configuration,(await loadRadarOperationalLimits(client)).limits,input.dailyLimit)
     const criteria = (config: RadarSearchConfiguration) => {
-      const { batch: _batch, exportFields: _fields, crmDestination:_destination, ...searchCriteria } = config
-      return searchCriteria
+      const { batch: _batch, exportFields: _fields, crmDestination:_destination,sources:_sources,research,braveQueryTemplate:_template, ...searchCriteria } = config
+      return {...searchCriteria,research:{contactPurpose:research.contactPurpose,completion:research.completion,
+        presenceResolutionEnabled:research.presenceResolutionEnabled,semanticQualificationEnabled:research.semanticQualificationEnabled,
+        profileEnabled:research.profileEnabled,sizeAssessment:research.sizeAssessment}}
     }
     const oldSearch = JSON.stringify([row.target_city, row.target_state, row.target_segment, row.target_states, row.target_keywords, row.target_cnaes,
       row.product_focus, row.offer_type, criteria(resolveRadarSearchConfiguration(row.search_configuration))])
@@ -248,12 +250,14 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
       `UPDATE public.radar_campaigns SET name = $3, target_segment = $4, target_city = $5, target_state = $6,
          target_states = $7, target_keywords = $8, target_cnaes = $9, product_focus = $10, offer_type = $11,
          budget_limit = $12, daily_limit = $13, search_configuration = $14::jsonb,
-         configuration_revision = configuration_revision + $15, updated_at = NOW()
+         configuration_revision = configuration_revision + $15,commercial_criteria_revision=commercial_criteria_revision+$15,
+         operational_policy_version=operational_policy_version+$16,updated_at = NOW()
        WHERE id = $1 AND organization_id = $2 RETURNING *`,
       [campaignId, input.organizationId, input.name.trim(), input.targetSegment.trim(), input.targetCity?.trim() ?? null,
         input.targetState?.trim().toUpperCase() ?? null, input.targetStates ?? [], input.targetKeywords ?? [],
         input.targetCnaes ?? [], input.productFocus ?? [], input.offerType.trim(), input.budgetLimit ?? null,
-        input.dailyLimit ?? row.daily_limit, JSON.stringify(configuration), changed ? 1 : 0],
+        input.dailyLimit ?? row.daily_limit, JSON.stringify(configuration), changed ? 1 : 0,
+        JSON.stringify(resolveRadarSearchConfiguration(row.search_configuration))!==JSON.stringify(configuration)||input.dailyLimit!==undefined&&input.dailyLimit!==row.daily_limit||input.budgetLimit!==undefined&&input.budgetLimit!==Number(row.budget_limit)?1:0],
     )
     if (changed) await client.query(
       `UPDATE public.radar_b2b_reviews SET approved_by = NULL, approved_at = NULL, target_status = 'review',
@@ -2657,6 +2661,7 @@ export function mapCampaign(row: RadarCampaignRow): RadarCampaign {
     productFocus: row.product_focus ?? [],
     searchConfiguration: resolveRadarSearchConfiguration(row.search_configuration),
     configurationRevision: row.configuration_revision ?? 1,
+    commercialCriteriaRevision:row.commercial_criteria_revision??row.configuration_revision??1,
     targetKeywords: row.target_keywords ?? [],
     targetCnaes: row.target_cnaes ?? [],
     offerType: row.offer_type,

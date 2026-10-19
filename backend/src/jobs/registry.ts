@@ -32,6 +32,7 @@ import {
   handleSandboxChannelSimulation,
 } from './handlers/providers.js'
 import { handleRadarOpportunityAnalysis, handleRadarRegionalDiscovery, handleRadarRegionalVerification,handleRadarCaptureOperation } from './handlers/radar.js'
+import {dispatchRadarResearchRequest} from '../modules/radar/research-requests.js'
 import { executeRadarCandidateResearch } from '../modules/radar/research-service.js'
 import { handleStrategyAdminChat } from './handlers/strategy.js'
 import { handleStrategyIndexKnowledge } from '../modules/strategy-engine/ingestion.js'
@@ -178,6 +179,7 @@ export const jobRegistry = {
   'radar.analyzeOpportunity': registered('ingestion', 180_000, ({ pool, env }, data) => handleRadarOpportunityAnalysis(pool, env, data)),
   'radar.researchCandidate': registered('external', 300_000, ({pool,env,signal},data) => executeRadarCandidateResearch(pool,env,{runId:String(data.runId),organizationId:String(data.organizationId)},signal), z.object({runId:uuid,organizationId:uuid})),
   'radar.advanceCaptureOperation': registered('external',180_000,({pool,env,queue,signal},data)=>handleRadarCaptureOperation(pool,env,{organizationId:String(data.organizationId),operationId:String(data.operationId)},queue,signal),z.object({organizationId:uuid,operationId:uuid})),
+  'radar.advanceResearchRequest': registered('external',180_000,({pool,env,queue},data)=>dispatchRadarResearchRequest(pool,env,{organizationId:String(data.organizationId),researchRequestId:String(data.researchRequestId)},queue),z.object({organizationId:uuid,researchRequestId:uuid})),
   'radar.runRegionalDiscovery': registered('external', 300_000, ({ pool, env, signal }, data) =>
       handleRadarRegionalDiscovery(pool, env, data, signal), z.object({ organizationId: uuid, campaignId: uuid, requestedBy: uuid, configurationRevision: z.number().int().positive().optional() })),
   'radar.verifyRegionalCandidates': registered('external', 300_000, ({ pool, env, signal, queue }, data) =>

@@ -31,7 +31,7 @@ vi.mock('@/services/radarService', () => ({radarService:{
   getCrmDestinations:vi.fn(async()=>[]),
   getLatestCaptureOperation:vi.fn(async()=>({operation:null})),getCaptureOperation:vi.fn(),startCaptureOperation:vi.fn(),resumeCaptureOperation:vi.fn(),
   capturePreflight:vi.fn(async()=>({stateId:'a'.repeat(64),allowed:true,requiresLimitsApproval:false,remaining:20,limits:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},attemptedQueries:0,successfulPagesByScope:{},optimisticAdditionalCapacity:20,minimumAdditionalQueries:2,blockers:[],checks:[]})),
-  startCandidateResearch:vi.fn(async()=>({runId:'run',status:'queued',reused:false})),
+  startCandidateResearch:vi.fn(async()=>({runId:'run',status:'queued',reused:false})),queueResearchRequest:vi.fn(async(_campaignId:string,input:{candidateIds:string[]})=>({requestId:'request',state:'accepted',items:input.candidateIds.map(candidateId=>({candidateId,state:'accepted',message:'Pesquisa solicitada.'}))})),
   getResearchHistory:vi.fn(async()=>[{id:'run',candidateId:'candidate',companyName:'Empresa pesquisada',configurationRevision:2,operation:'reanalyze',status:'succeeded',updatedAt:'2026-10-13T12:00:00Z'}]),
   getB2bProspects:vi.fn(async()=>[]),getB2bProgress:vi.fn(async()=>({candidates:0,checked:0,confirmed:0,approved:0,scopes:[]})),runB2bBatch:vi.fn(async()=>({status:'queued'})),
   getOpportunities:vi.fn(async () => []),getMetrics:vi.fn(async () => null),
@@ -56,10 +56,10 @@ describe('Radar campaign creation entry point', () => {
       await act(async()=>select!.click())
       const complete=[...container.querySelectorAll('button')].find(button=>button.textContent==='Completar dados')!
       await act(async()=>complete.click())
-      const calls=vi.mocked(radarService.startCandidateResearch).mock.calls
-      expect(calls).toHaveLength(4)
-      expect(calls.map(call=>call[0]).sort()).toEqual(['selected-0','selected-1','selected-2','selected-3'])
-      expect(calls.every(call=>call[1].allowSemanticRefresh===true&&call[1].configurationRevision===2)).toBe(true)
+      const calls=vi.mocked(radarService.queueResearchRequest).mock.calls
+      expect(calls).toHaveLength(1)
+      expect(calls[0]).toEqual(['campaign',expect.objectContaining({candidateIds:['selected-0','selected-1','selected-2','selected-3'],allowSemanticRefresh:true,criteriaRevision:2,requestId:expect.any(String)})])
+      expect(radarService.startCandidateResearch).not.toHaveBeenCalled()
       expect(container.textContent).not.toContain('execução existente reaproveitada')
     }finally{act(()=>root.unmount());container.remove();confirm.mockRestore();vi.mocked(radarService.getCandidates).mockResolvedValue([]);vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})}
   })
@@ -311,7 +311,7 @@ describe('Radar campaign creation entry point', () => {
     expect([...container.querySelectorAll('button')].find(button=>button.textContent==='Atualizar pesquisa')!.disabled).toBe(true)
     vi.spyOn(window,'confirm').mockReturnValue(true)
     await act(async()=>button.click())
-    expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'reanalyze'}))
+    expect(radarService.queueResearchRequest).toHaveBeenCalledWith('campaign',expect.objectContaining({intent:'reanalyze',candidateIds:['candidate']}))
     act(()=>root.unmount())
     vi.mocked(radarService.getCandidates).mockResolvedValue([])
     vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})

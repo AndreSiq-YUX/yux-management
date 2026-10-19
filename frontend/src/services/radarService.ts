@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestText } from '@/lib/apiClient'
+import type {RadarResearchRequestInput,RadarResearchRequestResult} from '@/types/radarResearch'
 import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant,RadarResearchFeedback,RadarResearchMetrics,RadarCaptureOperation,RadarCapturePreflight,RadarCaptureLimits } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
@@ -73,9 +74,12 @@ export const radarService = {
   revokeTlsException(candidateId:string,organizationId:string,grantId:string) {
     return apiRequest<{revoked:true}>(`/radar/candidates/${candidateId}/research/tls-exceptions/${grantId}/revoke`,{method:'POST',body:{organizationId}})
   },
-  startCandidateResearch(candidateId:string,input:{organizationId:string;configurationRevision:number;requestId:string;allowSemanticRefresh?:boolean;operation?:'complete'|'resume'|'refresh'|'reanalyze'}) {
-    return apiRequest<{runId:string;status:string;reused:boolean}>(`/radar/candidates/${candidateId}/research`,{method:'POST',body:input})
+  async startCandidateResearch(candidateId:string,input:{organizationId:string;configurationRevision:number;requestId:string;allowSemanticRefresh?:boolean;operation?:'complete'|'resume'|'refresh'|'reanalyze'}) {
+    const result=await apiRequest<{runId?:string;status?:string;reused?:boolean;requestId?:string;state?:string;campaignId?:string}>(`/radar/candidates/${candidateId}/research`,{method:'POST',body:input})
+    return {...result,status:result.status??(result.state==='waiting'?'blocked':result.state==='unchanged'||result.state==='completed'?'succeeded':'queued'),reused:result.reused??result.state==='unchanged'}
   },
+  queueResearchRequest(campaignId:string,input:RadarResearchRequestInput){return apiRequest<RadarResearchRequestResult>(`/radar/campaigns/${campaignId}/research-requests`,{method:'POST',body:input})},
+  getResearchRequest(campaignId:string,organizationId:string,requestId:string){return apiRequest<RadarResearchRequestResult>(`/radar/campaigns/${campaignId}/research-requests/${requestId}${buildQuery({organizationId})}`)},
   async getAdminDataSources() {
     return apiRequest<Array<RadarDataSource & { organizationName?: string }>>('/radar/admin/data-sources')
   },

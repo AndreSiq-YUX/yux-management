@@ -27,6 +27,14 @@ class CampaignPool {
   }
 }
 describe('Radar configurable search', () => {
+  it('does not invalidate commercial criteria or discovery cursors when only operational capacity/source changes',async()=>{
+    const pool=new CampaignPool()
+    const config=resolveRadarSearchConfiguration({...input.searchConfiguration,research:{...input.searchConfiguration.research,maxSearchQueriesPerCandidate:5,maxPagesPerCandidate:8,webSearchProviders:['serper_web_search','brave_web_search']}})
+    const result=await updateRadarCampaign(pool as never,admin,'campaign',{...input,searchConfiguration:config})
+    expect(result.criteriaChanged).toBe(false)
+    expect(pool.queries.find(item=>item.sql.includes('UPDATE public.radar_campaigns'))?.params[14]).toBe(0)
+    expect(pool.queries.find(item=>item.sql.includes('UPDATE public.radar_campaigns'))?.params[15]).toBe(1)
+  })
   it('has no fixed sector, positive qualification criterion or region', () => {
     const config = resolveRadarSearchConfiguration()
     expect(config.qualification.includeAnyTerms).toEqual([])

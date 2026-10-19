@@ -27,6 +27,25 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it.each(['yux_admin','yux_operator','client_admin_A','client_member_A'])('keeps a durable research request after queue loss and hides technical internals at POST/GET: %s',async user=>{
+  const requestId=randomUUID()
+  const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidateId],intent:'resume'}})
+  const role=user==='client_member_A'?'client_member':'client_admin'
+  const permitted=user.startsWith('yux_')||(await pool.query("SELECT 1 FROM public.role_permissions WHERE role_key=$1 AND permission_key='radar:manage'",[role])).rows.length>0
+  expect(response.statusCode).toBe(permitted?202:403)
+  if(!permitted)return
+  expect(response.json()).toMatchObject({requestId,state:'accepted',items:[{candidateId,state:'accepted'}]})
+  expect((await pool.query('SELECT COUNT(*) AS n FROM public.radar_research_requests WHERE request_id=$1',[requestId])).rows[0].n).toBe('1')
+  const read=await get(`/campaigns/${campaignId}/research-requests/${requestId}?organizationId=${fixtureIds.organizationA}`,user)
+  expect(read.statusCode).toBe(200)
+  expect(read.body).not.toMatch(/OpenRouter|brave|cnpja|serper|model|provider|cost|lease|intent_hash|requested_by|analysis_authorization/i)
+  const foreign=await get(`/campaigns/${campaignId}/research-requests/${requestId}?organizationId=${fixtureIds.organizationA}`,'client_admin_B')
+  expect([403,404]).toContain(foreign.statusCode)
+  if(user!=='yux_admin'){
+   const consent=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId:randomUUID(),candidateIds:[candidateId],intent:'resume',allowSemanticRefresh:true}})
+   expect(consent.statusCode).toBe(403)
+  }
+ })
  it.each(['yux_admin','yux_operator','client_admin_A','client_member_A','client_admin_B'])('restricts lot capacity diagnostics at the direct HTTP boundary: %s',async user=>{
   const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/capture-preflight`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,configurationRevision:1,requestedCount:1}})
   expect(response.statusCode).toBe(user==='yux_admin'?200:403)

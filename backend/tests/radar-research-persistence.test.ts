@@ -20,6 +20,7 @@ class ResearchPool {
   async query(sql:string,params:unknown[]=[]):Promise<{rows:any[]}> {
     this.queries.push({sql,params})
     if(sql.includes('FROM public.radar_capture_items'))return{rows:[]}
+    if(sql.includes('FROM public.radar_research_request_items'))return{rows:[]}
     if(sql.includes('FROM public.radar_analysis_receipts'))return{rows:this.receiptResult||this.receiptEffect||this.receiptStatus==='rejected_before_provider'?[{result:this.receiptResult,status:this.receiptStatus,...this.receiptEffect}]:[]}
     if(/^(BEGIN|COMMIT|ROLLBACK)/.test(sql)||sql.includes('pg_advisory_xact_lock'))return{rows:[]}
     if(sql.includes('SELECT candidate.*, campaign.search_configuration'))return{rows:params[1]==='org'?[{id:'candidate',organization_id:'org',campaign_id:'campaign',title:'Empresa Alfa',status:'pending_review',normalized_payload:this.payload,search_configuration:this.researchConfiguration,configuration_revision:this.revision,campaign_status:'draft',target_segment:'Serviços',offer_type:'Automação',product_focus:[],target_cnaes:[]}]:[]}

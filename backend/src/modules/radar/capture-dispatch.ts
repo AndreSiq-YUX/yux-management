@@ -100,8 +100,9 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
 }
 export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:CaptureQueue,window:number){
  // Global worker reads only this dispatch-only table; tenant job reauthorizes.
- const rows=(await pool.query('SELECT operation_id,organization_id FROM public.radar_capture_outbox WHERE next_dispatch_at<=NOW() ORDER BY next_dispatch_at,operation_id LIMIT 100')).rows
- for(const row of rows)await queue.add('radar.advanceCaptureOperation',{organizationId:row.organization_id,operationId:row.operation_id},{jobId:`radar-capture-${row.operation_id}-${window}`})
+ const rows=(await pool.query('SELECT operation_id,research_request_id,organization_id FROM public.radar_capture_outbox WHERE next_dispatch_at<=NOW() ORDER BY next_dispatch_at,id LIMIT 100')).rows
+ for(const row of rows)if(row.research_request_id)await queue.add('radar.advanceResearchRequest',{organizationId:row.organization_id,researchRequestId:row.research_request_id},{jobId:`radar-request-${row.research_request_id}-${window}`})
+ else await queue.add('radar.advanceCaptureOperation',{organizationId:row.organization_id,operationId:row.operation_id},{jobId:`radar-capture-${row.operation_id}-${window}`})
  return{enqueued:rows.length}
 }
 export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;operationId:string;configurationRevision:number;requestId:string;allowSemanticRefresh?:boolean;restartExpiredContinuation?:boolean;continuationReceiptId?:string;continuationStateId?:string;continuationAuthorizations?:ContinuationAuthorization[];limitsAuthorization?:{expectedStateId:string;limits:RadarCaptureLimits}},dependencies:PreflightDependencies={}){

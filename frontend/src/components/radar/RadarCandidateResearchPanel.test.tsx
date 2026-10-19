@@ -112,6 +112,15 @@ it('requests an explicit new research generation after confirmation',async()=>{
   expect(radarService.startCandidateResearch).toHaveBeenCalledWith('candidate',expect.objectContaining({operation:'refresh',requestId:expect.any(String)}))
   view.unmount()
 })
+it('retains the same intent ID when the acknowledgement of a refresh is lost',async()=>{
+  vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,run:{id:'done',status:'succeeded',stage:'review',updated_at:'2026-10-13',configuration_revision:2,output:{}}})
+  vi.mocked(radarService.startCandidateResearch).mockRejectedValueOnce(Error('lost acknowledgement')).mockResolvedValueOnce({runId:'run',status:'queued',reused:true})
+  const view=mount();await view.click('Ver dossiê da empresa')
+  await view.click('Atualizar pesquisa');await view.click('Atualizar pesquisa')
+  const calls=vi.mocked(radarService.startCandidateResearch).mock.calls
+  expect(calls).toHaveLength(2);expect(calls[0][1].requestId).toBe(calls[1][1].requestId)
+  view.unmount()
+})
 it('shows_brave_disabled_and_cost_reason_without_asking_for_license_again',()=>{
   const view=mount({...availability,allowed:false,reasons:[{code:'source_disabled',message:'Fonte Brave desativada.',resolution:'Admin → Integrações'},{code:'source_cost_required',message:'Custo não definido.',resolution:'Admin → Integrações'}]})
   expect(view.container.textContent).toContain('Fonte Brave desativada')

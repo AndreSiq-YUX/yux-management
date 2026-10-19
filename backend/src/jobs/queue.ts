@@ -50,6 +50,7 @@ export const JOB_NAMES = [
   'radar.analyzeOpportunity',
   'radar.researchCandidate',
   'radar.advanceCaptureOperation',
+  'radar.advanceResearchRequest',
   'radar.runRegionalDiscovery',
   'radar.verifyRegionalCandidates',
   'company-intelligence.indexKnowledge',

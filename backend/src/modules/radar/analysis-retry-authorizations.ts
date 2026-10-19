@@ -7,6 +7,7 @@ import {resolveRadarSearchConfiguration} from './search-configuration.js'
 
 const fail=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode})
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const numericSnapshot=(value:unknown)=>value===undefined?undefined:value===null?null:Number(value)
 function fallbackSnapshot(value:unknown){
  if(!value||typeof value!=='object'||Array.isArray(value))throw fail('radar_analysis_retry_route_invalid')
  const item=value as Record<string,unknown>,model=item.modelName??item.model_name
@@ -16,8 +17,23 @@ function fallbackSnapshot(value:unknown){
 export const radarAnalysisRetryAuthorizationSchema=z.object({organizationId:z.uuid(),campaignId:z.uuid(),configurationRevision:z.number().int().positive(),requestId:z.uuid(),expiresAt:z.iso.datetime(),acknowledgePreviousChargeMayExist:z.literal(true),
  items:z.array(z.object({candidateId:z.uuid(),previousReceiptId:z.uuid()}).strict()).min(1)}).strict()
 export type RadarAnalysisRetryAuthorizationInput=z.infer<typeof radarAnalysisRetryAuthorizationSchema>
+export type RadarAnalysisRetryBinding={authorization_id:string;candidate_id:string;campaign_id:string;configuration_revision:number;policy_hash:string}
+export async function resolveRadarAnalysisRetry(db:Pick<pg.Pool,'query'>,input:{organizationId:string;campaignId:string;candidateId:string;runId:string;configurationRevision:number;action:string;previousRequestId:string;searchConfiguration:unknown}):Promise<RadarAnalysisRetryBinding|undefined>{
+ const row=(await db.query(`SELECT grant_row.* FROM public.radar_research_request_items item
+  JOIN public.radar_research_requests request ON request.id=item.research_request_id AND request.organization_id=item.organization_id
+  JOIN public.radar_analysis_retry_authorizations grant_row ON grant_row.request_id=request.analysis_authorization_id AND grant_row.organization_id=request.organization_id AND grant_row.campaign_id=request.campaign_id AND grant_row.candidate_id=item.candidate_id
+  JOIN public.radar_analysis_receipts receipt ON receipt.id=grant_row.previous_analysis_receipt_id AND receipt.organization_id=grant_row.organization_id
+  WHERE item.organization_id=$1 AND item.campaign_id=$2 AND item.candidate_id=$3 AND item.run_id=$4 AND grant_row.configuration_revision=$5 AND grant_row.action=$6 AND receipt.request_id=$7
+   AND grant_row.consumed_at IS NULL AND grant_row.expires_at>NOW() ORDER BY request.created_at DESC LIMIT 1`,[input.organizationId,input.campaignId,input.candidateId,input.runId,input.configurationRevision,input.action,input.previousRequestId])).rows[0]
+ if(!row)return
+ const campaign=(await db.query('SELECT operational_policy_version FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[input.campaignId,input.organizationId])).rows[0]
+ const actions=(row.policy_snapshot?.routes??[]).map((route:{action:string})=>route.action)
+ const current=await radarAnalysisRetryPolicy(db,input.organizationId,input.searchConfiguration,actions,Number(campaign?.operational_policy_version??1))
+ if(current.hash!==row.policy_hash)throw fail('radar_analysis_retry_policy_changed')
+ return{authorization_id:row.id,candidate_id:input.candidateId,campaign_id:input.campaignId,configuration_revision:input.configurationRevision,policy_hash:row.policy_hash}
+}
 
-export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,organizationId:string,searchConfiguration:unknown,actions:string[]){
+export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,organizationId:string,searchConfiguration:unknown,actions:string[],campaignOperationalVersion=1){
  const policy=await loadRadarOperationalLimits(db),research=resolveRadarSearchConfiguration(searchConfiguration).research
  const rows=(await db.query(`SELECT rule.* FROM public.organizations organization
   LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
@@ -27,8 +43,8 @@ export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,or
  const routes=rows.map(rule=>({id:rule.id,version:rule.version,action:rule.agent_type,organizationId:rule.organization_id,clientId:rule.client_id,contractId:rule.contract_id,
   provider:rule.provider,model:rule.model_name,fallbackModel:rule.fallback_model_name,
   fallbacks:Array.isArray(rule.fallback_routes)?rule.fallback_routes.map(fallbackSnapshot):[],
-  maxInputTokens:rule.max_input_tokens,maxOutputTokens:rule.max_output_tokens,maxCostPerRun:rule.max_cost_per_run,temperature:rule.temperature}))
- const snapshot={operationalPolicy:{version:policy.version,limits:policy.limits},research,routes}
+  maxInputTokens:rule.max_input_tokens,maxOutputTokens:rule.max_output_tokens,maxCostPerRun:numericSnapshot(rule.max_cost_per_run),temperature:numericSnapshot(rule.temperature)}))
+ const snapshot={campaignOperationalVersion,operationalPolicy:{version:policy.version,limits:policy.limits},research,routes}
  return{snapshot,hash:hash(snapshot),policy}
 }
 export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,value:RadarAnalysisRetryAuthorizationInput){
@@ -66,7 +82,7 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
   })
   const active=(await client.query('SELECT id FROM public.radar_analysis_retry_authorizations WHERE organization_id=$1 AND previous_analysis_receipt_id=ANY($2::uuid[]) AND consumed_at IS NULL AND expires_at>NOW() LIMIT 1',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows[0]
   if(active)throw fail('radar_analysis_retry_already_authorized')
-  const policy=await radarAnalysisRetryPolicy(client,input.organizationId,campaign.search_configuration,bound.map(item=>item.action))
+  const policy=await radarAnalysisRetryPolicy(client,input.organizationId,campaign.search_configuration,bound.map(item=>item.action),Number(campaign.operational_policy_version??1))
   if(items.length>policy.policy.limits.maxVerificationBatch)throw fail('radar_operational_limit_exceeded')
   if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action)))throw fail('radar_analysis_retry_route_missing')
   const research=policy.snapshot.research

@@ -627,24 +627,27 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     return()=>{active=false;clearTimeout(timer)}
   },[organizationId,trackedResearchCandidates])
 
+  const pendingResearchIntent=useRef<{key:string;input:Parameters<typeof radarService.queueResearchRequest>[1]}|null>(null)
+  const researchIntentBusy=useRef(false)
   const researchSelected=async(operation:'complete'|'resume'|'refresh'|'reanalyze')=>{
-    if(!organizationId||!selectedCampaign||actionLoading||context.role?.key!=='yux_admin')return
+    if(!organizationId||!selectedCampaign||actionLoading||researchIntentBusy.current||context.role?.key!=='yux_admin')return
     const selected=candidates.filter(candidate=>selectedCandidateIds.includes(candidate.id)&&candidate.status==='pending_review')
     if(!selected.length||!researchAvailability||!(operation==='reanalyze'?researchAvailability.operations?.reanalyze.allowed??researchAvailability.allowed:researchAvailability.allowed))return
     const cost=operation==='reanalyze'?0:selected.length*researchAvailability.maximumCostPerCandidate
     if(!window.confirm(`${selected.length} empresas selecionadas. ${operation==='reanalyze'?'Reavaliar somente os dados salvos, sem novas buscas.':'Consultas de busca até '+cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4})+'.'} ${researchAvailability.semanticQualificationEnabled?'Ao continuar, você autoriza nova análise quando as evidências mudaram; isso pode consumir créditos adicionais.':''} Chamadas anteriores de resultado incerto não serão repetidas. Nenhum contato será iniciado. Continuar?`))return
     setActionLoading('research-selected');setResearchBatchStatus([])
-    const queued:string[]=[]
-    for(const candidate of selected){
-      try{
-        const result=await radarService.startCandidateResearch(candidate.id,{organizationId,configurationRevision:selectedCampaign.configurationRevision??1,requestId:crypto.randomUUID(),operation,
-          allowSemanticRefresh:operation!=='reanalyze'&&researchAvailability.semanticQualificationEnabled})
-        if(['queued','running'].includes(result.status))queued.push(candidate.id)
-        setResearchBatchStatus(current=>[...current,`${candidate.title}: ${['queued','running'].includes(result.status)?'pesquisa em andamento':result.reused?'pesquisa já finalizada; use Atualizar pesquisa para novas verificações':'pesquisa solicitada'}`])
-      }catch{setResearchBatchStatus(current=>[...current,`${candidate.title}: não foi possível iniciar; confira aprovação, disponibilidade e limites.`])}
-    }
-    setTrackedResearchCandidates(current=>[...new Set([...current,...queued])])
-    setActionLoading(null);refreshCampaignSidebars()
+    researchIntentBusy.current=true
+    const candidateIds=selected.map(candidate=>candidate.id).sort(),criteriaRevision=selectedCampaign.commercialCriteriaRevision??selectedCampaign.configurationRevision??1
+    const key=JSON.stringify({organizationId,campaignId:selectedCampaign.id,candidateIds,criteriaRevision,operation})
+    if(pendingResearchIntent.current?.key!==key)pendingResearchIntent.current={key,input:{organizationId,candidateIds,criteriaRevision,requestId:crypto.randomUUID(),intent:operation==='refresh'?'refresh':operation==='reanalyze'?'reanalyze':'resume',allowSemanticRefresh:operation!=='reanalyze'&&researchAvailability.semanticQualificationEnabled}}
+    try{
+      const result=await radarService.queueResearchRequest(selectedCampaign.id,pendingResearchIntent.current.input)
+      setResearchBatchStatus(result.items.map(item=>`${selected.find(candidate=>candidate.id===item.candidateId)?.title??'Empresa'}: ${item.message}`))
+      const queued=result.items.filter(item=>item.state==='accepted'||item.state==='running').map(item=>item.candidateId)
+      setTrackedResearchCandidates(current=>[...new Set([...current,...queued])])
+      pendingResearchIntent.current=null
+    }catch{setResearchBatchStatus(['Não foi possível confirmar o pedido. Tente novamente; o mesmo pedido será recuperado sem duplicar a solicitação.'])}
+    finally{researchIntentBusy.current=false;setActionLoading(null);refreshCampaignSidebars()}
   }
 
   const refreshDataSources = async () => {

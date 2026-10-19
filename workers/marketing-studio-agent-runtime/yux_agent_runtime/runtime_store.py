@@ -81,6 +81,9 @@ class InMemoryAgentRuntimeStore:
 
     def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token, input_request=None):
         with self._radar_lock:
+            # A fixture-only store cannot prove/consume a production approval.
+            if input_request and input_request.get('retry_authorization'):
+                raise RuntimeError('radar_analysis_retry_postgres_required')
             lease = (datetime.now().astimezone() + timedelta(minutes=6)).isoformat()
             snapshot = json.loads(json.dumps(input_request))
             key = dict(organization_id=organization_id, action=action, request_id=request_id)
@@ -276,6 +279,10 @@ class PostgresAgentRuntimeStore:
 
     def claim_radar_receipt(self, *, organization_id, action, request_id, input_hash, owner_token, input_request=None):
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:
+            if input_request and input_request.get('retry_authorization'):
+                cursor.execute('SELECT * FROM private.claim_radar_retry_receipt(%s,%s,%s,%s,%s,%s::jsonb)',[organization_id,action,request_id,input_hash,owner_token,json.dumps(input_request)])
+                result=cursor.fetchone()
+                return result['receipt'],result['claimed']
             cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', [f'radar-receipt:{organization_id}:{action}:{request_id}'])
             cursor.execute('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=%s AND action=%s AND request_id=%s FOR UPDATE', [organization_id, action, request_id])
             row = cursor.fetchone()

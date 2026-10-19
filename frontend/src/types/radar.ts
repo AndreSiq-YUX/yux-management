@@ -143,6 +143,7 @@ export interface RadarCampaign {
   targetStates: string[]
   searchConfiguration?: RadarSearchConfiguration
   configurationRevision?: number
+  commercialCriteriaRevision?:number
   productFocus: string[]
   targetKeywords: string[]
   targetCnaes: string[]

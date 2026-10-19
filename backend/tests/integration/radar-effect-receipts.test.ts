@@ -11,6 +11,7 @@ import {admin,available,company} from '../support/radar-capture-fixture.js'
 import {startRadarCaptureOperation,getRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js'
 import {advanceRadarCaptureDiscovery} from '../../src/modules/radar/capture-discovery.js'
 import {startRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
+import {queueRadarResearchRequest} from '../../src/modules/radar/research-requests.js'
 const authorization=await import('../../src/modules/radar/analysis-retry-authorizations.js').catch(()=>({})) as Record<string,any>
 
 describe.skipIf(!connectionString)('protected Radar effect responses',()=>{
@@ -35,6 +36,8 @@ describe.skipIf(!connectionString)('protected Radar effect responses',()=>{
    const result=await authorization.authorizeRadarAnalysisRetries(f.pool,admin,input)
    expect(result.analysisAuthorizationId).toBe(input.requestId)
    expect(result.items).toHaveLength(2)
+   const selected=await queueRadarResearchRequest(f.pool,admin,{organizationId,campaignId:f.campaign.id,requestId:randomUUID(),criteriaRevision:1,intent:'resume',candidateIds:[items[0].candidateId],analysisAuthorizationId:result.analysisAuthorizationId})
+   expect(selected).toMatchObject({state:'accepted',items:[{candidateId:items[0].candidateId}]})
    expect(await authorization.authorizeRadarAnalysisRetries(f.pool,admin,input)).toEqual(result)
    expect((await f.pool.query('SELECT COUNT(*) AS n FROM public.radar_analysis_retry_authorizations WHERE request_id=$1',[input.requestId])).rows[0].n).toBe('2')
    expect((await f.pool.query('SELECT status,result FROM public.radar_analysis_receipts WHERE id=ANY($1::uuid[])',[receiptIds])).rows.every(row=>row.status==='uncertain'&&row.result===null)).toBe(true)

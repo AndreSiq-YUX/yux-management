@@ -45,7 +45,9 @@ import {
   type RadarAnalysisRequest,
 } from './repository.js'
 import { radarSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
-import { getRadarCandidateResearch, startRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
+import { getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
+import {queueRadarResearchRequest,radarResearchRequestSchema,getRadarResearchRequest,enqueueRadarResearchRequest} from './research-requests.js'
+import {randomUUID} from 'node:crypto'
 import {authorizeRadarAnalysisRetries,radarAnalysisRetryAuthorizationSchema} from './analysis-retry-authorizations.js'
 import { getRadarResearchAvailability } from './research-availability.js'
 import {deliverRadarCompaniesToCrm,listRadarCrmDestinations} from './crm-delivery.js'
@@ -561,12 +563,27 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     const params=z.object({id:uuid}).safeParse(request.params),body=z.object({organizationId:uuid,configurationRevision:z.number().int().positive(),requestId:uuid.optional(),allowSemanticRefresh:z.boolean().optional(),operation:z.enum(['complete','resume','refresh','reanalyze']).optional()}).strict().safeParse(request.body)
     if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
-    const result=await startRadarCandidateResearch(app.pg,user,{...body.data,candidateId:params.data.id})
-    if(result.status!=='succeeded') {
-      try {await app.jobQueue.add('radar.researchCandidate',{runId:result.runId,organizationId:body.data.organizationId},{jobId:`radar-research-${result.runId}-${Date.now()}`})}
-      catch {await app.pg.query(`UPDATE public.radar_candidate_research_runs SET status='failed',error_code='queue_unavailable',updated_at=NOW() WHERE id=$1 AND status='queued'`,[result.runId]);return reply.code(503).send({error:'queue_unavailable'})}
-    }
+    const campaign=(await app.pg.query(`SELECT campaign.id,campaign.configuration_revision,campaign.commercial_criteria_revision FROM public.radar_candidate_records candidate JOIN public.radar_campaigns campaign ON campaign.id=candidate.campaign_id AND campaign.organization_id=candidate.organization_id WHERE candidate.id=$1 AND candidate.organization_id=$2`,[params.data.id,body.data.organizationId])).rows[0]
+    if(!campaign||campaign.configuration_revision!==body.data.configurationRevision)return reply.code(409).send({error:'radar_campaign_configuration_changed'})
+    const result=await queueRadarResearchRequest(app.pg,user,{organizationId:body.data.organizationId,campaignId:campaign.id,candidateIds:[params.data.id],criteriaRevision:campaign.commercial_criteria_revision,requestId:body.data.requestId??randomUUID(),intent:body.data.operation==='refresh'?'refresh':body.data.operation==='reanalyze'?'reanalyze':'resume',allowSemanticRefresh:body.data.allowSemanticRefresh})
+    await enqueueRadarResearchRequest(app.pg,app.jobQueue,body.data.organizationId,result.requestId as string)
+    return reply.code(202).send({...result,campaignId:campaign.id,status:result.state==='unchanged'?'succeeded':'queued',reused:result.state==='unchanged'})
+  })
+  app.post('/campaigns/:id/research-requests',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),body=radarResearchRequestSchema.omit({campaignId:true}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
+    const result=await queueRadarResearchRequest(app.pg,user,{...body.data,campaignId:params.data.id})
+    await enqueueRadarResearchRequest(app.pg,app.jobQueue,body.data.organizationId,result.requestId as string)
     return reply.code(202).send(result)
+  })
+  app.get('/campaigns/:id/research-requests/:requestId',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid,requestId:uuid}).safeParse(request.params),query=z.object({organizationId:uuid}).safeParse(request.query)
+    if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
+    const row=(await app.pg.query('SELECT id FROM public.radar_research_requests WHERE request_id=$1 AND campaign_id=$2 AND organization_id=$3',[params.data.requestId,params.data.id,query.data.organizationId])).rows[0]
+    if(!row)return reply.code(404).send({error:'radar_research_request_not_found'})
+    return getRadarResearchRequest(app.pg,user,query.data.organizationId,params.data.requestId)
   })
 
   app.get('/campaigns/:id/b2b-prospects', async (request, reply) => {

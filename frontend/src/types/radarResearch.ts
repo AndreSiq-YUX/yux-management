@@ -38,3 +38,6 @@ export type RadarResearchResult = {methodVersion?:number;configurationRevision:n
     activity?:{status:string;signals:Array<{kind:string;sourceUrl:string;excerpt:string;observedAt:string;publishedDate?:string}>;presenceSignals?:Array<{kind:string;sourceUrl:string;excerpt:string;observedAt:string;association:'confirmed'|'review';scope?:string}>;limitation:string};
     qualification?:{targetStatus:string;productFit:string;reasons:string[];evidenceIds:string[];evidenceSources?:Array<{id:string;sourceUrl:string}>;provider?:string;model?:string};limitations?:string[];
   }};history:Array<{id:string;status:string;updated_at:string}>}
+export type RadarResearchRequestState='accepted'|'running'|'waiting'|'unchanged'|'completed'
+export type RadarResearchRequestInput={organizationId:string;candidateIds:string[];requestId:string;criteriaRevision:number;intent:'resume'|'refresh'|'reanalyze';analysisAuthorizationId?:string;allowSemanticRefresh?:boolean}
+export type RadarResearchRequestResult={requestId:string;state:RadarResearchRequestState;items:Array<{candidateId:string;state:RadarResearchRequestState;message:string}>}

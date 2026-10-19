@@ -33,33 +33,46 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
   const [allowSemanticRefresh,setAllowSemanticRefresh]=useState(false)
   const [tlsConsent,setTlsConsent]=useState(''),[tlsMessage,setTlsMessage]=useState<string|null>(null)
   const submitted=useRef(false),onCompletedRef=useRef(onCompleted),completedId=useRef('')
+  const pendingIntent=useRef<{key:string;requestId:string}|null>(null)
+  const pendingDispatch=useRef<{candidateId:string;campaignId:string;requestId:string}|null>(null)
   onCompletedRef.current=onCompleted
   useEffect(()=>setAvailable(availability),[availability])
-  const running=!!result?.run && ['queued','running'].includes(result.run.status)
+  const running=pendingDispatch.current?.candidateId===candidateId||!!result?.run && ['queued','running'].includes(result.run.status)
   useEffect(()=>{
     if(!open)return
     let active=true,timer:ReturnType<typeof setTimeout>|undefined
     const load=async()=>{
       setLoading(true)
       try {
+        const pending=pendingDispatch.current
+        if(pending?.candidateId===candidateId){
+          const request=await radarService.getResearchRequest(pending.campaignId,organizationId,pending.requestId)
+          if(['waiting','completed','unchanged'].includes(request.state))pendingDispatch.current=null
+        }
         const value=await radarService.getCandidateResearch(candidateId,organizationId)
         if(!active)return
         setResult(value);setAvailable(value.availability);setError(null)
-        if(value.run && ['queued','running'].includes(value.run.status))timer=setTimeout(load,4000)
+        if(pendingDispatch.current?.candidateId===candidateId||value.run && ['queued','running'].includes(value.run.status))timer=setTimeout(load,4000)
         else if(value.run && value.run.id!==completedId.current) {completedId.current=value.run.id;onCompletedRef.current?.()}
-      } catch {if(active){setAvailable(null);setError('Não foi possível verificar a disponibilidade ou carregar o resultado. Tente novamente; seus dados foram preservados.')}}
+      } catch {if(active){setAvailable(null);setError('Não foi possível verificar a disponibilidade ou carregar o resultado. Tente novamente; seus dados foram preservados.');if(pendingDispatch.current?.candidateId===candidateId)timer=setTimeout(load,4000)}}
       finally{if(active)setLoading(false)}
     }
     void load()
     return()=>{active=false;clearTimeout(timer)}
   },[open,candidateId,organizationId,refresh])
   async function start(operation:'complete'|'resume'|'refresh'|'reanalyze'='complete') {
-    if(!available||submitted.current||!(operation==='refresh'?available.operations?.refresh?.allowed??available.allowed:operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
+    if(!available||submitted.current||pendingDispatch.current?.candidateId===candidateId||!(operation==='refresh'?available.operations?.refresh?.allowed??available.allowed:operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
     const route=available.semantic??available.presence
     const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${showTechnical&&route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
     if(!window.confirm(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
     submitted.current=true;setBusy(true);setError(null);setOpen(true)
-    try {await radarService.startCandidateResearch(candidateId,{organizationId,configurationRevision,requestId:crypto.randomUUID(),allowSemanticRefresh,operation});setAllowSemanticRefresh(false);setRefresh(value=>value+1)}
+    const key=JSON.stringify({candidateId,organizationId,configurationRevision,allowSemanticRefresh,operation})
+    if(pendingIntent.current?.key!==key)pendingIntent.current={key,requestId:crypto.randomUUID()}
+    try {
+      const response=await radarService.startCandidateResearch(candidateId,{organizationId,configurationRevision,requestId:pendingIntent.current.requestId,allowSemanticRefresh,operation})
+      if(response.requestId&&response.campaignId)pendingDispatch.current={candidateId,campaignId:response.campaignId,requestId:response.requestId}
+      pendingIntent.current=null;setAllowSemanticRefresh(false);setRefresh(value=>value+1)
+    }
     catch {setError('Não foi possível iniciar. Atualize a disponibilidade; confira configuração, quota e orçamento. Seus dados foram preservados.');setRefresh(value=>value+1)}
     finally {submitted.current=false;setBusy(false)}
   }

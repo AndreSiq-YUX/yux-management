@@ -98,11 +98,12 @@ const opportunity=(value:unknown)=>{const row=object(value),message=object(row.l
  return opportunitySchema.parse({...row,canConvertToLead:row.status==='approved'&&!row.convertedLeadId&&message.status==='approved'&&policy.canSendAutomatically===false&&policy.canConvertToLead===true,...(object(row.company).sourceType==='osm_extract'?{company:undefined}: {})})}
 const historySchema=z.object({id:text,candidateId:text,companyName:text,configurationRevision:number,status:text,updatedAt:text,actionLabel:text}).strip()
 const feedbackSchema=z.object({id:text,candidateId:text,configurationRevision:number,kind:text,note:narrative,createdAt:text,contact:z.object({kind:text,value:text}).strip().optional().catch(undefined)}).strip()
-export type RadarCommercialSurface='campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'
+export type RadarCommercialSurface='campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'
 export function projectRadarCommercialResponse(surface:RadarCommercialSurface,payload:unknown):unknown{
  if(payload===null)return null
  const row=object(payload)
  switch(surface){
+  case 'researchRequest':return z.object({requestId:z.uuid(),campaignId:z.uuid().optional(),state:z.enum(['accepted','running','waiting','unchanged','completed']),items:z.array(z.object({candidateId:z.uuid(),state:z.enum(['accepted','running','waiting','unchanged','completed']),message:narrative}).strip())}).strip().parse(row)
   case 'campaigns':if('campaign' in row)return{campaign:projectRadarCommercialResponse('campaigns',row.campaign),criteriaChanged:row.criteriaChanged===true}
    return map(payload,item=>{const r=object(item),config=object(r.searchConfiguration);return campaignSchema.parse({...r,criteria:{...object(config.qualification),cities:config.cities,openingFrom:config.openingFrom,openingTo:config.openingTo}})})
   case 'candidates':return map(payload,candidate)
@@ -129,6 +130,7 @@ export function projectRadarCommercialResponse(surface:RadarCommercialSurface,pa
 // Explicit route matrix. New endpoints are internal until a commercial schema is chosen.
 const surfaces:Record<string,RadarCommercialSurface>={
  'GET /campaigns':'campaigns','POST /campaigns':'campaigns','PATCH /campaigns/:id':'campaigns','POST /campaigns/:id/duplicate':'campaigns',
+ 'POST /campaigns/:id/research-requests':'researchRequest','GET /campaigns/:id/research-requests/:requestId':'researchRequest','POST /candidates/:id/research':'researchRequest',
  'GET /campaigns/:id/candidates':'candidates','GET /campaigns/:id/b2b-prospects':'candidates','POST /candidates/:id/discard':'candidates',
  'GET /campaigns/:id/capture-operations/latest':'capture','GET /capture-operations/:id':'capture','GET /candidates/:id/research':'research',
  'GET /campaigns/:id/research-history':'researchHistory','GET /campaigns/:id/metrics':'metrics','GET /campaigns/:id/research-metrics':'researchMetrics',

@@ -65,6 +65,8 @@ export type RadarMetrics = {
 }
 
 export type RadarCampaignRow = {
+  commercial_criteria_revision?:number
+  operational_policy_version?:number
   id: string
   organization_id: string
   name: string
@@ -251,6 +253,7 @@ export interface RadarCampaign {
   productFocus: string[]
   searchConfiguration: RadarSearchConfiguration
   configurationRevision: number
+  commercialCriteriaRevision?:number
   targetKeywords: string[]
   targetCnaes: string[]
   offerType: string

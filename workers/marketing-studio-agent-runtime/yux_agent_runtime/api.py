@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_serializer
 
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
@@ -47,7 +47,27 @@ class RadarQualificationEvidence(BaseModel):
     source_url: str = Field(min_length=1, max_length=2000)
     text: str = Field(min_length=1, max_length=12000)
 
-class RadarQualificationRequest(BaseModel):
+class RadarRetryAuthorization(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    authorization_id: str = Field(pattern=r'^[a-fA-F0-9-]{36}$')
+    campaign_id: str = Field(pattern=r'^[a-fA-F0-9-]{36}$')
+    candidate_id: str = Field(pattern=r'^[a-fA-F0-9-]{36}$')
+    configuration_revision: int = Field(strict=True,gt=0)
+    policy_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class RadarAnalysisRequest(BaseModel):
+    retry_authorization: RadarRetryAuthorization | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_original_request_material(self, handler):
+        result = handler(self)
+        if self.retry_authorization is None:
+            result.pop('retry_authorization', None)
+        return result
+
+
+class RadarQualificationRequest(RadarAnalysisRequest):
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
@@ -59,7 +79,7 @@ class RadarQualificationRequest(BaseModel):
 class RadarPresenceEvidence(RadarQualificationEvidence):
     kind: Literal['institutional_candidate','directory','social','third_party']
 
-class RadarPresenceRequest(BaseModel):
+class RadarPresenceRequest(RadarAnalysisRequest):
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
