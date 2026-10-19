@@ -1,4 +1,6 @@
 import { expect, it, vi } from 'vitest'
+import {createHash} from 'node:crypto'
+import {classifyRadarSource} from '../src/modules/radar/source-identity.js'
 import type { AuthUser } from '../src/auth/routes.js'
 import type { AppEnv } from '../src/config/env.js'
 import { executeRadarCandidateResearch, startRadarCandidateResearch, getRadarCandidateResearch } from '../src/modules/radar/research-service.js'
@@ -70,6 +72,49 @@ it('revalidates a completed raw profile receipt claim by claim without another A
 })
 const start=(pool:ResearchPool,organizationId='org',configurationRevision=2)=>startRadarCandidateResearch(pool as never,admin,{organizationId,candidateId:'candidate',configurationRevision})
 const pages=[{url:'https://alfa.example',observedAt:'2026-10-08',text:'Empresa Alfa CNPJ 12.345.678/0001-90',html:'<a href="tel:41999998888">Contato</a>'}]
+it.each(['presence','semantic'] as const)('rebinds a legacy %s receipt after reread/order change without buying another analysis',async key=>{
+ const pool=new ResearchPool()
+ pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,presenceResolutionEnabled:key==='presence',semanticQualificationEnabled:key==='semantic'}}
+ const run=await start(pool)
+ const oldPages=key==='presence'?[{url:'https://brand.example/',observedAt:'2026-10-08',text:'Empresa Alfa é nossa razão social.'},{url:'https://other.example/',observedAt:'2026-10-08',text:'Outra página pública.'}]:[pages[0],{...pages[0],url:'https://alfa.example/contato',text:`${pages[0].text}. Contato institucional.`}]
+ const identity={name:'Empresa Alfa',legalName:undefined,cnpj:'12345678000190',city:'Curitiba',state:'PR',address:undefined,phone:'4133334444'}
+ const oldEvidence=oldPages.map((page,index)=>({id:`page-${index}`,url:page.url,text:page.text,observedAt:page.observedAt,kind:classifyRadarSource(page.url,{text:page.text}).kind}))
+ const hash=createHash('sha256').update(JSON.stringify(key==='presence'?{identity,evidence:oldEvidence}:{pages:oldPages.map(({url,text})=>({url,text})),profile:false,size:false})).digest('hex')
+ const result=key==='presence'?{candidateId:'page-0',scope:'group',reason:'A página identifica a marca e razão social.',claims:[{evidenceId:'page-0',excerpt:oldPages[0].text}]}:{targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:['page-0'],limitations:[]}
+ pool.run!.calls[key]={status:'completed',source:key==='presence'?'radar_presence_resolution':'radar_business_qualification',evidenceHash:hash,result}
+ pool.run!.output={readingComplete:false,readerVersion:4,discoveryLocked:true,pages:oldPages,discovery:{association:'review',websiteUrl:oldPages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+ const runtime=vi.fn(),web=vi.fn()
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web,collect:async()=>[...oldPages].reverse().map(page=>({...page,observedAt:'2026-10-19'}))})
+ expect(runtime).not.toHaveBeenCalled();expect(web).not.toHaveBeenCalled()
+ expect(pool.run!.calls[key]).toMatchObject({evidenceHash:hash,evidenceVersion:{hashVersion:2,aliases:[hash]}})
+ if(key==='presence')expect(pool.run!.output.presenceResolution).toMatchObject({websiteUrl:oldPages[0].url,scope:'group'})
+ else expect(pool.run!.output.qualification).toMatchObject({productFit:'possible'})
+ expect(pool.run!.output.analysisEvidence[key].hashVersion).toBe(2)
+ const paidResult=JSON.parse(JSON.stringify(pool.run!.calls[key].result))
+ pool.run!.output.presenceResolution=undefined;pool.run!.output.presenceEvidenceHash=undefined
+ pool.run!.output.qualification=undefined;pool.run!.output.qualificationEvidenceHash=undefined;pool.run!.output.analysisEvidence=undefined
+ pool.run!.status='partial'
+ await start(pool)
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web,collect:async()=>[...oldPages].reverse().map(page=>({...page,observedAt:'2026-10-19'}))})
+ expect(pool.run!.calls[key].result).toEqual(paidResult)
+ expect(runtime).not.toHaveBeenCalled()
+ if(key==='presence')expect(pool.run!.output.presenceResolution?.websiteUrl).toBe(oldPages[0].url)
+ else expect(pool.run!.output.qualification?.productFit).toBe('possible')
+})
+it('preserves an unbindable old receipt and explains missing material instead of replaying it',async()=>{
+ const pool=new ResearchPool()
+ pool.researchConfiguration={sources:{enrichWithBrave:false},research:{enabled:true,webSearchEnabled:true,semanticQualificationEnabled:true}}
+ const run=await start(pool)
+ const receipt={status:'completed',source:'radar_business_qualification',evidenceHash:'old-material-unavailable',result:{targetStatus:'review',productFit:'possible',reasons:[],evidenceIds:[],limitations:[]}}
+ pool.run!.calls.semantic={...receipt}
+ pool.run!.output={readingComplete:false,readerVersion:4,discoveryLocked:true,pages:[],discovery:{association:'review',websiteUrl:pages[0].url,hits:[],suggestions:[],limitations:[],queries:1}}
+ const runtime=vi.fn()
+ await executeRadarCandidateResearch(pool as never,{} as AppEnv,{runId:run.runId,organizationId:'org'},undefined,{runtime,web:vi.fn(),collect:async()=>pages})
+ expect(runtime).not.toHaveBeenCalled()
+ expect(pool.run!.calls.semantic).toEqual(receipt)
+ expect(JSON.stringify(pool.run!.output.limitations)).toContain('radar_analysis_legacy_material_missing')
+ expect(pool.run!.output.qualification).toBeUndefined()
+})
 it('consolidates legacy dossier contacts on read, retaining sources without rewriting history',async()=>{
   const pool=new ResearchPool();await start(pool)
   const contact={kind:'email',value:'compras@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-15',association:'confirmed',scope:'establishment',purpose:'suppliers'}

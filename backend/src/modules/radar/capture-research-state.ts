@@ -4,7 +4,7 @@ type Child={status:string;stage?:string;error_code?:string|null;lease_until?:str
 const searchFailures=new Set(['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing','source_disabled','source_cost_required','retention_license_required','web_license_required','radar_research_query_limit','candidate_search_limit_reached'])
 const analysisFailures=new Set(['radar_presence_service_unavailable','radar_qualification_service_unavailable','radar_qualification_failed','radar_presence_failed','radar_ai_wallet_missing','radar_ai_credits_insufficient','radar_llm_route_missing','radar_research_call_uncertain',
  'radar_presence_explicit_route_required','radar_presence_refresh_authorization_required','radar_presence_previous_request_uncertain',
- 'radar_qualification_explicit_route_required','radar_qualification_refresh_authorization_required','radar_qualification_previous_request_uncertain','radar_qualification_invalid_json','radar_request_invalid'])
+ 'radar_qualification_explicit_route_required','radar_qualification_refresh_authorization_required','radar_qualification_previous_request_uncertain','radar_qualification_invalid_json','radar_request_invalid','radar_analysis_legacy_material_missing','radar_analysis_evidence_binding_missing','radar_analysis_saved_citations_require_review'])
 const safeCode=(value:unknown):value is string=>typeof value==='string'&&/^[a-z][a-z0-9_]{0,159}$/.test(value)
 // Legacy checkpoints embed the safe runtime code in these two exact wrappers.
 // Never parse public excerpts (or arbitrary warning prose) as operational errors.

@@ -50,3 +50,15 @@ Os IDs abaixo identificam candidatos, não novos cadastros a criar. Todos os dos
 | Trabalho sem avanço | A6 | Admin vê etapa, último avanço e ação possível; vigia não repete chamada incerta |
 
 Aceite do lote: cada item tem resultado ou motivo atual e acionável; não exigir artificialmente vinte conclusões positivas. Resolver o software não cria identidade, conteúdo público ou recibo que não existe. Antes da recuperação real, atualizar este inventário se o lote tiver mudado e comparar IDs, chamadas e custos anteriores/depois.
+
+## Provas locais de A0 — não são recuperação do lote de produção
+
+| Defeito corrigido | Testes executáveis |
+| --- | --- |
+| Capacidade por fonte e leitura/reanálise sem nova busca | `radar-search-capacity.test.ts`, `radar-research-planner.test.ts`, `radar-site-discovery.test.ts`, `radar-research-availability.test.ts`, `radar-capture-preflight.test.ts` |
+| Aprovação individual/seleção/retomada com mesmo escopo | `radar-capture-analysis-authorization.test.ts`, integração homônima, `radar-capture-dispatch.test.ts`, `RadarCaptureControls.test.tsx`, `RadarWorkspace.test.tsx` |
+| Resumo pai antigo, evento fora de ordem e recibo incerto preservado | `radar-capture-reconciliation.test.ts`, integração homônima e teste de confirmação atrasada em `radar-capture-dispatch.test.ts` |
+| Horário/ordem invalidando análise paga e citações mudando de página | `radar-evidence-version.test.ts`, testes de alias legado/reutilização repetida em `radar-research-persistence.test.ts` |
+| Continuidade das vinte admitidas sem redescobrir ou perder runs | cenário `recovers twenty admitted companies` em `radar-capture-dispatch.test.ts`, com fontes simuladas e PostgreSQL isolado |
+
+Continuam pendentes A1 (cinco recibos incertos), A5 (feedback completo por campo), B/E0 (qualidade medida da decisão) e C (novas estratégias de descoberta/identidade/investigação). As linhas individuais acima descrevem a auditoria original e não foram reclassificadas como resolvidas sem reabrir os registros reais.

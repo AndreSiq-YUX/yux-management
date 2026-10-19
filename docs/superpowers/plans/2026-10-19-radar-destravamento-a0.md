@@ -92,3 +92,13 @@ Acrescentar `allowSemanticRefresh?:boolean` ao schema HTTP de retomada e à entr
 - [ ] Reproduzir os vinte itens com fontes simuladas, com `discoveryCalls===0`, nenhum ID perdido e nenhum recibo incerto repetido.
 - [ ] Provar separadamente os quatro defeitos acima; não exigir A1/B/C para publicar esta correção.
 - [ ] Atualizar inventário código→tarefa→teste. Falta real de leitura/identidade e os cinco recibos antigos permanecem explicitamente atribuídos a A1/A5/C4, nunca marcados resolvidos por A0 sem evidência.
+
+## Registro de implementação — 19/10/2026
+
+- A0.1 implementada em `ff3f3ca`: capacidade por fonte, agregado explícito opcional e campos no Admin. Testes de capacidade, planner, descoberta, disponibilidade, preflight e formulário; PostgreSQL isolado.
+- A0.2 implementada em `7573ec2`: autorização do pedido persistida e revalidada para cada filho, seleção e retomada. Migração aditiva **0196**, inventário de migrações atualizado sem promover gates de release. Teste HTTP com quatro papéis e teste de quatro selecionadas; recibos incertos não autorizados por essa confirmação.
+- A0.3 implementada em `45d4277`: reconciliação transacional reutilizável, resumo e outbox atualizados após execução individual; resposta atrasada não sobrescreve run novo. Teste PostgreSQL reproduz 1/8/11, quatro atualizações, rollback, concorrência, conta/revisão diferente e histórico; worker individual real com transportes simulados.
+- A0.4 implementada nesta entrega: hash de conteúdo v2, vínculos de citações e aliases comprovados para recibos antigos. Material antigo ausente permanece preservado e explicado; nenhum replay automático. Testes de reordenação, horário, alteração real, reutilização repetida e preservação do resultado pago original.
+- Ensaio das vinte admitidas em `radar-capture-dispatch.test.ts`: zero redescoberta, mesmos IDs/runs/recibos. Os cinco efeitos reais incertos e as lacunas reais de leitura/identidade **não** foram conciliados em produção por esses testes.
+
+O desenvolvimento foi local, sem chamadas externas pagas, push, merge, implantação ou alteração de limites/credenciais de produção. Aceite em produção continua pendente de autorização e conferência própria; E0/A/B/C não estão concluídos por esta entrega.
