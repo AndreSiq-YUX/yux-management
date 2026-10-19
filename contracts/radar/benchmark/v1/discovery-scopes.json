@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "queryPlanVersion": "1.0.0-draft",
+  "executionStatus": "not_evaluated",
+  "country": "BR",
+  "sources": [
+    "osm_extract",
+    "brave_place_search",
+    "serper_places",
+    "serper_web_search",
+    "brave_web_search",
+    "cnpja_advanced_search",
+    "perplexity_search"
+  ],
+  "scopes": [],
+  "requirements": [
+    "Selecionar segmentos e regiões comparáveis antes de medir fontes.",
+    "OSM exige snapshot municipal e segmento suportado; indisponibilidade não é ausência de empresas.",
+    "Places depende de direitos de retenção e entrega; fontes sem licença não serão executadas.",
+    "Congelar período, consultas, cotações e orçamento antes de executar.",
+    "Sem chamadas externas automáticas; resultados ausentes permanecem not_evaluated."
+  ]
+}

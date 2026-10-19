@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "1.0.0-draft",
+  "criteriaVersion": "1.0.0-draft",
+  "contextVersion": "1.0.0-draft",
+  "labelStatus": "pending",
+  "status": "draft",
+  "plannedCases": 100,
+  "quotas": {
+    "calibration": {
+      "compatible": 18,
+      "outside_profile": 18,
+      "investigate": 24
+    },
+    "validation": {
+      "compatible": 12,
+      "outside_profile": 12,
+      "investigate": 16
+    }
+  },
+  "notes": [
+    "Cem vagas de coleta, sem empresas ou rótulos humanos inventados.",
+    "Revisão humana independente obrigatória para positivos e descartes; divergências impedem congelamento.",
+    "O mesmo grupo empresarial não pode atravessar as partições. Um nome comercial ou CNAE isolado não é rótulo."
+  ]
+}

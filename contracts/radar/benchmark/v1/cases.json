@@ -1,0 +1,805 @@
+{
+  "labelStatus": "pending",
+  "cases": [
+    {
+      "id": "case-001",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-002",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-003",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-004",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-005",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-006",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-007",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-008",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-009",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-010",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-011",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-012",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-013",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-014",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-015",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-016",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-017",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-018",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-019",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-020",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-021",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-022",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-023",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-024",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-025",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-026",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-027",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-028",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-029",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-030",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-031",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-032",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-033",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-034",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-035",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-036",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-037",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-038",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-039",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-040",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-041",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-042",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-043",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-044",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-045",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-046",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-047",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-048",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-049",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-050",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-051",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-052",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-053",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-054",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-055",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-056",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-057",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-058",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-059",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-060",
+      "partition": "calibration",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-061",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-062",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-063",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-064",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-065",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-066",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-067",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-068",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-069",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-070",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-071",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-072",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-073",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-074",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-075",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-076",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-077",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-078",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-079",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-080",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-081",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-082",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-083",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-084",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-085",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-086",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-087",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-088",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-089",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-090",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-091",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-092",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-093",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-094",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-095",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-096",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-097",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-098",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-099",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    },
+    {
+      "id": "case-100",
+      "partition": "validation",
+      "labelStatus": "pending",
+      "criteria": null,
+      "evidence": [],
+      "expectedSourceIds": []
+    }
+  ]
+}
