@@ -48,7 +48,9 @@ describe.skipIf(!connectionString)('durable continuation before paid reservation
    expect((await f.pool.query('SELECT * FROM public.radar_candidate_records WHERE campaign_id=$1',[f.campaign.id])).rows).toHaveLength(60)
    expect((await f.pool.query('SELECT * FROM public.radar_capture_items WHERE operation_id=$1',[op.operationId])).rows).toHaveLength(20)
    const cursor=(await f.pool.query('SELECT * FROM public.radar_regional_discovery_cursors WHERE campaign_id=$1',[f.campaign.id])).rows[0]
-   expect(cursor).toMatchObject({generation:1,pages_processed:8,candidates_seen:90})
+   // These counters became int8 in 0207/0209. Raw pg keeps strings globally;
+   // the application normalizes bounded Radar counters, not the global parser.
+   expect(cursor).toMatchObject({generation:1,pages_processed:'8',candidates_seen:'90'})
    expect((await f.pool.query('SELECT * FROM public.radar_continuation_authorizations WHERE campaign_id=$1',[f.campaign.id])).rows).toHaveLength(1)
    const researched=new Set<string>(),pending=new Set<string>()
    const queue={add:async(name:string,data:Record<string,unknown>)=>{expect(name).toBe('radar.researchCandidate');pending.add(String(data.runId));return{id:String(data.runId)}}}
