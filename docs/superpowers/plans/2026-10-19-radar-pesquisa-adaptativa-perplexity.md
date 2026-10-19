@@ -1,0 +1,139 @@
+# Radar pesquisa adaptativa e Perplexity Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Execução nativa, sequencial, sem subagentes. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Descobrir empresas aderentes por segmento e região e aprofundar lacunas com decisões de IA e Perplexity opcional, sem substituir fatos por texto não verificado.
+
+**Architecture:** Generalizar descoberta para cadastro e web, introduzir fontes Search e um bloco Agent de pesquisa verificável, e conectar decisões ao planner durável. Uma estratégia usa apenas as ferramentas necessárias; novos lotes v2 buscam quantidade aderente, enquanto lotes v1 conservam o seu contrato de contagem.
+
+**Tech Stack:** TypeScript/Fastify, PostgreSQL/BullMQ, runtime Python, OSM/Places e buscas existentes, Perplexity Search/Agent opcionais, OpenRouter Decisions alpha se aprovada em E0, React/Vitest.
+
+**Spec:** `docs/superpowers/specs/2026-10-19-radar-decisoes-pesquisa-perplexity-design.md`
+
+## Global Constraints
+
+- A experiência comercial do Radar não mostra ferramentas, fornecedores, modelos, rotas, recibos, tokens, licenças, custos ou falhas de infraestrutura. Administração técnica fica no painel administrativo do sistema, não em um accordion dentro da campanha.
+- Não apagar candidatos, empresas, revisões, recibos, contadores, overflow, aprovações ou correções humanas. Descartes de aderência são reversíveis e ficam fora da lista principal.
+- Uma resposta paga com resultado incerto não é reenviada automaticamente. Recuperar recibos/respostas; novas compras exigem autorização compatível com a política financeira vigente.
+- Não relaxar bloqueios SSRF, DNS fixado, TLS, robots, acesso privado, permissões de conta ou licenciamento. Exceções de certificado continuam específicas e temporárias.
+- Critérios comerciais e geográficos são configuráveis por campanha ou missão. Nenhum preset fixo de segmento, cidade, estado ou oferta. Este caso de teste não vira regra global.
+- Desenvolvimento usa transportes simulados e PostgreSQL isolado. Piloto real e implantação são autorizações separadas.
+
+## Review Focus
+
+1. Cobrar cinco consultas como cinco requisições ou tratar resultado vazio como gratuito: C1 testa as duas unidades e conciliação por recibo.
+2. Texto do agente citar domínio sem comprovar identidade/contato: C2/C4 exigem fontes, trechos verificáveis e validação independente.
+3. Descoberta web eliminar filiais por telefone comum ou encerrar estado após um resultado limitado: C3 testa identidade, cobertura e continuação própria de cada fonte.
+4. Trocar v1 por v2 admitir substitutas sem pedido ou pagar duas ferramentas equivalentes: C3/C4 congelam contagem e registram ação satisfeito/pulada.
+5. Ganho aparente esconder falsos descartes, custos incertos ou regressão de segurança/audiência: C5 mede qualidade/recuperação com benchmark separado e gate HTTP/CRM/CSV.
+
+## Dependências
+
+Implementar após A0, recuperação A e definição/primeira comparação de E0. A decisão pode ser o resultado estruturado da rota atual se E0 postergar B; C não obriga ativar um fornecedor de decisão novo. Contratos são acrescentados quando usados. Perplexity permanece desabilitada até credencial, política de uso e autorização financeira próprias; pipeline v2 também funciona com fontes atuais aprovadas. Fazer C3.1 e C3.2 antes da orquestração C3.3; C1/C2 são alternativas opcionais de fonte, não pré-requisito para testar descoberta atual.
+
+### Task C1 Perplexity Search como fonte governada
+
+**Files:** criar `backend/src/modules/radar/perplexity-search.ts`, `backend/tests/radar-perplexity-search.test.ts`, migração aditiva `radar_perplexity_sources` no próximo número livre; modificar `backend/src/modules/radar/web-search.ts`, `sourceRules.ts`, `repository.ts`, `search-configuration.ts`, `types.ts`, `backend/src/modules/platform/provider-credentials.ts`, `backend/src/modules/platform/routes.ts`, `frontend/src/components/platform/admin/ProviderConnectionEditor.tsx`, `RadarSourceManagementPanel.tsx` e seus testes.
+
+**Interfaces:** `searchRadarPerplexity({apiKey,queries:string[],searchType:'fast'|'web',maxResults,maxTokens,maxTokensPerPage,region,language,fetchImpl}):Promise<{hits:RadarWebHit[];queryCount:number;billableRequestCount:number;providerResponseId?:string}>`. Ampliar `RadarWebHit` com origem e texto extraído sem mudar retorno das fontes antigas. No máximo cinco consultas relacionadas por requisição, conforme API atual. Configuração administrativa de fonte separa preço por requisição e consumo de taxa por consulta. Endpoint de busca é `/search`; não chamar chat ou Decisions.
+
+**Exemplo e âncora:** `web-search.ts:4` já normaliza resultados Serper/Brave. Cinco consultas relacionadas de uma região, se agrupadas numa requisição, conservam cinco relações consulta→resultado e uma unidade faturável, sem inventar cinco cobranças nem cinco empresas. Mostrar estimativa em BRL com A4.
+
+- [ ] **Step 1:** Fixtures HTTP: cinco consultas + 200 => uma unidade faturável/cinco de taxa; 200 vazio => uma; 400/429/falha upstream confirmados => não faturável conforme contrato; timeout após envio => incerto. Testar URL inválida, tamanho excessivo, redaction, campos extras e modo rápida/padrão. Taxa de pesquisa não implica custo por tokens extraídos.
+- [ ] **Step 2:** Rodar `npm test -- tests/radar-perplexity-search.test.ts tests/radar-web-search.test.ts tests/radar-source-rules.test.ts`; observar falhas novas antes de implementar.
+- [ ] **Step 3:** Integrar conexão criptografada `perplexity`, capacidades e confirmação de persistência/entrega no Admin sem referência textual obrigatória. Criar fontes internas `perplexity_search_fast` e `perplexity_search_web` desativadas, sem credencial/limite financeiro aprovado por migração. Passar por reserva/recibo da A1; preservar consulta/origem para auditoria técnica. Incluir filtros BR/português como preferências do mercado da campanha, não prova de localização da empresa.
+- [ ] **Step 4:** Rodar regressões de fontes existentes, RLS/HTTP direto e testes de painel; confirmar zero chamada externa e zero alteração de conexão já cadastrada; commit da fonte Search.
+
+### Task C2 Bloco de investigação Agent com modelo roteável
+
+**Files:** criar `workers/marketing-studio-agent-runtime/yux_agent_runtime/perplexity_research.py`, `workers/marketing-studio-agent-runtime/tests/test_perplexity_research.py`, `backend/src/modules/radar/deep-research.ts`, `backend/tests/radar-deep-research.test.ts`; modificar `runtime_factory.py`, `api.py`, `backend/src/modules/platform/llm-routing.ts`, `routes.ts` e painel de roteamento da B4.
+
+**Interfaces:** `ResearchProvider.research(context,policy)->{claims,evidence,usage,toolCalls,responseId,completionState}`; adaptador `PerplexityAgentResearchProvider`. Backend `researchRadarGaps(pool,user,{candidateId,requestId,gaps,revision}):Promise<ResearchEvidenceV1[]>`, runtime `/radar/deep-research`, provedor `/v1/agent`. Rota `radar_deep_research`, capacidade research, conexão própria Perplexity; principal/fallbacks devem ser modelos aceitos por esse endpoint. Não usar fallback global de chat nem a chave OpenAI como se fosse Perplexity.
+
+Ampliar os enums de fornecedor em backend/frontend/runtime para `perplexity` **somente** nas rotas `kind:research`, com protocolo `perplexity-agent-v1` e credencial própria. Chat/embedding/decision não passam a aceitar esse protocolo por ampliar o enum. Se B estiver postergada, aplicar apenas extensão research/catálogo/painel de B1/B4 necessária a C2, sem instalar Decisions de produção.
+
+Cada HTTP request leva **um único `model`**; proibir `models`, `preset` e perfil que selecione modelo implicitamente. [Fallback nativo](https://docs.perplexity.ai/docs/agent-api/model-fallback) é delegado ao aplicativo, não ao fornecedor: erro confirmado permite próximo modelo em **outra** requisição autorizada, com outro recibo; transporte incerto não avança automaticamente. Não afirmar conhecimento de tentativas internas que o fornecedor não expõe; o recibo é por requisição observável.
+
+Enviar `max_steps`, inicial 3 e editável no Admin, e limite de saída documentado; **não enviar `max_tool_calls`**. Passos não equivalem a número de buscas: uma etapa pode gerar mais de uma ação. Orçar entrada/saída, ferramentas e tempo por execução; sem garantia verificável de teto financeiro, manter Agent desativado e usar Search/leitor local. Conciliar `usage.cost.total_cost` e conservar detalhamento de entrada, saída, cache, ferramentas e moeda. Total informado não é somado novamente às parcelas; campo ausente permanece desconhecido. [Contrato e exemplos Agent](https://docs.perplexity.ai/docs/agent-api/quickstart).
+
+Criar `normalizePerplexityEvidence(response)` em `backend/src/modules/radar/perplexity-evidence.ts` com teste `radar-perplexity-evidence.test.ts`. Ler blocos `search_results`, indexar `(responseId,source,id)` e resolver marcadores como `[web:1]` no texto mesmo quando `annotations`/citações vierem vazias. Se IDs colidirem entre blocos sem escopo suficiente para desambiguar, não adivinhar pela posição: afirmação fica sem fonte resolvida. Referência resolvida não garante suporte; validar trecho, identidade e finalidade antes de aceitar cada afirmação. Tratar citações estruturadas adicionais quando presentes, sem exigir um único formato.
+
+**Exemplo:** “contato para fornecedores ... [web:1]” só fornece contato utilizável quando `web:1` resolve à página e o trecho sustenta esse contato da empresa. `annotations:[]` não elimina essa relação; `[web:99]` inexistente não é aceito. JSON estruturado com `sourceIds` passa pela mesma verificação.
+
+- [ ] **Step 1:** Testar modelo principal/fallback em requests distintos: `body.model` único, ausência de `models`/`preset`/`max_tool_calls`, `max_steps===3`; timeout incerto não dispara fallback. Fornecedor Perplexity é aceito em research e rejeitado como decision/embedding incompatível. Fixtures com `annotations:[]` e `[web:1]` válido, fonte ausente/duplicada, JSON inválido, e-mail sem trecho e instruções maliciosas. Assertion `usage.cost.total_cost` preservado sem dupla soma; principal+fallback com dois recibos. Contato útil encontrado evita consultas equivalentes, mas mantém validação de identidade; snippet não é teste local do site ao vivo.
+- [ ] **Step 2:** Rodar `python -m pytest tests/test_perplexity_research.py -q` e `npm test -- tests/radar-deep-research.test.ts`; falhas devem demonstrar ausência da implementação.
+- [ ] **Step 3:** Implementar apenas ferramentas web/leitura, modelo único e saída verificável. Sem people_search, sandbox, mensagens, login ou formulário. Parâmetros iniciais propostos: `max_steps=3`, reserva de contexto até 16.000 tokens totais estimados e saída até 4.000; contexto de páginas posteriores também custa e integra reserva. Não tratar esses valores como teto remoto de custo ou de chamadas de ferramenta. Revalidar contrato antes de ativação, guardar fixtures documentais/reações reais autorizadas com versão. Usar A1/A4 para custo original, conversão BRL, falha e conciliação.
+- [ ] **Step 4:** Persistir resposta/ferramentas/consumo antes de validar; cada afirmação aceita precisa de evidência pública aplicável. Provar que orçamento/licença negados bloqueiam só esse efeito, que corte de resposta fica recuperável e que nenhuma URL bloqueada é enviada ao agente como forma de contorno. Rodar regressões runtime e commit do bloco Agent, ainda sem ativação paga.
+
+### Task C3.1 Extrair empresas de páginas e diretórios
+
+**Files:** criar `backend/src/modules/radar/discovery-extraction.ts`, `backend/tests/radar-discovery-extraction.test.ts`, `workers/marketing-studio-agent-runtime/yux_agent_runtime/radar_discovery_extraction.py`, `tests/test_radar_discovery_extraction.py`; modificar catálogo `backend/src/modules/platform/llm-routing.ts:18`, runtime/API e schema de evidências A1.
+
+**Interfaces:** `extractRadarBusinesses({document,region,criteria,requestId}):Promise<BusinessMention[]>`; cada menção `{name,location?,claimedTaxId?,claimedWebsite?,contacts:[],sourceUrl,evidenceSpans,subjectScope:'company'|'group'|'establishment',needsVerification:true}`. A rota chat `radar_discovery_extraction` fica no mesmo Admin de modelos, principal/fallback; saída JSON com schema. Modelo de decisão não generativo não é extrator de nomes livres. Cada campo requer trecho literal validável e sujeito da menção; telefone/e-mail de rodapé do diretório não é contato de empresa citada. Campo sem suporte é omitido, não completado pelo conhecimento do modelo.
+
+**Exemplo:** página “dez cozinhas de Campinas” com dez nomes e telefone do editor produz dez menções com trechos, zero telefone herdado do editor. Página de governo pode fornecer uma menção/CNPJ documentado, mas nunca vira site oficial automaticamente.
+
+- [ ] **Step 1:** Testes de lista com múltiplas empresas, rodapé compartilhado, mesmo nome em cidades diferentes, HTML malicioso, JSON cortado, campos sem trecho e limite de contexto. Só metadados de um resultado SERP não comprovam dez empresas ausentes do texto.
+- [ ] **Step 2:** Rodar `npm test -- tests/radar-discovery-extraction.test.ts` e `python -m pytest tests/test_radar_discovery_extraction.py -q`.
+- [ ] **Step 3:** Ler documentos pelo transporte público existente, selecionar trechos com limites versionados e salvar resposta/recibo antes de validar. Texto externo nunca é instrução. Menções seguem a C3.2; extração não admite automaticamente candidatos nem atribui contatos oficiais. Não extrair/armazenar material cuja política não permita.
+- [ ] **Step 4:** Provar revalidação sem nova IA, atribuição campo→trecho e zero contato do publicador publicado. Commit `feat(radar): extract evidenced business mentions from search pages`.
+
+### Task C3.2 Associar identidade web cadastro e CNPJ
+
+**Files:** criar `backend/src/modules/radar/entity-resolution.ts`, `backend/tests/radar-entity-resolution.test.ts`, `backend/tests/integration/radar-entity-resolution.test.ts`; modificar `source-identity.ts`, `site-discovery.ts:9`, `candidate-admission.ts` (criado nesta tarefa), `cnpjaClient.ts:86`, repositório e migração de identidade aditiva.
+
+**Interfaces:** `resolveRadarBusinessEntity(db,{organizationId,mention,existingCandidates,registryPolicy}):Promise<{status:'matched'|'new_provisional'|'ambiguous';candidateId?;taxId?;scope;signals;nextAction?}>`. Ordem: CNPJ completo validado e comprovado em evidência → cadastro existente da mesma conta; senão chave externa estável/registro já associado; senão domínio oficial confirmado **mais** nome compatível e endereço/município coincidentes. Nome sozinho, telefone/e-mail ou domínio de grupo sozinho não mesclam. CNPJs de estabelecimentos diferentes ficam distintos; vínculo de grupo separado. Conflito de CNPJ ou cidade suspende junção automática para revisão. Não usar raiz do CNPJ como identidade de filial.
+
+Compra de cadastro: tentar primeiro dados já salvos e evidência pública permitida. Se houver CNPJ confiável e faltar dado exigido, lookup individual somente com fonte/limite/orçamento aprovados. Sem CNPJ, triagem deve indicar compatibilidade ou investigação promissora e faltarem campos fiscais requeridos ou haver conflito de identidade: autorizar uma busca estreita por nome/localidade no CNPJá; resposta vazia/ambígua não dispara tentativas amplas automáticas. Número adicional é política Admin e novo efeito, não loop oculto. Candidato claramente fora do perfil não paga cadastro. Se perfil dispensa CNPJ, admitir provisório com aviso; não bloquear contato público legítimo por falta fiscal não exigida.
+
+**Exemplo:** empresa web “Alfa Refeições”, mesmo domínio/endereço da empresa já trazida pelo CNPJá, acrescenta evidências à existente. “Alfa” no mesmo estado não basta. Duas filiais com telefone central continuam duas unidades. CNPJ retirado do rodapé de agência desenvolvedora não é CNPJ do prospecto.
+
+- [ ] **Step 1:** Testar esses quatro casos, CNPJ inválido/conflitante, grupo, candidato simultâneo em duas fontes e duas contas. Assert `existingTaxId => newCandidateCount===0`, `wrongPublisherTaxId => noMerge`, `outsideProfile => registryCalls===0`, `ambiguous => notCountedAsQualified`.
+- [ ] **Step 2:** Rodar `npm test -- tests/radar-entity-resolution.test.ts` e integração homônima em PostgreSQL isolado.
+- [ ] **Step 3:** Implementar chaves/vínculos/evidências transacionais e unicidade por organização/campanha/identidade apropriada. Preservar menções e motivo da junção reversível; não apagar empresa ou contato humano. Cadastro pago passa pelos recibos A1 e não resolve dúvida apenas pelo mesmo CNAE.
+- [ ] **Step 4:** Testar corrida web×cadastro, replay de página já paga e recuperação de junção incorreta sem perder fontes. Commit `feat(radar): resolve web prospects against registry identities`.
+
+### Task C3.3 Orquestrar fontes existentes e meta aderente
+
+**Files:** criar `backend/src/modules/radar/discovery-providers.ts`, `discovery-plan.ts`, migração aditiva `radar_adaptive_capture`, `backend/tests/radar-discovery-plan.test.ts`, `radar-candidate-admission.test.ts`, `backend/tests/integration/radar-adaptive-capture.test.ts`; modificar `candidate-admission.ts` de C3.2, `capture-discovery.ts:62`, `capture-operation.ts`, `continuation-state.ts`, `cnpjaClient.ts`, `repository.ts:740`/`:1368`, `place-providers.ts`, `osm-segment-map.ts:3`, `osm-extract.ts`, `search-configuration.ts`, `types.ts`, `frontend/src/components/radar/RadarCampaignConfigurationForm.tsx`, `frontend/src/lib/radar/radarSearchConfiguration.ts` e testes.
+
+**Interfaces:** `DiscoveryProvider.discover(scope,queryPlan,continuation):Promise<{candidates:DiscoveryCandidate[];continuation?:object;exhaustion:'more'|'exhausted'|'unknown'}>`; candidatos aceitam nome/domínio/localização sem CNPJ e passam C3.1/C3.2. Adaptadores **OSM**, Serper Places, Brave Places, Serper Web, Brave Web, CNPJá e Perplexity opcional compartilham saída, não o método de continuação. Acrescentar `pipelineVersion:1|2`, `countingMode:'admitted'|'qualified'` e plano persistido; consumir revisões A3. Cadastro mantém token; web mantém consultas processadas; OSM mantém snapshot e chave ordenada, nunca cursor fictício.
+
+Estado real do OSM: `runRadarOsmSearch` exige workspace interno, cidade/UF e snapshot até 90 dias; `osm-segment-map.ts:3` reconhece somente clínicas médicas. Incluir fonte no catálogo/planner não significa já suportar cozinhas. Criar mapeamento versionado e editável no Admin de segmento→tags, validado por amostra e sem expressões executáveis. `maxSnapshotAgeDays` e tamanho de página do índice ficam editáveis na política OSM; substituir o `LIMIT 1000` fixo de `repository.ts:796` por paginação ordenada do snapshot, sem declarar esgotamento após a primeira fatia. Catálogo geográfico expande UF em municípios com snapshots disponíveis; lacunas são `coverage_unavailable`, não mercado esgotado. Consulta de índice tem custo externo zero, mas consumo de infraestrutura/atualização é medido. Preservar atribuição/licença; se incompatível com entrega comercial sem revelar mecanismo, manter material restrito até solução de apresentação autorizada.
+
+Places existentes incluem caminhos de pré-visualização restritos. Não usar `runRadarPlacePreview` como atalho para gravar qualquer resultado: separar transporte/normalização da persistência, verificando direitos por fonte/plano. OSM também não deve inserir pelo repositório legado e novamente pela admissão v2. Consumir índice com função sem efeitos e admitir pela mesma transação v2.
+
+**Exemplo:** campanha estadual usa municípios/termos configurados e fontes elegíveis de mapa/web; CNPJá pode complementar depois, não iniciar obrigatoriamente. Se OSM não tiver mapeamento/snapshot adequado, usar outra fonte e registrar lacuna de cobertura no Admin, não devolver zero como prova de inexistência.
+
+- [ ] **Step 1:** Fixtures: termos/UFs/cidades editáveis; cinco duplicados e três descartados não preenchem meta dez; vinte v1 retomam com zero descoberta. OSM com snapshot/mapeamento válidos descobre, sem snapshot fica indisponível, segmento não mapeado não finge suporte. Places sem direito de persistir fica só preview; fonte aprovada passa admissão. Queda após resposta antes de admissão recupera recibo; cobertura parcial não declara UF exaurida. Orçamento não altera cursor.
+- [ ] **Step 2:** Rodar `npm test -- tests/radar-discovery-plan.test.ts tests/radar-candidate-admission.test.ts tests/radar-capture-discovery.test.ts tests/radar-continuation-state.test.ts` e integração adaptive capture; demonstrar falhas reais antes de mudar o fluxo.
+- [ ] **Step 3:** Implementar plano configurável por segmento/sinônimos/exclusões e geografia, com ordem das fontes escolhida pelo Admin e ações elegíveis pela decisão. Estado inteiro e vários estados não exigem cidade. Planejamento de cidades usa catálogo territorial verificável/cacheado e processamento incremental; não hardcodificar cidades do piloto. Cadastrar todo candidato e motivo de deduplicação/admissão na mesma transação que avança continuação, incluindo excedentes pagos. Separar identidade de grupo e estabelecimento; nunca descartar por telefone/e-mail compartilhado isoladamente.
+- [ ] **Step 4:** Implementar v2 sem reinterpretar v1; descartados reversíveis não contam na meta e não somem da auditoria. Separar meta aderente e prontidão de contato; pesquisar até meta ou condição de parada real. Não converter pré-visualização de Places não licenciada em persistência. Regredir expiração de token, recomeço autorizado, replay de páginas e overflow; commit da descoberta/admissão.
+
+### Task C4 Planner adaptativo de ponta a ponta
+
+**Files:** modificar `backend/src/modules/radar/research-planner.ts`, `research-service.ts`, `research-availability.ts`, `research-quality.ts`, `capture-dispatch.ts`, `capture-research-state.ts`, `source-identity.ts`, `company-projection.ts`, `research-requests.ts`; criar `backend/tests/radar-adaptive-research.test.ts`, `backend/tests/integration/radar-adaptive-research.test.ts`; modificar suites de planner, identidade e contatos.
+
+**Interfaces:** `planRadarAdaptiveResearch({context,policy,availableActions,lastDecision,effects}):{next?:ResearchActionV1;stop?:'criteria_met'|'outside_profile'|'insufficient_evidence'|'awaiting_capacity'|'awaiting_authorization'|'no_progress'}`. Consome decisão B3 ou baseline estruturado E0 e fontes C3.1–C3.3; C1/C2 somente se configuradas. Cada efeito tem chave estável, status e recibo A1. O planner não executa transporte, escolhe apenas uma ação limitada por turno; worker persiste e reencaminha até término ou espera.
+
+Acrescentar `ResearchActionV1` ao schema A1 somente aqui. Se B for postergada, adaptar o resultado com opções fixas de E0 para a mesma interface de decisão, sem falsificar probabilidades. `availableActions` inclui fontes de mapa/web/cadastro e extração/resolução, sempre já filtradas por configuração, capacidade e licença. A decisão não pode inventar ferramenta nem autorizar efeito bloqueado.
+
+**Exemplo e âncora:** `capture-discovery.ts:62` hoje chama CNPJá diretamente; v2 oferece busca segmento/cidade em mapa/web, extrai empresas, associa identidade e só então decide cadastro/aprofundamento. Para contato já encontrado com fonte válida, não comprar consulta equivalente.
+
+- [ ] **Step 1:** Cenários completos: CNPJ amplo -> investigar -> site institucional -> fornecedor -> finalizar; resultado editorial -> rejeitar como oficial -> outro domínio; contato encontrado por Agent -> não duplicar busca/leitura equivalentes; modelo inconclusivo -> outra evidência, não fallback técnico; falha de uma empresa -> outras continuam. Todos os estágios aplicáveis avaliados, etapas não necessárias com motivo, nenhum perfil incompleto aprovado artificialmente.
+- [ ] **Step 2:** Rodar `npm test -- tests/radar-adaptive-research.test.ts tests/radar-research-planner.test.ts tests/radar-public-presence.test.ts tests/radar-contact-consolidation.test.ts`; integração com banco/worker isolados.
+- [ ] **Step 3:** Conectar decisões aos gaps reais, preferência por ler fonte já encontrada e escalonamento para investigação seletiva. Detectar repetição de `(ação,entrada,conteúdo)` sem progresso e terminar com lacuna clara; não consumir orçamento num loop. Priorizar contato da finalidade da campanha; formulário de fornecedores pode satisfazer esse canal se permitido pelos critérios, não virar e-mail inventado. Identidade, atuação observável, aderência, porte e intenção de compra permanecem avaliações separadas.
+- [ ] **Step 4:** Testar refresh incremental de uma empresa e retomada das vinte com transporte simulado, autorização/carteira revogadas, certificado vencido, robots, URL privada e timeouts. Confirmar reaproveitamento válido e novos efeitos somente quando necessários/autorizados; commit do planner durável.
+
+### Task C5 Experiência final e repetição do benchmark antecipado
+
+**Files:** modificar `frontend/src/components/radar/RadarCommercialResults.tsx`, `RadarCommercialWorkspace.tsx`, `RadarCaptureControls.tsx`, `RadarCaptureProgress.tsx`, `RadarCandidateSummary.tsx`, `RadarQualitySummary.tsx`, `frontend/src/types/radarCommercial.ts`, `backend/src/modules/radar/commercial-view.ts`, `research-metrics.ts`; reutilizar `contracts/radar/benchmark/v1` e avaliadores E0, criar `backend/tests/radar-adaptive-quality-benchmark.test.ts`, `frontend/tests/journeys/browser/radar-adaptive-campaign.pw.ts`; atualizar `docs/runbooks/radar-pesquisa-configuravel.md`.
+
+**Interfaces:** Métricas administrativas separam candidatos examinados, aderentes **novos** após deduplicação, descartes, contatos úteis, contribuição exclusiva/interseção das fontes, efeitos conhecidos/incertos, custo BRL por aderente novo/pronto e tempo por estágio. DTO cliente só tem resultado/andamento A5. Repetir protocolo/dataset congelados em E0 com adaptadores agora disponíveis; não criar o benchmark só no fim nem ajustar modelo com a validação final.
+
+**Exemplo:** 20 nomes descobertos não são 20 empresas prontas; mostrar aderentes/incompletas/descartadas com motivos comerciais. Internamente comparar quanto OSM/Places/web acrescentam de empresas novas na mesma região e o custo integral, incluindo extração e cadastro.
+
+- [ ] **Step 1:** Testar meta aderente, progresso sem falso 100%, detalhes inline, atualização antes/depois, motivo útil de ausência e recuperação de excluído. Benchmark com 100 casos/partição 60–40 conforme spec deve ter zero falso descarte de positivo confirmado na validação, zero contato de terceiro publicado, zero vazamento e zero replay incerto. Todos esses gates também devem existir com provedor simulado, sem fingir medir a qualidade de modelo real.
+- [ ] **Step 2:** Rodar suítes de UI/DTO/benchmark, integração HTTP direta em quatro papéis e isolamento de contas; verificar falhas novas antes de implementar a projeção v2.
+- [ ] **Step 3:** Implementar tela comercial com quantidade aderente explícita, uma ação contextual e filtros comerciais de incompletos/excluídos. Preservar fontes públicas úteis sem nomes técnicos. Comparação paga futura registra estratégias Serper/Brave, Perplexity Search e Agent seletivo sobre a mesma amostra, custo total e custo por prospecto útil; medir português brasileiro e não apenas latência publicada.
+- [ ] **Step 4:** Rodar todas as suítes backend/frontend/runtime, banco real isolado e navegador desktop/mobile. Entrega exige relatório de gates e regressão fora do Radar. Publicação, deploy, ativação de rotas e piloto real são etapas distintas. Antes do piloto registrar modelos principal/fallback, fontes, autorização de retenção/entrega, quantidade e teto de gasto específicos. Rollback preserva v2 em espera, não entrega seu estado pago à engine v1; commit final e atualizar runbook.
