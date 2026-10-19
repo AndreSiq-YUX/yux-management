@@ -4,6 +4,7 @@ import {captureFixture,connectionString,admin,organizationId,available,company,a
 import {startRadarCaptureOperation,getRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
 import {advanceRadarCaptureDiscovery,blockRadarCapture} from '../src/modules/radar/capture-discovery.js'
 import {startRadarCandidateResearch} from '../src/modules/radar/research-service.js'
+import {reconcileRadarCaptureItems} from '../src/modules/radar/capture-reconciliation.js'
 const modulePath='../src/modules/radar/capture-dispatch.js'
 const api=await import(modulePath).catch(()=>({}))
 const state=await import('../src/modules/radar/capture-research-state.js')
@@ -104,6 +105,25 @@ describe.skipIf(!connectionString)('durable capture dispatch',()=>{
    expect(runs).toHaveLength(2)
    expect(runs.every(row=>row.calls.presence.refreshAuthorized===true)).toBe(true)
    expect(runs.every(row=>row.calls.semantic.status==='uncertain'&&!row.calls.semantic.refreshAuthorized)).toBe(true)
+  }finally{await f.close()}
+ })
+ it('never regresses a child that completes before the queue acknowledgement returns',async()=>{
+  const f=await captureFixture()
+  try{
+   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available})
+   const input={organizationId,operationId:started.operationId}
+   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,searchPage:async()=>({candidates:[company()]}),loadSecret:async()=>'fixture'})
+   await api.dispatchRadarCaptureOperation(f.pool,{} as never,input,{add:async(_name:string,data:{runId:string})=>{
+    const client=await f.pool.connect()
+    try{
+     await client.query('BEGIN');await client.query('SELECT id FROM public.radar_campaigns WHERE id=$1 FOR UPDATE',[f.campaign.id])
+     const run=(await client.query("UPDATE public.radar_candidate_research_runs SET status='succeeded',output='{\"siteAssociation\":\"confirmed\",\"quality\":{\"readyForReview\":true}}' WHERE id=$1 RETURNING candidate_id",[data.runId])).rows[0]
+     await reconcileRadarCaptureItems(client,{organizationId,candidateId:run.candidate_id,runId:data.runId});await client.query('COMMIT')
+    }finally{client.release()}
+    return{id:'completed-before-ack'}
+   }},undefined,{availability:available})
+   const after=await getRadarCaptureOperation(f.pool,admin,organizationId,started.operationId)
+   expect(after.counts).toMatchObject({completed:1,researching:0});expect(after.status).toBe('completed')
   }finally{await f.close()}
  })
  it('recovers twenty admitted companies with exhausted search quota without rediscovery or replacing saved runs',async()=>{

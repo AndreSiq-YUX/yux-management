@@ -31,7 +31,7 @@ export async function reconcileRadarCaptureSummary(db:Pick<pg.PoolClient,'query'
  }else await db.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])
 }
 
-export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,input:{organizationId:string;candidateId:string;runId?:string}):Promise<void>{
+export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,input:{organizationId:string;candidateId:string;runId?:string;deliveryFailedRunId?:string}):Promise<void>{
  const parents=(await db.query<{campaign_id:string}>(`SELECT DISTINCT campaign_id FROM public.radar_capture_items WHERE organization_id=$1 AND candidate_id=$2 ORDER BY campaign_id`,[input.organizationId,input.candidateId])).rows
  for(const parent of parents){
   await db.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[parent.campaign_id,input.organizationId])
@@ -43,7 +43,8 @@ export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,
    const childReasons=new Set(previous.flatMap(item=>item.blocker?[item.blocker]:[]))
    const discoveryBlockers=!op.discovery_stopped?op.blockers.filter(code=>!childReasons.has(code)):undefined
    const assessment=assessRadarCaptureResearch(latest)
-   await db.query('UPDATE public.radar_capture_items SET run_id=$4,status=$5,blocker=$6 WHERE operation_id=$1 AND organization_id=$2 AND candidate_id=$3',[op.id,input.organizationId,input.candidateId,latest.id,assessment.status,assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null])
+   const deliveryFailure=latest.status==='queued'&&latest.id===input.deliveryFailedRunId
+   await db.query('UPDATE public.radar_capture_items SET run_id=$4,status=$5,blocker=$6 WHERE operation_id=$1 AND organization_id=$2 AND candidate_id=$3',[op.id,input.organizationId,input.candidateId,latest.id,assessment.status,deliveryFailure?'radar_capture_queue_unavailable':assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null])
    await reconcileRadarCaptureSummary(db,{organizationId:input.organizationId,operationId:op.id,discoveryBlockers})
   }
  }

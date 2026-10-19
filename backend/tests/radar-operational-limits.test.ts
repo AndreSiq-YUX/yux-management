@@ -43,6 +43,22 @@ describe('Radar operational policy',()=>{
 })
 
 describe.skipIf(!connectionString)('Radar persisted policy with isolated PostgreSQL',()=>{
+ it('backfills new defaults in the stored policy with an explicit migration audit instead of inventing a human actor',async()=>{
+  const f=await captureFixture(),before=await api.getRadarOperationalLimits(f.pool,admin)
+  try{
+   await f.pool.query("UPDATE public.radar_operational_limits SET limits=limits-'maxDecisionCallsPerCompany'-'maxDeepSearchesPerCompany'-'maxFallbackAttemptsPerEffect' WHERE singleton=TRUE")
+   await f.pool.query("SELECT private.backfill_radar_operational_defaults('{\"maxDecisionCallsPerCompany\":3,\"maxDeepSearchesPerCompany\":1,\"maxFallbackAttemptsPerEffect\":1}'::jsonb)")
+   const stored=(await f.pool.query('SELECT * FROM public.radar_operational_limits WHERE singleton=TRUE')).rows[0]
+   const normalized=await api.loadRadarOperationalLimits(f.pool)
+   expect(stored.version).toBe(before.version+1);expect(stored.limits).toEqual(normalized.limits)
+   const audit=(await f.pool.query('SELECT * FROM public.radar_operational_limit_audit WHERE policy_version=$1',[stored.version])).rows[0]
+   expect(audit).toMatchObject({change_origin:'migration',updated_by:null,new_limits:stored.limits})
+   await f.pool.query("SELECT private.backfill_radar_operational_defaults('{\"maxDecisionCallsPerCompany\":3}'::jsonb)")
+   expect((await api.loadRadarOperationalLimits(f.pool)).version).toBe(stored.version)
+   const client=await f.pool.connect()
+   try{await client.query('BEGIN');await client.query('SET LOCAL ROLE yux_api');await expect(client.query("SELECT private.backfill_radar_operational_defaults('{\"unauthorized\":1}'::jsonb)")).rejects.toMatchObject({code:'42501'});await client.query('ROLLBACK')}finally{client.release()}
+  }finally{const current=await api.getRadarOperationalLimits(f.pool,admin);await api.updateRadarOperationalLimits(f.pool,admin,{expectedVersion:current.version,limits:before.limits,costPolicy:before.costPolicy});await f.close()}
+ })
  it('serializes two simulated source reservations against the same total campaign budget',async()=>{
   const f=await captureFixture()
   try{

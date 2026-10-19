@@ -6,6 +6,8 @@ import { radarResearchMessage } from '@/lib/radar/radarResearchMessages'
 import {Button} from '@/components/ui/button'
 import {RadarQualitySummary} from './RadarQualitySummary'
 import {RadarResearchFeedback} from './RadarResearchFeedback'
+import {RadarResearchOutcome} from './RadarResearchOutcome'
+import {RadarPreservedResearchFacts} from './RadarCommercialResults'
 
 const stages = [['discovery','Presença pública'],['identity','Identidade'],['reading','Páginas e contatos'],['consolidation','Atividade e fontes'],['review','Qualificação e revisão']] as const
 const statusLabel:Record<string,string> = {queued:'Na fila',running:'Pesquisando',partial:'Resultado parcial',succeeded:'Pesquisa concluída',blocked:'Pesquisa bloqueada',failed:'Falha na pesquisa'}
@@ -38,6 +40,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
   onCompletedRef.current=onCompleted
   useEffect(()=>setAvailable(availability),[availability])
   const running=pendingDispatch.current?.candidateId===candidateId||!!result?.run && ['queued','running'].includes(result.run.status)
+  const needsResume=!!result?.run&&(['partial','blocked','failed'].includes(result.run.status)||result.commercialStatus?.status==='incomplete'||result.commercialStatus?.status==='waiting')
   useEffect(()=>{
     if(!open)return
     let active=true,timer:ReturnType<typeof setTimeout>|undefined
@@ -53,7 +56,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
         if(!active)return
         setResult(value);setAvailable(value.availability);setError(null)
         if(pendingDispatch.current?.candidateId===candidateId||value.run && ['queued','running'].includes(value.run.status))timer=setTimeout(load,4000)
-        else if(value.run && value.run.id!==completedId.current) {completedId.current=value.run.id;onCompletedRef.current?.()}
+        else if(value.run && `${value.run.id}:${value.run.updated_at}`!==completedId.current) {completedId.current=`${value.run.id}:${value.run.updated_at}`;onCompletedRef.current?.()}
       } catch {if(active){setAvailable(null);setError('Não foi possível verificar a disponibilidade ou carregar o resultado. Tente novamente; seus dados foram preservados.');if(pendingDispatch.current?.candidateId===candidateId)timer=setTimeout(load,4000)}}
       finally{if(active)setLoading(false)}
     }
@@ -64,7 +67,9 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     if(!available||submitted.current||pendingDispatch.current?.candidateId===candidateId||!(operation==='refresh'?available.operations?.refresh?.allowed??available.allowed:operation==='reanalyze'?available.operations?.reanalyze.allowed??available.allowed:available.allowed)||approved||!canStart)return
     const route=available.semantic??available.presence
     const semantic=available.semanticQualificationEnabled?` A etapa de IA poderá consumir créditos conforme a rota e fallbacks autorizados no Admin.${showTechnical&&route?` Modelo: ${route.model??'rota ainda não configurada'}. Limites: ${route.maxInputTokens} tokens de entrada e ${route.maxOutputTokens} de saída. ${route.fallbackCount} fallback(s) autorizado(s).`:''} Não há estimativa monetária do provedor nesta tela; o valor das buscas abaixo não inclui IA.`:''
-    if(!window.confirm(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`))return
+    const confirmation=showTechnical?(operation==='reanalyze'?`Reavaliar com os dados salvos, sem novas buscas?${semantic}`:`${operation==='refresh'?'Fazer uma nova coleta, mesmo com pesquisa recente?':'Pesquisar esta empresa sem enviar mensagens?'} Máximo de ${available.maxQueriesPerCandidate} consultas de busca; estimativa máxima ${money(available.maximumCostPerCandidate)}.${semantic}`)
+      :operation==='reanalyze'?'Reavaliar as informações já encontradas? Nenhuma mensagem será enviada.':operation==='refresh'?'Atualizar as informações desta empresa? Nenhuma mensagem será enviada.':'Completar a pesquisa desta empresa? Nenhuma mensagem será enviada.'
+    if(!window.confirm(confirmation))return
     submitted.current=true;setBusy(true);setError(null);setOpen(true)
     const key=JSON.stringify({candidateId,organizationId,configurationRevision,allowSemanticRefresh,operation})
     if(pendingIntent.current?.key!==key)pendingIntent.current={key,requestId:crypto.randomUUID()}
@@ -73,7 +78,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
       if(response.requestId&&response.campaignId)pendingDispatch.current={candidateId,campaignId:response.campaignId,requestId:response.requestId}
       pendingIntent.current=null;setAllowSemanticRefresh(false);setRefresh(value=>value+1)
     }
-    catch {setError('Não foi possível iniciar. Atualize a disponibilidade; confira configuração, quota e orçamento. Seus dados foram preservados.');setRefresh(value=>value+1)}
+    catch {setError(showTechnical?'Não foi possível iniciar. Atualize a disponibilidade; confira configuração, quota e orçamento. Seus dados foram preservados.':'Não foi possível iniciar esta pesquisa. Tente novamente; os dados encontrados foram preservados.');setRefresh(value=>value+1)}
     finally {submitted.current=false;setBusy(false)}
   }
   async function changeTls(diagnosticId?:string,grantId?:string) {
@@ -93,8 +98,8 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
   const historical=!!result?.run&&result.run.configuration_revision!==configurationRevision
   return <section className="mt-3 min-w-0 space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3" aria-label="Pesquisa automática da empresa">
     <div className="flex flex-wrap gap-2">
-      <button type="button" className={`${buttonClass} bg-slate-900 text-white`} disabled={!available?.allowed||busy||running||approved||!canStart} onClick={()=>start(result?.run&&['partial','blocked','failed'].includes(result.run.status)?'resume':'complete')}>
-        {busy?'Iniciando...':running?'Pesquisa em andamento':result?.run&&['partial','blocked','failed'].includes(result.run.status)?'Retomar pesquisa desta empresa':'Completar dados desta empresa'}</button>
+      <button type="button" className={`${buttonClass} bg-slate-900 text-white`} disabled={!available?.allowed||busy||running||approved||!canStart} onClick={()=>start(needsResume?'resume':'complete')}>
+        {busy?'Iniciando...':running?'Pesquisa em andamento':needsResume?'Retomar pesquisa desta empresa':'Completar dados desta empresa'}</button>
       <button type="button" className={buttonClass} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?'Ocultar dossiê':'Ver dossiê da empresa'}</button>
       {result?.run&&!running&&<><button type="button" className={buttonClass} disabled={!(available?.operations?.refresh?.allowed??available?.allowed)||busy||approved||!canStart} onClick={()=>start('refresh')}>Atualizar pesquisa</button>
         <button type="button" className={buttonClass} disabled={!(available?.operations?.reanalyze.allowed??available?.allowed)||busy||approved||!canStart} onClick={()=>start('reanalyze')}>Reavaliar com os dados salvos</button></>}
@@ -107,6 +112,8 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
     {available?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="text-xs text-amber-900">{showTechnical?`${reason.message} Caminho: ${reason.resolution}.`:'Pesquisa indisponível: solicite ao responsável a revisão da configuração ou dos limites da campanha.'}</p>)}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {open && <div className="space-y-3 text-sm">
+      <RadarResearchOutcome feedback={result?.commercialStatus}/>
+      {result?.researchRefreshIncomplete&&result.previousResearch?.belongsToCurrentIdentity===true&&<RadarPreservedResearchFacts previous={{websiteUrl:result.previousResearch.websiteUrl,observedAt:result.previousResearch.siteCheckedAt,contacts:result.previousResearch.publicContacts}}/>}
       {output&&<RadarQualitySummary quality={historical?undefined:output.quality}/>}
       {output&&<RadarResearchFeedback key={`${candidateId}:${configurationRevision}`} candidateId={candidateId} organizationId={organizationId} revision={configurationRevision} contacts={output.contacts??[]} canReview={canReview&&!historical}/>}
       {tlsMessage&&<p role="status">{tlsMessage}</p>}
@@ -136,7 +143,7 @@ export function RadarCandidateResearchPanel({candidateId,organizationId,configur
       {showTechnical&&(available?.presenceResolutionEnabled&&!available.presence?.routeConfigured||output?.limitations?.some(item=>/radar_(presence|qualification)_explicit_route_required/.test(item)))&&<p className="text-sm">A análise por IA aguarda configuração. <a className="text-primary underline" href="/admin/ai">Configurar modelos do Radar no Admin</a>. Os fatos encontrados continuam disponíveis; abrir esta página não consome créditos.</p>}
       {result?.run&&available?.semanticQualificationEnabled&&['partial','blocked','failed'].includes(result.run.status)&&<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={allowSemanticRefresh} onChange={e=>setAllowSemanticRefresh(e.target.checked)}/>Autorizo nova análise por IA se as evidências mudaram (pode consumir créditos; buscas concluídas serão reaproveitadas).</label>}
       <button type="button" className={buttonClass} onClick={()=>setRefresh(value=>value+1)}>Atualizar dossiê</button>
-      {result?.run ? <><p role="status" className="font-semibold">{statusLabel[result.run.status]??result.run.status}</p>
+      {result?.run ? <>{!result.commercialStatus&&<p role="status" className="font-semibold">{statusLabel[result.run.status]??'Pesquisa aguardando conferência'}</p>}
         {historical&&<p className="rounded border bg-background p-3 text-sm">Dossiê histórico — revisão {result.run.configuration_revision}. A configuração atual é a revisão {configurationRevision}; os vínculos e avaliações abaixo não estão confirmados para ela.</p>}
         {(result.run.output.methodVersion??0)<(result.methodVersion??0)&&<p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">Esta pesquisa foi feita pelo método anterior. Retomar não refaz as buscas nem reinicia o limite de consultas. Use Atualizar pesquisa para aplicar a nova descoberta com confirmação de custo, ou Reavaliar com os dados salvos para rever somente as evidências existentes. Canais de diretórios não são exibidos como contatos da empresa; o histórico foi preservado.</p>}
         <ol className="grid gap-2 sm:grid-cols-2">{stages.map(([key,label],index)=><li key={key} className="rounded border bg-white p-2">{index+1}. {label}{result.run?.stage===key?' — etapa atual':''}</li>)}</ol>

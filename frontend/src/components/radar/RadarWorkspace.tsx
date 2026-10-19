@@ -12,6 +12,9 @@ import {ApiClientError} from '@/lib/apiClient'
 import {RadarAdminOperations} from './RadarAdminOperations'
 import {RadarCommercialWorkspace,type RadarWorkspaceProps} from './RadarCommercialWorkspace'
 import {RadarCaptureProgress} from './RadarCaptureProgress'
+import {RadarResearchOutcome} from './RadarResearchOutcome'
+import {RadarResearchMetrics} from './RadarResearchMetrics'
+import type {RadarResearchRequestResult} from '@/types/radarResearch'
 import {buildRadarPresenceSummary} from '@/lib/radar/radarPresenceSummary'
 import {RadarCrmDeliveryDialog} from './RadarCrmDeliveryDialog'
 import { RadarCampaignList } from './RadarCampaignList'
@@ -199,9 +202,9 @@ const duplicateStatusLabels: Record<string, string> = {
 
 export function RadarWorkspace(props:RadarWorkspaceProps={}){
   const context=usePlatformContext(),globalRole=useAuthStore(state=>state.user?.role)
-  return context.role?.key==='yux_admin'&&globalRole==='admin'?<RadarAdminWorkspace {...props}/>:<RadarCommercialWorkspace {...props}/>
+  return globalRole==='admin'&&(context.role?.key==='yux_admin'||props.technicalOnly)?<RadarAdminWorkspace {...props}/>:<RadarCommercialWorkspace {...props}/>
 }
-function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=(id,pipelineId)=>`/portal/comercial/leads?leadId=${encodeURIComponent(id)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`}:{screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void;leadPath?:(id:string,pipelineId?:string)=>string}={}) {
+function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,technicalOnly=false,adminOrganizationId,leadPath=(id,pipelineId)=>`/portal/comercial/leads?leadId=${encodeURIComponent(id)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`}:RadarWorkspaceProps={}) {
   const draftOwner=useAuthStore(state=>state.user?.id)
   const [crmDialogOpen,setCrmDialogOpen]=useState(false)
   const [localScreen,setLocalScreen]=useState<RadarScreen>('list')
@@ -221,8 +224,11 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     if(onNavigate)onNavigate(path)
     else {setSelectedCampaignId(path&&path!=='nova'?path.split('/')[0]:null);setLocalScreen(path==='nova'?'new':!path?'list':path.endsWith('/configuracoes')?'configuration':path.endsWith('/historico')?'history':'results')}
   }
-  const context = usePlatformContext()
-  const organizationId = context.organization?.id
+  const workspaceContext = usePlatformContext()
+  // This component is entered only after the authenticated global Admin gate.
+  // The explicit scope is UI context, never backend authority or entitlement.
+  const context:ReturnType<typeof usePlatformContext> = technicalOnly?{...workspaceContext,role:{key:'yux_admin',name:'Admin YUX',scope:'internal',permissions:[]}}:workspaceContext
+  const organizationId = technicalOnly?adminOrganizationId:context.organization?.id
   const [campaigns, setCampaigns] = useState<RadarCampaign[]>([])
   const [form, setForm] = useState(initialForm)
   const [configurationEditor, setConfigurationEditor] = useState<'new' | RadarCampaign | null>(null)
@@ -243,6 +249,9 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   },[expandedCandidateId,detailsOpenRequest])
   const [researchBatchStatus,setResearchBatchStatus]=useState<string[]>([])
   const [trackedResearchCandidates,setTrackedResearchCandidates]=useState<string[]>([])
+  const [trackedResearchRequest,setTrackedResearchRequest]=useState<{organizationId:string;campaignId:string;requestId:string}|null>(null)
+  const [researchRequestResult,setResearchRequestResult]=useState<RadarResearchRequestResult|null>(null)
+  const researchRestoreGeneration=useRef(0)
   const [batchRequestedAt,setBatchRequestedAt]=useState(0)
   const [companyForm, setCompanyForm] = useState(initialCompanyForm)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(campaignId??null)
@@ -295,8 +304,8 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [regionalProgress, setRegionalProgress] = useState<Record<string, string>>({})
 
-  const canAccess = canShowRadarNavigation(context)
-  const canManage = canManageRadar(context)
+  const canAccess = technicalOnly?!!organizationId:canShowRadarNavigation(context)
+  const canManage = technicalOnly?!!organizationId:canManageRadar(context)
   const canEditConfiguration=canManage&&context.role?.key==='yux_admin'
   const {policy:operationalPolicy,error:operationalPolicyError,reload:reloadOperationalPolicy}=useRadarOperationalPolicy(canEditConfiguration)
   const canUseCrm = context.organization?.isInternalGrowthWorkspace
@@ -613,19 +622,40 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     : candidates
 
   useEffect(()=>{
-    if(!organizationId||!trackedResearchCandidates.length)return
-    let active=true,timer:ReturnType<typeof setTimeout>
+    setTrackedResearchRequest(null);setResearchRequestResult(null);setTrackedResearchCandidates([]);setResearchBatchStatus([])
+    if(!organizationId||!selectedCampaignId)return
+    let active=true
+    const generation=++researchRestoreGeneration.current
+    radarService.getLatestResearchRequest(selectedCampaignId,organizationId).then(({request})=>{
+      if(!active||generation!==researchRestoreGeneration.current||!request)return
+      setResearchRequestResult(request)
+      if(['accepted','running'].includes(request.state)){
+        setTrackedResearchRequest({organizationId,campaignId:selectedCampaignId,requestId:request.requestId})
+        setTrackedResearchCandidates(request.items.map(item=>item.candidateId))
+        setResearchBatchStatus(['Pesquisa em andamento recuperada. Não foi criada uma nova solicitação.'])
+      }
+    }).catch(()=>{if(active&&generation===researchRestoreGeneration.current)setResearchBatchStatus(['Não foi possível recuperar o acompanhamento agora. Os pedidos e resultados continuam salvos.'])})
+    return()=>{active=false}
+  },[organizationId,selectedCampaignId])
+  useEffect(()=>{
+    if(!trackedResearchRequest)return
+    let active=true,timer:ReturnType<typeof setTimeout>|undefined
     const poll=async()=>{
-      const results=await Promise.allSettled(trackedResearchCandidates.map(id=>radarService.getCandidateResearch(id,organizationId)))
-      if(!active)return
-      const running=trackedResearchCandidates.filter((_,index)=>{const value=results[index];return value.status==='fulfilled'&&value.value.run&&['queued','running'].includes(value.value.run.status)})
-      setTrackedResearchCandidates(running)
-      refreshCaptureResults.current?.()
-      if(running.length)timer=setTimeout(poll,4000)
+      try{
+        // The durable request, not an older blocked child, decides when polling ends.
+        const result=await radarService.getResearchRequest(trackedResearchRequest.campaignId,trackedResearchRequest.organizationId,trackedResearchRequest.requestId)
+        if(!active)return
+        setResearchRequestResult(result)
+        const pending=['accepted','running'].includes(result.state)
+        if(!pending){setTrackedResearchCandidates([]);setTrackedResearchRequest(null)}
+        setResearchBatchStatus([pending?'As empresas selecionadas estão sendo pesquisadas. Você pode sair desta página.':'Atualização das empresas encerrada. Confira o resultado de cada uma abaixo.'])
+        refreshCaptureResults.current?.()
+        if(pending)timer=setTimeout(poll,4000)
+      }catch{if(active){setResearchBatchStatus(['Não foi possível atualizar o acompanhamento. O pedido permanece salvo; uma nova verificação será feita automaticamente.']);timer=setTimeout(poll,4000)}}
     }
     timer=setTimeout(poll,4000)
     return()=>{active=false;clearTimeout(timer)}
-  },[organizationId,trackedResearchCandidates])
+  },[trackedResearchRequest])
 
   const pendingResearchIntent=useRef<{key:string;input:Parameters<typeof radarService.queueResearchRequest>[1]}|null>(null)
   const researchIntentBusy=useRef(false)
@@ -635,19 +665,24 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     if(!selected.length||!researchAvailability||!(operation==='reanalyze'?researchAvailability.operations?.reanalyze.allowed??researchAvailability.allowed:researchAvailability.allowed))return
     const cost=operation==='reanalyze'?0:selected.length*researchAvailability.maximumCostPerCandidate
     if(!window.confirm(`${selected.length} empresas selecionadas. ${operation==='reanalyze'?'Reavaliar somente os dados salvos, sem novas buscas.':'Consultas de busca até '+cost.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4})+'.'} ${researchAvailability.semanticQualificationEnabled?'Ao continuar, você autoriza nova análise quando as evidências mudaram; isso pode consumir créditos adicionais.':''} Chamadas anteriores de resultado incerto não serão repetidas. Nenhum contato será iniciado. Continuar?`))return
-    setActionLoading('research-selected');setResearchBatchStatus([])
+    researchRestoreGeneration.current++
+    setActionLoading('research-selected');setResearchBatchStatus([]);setResearchRequestResult(null)
     researchIntentBusy.current=true
     const candidateIds=selected.map(candidate=>candidate.id).sort(),criteriaRevision=selectedCampaign.commercialCriteriaRevision??selectedCampaign.configurationRevision??1
     const key=JSON.stringify({organizationId,campaignId:selectedCampaign.id,candidateIds,criteriaRevision,operation})
+    const scope=sidebarScope.current
     if(pendingResearchIntent.current?.key!==key)pendingResearchIntent.current={key,input:{organizationId,candidateIds,criteriaRevision,requestId:crypto.randomUUID(),intent:operation==='refresh'?'refresh':operation==='reanalyze'?'reanalyze':'resume',allowSemanticRefresh:operation!=='reanalyze'&&researchAvailability.semanticQualificationEnabled}}
     try{
       const result=await radarService.queueResearchRequest(selectedCampaign.id,pendingResearchIntent.current.input)
+      if(scope!==sidebarScope.current)return
+      setResearchRequestResult(result)
+      if(['accepted','running'].includes(result.state))setTrackedResearchRequest({organizationId,campaignId:selectedCampaign.id,requestId:result.requestId})
       setResearchBatchStatus(result.items.map(item=>`${selected.find(candidate=>candidate.id===item.candidateId)?.title??'Empresa'}: ${item.message}`))
       const queued=result.items.filter(item=>item.state==='accepted'||item.state==='running').map(item=>item.candidateId)
       setTrackedResearchCandidates(current=>[...new Set([...current,...queued])])
       pendingResearchIntent.current=null
-    }catch{setResearchBatchStatus(['Não foi possível confirmar o pedido. Tente novamente; o mesmo pedido será recuperado sem duplicar a solicitação.'])}
-    finally{researchIntentBusy.current=false;setActionLoading(null);refreshCampaignSidebars()}
+    }catch{if(scope===sidebarScope.current)setResearchBatchStatus(['Não foi possível confirmar o pedido. Tente novamente; o mesmo pedido será recuperado sem duplicar a solicitação.'])}
+    finally{researchIntentBusy.current=false;if(scope===sidebarScope.current){setActionLoading(null);refreshCampaignSidebars()}}
   }
 
   const refreshDataSources = async () => {
@@ -1253,75 +1288,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
     )
   }
 
-  return (
-    <div className="min-w-0 max-w-full space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Radar Comercial</h1>
-          <p className="text-sm text-gray-600">Encontre empresas, complete os dados e organize seus próximos contatos no CRM.</p>
-        </div>
-      </div>
-
-      {screen==='configuration' && context.role?.key==='yux_admin' && <StrategyContextPanel
-        organizationId={organizationId || ''}
-        moduleKey="crm"
-        recordType="radar"
-        recordTitle="Radar Comercial"
-        contextSummary="Use o Strategy Engine para orientar Analise da oportunidade, oferta recomendada, riscos, evidencias e proxima acao antes de qualquer conversao para lead."
-      />}
-
-      {!canManage && <p className="rounded-md border bg-blue-50 p-3 text-sm text-blue-900">
-        Acesso de consulta: acompanhe as campanhas, os dados e as análises. A operação das campanhas fica com a equipe YUX.
-      </p>}
-
-      {screen!=='list' && selectedCampaign && <RadarCampaignPage campaign={selectedCampaign} screen={screen} canManage={canEditConfiguration} onNavigate={navigateTo} onDuplicate={canEditConfiguration?duplicateCampaign:undefined}/>}
-      {screen!=='list' && screen!=='new' && !loading && !selectedCampaign && <p role="alert">Campanha não encontrada ou acesso indisponível.</p>}
-      {screen==='new' && <Button variant="outline" onClick={()=>navigateTo('')}>Voltar às campanhas</Button>}
-      {(screen==='new'&&canManage||screen==='configuration'&&selectedCampaign) && <section onChangeCapture={()=>{if(canManage)setConfigurationDirty(true)}} id="radar-search-configuration" className="rounded-md border bg-white p-4">
-        <h2 className="text-base font-semibold text-slate-950">Configuração de campanhas</h2>
-        {screen==='new'&&context.role?.key === 'yux_admin' && <label className="mt-3 block text-sm font-medium">Tipo de criação
-          <select className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={creationMode}
-            disabled={!canManage || creating || Boolean(actionLoading)} onChange={event => {
-              setCreationMode(event.target.value as typeof creationMode)
-              setConfigurationEditor(null)
-            }}>
-            <option value="regional">Pesquisa configurável — estados ou cidades</option>
-            <option value="local">Criação rápida local — uma cidade</option>
-          </select>
-        </label>}
-        {activeConfigurationEditor && <RadarCampaignConfigurationForm
-          key={activeConfigurationEditor === 'new' ? `new-${newCampaignVersion}` : `${activeConfigurationEditor.id}-${activeConfigurationEditor.configurationRevision}`}
-          organizationId={organizationId || ''} initialCampaign={activeConfigurationEditor === 'new' ? undefined : activeConfigurationEditor}
-          draftKey={draftOwner?`${draftOwner}:${organizationId}:${activeConfigurationEditor==='new'?'new':activeConfigurationEditor.id}`:undefined}
-          canConfigureProviders={context.role?.key==='yux_admin'}
-          busy={creating} readOnly={!canEditConfiguration&&screen==='configuration'} canUseCrm={canEditConfiguration&&Boolean(canUseCrm)} onSubmit={saveCampaignConfiguration} onCancel={() => navigateTo(selectedCampaignId??'')} />}
-        {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
-            value={form.campaignType}
-            onChange={event => setForm({ ...form, campaignType: event.target.value as typeof form.campaignType })}
-          >
-            <option value="local_niche">Radar local por nicho</option>
-            <option value="recently_opened">Empresas recem-abertas</option>
-          </select>
-          <Input className="md:col-span-2" placeholder="Nome" value={form.name} required onChange={event => setForm({ ...form, name: event.target.value })} />
-          <Input placeholder="Nicho" value={form.targetSegment} required onChange={event => setForm({ ...form, targetSegment: event.target.value })} />
-          <Input placeholder="Cidade" value={form.targetCity} required onChange={event => setForm({ ...form, targetCity: event.target.value })} />
-          <Input placeholder="UF" value={form.targetState} required maxLength={2} onChange={event => setForm({ ...form, targetState: event.target.value.toUpperCase() })} />
-          <Input className="md:col-span-2" placeholder="Oferta ou objetivo comercial" value={form.offerType} required
-            onChange={event => setForm({ ...form, offerType: event.target.value })} />
-          <Input type="number" min="1" max="10" placeholder="Limite" value={form.dailyLimit} required onChange={event => setForm({ ...form, dailyLimit: Number(event.target.value) })} />
-          <Button type="submit" disabled={!canManage || creating}>
-            <Plus className="mr-2 h-4 w-4" />
-            {creating ? 'Criando...' : 'Criar'}
-          </Button>
-        </form>}
-      </section>}
-
-      {screen==='list' && <RadarCampaignList campaigns={campaigns} loading={loading} canCreate={canManage} onCreate={()=>navigateTo('nova')} onOpen={id=>navigateTo(id)}/>}
-
-      {selectedCampaign && (screen==='results'||screen==='history') && (
-        <>
+  const captureSection=selectedCampaign&&(<>
           {screen==='results' && selectedCampaign?.campaignType === 'regional_b2b' && <section className="rounded-md border bg-white p-4">
             <h2 className="font-semibold text-slate-950">Pesquisa da campanha</h2>
             <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-600">Ver público, oferta e critérios utilizados</summary><p className="mt-1 text-sm text-slate-600">Público: {selectedCampaign.targetSegment}. Oferta: {selectedCampaign.offerType}. CNAEs: {selectedCampaign.targetCnaes.join(', ') || 'sem filtro'}. A coleta não inicia contatos automáticos.</p>
@@ -1336,7 +1303,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
               finally{if(consent.scope===sidebarScope.current)setCaptureBusy(false)}
             }}/>}
             {canEditConfiguration&&captureConsent&&captureConsent.scope===sidebarScope.current&&captureConsent.operationId===captureOperation?.id&&<RadarCaptureContinuationDialog key={captureConsent.preflight.stateId} open preflight={captureConsent.preflight} busy={captureBusy} error={captureError} onCancel={()=>setCaptureConsent(null)} onConfirm={async limits=>{await resumeCapture({approvedLimits:limits})}}/>}
-            {captureOperation&&<div className="mt-4"><RadarCaptureProgress showTechnical={context.role?.key==='yux_admin'} operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
+            {captureOperation&&<div className="mt-4"><RadarCaptureProgress showTechnical={technicalOnly} operation={captureOperation} onRefresh={()=>setCaptureRefresh(value=>value+1)} busy={captureBusy}/></div>}
             {batchRequestedAt>0&&<p role="status" className="mt-2 text-xs text-slate-600">Busca solicitada. Os resultados serão atualizados automaticamente durante o acompanhamento; a consulta continua em segundo plano.</p>}
             <div className="mt-3 flex items-center gap-3 border-t pt-3">
               <span className="text-sm text-slate-600">{b2bProspects.filter(item => item.approvedAt).length} empresas aprovadas para contato manual</span>
@@ -1344,177 +1311,9 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
                 onClick={exportB2bProspects}>Exportar lista verificada</Button>}
             </div>
           </section>}
-
-
-          {screen==='results' && <section className="rounded-md border bg-white p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-slate-950">Empresas encontradas</h2>
-                <p className="text-sm text-slate-500">
-                  {selectedCampaign.campaignType==='regional_b2b'?'Selecione as empresas para completar dados, revisar e enviar ao CRM.':metrics ? `${metrics.opportunities} oportunidades, ${metrics.reviewPending} em revisão` : 'Busque ou adicione empresas para iniciar.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="my-4 flex flex-wrap items-center gap-2">
-              {context.role?.key==='yux_admin'&&selectedCandidateIds.length>0&&selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
-                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!(operation==='reanalyze'?researchAvailability?.operations?.reanalyze.allowed??researchAvailability?.allowed:researchAvailability?.allowed)}
-                onClick={()=>researchSelected(operation)}>{({complete:'Completar dados',resume:'Retomar pesquisa',refresh:'Atualizar pesquisa',reanalyze:'Reavaliar dados salvos'})[operation]}</Button>)}
-              {selectedCampaign.campaignType==='regional_b2b'&&<Button size="sm" disabled={!canManage||!canUseCrm||!selectedCandidateIds.length||selectedCandidateIds.length>25||!!actionLoading} onClick={()=>setCrmDialogOpen(true)}>Enviar ao CRM</Button>}
-              <Button size="sm" variant="outline" onClick={()=>{refreshCampaignSidebars();setResearchAvailabilityRefresh(value=>value+1)}}>Atualizar resultados</Button>
-            </div>
-            {selectedCandidateIds.length>25&&<p className="text-sm text-amber-800">Selecione até 25 empresas por envio ao CRM.</p>}
-            {!canUseCrm&&<p className="text-xs text-slate-500">Para enviar empresas, é necessário um CRM contratado e permissão de escrita. A consulta e a lista de resultados permanecem disponíveis.</p>}
-            {crmDialogOpen&&organizationId&&<RadarCrmDeliveryDialog organizationId={organizationId} campaignId={selectedCampaign.id} revision={selectedCampaign.configurationRevision??1} candidateIds={selectedCandidateIds} initialDestination={selectedCampaign.searchConfiguration?.crmDestination} onClose={()=>setCrmDialogOpen(false)} onCompleted={refreshCampaignSidebars} leadPath={leadPath}/>}
-            {researchAvailabilityError&&<p role="alert" className="mb-3 text-sm text-red-700">{researchAvailabilityError}</p>}
-            {researchBatchStatus.length>0&&<div role="status" className="mb-3 rounded border bg-slate-50 p-3 text-xs">{researchBatchStatus.map((message,index)=><p key={index}>{message}</p>)}</div>}
-            <RadarResultsTable candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} approvedIds={b2bProspects.filter(item=>item.approvedAt).map(item=>item.id)} onSelect={setSelectedCandidateIds} onOpen={openCandidateDetails}/>
-            <div className="mt-4 space-y-4">
-              {expandedCandidateId&&<div className="rounded-md border">
-                <div className="border-b p-3">
-                  <h3 id="radar-company-full-details" ref={detailsHeading} tabIndex={-1} className="scroll-mt-6 text-sm font-semibold text-slate-950">Detalhes da empresa</h3>
-                  {expandedCandidateId?<Button size="sm" variant="ghost" onClick={closeCandidateDetails}>Fechar detalhes</Button>:<p className="text-xs text-slate-500">Selecione “Ver detalhes” em uma empresa para consultar dados, fontes e ações.</p>}
-                </div>
-                <div className="divide-y">
-                  {visibleCandidates.length < candidates.length && <p className="p-3 text-sm text-amber-800">{candidates.length - visibleCandidates.length} empresas de configurações anteriores foram preservadas no histórico. Execute a descoberta com os critérios atuais para incluí-las novamente.</p>}
-                  {visibleCandidates.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhum candidato nesta configuração.</p>}
-                  {candidates.filter(candidate=>candidate.id===expandedCandidateId).map(candidate => (
-                    <div key={candidate.id} className="flex min-w-0 flex-col items-start justify-between gap-3 p-3">
-                      <div className="min-w-0 w-full">
-                        <p className="text-sm font-medium text-slate-950">{candidate.title}</p>
-                        <p className="text-xs text-slate-500">{context.role?.key==='yux_admin'?`${candidate.sourceType} - `:''}{candidateStatusLabels[candidate.status] || 'Revisão necessária'}</p>
-                        {candidate.snippet && <p className="mt-1 text-sm text-slate-600">{candidate.snippet}</p>}
-                        {candidate.sourceType === 'osm_extract' && candidate.sourceUrl && <a className="mt-1 block text-xs text-yux-700 underline" href={candidate.sourceUrl} target="_blank" rel="noreferrer">Ver elemento no OpenStreetMap</a>}
-                        {candidate.sourceType === 'osm_extract' && <p className="mt-1 text-xs text-slate-500">Site: {getOsmSiteCheckLabel(candidate)}</p>}
-                        {selectedCampaign?.campaignType === 'regional_b2b' && <div className="mt-1 space-y-1 text-xs text-slate-600">
-                          <p>CNPJ: {String(candidate.normalizedPayload.cnpj ?? 'não identificado')} · {String(candidate.normalizedPayload.city ?? '')}/{String(candidate.normalizedPayload.state ?? '')}</p>
-                          {typeof candidate.normalizedPayload.address==='string'&&<p>Endereço cadastral: {candidate.normalizedPayload.address}</p>}
-                          {typeof candidate.normalizedPayload.registrationStatus==='string'&&<p>Situação cadastral: {candidate.normalizedPayload.registrationStatus} — não comprova funcionamento atual.</p>}
-                          <p>Site: {buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website?.url??'não encontrado nas fontes consultadas'}</p>
-                          {buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website&&<p>{buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website?.label}</p>}
-                          <p>Telefone cadastral: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} — atendimento não verificado.</p>
-                          {getBraveSuggestions(candidate.normalizedPayload).map(suggestion =>
-                            <div key={suggestion.sourceUrl} className="mt-2 rounded border border-sky-200 bg-sky-50 p-2">
-                              <p className="font-medium">Presença pública a conferir: {suggestion.name}</p>
-                              <p>{suggestion.address} · Site: {suggestion.websiteUrl ?? 'não informado'} · Tel.: {suggestion.phone ?? 'não informado'}</p>
-                              <a className="text-yux-700 underline" href={suggestion.sourceUrl} target="_blank" rel="noreferrer">Conferir origem</a>
-                              <Button type="button" size="sm" variant="outline" className="ml-2"
-                                disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
-                                onClick={() => confirmBraveSuggestion(candidate.id, suggestion.sourceUrl)}>Associar após conferir</Button>
-                            </div>)}
-                          <p>Qualificação: {b2bProspectById.get(candidate.id)?.targetStatus ?? 'aguardando verificação'} · Adequação: {b2bProspectById.get(candidate.id)?.productFit ?? 'desconhecida'}</p>
-                          {Array.isArray(candidate.normalizedPayload.triageReasons) && candidate.normalizedPayload.triageReasons.map((reason, index) => <p key={index}>{String(reason)}</p>)}
-                          {context.role?.key==='yux_admin'&&!!b2bProspectById.get(candidate.id)?.evidence.length&&<details><summary className="cursor-pointer">Histórico de evidências técnicas — não confirma contatos da empresa</summary>{b2bProspectById.get(candidate.id)?.evidence.map((fact,index)=><p key={index}>{fact.kind}: {fact.value.slice(0,180)} · <a className="text-primary underline" href={fact.sourceUrl} target="_blank" rel="noreferrer">fonte</a></p>)}</details>}
-                          {b2bProspectById.get(candidate.id)?.approvedAt &&
-                            <p className="font-medium text-emerald-700">Aprovada por verificação {b2bProspectById.get(candidate.id)?.verificationMethod === 'manual' ? 'humana' : 'automatizada'}.</p>}
-                          {b2bProspectById.get(candidate.id)?.approvedAt&&context.role?.key==='yux_admin'&&<Button size="sm" variant="outline" disabled={!!actionLoading} onClick={async()=>{
-                            if(!organizationId||!window.confirm('Reabrir a revisão? A aprovação atual será retirada; o histórico e o lead já criado serão preservados. Nenhuma pesquisa será iniciada.'))return
-                            setActionLoading('reopen-review')
-                            try{await radarService.reopenResearchReview(candidate.id,organizationId,selectedCampaign.configurationRevision??1);refreshCampaignSidebars()}catch{toast.error('Não foi possível reabrir a revisão.')}finally{setActionLoading(null)}
-                          }}>Reabrir revisão</Button>}
-                          {candidate.status === 'pending_review' && context.role?.key === 'yux_admin'
-                            && b2bProspectById.get(candidate.id)?.targetStatus
-                            && b2bProspectById.get(candidate.id)?.targetStatus !== 'confirmed'
-                            && !b2bProspectById.get(candidate.id)?.approvedAt && (
-                            <details className="mt-2 space-y-2 rounded border border-amber-200 bg-amber-50 p-2">
-                              <summary className="cursor-pointer font-medium">Corrigir associação / confirmação humana (opcional)</summary>
-                              <p>Use após conferir uma ambiguidade. A pesquisa automática não exige URL manual.</p>
-                              <Input aria-label={`Fonte pública de ${candidate.title}`} placeholder="URL da fonte pública que comprova a atividade"
-                                value={b2bManualReviews[candidate.id]?.url ?? ''}
-                                onChange={event => setB2bManualReviews(current => ({ ...current,
-                                  [candidate.id]: { url: event.target.value, note: current[candidate.id]?.note ?? '' } }))} />
-                              <textarea aria-label={`Justificativa de ${candidate.title}`} className="w-full rounded border p-2"
-                                placeholder="Explique quais critérios do público e da oferta foram confirmados (mín. 20 caracteres)"
-                                value={b2bManualReviews[candidate.id]?.note ?? ''}
-                                onChange={event => setB2bManualReviews(current => ({ ...current,
-                                  [candidate.id]: { url: current[candidate.id]?.url ?? '', note: event.target.value } }))} />
-                              <Button type="button" size="sm" disabled={!canManage || Boolean(actionLoading)
-                                || !b2bManualReviews[candidate.id]?.url || (b2bManualReviews[candidate.id]?.note.length ?? 0) < 20}
-                                onClick={() => approveB2bProspect(candidate.id, true)}>Confirmar e aprovar manualmente</Button>
-                            </details>)}
-                          <RadarCandidateResearchPanel key={`${organizationId}-${candidate.id}-${selectedCampaign.configurationRevision}`}
-                            candidateId={candidate.id} organizationId={organizationId!} configurationRevision={selectedCampaign.configurationRevision??1}
-                            initialOpen availability={researchAvailability} availabilityError={researchAvailabilityError} showTechnical={context.role?.key==='yux_admin'} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
-                            canReview={canManage} approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
-                        </div>}
-                        {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{context.role?.key==='yux_admin'?candidate.errorMessage:'Este registro requer atenção do responsável pela campanha.'}</p>}
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        {candidate.sourceType === 'osm_extract' && typeof candidate.normalizedPayload.websiteUrl === 'string' && (
-                          <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
-                        )}
-                        {context.role?.key==='yux_admin'&&selectedCampaign.campaignType==='regional_b2b'&&<details><summary className="cursor-pointer text-sm text-slate-600">Conferência avançada de presença e site</summary><div className="mt-2 flex flex-wrap gap-2">
-                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.sourceType === 'cnpja_advanced_search'
-                          && candidate.status === 'pending_review' && <Button type="button" size="sm" variant="outline"
-                            disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || !braveSource?.enabled
-                              || selectedCampaign.searchConfiguration?.sources.enrichWithBrave === false}
-                            onClick={() => enrichCandidateWithBrave(candidate.id)}>
-                            {actionLoading === `brave-${candidate.id}` ? 'Consultando...' : 'Completar presença pública'}
-                          </Button>}
-                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.status === 'pending_review'
-                          && <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading)}
-                            onClick={() => inspectBusinessSite(candidate.id)}>
-                            {actionLoading === `b2b-site-${candidate.id}` ? 'Verificando...' : 'Conferir site informado e atividade'}
-                          </Button>}
-                        </div></details>}
-                        {selectedCampaign?.campaignType === 'regional_b2b' && b2bProspectById.get(candidate.id)?.targetStatus === 'confirmed'
-                          && candidate.normalizedPayload.websiteStatus === 'verified_present'
-                          && !b2bProspectById.get(candidate.id)?.approvedAt
-                          && <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
-                            onClick={() => approveB2bProspect(candidate.id)}>Aprovar para lista</Button>}
-                        {selectedCampaign?.campaignType !== 'regional_b2b' && <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>}
-                        <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => discardCandidate(candidate.id)}>Descartar</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>}
-
-              {(opportunities.length>0||selectedCampaign.campaignType!=='regional_b2b')&&<details className="rounded-md border"><summary className="cursor-pointer p-3 text-sm font-medium">Acompanhamento comercial</summary>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-950">Oportunidades</h3>
-                    <p className="text-xs text-slate-500">{selectedOpportunityIds.length} selecionadas para lote</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button type="button" size="sm" variant="outline" disabled={!canManage || selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('enrich')}>
-                      {actionLoading === 'batch-enrich' ? 'Enriquecendo...' : 'Enriquecer'}
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" disabled={!canManage || selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('analyze')}>
-                      {actionLoading === 'batch-analyze' ? 'Analisando...' : 'Analisar'}
-                    </Button>
-                  </div>
-                </div>
-                <div className="divide-y">
-                  {opportunities.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhuma oportunidade nesta campanha.</p>}
-                  {opportunities.map(opportunity => (
-                    <div key={opportunity.id} className={`flex items-center gap-3 p-3 text-sm hover:bg-slate-50 ${selectedOpportunity?.id === opportunity.id ? 'bg-slate-50' : ''}`}>
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300"
-                        checked={selectedOpportunityIds.includes(opportunity.id)}
-                        onChange={() => toggleOpportunitySelection(opportunity.id)}
-                        aria-label={`Selecionar ${getRadarCompanyDisplayName(opportunity.company)}`}
-                      />
-                      <button
-                        type="button"
-                        className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
-                        onClick={() => setSelectedOpportunity(opportunity)}
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium text-slate-950">{getRadarCompanyDisplayName(opportunity.company)}</span>
-                          <span className="block text-xs text-slate-500">{getRadarOpportunityStatusLabel(opportunity.status)}</span>
-                        </span>
-                        <span className="shrink-0 text-xs text-slate-500">Score {opportunity.latestScore?.totalScore ?? '-'}</span>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </details>}
-            </div>
-          </section>}
-
-          {screen==='results'&&context.role?.key==='yux_admin'&&<RadarAdminOperations>
+  </>)
+  const technicalPanel=selectedCampaign&&(<>
+          {screen==='results'&&context.role?.key==='yux_admin'&&<RadarAdminOperations isSystemAdmin standalone>
             {selectedCampaign.searchConfiguration?.research?.enabled && researchAvailability?.reasons.map((reason,index)=><p key={`${reason.code}-${index}`} className="mt-2 text-xs text-amber-800">{context.role?.key==='yux_admin'?`${reason.message} ${reason.resolution}.`:'A operação da pesquisa é realizada pelo responsável autorizado pela campanha.'}</p>)}
             {b2bProgress && <p className="mt-2 text-xs text-slate-600">{candidates.length} empresas encontradas · {b2bProgress.candidates} nesta configuração · {b2bProgress.checked} empresas avaliadas · {b2bProgress.confirmed} empresas qualificadas · {b2bProgress.approved} aprovadas. {b2bProgress.scopes.map(item => `${item.label}: ${item.pages} páginas${item.completed ? ' (concluído)' : ''}`).join(' · ')}</p>}
             <div className="mt-2 flex flex-wrap gap-2">
@@ -1781,6 +1580,281 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
           </fieldset>}
 
           </RadarAdminOperations>}
+          {context.role?.key==='yux_admin'&&<details className="rounded-md border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">Diagnóstico operacional — Admin</summary><section className="mt-3 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-md border bg-white p-4">
+              <h2 className="text-base font-semibold text-slate-950">Metricas por fonte</h2>
+              <div className="mt-3 divide-y rounded-md border">
+                {(!metrics?.sourceBreakdown || metrics.sourceBreakdown.length === 0) && <p className="p-3 text-sm text-slate-500">Sem metricas por fonte nesta campanha.</p>}
+                {metrics?.sourceBreakdown?.map(source => (
+                  <div key={source.sourceType} className="grid gap-2 p-3 text-sm md:grid-cols-5">
+                    <p className="font-medium text-slate-950">{source.sourceType}</p>
+                    <p className="text-slate-600">Empresas {source.companies}</p>
+                    <p className="text-slate-600">Oportunidades {source.opportunities}</p>
+                    <p className="text-slate-600">Candidatos {source.candidates}</p>
+                    <p className="text-slate-600">R$ {source.estimatedCost.toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-white p-4">
+              <h2 className="text-base font-semibold text-slate-950">Runs recentes</h2>
+              <div className="mt-3 space-y-2">
+                {runs.length === 0 && <p className="text-sm text-slate-500">Nenhum run registrado nesta campanha.</p>}
+                {runs.slice(0, 5).map(run => (
+                  <div key={run.id} className="rounded-md border p-3">
+                    <p className="text-sm font-medium text-slate-950">{run.runKind === 'analysis' ? 'Analise IA' : run.provider} - {run.status}</p>
+                    <p className="text-xs text-slate-500">{new Date(run.createdAt).toLocaleString('pt-BR')}</p>
+                    {run.errorMessage && <p className="mt-1 text-xs text-red-600">{run.errorMessage}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section></details>}
+  </>)
+  if(technicalOnly)return <div className="min-w-0 space-y-5"><h1 className="text-xl font-semibold">Operações administrativas do Radar</h1><p>{selectedCampaign?.name??'Carregando campanha…'}</p>{organizationId&&campaignId&&<a className="text-sm text-primary underline" href={`/client-workspaces/${encodeURIComponent(organizationId)}/comercial/radar/${encodeURIComponent(campaignId)}`}>Voltar aos resultados da campanha</a>}{selectedCampaign&&organizationId&&<RadarResearchMetrics campaignId={selectedCampaign.id} organizationId={organizationId} showCosts/>}{captureSection}{technicalPanel}</div>
+  return (
+    <div className="min-w-0 max-w-full space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Radar Comercial</h1>
+          <p className="text-sm text-gray-600">Encontre empresas, complete os dados e organize seus próximos contatos no CRM.</p>
+        </div>
+      </div>
+
+      {screen==='configuration' && context.role?.key==='yux_admin' && <StrategyContextPanel
+        organizationId={organizationId || ''}
+        moduleKey="crm"
+        recordType="radar"
+        recordTitle="Radar Comercial"
+        contextSummary="Use o Strategy Engine para orientar Analise da oportunidade, oferta recomendada, riscos, evidencias e proxima acao antes de qualquer conversao para lead."
+      />}
+
+      {!canManage && <p className="rounded-md border bg-blue-50 p-3 text-sm text-blue-900">
+        Acesso de consulta: acompanhe as campanhas, os dados e as análises. A operação das campanhas fica com a equipe YUX.
+      </p>}
+
+      {screen!=='list' && selectedCampaign && <RadarCampaignPage campaign={selectedCampaign} screen={screen} canManage={canEditConfiguration} onNavigate={navigateTo} onDuplicate={canEditConfiguration?duplicateCampaign:undefined}/>}
+      {screen!=='list' && screen!=='new' && !loading && !selectedCampaign && <p role="alert">Campanha não encontrada ou acesso indisponível.</p>}
+      {screen==='new' && <Button variant="outline" onClick={()=>navigateTo('')}>Voltar às campanhas</Button>}
+      {(screen==='new'&&canManage||screen==='configuration'&&selectedCampaign) && <section onChangeCapture={()=>{if(canManage)setConfigurationDirty(true)}} id="radar-search-configuration" className="rounded-md border bg-white p-4">
+        <h2 className="text-base font-semibold text-slate-950">Configuração de campanhas</h2>
+        {screen==='new'&&context.role?.key === 'yux_admin' && <label className="mt-3 block text-sm font-medium">Tipo de criação
+          <select className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={creationMode}
+            disabled={!canManage || creating || Boolean(actionLoading)} onChange={event => {
+              setCreationMode(event.target.value as typeof creationMode)
+              setConfigurationEditor(null)
+            }}>
+            <option value="regional">Pesquisa configurável — estados ou cidades</option>
+            <option value="local">Criação rápida local — uma cidade</option>
+          </select>
+        </label>}
+        {activeConfigurationEditor && <RadarCampaignConfigurationForm
+          key={activeConfigurationEditor === 'new' ? `new-${newCampaignVersion}` : `${activeConfigurationEditor.id}-${activeConfigurationEditor.configurationRevision}`}
+          organizationId={organizationId || ''} initialCampaign={activeConfigurationEditor === 'new' ? undefined : activeConfigurationEditor}
+          draftKey={draftOwner?`${draftOwner}:${organizationId}:${activeConfigurationEditor==='new'?'new':activeConfigurationEditor.id}`:undefined}
+          canConfigureProviders={context.role?.key==='yux_admin'}
+          busy={creating} readOnly={!canEditConfiguration&&screen==='configuration'} canUseCrm={canEditConfiguration&&Boolean(canUseCrm)} onSubmit={saveCampaignConfiguration} onCancel={() => navigateTo(selectedCampaignId??'')} />}
+        {!activeConfigurationEditor && <form aria-label="Criação rápida local" className="mt-3 grid gap-3 md:grid-cols-6" onSubmit={createCampaign}>
+          <select
+            className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
+            value={form.campaignType}
+            onChange={event => setForm({ ...form, campaignType: event.target.value as typeof form.campaignType })}
+          >
+            <option value="local_niche">Radar local por nicho</option>
+            <option value="recently_opened">Empresas recem-abertas</option>
+          </select>
+          <Input className="md:col-span-2" placeholder="Nome" value={form.name} required onChange={event => setForm({ ...form, name: event.target.value })} />
+          <Input placeholder="Nicho" value={form.targetSegment} required onChange={event => setForm({ ...form, targetSegment: event.target.value })} />
+          <Input placeholder="Cidade" value={form.targetCity} required onChange={event => setForm({ ...form, targetCity: event.target.value })} />
+          <Input placeholder="UF" value={form.targetState} required maxLength={2} onChange={event => setForm({ ...form, targetState: event.target.value.toUpperCase() })} />
+          <Input className="md:col-span-2" placeholder="Oferta ou objetivo comercial" value={form.offerType} required
+            onChange={event => setForm({ ...form, offerType: event.target.value })} />
+          <Input type="number" min="1" max="10" placeholder="Limite" value={form.dailyLimit} required onChange={event => setForm({ ...form, dailyLimit: Number(event.target.value) })} />
+          <Button type="submit" disabled={!canManage || creating}>
+            <Plus className="mr-2 h-4 w-4" />
+            {creating ? 'Criando...' : 'Criar'}
+          </Button>
+        </form>}
+      </section>}
+
+      {screen==='list' && <RadarCampaignList campaigns={campaigns} loading={loading} canCreate={canManage} onCreate={()=>navigateTo('nova')} onOpen={id=>navigateTo(id)}/>}
+
+      {selectedCampaign && (screen==='results'||screen==='history') && (
+        <>
+          {captureSection}
+
+
+          {screen==='results' && <section className="rounded-md border bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-950">Empresas encontradas</h2>
+                <p className="text-sm text-slate-500">
+                  {selectedCampaign.campaignType==='regional_b2b'?'Selecione as empresas para completar dados, revisar e enviar ao CRM.':metrics ? `${metrics.opportunities} oportunidades, ${metrics.reviewPending} em revisão` : 'Busque ou adicione empresas para iniciar.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="my-4 flex flex-wrap items-center gap-2">
+              {context.role?.key==='yux_admin'&&selectedCandidateIds.length>0&&selectedCampaign?.campaignType==='regional_b2b'&&(['complete','resume','refresh','reanalyze'] as const).map(operation=><Button key={operation} size="sm" variant={operation==='complete'?'default':'outline'}
+                disabled={!canManage||context.role?.key!=='yux_admin'||!selectedCandidateIds.length||!!actionLoading||!(operation==='reanalyze'?researchAvailability?.operations?.reanalyze.allowed??researchAvailability?.allowed:researchAvailability?.allowed)}
+                onClick={()=>researchSelected(operation)}>{({complete:'Completar dados',resume:'Retomar pesquisa',refresh:'Atualizar pesquisa',reanalyze:'Reavaliar dados salvos'})[operation]}</Button>)}
+              {selectedCampaign.campaignType==='regional_b2b'&&<Button size="sm" disabled={!canManage||!canUseCrm||!selectedCandidateIds.length||selectedCandidateIds.length>25||!!actionLoading} onClick={()=>setCrmDialogOpen(true)}>Enviar ao CRM</Button>}
+              <Button size="sm" variant="outline" onClick={()=>{refreshCampaignSidebars();setResearchAvailabilityRefresh(value=>value+1)}}>Atualizar resultados</Button>
+            </div>
+            {selectedCandidateIds.length>25&&<p className="text-sm text-amber-800">Selecione até 25 empresas por envio ao CRM.</p>}
+            {!canUseCrm&&<p className="text-xs text-slate-500">Para enviar empresas, é necessário um CRM contratado e permissão de escrita. A consulta e a lista de resultados permanecem disponíveis.</p>}
+            {crmDialogOpen&&organizationId&&<RadarCrmDeliveryDialog organizationId={organizationId} campaignId={selectedCampaign.id} revision={selectedCampaign.configurationRevision??1} candidateIds={selectedCandidateIds} initialDestination={selectedCampaign.searchConfiguration?.crmDestination} onClose={()=>setCrmDialogOpen(false)} onCompleted={refreshCampaignSidebars} leadPath={leadPath}/>}
+            {researchAvailabilityError&&<p role="alert" className="mb-3 text-sm text-red-700">{researchAvailabilityError}</p>}
+            {researchBatchStatus.length>0&&<div role="status" className="mb-3 rounded border bg-slate-50 p-3 text-xs">{researchBatchStatus.map((message,index)=><p key={index}>{message}</p>)}</div>}
+            {researchRequestResult?.items.some(item=>item.feedback&&item.feedback.status!=='researching')&&<div className="mb-4 grid gap-3 md:grid-cols-2">{researchRequestResult.items.filter(item=>item.feedback&&item.feedback.status!=='researching').map(item=><section key={item.candidateId} className="min-w-0"><h4 className="mb-2 text-sm font-medium">{candidates.find(candidate=>candidate.id===item.candidateId)?.title??'Empresa selecionada'}</h4><RadarResearchOutcome feedback={item.feedback}/></section>)}</div>}
+            <RadarResultsTable candidates={candidates} revision={selectedCampaign.configurationRevision??1} selectedIds={selectedCandidateIds} approvedIds={b2bProspects.filter(item=>item.approvedAt).map(item=>item.id)} onSelect={setSelectedCandidateIds} onOpen={openCandidateDetails}/>
+            <div className="mt-4 space-y-4">
+              {expandedCandidateId&&<div className="rounded-md border">
+                <div className="border-b p-3">
+                  <h3 id="radar-company-full-details" ref={detailsHeading} tabIndex={-1} className="scroll-mt-6 text-sm font-semibold text-slate-950">Detalhes da empresa</h3>
+                  {expandedCandidateId?<Button size="sm" variant="ghost" onClick={closeCandidateDetails}>Fechar detalhes</Button>:<p className="text-xs text-slate-500">Selecione “Ver detalhes” em uma empresa para consultar dados, fontes e ações.</p>}
+                </div>
+                <div className="divide-y">
+                  {visibleCandidates.length < candidates.length && <p className="p-3 text-sm text-amber-800">{candidates.length - visibleCandidates.length} empresas de configurações anteriores foram preservadas no histórico. Execute a descoberta com os critérios atuais para incluí-las novamente.</p>}
+                  {visibleCandidates.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhum candidato nesta configuração.</p>}
+                  {candidates.filter(candidate=>candidate.id===expandedCandidateId).map(candidate => (
+                    <div key={candidate.id} className="flex min-w-0 flex-col items-start justify-between gap-3 p-3">
+                      <div className="min-w-0 w-full">
+                        <p className="text-sm font-medium text-slate-950">{candidate.title}</p>
+                        <p className="text-xs text-slate-500">{context.role?.key==='yux_admin'?`${candidate.sourceType} - `:''}{candidateStatusLabels[candidate.status] || 'Revisão necessária'}</p>
+                        {candidate.snippet && <p className="mt-1 text-sm text-slate-600">{candidate.snippet}</p>}
+                        {candidate.sourceType === 'osm_extract' && candidate.sourceUrl && <a className="mt-1 block text-xs text-yux-700 underline" href={candidate.sourceUrl} target="_blank" rel="noreferrer">Ver elemento no OpenStreetMap</a>}
+                        {candidate.sourceType === 'osm_extract' && <p className="mt-1 text-xs text-slate-500">Site: {getOsmSiteCheckLabel(candidate)}</p>}
+                        {selectedCampaign?.campaignType === 'regional_b2b' && <div className="mt-1 space-y-1 text-xs text-slate-600">
+                          <p>CNPJ: {String(candidate.normalizedPayload.cnpj ?? 'não identificado')} · {String(candidate.normalizedPayload.city ?? '')}/{String(candidate.normalizedPayload.state ?? '')}</p>
+                          {typeof candidate.normalizedPayload.address==='string'&&<p>Endereço cadastral: {candidate.normalizedPayload.address}</p>}
+                          {typeof candidate.normalizedPayload.registrationStatus==='string'&&<p>Situação cadastral: {candidate.normalizedPayload.registrationStatus} — não comprova funcionamento atual.</p>}
+                          <p>Site: {buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website?.url??'não encontrado nas fontes consultadas'}</p>
+                          {buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website&&<p>{buildRadarPresenceSummary(candidate,selectedCampaign.configurationRevision??1).website?.label}</p>}
+                          <p>Telefone cadastral: {String(candidate.normalizedPayload.phoneRaw ?? 'não identificado')} — atendimento não verificado.</p>
+                          {getBraveSuggestions(candidate.normalizedPayload).map(suggestion =>
+                            <div key={suggestion.sourceUrl} className="mt-2 rounded border border-sky-200 bg-sky-50 p-2">
+                              <p className="font-medium">Presença pública a conferir: {suggestion.name}</p>
+                              <p>{suggestion.address} · Site: {suggestion.websiteUrl ?? 'não informado'} · Tel.: {suggestion.phone ?? 'não informado'}</p>
+                              <a className="text-yux-700 underline" href={suggestion.sourceUrl} target="_blank" rel="noreferrer">Conferir origem</a>
+                              <Button type="button" size="sm" variant="outline" className="ml-2"
+                                disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                                onClick={() => confirmBraveSuggestion(candidate.id, suggestion.sourceUrl)}>Associar após conferir</Button>
+                            </div>)}
+                          <p>Qualificação: {b2bProspectById.get(candidate.id)?.targetStatus ?? 'aguardando verificação'} · Adequação: {b2bProspectById.get(candidate.id)?.productFit ?? 'desconhecida'}</p>
+                          {Array.isArray(candidate.normalizedPayload.triageReasons) && candidate.normalizedPayload.triageReasons.map((reason, index) => <p key={index}>{String(reason)}</p>)}
+                          {context.role?.key==='yux_admin'&&!!b2bProspectById.get(candidate.id)?.evidence.length&&<details><summary className="cursor-pointer">Histórico de evidências técnicas — não confirma contatos da empresa</summary>{b2bProspectById.get(candidate.id)?.evidence.map((fact,index)=><p key={index}>{fact.kind}: {fact.value.slice(0,180)} · <a className="text-primary underline" href={fact.sourceUrl} target="_blank" rel="noreferrer">fonte</a></p>)}</details>}
+                          {b2bProspectById.get(candidate.id)?.approvedAt &&
+                            <p className="font-medium text-emerald-700">Aprovada por verificação {b2bProspectById.get(candidate.id)?.verificationMethod === 'manual' ? 'humana' : 'automatizada'}.</p>}
+                          {b2bProspectById.get(candidate.id)?.approvedAt&&context.role?.key==='yux_admin'&&<Button size="sm" variant="outline" disabled={!!actionLoading} onClick={async()=>{
+                            if(!organizationId||!window.confirm('Reabrir a revisão? A aprovação atual será retirada; o histórico e o lead já criado serão preservados. Nenhuma pesquisa será iniciada.'))return
+                            setActionLoading('reopen-review')
+                            try{await radarService.reopenResearchReview(candidate.id,organizationId,selectedCampaign.configurationRevision??1);refreshCampaignSidebars()}catch{toast.error('Não foi possível reabrir a revisão.')}finally{setActionLoading(null)}
+                          }}>Reabrir revisão</Button>}
+                          {candidate.status === 'pending_review' && context.role?.key === 'yux_admin'
+                            && b2bProspectById.get(candidate.id)?.targetStatus
+                            && b2bProspectById.get(candidate.id)?.targetStatus !== 'confirmed'
+                            && !b2bProspectById.get(candidate.id)?.approvedAt && (
+                            <details className="mt-2 space-y-2 rounded border border-amber-200 bg-amber-50 p-2">
+                              <summary className="cursor-pointer font-medium">Corrigir associação / confirmação humana (opcional)</summary>
+                              <p>Use após conferir uma ambiguidade. A pesquisa automática não exige URL manual.</p>
+                              <Input aria-label={`Fonte pública de ${candidate.title}`} placeholder="URL da fonte pública que comprova a atividade"
+                                value={b2bManualReviews[candidate.id]?.url ?? ''}
+                                onChange={event => setB2bManualReviews(current => ({ ...current,
+                                  [candidate.id]: { url: event.target.value, note: current[candidate.id]?.note ?? '' } }))} />
+                              <textarea aria-label={`Justificativa de ${candidate.title}`} className="w-full rounded border p-2"
+                                placeholder="Explique quais critérios do público e da oferta foram confirmados (mín. 20 caracteres)"
+                                value={b2bManualReviews[candidate.id]?.note ?? ''}
+                                onChange={event => setB2bManualReviews(current => ({ ...current,
+                                  [candidate.id]: { url: current[candidate.id]?.url ?? '', note: event.target.value } }))} />
+                              <Button type="button" size="sm" disabled={!canManage || Boolean(actionLoading)
+                                || !b2bManualReviews[candidate.id]?.url || (b2bManualReviews[candidate.id]?.note.length ?? 0) < 20}
+                                onClick={() => approveB2bProspect(candidate.id, true)}>Confirmar e aprovar manualmente</Button>
+                            </details>)}
+                          <RadarCandidateResearchPanel key={`${organizationId}-${candidate.id}-${selectedCampaign.configurationRevision}`}
+                            candidateId={candidate.id} organizationId={organizationId!} configurationRevision={selectedCampaign.configurationRevision??1}
+                            initialOpen availability={researchAvailability} availabilityError={researchAvailabilityError} showTechnical={context.role?.key==='yux_admin'} canStart={canManage&&context.role?.key==='yux_admin'&&candidate.status==='pending_review'}
+                            canReview={canManage} approved={!!b2bProspectById.get(candidate.id)?.approvedAt} onCompleted={refreshCampaignSidebars}/>
+                        </div>}
+                        {candidate.errorMessage && <p className="mt-1 text-xs text-red-600">{context.role?.key==='yux_admin'?candidate.errorMessage:'Este registro requer atenção do responsável pela campanha.'}</p>}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {candidate.sourceType === 'osm_extract' && typeof candidate.normalizedPayload.websiteUrl === 'string' && (
+                          <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => checkOsmSite(candidate.id)}>Verificar site</Button>
+                        )}
+                        {context.role?.key==='yux_admin'&&selectedCampaign.campaignType==='regional_b2b'&&<details><summary className="cursor-pointer text-sm text-slate-600">Conferência avançada de presença e site</summary><div className="mt-2 flex flex-wrap gap-2">
+                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.sourceType === 'cnpja_advanced_search'
+                          && candidate.status === 'pending_review' && <Button type="button" size="sm" variant="outline"
+                            disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading) || !braveSource?.enabled
+                              || selectedCampaign.searchConfiguration?.sources.enrichWithBrave === false}
+                            onClick={() => enrichCandidateWithBrave(candidate.id)}>
+                            {actionLoading === `brave-${candidate.id}` ? 'Consultando...' : 'Completar presença pública'}
+                          </Button>}
+                        {selectedCampaign?.campaignType === 'regional_b2b' && candidate.status === 'pending_review'
+                          && <Button type="button" size="sm" variant="outline" disabled={!canManage || Boolean(actionLoading)}
+                            onClick={() => inspectBusinessSite(candidate.id)}>
+                            {actionLoading === `b2b-site-${candidate.id}` ? 'Verificando...' : 'Conferir site informado e atividade'}
+                          </Button>}
+                        </div></details>}
+                        {selectedCampaign?.campaignType === 'regional_b2b' && b2bProspectById.get(candidate.id)?.targetStatus === 'confirmed'
+                          && candidate.normalizedPayload.websiteStatus === 'verified_present'
+                          && !b2bProspectById.get(candidate.id)?.approvedAt
+                          && <Button type="button" size="sm" disabled={!canManage || context.role?.key !== 'yux_admin' || Boolean(actionLoading)}
+                            onClick={() => approveB2bProspect(candidate.id)}>Aprovar para lista</Button>}
+                        {selectedCampaign?.campaignType !== 'regional_b2b' && <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => importCandidate(candidate.id)}>Importar</Button>}
+                        <Button type="button" size="sm" variant="outline" disabled={!canManage || candidate.status !== 'pending_review' || Boolean(actionLoading)} onClick={() => discardCandidate(candidate.id)}>Descartar</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>}
+
+              {(opportunities.length>0||selectedCampaign.campaignType!=='regional_b2b')&&<details className="rounded-md border"><summary className="cursor-pointer p-3 text-sm font-medium">Acompanhamento comercial</summary>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Oportunidades</h3>
+                    <p className="text-xs text-slate-500">{selectedOpportunityIds.length} selecionadas para lote</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" disabled={!canManage || selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('enrich')}>
+                      {actionLoading === 'batch-enrich' ? 'Enriquecendo...' : 'Enriquecer'}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled={!canManage || selectedOpportunityIds.length === 0 || Boolean(actionLoading)} onClick={() => runBatchAction('analyze')}>
+                      {actionLoading === 'batch-analyze' ? 'Analisando...' : 'Analisar'}
+                    </Button>
+                  </div>
+                </div>
+                <div className="divide-y">
+                  {opportunities.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhuma oportunidade nesta campanha.</p>}
+                  {opportunities.map(opportunity => (
+                    <div key={opportunity.id} className={`flex items-center gap-3 p-3 text-sm hover:bg-slate-50 ${selectedOpportunity?.id === opportunity.id ? 'bg-slate-50' : ''}`}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300"
+                        checked={selectedOpportunityIds.includes(opportunity.id)}
+                        onChange={() => toggleOpportunitySelection(opportunity.id)}
+                        aria-label={`Selecionar ${getRadarCompanyDisplayName(opportunity.company)}`}
+                      />
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                        onClick={() => setSelectedOpportunity(opportunity)}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-slate-950">{getRadarCompanyDisplayName(opportunity.company)}</span>
+                          <span className="block text-xs text-slate-500">{getRadarOpportunityStatusLabel(opportunity.status)}</span>
+                        </span>
+                        <span className="shrink-0 text-xs text-slate-500">Score {opportunity.latestScore?.totalScore ?? '-'}</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </details>}
+            </div>
+          </section>}
+
+          <RadarAdminOperations isSystemAdmin organizationId={organizationId} campaignId={selectedCampaign.id}/>
 
           {screen==='history' && <><section className="rounded-md border bg-white p-4">
             <h2 className="font-semibold">Histórico de pesquisas</h2><p className="mt-1 text-xs text-slate-500">Últimas 100 execuções. Pesquisas anteriores continuam registradas, mesmo após alterar a configuração.</p>
@@ -1820,37 +1894,7 @@ function RadarAdminWorkspace({screen:routeScreen,campaignId,onNavigate,leadPath=
             </div>
           </section>
 
-          {context.role?.key==='yux_admin'&&<details className="rounded-md border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">Diagnóstico operacional — Admin</summary><section className="mt-3 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-md border bg-white p-4">
-              <h2 className="text-base font-semibold text-slate-950">Metricas por fonte</h2>
-              <div className="mt-3 divide-y rounded-md border">
-                {(!metrics?.sourceBreakdown || metrics.sourceBreakdown.length === 0) && <p className="p-3 text-sm text-slate-500">Sem metricas por fonte nesta campanha.</p>}
-                {metrics?.sourceBreakdown?.map(source => (
-                  <div key={source.sourceType} className="grid gap-2 p-3 text-sm md:grid-cols-5">
-                    <p className="font-medium text-slate-950">{source.sourceType}</p>
-                    <p className="text-slate-600">Empresas {source.companies}</p>
-                    <p className="text-slate-600">Oportunidades {source.opportunities}</p>
-                    <p className="text-slate-600">Candidatos {source.candidates}</p>
-                    <p className="text-slate-600">R$ {source.estimatedCost.toFixed(2)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-md border bg-white p-4">
-              <h2 className="text-base font-semibold text-slate-950">Runs recentes</h2>
-              <div className="mt-3 space-y-2">
-                {runs.length === 0 && <p className="text-sm text-slate-500">Nenhum run registrado nesta campanha.</p>}
-                {runs.slice(0, 5).map(run => (
-                  <div key={run.id} className="rounded-md border p-3">
-                    <p className="text-sm font-medium text-slate-950">{run.runKind === 'analysis' ? 'Analise IA' : run.provider} - {run.status}</p>
-                    <p className="text-xs text-slate-500">{new Date(run.createdAt).toLocaleString('pt-BR')}</p>
-                    {run.errorMessage && <p className="mt-1 text-xs text-red-600">{run.errorMessage}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section></details>}</>}
+          </>}
         </>
       )}
 

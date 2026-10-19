@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { lazy,Suspense,useEffect, useState } from 'react'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import { RadarSourceManagementPanel } from '@/components/platform/admin/RadarSourceManagementPanel'
 import { RadarOperationalLimitsPanel } from '@/components/platform/admin/RadarOperationalLimitsPanel'
+import {RadarResearchOperationsPanel} from '@/components/platform/admin/RadarResearchOperationsPanel'
 import {useAuthStore} from '@/stores/authStore'
 import {
   cnpjaProviderDefaults,
@@ -15,9 +16,13 @@ import {
 } from '@/lib/platform/providerDefaults'
 import { adminPlatformService } from '@/services/adminPlatformService'
 import type { PlatformProviderConnection } from '@/types/adminPlatform'
+const RadarOperationalWorkspace=lazy(()=>import('@/components/radar/RadarWorkspace').then(module=>({default:module.RadarWorkspace})))
 
 export function AdminIntegrationsPage() {
   const isAdmin=useAuthStore(state=>state.user?.role==='admin')
+  const parameters=new URLSearchParams(window.location.search),organizationId=parameters.get('radarOrganization'),campaignId=parameters.get('radarCampaign')
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const radarScope=isAdmin&&organizationId&&campaignId&&uuid.test(organizationId)&&uuid.test(campaignId)?{organizationId,campaignId}:null
   const [providers, setProviders] = useState<PlatformProviderConnection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +73,7 @@ export function AdminIntegrationsPage() {
         Esta area salva configuracoes operacionais e identificadores internos. Provedores como SMTP2GO devem ser
         conectados pelo fluxo seguro do Admin, com credenciais criptografadas no backend da VPS.
       </div>
+      {radarScope&&<section id="radar-operations" className="scroll-mt-24 space-y-5"><RadarResearchOperationsPanel isSystemAdmin={isAdmin} organizationId={radarScope.organizationId} campaignId={radarScope.campaignId}/><Suspense fallback={<p role="status">Carregando operações do Radar…</p>}><RadarOperationalWorkspace key={`${radarScope.organizationId}:${radarScope.campaignId}`} technicalOnly adminOrganizationId={radarScope.organizationId} campaignId={radarScope.campaignId} screen="results"/></Suspense></section>}
 
       {loading && <p className="text-sm text-gray-600">Carregando integracoes globais...</p>}
 

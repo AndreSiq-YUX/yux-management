@@ -16,6 +16,6 @@ export function RadarCampaignPage({campaign,screen,canManage,onNavigate,onDuplic
       <Button type="button" size="sm" variant="outline" onClick={onDuplicate}>Duplicar pesquisa</Button><p className="text-xs text-muted-foreground">Cria outra campanha independente; não continua esta pesquisa.</p>
     </div></details>}
     <p className="text-xs text-slate-500">Configuração salva: revisão {campaign.configurationRevision??1}. Salvar configurações não inicia buscas ou contatos.</p>
-    {screen==='results'&&<RadarResearchMetrics campaignId={campaign.id} organizationId={campaign.organizationId} showCosts={canManage}/>}
+    {screen==='results'&&<RadarResearchMetrics campaignId={campaign.id} organizationId={campaign.organizationId} showCosts={false}/>}
   </header>
 }

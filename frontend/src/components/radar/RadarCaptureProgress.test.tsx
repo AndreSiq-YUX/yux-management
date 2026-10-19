@@ -6,7 +6,7 @@ describe('truthful capture progress',()=>{
  it.each([true,false])('does not count blocked companies as complete and separates technical guidance: %s',async showTechnical=>{
   const container=document.createElement('div'),root=createRoot(container)
   try{
-   await act(async()=>root.render(<api.RadarCaptureProgress showTechnical={showTechnical} operation={{id:'op',status:'blocked',configurationRevision:6,discoveryStopped:true,counts:{requested:20,admitted:20,researching:0,completed:0,insufficient:1,blocked:19},blockers:['source_limit_exceeded'],items:[]}} onRefresh={vi.fn()}/>))
+   await act(async()=>root.render(<api.RadarCaptureProgress showTechnical={showTechnical} operation={{id:'op',status:'blocked',configurationRevision:6,discoveryStopped:true,counts:{requested:20,admitted:20,researching:0,completed:1,insufficient:8,blocked:11},blockers:['source_limit_exceeded'],items:[]}} onRefresh={vi.fn()}/>))
    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('5')
    if(showTechnical){
     expect(container.textContent).toContain('etapas com dados salvos')

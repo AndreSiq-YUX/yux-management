@@ -22,7 +22,7 @@ export function mergeRadarCompanyResearch(previous:Record<string,unknown>,incomi
  const priorPresence=object(prior.publicPresence),priorWebsite=object(priorPresence.website)
  const incomplete=incoming.researchComplete!==true||object(incoming.researchQuality).readyForReview!==true
  const snapshot={runId:previous.researchRunId,configurationRevision:previous.researchRevision,belongsToCurrentIdentity:sameIdentity,
-  websiteUrl:prior.websiteUrl,siteCheckedAt:prior.siteCheckedAt,publicPresence:prior.publicPresence,publicContacts:prior.publicContacts,companyProfile:prior.companyProfile,activityAssessment:prior.activityAssessment}
+  websiteUrl:prior.websiteUrl,siteCheckedAt:prior.siteCheckedAt,publicPresence:prior.publicPresence,publicContacts:prior.publicContacts,companyProfile:prior.companyProfile,activityAssessment:prior.activityAssessment,targetStatus:prior.targetStatus,productFit:prior.productFit,sizeAssessment:prior.sizeAssessment}
  // Keep the last genuinely useful snapshot across any number of empty refreshes.
  const historical=object(previous.previousResearch)
  result.previousResearch=previous.researchRefreshIncomplete===true&&Object.keys(historical).length?{...historical,belongsToCurrentIdentity:sameIdentity&&historical.belongsToCurrentIdentity===true}

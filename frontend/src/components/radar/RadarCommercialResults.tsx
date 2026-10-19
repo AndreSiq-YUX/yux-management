@@ -1,8 +1,9 @@
-import {Fragment,useState} from 'react'
+import {Fragment,useState,type ReactNode} from 'react'
 import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
 import {Progress} from '@/components/ui/progress'
 import {RadarResearchMetrics} from './RadarResearchMetrics'
+import {RadarResearchOutcome} from './RadarResearchOutcome'
 import type {RadarScreen} from './RadarCampaignPage'
 import type {RadarCommercialCampaign,RadarCommercialCandidate,RadarCommercialCapture,RadarCommercialFacts,RadarCommercialResearch,CommercialHistory,CommercialOpportunity,CommercialClaim} from '@/types/radarCommercial'
 
@@ -15,12 +16,20 @@ export function CommercialSource({url,label='Ver evidência pública'}:{url?:str
  return <a className="break-all text-primary underline" href={url} target="_blank" rel="noreferrer">{label}</a>
 }
 function Claim({claim}:{claim:CommercialClaim}){return <p>{claim.value} {claim.sourceUrl&&<CommercialSource url={claim.sourceUrl}/>}</p>}
-export function RadarCommercialCompanyDetails({facts,assessment}:{facts:RadarCommercialFacts;assessment?:RadarCommercialResearch['assessment']}){
+export function RadarPreservedResearchFacts({previous}:{previous:NonNullable<RadarCommercialFacts['previousResearch']>}){
+ return <section className="flex flex-col gap-2 rounded-md border bg-muted/20 p-3" aria-label="Dados anteriores preservados"><h4 className="font-semibold">Dados anteriores preservados</h4><p>A tentativa mais recente ficou incompleta. Estas informações mantêm a data original e não representam uma nova confirmação.</p>
+  {previous.websiteUrl&&<p><CommercialSource url={previous.websiteUrl} label="Abrir site encontrado anteriormente"/> · observado em {date(previous.observedAt)}</p>}
+  {previous.contacts?.map((contact,index)=><p key={index} className="break-all">{contact.value} · observado em {date(contact.observedAt)} <CommercialSource url={contact.sourceUrl}/></p>)}
+ </section>
+}
+export function RadarCommercialCompanyDetails({facts,assessment,feedback}:{facts:RadarCommercialFacts;assessment?:RadarCommercialResearch['assessment'];feedback?:RadarCommercialResearch['feedback']}){
  return <div className="flex min-w-0 flex-col gap-4 text-sm">
+  <RadarResearchOutcome feedback={feedback}/>
+  {facts.refreshIncomplete&&facts.previousResearch&&<RadarPreservedResearchFacts previous={facts.previousResearch}/>}
   <div><p>{facts.legalName}</p><p>CNPJ: {facts.cnpj??'Não identificado'} · {[facts.city,facts.state].filter(Boolean).join(' / ')}</p>{facts.address&&<p>{facts.address}</p>}
    {facts.registrationStatus&&<p>Situação cadastral: {facts.registrationStatus}. Não comprova funcionamento atual.</p>}
    {facts.openingDate&&<p>Abertura: {date(facts.openingDate)}</p>}
-   {facts.websiteUrl?<p><CommercialSource url={facts.websiteUrl} label="Abrir site da empresa"/> · {facts.websiteStatus==='verified_present'?'Identidade corroborada':'Identificação pendente'}</p>:<p>Site não encontrado nas fontes consultadas.</p>}
+   {facts.websiteUrl?<p><CommercialSource url={facts.websiteUrl} label="Abrir site da empresa"/> · {facts.websiteStatus==='verified_present'?'Identidade corroborada':'Identificação pendente'}{facts.siteObservedAt&&` · observado em ${date(facts.siteObservedAt)}`}</p>:facts.previousResearch?.websiteUrl?<p>Nenhum site novo confirmado nesta tentativa; o site anterior permanece disponível acima.</p>:<p>Site não encontrado nas fontes consultadas.</p>}
   </div>
   <div><h4 className="font-semibold">Contatos e canais</h4>{facts.registryPhone&&<p>Telefone cadastral: {facts.registryPhone} — não validado por atendimento.</p>}
    {!facts.contacts?.length&&<p>Nenhum contato público identificado até esta etapa.</p>}
@@ -45,16 +54,16 @@ export function RadarCommercialCompanyDetails({facts,assessment}:{facts:RadarCom
   <p className="text-xs text-muted-foreground">Dados públicos não comprovam consentimento ou intenção de compra. Nenhuma mensagem é enviada.</p>
  </div>
 }
-type Props={campaign:RadarCommercialCampaign;candidates:RadarCommercialCandidate[];operation:RadarCommercialCapture|null;screen:RadarScreen;history?:CommercialHistory[];opportunities?:CommercialOpportunity[];
+type Props={campaign:RadarCommercialCampaign;candidates:RadarCommercialCandidate[];operation:RadarCommercialCapture|null;screen:RadarScreen;history?:CommercialHistory[];opportunities?:CommercialOpportunity[];researchActions?:ReactNode;
  onNavigate:(path:string)=>void;onOpenDetails:(id:string)=>void;onSelect?:(ids:string[])=>void;selectedIds?:string[];onSendCrm?:()=>void;canReview?:boolean;busy?:boolean;
  onOpportunityAction?:(id:string,action:'analyze'|'approve'|'reject'|'optOut'|'convert')=>void;
  onCandidateAction?:(id:string,action:'import'|'discard',input:{analyzeAfterImport:boolean})=>void}
-export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,onCandidateAction,busy=false}:Props){
+export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],researchActions,onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,onCandidateAction,busy=false}:Props){
  const [query,setQuery]=useState(''),[page,setPage]=useState(0),[expanded,setExpanded]=useState<string|null>(null)
  const [analyzeAfterImport,setAnalyzeAfterImport]=useState(false)
  const filtered=candidates.filter(item=>`${item.title} ${item.facts.cnpj} ${item.facts.city} ${item.facts.state}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))
  const pageCount=Math.max(1,Math.ceil(filtered.length/25)),currentPage=Math.min(page,pageCount-1),visible=filtered.slice(currentPage*25,(currentPage+1)*25)
- const c=operation?.counts,finished=(c?.completed??0)+(c?.insufficient??0)+(c?.blocked??0)
+ const c=operation?.counts,finished=c?.completed??0
  return <div className="flex min-w-0 flex-col gap-5">
   <header className="flex flex-col gap-4 rounded-md border bg-background p-4"><Button size="sm" variant="ghost" className="self-start" onClick={()=>onNavigate('')}>Voltar às campanhas</Button>
    <div><h2 className="text-xl font-semibold">{campaign.name}</h2><p className="text-sm text-muted-foreground">{campaign.targetSegment} · {campaign.offerType}</p></div>
@@ -65,11 +74,12 @@ export function RadarCommercialResults({campaign,candidates,operation,screen,his
    <p>CNAEs: {campaign.targetCnaes?.join(', ')||'Sem filtro'}</p><p>Produtos e serviços: {campaign.productFocus?.join(', ')||'Não informados'}</p>
    {([['includeAnyTerms','Termos desejados'],['includeAllTerms','Termos obrigatórios'],['excludeTerms','Exclusões'],['productTerms','Critérios da oferta']] as const).map(([key,label])=>campaign.criteria[key]?.length?<p key={key}>{label}: {campaign.criteria[key]!.join(', ')}</p>:null)}
   </section>:screen==='history'?<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold">Histórico da pesquisa</h3>{history.length?history.map((item,i)=><p key={item.id??i}>{item.companyName} · {item.actionLabel} · {status(item.status)} · {date(item.updatedAt)}</p>):<p>Ainda não há pesquisas registradas.</p>}</section>:<>
-   {operation&&<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold" role="status">{status(operation.status)}</h3><Progress value={c?.requested?finished/c.requested*100:0} aria-label="Empresas com pesquisa encerrada"/>
+   {operation&&<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold" role="status">{status(operation.status)}</h3><Progress value={c?.requested?Math.min(100,finished/c.requested*100):0} aria-valuenow={c?.requested?Math.min(100,finished/c.requested*100):0} aria-label="Empresas com dados necessários concluídos"/>
     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Solicitadas',c?.requested],['Novas encontradas',c?.admitted],['Em pesquisa',c?.researching],['Concluídas',c?.completed],['Dados insuficientes',c?.insufficient],['Aguardando a equipe',c?.blocked]].map(([label,value])=><div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="text-lg font-semibold">{value??0}</dd></div>)}</dl>
     {operation.pendingMessage&&<p>{operation.pendingMessage}</p>}{operation.status==='partial'&&<p>Algumas empresas terminaram sem todos os dados necessários. Confira os resultados antes de agir.</p>}
    </section>}
    <section className="min-w-0 rounded-md border bg-background p-4"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Empresas encontradas</h3><Input aria-label="Filtrar empresas" placeholder="Nome, CNPJ ou cidade" className="sm:max-w-sm" value={query} onChange={event=>{setQuery(event.target.value);setPage(0);setExpanded(null)}}/></div>
+    {researchActions}
     {onSendCrm&&<Button size="sm" disabled={!selectedIds.length||selectedIds.length>25} onClick={onSendCrm}>Enviar ao CRM</Button>}
     {onCandidateAction&&campaign.campaignType!=='regional_b2b'&&<label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={analyzeAfterImport} disabled={busy} onChange={event=>setAnalyzeAfterImport(event.target.checked)}/>Analisar após importar</label>}
     {selectedIds.length>25&&<p>Selecione até 25 empresas por envio.</p>}

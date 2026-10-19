@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react'
+import {useCallback,useEffect,useRef,useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
 import {radarService} from '@/services/radarService'
@@ -6,10 +6,11 @@ import {usePlatformContext} from '@/stores/platformStore'
 import {canShowRadarNavigation,canManageRadar} from '@/lib/radar/radarRules'
 import {RadarCommercialResults,RadarCommercialCompanyDetails} from './RadarCommercialResults'
 import {RadarCommercialFeedback} from './RadarCommercialFeedback'
+import {RadarCommercialResearchActions} from './RadarCommercialResearchActions'
 import {RadarCrmDeliveryDialog} from './RadarCrmDeliveryDialog'
 import type {RadarScreen} from './RadarCampaignPage'
 import type {RadarCommercialCampaign,RadarCommercialCandidate,RadarCommercialCapture,RadarCommercialResearch,CommercialHistory,CommercialOpportunity} from '@/types/radarCommercial'
-export type RadarWorkspaceProps={screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void;leadPath?:(id:string,pipelineId?:string)=>string}
+export type RadarWorkspaceProps={screen?:RadarScreen;campaignId?:string;onNavigate?:(path:string)=>void;leadPath?:(id:string,pipelineId?:string)=>string;technicalOnly?:boolean;adminOrganizationId?:string}
 export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
  const context=usePlatformContext(),org=context.organization?.id,allowed=canShowRadarNavigation(context),canReview=canManageRadar(context)
  const canCrm=canReview&&(context.organization?.isInternalGrowthWorkspace||context.enabledModuleKeys.includes('crm')&&context.role?.permissions.includes('leads.write'))
@@ -19,6 +20,7 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[refresh,setRefresh]=useState(0),[query,setQuery]=useState(''),[selected,setSelected]=useState<string[]>([]),[crmOpen,setCrmOpen]=useState(false)
  const [fullId,setFullId]=useState<string|null>(null),[research,setResearch]=useState<RadarCommercialResearch|null>(null),[detailsLoading,setDetailsLoading]=useState(false),[detailsError,setDetailsError]=useState('')
  const [actionBusy,setActionBusy]=useState(false),actionSending=useRef(false)
+ const researchUpdated=useCallback(()=>setRefresh(value=>value+1),[])
  const requestSequence=useRef(0),currentScope=useRef(scope),heading=useRef<HTMLHeadingElement>(null),returnFocus=useRef<HTMLElement|null>(null)
  const loadedOrganization=useRef<string>(),loadedResultsScope=useRef<string>()
  currentScope.current=scope
@@ -76,9 +78,10 @@ export function RadarCommercialWorkspace(props:RadarWorkspaceProps){
    {campaigns.filter(item=>`${item.name} ${item.targetSegment} ${item.targetStates?.join(' ')}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).map((item,i)=><div key={item.id??i} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><div><h3 className="font-medium">{item.name}</h3><p className="text-sm text-muted-foreground">{item.targetSegment} · {item.targetStates?.join(', ')||[item.targetCity,item.targetState].filter(Boolean).join('/')}</p><p className="text-sm">Objetivo: {item.offerType}</p></div>{item.id&&<Button size="sm" variant="outline" onClick={()=>navigate(item.id!)}>Abrir</Button>}</div>)}
    {!campaigns.length&&<p className="mt-4 text-sm">Nenhuma campanha encontrada.</p>}
   </section>:campaign?<RadarCommercialResults key={scope} campaign={campaign} candidates={candidates} operation={operation} screen={screen} history={history} opportunities={opportunities} onNavigate={navigate} onOpenDetails={openDetails}
-   selectedIds={selected} onSelect={canCrm?setSelected:undefined} onSendCrm={canCrm?()=>setCrmOpen(true):undefined} busy={actionBusy} onOpportunityAction={canReview?opportunityAction:undefined} onCandidateAction={canReview?candidateAction:undefined}/>:<p>Campanha não encontrada ou acesso indisponível.</p>}
+   selectedIds={selected} onSelect={canReview?setSelected:undefined} onSendCrm={canCrm?()=>setCrmOpen(true):undefined} busy={actionBusy} onOpportunityAction={canReview?opportunityAction:undefined} onCandidateAction={canReview?candidateAction:undefined}
+   researchActions={org&&id?<RadarCommercialResearchActions organizationId={org} campaignId={id} criteriaRevision={campaign.commercialCriteriaRevision??campaign.configurationRevision??1} canResearch={canReview} selectedIds={selected} companies={candidates} onUpdated={researchUpdated}/>:undefined}/>:<p>Campanha não encontrada ou acesso indisponível.</p>}
   {fullId&&screen==='results'&&<section className="rounded-md border bg-background p-4"><h3 ref={heading} tabIndex={-1} className="scroll-mt-6 font-semibold">Detalhes completos — {company?.title}</h3><Button size="sm" variant="ghost" onClick={closeDetails}>Fechar detalhes</Button>
-   {detailsLoading?<p role="status">Carregando detalhes…</p>:detailsError?<div role="alert"><p>{detailsError}</p><Button size="sm" variant="outline" onClick={()=>openDetails(fullId)}>Tentar novamente</Button></div>:<><RadarCommercialCompanyDetails facts={facts} assessment={research?.assessment}/>{research?.pendingMessage&&<p className="mt-3 text-sm">{research.pendingMessage}</p>}
+   {detailsLoading?<p role="status">Carregando detalhes…</p>:detailsError?<div role="alert"><p>{detailsError}</p><Button size="sm" variant="outline" onClick={()=>openDetails(fullId)}>Tentar novamente</Button></div>:<><RadarCommercialCompanyDetails facts={facts} assessment={research?.assessment} feedback={research?.feedback}/>{research?.pendingMessage&&<p className="mt-3 text-sm">{research.pendingMessage}</p>}
     {org&&<RadarCommercialFeedback key={`${org}:${fullId}`} candidateId={fullId} organizationId={org} revision={campaign?.configurationRevision??1} contacts={facts.contacts??[]} canReview={canReview}/>}</>}
   </section>}
   {crmOpen&&org&&id&&canCrm&&<RadarCrmDeliveryDialog organizationId={org} campaignId={id} revision={campaign?.configurationRevision??1} candidateIds={selected} onClose={()=>setCrmOpen(false)} onCompleted={()=>setRefresh(value=>value+1)} leadPath={props.leadPath??((leadId,pipelineId)=>`/portal/comercial/leads?leadId=${encodeURIComponent(leadId)}${pipelineId?`&pipelineId=${encodeURIComponent(pipelineId)}`:''}`)}/>}

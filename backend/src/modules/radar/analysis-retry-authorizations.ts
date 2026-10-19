@@ -83,7 +83,7 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
   const active=(await client.query('SELECT id FROM public.radar_analysis_retry_authorizations WHERE organization_id=$1 AND previous_analysis_receipt_id=ANY($2::uuid[]) AND consumed_at IS NULL AND expires_at>NOW() LIMIT 1',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows[0]
   if(active)throw fail('radar_analysis_retry_already_authorized')
   const policy=await radarAnalysisRetryPolicy(client,input.organizationId,campaign.search_configuration,bound.map(item=>item.action),Number(campaign.operational_policy_version??1))
-  if(items.length>policy.policy.limits.maxVerificationBatch)throw fail('radar_operational_limit_exceeded')
+  if(new Set(items.map(item=>item.candidateId)).size>policy.policy.limits.maxNewCompaniesPerLot)throw fail('radar_operational_limit_exceeded')
   if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action)))throw fail('radar_analysis_retry_route_missing')
   const research=policy.snapshot.research
   if(bound.some(item=>item.action==='radar_presence_resolution'?!research.presenceResolutionEnabled:!(research.semanticQualificationEnabled||research.profileEnabled||research.sizeAssessment.enabled)))throw fail('radar_analysis_retry_stage_disabled')

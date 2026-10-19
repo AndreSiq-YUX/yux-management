@@ -11,4 +11,5 @@ it('projects useful per-item commercial states without provider errors or admini
  const projected=api.projectRadarResearchRequest({id:value.requestId,status:'waiting',items:[{candidate_id:value.candidateIds[0],state:'waiting',reason_code:'agent_runtime_503',run_id:'internal-run',effect_receipt:{provider:'OpenRouter',costUsd:1}}]})
  expect(projected).toMatchObject({requestId:value.requestId,state:'waiting',items:[{candidateId:value.candidateIds[0],state:'waiting'}]})
  expect(JSON.stringify(projected)).not.toMatch(/OpenRouter|costUsd|agent_runtime|effect_receipt|internal-run/)
+ expect(projected.items[0].feedback).toMatchObject({status:'waiting',nextAction:'wait'})
 })

@@ -24,7 +24,8 @@ export type RadarResearchContact = {kind:'phone'|'email'|'whatsapp'|'social'|'bu
   sources?:Array<{sourceUrl:string;observedAt:string;purpose?:string}>}
 export type RadarTlsExceptionEvidence={grantId:string;hostname:string;fingerprint256:string;observedAt:string}
 export type RadarTlsExceptionGrant={id:string;hostname:string;fingerprint256:string;approvedBy:string;approvedAt:string;expiresAt:string;revokedAt?:string}
-export type RadarResearchResult = {methodVersion?:number;configurationRevision:number;availability:RadarResearchAvailability;
+export type RadarResearchResult = {commercialStatus?:import('./generated/radarResearch').CommercialResearchStatusV1;methodVersion?:number;configurationRevision:number;availability:RadarResearchAvailability;
+  researchRefreshIncomplete?:boolean;previousResearch?:{belongsToCurrentIdentity?:boolean;websiteUrl?:string;siteCheckedAt?:string;publicContacts?:RadarResearchContact[]};
   tlsCanAuthorize?:boolean;tlsDiagnostics?:Array<{diagnosticId:string;hostname:string;fingerprint256:string;validTo:string}>;tlsExceptions?:RadarTlsExceptionGrant[];
   run:null|{id:string;status:string;stage:string;error_code?:string;updated_at:string;configuration_revision:number;output:{
     methodVersion?:number;associationVersion?:number;
@@ -40,5 +41,6 @@ export type RadarResearchResult = {methodVersion?:number;configurationRevision:n
     qualification?:{targetStatus:string;productFit:string;reasons:string[];evidenceIds:string[];evidenceSources?:Array<{id:string;sourceUrl:string}>;provider?:string;model?:string};limitations?:string[];
   }};history:Array<{id:string;status:string;updated_at:string}>}
 export type RadarResearchRequestState='accepted'|'running'|'waiting'|'unchanged'|'completed'
+export type RadarAdministrativeResearch={configurationRevision:number;criteriaRevision:number;requests:Array<{requestId:string;state:RadarResearchRequestState;criteriaRevision:number;configurationRevision:number;budgetRevision:number;createdAt:string;items:number;waiting:number}>;analyses:Array<{receiptId:string;candidateId:string;companyName:string;action:string;status:string;configurationRevision:number;createdAt:string;transport:string|null;validation:string|null;billing:string;failureCode:string|null;provider:string|null;model:string|null;reportedUsd:string|null;estimatedBrl:string|null;canRevalidate:boolean;canAuthorizeRetry:boolean}>}
 export type RadarResearchRequestInput={organizationId:string;candidateIds:string[];requestId:string;criteriaRevision:number;intent:'resume'|'refresh'|'reanalyze';analysisAuthorizationId?:string;allowSemanticRefresh?:boolean}
-export type RadarResearchRequestResult={requestId:string;state:RadarResearchRequestState;items:Array<{candidateId:string;state:RadarResearchRequestState;message:string}>}
+export type RadarResearchRequestResult={requestId:string;state:RadarResearchRequestState;items:Array<{candidateId:string;state:RadarResearchRequestState;message:string;feedback?:import('./generated/radarResearch').CommercialResearchStatusV1}>}

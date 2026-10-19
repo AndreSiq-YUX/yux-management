@@ -81,6 +81,11 @@ export const radarService = {
   },
   queueResearchRequest(campaignId:string,input:RadarResearchRequestInput){return apiRequest<RadarResearchRequestResult>(`/radar/campaigns/${campaignId}/research-requests`,{method:'POST',body:input})},
   getResearchRequest(campaignId:string,organizationId:string,requestId:string){return apiRequest<RadarResearchRequestResult>(`/radar/campaigns/${campaignId}/research-requests/${requestId}${buildQuery({organizationId})}`)},
+  getLatestResearchRequest(campaignId:string,organizationId:string){return apiRequest<{request:RadarResearchRequestResult|null}>(`/radar/campaigns/${campaignId}/research-requests/latest${buildQuery({organizationId})}`)},
+  getAdministrativeResearch(campaignId:string,organizationId:string){return apiRequest<import('@/types/radarResearch').RadarAdministrativeResearch>(`/radar/admin/research-operations${buildQuery({organizationId,campaignId})}`)},
+  revalidateAdministrativeResearch(input:{organizationId:string;campaignId:string;receiptIds:string[]}){return apiRequest<{items:Array<{receiptId:string;state:'revalidated'|'invalid'|'no_saved_response'|'waiting';reason?:string}>}>('/radar/admin/research-operations/revalidate',{method:'POST',body:input})},
+  authorizeAnalysisRetries(campaignId:string,input:{organizationId:string;configurationRevision:number;requestId:string;expiresAt:string;acknowledgePreviousChargeMayExist:true;items:Array<{candidateId:string;previousReceiptId:string}>}){return apiRequest<{analysisAuthorizationId:string;expiresAt:string}>(`/radar/campaigns/${campaignId}/analysis-retries`,{method:'POST',body:input})},
+  authorizeResearchBudget(requestId:string,input:{organizationId:string;expectedBudgetRevision:number;authorizationId:string}){return apiRequest<{budgetRevision:number}>(`/radar/admin/research-requests/${requestId}/authorize-budget`,{method:'POST',body:input})},
   async getAdminDataSources() {
     return apiRequest<Array<RadarDataSource & { organizationName?: string }>>('/radar/admin/data-sources')
   },

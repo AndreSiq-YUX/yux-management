@@ -29,6 +29,19 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it('restores the latest durable research after reload for all permitted readers without mutating or purchasing anything',async()=>{
+  const requestId=randomUUID()
+  const start=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get('yux_admin')!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidateId],intent:'resume'}})
+  expect(start.statusCode).toBe(202)
+  const before=(await pool.query('SELECT * FROM public.radar_research_requests WHERE request_id=$1',[requestId])).rows[0]
+  for(const user of ['yux_admin','yux_operator','client_admin_A','client_member_A']){
+   const result=await get(`/campaigns/${campaignId}/research-requests/latest?organizationId=${fixtureIds.organizationA}`,user)
+   expect(result.statusCode).toBe(200);expect(result.json()).toMatchObject({request:{requestId,state:'accepted',items:[{candidateId,feedback:{status:'researching'}}]}})
+   expect(result.body).not.toMatch(/budget|cost|policy|Brave|model|provider|input_hash|owner_token/)
+  }
+  expect((await get(`/campaigns/${campaignId}/research-requests/latest?organizationId=${fixtureIds.organizationA}`,'client_admin_B')).statusCode).toBe(403)
+  expect((await pool.query('SELECT * FROM public.radar_research_requests WHERE request_id=$1',[requestId])).rows[0]).toEqual(before)
+ })
  it('stops an accepted request with a useful waiting state when its user loses write permission',async()=>{
   const had=(await pool.query("SELECT 1 FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")).rows.length>0
   try{
@@ -47,6 +60,8 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  it.each(['yux_operator','client_admin_A','client_member_A'])('denies operational budget approval by direct HTTP to %s',async user=>{
   const result=await app.inject({method:'POST',url:`/api/radar/admin/research-requests/${randomUUID()}/authorize-budget`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,expectedBudgetRevision:1,authorizationId:randomUUID()}})
   expect(result.statusCode).toBe(403);expect(result.body).not.toMatch(/cost|budgetRevision|brave|serper|policy/)
+  expect((await get(`/admin/research-operations?organizationId=${fixtureIds.organizationA}&campaignId=${campaignId}`,user)).statusCode).toBe(403)
+  expect((await app.inject({method:'POST',url:'/api/radar/admin/research-operations/revalidate',headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,campaignId,receiptIds:[randomUUID()]}})).statusCode).toBe(403)
  })
  it('executes an entitled client Admin research request without technical overrides or provider calls for saved facts',async()=>{
   const prior=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[campaignId])).rows[0].search_configuration

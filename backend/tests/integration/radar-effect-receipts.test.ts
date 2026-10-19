@@ -12,12 +12,13 @@ import {startRadarCaptureOperation,getRadarCaptureOperation} from '../../src/mod
 import {advanceRadarCaptureDiscovery} from '../../src/modules/radar/capture-discovery.js'
 import {startRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
 import {queueRadarResearchRequest} from '../../src/modules/radar/research-requests.js'
+import {getRadarOperationalLimits,updateRadarOperationalLimits} from '../../src/modules/radar/operational-limits.js'
 const authorization=await import('../../src/modules/radar/analysis-retry-authorizations.js').catch(()=>({})) as Record<string,any>
 
 describe.skipIf(!connectionString)('protected Radar effect responses',()=>{
  it('records one explicit batch approval linked to the old uncertain receipts without changing their result or consuming credit',async()=>{
   expect(authorization.authorizeRadarAnalysisRetries).toBeTypeOf('function')
-  const f=await captureFixture(),receiptIds:string[]=[]
+  const f=await captureFixture(),receiptIds:string[]=[],originalPolicy=await getRadarOperationalLimits(f.pool,admin)
   let routeId:string|undefined,foreignReceiptId:string|undefined
   try{
    await f.pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research,presenceResolutionEnabled}','true') WHERE id=$1`,[f.campaign.id])
@@ -32,6 +33,9 @@ describe.skipIf(!connectionString)('protected Radar effect responses',()=>{
     const receipt=(await f.pool.query("INSERT INTO public.radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status) VALUES($1,'radar_presence_resolution',$2,$3,$4,'uncertain') RETURNING id",[organizationId,requestId,'b'.repeat(64),randomUUID()])).rows[0]
     receiptIds.push(receipt.id);items.push({candidateId:item.candidateId,previousReceiptId:receipt.id})
    }
+   // Two companies remain one logical intent even when the worker handles one
+   // at a time. The dispatch window must not reject this approval.
+   await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:originalPolicy.version,limits:{...originalPolicy.limits,maxVerificationBatch:1}})
    const input={organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),expiresAt:new Date(Date.now()+3600000).toISOString(),acknowledgePreviousChargeMayExist:true,items}
    const result=await authorization.authorizeRadarAnalysisRetries(f.pool,admin,input)
    expect(result.analysisAuthorizationId).toBe(input.requestId)
@@ -63,7 +67,7 @@ describe.skipIf(!connectionString)('protected Radar effect responses',()=>{
      else expect(response.json()).toEqual(result)
     }
    }finally{await app.close();await apiPool.end()}
-  }finally{if(receiptIds.length)await f.pool.query('DELETE FROM public.radar_analysis_receipts WHERE id=ANY($1::uuid[])',[receiptIds]);if(foreignReceiptId)await f.pool.query('DELETE FROM public.radar_analysis_receipts WHERE id=$1',[foreignReceiptId]);if(routeId)await f.pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId]);await f.close()}
+  }finally{const policy=await getRadarOperationalLimits(f.pool,admin);await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:policy.version,limits:originalPolicy.limits,costPolicy:originalPolicy.costPolicy});if(receiptIds.length)await f.pool.query('DELETE FROM public.radar_analysis_receipts WHERE id=ANY($1::uuid[])',[receiptIds]);if(foreignReceiptId)await f.pool.query('DELETE FROM public.radar_analysis_receipts WHERE id=$1',[foreignReceiptId]);if(routeId)await f.pool.query('DELETE FROM public.model_routing_rules WHERE id=$1',[routeId]);await f.close()}
  })
  it('stores a response once under the current owner/lease, keeps backend read-only and isolates tenants',async()=>{
   const f=await captureFixture(),owner=randomUUID(),requestId=randomUUID(),effectKey=`radar_presence_resolution:${requestId}`,lease=new Date(Date.now()+300000).toISOString()

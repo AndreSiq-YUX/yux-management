@@ -16,7 +16,7 @@ import type {RadarCaptureLimits} from './capture-capacity.js'
 import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
 import {assessRadarCaptureResearch} from './capture-research-state.js'
 import {radarCaptureRefreshAuthorized} from './capture-analysis-authorization.js'
-import {reconcileRadarCaptureSummary} from './capture-reconciliation.js'
+import {reconcileRadarCaptureSummary,reconcileRadarCaptureItems} from './capture-reconciliation.js'
 import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy} from './research-budget.js'
 import {normalizeRadarCounters} from './numeric-counters.js'
 
@@ -78,13 +78,13 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
       WHERE id=$1 AND organization_id=$2 AND run_id IN(SELECT id FROM stale) RETURNING dispatch_generation`,[item.id,input.organizationId,runId])
      if(redelivery.rows[0])item.dispatch_generation=redelivery.rows[0].dispatch_generation
     }
-    try{
-     await queue.add('radar.researchCandidate',{organizationId:input.organizationId,runId},{jobId:`radar-capture-item-${item.id}-${item.dispatch_generation}`})
-     await pool.query("UPDATE public.radar_capture_items SET status='researching',blocker=NULL WHERE id=$1 AND organization_id=$2 AND run_id=$3",[item.id,input.organizationId,runId])
-    }catch{await pool.query("UPDATE public.radar_capture_items SET blocker='radar_capture_queue_unavailable' WHERE id=$1 AND organization_id=$2 AND run_id=$3",[item.id,input.organizationId,runId])}
+    // A fast worker may finish before add() acknowledges. Never publish the
+    // dispatcher's earlier snapshot over the result committed by that worker.
+    await reconcileChild(runId,item.candidate_id)
+    try{await queue.add('radar.researchCandidate',{organizationId:input.organizationId,runId},{jobId:`radar-capture-item-${item.id}-${item.dispatch_generation}`})}
+    catch{await reconcileChild(runId,item.candidate_id,true)}
    }else{
-    const assessment=assessRadarCaptureResearch({...item,status})
-    await pool.query('UPDATE public.radar_capture_items SET status=$3,blocker=$4 WHERE id=$1 AND organization_id=$2 AND run_id=$5',[item.id,input.organizationId,assessment.status,assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null,runId])
+    await reconcileChild(runId,item.candidate_id)
    }
   }
   const summary=await pool.connect()
@@ -99,6 +99,15 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
   await pool.query("UPDATE public.radar_capture_outbox SET next_dispatch_at=NOW()+INTERVAL '20 seconds' WHERE operation_id=$1 AND organization_id=$2",[op.id,input.organizationId])
  }
  return getRadarCaptureOperation(pool,user,input.organizationId,op.id)
+ async function reconcileChild(runId:string,candidateId:string,deliveryFailed=false){
+  const client=await pool.connect()
+  try{
+   await client.query('BEGIN')
+   await client.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.campaign_id,input.organizationId])
+   await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId,runId,...(deliveryFailed?{deliveryFailedRunId:runId}:{})})
+   await client.query('COMMIT')
+  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+ }
 }
 export async function reconcileRadarCaptureOutbox(pool:pg.Pool,queue:CaptureQueue,window:number){
  // Global worker reads only this dispatch-only table; tenant job reauthorizes.

@@ -7,6 +7,34 @@ import type { RadarResearchAvailability, RadarResearchResult } from '@/types/rad
 vi.mock('@/services/radarService',()=>({radarService:{getCandidateResearch:vi.fn(),startCandidateResearch:vi.fn(),authorizeTlsException:vi.fn(),revokeTlsException:vi.fn(),getResearchFeedback:vi.fn(async()=>[]),saveResearchFeedback:vi.fn()}}))
 const availability:RadarResearchAvailability={allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.03,maxQueriesPerCandidate:3,semanticQualificationEnabled:false}
 const initial:RadarResearchResult={availability,configurationRevision:2,run:null,history:[]}
+it('offers resume when an older run succeeded technically but did not complete the required data',async()=>{
+ vi.mocked(radarService.getCandidateResearch).mockResolvedValue({...initial,commercialStatus:{schemaVersion:1,status:'incomplete',updatedFields:[],unresolvedFields:[{field:'website',reason:'not_found'}],lastAttemptAt:null,nextAction:'continue'},run:{id:'same',status:'succeeded',stage:'review',updated_at:'2026-10-19',configuration_revision:2,output:{}}})
+ const view=mount();await view.click('Ver dossiê da empresa')
+ expect(view.container.textContent).toContain('Retomar pesquisa desta empresa')
+ view.unmount()
+})
+it('refreshes the parent after a same-run resume publishes a newer result',async()=>{
+ const before={...initial,run:{id:'same',status:'partial',stage:'review',updated_at:'2026-10-18T10:00:00Z',configuration_revision:2,output:{}}}
+ vi.mocked(radarService.getCandidateResearch).mockResolvedValueOnce(before).mockResolvedValueOnce({...before,run:{...before.run,updated_at:'2026-10-19T10:00:00Z'}})
+ vi.mocked(radarService.startCandidateResearch).mockResolvedValue({runId:'same',status:'queued',reused:true})
+ const host=document.createElement('div'),root=createRoot(host),completed=vi.fn()
+ try{
+  await act(async()=>root.render(<RadarCandidateResearchPanel candidateId="candidate" organizationId="org" configurationRevision={2} availability={availability} onCompleted={completed}/>))
+  await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent==='Ver dossiê da empresa')!.click())
+  expect(completed).toHaveBeenCalledTimes(1)
+  await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent==='Retomar pesquisa desta empresa')!.click())
+  expect(completed).toHaveBeenCalledTimes(2)
+ }finally{act(()=>root.unmount())}
+})
+it('never puts internal prices or AI routing in a non-technical confirmation',async()=>{
+ const host=document.createElement('div'),root=createRoot(host)
+ try{
+  await act(async()=>root.render(<RadarCandidateResearchPanel candidateId="candidate" organizationId="org" configurationRevision={2} availability={{...availability,semanticQualificationEnabled:true}} showTechnical={false}/>))
+  await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent==='Completar dados desta empresa')!.click())
+  expect(window.confirm).toHaveBeenCalled()
+  expect(vi.mocked(window.confirm).mock.calls[0][0]).not.toMatch(/Admin|R\$|créditos|IA|modelo|tokens|rota|fallback|provedor/)
+ }finally{act(()=>root.unmount())}
+})
 it('does not report absent research while the dossier request is still loading',async()=>{
  let resolve!:(value:RadarResearchResult)=>void
  vi.mocked(radarService.getCandidateResearch).mockImplementationOnce(()=>new Promise(done=>{resolve=done}))

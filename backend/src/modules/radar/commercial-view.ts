@@ -1,6 +1,7 @@
 import {z} from 'zod'
 import type {AuthUser} from '../../auth/routes.js'
 import {projectRadarCompanyFacts} from './company-projection.js'
+import {radarCommercialStatusSchema} from './commercial-status.js'
 
 export const canViewRadarInternals=(user:Pick<AuthUser,'role'>)=>user.role==='yux_admin'
 const object=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
@@ -65,7 +66,7 @@ export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFact
   contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
 const base={id:text,organizationId:text,campaignId:text,status:text,createdAt:text,updatedAt:text}
-const campaignSchema=z.object({...base,name:text,campaignType:text,targetSegment:text,targetCity:text,targetState:text,targetStates:texts,targetKeywords:texts,targetCnaes:texts,productFocus:texts,offerType:text,configurationRevision:number,
+const campaignSchema=z.object({...base,name:text,campaignType:text,targetSegment:text,targetCity:text,targetState:text,targetStates:texts,targetKeywords:texts,targetCnaes:texts,productFocus:texts,offerType:text,configurationRevision:number,commercialCriteriaRevision:number,
  criteria:z.object({cities:z.array(z.object({city:text,state:text}).strip()).optional().catch(undefined),includeAnyTerms:texts,includeAllTerms:texts,excludeTerms:texts,productTerms:texts,productMatch:text,openingFrom:text,openingTo:text}).strip()}).strip()
 export type RadarCommercialCampaign=z.infer<typeof campaignSchema>
 const candidateSchema=z.object({...base,title:text,configurationRevision:number,approvedAt:text,crmLeadId:text,importedOpportunityId:text,importedCompanyRecordId:text,
@@ -75,7 +76,7 @@ const countShape={requested:number,admitted:number,researching:number,completed:
 const captureSchema=z.object({...base,configurationRevision:number,counts:z.object(countShape).strip(),pendingMessage:text}).strip()
 export type RadarCommercialCapture=z.infer<typeof captureSchema>
 const assessmentSchema=z.object({targetStatus:text,productFit:text,reasons:narratives}).strip()
-const researchSchema=z.object({configurationRevision:number,status:text,updatedAt:text,pendingMessage:text,facts:factsSchema,assessment:assessmentSchema.optional().catch(undefined)}).strip()
+const researchSchema=z.object({configurationRevision:number,status:text,updatedAt:text,pendingMessage:text,facts:factsSchema,feedback:radarCommercialStatusSchema.optional().catch(undefined),assessment:assessmentSchema.optional().catch(undefined)}).strip()
 export type RadarCommercialResearch=z.infer<typeof researchSchema>
 const metricSchema=z.object({companies:number,opportunities:number,enriched:number,reviewPending:number,approved:number,converted:number,optedOut:number,
  identified:number,withUsefulContact:number,readyForReview:number,period:z.object({from:text,to:text,timeZone:text}).strip().optional().catch(undefined)}).strip()
@@ -98,12 +99,13 @@ const opportunity=(value:unknown)=>{const row=object(value),message=object(row.l
  return opportunitySchema.parse({...row,canConvertToLead:row.status==='approved'&&!row.convertedLeadId&&message.status==='approved'&&policy.canSendAutomatically===false&&policy.canConvertToLead===true,...(object(row.company).sourceType==='osm_extract'?{company:undefined}: {})})}
 const historySchema=z.object({id:text,candidateId:text,companyName:text,configurationRevision:number,status:text,updatedAt:text,actionLabel:text}).strip()
 const feedbackSchema=z.object({id:text,candidateId:text,configurationRevision:number,kind:text,note:narrative,createdAt:text,contact:z.object({kind:text,value:text}).strip().optional().catch(undefined)}).strip()
-export type RadarCommercialSurface='campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'
+export type RadarCommercialSurface='campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'|'latestResearchRequest'
 export function projectRadarCommercialResponse(surface:RadarCommercialSurface,payload:unknown):unknown{
  if(payload===null)return null
  const row=object(payload)
  switch(surface){
-  case 'researchRequest':return z.object({requestId:z.uuid(),campaignId:z.uuid().optional(),state:z.enum(['accepted','running','waiting','unchanged','completed']),items:z.array(z.object({candidateId:z.uuid(),state:z.enum(['accepted','running','waiting','unchanged','completed']),message:narrative}).strip())}).strip().parse(row)
+  case 'latestResearchRequest':return{request:row.request?projectRadarCommercialResponse('researchRequest',row.request):null}
+  case 'researchRequest':return z.object({requestId:z.uuid(),campaignId:z.uuid().optional(),state:z.enum(['accepted','running','waiting','unchanged','completed']),items:z.array(z.object({candidateId:z.uuid(),state:z.enum(['accepted','running','waiting','unchanged','completed']),message:narrative,feedback:radarCommercialStatusSchema.optional().catch(undefined)}).strip())}).strip().parse(row)
   case 'campaigns':if('campaign' in row)return{campaign:projectRadarCommercialResponse('campaigns',row.campaign),criteriaChanged:row.criteriaChanged===true}
    return map(payload,item=>{const r=object(item),config=object(r.searchConfiguration);return campaignSchema.parse({...r,criteria:{...object(config.qualification),cities:config.cities,openingFrom:config.openingFrom,openingTo:config.openingTo}})})
   case 'candidates':return map(payload,candidate)
@@ -114,7 +116,7 @@ export function projectRadarCommercialResponse(surface:RadarCommercialSurface,pa
   case 'research':{const run=object(row.run),out=object(run.output),qualification=object(out.qualification),identity=object(row.companyIdentity)
    const priorFacts=projectRadarCommercialFacts({previousResearch:row.previousResearch,researchRefreshIncomplete:row.researchRefreshIncomplete})
    const facts=projectRadarCommercialFacts({tradeName:identity.tradeName,legalName:identity.legalName,websiteUrl:object(out.discovery).websiteUrl,websiteStatus:object(out.discovery).websiteUrl?(out.siteAssociation==='confirmed'?'verified_present':'unverified'):undefined,phoneRaw:out.registryPhone,documents:out.documents,publicContacts:out.contacts,companyProfile:out.profile,activityAssessment:out.activity,sizeAssessment:out.sizeAssessment,researchQuality:out.quality})
-   return {...researchSchema.omit({facts:true}).parse({configurationRevision:row.configurationRevision,status:run.status,updatedAt:run.updated_at,pendingMessage:run.status==='blocked'||run.status==='failed'?pending:undefined,assessment:qualification}),facts:{...facts,previousResearch:priorFacts.previousResearch,refreshIncomplete:priorFacts.refreshIncomplete}}}
+   return {...researchSchema.omit({facts:true}).parse({configurationRevision:row.configurationRevision,status:run.status,updatedAt:run.updated_at,pendingMessage:run.status==='blocked'||run.status==='failed'?pending:undefined,assessment:qualification,feedback:row.commercialStatus}),facts:{...facts,previousResearch:priorFacts.previousResearch,refreshIncomplete:priorFacts.refreshIncomplete}}}
   case 'researchHistory':return map(payload,item=>{const r=object(item);return historySchema.parse({...r,actionLabel:({complete:'Pesquisa completa',resume:'Retomada da pesquisa',refresh:'Atualização da pesquisa',reanalyze:'Reavaliação dos dados salvos'} as Record<string,string>)[String(r.operation)]??'Pesquisa da empresa'})})
   case 'feedback':return map(payload,item=>{const r=object(item);return feedbackSchema.parse({...r,candidateId:r.candidateId??r.candidate_id,configurationRevision:r.configurationRevision??r.configuration_revision,createdAt:r.createdAt??r.created_at})})
   case 'duplicates':return map(payload,item=>z.object({...base,duplicateType:text,companyRecordId:text,matchedCompanyRecordId:text,confidence:number}).strip().parse(item))
@@ -131,6 +133,7 @@ export function projectRadarCommercialResponse(surface:RadarCommercialSurface,pa
 const surfaces:Record<string,RadarCommercialSurface>={
  'GET /campaigns':'campaigns','POST /campaigns':'campaigns','PATCH /campaigns/:id':'campaigns','POST /campaigns/:id/duplicate':'campaigns',
  'POST /campaigns/:id/research-requests':'researchRequest','GET /campaigns/:id/research-requests/:requestId':'researchRequest','POST /candidates/:id/research':'researchRequest',
+ 'GET /campaigns/:id/research-requests/latest':'latestResearchRequest',
  'GET /campaigns/:id/candidates':'candidates','GET /campaigns/:id/b2b-prospects':'candidates','POST /candidates/:id/discard':'candidates',
  'GET /campaigns/:id/capture-operations/latest':'capture','GET /capture-operations/:id':'capture','GET /candidates/:id/research':'research',
  'GET /campaigns/:id/research-history':'researchHistory','GET /campaigns/:id/metrics':'metrics','GET /campaigns/:id/research-metrics':'researchMetrics',

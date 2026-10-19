@@ -7,6 +7,23 @@ const facts={cnpj:'1128426000198',city:'Poá',state:'SP',websiteUrl:'https://emp
  profile:{summary:{value:'Alimentação empresarial',sourceUrl:'https://empresa.example/'},services:[{value:'Refeições coletivas'}],customerSegments:[{value:'Indústrias'}],operatingRegions:[{value:'Sudeste'}]},
  activity:{status:'inconclusive',signals:[],presenceSignals:[{kind:'accessible_site',excerpt:'Site acessível',sourceUrl:'https://empresa.example/'}]},sizeAssessment:{score:70,evidenceCoverage:60,contributions:[{metric:'units',amount:30,points:70,weight:1,sourceUrl:'https://empresa.example/'}]}}
 describe('commercial results without operational tooling',()=>{
+ it('shows the dated last useful site and contact when a new attempt remains incomplete',async()=>{
+  const host=document.createElement('div'),root=createRoot(host)
+  try{
+   await act(async()=>root.render(<api.RadarCommercialCompanyDetails facts={{refreshIncomplete:true,previousResearch:{websiteUrl:'https://anterior.example/',observedAt:'2026-10-18T12:00:00Z',contacts:[{kind:'email',value:'compras@anterior.example',sourceUrl:'https://anterior.example/',observedAt:'2026-10-18T12:00:00Z'}]}}}/>))
+   expect(host.textContent).toContain('Dados anteriores preservados')
+   expect(host.textContent).toContain('18/10/2026');expect(host.textContent).toContain('compras@anterior.example')
+   expect(host.querySelector('a[href="https://anterior.example/"]')).not.toBeNull()
+   expect(host.textContent).not.toContain('Site não encontrado')
+  }finally{act(()=>root.unmount())}
+ })
+ it('never shows a finished bar for one complete, eight insufficient and eleven blocked companies',async()=>{
+  const host=document.createElement('div'),root=createRoot(host)
+  try{
+   await act(async()=>root.render(<api.RadarCommercialResults campaign={campaign} candidates={[]} operation={{status:'blocked',counts:{requested:20,admitted:20,researching:0,completed:1,insufficient:8,blocked:11}}} screen="results" opportunities={[]} onNavigate={vi.fn()} onOpenDetails={vi.fn()}/>))
+   expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('5')
+  }finally{act(()=>root.unmount())}
+ })
  it('keeps a calendar reference date on its published day in Brazil',async()=>{
   vi.stubEnv('TZ','America/Sao_Paulo')
   const container=document.createElement('div'),root=createRoot(container)

@@ -28,6 +28,7 @@ import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-so
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
 import {assessRadarCaptureResearch} from './capture-research-state.js'
+import {projectRadarCommercialResearchStatus} from './commercial-status.js'
 import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,radarAnalysisDependencies,radarDependencyBindingMatch,radarResearchDependencyVersions,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
 import {mergeRadarCompanyResearch,radarCompanyProjectionVersion,projectRadarCompanyFacts,radarPayloadIdentityHash} from './company-projection.js'
 import {resolveRadarAnalysisRetry,type RadarAnalysisRetryBinding} from './analysis-retry-authorizations.js'
@@ -476,7 +477,10 @@ export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, org
   const available=cachedReadAvailability(availability,latest,context.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.freshnessDays)
   const identity={name:String(context.normalized_payload.tradeName||context.title),legalName:typeof context.normalized_payload.legalName==='string'?context.normalized_payload.legalName:undefined,cnpj:typeof context.normalized_payload.cnpj==='string'?context.normalized_payload.cnpj:undefined}
   const projectedOutput=latest?currentDossierProjection(latest.output,context.configuration_revision,latest.configuration_revision,resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,identity,identityChanged):undefined
+  const policy=resolveRadarSearchConfiguration(context.search_configuration).research
+  const requestedFields:Parameters<typeof projectRadarCommercialResearchStatus>[0]['requestedFields']=['website','identity','email','phone',...(policy.contactPurpose==='suppliers'?['supplierChannel' as const]:[]),...(policy.profileEnabled?['companyProfile' as const]:[]),...(policy.sizeAssessment.enabled?['companySize' as const]:[]),...(policy.semanticQualificationEnabled?['fit' as const]:[])]
   return { companyIdentity:{tradeName:context.normalized_payload.tradeName??context.title,legalName:context.normalized_payload.legalName},methodVersion:RADAR_RESEARCH_METHOD_VERSION,
+    commercialStatus:projectRadarCommercialResearchStatus({run:latest?{...latest,output:projectedOutput}:undefined,previous:context.normalized_payload.researchRunId===latest?.id?context.normalized_payload.previousResearch:context.normalized_payload,requestedFields}),
     availability:{...available,operations:{...available.operations,refresh:{allowed:availability.allowed,reasons:availability.reasons}}},configurationRevision:context.configuration_revision,
     run:latest?{...latest,...(expired?{status:'blocked',error_code:'radar_research_worker_interrupted_retry_available'}:{}),calls:undefined,output:projectedOutput!}:null,
     previousResearch:candidateProjection.previousResearch,researchRefreshIncomplete:context.normalized_payload.researchRefreshIncomplete,

@@ -32,6 +32,8 @@ vi.mock('@/services/radarService', () => ({radarService:{
   getLatestCaptureOperation:vi.fn(async()=>({operation:null})),getCaptureOperation:vi.fn(),startCaptureOperation:vi.fn(),resumeCaptureOperation:vi.fn(),
   capturePreflight:vi.fn(async()=>({stateId:'a'.repeat(64),allowed:true,requiresLimitsApproval:false,remaining:20,limits:{pageSize:10,maxPagesPerScope:5,maxQueriesPerBatch:5},attemptedQueries:0,successfulPagesByScope:{},optimisticAdditionalCapacity:20,minimumAdditionalQueries:2,blockers:[],checks:[]})),
   startCandidateResearch:vi.fn(async()=>({runId:'run',status:'queued',reused:false})),queueResearchRequest:vi.fn(async(_campaignId:string,input:{candidateIds:string[]})=>({requestId:'request',state:'accepted',items:input.candidateIds.map(candidateId=>({candidateId,state:'accepted',message:'Pesquisa solicitada.'}))})),
+  getResearchRequest:vi.fn(async()=>({requestId:'request',state:'running',items:[]})),getCandidateResearch:vi.fn(async()=>({run:{id:'old',status:'blocked'},history:[]})),
+  getLatestResearchRequest:vi.fn(async()=>({request:null})),
   getResearchHistory:vi.fn(async()=>[{id:'run',candidateId:'candidate',companyName:'Empresa pesquisada',configurationRevision:2,operation:'reanalyze',status:'succeeded',updatedAt:'2026-10-13T12:00:00Z'}]),
   getB2bProspects:vi.fn(async()=>[]),getB2bProgress:vi.fn(async()=>({candidates:0,checked:0,confirmed:0,approved:0,scopes:[]})),runB2bBatch:vi.fn(async()=>({status:'queued'})),
   getOpportunities:vi.fn(async () => []),getMetrics:vi.fn(async () => null),
@@ -43,11 +45,24 @@ vi.mock('@/services/radarService', () => ({radarService:{
 }}))
 
 describe('Radar campaign creation entry point', () => {
+  it('recovers the saved per-company outcome on reload without sending another research request',async()=>{
+    vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:100,createdAt:'',updatedAt:'',configurationRevision:2,searchConfiguration:defaultRadarSearchConfiguration()} as RadarCampaign])
+    vi.mocked(radarService.getLatestResearchRequest).mockResolvedValueOnce({request:{requestId:'saved',state:'waiting',items:[{candidateId:'candidate',state:'waiting',message:'Pesquisa parcial.',feedback:{schemaVersion:1,status:'incomplete',updatedFields:['email'],unresolvedFields:[],lastAttemptAt:null,nextAction:'continue'}}]}})
+    const host=document.body.appendChild(document.createElement('div')),root=createRoot(host)
+    try{
+      await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+      expect(radarService.getLatestResearchRequest).toHaveBeenCalledWith('campaign','org')
+      expect(host.textContent).toContain('Atualizado nesta pesquisa: E-mail')
+      expect(radarService.queueResearchRequest).not.toHaveBeenCalled()
+    }finally{act(()=>root.unmount());host.remove()}
+  })
   it('carries the confirmed analysis authorization to every company selected for completion',async()=>{
+    vi.useFakeTimers()
     const config=defaultRadarSearchConfiguration();config.research!.enabled=true
     vi.mocked(radarService.getCampaigns).mockResolvedValueOnce([{...campaignDefaults,id:'campaign',organizationId:'org',name:'Campanha',campaignType:'regional_b2b',targetSegment:'Empresas',targetStates:['PR'],productFocus:[],targetKeywords:[],targetCnaes:[],offerType:'Serviço',status:'draft',dailyLimit:100,createdAt:'',updatedAt:'',configurationRevision:2,searchConfiguration:config} as RadarCampaign])
     vi.mocked(radarService.getCandidates).mockResolvedValue(Array.from({length:4},(_,index)=>({id:`selected-${index}`,campaignId:'campaign',organizationId:'org',title:`Empresa ${index}`,status:'pending_review',sourceType:'cnpja_advanced_search',normalizedPayload:{},rawPayload:{},createdAt:'',updatedAt:''})) as never)
     vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:true,reasons:[],estimates:[],maximumCostPerCandidate:.1,maxQueriesPerCandidate:3,semanticQualificationEnabled:true})
+    vi.mocked(radarService.getResearchRequest).mockResolvedValueOnce({requestId:'request',state:'running',items:[]}).mockResolvedValueOnce({requestId:'request',state:'waiting',items:Array.from({length:4},(_,index)=>({candidateId:`selected-${index}`,state:'waiting' as const,message:'Esta empresa aguarda uma etapa da pesquisa.',feedback:{schemaVersion:1,status:'incomplete' as const,updatedFields:['email' as const],unresolvedFields:[{field:'website' as const,reason:'not_found' as const}],lastAttemptAt:'2026-10-19T10:00:00Z',nextAction:'continue' as const}}))})
     const confirm=vi.spyOn(window,'confirm').mockReturnValue(true),container=document.body.appendChild(document.createElement('div')),root=createRoot(container)
     try{
       await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
@@ -61,7 +76,12 @@ describe('Radar campaign creation entry point', () => {
       expect(calls[0]).toEqual(['campaign',expect.objectContaining({candidateIds:['selected-0','selected-1','selected-2','selected-3'],allowSemanticRefresh:true,criteriaRevision:2,requestId:expect.any(String)})])
       expect(radarService.startCandidateResearch).not.toHaveBeenCalled()
       expect(container.textContent).not.toContain('execução existente reaproveitada')
-    }finally{act(()=>root.unmount());container.remove();confirm.mockRestore();vi.mocked(radarService.getCandidates).mockResolvedValue([]);vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})}
+      await act(async()=>vi.advanceTimersByTimeAsync(4000))
+      expect(radarService.getResearchRequest).toHaveBeenCalledWith('campaign','org','request')
+      await act(async()=>vi.advanceTimersByTimeAsync(4000))
+      expect(container.textContent).toContain('Atualizado nesta pesquisa: E-mail')
+      expect(container.querySelectorAll('[aria-label="Resultado desta pesquisa"]')).toHaveLength(4)
+    }finally{act(()=>root.unmount());vi.useRealTimers();container.remove();confirm.mockRestore();vi.mocked(radarService.getCandidates).mockResolvedValue([]);vi.mocked(radarService.getResearchAvailability).mockResolvedValue({allowed:false,reasons:[],estimates:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:3,semanticQualificationEnabled:false})}
   })
   it.each(['continuation','capacity'])('confirms new-lot %s warnings once and preserves consent on retry',async mode=>{
     const config=defaultRadarSearchConfiguration();config.research!.enabled=true
@@ -184,8 +204,11 @@ describe('Radar campaign creation entry point', () => {
     const controls=container.querySelector('form[aria-label="Pesquisar novas empresas"]')
     expect(controls).not.toBeNull();expect(controls!.querySelector('input[type="number"]')).not.toBeNull()
     expect([...container.querySelectorAll('button')].filter(button=>button.textContent==='Retomar pesquisa')).toHaveLength(0)
-    const areas=[...container.querySelectorAll('details')].filter(item=>item.querySelector('summary')?.textContent==='Operação técnica — Admin YUX')
-    expect(areas).toHaveLength(1);expect(areas[0].open).toBe(false)
+    expect(container.textContent).not.toContain('Fontes da campanha')
+    expect(container.querySelector('a[href*="radarCampaign=campaign"]')).not.toBeNull()
+    await act(async()=>root.render(<RadarWorkspace technicalOnly adminOrganizationId="org" screen="results" campaignId="campaign"/>))
+    const areas=container.querySelectorAll('[aria-label="Operações técnicas do Radar"]')
+    expect(areas).toHaveLength(1)
     const regional=[...container.querySelectorAll('summary')].find(item=>item.textContent==='Acompanhar ou avançar a busca por região')
     expect(areas[0].contains(regional??null)).toBe(true)
     act(()=>root.unmount())
@@ -197,7 +220,7 @@ describe('Radar campaign creation entry point', () => {
     vi.mocked(radarService.resumeCaptureOperation).mockResolvedValue({...operation,status:'queued'})
     const container=document.createElement('div'),root=createRoot(container)
     document.body.append(container) // Native submit activation requires a connected form.
-    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    await act(async()=>root.render(<RadarWorkspace technicalOnly adminOrganizationId="org" screen="results" campaignId="campaign"/>))
     const resume=()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Retomar pesquisa')!
     await act(async()=>resume().click())
     vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation})
@@ -224,7 +247,7 @@ describe('Radar campaign creation entry point', () => {
     const operation={id:'op',campaignId:'campaign',configurationRevision:2,status:'partial' as const,discoveryStopped:true,queries:1,blockers:[],counts:{requested:7,admitted:7,researching:0,completed:0,insufficient:7,blocked:0},items:[]}
     vi.mocked(radarService.getLatestCaptureOperation).mockResolvedValueOnce({operation})
     const container=document.createElement('div'),root=createRoot(container)
-    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    await act(async()=>root.render(<RadarWorkspace technicalOnly adminOrganizationId="org" screen="results" campaignId="campaign"/>))
     let resolve!:(value:{operation:typeof operation})=>void
     vi.mocked(radarService.getLatestCaptureOperation).mockReturnValueOnce(new Promise(done=>{resolve=done}))
     await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Atualizar acompanhamento')!.click())
@@ -395,9 +418,10 @@ describe('Radar campaign creation entry point', () => {
     vi.mocked(radarService.getDataSources).mockResolvedValueOnce([{id:'source',sourceType:'cnpja_advanced_search',sourceKey:'cnpja_advanced_search',displayName:'Cadastro empresarial',enabled:true,isPaid:true,requiresSecret:false,defaultCostPerUnit:.01,rateLimitPerDay:100,createdAt:'',updatedAt:''}])
     vi.spyOn(window,'confirm').mockReturnValue(true)
     const container=document.createElement('div'),root=createRoot(container)
-    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
+    await act(async()=>root.render(<RadarWorkspace technicalOnly adminOrganizationId="org" screen="results" campaignId="campaign"/>))
     vi.mocked(radarService.getCandidates).mockResolvedValue([{id:'new',organizationId:'org',campaignId:'campaign',title:'Nova empresa encontrada',sourceType:'cnpja_advanced_search',status:'pending_review',normalizedPayload:{city:'Cidade',state:'PR'},dedupeKey:'new',createdAt:'',updatedAt:''}])
     await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='Somente descobrir empresas — sem aprofundamento')!.click())
+    await act(async()=>root.render(<RadarWorkspace screen="results" campaignId="campaign"/>))
     expect(container.querySelector('tbody')?.textContent).toContain('Nova empresa encontrada')
     act(()=>root.unmount())
     vi.mocked(radarService.getCandidates).mockResolvedValue([])
@@ -415,8 +439,7 @@ describe('Radar campaign creation entry point', () => {
     vi.mocked(radarService.getDataSources).mockResolvedValueOnce([source]).mockResolvedValueOnce([{...source,enabled:true}])
     const container = document.createElement('div')
     const root = createRoot(container)
-    await act(async () => root.render(<RadarWorkspace />))
-    await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Abrir')!.click())
+    await act(async () => root.render(<RadarWorkspace technicalOnly adminOrganizationId="org" screen="results" campaignId="campaign"/>))
     expect(container.querySelector('a[href="/admin/integrations#radar-sources"]')?.textContent).toContain('Configurar fontes no Admin')
     expect(container.textContent).not.toContain('Configure as credenciais antes')
     expect(container.textContent).not.toContain('Salvar limites e custo')

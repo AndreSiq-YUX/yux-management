@@ -12,6 +12,7 @@ import {startRadarCaptureOperation,getRadarCaptureOperation} from '../../src/mod
 import {CnpjaSearchHttpError} from '../../src/modules/radar/cnpjaClient.js'
 import {dispatchRadarCaptureOperation,reconcileRadarCaptureOutbox} from '../../src/modules/radar/capture-dispatch.js'
 import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
+import {dispatchRadarResearchRequest} from '../../src/modules/radar/research-requests.js'
 import {storePlatformProviderSecret} from '../../src/modules/platform/adminRepository.js'
 import type {AuthUser} from '../../src/auth/routes.js'
 import type {AppJobQueue} from '../../src/server.js'
@@ -77,14 +78,17 @@ if(expiredContinuation||limitContinuation||staleStart){
  await pool.query(`INSERT INTO public.radar_regional_discovery_cursors(organization_id,campaign_id,state,provider,scope_key,next_token,pages_processed,candidates_seen,token_received_at) VALUES($1,$2,'PR','cnpja_advanced_search','v1:PR:all','qa-expired-token',4,40,CASE WHEN $3 THEN NOW()-INTERVAL '10 hours' ELSE NOW() END)`,[org,campaign.id,staleStart])
  if(expiredContinuation&&!limitContinuation&&!staleStart)await startRadarCaptureOperation(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:org,campaignId:campaign.id,configurationRevision:1,requestId:crypto.randomUUID(),requestedCount:1})
 }
+const counters={discovery:0,search:0,model:0},processed=new Set<string>()
 const queued=new Set<string>(),blocked=new Set<string>();let failedOnce=recoverSaved||rejectDiscovery||expiredContinuation||limitContinuation||staleStart,rejectedOnce=false
 const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
  const id=options?.jobId??`${name}-${Date.now()}`
  if(queued.has(id))return{id};queued.add(id)
- if(!['radar.advanceCaptureOperation','radar.researchCandidate'].includes(name))throw Error('qa_external_effects_disabled')
+ if(!['radar.advanceCaptureOperation','radar.advanceResearchRequest','radar.researchCandidate'].includes(name))throw Error('qa_external_effects_disabled')
  setTimeout(()=>void runWithDatabaseRequestContext({role:'client_member',organizationIds:[org],serviceRole:'worker'},async()=>{
-  if(name==='radar.advanceCaptureOperation'){
+  if(name==='radar.advanceResearchRequest')await dispatchRadarResearchRequest(workerPool,env,{organizationId:org,researchRequestId:String(data.researchRequestId)},queue)
+  else if(name==='radar.advanceCaptureOperation'){
    const discover=()=>advanceRadarCaptureDiscovery(workerPool,env,{organizationId:org,operationId:String(data.operationId)},{loadSecret:async()=>'fixture',searchPage:async input=>{
+    counters.discovery++
     if(recoverSaved)throw Error('qa_recovery_must_not_rediscover')
     if(expiredContinuation&&input.token==='qa-expired-token')throw new CnpjaSearchHttpError('HTTP 400: request validation failed; token is invalid or expired',400)
     if(rejectDiscovery&&!rejectedOnce){rejectedOnce=true;throw new CnpjaSearchHttpError('request validation failed',422)}
@@ -104,8 +108,8 @@ const queue:AppJobQueue={close:async()=>{},add:async(name,data,options)=>{
    if(blocked.has(runId)){blocked.delete(runId);await workerPool.query("UPDATE public.radar_candidate_research_runs SET status='blocked',error_code='provider_inactive' WHERE id=$1",[runId]);return}
    const candidate=(await workerPool.query('SELECT candidate.* FROM public.radar_candidate_research_runs run JOIN public.radar_candidate_records candidate ON candidate.id=run.candidate_id WHERE run.id=$1 AND run.organization_id=$2',[runId,org])).rows[0]
    const site=`https://qa-${candidate.id}.example/`,text=`${candidate.normalized_payload.legalName}. CNPJ ${candidate.normalized_payload.cnpj}. Curitiba PR. Contato para fornecedores: compras@empresa.example`
-   await executeRadarCandidateResearch(workerPool,env,{organizationId:org,runId},undefined,{loadSecret:async()=>'fixture',web:async()=>[{url:site,title:candidate.title,snippets:[text],observedAt:new Date().toISOString()}],local:async()=>{throw Error('qa_unexpected_local_search')},collect:async()=>[{url:site,text,html:'<a href="mailto:compras@empresa.example">Fornecedores</a>',observedAt:new Date().toISOString()}],collectSocial:undefined,runtime:async()=>{throw Error('qa_unexpected_model')}} as never)
-   blocked.delete(runId)
+   await executeRadarCandidateResearch(workerPool,env,{organizationId:org,runId},undefined,{loadSecret:async()=>'fixture',web:async()=>{counters.search++;return[{url:site,title:candidate.title,snippets:[text],observedAt:new Date().toISOString()}]},local:async()=>{throw Error('qa_unexpected_local_search')},collect:async()=>[{url:site,text,html:'<a href="mailto:compras@empresa.example">Fornecedores</a>',observedAt:new Date().toISOString()}],collectSocial:undefined,runtime:async()=>{counters.model++;throw Error('qa_unexpected_model')}} as never)
+   processed.add(runId);blocked.delete(runId)
   }
  }).catch(error=>console.error('[QA simulated worker]',error)),500)
  return{id}
@@ -114,9 +118,10 @@ const app=await buildServer(env,{pool:apiPool,jobQueue:queue,redisPing:async()=>
 app.addHook('onRequest',async(request,reply)=>{
  if(request.method==='GET')return
  if(request.method==='PUT'&&request.url==='/api/radar/admin/operational-limits')return
- if(request.url==='/api/auth/login'||request.url==='/api/auth/logout'||request.url.includes(`/campaigns/${campaign.id}/capture-operations`)||request.url===`/api/radar/campaigns/${campaign.id}/capture-preflight`||/\/capture-operations\/[0-9a-f-]+\/resume$/.test(request.url))return
+ if(request.url==='/api/auth/login'||request.url==='/api/auth/logout'||request.url.includes(`/campaigns/${campaign.id}/capture-operations`)||request.url===`/api/radar/campaigns/${campaign.id}/capture-preflight`||request.url===`/api/radar/campaigns/${campaign.id}/research-requests`||/\/capture-operations\/[0-9a-f-]+\/resume$/.test(request.url))return
  return reply.code(403).send({error:'qa_external_effects_disabled'})
 })
+app.get('/api/qa/radar-state',async()=>({counters,processed:processed.size,items:(await pool.query('SELECT item.id,item.run_id,item.status,item.blocker FROM public.radar_capture_items item JOIN public.radar_capture_operations operation ON operation.id=item.operation_id WHERE operation.campaign_id=$1 ORDER BY item.id',[campaign.id])).rows,requests:(await pool.query('SELECT request_id,status FROM public.radar_research_requests WHERE campaign_id=$1',[campaign.id])).rows}))
 await app.listen({host:'127.0.0.1',port:4182})
 const timer=setInterval(()=>void runWithDatabaseRequestContext({role:'yux_operator',organizationIds:[],serviceRole:'worker'},()=>reconcileRadarCaptureOutbox(workerPool,queue,Math.floor(Date.now()/1000))).catch(error=>console.error('[QA reconciler]',error)),1000)
 const heartbeatTimer=setInterval(()=>void beat(),20_000)

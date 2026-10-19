@@ -9,6 +9,7 @@ import {loadRadarOperationalLimits} from './operational-limits.js'
 import {startRadarCandidateResearch} from './research-service.js'
 import {assessRadarCaptureResearch} from './capture-research-state.js'
 import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy,amendRadarResearchIntentBudget} from './research-budget.js'
+import {projectRadarCommercialResearchStatus} from './commercial-status.js'
 
 export const radarResearchRequestSchema=z.object({organizationId:z.uuid(),campaignId:z.uuid(),candidateIds:z.array(z.uuid()).min(1),requestId:z.uuid(),criteriaRevision:z.number().int().positive(),intent:z.enum(['resume','refresh','reanalyze']),analysisAuthorizationId:z.uuid().optional(),allowSemanticRefresh:z.boolean().optional()}).strict()
 export type RadarResearchRequestInput=z.infer<typeof radarResearchRequestSchema>
@@ -20,10 +21,13 @@ const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='obje
 export function projectRadarResearchRequest(value:unknown){
  const row=object(value)
  const message=(state:unknown)=>state==='unchanged'?'Os dados disponíveis já foram conferidos.':state==='waiting'?'Esta empresa aguarda uma etapa da pesquisa.':state==='completed'?'Pesquisa desta empresa finalizada.':'Pesquisa solicitada.'
- return{requestId:row.request_id??row.id,state:row.status,items:(Array.isArray(row.items)?row.items:[]).map(value=>{const item=object(value);return{candidateId:item.candidate_id,state:item.state,message:message(item.state)}})}
+ return{requestId:row.request_id??row.id,state:row.status,items:(Array.isArray(row.items)?row.items:[]).map(value=>{const item=object(value);return{candidateId:item.candidate_id,state:item.state,message:message(item.state),feedback:projectRadarCommercialResearchStatus({run:item.research_run??{status:item.state==='accepted'?'queued':'blocked'},previous:item.previous_research})}})}
 }
 async function requestWithItems(db:Pick<pg.Pool,'query'>,row:RequestRow){
- const items=(await db.query<ItemRow>('SELECT * FROM public.radar_research_request_items WHERE research_request_id=$1 AND organization_id=$2 ORDER BY created_at,id',[row.id,row.organization_id])).rows
+ const items=(await db.query<ItemRow>(`SELECT item.*,to_jsonb(run) AS research_run,CASE WHEN candidate.normalized_payload->>'researchRunId'=item.run_id::text THEN candidate.normalized_payload->'previousResearch' ELSE candidate.normalized_payload END AS previous_research
+  FROM public.radar_research_request_items item LEFT JOIN public.radar_candidate_research_runs run ON run.id=item.run_id AND run.organization_id=item.organization_id
+  JOIN public.radar_candidate_records candidate ON candidate.id=item.candidate_id AND candidate.organization_id=item.organization_id
+  WHERE item.research_request_id=$1 AND item.organization_id=$2 ORDER BY item.created_at,item.id`,[row.id,row.organization_id])).rows
  return{...row,items}
 }
 export async function getRadarResearchRequest(pool:pg.Pool,user:AuthUser,organizationId:string,requestId:string){
@@ -31,6 +35,11 @@ export async function getRadarResearchRequest(pool:pg.Pool,user:AuthUser,organiz
  const row=(await pool.query<RequestRow>('SELECT * FROM public.radar_research_requests WHERE organization_id=$1 AND request_id=$2',[organizationId,requestId])).rows[0]
  if(!row)throw failure('radar_research_request_not_found',404)
  return projectRadarResearchRequest(await requestWithItems(pool,row))
+}
+export async function getLatestRadarResearchRequest(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){
+ await requireRadarScope(pool,user,{organizationId,campaignId},false)
+ const row=(await pool.query<RequestRow>('SELECT * FROM public.radar_research_requests WHERE organization_id=$1 AND campaign_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1',[organizationId,campaignId])).rows[0]
+ return{request:row?projectRadarResearchRequest(await requestWithItems(pool,row)):null}
 }
 export async function enqueueRadarResearchRequest(pool:pg.Pool,queue:Pick<RegisteredJobQueue,'add'>,organizationId:string,requestId:string){
  const row=(await pool.query('SELECT id FROM public.radar_research_requests WHERE organization_id=$1 AND request_id=$2',[organizationId,requestId])).rows[0]

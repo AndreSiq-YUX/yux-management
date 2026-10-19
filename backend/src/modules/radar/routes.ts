@@ -46,7 +46,7 @@ import {
 } from './repository.js'
 import { radarSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
 import { getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
-import {queueRadarResearchRequest,radarResearchRequestSchema,getRadarResearchRequest,enqueueRadarResearchRequest,authorizeRadarResearchBudget,radarResearchBudgetAuthorizationSchema} from './research-requests.js'
+import {queueRadarResearchRequest,radarResearchRequestSchema,getRadarResearchRequest,getLatestRadarResearchRequest,enqueueRadarResearchRequest,authorizeRadarResearchBudget,radarResearchBudgetAuthorizationSchema} from './research-requests.js'
 import {randomUUID} from 'node:crypto'
 import {authorizeRadarAnalysisRetries,radarAnalysisRetryAuthorizationSchema} from './analysis-retry-authorizations.js'
 import { getRadarResearchAvailability } from './research-availability.js'
@@ -61,6 +61,7 @@ import {getRadarCapturePreflight} from './capture-preflight.js'
 const continuationAuthorizationsSchema=z.array(z.object({scopeKey:z.string().min(1).max(256),expectedStateId:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional()
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
+import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,radarAdministrativeScopeSchema,radarAdministrativeRevalidationSchema} from './administrative-research.js'
 import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
@@ -232,6 +233,20 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const surface=radarCommercialSurface(request.method,request.routeOptions.url??'')
     if(!surface||typeof payload!=='string')return JSON.stringify({})
     return JSON.stringify(projectRadarCommercialResponse(surface,JSON.parse(payload)))
+  })
+  app.get('/admin/research-operations',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    const input=radarAdministrativeScopeSchema.safeParse(request.query)
+    if(!input.success)return reply.code(400).send({error:'invalid_radar_research_scope'})
+    return getRadarAdministrativeResearch(app.pg,user,input.data)
+  })
+  app.post('/admin/research-operations/revalidate',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    const input=radarAdministrativeRevalidationSchema.safeParse(request.body)
+    if(!input.success)return reply.code(400).send({error:'invalid_radar_revalidation_payload'})
+    return revalidateRadarAdministrativeResearch(app.pg,user,app.config,input.data)
   })
   app.get('/admin/operational-limits',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
@@ -586,6 +601,12 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const result=await queueRadarResearchRequest(app.pg,user,{...body.data,campaignId:params.data.id})
     await enqueueRadarResearchRequest(app.pg,app.jobQueue,body.data.organizationId,result.requestId as string)
     return reply.code(202).send(result)
+  })
+  app.get('/campaigns/:id/research-requests/latest',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).safeParse(request.params),query=z.object({organizationId:uuid}).safeParse(request.query)
+    if(!params.success||!query.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
+    return getLatestRadarResearchRequest(app.pg,user,query.data.organizationId,params.data.id)
   })
   app.get('/campaigns/:id/research-requests/:requestId',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

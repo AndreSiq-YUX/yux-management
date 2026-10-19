@@ -4,6 +4,14 @@ const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
 describe('Radar commercial data boundary',()=>{
+ it('retains the commercial criteria revision required to submit an entitled research request',()=>{
+  expect(project('campaigns',[{configurationRevision:7,commercialCriteriaRevision:3,searchConfiguration:{}}])).toMatchObject([{configurationRevision:7,commercialCriteriaRevision:3}])
+ })
+ it('carries a strict commercial research outcome but rejects nested technical additions',()=>{
+  const feedback={schemaVersion:1,status:'incomplete',updatedFields:['email'],unresolvedFields:[{field:'website',reason:'identity_unresolved'}],lastAttemptAt:'2026-10-19T10:00:00Z',nextAction:'continue'}
+  expect(project('research',{run:{status:'partial',output:{}},commercialStatus:feedback})).toMatchObject({feedback})
+  expect(project('research',{run:{status:'partial',output:{}},commercialStatus:{...feedback,provider:'Brave',costUsd:5}}).feedback).toBeUndefined()
+ })
  it('exposes dated known facts through allowlists without technical metadata or foreign identity history',()=>{
   const previousResearch={belongsToCurrentIdentity:true,runId:'internal-run',configurationRevision:1,websiteUrl:'https://alfa.example/',siteCheckedAt:'2026-10-18',publicContacts:[{kind:'email',value:'compras@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-18',association:'confirmed',scope:'group',...internal}],...internal}
   const result=project('candidates',[{normalizedPayload:{previousResearch,researchRefreshIncomplete:true,...internal}}])
