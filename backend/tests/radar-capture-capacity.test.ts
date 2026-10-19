@@ -1,4 +1,5 @@
 import {describe,it,expect,vi} from 'vitest'
+import {normalizeRadarCounters} from '../src/modules/radar/numeric-counters.js'
 import {randomUUID} from 'node:crypto'
 import {captureFixture,connectionString,admin,organizationId,available,company} from './support/radar-capture-fixture.js'
 import {startRadarCaptureOperation} from '../src/modules/radar/capture-operation.js'
@@ -47,7 +48,7 @@ describe.skipIf(!connectionString)('capture accounting and limit pause with Post
   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20},{availability:available})
   // Historic lots were accepted before capacity validation existed.
   await f.pool.query("UPDATE public.radar_capture_operations SET configuration_snapshot=jsonb_set(configuration_snapshot,'{search_configuration,batch,maxPagesPerScope}','1') WHERE id=$1",[started.operationId])
-  const input={organizationId,operationId:started.operationId},op=async()=>(await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[input.operationId])).rows[0]
+  const input={organizationId,operationId:started.operationId},op=async()=>normalizeRadarCounters((await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[input.operationId])).rows[0])
   return{...f,input,op}
  }
  async function historicalLot(){

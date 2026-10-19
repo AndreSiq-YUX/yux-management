@@ -40,6 +40,9 @@ def _with_id(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class AgentRuntimeStore(Protocol):
+    def radar_fallback_limit(self) -> int:
+        ...
+
     def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
         ...
 
@@ -57,6 +60,10 @@ class AgentRuntimeStore(Protocol):
 class InMemoryAgentRuntimeStore:
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _radar_lock: Any = field(default_factory=RLock, repr=False)
+    radar_limits: dict[str, int] = field(default_factory=dict)
+
+    def radar_fallback_limit(self) -> int:
+        return self.radar_limits.get('maxFallbackAttemptsPerEffect', 1)
 
     def begin_radar_effect(self, *, organization_id, action, request_id, analysis_receipt_id, owner_token, input_hash, provider, model_snapshot, lease_until):
         with self._radar_lock:
@@ -242,6 +249,14 @@ class PostgresAgentRuntimeStore:
 
     def set_internal_scope(self) -> None:
         _runtime_database_scope.set(RuntimeDatabaseScope(role="yux_operator", organization_ids=()))
+
+    def radar_fallback_limit(self) -> int:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute('SELECT private.radar_fallback_limit()')
+            row = cursor.fetchone()
+            if not row or row[0] is None:
+                raise RuntimeError('radar_operational_policy_unavailable')
+            return int(row[0])
 
     def begin_radar_effect(self, *, organization_id, action, request_id, analysis_receipt_id, owner_token, input_hash, provider, model_snapshot, lease_until):
         with self._connection() as connection, connection.cursor(row_factory=self._row_factory()) as cursor:

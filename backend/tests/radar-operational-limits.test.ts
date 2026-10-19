@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest'
 import {captureFixture,connectionString,admin,organizationId} from './support/radar-capture-fixture.js'
 import {fixtureUsers} from './integration/support/fixtures.js'
 import {resolveRadarSearchConfiguration} from '../src/modules/radar/search-configuration.js'
-import {runRadarCnpjaAdvancedSearch} from '../src/modules/radar/repository.js'
+import {runRadarCnpjaAdvancedSearch,evaluateRadarSourceGovernance,recordRadarSourceUsage,findRadarDataSource} from '../src/modules/radar/repository.js'
 import {searchCnpjaAdvancedPage} from '../src/modules/radar/cnpjaClient.js'
 import {company} from './support/radar-capture-fixture.js'
 import {buildServer} from '../src/server.js'
@@ -18,6 +18,9 @@ const modulePath='../src/modules/radar/operational-limits.js',api=await import(m
 const defaults={maxNewCompaniesPerLot:1000,maxPagesPerScope:10,maxDiscoveryQueriesPerLot:100,maxDiscoveryPageSize:10,maxVerificationBatch:25,maxSearchQueriesPerCompany:5,maxPublicPagesPerCompany:10,maxCampaignDailyQueries:1000,maxSourceDailyQueries:1000,maxResearchFreshnessDays:30,maxContinuationIdleMinutes:60}
 
 describe('Radar operational policy',()=>{
+ it('accepts safe integer capacities above int4 rather than treating storage as a product quota',()=>{
+  expect(api.radarOperationalLimitsSchema.safeParse({...defaults,maxNewCompaniesPerLot:3_000_000_000}).success).toBe(true)
+ })
  it('does not truncate a configurable 25-record provider page',async()=>{
   const records=Array.from({length:25},(_,i)=>({taxId:String(10000000000000+i),company:{name:'Fixture'}}))
   const result=await searchCnpjaAdvancedPage({apiKey:'fake',limit:25,fetchImpl:async()=>new Response(JSON.stringify({records,next:'next-fixture'}),{status:200})})
@@ -40,6 +43,37 @@ describe('Radar operational policy',()=>{
 })
 
 describe.skipIf(!connectionString)('Radar persisted policy with isolated PostgreSQL',()=>{
+ it('serializes two simulated source reservations against the same total campaign budget',async()=>{
+  const f=await captureFixture()
+  try{
+   await f.pool.query('UPDATE public.radar_campaigns SET budget_limit=.3 WHERE id=$1',[f.campaign.id])
+   const sources=await Promise.all(['brave_web_search','serper_web_search'].map(key=>findRadarDataSource(f.pool,organizationId,key)))
+   const outcomes=await Promise.all(sources.map(async source=>{
+    if(!source)throw Error('fixture_source_missing')
+    // Fixture-only approved prices. No activation or real provider request.
+    const simulated={...source,enabled:true,defaultCostPerUnit:.2},client=await f.pool.connect()
+    try{
+     await client.query('BEGIN')
+     const result=await evaluateRadarSourceGovernance(client,organizationId,f.campaign.id,simulated,1,1,true)
+     if(result.allowed){await new Promise(done=>setTimeout(done,50));await recordRadarSourceUsage(client,organizationId,f.campaign.id,simulated,1,result.estimatedCost)}
+     await client.query('COMMIT');return result.allowed
+    }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+   }))
+   expect(outcomes.filter(Boolean)).toHaveLength(1)
+   expect(Number((await f.pool.query('SELECT SUM(estimated_cost) AS cost FROM public.radar_source_usage_counters WHERE campaign_id=$1',[f.campaign.id])).rows[0].cost)).toBe(.2)
+  }finally{await f.close()}
+ })
+ it('versions a manual cost policy with audit and CAS, without modifying a frozen estimate',async()=>{
+  const f=await captureFixture(),before=await api.getRadarOperationalLimits(f.pool,admin);let current=before
+  try{
+   const costPolicy={usdToBrl:'5.50',rateAsOf:'2026-10-19T12:00:00Z',rateSource:'manual' as const,marginPercent:'0'}
+   current=await api.updateRadarOperationalLimits(f.pool,admin,{expectedVersion:before.version,limits:before.limits,costPolicy})
+   expect(current.costPolicy).toEqual(costPolicy)
+   const audit=(await f.pool.query('SELECT old_cost_policy,new_cost_policy FROM public.radar_operational_limit_audit WHERE policy_version=$1',[current.version])).rows[0]
+   expect(audit.new_cost_policy).toEqual(costPolicy)
+   await expect(api.updateRadarOperationalLimits(f.pool,admin,{expectedVersion:before.version,limits:before.limits,costPolicy:{...costPolicy,usdToBrl:'9'}})).rejects.toThrow('radar_operational_policy_stale')
+  }finally{if(current.version!==before.version)await api.updateRadarOperationalLimits(f.pool,admin,{expectedVersion:current.version,limits:before.limits,costPolicy:before.costPolicy});await f.close()}
+ })
  it('snapshots the approved policy and never raises an existing lot when policy changes',async()=>{
   const f=await captureFixture();const before=await api.getRadarOperationalLimits(f.pool,admin);let version=before.version
   try{
@@ -50,7 +84,7 @@ describe.skipIf(!connectionString)('Radar persisted policy with isolated Postgre
    const p=await getRadarCapturePreflight(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestedCount:20,operationId:op.operationId},{availability,workerReady:async()=>true})
    expect(p.limits.maxPagesPerScope).toBe(saved.search_configuration.batch.maxPagesPerScope)
    expect(p.policy).toMatchObject({version:changed.version,limits:{maxNewCompaniesPerLot:5}})
-   expect((await f.pool.query('SELECT queries FROM public.radar_capture_operations WHERE id=$1',[op.operationId])).rows[0].queries).toBe(0)
+   expect(Number((await f.pool.query('SELECT queries FROM public.radar_capture_operations WHERE id=$1',[op.operationId])).rows[0].queries)).toBe(0)
   }finally{if(version!==before.version)await api.updateRadarOperationalLimits(f.pool,admin,{expectedVersion:version,limits:before.limits});await f.close()}
  })
  it('reserves three billing units but one call for a 25-company page and preserves the inherited page size',async()=>{
@@ -88,6 +122,8 @@ describe.skipIf(!connectionString)('Radar persisted policy with isolated Postgre
    }
    for(const role of ['client_admin','client_member','yux_operator'] as const)await runWithDatabaseRequestContext({role,organizationIds:[organizationId]},async()=>{
     expect((await pool.query('SELECT * FROM public.radar_operational_limits')).rows).toHaveLength(0)
+    const internal=await api.loadRadarOperationalLimits(pool)
+    expect(internal.version).toBe((await api.getRadarOperationalLimits(f.pool,admin)).version)
    })
    expect(jobs).toBe(0)
   }finally{await app.close();await pool.end();await f.close()}

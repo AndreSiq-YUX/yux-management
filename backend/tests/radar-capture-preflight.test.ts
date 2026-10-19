@@ -15,7 +15,7 @@ describe.skipIf(!connectionString)('capture preflight with PostgreSQL',()=>{
    const availability=async()=>({...await available(),estimates:[{sourceType:'brave_web_search',costPerQuery:.01,remainingQueries:2}],maxQueriesPerCandidate:3})
    const result=await api.getRadarCapturePreflight(f.pool,admin,{...input,requestedCount:2},{availability})
    expect(result).toMatchObject({researchCapacity:{remainingQueries:2,plannedMaximumQueries:6,estimatedMaximumCostBrl:.06},warnings:[{code:'radar_capture_enrichment_capacity_low'}]})
-   expect((await f.pool.query("SELECT rate_limit_per_day FROM public.radar_data_sources WHERE source_key='brave_web_search'")).rows.every(row=>row.rate_limit_per_day===10000)).toBe(true)
+   expect((await f.pool.query("SELECT rate_limit_per_day FROM public.radar_data_sources WHERE source_key='brave_web_search'")).rows.every(row=>Number(row.rate_limit_per_day)===10000)).toBe(true)
   }finally{await f.close()}
  })
  it('includes the shared campaign budget when warning about enrichment capacity across selected sources',async()=>{

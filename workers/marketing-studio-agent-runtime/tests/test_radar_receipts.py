@@ -189,12 +189,15 @@ def test_free_revalidation_http_is_authenticated_tenant_scoped_and_never_builds_
     assert 'must-not-echo' not in rejected.text
 
 
-def test_confirmed_rejection_can_use_one_authorized_fallback_but_timeout_cannot():
+@pytest.mark.parametrize('fallback_limit', [0, 1])
+def test_confirmed_rejection_can_use_only_admin_bounded_fallbacks_but_timeout_cannot(fallback_limit):
     from yux_agent_runtime.providers import ProviderRequestError
     route = dict(agent_type='radar_presence_resolution', provider='openrouter', model_name='fixture-primary', status='active', fallback_routes=[dict(provider='openrouter', modelName='fixture-fallback')])
     evidence = [dict(id='page-0', source_url='https://empresa.example/', kind='institutional_candidate', text='Empresa Alfa é nossa razão social.')]
     for failure, expected in [('provider_http_429', 2), ('provider_transport_unavailable', 1)]:
         store, calls = InMemoryAgentRuntimeStore(dict(model_routing_rules=[route])), []
+        store.radar_limits = {'maxFallbackAttemptsPerEffect': fallback_limit}
+        expected = min(expected, fallback_limit + 1)
         class Client:
             def chat_completion(self, **kwargs):
                 calls.append(kwargs['model'])
@@ -211,7 +214,7 @@ def test_confirmed_rejection_can_use_one_authorized_fallback_but_timeout_cannot(
         assert len(calls) == expected
         effects = store.list('radar_effect_receipts')
         assert len(effects) == expected
-        assert effects[0]['transport_outcome'] == ('rejected' if expected == 2 else 'uncertain')
+        assert effects[0]['transport_outcome'] == ('rejected' if failure == 'provider_http_429' else 'uncertain')
 
 
 def test_receipt_capture_does_not_capture_an_unrelated_nested_chat_response():

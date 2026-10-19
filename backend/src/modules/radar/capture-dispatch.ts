@@ -17,6 +17,8 @@ import {authorizeRadarContinuations,type ContinuationAuthorization} from './cont
 import {assessRadarCaptureResearch} from './capture-research-state.js'
 import {radarCaptureRefreshAuthorized} from './capture-analysis-authorization.js'
 import {reconcileRadarCaptureSummary} from './capture-reconciliation.js'
+import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy} from './research-budget.js'
+import {normalizeRadarCounters} from './numeric-counters.js'
 
 export const classifyRadarCaptureResearch=(run:Parameters<typeof assessRadarCaptureResearch>[0])=>assessRadarCaptureResearch(run).status
 type CaptureQueue=Pick<RegisteredJobQueue,'add'>
@@ -48,7 +50,7 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
    let runId=item.run_id,status=item.run_status
    const expired=status==='running'&&item.lease_until&&new Date(item.lease_until).getTime()<Date.now()
    if(paused&&(!runId||status==='queued'||expired&&item.status==='queued'))continue
-   if(!runId||item.status==='queued'&&(['partial','blocked','failed'].includes(status)||expired)){
+   if(!runId||item.status==='queued'&&(assessRadarCaptureResearch({...item,status}).status!=='completed'&&!['queued','running'].includes(status)||expired)){
     try{
      // Admission is already complete. The child authorizes each unfinished effect;
      // exhausted search quota must not prohibit reading or analysing saved evidence.
@@ -115,9 +117,9 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
  try{
   await client.query('BEGIN')
   // Match discovery's lock order and recheck revision after waiting for locks.
-  const campaign=(await client.query('SELECT configuration_revision FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.campaign_id,input.organizationId])).rows[0]
+  const campaign=(await client.query('SELECT configuration_revision,search_configuration FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.campaign_id,input.organizationId])).rows[0]
   if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
-  const current=(await client.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,input.organizationId])).rows[0]
+  const current=normalizeRadarCounters((await client.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,input.organizationId])).rows[0])
   if(!current)throw captureError('radar_capture_not_found',404)
   if(current.resume_request_id===input.requestId){await client.query('COMMIT');return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
   await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
@@ -143,6 +145,13 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
    const continuationScopes=scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision}))
    await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
    const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND (status='blocked' OR ($2 AND status='insufficient' AND run_id IS NOT NULL))",[op.id,current.discovery_stopped&&!limitPause])).rows
+   if(!limitPause&&items.length){
+    const runs=(await client.query('SELECT id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND id=ANY($2::uuid[])',[input.organizationId,items.map(item=>item.run_id).filter(Boolean)])).rows
+    const budgetPolicy=await loadRadarResearchBudgetPolicy(client,{organizationId:input.organizationId,configuration:campaign.search_configuration,policy})
+    const grant={requestId:input.requestId,approvedBy:user.id,configurationRevision:input.configurationRevision,items:items.map(item=>({candidateId:item.candidate_id,runId:item.run_id,
+     budget:createRadarResearchIntentBudget({requestId:input.requestId,approvedBy:user.id,policy:budgetPolicy,previousRun:runs.find(run=>run.id===item.run_id) as {id:string;calls:Record<string,{source:string;status:string}>}|undefined})}))}
+    await client.query('UPDATE public.radar_capture_operations SET research_budget_authorizations=research_budget_authorizations||$3::jsonb WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,JSON.stringify([grant])])
+   }
    if(input.allowSemanticRefresh&&!limitPause&&items.length){
     const grant={requestId:input.requestId,approvedBy:user.id,approvedAt:new Date().toISOString(),configurationRevision:input.configurationRevision,candidateIds:items.map(item=>item.candidate_id as string).sort()}
     await client.query('UPDATE public.radar_capture_operations SET analysis_refresh_authorizations=analysis_refresh_authorizations||$3::jsonb WHERE id=$1 AND organization_id=$2',[op.id,input.organizationId,JSON.stringify([grant])])

@@ -37,7 +37,7 @@ describe.skipIf(!connectionString)('capture journey with isolated PostgreSQL',()
    expect((await f.pool.query('SELECT output,status FROM public.radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0]).toMatchObject({output:{discoveryLocked:true,siteAssociation:'confirmed'}})
    expect((await getRadarCaptureOperation(f.pool,admin,organizationId,start.operationId)).counts).toMatchObject({admitted:1,blocked:0})
    for(const effect of [discover,web,local,runtime])expect(effect).not.toHaveBeenCalled()
-   expect((await f.pool.query("SELECT units FROM public.radar_source_usage_counters WHERE campaign_id=$1 AND source_type='brave_web_search'",[f.campaign.id])).rows[0].units).toBe(1)
+   expect(Number((await f.pool.query("SELECT units FROM public.radar_source_usage_counters WHERE campaign_id=$1 AND source_type='brave_web_search'",[f.campaign.id])).rows[0].units)).toBe(1)
   }finally{await activateCaptureSearch(f.pool);await raw.end();await f.close()}
  })
  it('lets the scoped read-only worker reserve discovery without granting policy writes',async()=>{

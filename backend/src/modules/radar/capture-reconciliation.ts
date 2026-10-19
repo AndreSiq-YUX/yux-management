@@ -8,7 +8,7 @@ export function summarizeRadarCaptureItems(op:Operation,items:Item[],discoveryBl
  const capped=items.length<op.requested_count&&['page_cap','query_cap'].includes(op.discovery_reason??'')
  const discovery=discoveryBlockers??(!op.discovery_stopped?op.blockers:[])
  const blockers=[...new Set([...discovery,...(capped?[op.discovery_reason==='page_cap'?'radar_capture_page_limit':'radar_capture_query_limit']:[]),...items.flatMap(item=>item.blocker?[item.blocker]:[])])]
- const status=discovery.length||capped?'blocked':!op.discovery_stopped?'discovering':pending?'researching':items.some(item=>item.status==='blocked')?'blocked':items.length<op.requested_count||items.some(item=>item.status==='insufficient')?'partial':'completed'
+ const status=discovery.length?'blocked':pending&&op.discovery_stopped?'researching':capped?'blocked':!op.discovery_stopped?'discovering':pending?'researching':items.some(item=>item.status==='blocked')?'blocked':items.length<op.requested_count||items.some(item=>item.status==='insufficient')?'partial':'completed'
  return{status,blockers}
 }
 

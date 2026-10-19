@@ -6,7 +6,7 @@ import {radarResearchDependencyVersions} from './evidence-version.js'
 
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
 export function radarPayloadIdentityHash(payload:Record<string,unknown>,title?:string):string{
- return radarResearchDependencyVersions({identity:{name:String(payload.tradeName||title||payload.legalName||''),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,
+ return radarResearchDependencyVersions({identity:{name:String(payload.tradeName||title||payload.researchIdentityName||payload.legalName||''),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,
   cnpj:String(payload.cnpj??''),city:String(payload.city??''),state:String(payload.state??''),address:String(payload.address??'')},criteria:{},evidence:[]}).identityHash
 }
 // Publication concurrency, unlike analysis reuse, includes dates and exact strings.
@@ -54,10 +54,10 @@ export function mergeRadarCompanyResearch(previous:Record<string,unknown>,incomi
 }
 
 // A read/new-delivery projection, not a migration: historical rows and existing leads remain intact.
-export function projectRadarCompanyFacts(payload:Record<string,unknown>):Record<string,unknown>{
+export function projectRadarCompanyFacts(payload:Record<string,unknown>,title?:string):Record<string,unknown>{
   const result={...payload}
   const versions=object(payload.researchDependencyVersions)
-  const identityMismatch=versions.version===1&&typeof versions.identityHash==='string'&&versions.identityHash!==radarPayloadIdentityHash(payload)
+  const identityMismatch=versions.version===1&&typeof versions.identityHash==='string'&&versions.identityHash!==radarPayloadIdentityHash(payload,title)
   if(identityMismatch&&payload.previousResearch)result.previousResearch={...object(payload.previousResearch),belongsToCurrentIdentity:false}
   const presence=payload.publicPresence&&typeof payload.publicPresence==='object'?payload.publicPresence as Record<string,unknown>:undefined
   const website=presence?.website&&typeof presence.website==='object'?presence.website as Record<string,unknown>:undefined

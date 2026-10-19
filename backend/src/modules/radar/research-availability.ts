@@ -18,7 +18,7 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
   sources: Source[]; provider?: Provider; providers?:Record<string,Provider|undefined>; sourceIssues?:Record<string,ResearchBlocker[]>;localEnabled?: boolean; campaignActive?: boolean }) {
   const reasons:ResearchBlocker[]=[],warnings:ResearchBlocker[]=[]
   const issue=(code:string,message:string,sourceType?:string,resolution='Admin → Integrações → Fontes do Radar')=>({code,message,sourceType,resolution})
-  if(!input.canManage)reasons.push(issue('research_admin_required','A pesquisa paga exige um administrador YUX.'))
+  if(!input.canManage)reasons.push(issue('research_admin_required','Sem permissão para iniciar esta pesquisa.'))
   if(!input.policy.enabled)reasons.push(issue('campaign_research_disabled','Aprofundamento automático desativado nesta campanha.',undefined,'Campanha → Editar configuração'))
   if(input.campaignActive===false)reasons.push(issue('campaign_inactive','Campanha arquivada, concluída ou pausada.'))
   const wanted=[...(input.localEnabled&&input.policy.localSearchOrder!=='disabled'?['brave_place_search']:[]),...(input.policy.webSearchEnabled?input.policy.webSearchProviders:[])]
@@ -51,6 +51,8 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
 
 export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser, organizationId: string, campaignId: string) {
   await requireRadarScope(pool, user, { organizationId, campaignId })
+  let canManage=false
+  try{await requireRadarScope(pool,user,{organizationId,campaignId},true);canManage=await isRadarEnabledOrganization(pool,organizationId)}catch(cause){if((cause as {statusCode?:number}).statusCode!==403)throw cause}
   const campaign = await pool.query<{ search_configuration: unknown; status: string }>(
     'SELECT search_configuration, status FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2', [campaignId, organizationId])
   if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
@@ -69,7 +71,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     return{key,source,governance}
   }))
   const result=evaluateRadarResearchAvailability({policy:configuration.research,
-    canManage:user.role==='yux_admin'&&await isRadarEnabledOrganization(pool,organizationId),
+    canManage,
     campaignActive:!['paused','archived','completed'].includes(campaign.rows[0].status),
     localEnabled:configuration.sources.enrichWithBrave,providers,sources:sources.flatMap(item=>item.source?[{...item.source,remaining:item.governance.remainingQueries??0}]:[]),
     sourceIssues:Object.fromEntries(sources.map(item=>[item.key,item.governance.issues.filter(issue=>issue.code!=='source_disabled').map(issue=>({...issue,resolution:'Admin → Integrações → Limites e orçamento'}))]))})

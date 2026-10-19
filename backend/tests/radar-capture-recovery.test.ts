@@ -1,4 +1,5 @@
 import {describe,it,expect,vi} from 'vitest'
+import {normalizeRadarCounters} from '../src/modules/radar/numeric-counters.js'
 import {randomUUID} from 'node:crypto'
 import {captureFixture,connectionString,admin,organizationId,available,company} from './support/radar-capture-fixture.js'
 import {fixtureIds,fixtureUsers} from './integration/support/fixtures.js'
@@ -14,7 +15,7 @@ describe.skipIf(!connectionString)('rejected capture recovery with PostgreSQL',(
   const started=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:20},{availability:available})
   const input={organizationId,operationId:started.operationId}
   const resume={...input,configurationRevision:1,requestId:randomUUID()}
-  const op=async()=> (await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[started.operationId])).rows[0]
+  const op=async()=> normalizeRadarCounters((await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[started.operationId])).rows[0])
   const runs=async()=> (await f.pool.query('SELECT * FROM public.radar_enrichment_runs WHERE campaign_id=$1 ORDER BY started_at',[f.campaign.id])).rows
   const fail=async(error:Error)=>advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{throw error}})
   const legacy=async()=>{

@@ -37,10 +37,10 @@
   "migrations": {
     "checksumAlgorithm": "sha256:utf8:lf:bom-and-nul-removed:trim-start:v1",
     "aggregateAlgorithm": "sha256:filename-checksum-lines:v1",
-    "count": 99,
+    "count": 106,
     "first": "0001_auth_core.sql",
-    "last": "0202_radar_retry_claim_lock_order.sql",
-    "aggregateSha256": "2736d770089a36a7198846e2f77d7d97ed91262a458083c54fb85f3e645077b5",
+    "last": "0209_radar_safe_integer_history.sql",
+    "aggregateSha256": "31f5708bcbf1e9957fc38e87dc55d12ab698984433835db8d8b8b3825865f173",
     "targetVerification": "not_run"
   },
   "contracts": {

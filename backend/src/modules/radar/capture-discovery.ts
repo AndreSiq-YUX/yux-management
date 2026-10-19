@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import {normalizeRadarCounters} from './numeric-counters.js'
 import type {AppEnv} from '../../config/env.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {runRadarCnpjaAdvancedSearch,assertRadarRegionalBatchAccess} from './repository.js'
@@ -7,7 +8,7 @@ import {admitRadarCapturePage,assertCaptureAvailability,captureError,getRadarCap
 import {loadRadarCapturePageAccounting} from './capture-capacity.js'
 
 export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,availability?:AvailabilityLoader,checkAvailability=true){
- const op=(await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0]
+ const op=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
  if(!op)throw captureError('radar_capture_not_found',404)
  const row=(await pool.query("SELECT id,email,display_name,role FROM app_users WHERE id=$1 AND role='yux_admin' AND is_active=TRUE",[op.requested_by])).rows[0]
  if(!row)throw captureError('radar_batch_admin_not_active')

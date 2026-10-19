@@ -46,7 +46,7 @@ import {
 } from './repository.js'
 import { radarSearchConfigurationSchema, radarStateSchema } from './search-configuration.js'
 import { getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from './research-service.js'
-import {queueRadarResearchRequest,radarResearchRequestSchema,getRadarResearchRequest,enqueueRadarResearchRequest} from './research-requests.js'
+import {queueRadarResearchRequest,radarResearchRequestSchema,getRadarResearchRequest,enqueueRadarResearchRequest,authorizeRadarResearchBudget,radarResearchBudgetAuthorizationSchema} from './research-requests.js'
 import {randomUUID} from 'node:crypto'
 import {authorizeRadarAnalysisRetries,radarAnalysisRetryAuthorizationSchema} from './analysis-retry-authorizations.js'
 import { getRadarResearchAvailability } from './research-availability.js'
@@ -61,6 +61,7 @@ import {getRadarCapturePreflight} from './capture-preflight.js'
 const continuationAuthorizationsSchema=z.array(z.object({scopeKey:z.string().min(1).max(256),expectedStateId:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional()
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
+import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
 
@@ -238,7 +239,7 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   })
   app.put('/admin/operational-limits',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
-    const body=z.object({expectedVersion:z.number().int().positive(),limits:radarOperationalLimitsSchema}).strict().safeParse(request.body)
+    const body=z.object({expectedVersion:z.number().int().positive(),limits:radarOperationalLimitsSchema,costPolicy:radarCostPolicySchema.optional()}).strict().safeParse(request.body)
     if(!body.success)return reply.code(400).send({error:'invalid_radar_operational_policy'})
     return updateRadarOperationalLimits(app.pg,user,body.data)
   })
@@ -568,6 +569,15 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const result=await queueRadarResearchRequest(app.pg,user,{organizationId:body.data.organizationId,campaignId:campaign.id,candidateIds:[params.data.id],criteriaRevision:campaign.commercial_criteria_revision,requestId:body.data.requestId??randomUUID(),intent:body.data.operation==='refresh'?'refresh':body.data.operation==='reanalyze'?'reanalyze':'resume',allowSemanticRefresh:body.data.allowSemanticRefresh})
     await enqueueRadarResearchRequest(app.pg,app.jobQueue,body.data.organizationId,result.requestId as string)
     return reply.code(202).send({...result,campaignId:campaign.id,status:result.state==='unchanged'?'succeeded':'queued',reused:result.state==='unchanged'})
+  })
+  app.post('/admin/research-requests/:requestId/authorize-budget',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    const params=z.object({requestId:uuid}).safeParse(request.params),body=radarResearchBudgetAuthorizationSchema.omit({requestId:true}).safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_research_payload'})
+    const result=await authorizeRadarResearchBudget(app.pg,user,{...body.data,requestId:params.data.requestId})
+    await enqueueRadarResearchRequest(app.pg,app.jobQueue,body.data.organizationId,params.data.requestId)
+    return reply.code(202).send(result)
   })
   app.post('/campaigns/:id/research-requests',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

@@ -26,7 +26,7 @@ export async function loadRadarCapturePageAccounting(client:RadarQueryable,op:Ca
   if(input.configurationRevision!==op.configuration_revision||matching.length!==1||input.scopeKey&&input.scopeKey!==matching[0].key||!row.completed_at||output?.discoveryOutcome==='uncertain'||row.status!=='succeeded'&&output?.discoveryOutcome!=='rejected'&&!auditedLegacy){historyCertain=false;continue}
   if(row.status==='succeeded')successfulPagesByScope[matching[0].key]=(successfulPagesByScope[matching[0].key]??0)+1
  }
- return{successfulPagesByScope,historyCertain:historyCertain&&attempts===op.queries}
+ return{successfulPagesByScope,historyCertain:historyCertain&&attempts===Number(op.queries)}
 }
 export function calculateRadarCaptureCapacity(input:{limits:RadarCaptureLimits;remaining:number;attemptedQueries:number;scopes:Array<{key:string;completed:boolean;inheritedPageSize?:number}>;successfulPagesByScope:Record<string,number>;usableOverflowCount:number}){
  const queries=Math.max(0,input.limits.maxQueriesPerBatch-input.attemptedQueries),unfinished=input.scopes.filter(scope=>!scope.completed)

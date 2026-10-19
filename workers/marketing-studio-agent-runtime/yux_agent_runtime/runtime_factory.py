@@ -108,6 +108,7 @@ def build_routed_client(store: AgentRuntimeStore, key: str, *, context: dict[str
         key, lambda: store.list("model_routing_rules", limit=None),
         (lambda routes: {"openrouter": llm_client, "openai_direct": llm_client}) if llm_client is not None else (lambda routes: _provider_clients(store, routes)),
         context=context or {}, tier=tier, kind=kind,
+        radar_fallback_limit_loader=store.radar_fallback_limit if key in {'radar_presence_resolution', 'radar_business_qualification'} else None,
     )
 
 

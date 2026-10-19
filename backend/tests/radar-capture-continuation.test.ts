@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'vitest'
+import {normalizeRadarCounters} from '../src/modules/radar/numeric-counters.js'
 import {randomUUID} from 'node:crypto'
 import pg from 'pg'
 import {captureFixture,connectionString,admin,organizationId,available,company,activateCaptureSearch} from './support/radar-capture-fixture.js'
@@ -20,8 +21,8 @@ describe.skipIf(!connectionString)('expired capture continuation with PostgreSQL
   const input={organizationId,operationId:started.operationId},resume={...input,configurationRevision:1,requestId:randomUUID()}
   await advanceRadarCaptureDiscovery(f.pool,{} as never,input,{availability:available,loadSecret:async()=>'fixture',searchPage:async()=>{throw error}})
   const state=async()=>({
-   op:(await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[input.operationId])).rows[0],
-   cursor:(await f.pool.query('SELECT * FROM public.radar_regional_discovery_cursors WHERE campaign_id=$1',[f.campaign.id])).rows[0],
+   op:normalizeRadarCounters((await f.pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1',[input.operationId])).rows[0]),
+   cursor:normalizeRadarCounters((await f.pool.query('SELECT * FROM public.radar_regional_discovery_cursors WHERE campaign_id=$1',[f.campaign.id])).rows[0]),
    runs:(await f.pool.query('SELECT * FROM public.radar_enrichment_runs WHERE campaign_id=$1 ORDER BY started_at DESC',[f.campaign.id])).rows,
    outbox:(await f.pool.query('SELECT * FROM public.radar_capture_outbox WHERE operation_id=$1',[input.operationId])).rows,
    usage:(await f.pool.query('SELECT * FROM public.radar_source_usage_counters WHERE campaign_id=$1 ORDER BY source_type,usage_date',[f.campaign.id])).rows,

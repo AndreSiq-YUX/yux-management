@@ -102,10 +102,16 @@ class RoutedLlmClient:
     context: dict[str, Any] = field(default_factory=dict)
     tier: str = "default"
     kind: str = "chat"
+    radar_fallback_limit_loader: Callable[[], int] | None = None
 
     def configuration(self) -> tuple[dict[str, Any], dict[str, Any]]:
         routes = self.route_loader()
         route = resolve_route(routes, self.use_case, tier=self.tier, context=self.context, kind=self.kind)
+        if self.radar_fallback_limit_loader is not None:
+            limit = self.radar_fallback_limit_loader()
+            if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+                raise ProviderAuthorizationError('radar_fallback_limit_invalid')
+            route = {**route, 'attempts': route['attempts'][:limit + 1]}
         # Only matched routes authorize paid models, never another tenant's config.
         permitted = [r for r in routes if _matches(r, self.context)]
         return route, self.client_builder(permitted)

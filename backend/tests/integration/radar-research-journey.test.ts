@@ -11,6 +11,7 @@ import { createRadarCampaign, approveRadarB2bProspect, exportRadarB2bProspectsCs
 import {buildRadarCrmLeadFacts} from '../../src/modules/radar/crm-delivery.js'
 import { startRadarCandidateResearch, executeRadarCandidateResearch, getRadarCandidateResearch,reopenRadarResearchReview,listRadarResearchHistory } from '../../src/modules/radar/research-service.js'
 import { getRadarResearchAvailability } from '../../src/modules/radar/research-availability.js'
+import {radarPayloadIdentityHash} from '../../src/modules/radar/company-projection.js'
 
 // Intentionally separate from production/container suites: never accept a remote or shared database.
 const connectionString=process.env.YUX_RADAR_TEST_DATABASE_URL
@@ -223,7 +224,7 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
       ()=>worker.query('SELECT id FROM public.radar_candidate_research_runs WHERE id=$1',[starts[0].runId]))
     expect(hidden.rows).toHaveLength(0)
     const usage=await pool.query('SELECT SUM(units)::integer AS units FROM public.radar_source_usage_counters WHERE campaign_id=$1',[campaignId])
-    expect(usage.rows[0].units).toBe(2)
+    expect(Number(usage.rows[0].units)).toBe(2)
   })
   it('reclassifies legacy facts without searches then explicitly refreshes brand identity while preserving history',async()=>{
     await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research}', '{"enabled":true,"webSearchEnabled":true,"presenceResolutionEnabled":true,"maxSearchQueriesPerCandidate":1}'::jsonb) WHERE id=$1`,[campaignId])
@@ -245,9 +246,18 @@ describe.skipIf(!connectionString)('Radar research with migrated PostgreSQL and 
     const fresh=await scoped(()=>startRadarCandidateResearch(worker,admin,{organizationId,candidateId:id,configurationRevision:2,operation:'refresh',requestId:randomUUID()}))
     const source={url:'https://marca-gama.example/',text:'Marca Delta. Empresa Gama é nossa razão social.',html:'<h2>Fornecedores</h2><a href="mailto:compras@marca-gama.example">Entrar em contato</a>',observedAt:'2026-10-13'}
     web.mockResolvedValue([{url:source.url,title:'Marca Delta',snippets:['Empresa Gama'],observedAt:source.observedAt}]);collect.mockResolvedValue([source])
-    runtime.mockResolvedValue({candidateId:'page-0',scope:'group',reason:'A marca apresenta a razão social procurada.',claims:[{evidenceId:'page-0',excerpt:'Empresa Gama é nossa razão social.'}]})
+    runtime.mockImplementation(async(_env,_path,body)=>{
+      const excerpt='Empresa Gama é nossa razão social.'
+      const evidence=body.evidence.find((item:{text:string})=>item.text.includes(excerpt))
+      expect(evidence).toBeDefined()
+      return{candidateId:evidence.id,scope:'group',reason:'A marca apresenta a razão social procurada.',claims:[{evidenceId:evidence.id,excerpt}]}
+    })
     await jobScope(()=>executeRadarCandidateResearch(worker,{PROVIDER_SECRET_ENCRYPTION_KEY_B64:fixtureKey} as AppEnv,{runId:fresh.runId,organizationId},undefined,{web,collect,runtime}))
     expect(web).toHaveBeenCalledTimes(1);expect(runtime).toHaveBeenCalledTimes(1)
+    const persisted=(await pool.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1',[id])).rows[0].normalized_payload
+    expect(persisted.researchDependencyVersions.identityHash).toBe(radarPayloadIdentityHash(persisted,'Empresa Gama'))
+    const savedOutput=(await pool.query('SELECT output FROM public.radar_candidate_research_runs WHERE id=$1',[fresh.runId])).rows[0].output
+    expect(savedOutput.presenceResolution,JSON.stringify(savedOutput.limitations)).toMatchObject({scope:'group'})
     const dossier=await scoped(()=>getRadarCandidateResearch(worker,admin,organizationId,id))
     expect(dossier.run?.output).toMatchObject({methodVersion:2,presenceResolution:{scope:'group'},discovery:{websiteUrl:source.url}})
     expect(dossier.run?.output.contacts).toContainEqual(expect.objectContaining({value:'compras@marca-gama.example',scope:'group'}))

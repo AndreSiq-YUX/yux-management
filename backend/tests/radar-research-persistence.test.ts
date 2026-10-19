@@ -2,6 +2,8 @@ import { expect, it, vi } from 'vitest'
 import {createHash} from 'node:crypto'
 import {classifyRadarSource} from '../src/modules/radar/source-identity.js'
 import {canonicalRadarAnalysisEvidence} from '../src/modules/radar/evidence-version.js'
+import {defaultRadarOperationalLimits} from '../src/modules/radar/operational-limits.js'
+import {defaultRadarCostPolicy} from '../src/modules/radar/cost-conversion.js'
 import type { AuthUser } from '../src/auth/routes.js'
 import type { AppEnv } from '../src/config/env.js'
 import { executeRadarCandidateResearch, startRadarCandidateResearch, getRadarCandidateResearch } from '../src/modules/radar/research-service.js'
@@ -21,6 +23,7 @@ class ResearchPool {
     this.queries.push({sql,params})
     if(sql.includes('FROM public.radar_capture_items'))return{rows:[]}
     if(sql.includes('FROM public.radar_research_request_items'))return{rows:[]}
+    if(sql.includes('FROM private.radar_operational_policy()'))return{rows:[{version:1,limits:defaultRadarOperationalLimits,cost_policy:defaultRadarCostPolicy}]}
     if(sql.includes('FROM public.radar_analysis_receipts'))return{rows:this.receiptResult||this.receiptEffect||this.receiptStatus==='rejected_before_provider'?[{result:this.receiptResult,status:this.receiptStatus,...this.receiptEffect}]:[]}
     if(/^(BEGIN|COMMIT|ROLLBACK)/.test(sql)||sql.includes('pg_advisory_xact_lock'))return{rows:[]}
     if(sql.includes('SELECT candidate.*, campaign.search_configuration'))return{rows:params[1]==='org'?[{id:'candidate',organization_id:'org',campaign_id:'campaign',title:'Empresa Alfa',status:'pending_review',normalized_payload:this.payload,search_configuration:this.researchConfiguration,configuration_revision:this.revision,campaign_status:'draft',target_segment:'Serviços',offer_type:'Automação',product_focus:[],target_cnaes:[]}]:[]}
@@ -40,7 +43,7 @@ class ResearchPool {
     if(sql.includes('FROM public.radar_candidate_research_runs'))return{rows:this.run&&(!sql.includes('request_id=$3')||this.run.request_id===params[2])&&(!sql.includes("status IN ('queued','running')")||['queued','running'].includes(this.run.status))?[this.run]:[]}
     if(sql.includes('UPDATE public.radar_candidate_research_runs')) {
       if(!this.run)return{rows:[]}
-      if(sql.includes("status='running'")){if(this.run.lease_id||this.run.status==='succeeded'||params[2]!=='org')return{rows:[]};this.run.status='running';this.run.lease_id=params[1]}
+      if(sql.includes("SET status='running'")){if(this.run.lease_id||this.run.status==='succeeded'||params[2]!=='org')return{rows:[]};this.run.status='running';this.run.lease_id=params[1]}
       if(sql.includes("status='queued'"))this.run.status='queued'
       if(sql.includes('calls=$3'))this.run.calls=JSON.parse(String(params[2]))
       if(sql.includes('output = $3'))this.run.output=JSON.parse(String(params[2]))
@@ -469,10 +472,10 @@ it('exposes_expired_worker_lease_as_retryable_without_modifying_saved_facts',asy
   expect(result.run?.error_code).toBe('radar_research_worker_interrupted_retry_available')
   expect(pool.payload.phoneRaw).toBe('4133334444')
 })
-it('allows recovery from saved discovery when search quota is exhausted, without another paid call',async()=>{
+it.each(['partial','succeeded'])('allows recovery from %s saved discovery when search quota is exhausted, without another paid call',async status=>{
   const pool=new ResearchPool(),run=await start(pool)
-  pool.quota=10;pool.run!.status='partial'
-  pool.run!.output={readingComplete:true,discovery:{association:'review',websiteUrl:'https://alfa.example/',hits:[],suggestions:[],queries:1,limitations:[]},
+  pool.quota=10;pool.run!.status=status
+  pool.run!.output={quality:{readyForReview:false},siteAssociation:'review',readingComplete:true,discovery:{association:'review',websiteUrl:'https://alfa.example/',hits:[],suggestions:[],queries:1,limitations:[]},
     pages:[{url:'https://alfa.example/',observedAt:'2026-10-12',text:'',limitation:'robots_unavailable'}]}
   expect((await getRadarCandidateResearch(pool as never,admin,'org','candidate')).availability.allowed).toBe(true)
   await start(pool)

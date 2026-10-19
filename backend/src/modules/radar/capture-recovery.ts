@@ -18,7 +18,7 @@ export async function inspectRejectedRadarCaptureDiscovery(client:RadarQueryable
  const run=runs[0]
  if(!run||run.status!=='failed'||!run.completed_at||run.input_payload.configurationRevision!==op.configuration_revision||run.output_payload.candidateCount!==0)return false
  const linked=run.input_payload.captureOperationId===op.id&&run.output_payload.discoveryOutcome==='rejected'
- const legacy=runs.length===1&&op.queries===1&&!run.input_payload.captureOperationId&&!run.output_payload.discoveryOutcome
+ const legacy=runs.length===1&&Number(op.queries)===1&&!run.input_payload.captureOperationId&&!run.output_payload.discoveryOutcome
   &&run.error_message==='request validation failed'
   &&run.output_payload.issues?.some((issue:{code?:string;sourceType?:string})=>issue.code==='provider_failed'&&issue.sourceType==='cnpja_advanced_search')
  if(!linked&&!legacy)return false

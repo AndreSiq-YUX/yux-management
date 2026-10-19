@@ -86,7 +86,7 @@ class FakeRadarPool {
   async query(sql: string, params: unknown[] = []) {
     this.queries.push({ sql, params })
     const normalized = sql.replace(/\s+/g, ' ').trim()
-    if (sql.includes('FROM public.radar_operational_limits')) return { rows: [{ version: 1, limits: defaultRadarOperationalLimits }] }
+    if (sql.includes('FROM public.radar_operational_limits')||sql.includes('FROM private.radar_operational_policy()')) return { rows: [{ version: 1, limits: defaultRadarOperationalLimits }] }
 
     if (sql.includes('SELECT organization_id') && sql.includes('FROM public.memberships')) return { rows: [] }
     if (sql.includes('JOIN public.memberships membership') && sql.includes("module.module_key = 'radar'")) return { rows: [{ allowed: this.clientRadarAllowed }] }

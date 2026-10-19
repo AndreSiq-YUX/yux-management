@@ -8,7 +8,8 @@ const api=await import(modulePath).catch(()=>({}))
 describe('capture operation contract',()=>{
   it('exposes quantity validation before any database effects',()=>{
     expect(api.parseRadarCaptureCount,'missing capture operation implementation').toBeTypeOf('function')
-    for(const n of [0,1.5,2_147_483_648,NaN])expect(()=>api.parseRadarCaptureCount(n)).toThrow()
+    for(const n of [0,1.5,Number.MAX_SAFE_INTEGER+1,NaN])expect(()=>api.parseRadarCaptureCount(n)).toThrow()
+    expect(api.parseRadarCaptureCount(3_000_000_000)).toBe(3_000_000_000)
     expect(api.parseRadarCaptureCount(7)).toBe(7)
   })
 })

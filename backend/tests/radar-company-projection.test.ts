@@ -6,6 +6,13 @@ const old={cnpj:'12345678000190',tradeName:'Empresa Alfa',websiteUrl:'https://al
  publicContacts:[{kind:'email',value:'compras@alfa.example',sourceUrl:'https://alfa.example/',observedAt:'2026-10-18T12:00:00Z',association:'confirmed',scope:'group'}],companyProfile:{summary:{value:'Atende empresas',sourceUrl:'https://alfa.example/',observedAt:'2026-10-18T12:00:00Z'}}}
 const incoming={researchRunId:'new-run',researchRevision:1,websiteStatus:'unknown',websiteUrl:undefined,publicPresence:{version:1,configurationRevision:1,contacts:[]},publicContacts:[],researchComplete:false,researchQuality:{readyForReview:false},targetStatus:'review'}
 const options={identityHash:'same-identity',configurationRevision:1,freshnessDays:30,now:Date.parse('2026-10-19T12:00:00Z')}
+it('keeps a title-only identity snapshot without inventing a trade name and invalidates a later title correction',()=>{
+ const payload={...old,tradeName:undefined,researchIdentityName:'Empresa Alfa'}
+ payload.researchDependencyVersions={version:1,identityHash:api.radarPayloadIdentityHash(payload,'Empresa Alfa')} as never
+ expect(api.projectRadarCompanyFacts(payload).websiteUrl).toBe(old.websiteUrl)
+ expect(api.projectRadarCompanyFacts(payload,'Empresa Beta').websiteUrl).toBeUndefined()
+ expect(api.projectRadarCompanyFacts(payload).tradeName).toBeUndefined()
+})
 it('preserves dated known facts during incomplete refresh, without manufacturing current activity or changing group scope',()=>{
  expect(api.mergeRadarCompanyResearch).toBeTypeOf('function')
  const result=api.mergeRadarCompanyResearch(old,incoming,options)

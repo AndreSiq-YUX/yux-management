@@ -1,5 +1,6 @@
 import { apiRequest, apiRequestText } from '@/lib/apiClient'
 import type {RadarResearchRequestInput,RadarResearchRequestResult} from '@/types/radarResearch'
+import type {RadarCostPolicy} from '@/types/radarResearch'
 import type { RadarResearchAvailability, RadarResearchResult, RadarTlsExceptionGrant,RadarResearchFeedback,RadarResearchMetrics,RadarCaptureOperation,RadarCapturePreflight,RadarCaptureLimits } from '@/types/radarResearch'
 import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDataSource, RadarDuplicateCandidate, RadarEnrichmentRun, RadarImportIssue, RadarMetrics, RadarOpportunity, RadarPlacePreview } from '@/types/radar'
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
@@ -32,7 +33,7 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 
 export const radarService = {
   getOperationalPolicy(){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits')},
-  updateOperationalPolicy(input:{expectedVersion:number;limits:RadarOperationalLimits}){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits',{method:'PUT',body:input})},
+  updateOperationalPolicy(input:{expectedVersion:number;limits:RadarOperationalLimits;costPolicy?:RadarCostPolicy}){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits',{method:'PUT',body:input})},
   getCommercialCampaigns(organizationId:string){return apiRequest<RadarCommercialCampaign[]>(`/radar/campaigns${buildQuery({organizationId})}`)},
   getCommercialCandidates(campaignId:string){return apiRequest<RadarCommercialCandidate[]>(`/radar/campaigns/${campaignId}/candidates`)},
   getCommercialCapture(campaignId:string,organizationId:string){return apiRequest<{operation:RadarCommercialCapture|null}>(`/radar/campaigns/${campaignId}/capture-operations/latest${buildQuery({organizationId})}`)},

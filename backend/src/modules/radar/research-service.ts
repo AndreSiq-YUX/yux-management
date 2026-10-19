@@ -27,9 +27,13 @@ import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from './publi
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
+import {assessRadarCaptureResearch} from './capture-research-state.js'
 import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,radarAnalysisDependencies,radarDependencyBindingMatch,radarResearchDependencyVersions,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
 import {mergeRadarCompanyResearch,radarCompanyProjectionVersion,projectRadarCompanyFacts,radarPayloadIdentityHash} from './company-projection.js'
 import {resolveRadarAnalysisRetry,type RadarAnalysisRetryBinding} from './analysis-retry-authorizations.js'
+import {loadRadarResearchIntentBudget,frozenRadarCostPolicy} from './research-budget.js'
+import {loadRadarOperationalLimits} from './operational-limits.js'
+import {estimateRadarCostBrl,compareRadarDecimal,addRadarDecimal,radarReportedCostAmount,type RadarCostEstimate,type RadarCostPolicy} from './cost-conversion.js'
 import {hasUsefulRadarHits,planRadarResearch} from './research-planner.js'
 import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
@@ -434,12 +438,12 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
   target_segment: string; offer_type: string; product_focus: string[]; target_cnaes: string[] }
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
   operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
-  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;
+  configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;costEstimate?:RadarCostEstimate;costPolicy?:RadarCostPolicy;budgetRequestId?:string;
     rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
 function cachedReadAvailability<T extends {allowed:boolean;reasons:Array<{code:string}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number}>(availability:T,run:ResearchRun|undefined,revision:number,freshnessDays:number):T {
-  const recoverable=run&&run.configuration_revision===revision&&['partial','blocked','failed'].includes(run.status)&&run.output.discovery
+  const recoverable=run&&run.configuration_revision===revision&&['partial','blocked','failed','succeeded'].includes(run.status)&&run.output.discovery
     &&Date.now()-Date.parse(run.completed_at||run.created_at)<freshnessDays*86400000
   if(!availability.allowed&&recoverable&&availability.reasons.every(item=>['source_limit_exceeded','source_budget_exceeded'].includes(item.code)))
     return {...availability,allowed:true,reasons:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:0}
@@ -456,7 +460,7 @@ async function loadContext(pool: Pick<pg.Pool,'query'>, organizationId:string, c
 export async function getRadarCandidateResearch(pool:pg.Pool, user:AuthUser, organizationId:string, candidateId:string) {
   await requireRadarScope(pool,user,{ organizationId,candidateId })
   const context = await loadContext(pool,organizationId,candidateId)
-  const candidateProjection=projectRadarCompanyFacts(context.normalized_payload)
+  const candidateProjection=projectRadarCompanyFacts(context.normalized_payload,context.title)
   const recordedIdentity=context.normalized_payload.researchDependencyVersions as {version?:number;identityHash?:string}|undefined
   const identityChanged=recordedIdentity?.version===1&&recordedIdentity.identityHash!==radarPayloadIdentityHash(context.normalized_payload,context.title)
   const [runs, availability] = await Promise.all([
@@ -520,7 +524,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     if(['refresh','reanalyze'].includes(operation)&&!input.requestId)throw error('radar_research_request_id_required',400)
     if(input.requestId){
       const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
-      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running','succeeded'].includes(duplicate.rows[0].status))){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:duplicate.rows[0].id});await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
+      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running'].includes(duplicate.rows[0].status)||assessRadarCaptureResearch(duplicate.rows[0]).status==='completed')){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:duplicate.rows[0].id});await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
     }
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
       WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation])
@@ -539,7 +543,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     const fresh = !['refresh','reanalyze'].includes(operation)&&run&&run.configuration_revision===input.configurationRevision
       &&(['queued','running'].includes(run.status) || operation==='resume'||Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
     if (fresh) {
-      if (!['queued','running','succeeded'].includes(run.status)) {
+      if (!['queued','running'].includes(run.status)&&assessRadarCaptureResearch(run).status!=='completed') {
         if(input.allowSemanticRefresh&&run.calls.presence?.status==='completed')run.calls.presence.refreshAuthorized=true
         if(input.allowSemanticRefresh&&(run.calls.presence?.status==='completed'||run.calls.semantic?.status==='completed')) {
           if(run.calls.semantic?.status==='completed')run.calls.semantic.refreshAuthorized=true
@@ -578,19 +582,21 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
   }
   try {
     const userResult = await pool.query<{id:string;role:string}>(`SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE`,[run.requested_by])
-    if (userResult.rows[0]?.role !== 'yux_admin' || !await isRadarEnabledOrganization(pool,run.organization_id)) throw error('research_admin_required',403)
+    if (!userResult.rows[0] || !await isRadarEnabledOrganization(pool,run.organization_id)) throw error('research_admin_required',403)
     const user = userResult.rows[0] as AuthUser
+    await requireRadarScope(pool,user,{organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id},true)
     const context = await loadContext(pool,run.organization_id,run.candidate_id)
     if (context.configuration_revision !== run.configuration_revision) throw error('radar_campaign_configuration_changed')
     if (context.status !== 'pending_review' || ['paused','archived','completed'].includes(context.campaign_status)) throw error('radar_campaign_or_candidate_inactive')
     const configuration = resolveRadarSearchConfiguration(context.search_configuration)
     if (!configuration.research.enabled) throw error('campaign_research_disabled')
     const payload = context.normalized_payload
+    const intentBudget=await loadRadarResearchIntentBudget(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision})
     const str = (key:string) => typeof payload[key] === 'string' ? payload[key] as string : undefined
     const identity:RadarBusinessIdentity = {name:str('tradeName') || context.title,legalName:str('legalName'),cnpj:str('cnpj'),
       city:str('city'),state:str('state'),address:str('address'),phone:str('phoneRaw'),websiteUrl:str('websiteUrl')}
     const searchCapacity=()=>{
-      const capacity=resolveRadarSearchCapacity({calls:run.calls,policy:configuration.research})
+      const capacity=resolveRadarSearchCapacity({calls:run.calls,policy:configuration.research,intent:intentBudget})
       const selected=new Set<string>(configuration.research.webSearchEnabled?configuration.research.webSearchProviders:[])
       if(configuration.sources.enrichWithBrave&&configuration.research.localSearchOrder!=='disabled'&&identity.city&&identity.state)selected.add('brave_place_search')
       for(const source of Object.keys(capacity.bySource))if(!selected.has(source))capacity.bySource[source].remaining=0
@@ -600,7 +606,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const assertEffectAuthorization=async(queryable:Pick<pg.Pool,'query'>=pool)=>{
       signal?.throwIfAborted()
       const requester=(await queryable.query('SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE',[run.requested_by])).rows[0]
-      if(requester?.role!=='yux_admin'||!await isRadarEnabledOrganization(queryable,run.organization_id))throw error('research_admin_required',403)
+      if(!requester||!await isRadarEnabledOrganization(queryable,run.organization_id))throw error('research_admin_required',403)
+      await requireRadarScope(queryable,requester as AuthUser,{organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id},true)
       const current=await loadContext(queryable,run.organization_id,run.candidate_id)
       if(current.configuration_revision!==run.configuration_revision)throw error('radar_campaign_configuration_changed')
       if(current.status!=='pending_review'||['paused','archived','completed'].includes(current.campaign_status))throw error('radar_campaign_or_candidate_inactive')
@@ -625,14 +632,19 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         if (currentCampaign.rows[0]?.configuration_revision !== run.configuration_revision) throw error('radar_campaign_configuration_changed')
         if (['paused','archived','completed'].includes(currentCampaign.rows[0]?.status)) throw error('campaign_inactive')
         await assertEffectAuthorization(reservation)
+        const operationalPolicy=await loadRadarOperationalLimits(reservation)
+        const effective=resolveRadarSearchCapacity({calls:run.calls,policy:{...configuration.research,maxSearchQueriesPerCandidate:Math.min(configuration.research.maxSearchQueriesPerCandidate,operationalPolicy.limits.maxSearchQueriesPerCompany),maxSearchQueriesBySource:Object.fromEntries(Object.entries(configuration.research.maxSearchQueriesBySource).map(([source,value])=>[source,Math.min(value,operationalPolicy.limits.maxSearchQueriesPerCompany)]))},intent:intentBudget})
+        if((effective.bySource[sourceKey]?.remaining??0)===0||effective.totalRemaining===0)throw error('candidate_search_limit_reached')
         const source = await findRadarDataSource(reservation as unknown as pg.Pool,run.organization_id,sourceKey)
         if (!source || source.defaultCostPerUnit <= 0) throw error('source_cost_required')
-        const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1)
+        const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1,1,true)
         if (!governance.allowed) throw error(governance.issues[0].code)
         if (!hasRadarSearchCapacity(searchCapacity(),sourceKey)) throw error('candidate_search_limit_reached')
         const spent = await reservation.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[run.organization_id,run.campaign_id])
         const budget = currentCampaign.rows[0]?.budget_limit
-        if (budget !== null && budget !== undefined && Number(spent.rows[0]?.cost ?? 0) + source.defaultCostPerUnit > Number(budget)) throw error('source_budget_exceeded')
+        if (budget !== null && budget !== undefined && compareRadarDecimal(addRadarDecimal(String(spent.rows[0]?.cost??0),String(source.defaultCostPerUnit)),String(budget))>0) throw error('source_budget_exceeded')
+        const approvedUnit=intentBudget?.sourceUnitPricesBrl[sourceKey as keyof typeof intentBudget.sourceUnitPricesBrl]
+        if(intentBudget&&(!approvedUnit||compareRadarDecimal(String(source.defaultCostPerUnit),approvedUnit)>0))throw error('radar_intent_source_price_changed')
         const provider = await reservation.query<{id:string;status:string;public_config:Record<string,unknown>}>(`SELECT id,status,public_config FROM public.platform_provider_connections WHERE provider_key=$1
           AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`,[sourceKey==='serper_web_search'?'serper':'brave_place'])
         const connection = provider.rows[0]
@@ -644,14 +656,15 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         if (!secret) throw error('provider_secret_missing')
         apiKey = secret
         await recordRadarSourceUsage(reservation,run.organization_id,run.campaign_id,source,1,source.defaultCostPerUnit)
-        run.calls[key] = {status:'reserved',source:sourceKey}
-        await reservation.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(run.calls)])
+        run.calls[key] = {status:'reserved',source:sourceKey,costEstimate:estimateRadarCostBrl({amount:String(source.defaultCostPerUnit),currency:'BRL',rateSnapshot:frozenRadarCostPolicy(intentBudget,operationalPolicy.costPolicy)}),...(intentBudget?{budgetRequestId:intentBudget.requestId}:{})}
+        const reserved=await reservation.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 AND status='running' AND lease_until>NOW() RETURNING id`,[run.id,lease,JSON.stringify(run.calls)])
+        if(!reserved.rows[0])throw error('radar_research_lease_lost')
         await reservation.query('COMMIT')
-      } catch (cause) { await reservation.query('ROLLBACK'); throw cause } finally { reservation.release() }
+      } catch (cause) { await reservation.query('ROLLBACK');delete run.calls[key];throw cause } finally { reservation.release() }
       // No automatic replay after a crash/ambiguous response. Reserved units still count against the cap.
-      try { const result = await request(apiKey); run.calls[key] = {status:'completed',source:sourceKey,result}; return result }
-      catch (cause) { run.calls[key] = {status:'failed',source:sourceKey,error:cause instanceof Error ? cause.message:'provider_request_failed'}; throw cause }
-      finally { await pool.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2`,[run.id,lease,JSON.stringify(run.calls)]) }
+      try { const result = await request(apiKey); run.calls[key] = {...run.calls[key],status:'completed',result}; return result }
+      catch (cause) { run.calls[key] = {...run.calls[key],status:'failed',error:cause instanceof Error ? cause.message:'provider_request_failed'}; throw cause }
+      finally { const updated=await pool.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,JSON.stringify(run.calls)]);if(!updated.rows[0])throw error('radar_research_lease_lost') }
     }
     // Recover a completed provider response even if the process stopped before the discovery checkpoint.
     const cachedHits=Object.values(run.calls).flatMap(call=>call.status==='completed' && ['brave_web_search','serper_web_search'].includes(call.source) && Array.isArray(call.result)?call.result as RadarWebHit[]:[])
@@ -754,7 +767,9 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         await assertEffectAuthorization()
         const requestEvidence=canonicalRadarAnalysisEvidence(evidence)
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
+        const costPolicy=frozenRadarCostPolicy(intentBudget,(await loadRadarOperationalLimits(pool)).costPolicy)
         run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previous?.rejections,...(retry?{requestId,retryAuthorization:retry,previous:{requestId:previous?.requestId,evidenceHash:previous?.evidenceHash,status:previous?.status}}:{})}
+        run.calls.presence.costPolicy=costPolicy
         const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
         if(!reserved.rows[0])throw error('radar_research_lease_lost')
         signal?.throwIfAborted()
@@ -765,8 +780,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           evidence:requestEvidence.map(item=>({id:item.id,source_url:item.url,text:item.text,kind:item.kind})),
         })
         const result=remapRadarEvidenceResult(rawResult,radarEvidenceBindings(requestEvidence),version.bindings)
-        validateRadarPresenceResolution(result,identity,evidence)
-        run.calls.presence={...run.calls.presence,status:'completed',result}
+        const checkedPresence=validateRadarPresenceResolution(result,identity,evidence)
+        run.calls.presence={...run.calls.presence,status:'completed',result,costEstimate:estimateRadarCostBrl({amount:radarReportedCostAmount(checkedPresence.usage?.costUsd),currency:'USD',rateSnapshot:costPolicy})}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return result
       },
@@ -798,6 +813,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previousSemantic?.rejections,
           previous:previousSemantic?.status==='completed'?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:previousSemantic?.previous}
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
+        const costPolicy=frozenRadarCostPolicy(intentBudget,(await loadRadarOperationalLimits(pool)).costPolicy)
+        run.calls.semantic.costPolicy=costPolicy
         if(retry)Object.assign(run.calls.semantic,{requestId,retryAuthorization:retry,previous:{requestId:previousSemantic?.requestId,evidenceHash:previousSemantic?.evidenceHash,status:previousSemantic?.status}})
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         const rawResult = await invokeAnalysis<RadarQualification>('semantic','/radar/qualify',{
@@ -808,7 +825,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         })
         const result=remapRadarEvidenceResult(rawResult,radarEvidenceBindings(requestEvidence),version.bindings)
         const checked=validatedQualificationProfile(result,pages)
-        run.calls.semantic={...run.calls.semantic,status:'completed',result:checked}
+        run.calls.semantic={...run.calls.semantic,status:'completed',result:checked,costEstimate:estimateRadarCostBrl({amount:radarReportedCostAmount(checked.usage?.costUsd),currency:'USD',rateSnapshot:costPolicy})}
         await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2',[run.id,lease,JSON.stringify(run.calls)])
         return checked
       },
@@ -872,7 +889,7 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
         ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
       researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
-      researchQuality:quality,
+      researchQuality:quality,researchIdentityName:identity.name,
       researchLimitations:dossier.limitations,
       researchTlsExceptions:dossier.pages.filter(page=>page.tlsException).map(page=>({...page.tlsException,sourceUrl:page.url})),
       researchContactPurpose:resolveRadarSearchConfiguration(context.search_configuration).research.contactPurpose,

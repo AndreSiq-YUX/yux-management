@@ -37,6 +37,7 @@ import { createRadarDuplicateCandidates } from './dedupe.js'
 import { readJinaUrl, searchJinaWeb, type RadarJinaEvidence, type RadarJinaSearchResult } from './jinaClient.js'
 import { buildCnpjaCandidateSnippet, CnpjaSearchHttpError, searchCnpjaAdvanced, searchCnpjaAdvancedPage, type CnpjaCandidate, type CnpjaProviderConfig } from './cnpjaClient.js'
 import { assertSmallBatchLimit, estimateRadarCost } from './sourceRules.js'
+import {addRadarDecimal,compareRadarDecimal,remainingRadarCostUnits} from './cost-conversion.js'
 import {loadRadarOperationalLimits,validateRadarOperationalConfiguration,assertRadarOperationalLimit} from './operational-limits.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { resolveRadarOsmSegment } from './osm-segment-map.js'
@@ -581,7 +582,7 @@ export async function importRadarUrlsToCampaign(
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
 
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, urls.length)
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, urls.length,urls.length,true)
     const run = await client.query<{ id: string }>(
       `INSERT INTO public.radar_enrichment_runs (
          organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
@@ -765,7 +766,7 @@ export async function runRadarOsmSearch(pool: pg.Pool, user: AuthUser, input: {
        ORDER BY organization_id NULLS LAST LIMIT 1`, [input.organizationId],
     )
     const source = sourceResult.rows[0] ? mapDataSource(sourceResult.rows[0]) : null
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit,limit,true)
     const segmentKey = resolveRadarOsmSegment(campaign.target_segment)
     const snapshot = campaign.target_city && campaign.target_state
       ? await findRadarOsmSnapshot(client, campaign.target_city, campaign.target_state) : null
@@ -942,7 +943,7 @@ export async function runRadarAssistedSearch(
     )
     if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
 
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit)
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, limit,limit,true)
     const run = await client.query<{ id: string }>(
       `INSERT INTO public.radar_enrichment_runs (
          organization_id, campaign_id, company_record_id, opportunity_id, data_source_id,
@@ -1059,7 +1060,7 @@ export async function runRadarCnpjaAdvancedSearch(
     throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
   }
   let limit = input.limit ?? 5
-  assertRadarOperationalLimit(limit,2_147_483_647)
+  assertRadarOperationalLimit(limit,Number.MAX_SAFE_INTEGER)
 
   if (!await isRadarEnabledOrganization(pool, input.organizationId)) {
     throw Object.assign(new Error('radar_source_internal_only'), { statusCode: 403 })
@@ -1142,7 +1143,7 @@ export async function runRadarCnpjaAdvancedSearch(
         throw Object.assign(new Error('radar_regional_search_in_progress'), { statusCode: 409 })
       }
       pageToken = previous?.next_token ?? undefined
-      if(pageToken)limit=previous?.page_size??10
+      if(pageToken)limit=Number(previous?.page_size??10)
       const continuation=await inspectRadarContinuationState(client,{organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:campaignSnapshot.configuration_revision??1,key:scopeKey,label:scopes[0].label,state:input.regionalState,city:scopeCity},await loadRadarOperationalLimits(client))
       if(continuation?.reason==='uncertain')throw captureError('radar_capture_discovery_uncertain')
       if(continuation?.requiresRestartConfirmation)throw captureError('radar_capture_continuation_confirmation_required')
@@ -1154,7 +1155,7 @@ export async function runRadarCnpjaAdvancedSearch(
 
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
       [`radar:${input.organizationId}:cnpja_advanced_search`])
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1,Math.ceil(limit/10))
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1,Math.ceil(limit/10),true)
     estimatedCost = governance.estimatedCost
     const issues = [...governance.issues]
     if (providerIssue) issues.push(providerIssue)
@@ -1416,7 +1417,7 @@ export async function runRadarPlacePreview(
     await client.query('BEGIN')
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
       [`radar:${input.organizationId}:${input.sourceType}`])
-    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1)
+    const governance = await evaluateRadarSourceGovernance(client, input.organizationId, input.campaignId, source, 1,1,true)
     if (!governance.allowed) {
       throw Object.assign(new Error(governance.issues[0]?.code ?? 'radar_source_governance_blocked'), { statusCode: 409 })
     }
@@ -1528,7 +1529,7 @@ export async function enrichRadarCandidateWithLicensedBrave(
     const review=await reservation.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 AND organization_id=$2 AND approved_at IS NOT NULL',[input.candidateId,input.organizationId])
     if(current.rows[0]?.status!=='pending_review'||review.rows.length)throw Object.assign(new Error('radar_candidate_no_longer_pending'),{statusCode:409})
     if(!isRadarCandidateCurrentRevision(current.rows[0].normalized_payload??{},candidate.configuration_revision??1))throw Object.assign(new Error('radar_candidate_requires_current_discovery'),{statusCode:409})
-    const governance = await evaluateRadarSourceGovernance(reservation, input.organizationId, candidate.campaign_id, source, 1)
+    const governance = await evaluateRadarSourceGovernance(reservation, input.organizationId, candidate.campaign_id, source, 1,1,true)
     if (!governance.allowed) throw Object.assign(new Error(governance.issues[0]?.code ?? 'radar_source_governance_blocked'), { statusCode: 409 })
     await recordRadarSourceUsage(reservation, input.organizationId, candidate.campaign_id, source, 1, governance.estimatedCost)
     await reservation.query('COMMIT')
@@ -1881,7 +1882,7 @@ export async function getRadarB2bProgress(pool: pg.Pool, user: AuthUser,
   const row = counts.rows[0]
   return { scopes: scopes.map(scope => {
     const cursor = cursors.rows.find(item => item.scope_key === scope.key)
-    return { ...scope, pages: cursor?.pages_processed ?? 0, candidates: cursor?.candidates_seen ?? 0, completed: cursor?.completed ?? false }
+    return { ...scope, pages: Number(cursor?.pages_processed ?? 0), candidates: Number(cursor?.candidates_seen ?? 0), completed: cursor?.completed ?? false }
   }), configurationRevision: campaign.configurationRevision,
     candidates: Number(row?.candidates ?? 0), checked: Number(row?.checked ?? 0),
     confirmed: Number(row?.confirmed ?? 0), approved: Number(row?.approved ?? 0) }
@@ -1906,9 +1907,9 @@ export async function approveRadarB2bProspect(
      FOR UPDATE OF campaign`, [input.candidateId, input.organizationId],
   )
   if (!campaignLock.rows[0]) throw Object.assign(new Error('radar_b2b_prospect_not_verified'), { statusCode: 409 })
-  const result = await client.query<{ candidate_id: string; target_status: string;
+  const result = await client.query<{ candidate_id: string; target_status: string; title:string;
     normalized_payload: Record<string, unknown> }>(
-    `SELECT review.candidate_id, review.target_status, candidate.normalized_payload
+    `SELECT review.candidate_id, review.target_status, candidate.title, candidate.normalized_payload
      FROM public.radar_b2b_reviews review
      JOIN public.radar_candidate_records candidate ON candidate.id = review.candidate_id
      JOIN public.radar_campaigns campaign ON campaign.id = review.campaign_id AND campaign.organization_id = $2
@@ -1923,7 +1924,7 @@ export async function approveRadarB2bProspect(
   if (!row) {
     throw Object.assign(new Error('radar_b2b_prospect_not_verified'), { statusCode: 409 })
   }
-  const projection=projectRadarCompanyFacts(row.normalized_payload??{})
+  const projection=projectRadarCompanyFacts(row.normalized_payload??{},row.title)
   const automated = row.target_status === 'confirmed' && projection.websiteStatus === 'verified_present' && projection.researchAssociationNeedsReview!==true
   if (!automated) {
     const url = input.manualEvidenceUrl?.trim() ?? ''
@@ -2668,7 +2669,7 @@ export function mapCampaign(row: RadarCampaignRow): RadarCampaign {
     status: row.status,
     ownerId: row.owner_id ?? undefined,
     budgetLimit: row.budget_limit !== null && row.budget_limit !== undefined ? Number(row.budget_limit) : undefined,
-    dailyLimit: row.daily_limit,
+    dailyLimit: Number(row.daily_limit),
     automationLevel: row.automation_level,
     strategyProfileKey: row.strategy_profile_key,
     createdBy: row.created_by ?? undefined,
@@ -2689,7 +2690,7 @@ export function mapDataSource(row: RadarDataSourceRow): RadarDataSource {
     requiresSecret: row.requires_secret,
     termsNotes: row.terms_notes ?? undefined,
     defaultCostPerUnit: Number(row.default_cost_per_unit ?? 0),
-    rateLimitPerDay: row.rate_limit_per_day,
+    rateLimitPerDay: Number(row.rate_limit_per_day),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -2728,7 +2729,7 @@ export function mapCandidate(row: RadarCandidateRecordRow): RadarCandidateRecord
     title: row.title,
     snippet: row.snippet ?? undefined,
     rawPayload: row.raw_payload ?? {},
-    normalizedPayload: projectRadarCompanyFacts(row.normalized_payload ?? {}),
+    normalizedPayload: projectRadarCompanyFacts(row.normalized_payload ?? {},row.title),
     dedupeKey: row.dedupe_key,
     status: row.status,
     importedCompanyRecordId: row.imported_company_record_id ?? undefined,
@@ -2937,6 +2938,7 @@ export async function evaluateRadarSourceGovernance(
   source: RadarDataSource | null,
   requestedUnits: number,
   billingUnits: number = requestedUnits,
+  forReservation=false,
 ) {
   const sourceType = source?.sourceType ?? 'unknown'
   const estimatedCost = estimateRadarCost(billingUnits, source?.defaultCostPerUnit ?? 0)
@@ -2952,7 +2954,7 @@ export async function evaluateRadarSourceGovernance(
     `SELECT daily_limit, budget_limit
      FROM public.radar_campaigns
      WHERE id = $1 AND organization_id = $2
-     LIMIT 1`,
+     LIMIT 1${forReservation?' FOR UPDATE':''}`,
     [campaignId, organizationId],
   )
   const campaignDailyLimit = campaign.rows[0]?.daily_limit ?? source.rateLimitPerDay
@@ -2970,7 +2972,9 @@ export async function evaluateRadarSourceGovernance(
     [organizationId, campaignId, sourceType],
   )
   const usedUnits = Number(usage.rows[0]?.units ?? 0)
-  const usedCost = Number(usage.rows[0]?.estimated_cost ?? 0)
+  // Money is campaign-wide and cumulative; a new source/day does not reset it.
+  const campaignCost=await queryable.query<{estimated_cost:string|number}>(`SELECT COALESCE(SUM(estimated_cost),0) AS estimated_cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2`,[organizationId,campaignId])
+  const costAmount=String(campaignCost.rows[0]?.estimated_cost??0),usedCost=Number(costAmount)
   const organizationUsage = await queryable.query<{ units: string | number }>(
     `SELECT COALESCE(SUM(units), 0) AS units
      FROM public.radar_source_usage_counters
@@ -2997,18 +3001,18 @@ export async function evaluateRadarSourceGovernance(
       used: usedUnits,
     })
   }
-  if (budgetLimit !== undefined && usedCost + estimatedCost > budgetLimit) {
+  if (budgetLimit !== undefined && estimatedCost>0 && compareRadarDecimal(addRadarDecimal(costAmount,String(estimatedCost)),String(campaign.rows[0].budget_limit))>0) {
     issues.push({
       code: 'source_budget_exceeded',
       sourceType,
-      message: `Orcamento diario da campanha excedido para ${sourceType}.`,
+      message: `Orçamento total da campanha excedido.`,
       limit: budgetLimit,
       used: usedCost,
     })
   }
 
   const remainingQueries=Math.max(0,Math.min(source.rateLimitPerDay-organizationUsedUnits,campaignDailyLimit-usedUnits,
-    budgetLimit!==undefined&&source.defaultCostPerUnit>0?Math.floor(Math.max(0,budgetLimit-usedCost)/source.defaultCostPerUnit):Number.MAX_SAFE_INTEGER))
+    budgetLimit!==undefined&&source.defaultCostPerUnit>0?remainingRadarCostUnits({budget:String(campaign.rows[0].budget_limit),used:costAmount,unitPrice:String(source.defaultCostPerUnit)}):Number.MAX_SAFE_INTEGER))
   return { allowed: issues.length === 0, estimatedCost, issues, remainingQueries }
 }
 

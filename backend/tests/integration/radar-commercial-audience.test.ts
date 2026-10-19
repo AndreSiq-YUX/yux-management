@@ -6,7 +6,9 @@ import {createContextAwarePool} from '../../src/db/client.js'
 import {fixtureIds,fixtureUsers,fixturePassword,seedIntegrationFixtures} from './support/fixtures.js'
 import {createRadarCampaign} from '../../src/modules/radar/repository.js'
 import type {AuthUser} from '../../src/auth/routes.js'
-import {connectionString} from '../support/radar-capture-fixture.js'
+import {connectionString,activateCaptureSearch} from '../support/radar-capture-fixture.js'
+import {dispatchRadarResearchRequest} from '../../src/modules/radar/research-requests.js'
+import {executeRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
 
 describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated PostgreSQL',()=>{
  const pool=new pg.Pool({connectionString});let app:Awaited<ReturnType<typeof buildServer>>,apiPool:pg.Pool,campaignId:string,candidateId:string
@@ -27,6 +29,48 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it('stops an accepted request with a useful waiting state when its user loses write permission',async()=>{
+  const had=(await pool.query("SELECT 1 FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")).rows.length>0
+  try{
+   await pool.query("INSERT INTO public.role_permissions(role_key,permission_key) VALUES('client_admin','radar:manage') ON CONFLICT DO NOTHING")
+   const requestId=randomUUID()
+   const accepted=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get('client_admin_A')!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidateId],intent:'resume'}})
+   expect(accepted.statusCode).toBe(202)
+   await pool.query("DELETE FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")
+   const request=(await pool.query('SELECT id FROM public.radar_research_requests WHERE request_id=$1',[requestId])).rows[0]
+   let jobs=0
+   const result=await dispatchRadarResearchRequest(pool,{} as never,{organizationId:fixtureIds.organizationA,researchRequestId:request.id},{add:async()=>{jobs++}} as never)
+   expect(jobs).toBe(0);expect(result).toMatchObject({state:'waiting',items:[{candidateId,state:'waiting'}]})
+   expect((await pool.query('SELECT reason_code FROM public.radar_research_request_items WHERE research_request_id=$1',[request.id])).rows[0].reason_code).toBe('radar_forbidden')
+  }finally{if(had)await pool.query("INSERT INTO public.role_permissions(role_key,permission_key) VALUES('client_admin','radar:manage') ON CONFLICT DO NOTHING")}
+ })
+ it.each(['yux_operator','client_admin_A','client_member_A'])('denies operational budget approval by direct HTTP to %s',async user=>{
+  const result=await app.inject({method:'POST',url:`/api/radar/admin/research-requests/${randomUUID()}/authorize-budget`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,expectedBudgetRevision:1,authorizationId:randomUUID()}})
+  expect(result.statusCode).toBe(403);expect(result.body).not.toMatch(/cost|budgetRevision|brave|serper|policy/)
+ })
+ it('executes an entitled client Admin research request without technical overrides or provider calls for saved facts',async()=>{
+  const prior=(await pool.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1',[campaignId])).rows[0].search_configuration
+  const hadPermission=(await pool.query("SELECT 1 FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")).rows.length>0
+  await pool.query("INSERT INTO public.role_permissions(role_key,permission_key) VALUES('client_admin','radar:manage') ON CONFLICT DO NOTHING")
+  await activateCaptureSearch(pool)
+  const candidate=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{"cnpj":"12345678000190","tradeName":"Empresa Alfa","city":"Curitiba","state":"PR"}') RETURNING id`,[fixtureIds.organizationA,campaignId,randomUUID()])).rows[0]
+  try{
+   await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(jsonb_set(jsonb_set(search_configuration,'{research,enabled}','true'),'{research,webSearchEnabled}','true'),'{sources,enrichWithBrave}','false') WHERE id=$1`,[campaignId])
+   const requestId=randomUUID()
+   const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get('client_admin_A')!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidate.id],intent:'resume'}})
+   expect(response.statusCode).toBe(202)
+   const request=(await pool.query('SELECT id FROM public.radar_research_requests WHERE request_id=$1',[requestId])).rows[0]
+   await dispatchRadarResearchRequest(pool,{} as never,{organizationId:fixtureIds.organizationA,researchRequestId:request.id},{add:async()=>({id:'fixture'})} as never)
+   const item=(await pool.query('SELECT * FROM public.radar_research_request_items WHERE research_request_id=$1',[request.id])).rows[0]
+   expect(item).toMatchObject({reason_code:null,run_id:expect.any(String)})
+   const page={url:'https://alfa.example/',text:'Empresa Alfa CNPJ 12.345.678/0001-90. Contato compras@alfa.example',observedAt:new Date().toISOString()}
+   await pool.query('UPDATE public.radar_candidate_research_runs SET output=$2 WHERE id=$1',[item.run_id,JSON.stringify({readerVersion:4,readingComplete:true,discoveryLocked:true,pages:[page],discovery:{association:'confirmed',websiteUrl:page.url,hits:[],suggestions:[],limitations:[],queries:1}})])
+   let calls=0
+   await executeRadarCandidateResearch(pool,{} as never,{organizationId:fixtureIds.organizationA,runId:item.run_id},undefined,{web:async()=>{calls++;return[]},local:async()=>{calls++;return[]},runtime:async()=>{calls++;throw Error('unexpected_provider_call')}})
+   expect(calls).toBe(0)
+   expect((await pool.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1',[candidate.id])).rows[0].normalized_payload).toMatchObject({websiteUrl:page.url,websiteStatus:'verified_present'})
+  }finally{await pool.query('DELETE FROM public.radar_candidate_records WHERE id=$1',[candidate.id]);await pool.query('UPDATE public.radar_campaigns SET search_configuration=$2 WHERE id=$1',[campaignId,JSON.stringify(prior)]);if(!hadPermission)await pool.query("DELETE FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")}
+ })
  it.each(['yux_admin','yux_operator','client_admin_A','client_member_A'])('keeps a durable research request after queue loss and hides technical internals at POST/GET: %s',async user=>{
   const requestId=randomUUID()
   const response=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get(user)!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidateId],intent:'resume'}})

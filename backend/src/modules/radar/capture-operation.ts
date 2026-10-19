@@ -8,9 +8,10 @@ import type {RadarCaptureOperation} from './types.js'
 import {buildCnpjaCandidateSnippet,type CnpjaCandidate} from './cnpjaClient.js'
 import {loadRadarCapturePreflight,isRadarCaptureLimitPause} from './capture-preflight.js'
 import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
+import {normalizeRadarCounters} from './numeric-counters.js'
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
-export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().max(2_147_483_647).parse(value)
+export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().safe().parse(value)
 export type CaptureAvailability={allowed:boolean;reasons:Array<{code:string;message:string;resolution:string}>;presence?:{routeConfigured:boolean};semantic?:{routeConfigured:boolean};maxQueriesPerCandidate?:number;maximumCostPerCandidate?:number;estimates?:Array<{sourceType:string;costPerQuery:number;maximumQueries?:number;available?:boolean;remainingQueries?:number}>}
 export type AvailabilityLoader=(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string)=>Promise<CaptureAvailability>
 export async function assertCaptureAvailability(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string,availability:AvailabilityLoader=getRadarResearchAvailability){
@@ -28,14 +29,14 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
   const campaign=(await client.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.campaignId,input.organizationId])).rows[0]
   const duplicate=(await client.query(`SELECT request.*,operation.status FROM public.radar_capture_requests request JOIN public.radar_capture_operations operation ON operation.id=request.operation_id AND operation.organization_id=request.organization_id WHERE request.organization_id=$1 AND request.request_id=$2`,[input.organizationId,input.requestId])).rows[0]
   if(duplicate){
-   if(duplicate.campaign_id!==input.campaignId||duplicate.configuration_revision!==input.configurationRevision||duplicate.requested_count!==count)throw captureError('radar_capture_request_conflict')
+   if(duplicate.campaign_id!==input.campaignId||duplicate.configuration_revision!==input.configurationRevision||Number(duplicate.requested_count)!==count)throw captureError('radar_capture_request_conflict')
    await client.query('COMMIT');return{operationId:duplicate.operation_id,reused:true,status:duplicate.status}
   }
   if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
   const revision=campaign.configuration_revision
   const saveRequest=async(operationId:string)=>client.query(`INSERT INTO public.radar_capture_requests(organization_id,request_id,operation_id,campaign_id,configuration_revision,requested_count) VALUES($1,$2,$3,$4,$5,$6)`,[input.organizationId,input.requestId,operationId,input.campaignId,revision,count])
   const active=(await client.query(`SELECT id,status,requested_count FROM public.radar_capture_operations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND status IN ('queued','discovering','researching','blocked')`,[input.organizationId,input.campaignId,revision])).rows[0]
-  if(active){if(active.requested_count!==count)throw captureError('radar_capture_request_conflict');await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
+  if(active){if(Number(active.requested_count)!==count)throw captureError('radar_capture_request_conflict');await saveRequest(active.id);await client.query('COMMIT');return{operationId:active.id,reused:true,status:active.status}}
   await assertCaptureAvailability(client as unknown as pg.Pool,user,input.organizationId,input.campaignId,dependencies.availability)
   await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
   const {preflight,policy,scopes}=await loadRadarCapturePreflight(client,user,input,dependencies)
@@ -50,7 +51,7 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
 }
 export async function getRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organizationId:string,operationId:string):Promise<RadarCaptureOperation>{
  await requireRadarScope(pool,user,{organizationId})
- const row=(await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0]
+ const row=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
  if(!row)throw captureError('radar_capture_not_found',404)
  await requireRadarScope(pool,user,{organizationId,campaignId:row.campaign_id})
  const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows

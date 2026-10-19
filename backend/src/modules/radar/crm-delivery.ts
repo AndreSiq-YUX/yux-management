@@ -19,7 +19,7 @@ type DeliveryItem={candidateId:string;status:'created'|'already_linked'|'blocked
 const failure=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 
 export function buildRadarCrmLeadFacts(candidate:{title:string;normalizedPayload:Record<string,unknown>},offer:string){
-  const data=projectRadarCompanyFacts(candidate.normalizedPayload)
+  const data=projectRadarCompanyFacts(candidate.normalizedPayload,candidate.title)
   const purpose=(['general','suppliers','sales','finance','recruitment'].includes(String(data.researchContactPurpose))?data.researchContactPurpose:'general') as RadarContactPurpose
   const contacts=consolidateRadarContacts((Array.isArray(data.publicContacts)?data.publicContacts:[]).filter((item):item is RadarContactEvidence=>
     !!item&&typeof item==='object'&&item.association==='confirmed'&&typeof item.value==='string'&&typeof item.sourceUrl==='string')
@@ -88,7 +88,7 @@ export async function deliverRadarCompaniesToCrm(pool:pg.Pool,user:AuthUser,inpu
       if(candidate.crm_lead_id){const linked=(await client.query('SELECT pipeline_id FROM public.leads WHERE id=$1 AND organization_id=$2',[candidate.crm_lead_id,input.organizationId])).rows[0];items.push({candidateId,status:'already_linked',leadId:candidate.crm_lead_id,pipelineId:linked?.pipeline_id});continue}
       const payload=candidate.normalized_payload as Record<string,unknown>
       const presence=candidate.research_output&&radarPublicPresenceFromDossier(candidate.research_output,input.configurationRevision,{name:String(payload.tradeName||candidate.title),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,cnpj:typeof payload.cnpj==='string'?payload.cnpj:undefined})
-      const data=projectRadarCompanyFacts({...payload,...(presence?{publicPresence:presence}: {})})
+      const data=projectRadarCompanyFacts({...payload,...(presence?{publicPresence:presence}: {})},candidate.title)
       const research=resolveRadarSearchConfiguration(campaign.search_configuration).research
       if(research.completion.enabled&&!radarQualityFromPayload(data,research,input.configurationRevision).readyForReview){block('radar_crm_completion_requirements_missing');continue}
       if(data.researchAssociationNeedsReview===true&&candidate.verification_method!=='manual'){block('radar_crm_review_required');continue}

@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto'
 import type pg from 'pg'
+import {normalizeRadarCounters} from './numeric-counters.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {assertRadarRegionalBatchAccess,findRadarDataSource,evaluateRadarSourceGovernance} from './repository.js'
 import {captureError,parseRadarCaptureCount,type AvailabilityLoader,type CaptureAvailability} from './capture-operation.js'
@@ -20,7 +21,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const revision=await assertRadarRegionalBatchAccess(db as pg.Pool,user,input.organizationId,input.campaignId)
  if(revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
  const campaign=(await db.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[input.campaignId,input.organizationId])).rows[0]
- const op=input.operationId?(await db.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3',[input.operationId,input.organizationId,input.campaignId])).rows[0]:null
+ const op=input.operationId?normalizeRadarCounters((await db.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 AND campaign_id=$3',[input.operationId,input.organizationId,input.campaignId])).rows[0]):null
  if(input.operationId&&!op)throw captureError('radar_capture_not_found',404)
  if(op&&(op.configuration_revision!==revision||op.requested_count!==input.requestedCount))throw captureError('radar_capture_request_conflict')
  const policy=await loadRadarOperationalLimits(db)
@@ -46,7 +47,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(needsDiscovery&&remaining>overflowCount)for(const scope of scopes.filter(s=>!s.completed)){
   const state=await inspectRadarContinuationState(db,{...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision},policy)
   if(state)continuations.push(state)
-  if(state?.reason==='ready')scope.inheritedPageSize=cursors.find(row=>row.scope_key===scope.key)?.page_size??10
+  if(state?.reason==='ready')scope.inheritedPageSize=Number(cursors.find(row=>row.scope_key===scope.key)?.page_size??10)
  }
  const capacity=calculateRadarCaptureCapacity({limits,remaining,attemptedQueries:op?.queries??0,scopes,successfulPagesByScope:accounting.successfulPagesByScope,usableOverflowCount:overflowCount})
  const blockers:RadarCapturePreflight['blockers']=[],checks:RadarCapturePreflight['checks']=[]

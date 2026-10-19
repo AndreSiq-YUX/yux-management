@@ -30,5 +30,6 @@ export function sourceRequiresEnabledCatalog(sourceType: string) {
 }
 
 export function estimateRadarCost(units: number, defaultCostPerUnit: number) {
-  return Number((Math.max(0, units) * Math.max(0, defaultCostPerUnit)).toFixed(6))
+  return Number(multiplyRadarDecimal(String(Math.max(0,units)),String(Math.max(0,defaultCostPerUnit))))
 }
+import {multiplyRadarDecimal} from './cost-conversion.js'

@@ -8,6 +8,7 @@ import {requireRadarScope} from './access.js'
 import {loadRadarOperationalLimits} from './operational-limits.js'
 import {startRadarCandidateResearch} from './research-service.js'
 import {assessRadarCaptureResearch} from './capture-research-state.js'
+import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy,amendRadarResearchIntentBudget} from './research-budget.js'
 
 export const radarResearchRequestSchema=z.object({organizationId:z.uuid(),campaignId:z.uuid(),candidateIds:z.array(z.uuid()).min(1),requestId:z.uuid(),criteriaRevision:z.number().int().positive(),intent:z.enum(['resume','refresh','reanalyze']),analysisAuthorizationId:z.uuid().optional(),allowSemanticRefresh:z.boolean().optional()}).strict()
 export type RadarResearchRequestInput=z.infer<typeof radarResearchRequestSchema>
@@ -49,7 +50,7 @@ export async function queueRadarResearchRequest(pool:pg.Pool,user:AuthUser,value
   const prior=(await client.query<RequestRow>('SELECT * FROM public.radar_research_requests WHERE organization_id=$1 AND request_id=$2',[input.organizationId,input.requestId])).rows[0]
   if(prior){if(prior.intent_hash!==intentHash)throw failure('radar_research_request_conflict');const result=await requestWithItems(client,prior);await client.query('COMMIT');return projectRadarResearchRequest(result)}
   const limits=await loadRadarOperationalLimits(client)
-  if(candidateIds.length>limits.limits.maxVerificationBatch)throw failure('radar_operational_limit_exceeded')
+  if(candidateIds.length>limits.limits.maxNewCompaniesPerLot)throw failure('radar_operational_limit_exceeded')
   const candidates=(await client.query('SELECT id FROM public.radar_candidate_records WHERE id=ANY($1::uuid[]) AND organization_id=$2 AND campaign_id=$3',[candidateIds,input.organizationId,input.campaignId])).rows
   if(candidates.length!==candidateIds.length)throw failure('radar_research_request_scope_invalid',403)
   if(input.analysisAuthorizationId){
@@ -60,13 +61,56 @@ export async function queueRadarResearchRequest(pool:pg.Pool,user:AuthUser,value
   const consent=input.allowSemanticRefresh?{approvedBy:user.id,candidateIds,configurationRevision:campaign.configuration_revision}:null
   const row=(await client.query<RequestRow>(`INSERT INTO public.radar_research_requests(organization_id,campaign_id,request_id,requested_by,criteria_revision,configuration_revision,operational_policy_version,intent,intent_hash,analysis_authorization_id,analysis_refresh_authorization)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[input.organizationId,input.campaignId,input.requestId,user.id,input.criteriaRevision,campaign.configuration_revision,campaign.operational_policy_version,input.intent,intentHash,input.analysisAuthorizationId??null,consent?JSON.stringify(consent):null])).rows[0]
-  for(const candidateId of candidateIds)await client.query('INSERT INTO public.radar_research_request_items(organization_id,campaign_id,research_request_id,candidate_id) VALUES($1,$2,$3,$4)',[input.organizationId,input.campaignId,row.id,candidateId])
+  const previous=(await client.query(`SELECT DISTINCT ON(candidate_id) id,candidate_id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND campaign_id=$2 AND candidate_id=ANY($3::uuid[]) AND configuration_revision=$4 ORDER BY candidate_id,created_at DESC`,[input.organizationId,input.campaignId,candidateIds,campaign.configuration_revision])).rows
+  const budgetPolicy=await loadRadarResearchBudgetPolicy(client,{organizationId:input.organizationId,configuration:campaign.search_configuration,policy:limits})
+  for(const candidateId of candidateIds){
+   const budget=createRadarResearchIntentBudget({requestId:input.requestId,approvedBy:user.id,policy:budgetPolicy,previousRun:previous.find(run=>run.candidate_id===candidateId) as {id:string;calls:Record<string,{source:string;status:string}>}|undefined})
+   await client.query('INSERT INTO public.radar_research_request_items(organization_id,campaign_id,research_request_id,candidate_id,research_budget) VALUES($1,$2,$3,$4,$5)',[input.organizationId,input.campaignId,row.id,candidateId,JSON.stringify(budget)])
+  }
   await client.query('INSERT INTO public.radar_capture_outbox(organization_id,campaign_id,research_request_id) VALUES($1,$2,$3)',[input.organizationId,input.campaignId,row.id])
   const result=await requestWithItems(client,row)
   await client.query('COMMIT');return projectRadarResearchRequest(result)
  }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
 }
 type RequestQueue=Pick<RegisteredJobQueue,'add'>
+export const radarResearchBudgetAuthorizationSchema=z.object({organizationId:z.uuid(),requestId:z.uuid(),expectedBudgetRevision:z.number().int().positive(),authorizationId:z.uuid()}).strict()
+export async function authorizeRadarResearchBudget(pool:pg.Pool,user:AuthUser,value:z.infer<typeof radarResearchBudgetAuthorizationSchema>){
+ if(user.role!=='yux_admin')throw failure('research_admin_required',403)
+ const input=radarResearchBudgetAuthorizationSchema.parse(value)
+ await requireRadarScope(pool,user,{organizationId:input.organizationId},true)
+ const client=await pool.connect()
+ try{
+  await client.query('BEGIN')
+  const active=(await client.query("SELECT id FROM public.app_users WHERE id=$1 AND is_active=TRUE AND role='yux_admin'",[user.id])).rows[0]
+  if(!active)throw failure('research_admin_required',403)
+  const initial=(await client.query('SELECT campaign_id FROM public.radar_research_requests WHERE organization_id=$1 AND request_id=$2',[input.organizationId,input.requestId])).rows[0]
+  if(!initial)throw failure('radar_research_request_not_found',404)
+  const campaign=(await client.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[initial.campaign_id,input.organizationId])).rows[0]
+  const row=(await client.query<RequestRow>('SELECT * FROM public.radar_research_requests WHERE organization_id=$1 AND request_id=$2 FOR UPDATE',[input.organizationId,input.requestId])).rows[0]
+  if(row.budget_authorizations.some((entry:{authorizationId:string})=>entry.authorizationId===input.authorizationId)){await client.query('COMMIT');return{budgetRevision:row.budget_revision}}
+  if(row.budget_revision!==input.expectedBudgetRevision)throw failure('radar_intent_budget_stale')
+  if(campaign?.configuration_revision!==row.configuration_revision)throw failure('radar_campaign_configuration_changed')
+  if(row.lease_until&&new Date(row.lease_until).getTime()>Date.now())throw failure('radar_research_request_busy')
+  const items=(await requestWithItems(client,row)).items.filter(item=>item.state==='waiting')
+  if(!items.length)throw failure('radar_intent_budget_no_waiting_items')
+  const policy=await loadRadarResearchBudgetPolicy(client,{organizationId:input.organizationId,configuration:campaign.search_configuration,policy:await loadRadarOperationalLimits(client)})
+  const audit:unknown[]=[]
+  for(const item of items){
+   const latest=(await client.query('SELECT id,status FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 ORDER BY created_at DESC LIMIT 1 FOR UPDATE',[item.candidate_id,input.organizationId])).rows[0]
+   if(!item.research_budget)throw failure('radar_intent_budget_legacy_requires_new_intent')
+   if(latest&&latest.id!==(item.run_id??item.research_budget.baselineRunId))throw failure('radar_intent_budget_run_superseded')
+   if(latest&&['queued','running'].includes(latest.status))throw failure('radar_research_request_busy')
+   const next=amendRadarResearchIntentBudget(item.research_budget,policy,user.id)
+   audit.push({candidateId:item.candidate_id,previous:item.research_budget,next})
+   await client.query("UPDATE public.radar_research_request_items SET research_budget=$3,resume_pending=$4,state='accepted',reason_code=NULL,updated_at=NOW() WHERE id=$1 AND organization_id=$2",[item.id,input.organizationId,JSON.stringify(next),!!item.run_id])
+  }
+  const revision=row.budget_revision+1
+  const authorization={authorizationId:input.authorizationId,approvedBy:user.id,approvedAt:new Date().toISOString(),revision,items:audit}
+  await client.query("UPDATE public.radar_research_requests SET budget_revision=$3,budget_authorizations=budget_authorizations||$4::jsonb,status='accepted',updated_at=NOW() WHERE id=$1 AND organization_id=$2",[row.id,input.organizationId,revision,JSON.stringify([authorization])])
+  await client.query('INSERT INTO public.radar_capture_outbox(organization_id,campaign_id,research_request_id) VALUES($1,$2,$3) ON CONFLICT(research_request_id) DO UPDATE SET next_dispatch_at=NOW()',[input.organizationId,row.campaign_id,row.id])
+  await client.query('COMMIT');return{budgetRevision:revision}
+ }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+}
 export async function dispatchRadarResearchRequest(pool:pg.Pool,_env:AppEnv,input:{organizationId:string;researchRequestId:string},queue:RequestQueue){
  const lease=randomUUID()
  const row=(await pool.query<RequestRow>(`UPDATE public.radar_research_requests SET lease_id=$3,lease_until=NOW()+INTERVAL '3 minutes',updated_at=NOW()
@@ -77,13 +121,18 @@ export async function dispatchRadarResearchRequest(pool:pg.Pool,_env:AppEnv,inpu
   const actor=(await pool.query<AuthUser>("SELECT * FROM public.app_users WHERE id=$1 AND is_active=TRUE",[row.requested_by])).rows[0]
   const campaign=(await pool.query('SELECT configuration_revision,status FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[row.campaign_id,input.organizationId])).rows[0]
   const items=(await requestWithItems(pool,row)).items
-  if(!actor||campaign?.configuration_revision!==row.configuration_revision||campaign.status==='paused'){
-   for(const item of items)await setItem(item,'waiting',!actor?'radar_forbidden':'radar_campaign_configuration_changed')
+  let permitted=!!actor
+  if(actor)try{await requireRadarScope(pool,actor,{organizationId:input.organizationId,campaignId:row.campaign_id},true)}catch(cause){if((cause as {statusCode?:number}).statusCode!==403)throw cause;permitted=false}
+  if(!permitted||campaign?.configuration_revision!==row.configuration_revision||campaign.status==='paused'){
+   for(const item of items)await setItem(item,'waiting',!permitted?'radar_forbidden':'radar_campaign_configuration_changed')
   }else{
-   await requireRadarScope(pool,actor,{organizationId:input.organizationId,campaignId:row.campaign_id},true)
    const grant=row.analysis_refresh_authorization
    const allowSemanticRefresh=!!grant&&grant.approvedBy===actor.id&&actor.role==='yux_admin'&&grant.configurationRevision===row.configuration_revision
-   for(const item of items){
+   const policy=await loadRadarOperationalLimits(pool)
+   // One durable intent can exceed a worker dispatch window. Oldest attempted
+   // items rotate fairly; waiting companies cannot starve newly accepted ones.
+   const window=items.filter(item=>!['unchanged','completed'].includes(item.state)).sort((a,b)=>(a.state==='accepted'?0:1)-(b.state==='accepted'?0:1)||new Date(a.updated_at).getTime()-new Date(b.updated_at).getTime()).slice(0,policy.limits.maxVerificationBatch)
+   for(const item of window){
     if(['unchanged','completed'].includes(item.state))continue
     try{
      if(!item.run_id){
@@ -93,6 +142,14 @@ export async function dispatchRadarResearchRequest(pool:pg.Pool,_env:AppEnv,inpu
      }
      let run=(await pool.query('SELECT * FROM public.radar_candidate_research_runs WHERE id=$1 AND organization_id=$2',[item.run_id,input.organizationId])).rows[0]
      if(!run)throw failure('radar_research_request_run_missing')
+     if(item.resume_pending){
+      if(['queued','running'].includes(run.status))throw failure('radar_research_request_busy')
+      const resumed=await startRadarCandidateResearch(pool,actor,{organizationId:input.organizationId,candidateId:item.candidate_id,configurationRevision:row.configuration_revision,requestId:item.id,operation:'resume'})
+      if(resumed.runId!==item.run_id)throw failure('radar_intent_budget_run_superseded')
+      const changed=(await pool.query('UPDATE public.radar_research_request_items SET resume_pending=FALSE,dispatch_generation=dispatch_generation+1 WHERE id=$1 AND organization_id=$2 RETURNING dispatch_generation',[item.id,input.organizationId])).rows[0]
+      item.dispatch_generation=changed.dispatch_generation
+      run=(await pool.query('SELECT * FROM public.radar_candidate_research_runs WHERE id=$1 AND organization_id=$2',[item.run_id,input.organizationId])).rows[0]
+     }
      if(run.status==='running'&&run.lease_until&&new Date(run.lease_until).getTime()<Date.now()){
       // Re-deliver the same DB run after a dead worker lease. Receipt recovery
       // still gates every effect: this is not permission to repeat a paid call.
