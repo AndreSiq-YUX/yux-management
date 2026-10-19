@@ -1,4 +1,4 @@
-"""Representations of the three Radar v1 contracts, checked by shared fixtures."""
+"""Incremental Radar v1 contracts, checked by shared fixtures."""
 from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
@@ -81,4 +81,58 @@ class CommercialResearchStatusV1(_Contract):
         return self
 
 
-radar_contract = TypeAdapter(ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1)
+class _MentionLocation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    city: str | None = Field(default=None,min_length=1,max_length=200)
+    state: str | None = Field(default=None,min_length=1,max_length=80)
+    address: str | None = Field(default=None,min_length=1,max_length=500)
+
+    @field_validator('city','state','address',mode='before')
+    @classmethod
+    def explicit_null_is_not_a_claim(cls,value):
+        if value is None:
+            raise ValueError('radar_mention_null_field')
+        return value
+
+
+class _MentionContact(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    kind: Literal['email','phone','whatsapp','social']
+    value: str = Field(min_length=1,max_length=300)
+
+
+class _MentionSpan(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    field: Literal['name','city','state','address','claimedTaxId','claimedWebsite','contact']
+    evidenceId: str = Field(min_length=1,max_length=80)
+    excerpt: str = Field(min_length=2,max_length=1200)
+
+
+class BusinessMentionV1(_Contract):
+    name: str = Field(min_length=2,max_length=240)
+    location: _MentionLocation | None = None
+    claimedTaxId: str | None = Field(default=None,min_length=1,max_length=24)
+    claimedWebsite: HttpUrl | None = None
+    contacts: list[_MentionContact] = Field(max_length=12)
+    sourceUrl: HttpUrl
+    observedAt: AwareDatetime | None = None
+    evidenceSpans: list[_MentionSpan] = Field(min_length=1,max_length=24)
+    subjectScope: Literal['company','group','establishment']
+    needsVerification: Literal[True]
+
+    @field_validator('location','claimedTaxId','claimedWebsite','observedAt',mode='before')
+    @classmethod
+    def optional_means_omitted_not_null(cls,value):
+        if value is None:
+            raise ValueError('radar_mention_null_field')
+        return value
+
+    @field_validator('needsVerification',mode='before')
+    @classmethod
+    def verification_is_strict_boolean(cls,value):
+        if value is not True:
+            raise ValueError('radar_mention_verification_required')
+        return value
+
+
+radar_contract = TypeAdapter(ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1)

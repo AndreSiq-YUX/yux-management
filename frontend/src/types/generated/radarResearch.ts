@@ -1,6 +1,7 @@
 /* Generated from contracts/radar/v1/radar-research.schema.json. Do not edit manually. */
 
-export type RadarResearchContractV1 = ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1
+export type RadarResearchContractV1 =
+  ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1
 export type EffectReceiptV1 = {
   [k: string]: unknown
 } & {
@@ -71,4 +72,376 @@ export interface CommercialResearchStatusV1 {
   }[]
   lastAttemptAt: string | null
   nextAction: 'continue' | 'review_source' | 'review_result' | 'wait' | 'none'
+}
+export interface BusinessMentionV1 {
+  schemaVersion: 1
+  name: string
+  location?: {
+    city?: string
+    state?: string
+    address?: string
+  }
+  claimedTaxId?: string
+  claimedWebsite?: string
+  /**
+   * @maxItems 12
+   */
+  contacts:
+    | []
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+    | [
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+        {
+          kind: 'email' | 'phone' | 'whatsapp' | 'social'
+          value: string
+        },
+      ]
+  sourceUrl: string
+  observedAt?: string
+  subjectScope: 'company' | 'group' | 'establishment'
+  needsVerification: true
+  /**
+   * @minItems 1
+   * @maxItems 24
+   */
+  evidenceSpans: [
+    {
+      field: 'name' | 'city' | 'state' | 'address' | 'claimedTaxId' | 'claimedWebsite' | 'contact'
+      evidenceId: string
+      excerpt: string
+    },
+    ...{
+      field: 'name' | 'city' | 'state' | 'address' | 'claimedTaxId' | 'claimedWebsite' | 'contact'
+      evidenceId: string
+      excerpt: string
+    }[],
+  ]
 }

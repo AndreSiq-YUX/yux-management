@@ -15,15 +15,16 @@ if DATABASE:
 
 
 @pytest.mark.skipif(not DATABASE, reason='isolated PostgreSQL URL required')
-def test_runtime_writer_and_free_revalidation_with_real_postgres_lease_and_tenant_scope():
+@pytest.mark.parametrize('action',['radar_presence_resolution','radar_discovery_extraction'])
+def test_runtime_writer_and_free_revalidation_with_real_postgres_lease_and_tenant_scope(action):
     import psycopg
     target = urlsplit(DATABASE)
     url = urlunsplit((target.scheme, f'yux_runtime@{target.hostname}:{target.port}', target.path, target.query, target.fragment))
     store = PostgresAgentRuntimeStore(url)
     org = '10000000-0000-4000-8000-000000000003'
-    store.set_tenant_scope(org, profile_key='radar_presence_resolution', audience='internal_operator')
+    store.set_tenant_scope(org, profile_key=action, audience='internal_operator')
     request_id, owner = str(uuid4()), str(uuid4())
-    key = dict(organization_id=org, action='radar_presence_resolution', request_id=request_id)
+    key = dict(organization_id=org, action=action, request_id=request_id)
     receipt = None
     try:
         receipt, claimed = store.claim_radar_receipt(**key, input_hash='d' * 64, owner_token=owner, input_request=dict(client_id=None, contract_id=None, evidence=[]))

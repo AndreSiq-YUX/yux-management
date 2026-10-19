@@ -17,6 +17,7 @@ export const TECHNICAL_LLM_USE_CASES: LlmUseCaseDefinition[] = [
   { key: 'knowledge_embeddings', title: 'Embeddings — ingestão e busca', description: 'Modelo compartilhado para indexar e consultar conhecimento estratégico e empresarial.', kind: 'embedding', group: 'Conhecimento' },
   { key: 'radar_business_qualification', title: 'Radar — qualificação de empresas pela oferta', description: 'Interpreta evidências públicas coletadas e os critérios da campanha. Exige rota própria ativa; a coleta de contatos funciona sem LLM.', kind: 'chat', group: 'Radar Comercial' },
   {key:'radar_presence_resolution',title:'Radar — identificação de site e canais oficiais',description:'Resolve identidade de site, marca e grupo usando somente evidências coletadas. Exige rota própria; não pesquisa nem inventa contatos.',kind:'chat',group:'Radar Comercial'},
+  {key:'radar_discovery_extraction',title:'Radar — extração de empresas em páginas e listas',description:'Extrai menções provisórias com trechos literais, sem admitir empresas nem herdar contatos do publicador. Exige rota própria ativa.',kind:'chat',group:'Radar Comercial'},
 ]
 
 const profileTitles: Record<string, string> = {

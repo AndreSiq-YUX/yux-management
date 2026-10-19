@@ -73,10 +73,12 @@ Criar `normalizePerplexityEvidence(response)` em `backend/src/modules/radar/perp
 
 **Exemplo:** página “dez cozinhas de Campinas” com dez nomes e telefone do editor produz dez menções com trechos, zero telefone herdado do editor. Página de governo pode fornecer uma menção/CNPJ documentado, mas nunca vira site oficial automaticamente.
 
-- [ ] **Step 1:** Testes de lista com múltiplas empresas, rodapé compartilhado, mesmo nome em cidades diferentes, HTML malicioso, JSON cortado, campos sem trecho e limite de contexto. Só metadados de um resultado SERP não comprovam dez empresas ausentes do texto.
-- [ ] **Step 2:** Rodar `npm test -- tests/radar-discovery-extraction.test.ts` e `python -m pytest tests/test_radar_discovery_extraction.py -q`.
-- [ ] **Step 3:** Ler documentos pelo transporte público existente, selecionar trechos com limites versionados e salvar resposta/recibo antes de validar. Texto externo nunca é instrução. Menções seguem a C3.2; extração não admite automaticamente candidatos nem atribui contatos oficiais. Não extrair/armazenar material cuja política não permita.
-- [ ] **Step 4:** Provar revalidação sem nova IA, atribuição campo→trecho e zero contato do publicador publicado. Commit `feat(radar): extract evidenced business mentions from search pages`.
+- [x] **Step 1:** Testes de lista com múltiplas empresas, rodapé compartilhado, mesmo nome em cidades diferentes, HTML malicioso, JSON cortado, campos sem trecho e limite de contexto. Só metadados de um resultado SERP não comprovam dez empresas ausentes do texto.
+- [x] **Step 2:** Rodar `npm test -- tests/radar-discovery-extraction.test.ts` e `python -m pytest tests/test_radar_discovery_extraction.py -q`.
+- [x] **Step 3:** Ler documentos pelo transporte público existente, selecionar trechos com limites versionados e salvar resposta/recibo antes de validar. Texto externo nunca é instrução. Menções seguem a C3.2; extração não admite automaticamente candidatos nem atribui contatos oficiais. Não extrair/armazenar material cuja política não permita.
+- [x] **Step 4:** Provar revalidação sem nova IA, atribuição campo→trecho e zero contato do publicador publicado. Commit `feat(radar): extract evidenced business mentions from search pages`.
+
+**Verificado em 19/10, sem ativação:** extrator isolado recebe documentos já lidos/autorizados pelo chamador; janelas UTF-8 de 8 KB com sobreposição e continuação explícita. Nova rota chat obrigatoriamente explícita no Admin, sem herdar modelo global. Recibo bruto antecede o parser; revalidação recupera duas menções sem novo débito/chamada. Testes finais focados backend 43/43, extrator runtime 12/12; regressões amplas backend 1.214 e runtime 343 aprovadas (ajustes finais cobertos separadamente), oito testes PostgreSQL reais e tipos/build aprovados. Migração 0214 aplicada somente nos bancos locais isolados, manifesto com 111 migrações. Nada é admitido/publicado por esta função; sua ligação com a descoberta depende de C3.2/C3.3. Nenhuma chamada paga ou modelo ativado.
 
 ### Task C3.2 Associar identidade web cadastro e CNPJ
 

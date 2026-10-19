@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_serializer, field_validator
 
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
@@ -20,6 +20,7 @@ from .runtime_factory import build_mission_supervisor, build_strategy_workflow_e
 from .llm_routing import effective_legacy_routes
 from .radar_qualification import qualify_radar_business, validate_radar_qualification_response
 from .radar_presence import resolve_radar_presence, validate_radar_presence_response
+from .radar_discovery_extraction import extract_radar_businesses, validate_radar_discovery_extraction_response, public_discovery_url
 from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
 from .mission import MissionPlanRequest, plan_mission
@@ -89,12 +90,47 @@ class RadarPresenceRequest(RadarAnalysisRequest):
     evidence: list[RadarPresenceEvidence] = Field(min_length=1,max_length=10)
 
 
+class RadarExtractionDocument(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    id: str=Field(min_length=1,max_length=80)
+    source_url: str=Field(min_length=1,max_length=2000)
+    text: str=Field(min_length=1,max_length=8000)
+    kind: Literal['institutional_candidate','directory','third_party','social']
+
+    @field_validator('source_url')
+    @classmethod
+    def public_url(cls,value):
+        if not public_discovery_url(value):
+            raise ValueError('radar_discovery_document_unsafe')
+        return value
+
+    @field_validator('text')
+    @classmethod
+    def bounded_text(cls,value):
+        if len(value.encode('utf-8'))>8000:
+            raise ValueError('radar_discovery_document_too_large')
+        return value
+
+
+class RadarExtractionRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    organization_id: str
+    client_id: str | None=None
+    contract_id: str | None=None
+    enabled: bool=False
+    request_id: str=Field(min_length=1,max_length=200)
+    context_version: int=Field(default=1,strict=True,ge=1,le=1)
+    document: RadarExtractionDocument
+    region: dict[str,Any]
+    criteria: dict[str,Any]
+
+
 class RadarRevalidationRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
-    action: Literal['radar_presence_resolution', 'radar_business_qualification']
+    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction']
     request_id: str = Field(min_length=1, max_length=200)
     input_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
 
@@ -313,6 +349,8 @@ def create_app(
                 raise HTTPException(status_code=403, detail='radar_analysis_tenant_changed')
             if request.action == 'radar_presence_resolution':
                 return validate_radar_presence_response(response, evidence=saved['evidence'])
+            if request.action == 'radar_discovery_extraction':
+                return validate_radar_discovery_extraction_response(response,document=saved['document'])
             return validate_radar_qualification_response(response, criteria=saved['criteria'], evidence=saved['evidence'])
         try:
             return revalidate_radar_receipt(runtime_store, organization_id=request.organization_id, action=request.action, request_id=request.request_id, input_hash=request.input_hash, validate=validate, tenant_context=dict(client_id=request.client_id, contract_id=request.contract_id))
@@ -321,6 +359,21 @@ def create_app(
             if code == 'radar_analysis_tenant_changed':
                 raise HTTPException(status_code=403, detail=code) from None
             raise HTTPException(status_code=422, detail=code if re.fullmatch(r'(?:radar_[a-z0-9_]+|output_truncated)', code) else 'radar_analysis_response_invalid') from None
+
+    @app.post('/radar/extract-businesses', dependencies=[Depends(require_runtime_token)])
+    def radar_extract_businesses(request: RadarExtractionRequest) -> dict[str,Any]:
+        validate_tenant(request.organization_id,request.client_id,request.contract_id,profile_key='radar_discovery_extraction',audience='internal_operator')
+        if len(json.dumps(dict(criteria=request.criteria,region=request.region),ensure_ascii=False).encode('utf-8'))>4000:
+            raise HTTPException(status_code=422,detail='radar_discovery_criteria_too_large')
+        try:
+            return execute_radar_receipt(runtime_store,action='radar_discovery_extraction',request=request,
+                debit=lambda: reserve_radar_credits(request,'radar_discovery_extraction'),
+                compute=lambda before_call: extract_radar_businesses(runtime_store,enabled=request.enabled,context=request.model_dump(),document=request.document.model_dump(),region=request.region,criteria=request.criteria,before_call=before_call))
+        except ProviderRequestError as cause:
+            raise provider_http_exception(cause) from cause
+        except ValueError as cause:
+            code=str(cause)
+            raise HTTPException(status_code=422,detail=code if re.fullmatch(r'(?:radar_[a-z0-9_]+|output_truncated)',code) else 'radar_discovery_extraction_invalid_response') from None
 
     @app.post('/radar/resolve-presence', dependencies=[Depends(require_runtime_token)])
     def radar_resolve_presence(request: RadarPresenceRequest) -> dict[str,Any]:

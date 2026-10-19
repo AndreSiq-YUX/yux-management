@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 _active_recorder = ContextVar('radar_effect_recorder', default=None)
 _provider_recorder = ContextVar('radar_provider_recorder', default=None)
-_actions = {'radar_presence_resolution', 'radar_business_qualification'}
+_actions = {'radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction'}
 
 
 def radar_effect_recorder(action):
