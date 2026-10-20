@@ -9,6 +9,10 @@ import {buildCnpjaCandidateSnippet,type CnpjaCandidate} from './cnpjaClient.js'
 import {loadRadarCapturePreflight,isRadarCaptureLimitPause} from './capture-preflight.js'
 import {authorizeRadarContinuations,type ContinuationAuthorization} from './continuation-state.js'
 import {normalizeRadarCounters} from './numeric-counters.js'
+import {prepareRadarAdaptiveCapture,loadRadarAdaptiveItems} from './adaptive-capture.js'
+import {radarAdaptiveDiscoveryCounts} from './discovery-plan.js'
+import {authorizeRadarAdaptiveContinuations} from './adaptive-continuation.js'
+import {resolveRadarSearchConfiguration} from './search-configuration.js'
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().safe().parse(value)
@@ -41,9 +45,12 @@ export async function startRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inpu
   await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
   const {preflight,policy,scopes}=await loadRadarCapturePreflight(client,user,input,dependencies)
   if(!preflight.allowed)throw captureError(preflight.blockers[0]?.code??'radar_capture_research_unavailable')
-  await authorizeRadarContinuations(client,scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision})),policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
-  const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot)
-   VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify({...campaign,operationalPolicy:policy})])).rows[0]
+  if(resolveRadarSearchConfiguration(campaign.search_configuration).discovery.enabled)await authorizeRadarAdaptiveContinuations(client,{organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision},policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
+  else await authorizeRadarContinuations(client,scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:revision})),policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
+  const adaptive=resolveRadarSearchConfiguration(campaign.search_configuration).discovery.enabled?await prepareRadarAdaptiveCapture(client,campaign):null
+  if(adaptive&&!adaptive.plan.scopes.length)throw captureError('radar_discovery_no_eligible_sources')
+  const row=(await client.query(`INSERT INTO public.radar_capture_operations(organization_id,campaign_id,requested_by,request_id,configuration_revision,requested_count,configuration_snapshot,pipeline_version,counting_mode,discovery_plan)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) RETURNING id,status`,[input.organizationId,input.campaignId,user.id,input.requestId,revision,count,JSON.stringify({...campaign,operationalPolicy:policy}),adaptive?2:1,adaptive?'qualified':'admitted',JSON.stringify(adaptive??{})])).rows[0]
   await client.query('INSERT INTO public.radar_capture_outbox(operation_id,organization_id,campaign_id) VALUES($1,$2,$3)',[row.id,input.organizationId,input.campaignId])
   await saveRequest(row.id)
   await client.query('COMMIT');return{operationId:row.id,reused:false,status:row.status}
@@ -55,9 +62,12 @@ export async function getRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organi
  if(!row)throw captureError('radar_capture_not_found',404)
  await requireRadarScope(pool,user,{organizationId,campaignId:row.campaign_id})
  const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
- const n=(status:string)=>items.filter(item=>item.status===status).length
- return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,items.length)||row.status==='partial'&&row.discovery_stopped&&items.some(item=>item.status==='insufficient'&&item.runId)}:{}),
-  counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked')}}
+ const adaptiveItems=row.pipeline_version===2?await loadRadarAdaptiveItems(pool,row.id,organizationId):null
+ const outside=new Set(adaptiveItems?.filter(item=>item.qualification==='not_target').map(item=>item.candidateId)??[])
+ const n=(status:string)=>items.filter(item=>item.status===status&&!outside.has(item.candidateId)).length
+ const adaptive=adaptiveItems?radarAdaptiveDiscoveryCounts(adaptiveItems):null
+ return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,adaptive?.qualifiedNew??items.length)||row.status==='partial'&&row.discovery_stopped&&items.some(item=>item.status==='insufficient'&&item.runId)}:{}),
+  ...(adaptive?{countingMode:'qualified' as const}:{}),counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked'),...(adaptive?{qualified:adaptive.qualifiedNew,outsideProfile:adaptive.outsideProfile}:{})}}
 }
 export async function getLatestRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){
  await requireRadarScope(pool,user,{organizationId,campaignId})

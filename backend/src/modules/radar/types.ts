@@ -3,7 +3,8 @@ import type { RadarSearchConfiguration } from './search-configuration.js'
 export type RadarCaptureOperation = {
   id:string;campaignId:string;configurationRevision:number;status:'queued'|'discovering'|'researching'|'completed'|'partial'|'blocked';
   discoveryStopped:boolean;discoveryReason?:string;queries:number;blockers:string[];canContinue?:boolean;
-  counts:{requested:number;admitted:number;researching:number;completed:number;insufficient:number;blocked:number};
+  countingMode?:'admitted'|'qualified';
+  counts:{requested:number;admitted:number;researching:number;completed:number;insufficient:number;blocked:number;qualified?:number;outsideProfile?:number};
   items:Array<{id:string;candidateId:string;runId?:string;status:string;blocker?:string}>
 }
 
@@ -25,6 +26,8 @@ export type RadarSourceType =
   | 'serper_web_search'
   | 'brave_place_search'
   | 'brave_web_search'
+  | 'perplexity_search_fast'
+  | 'perplexity_search_web'
 
 export type RadarRunStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 export type RadarCandidateStatus = 'pending_review' | 'imported' | 'discarded' | 'duplicate' | 'failed'

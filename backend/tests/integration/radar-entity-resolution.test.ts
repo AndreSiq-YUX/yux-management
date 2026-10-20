@@ -11,6 +11,15 @@ const policy={triage:'compatible',requiredFields:[],missingFields:[],sourceAllow
 const mention:BusinessMentionV1={schemaVersion:1,name:'Alfa Refeições',location:{city:'Campinas',state:'SP',address:'Rua Um, 10'},contacts:[],sourceUrl:'https://lista.example/alfa',subjectScope:'establishment',needsVerification:true,evidenceSpans:[{field:'name',evidenceId:'page-1',excerpt:'Alfa Refeições'}]}
 const verification={taxId:{value:'37335118000180',subjectName:mention.name,subjectScope:'establishment',sourceRole:'registry',evidenceId:'registry-1',location:mention.location}}
 describe.skipIf(!connectionString)('Radar web/registry entity admission in isolated PostgreSQL',()=>{
+ it('rolls back page admission with its caller transaction instead of committing candidates before a cursor',async()=>{
+  const f=await captureFixture(),transaction=await f.pool.connect()
+  try{
+   await transaction.query('BEGIN')
+   await api.admitRadarBusinessMention(f.pool,{organizationId,campaignId:f.campaign.id,revision:1,observationKey:randomUUID(),mention,verification,registryPolicy:policy,canPersist:true},{transaction})
+   await transaction.query('ROLLBACK')
+   expect((await f.pool.query('SELECT COUNT(*) AS n FROM radar_candidate_records WHERE campaign_id=$1',[f.campaign.id])).rows[0].n).toBe('0')
+  }finally{await transaction.query('ROLLBACK');transaction.release();await f.close()}
+ })
  it('keeps two establishments with the same root and shared central contact separate',async()=>{
   const f=await captureFixture()
   try{

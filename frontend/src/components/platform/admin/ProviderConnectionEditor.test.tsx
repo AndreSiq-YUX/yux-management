@@ -21,7 +21,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function renderEditor(providerKey: 'cnpja' | 'brave_place'|'serper', config: Record<string, unknown> = {}) {
+async function renderEditor(providerKey: 'cnpja' | 'brave_place'|'serper'|'perplexity', config: Record<string, unknown> = {}) {
   const provider: PlatformProviderConnection = {
     id: 'existing-provider', providerType: 'internal_service', providerKey,
     displayName: providerKey, environment: 'production', status: 'active',
@@ -48,6 +48,14 @@ async function save() {
 }
 
 describe('provider permission confirmations', () => {
+  it('configures Perplexity storage and delivery independently without replacing its key',async()=>{
+    const {onSave,onSaveCredential}=await renderEditor('perplexity')
+    await toggle('Confirmo armazenamento dos resultados Perplexity')
+    await toggle('Confirmo entrega dos resultados Perplexity a clientes')
+    await save()
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({secretReference:'stored-key-reference',publicConfig:{retentionLicensed:true,webSearchLicensed:true,clientDeliveryLicensed:true}}))
+    expect(onSaveCredential).not.toHaveBeenCalled()
+  })
   it('confirms Serper web storage independently from Places without requiring another key or contract text',async()=>{
     const {onSave,onSaveCredential}=await renderEditor('serper')
     await toggle('Confirmo uso da pesquisa web com armazenamento dos resultados')

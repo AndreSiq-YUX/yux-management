@@ -89,10 +89,10 @@ function initialForm(useCase: AdminLlmUseCaseDefinition, route?: AdminLlmRoute):
   if (route?.fallbackModelName && !fallbackRoutes.some(item => item.provider === route.provider && item.modelName === route.fallbackModelName)) {
     fallbackRoutes.push({ provider: route.provider, modelName: route.fallbackModelName })
   }
-  return { id: route?.id,...(useCase.kind?{kind:useCase.kind,protocol:useCase.kind==='decision'?'openrouter-decisions-alpha-v1':'openai-compatible-v1'}:{}),...(useCase.kind==='decision'?{decisionConfig:route?.decisionConfig??{enabled:false,mode:'observe',maxAttempts:1,modelPolicies:{}}}:{}),agentType: route ? route.agentType : useCase.key.startsWith('agent:') ? null : useCase.key,
+  return { id: route?.id,...(useCase.kind?{kind:useCase.kind,protocol:useCase.kind==='decision'?'openrouter-decisions-alpha-v1':useCase.kind==='research'?'perplexity-agent-v1':'openai-compatible-v1'}:{}),...(useCase.kind==='research'?{researchConfig:route?.researchConfig??{enabled:false,maxSteps:3,maxAttempts:1,timeoutSeconds:45}}:{}),...(useCase.kind==='decision'?{decisionConfig:route?.decisionConfig??{enabled:false,mode:'observe',maxAttempts:1,modelPolicies:{}}}:{}),agentType: route ? route.agentType : useCase.key.startsWith('agent:') ? null : useCase.key,
     organizationId: route?.organizationId || null, clientId: route?.clientId || null,
     contractId: route?.contractId || null, agentId: route?.agentId || (useCase.key.startsWith('agent:') ? useCase.key.slice(6) : null),
-    routingTier: route?.routingTier || 'default', provider: route?.provider || 'openrouter', modelName: route?.modelName || '',
+    routingTier: route?.routingTier || 'default', provider: route?.provider || (useCase.kind==='research'?'perplexity':'openrouter'), modelName: route?.modelName || '',
     fallbackModelName: null, fallbackRoutes, maxInputTokens: route?.maxInputTokens || 16000, maxOutputTokens: route?.maxOutputTokens || 2200,
     temperature: route?.temperature ?? 0.2, maxCostPerRun: route?.maxCostPerRun ?? 0, status: route?.status || 'active' }
 }
@@ -107,14 +107,14 @@ function LlmRouteEditor({ useCase, providers, route, onSave, onTest,onDecisionSt
   const [calibrationJson,setCalibrationJson]=useState('')
   const [decisionTask,setDecisionTask]=useState(useCase.key==='radar_decision_default'?'radar_initial_triage':useCase.key)
   const decisionStatusForRoute=(id:string)=>onDecisionStatus!(id,decisionTask)
-  const decision=useCase.kind==='decision',unsupported=useCase.kind===null||useCase.kind==='research'
+  const decision=useCase.kind==='decision',research=useCase.kind==='research',unsupported=useCase.kind===null
   const config={enabled:false,mode:'observe',maxAttempts:1,modelPolicies:{},...form.decisionConfig} as RadarDecisionRoutingConfig
   const active=useRef(true)
   useEffect(()=>{active.current=true;return()=>{active.current=false}},[])
   const setConfig=(patch:Partial<RadarDecisionRoutingConfig>)=>{setForm(current=>({...current,decisionConfig:{enabled:false,mode:'observe',maxAttempts:1,modelPolicies:{},...current.decisionConfig,...patch}}));setDecisionStatus(null);setTestResult(null)}
   const global = useCase.key === 'global_llm' || useCase.key === 'global_embeddings'
-  const providerOptions = [...new Map([{ providerKey: 'openrouter', displayName: 'OpenRouter' }, { providerKey: 'openai_direct', displayName: 'OpenAI direta' },
-    ...providers.filter(item => ['openrouter', 'openai_direct'].includes(item.providerKey))].filter(item=>!decision||item.providerKey==='openrouter').map(item => [item.providerKey, item])).values()]
+  const providerOptions = [...new Map([{ providerKey: 'openrouter', displayName: 'OpenRouter' }, { providerKey: 'openai_direct', displayName: 'OpenAI direta' },{providerKey:'perplexity',displayName:'Perplexity'},
+    ...providers.filter(item => ['openrouter', 'openai_direct','perplexity'].includes(item.providerKey))].filter(item=>research?item.providerKey==='perplexity':item.providerKey!=='perplexity'&&(!decision||item.providerKey==='openrouter')).map(item => [item.providerKey, item])).values()]
   const dirty = JSON.stringify(form) !== JSON.stringify(initialForm(useCase, route))
   const fallbacks = form.fallbackRoutes || []
 
@@ -132,7 +132,9 @@ function LlmRouteEditor({ useCase, providers, route, onSave, onTest,onDecisionSt
     setTesting(true); setNotice(null)
     try {
       let input:AdminDecisionTestInput|undefined
-      if(decision){
+      if(research){
+        const result=await onTest(form.id);setTestResult(result);setNotice({ok:result.ok,message:result.message});return
+      }else if(decision){
         if(!onDecisionStatus)throw Error('A consulta de custo da decisão não está disponível.')
         const status=await decisionStatusForRoute(form.id);setDecisionStatus(status)
         if(!active.current)return
@@ -157,6 +159,18 @@ function LlmRouteEditor({ useCase, providers, route, onSave, onTest,onDecisionSt
     <p className="mt-1 text-xs text-gray-500">Identificador: {form.agentType || form.agentId}</p>
     {unsupported&&<p role="status" className="mt-3 rounded-md bg-amber-50 p-3 text-sm">{useCase.kind===null?'Rota legada sem classificação. Não será executada como chat silenciosamente; revise sua função antes de editar.':'Capacidade reservada para integração futura. Não autoriza chamadas.'}</p>}
     {decision&&<p role="status" className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">Protocolo alpha: /api/alpha/decisions · adaptador openrouter-decisions-alpha-v1. Sem calibração aprovada para modelo, snapshot, tarefa e contexto, o modo efetivo é observação. Trocar o modelo ou salvar uma revisão exige nova correspondência. Não herda texto ou embeddings.</p>}
+    {research&&<fieldset className="mt-3 flex flex-col gap-3 rounded-md border p-3"><legend>Investigação Perplexity Agent</legend>
+      <p role="status" className="text-sm text-muted-foreground">Orçamento estimado com acompanhamento. Uma chamada em andamento pode superar a estimativa; o sistema impede novas chamadas quando o orçamento é atingido. max_steps limita passos, não dinheiro. Sem fallback de chat nem troca automática de modelo pelo provedor.</p>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.researchConfig?.allowEstimatedBudget===true} onChange={event=>setForm(current=>({...current,researchConfig:{...current.researchConfig,allowEstimatedBudget:event.target.checked,...(!event.target.checked?{enabled:false}:{})}}))}/>Aceito orçamento estimado, sem teto financeiro garantido pelo provedor</label>
+      <label className="flex items-center gap-2"><input type="checkbox" disabled={form.researchConfig?.allowEstimatedBudget!==true} checked={form.researchConfig?.enabled===true} onChange={event=>setForm(current=>({...current,researchConfig:{...current.researchConfig,enabled:event.target.checked}}))}/>Permitir investigação seletiva nesta rota</label>
+      <Input label="Máximo de passos por investigação" type="number" min="1" max="10" value={String(form.researchConfig?.maxSteps??3)} onChange={value=>setForm(current=>({...current,researchConfig:{...current.researchConfig,maxSteps:Number(value)}}))}/>
+      <Input label="Máximo de tentativas por investigação" type="number" min="1" max="10" value={String(form.researchConfig?.maxAttempts??1)} onChange={value=>setForm(current=>({...current,researchConfig:{...current.researchConfig,maxAttempts:Number(value)}}))}/>
+      <Input label="Estimativa por tentativa de investigação (USD)" type="number" min="0.000001" step="0.000001" value={String(form.researchConfig?.estimatedUsdPerAttempt??'')} onChange={value=>setForm(current=>({...current,researchConfig:{...current.researchConfig,estimatedUsdPerAttempt:value===''?undefined:Number(value)}}))}/>
+      <Input label="Orçamento estimado por investigação (USD)" type="number" min="0.000001" step="0.000001" value={String(form.researchConfig?.budgetUsdPerResearch??'')} onChange={value=>setForm(current=>({...current,researchConfig:{...current.researchConfig,budgetUsdPerResearch:value===''?undefined:Number(value)}}))}/>
+      <Input label="Orçamento estimado do Agent por campanha (USD)" type="number" min="0.000001" step="0.000001" value={String(form.researchConfig?.budgetUsdPerCampaign??'')} onChange={value=>setForm(current=>({...current,researchConfig:{...current.researchConfig,budgetUsdPerCampaign:value===''?undefined:Number(value)}}))}/>
+      <p className="text-xs text-muted-foreground">O orçamento do Agent é separado do orçamento de buscas da campanha. Ambos acompanham reservas, custos conhecidos e incertezas; não há reinício diário oculto do orçamento do Agent.</p>
+      <p className="text-xs text-muted-foreground">A estimativa não é teto remoto. Conversão em reais usa a cotação, data e margem do Admin → Integrações → Radar; custos desconhecidos nunca são tratados como zero.</p>
+    </fieldset>}
     {route?.origin === 'environment' && <p role="status" className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800">{route.originDetail || 'Configuração legada do ambiente. Salve para gerenciar aqui.'}</p>}
     {useCase.kind === 'embedding' && <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Use apenas modelos de embeddings compatíveis com 1024 dimensões. Trocar de modelo exige reindexação para manter a cobertura da busca. Índices antigos não são apagados e modelos diferentes não são comparados no mesmo espaço vetorial. O fallback de texto não se aplica.</p>}
     <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -207,7 +221,7 @@ function LlmRouteEditor({ useCase, providers, route, onSave, onTest,onDecisionSt
     </fieldset>
     <p className="mt-3 text-xs text-gray-500">{decision?'A operação comercial exige rota ativa e decisões habilitadas. Salvar não faz chamada; o teste exige confirmação separada.':'Salvar uma rota ativa autoriza o sistema a usar os modelos informados.'} Rotas pausadas não autorizam chamadas. Chaves de API permanecem no servidor.</p>
     <div className="mt-4 flex flex-wrap justify-end gap-2">
-      <button type="button" onClick={testRoute} disabled={!form.id || dirty || form.status !== 'active' || testing || saving} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"><FlaskConical className="h-4 w-4" />{testing ? 'Testando...' : 'Testar modelo (pode consumir créditos)'}</button>
+      <button type="button" onClick={testRoute} disabled={!form.id || dirty || form.status !== 'active' || testing || saving} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"><FlaskConical className="h-4 w-4" />{testing ? 'Conferindo...' : research?'Conferir configuração (sem consumo)':'Testar modelo (pode consumir créditos)'}</button>
       <button type="submit" disabled={unsupported || saving || testing || !form.modelName.trim() || fallbacks.some(item => !item.modelName.trim())} className="inline-flex items-center gap-2 rounded-md bg-yux-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"><Save className="h-4 w-4" />{saving ? 'Salvando...' : 'Salvar rota'}</button>
     </div>
     {notice && <div role="status" className={`mt-3 rounded-md border p-3 text-sm ${notice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{notice.message}</div>}

@@ -89,6 +89,7 @@ export interface AdminLlmRoute {
   protocol?:string|null
   adapterVersion?:string|null
   decisionConfig?:Record<string,unknown>
+  researchConfig?:Record<string,unknown>
   version?:number
   id?: string
   agentType: AdminLlmUseCase | null

@@ -1,6 +1,6 @@
 import type pg from 'pg'
 
-export const LLM_PROVIDERS = ['openrouter', 'openai_direct'] as const
+export const LLM_PROVIDERS = ['openrouter', 'openai_direct','perplexity'] as const
 export type LlmRouteKind='chat'|'embedding'|'decision'|'research'
 export type LlmUseCaseDefinition = { key: string; title: string; description: string; kind:LlmRouteKind|null; group: string;classificationStatus?:'registered'|'pending' }
 export const TECHNICAL_LLM_USE_CASES: LlmUseCaseDefinition[] = [
@@ -20,7 +20,7 @@ export const TECHNICAL_LLM_USE_CASES: LlmUseCaseDefinition[] = [
   {key:'radar_presence_resolution',title:'Radar — identificação de site e canais oficiais',description:'Resolve identidade de site, marca e grupo usando somente evidências coletadas. Exige rota própria; não pesquisa nem inventa contatos.',kind:'chat',group:'Radar Comercial'},
   {key:'radar_discovery_extraction',title:'Radar — extração de empresas em páginas e listas',description:'Extrai menções provisórias com trechos literais, sem admitir empresas nem herdar contatos do publicador. Exige rota própria ativa.',kind:'chat',group:'Radar Comercial'},
   ...(['radar_decision_default','radar_initial_triage','radar_next_action','radar_quality_gate'] as const).map((key,index)=>({key,title:['Radar — decisão geral e reserva','Radar — triagem inicial','Radar — decisão do próximo passo','Radar — decisão de qualidade'][index],description:'Decisão estruturada via OpenRouter. Herda somente a decisão geral compatível; nunca chat. Sem calibração correspondente, opera em observação.',kind:'decision' as const,group:'Radar Comercial'})),
-  {key:'radar_deep_research',title:'Radar — investigação aprofundada (integração futura)',description:'Capacidade reservada para investigação com fontes. Requer adaptador próprio, não herda chat ou decisão.',kind:'research',group:'Radar Comercial'},
+  {key:'radar_deep_research',title:'Radar — investigação aprofundada',description:'Perplexity Agent com modelo único por tentativa e fontes verificáveis. Orçamento estimado acompanhado, com aceite explícito; uma chamada em andamento pode superar a estimativa. Search funciona separadamente.',kind:'research',group:'Radar Comercial'},
 ]
 
 const profileTitles: Record<string, string> = {
@@ -45,7 +45,7 @@ export function validateLlmRouteCapability(input:{agentType:string|null;agentId?
  const kind=input.agentType?resolveUseCaseDefinition(input.agentType,definitions).kind:input.agentId?'chat':null
  if(!kind||input.kind&&input.kind!==kind)throw Object.assign(Error('llm_route_capability_incompatible'),{statusCode:400})
  const protocol=kind==='decision'?'openrouter-decisions-alpha-v1':kind==='research'?'perplexity-agent-v1':'openai-compatible-v1'
- if(input.protocol&&input.protocol!==protocol||kind==='decision'&&(input.provider!=='openrouter'||input.fallbackRoutes?.some(item=>item.provider!=='openrouter'))||kind==='research')throw Object.assign(Error('llm_route_capability_incompatible'),{statusCode:400})
+ if(input.protocol&&input.protocol!==protocol||kind==='decision'&&(input.provider!=='openrouter'||input.fallbackRoutes?.some(item=>item.provider!=='openrouter'))||kind==='research'&&(input.provider!=='perplexity'||input.fallbackRoutes?.some(item=>item.provider!=='perplexity'))||kind!=='research'&&(input.provider==='perplexity'||input.fallbackRoutes?.some(item=>item.provider==='perplexity')))throw Object.assign(Error('llm_route_capability_incompatible'),{statusCode:400})
  const fallbacks=[...(input.fallbackRoutes??[]),...(input.fallbackModelName?[{provider:input.provider,modelName:input.fallbackModelName}]:[])]
  if(kind==='decision'&&[input.modelName,...fallbacks.map(item=>item.modelName)].some(model=>model.trim().length>200||model.trim().startsWith('~')))throw Object.assign(Error('llm_route_capability_incompatible'),{statusCode:400})
  const seen=new Set([`${input.provider}:${input.modelName.trim()}`])

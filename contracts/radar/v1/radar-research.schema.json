@@ -20,9 +20,23 @@
     },
     {
       "$ref": "#/$defs/DecisionResultV1"
+    },
+    {
+      "$ref": "#/$defs/ResearchActionV1"
     }
   ],
   "$defs": {
+    "ResearchActionV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "id", "kind", "inputHash"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "kind": {"enum": ["read", "web", "local", "registry", "extract", "resolve", "deep_research", "qualify"]},
+        "inputHash": {"type": "string", "minLength": 1, "maxLength": 160}
+      }
+    },
     "ResearchEvidenceV1": {
       "type": "object",
       "additionalProperties": false,

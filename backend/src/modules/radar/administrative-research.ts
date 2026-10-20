@@ -37,7 +37,7 @@ async function analyses(pool:pg.Pool,input:Scope,ids?:string[]){
   JOIN public.radar_campaigns campaign ON campaign.id=run.campaign_id AND campaign.organization_id=run.organization_id
   LEFT JOIN LATERAL(SELECT transport_outcome,validation_outcome,billing_outcome,failure_code,provider,model_snapshot,usage,response_body FROM public.radar_effect_receipts effect
    WHERE effect.analysis_receipt_id=receipt.id AND effect.organization_id=receipt.organization_id ORDER BY effect.attempt DESC LIMIT 1) effect ON TRUE
-  WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification','radar_initial_triage','radar_next_action','radar_quality_gate')
+  WHERE receipt.organization_id=$1 AND run.campaign_id=$2 AND receipt.action IN('radar_presence_resolution','radar_business_qualification','radar_initial_triage','radar_next_action','radar_quality_gate','radar_deep_research')
    AND (($3::uuid[] IS NULL AND receipt.status<>'completed') OR receipt.id=ANY($3::uuid[]))
   ORDER BY receipt.created_at DESC,receipt.id DESC`,[input.organizationId,input.campaignId,ids??null])).rows
 }
@@ -57,7 +57,7 @@ export async function getRadarAdministrativeResearch(pool:pg.Pool,user:AuthUser,
    const bound=(call.requestId??inferred)===row.request_id
    return{receiptId:row.id,candidateId:row.candidate_id,companyName:row.company_name,action:row.action,status:row.status,configurationRevision:row.configuration_revision,createdAt:row.created_at,
     transport:row.transport_outcome??null,validation:row.validation_outcome??null,billing:row.billing_outcome??'uncertain',failureCode:row.failure_code??null,provider:row.provider??null,model:row.model_snapshot??null,
-    reportedUsd:radarReportedCostAmount(usage.costUsd),estimatedBrl:bound?radarReportedCostAmount(estimate.amountBrl):null,
+    reportedUsd:radarReportedCostAmount(usage.costUsd),estimatedBrl:bound?radarReportedCostAmount(estimate.amountBrl??call.reservedBrl):null,
     canRevalidate:row.has_saved_response===true&&row.has_saved_input===true&&!row.lease_active,
     canAuthorizeRetry:bound&&call.status!=='completed'&&row.current_scope===true&&row.status==='uncertain'&&!row.lease_active}
   })}

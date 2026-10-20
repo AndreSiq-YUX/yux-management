@@ -8,7 +8,7 @@ from typing import Any, Callable
 from .providers import ProviderAuthorizationError, ProviderRequestError
 
 SCOPES = ("organization_id", "client_id", "contract_id", "agent_id")
-PROVIDERS = {"openrouter", "openai_direct"}
+PROVIDERS = {"openrouter", "openai_direct", "perplexity"}
 DECISION_CASES={'radar_decision_default','radar_initial_triage','radar_next_action','radar_quality_gate'}
 CAPABILITIES={**{key:'decision' for key in DECISION_CASES},'radar_deep_research':'research','knowledge_embeddings':'embedding','global_embeddings':'embedding'}
 
@@ -91,7 +91,7 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
     def compatible(item):
         if 'kind' in item and item['kind'] is None:
             raise ProviderAuthorizationError('llm_route_classification_required')
-        if item.get('kind',kind)!=kind or kind=='decision' and (item.get('provider')!='openrouter' or item.get('protocol')!='openrouter-decisions-alpha-v1'):
+        if item.get('kind',kind)!=kind or kind=='decision' and (item.get('provider')!='openrouter' or item.get('protocol')!='openrouter-decisions-alpha-v1') or kind=='research' and (item.get('provider')!='perplexity' or item.get('protocol')!='perplexity-agent-v1') or kind!='research' and item.get('provider')=='perplexity':
             raise ProviderAuthorizationError('llm_route_capability_incompatible')
     compatible(route)
     attempts: list[dict[str, str]] = []
@@ -101,6 +101,8 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
         if provider not in PROVIDERS or not model:
             raise ProviderAuthorizationError("invalid_llm_route")
         if kind == 'decision' and provider != 'openrouter':
+            raise ProviderAuthorizationError('llm_route_capability_incompatible')
+        if (kind=='research') != (provider=='perplexity'):
             raise ProviderAuthorizationError('llm_route_capability_incompatible')
         value = {"provider": provider, "modelName": model}
         if value not in attempts:
@@ -113,7 +115,7 @@ def resolve_route(routes: list[dict[str, Any]], key: str, *, tier: str = "defaul
         if item.get("fallback_model_name"):
             append({"provider": item["provider"], "modelName": item["fallback_model_name"]})
     extend(route)
-    if general_route and general_route.get("status", "active") == "active":
+    if kind!='research' and general_route and general_route.get("status", "active") == "active":
         extend(general_route)
     if global_route and global_route.get("status", "active") == "active":
         extend(global_route)

@@ -23,4 +23,16 @@ def transport(url,headers,payload,method):
     return dict(model=payload['model']+'-snapshot',id='fixture-response',provider='fixture',answers=answers,usage=dict(cost=.00001,input_tokens=30,output_tokens=5))
 
 
-uvicorn.run(create_app(store=PostgresAgentRuntimeStore(),decision_transport=transport),host='127.0.0.1',port=int(os.environ['RADAR_DECISION_TEST_PORT']),log_level='error')
+def research_transport(url,headers,payload,method):
+    from urllib.error import HTTPError
+    assert url=='https://api.perplexity.ai/v1/agent' and method=='POST'
+    assert isinstance(payload['model'],str) and 'models' not in payload
+    if payload['model']=='fixture/timeout':raise TimeoutError('synthetic timeout')
+    if payload['model']=='fixture/rejected':raise HTTPError(url,429,'synthetic rejection',{},None)
+    if payload['model']=='fixture/invalid':return dict(id=None,output=[])
+    return dict(id='fixture-agent-response',status='completed',model=payload['model'],
+                output=[dict(type='search_results',contents=[dict(id=1,source='web',url='https://alfa.example/',snippet='Empresa Alfa CNPJ 37335118000180. Contato compras@alfa.example.')]),dict(type='message',content=[dict(type='output_text',text='Contato encontrado [web:1].',annotations=[])])],
+                usage=dict(input_tokens=30,output_tokens=20,cost=dict(currency='USD',total_cost=.006,input_cost=.001,output_cost=.002,tool_calls_cost=.003)))
+
+
+uvicorn.run(create_app(store=PostgresAgentRuntimeStore(),decision_transport=transport,research_transport=research_transport),host='127.0.0.1',port=int(os.environ['RADAR_DECISION_TEST_PORT']),log_level='error')

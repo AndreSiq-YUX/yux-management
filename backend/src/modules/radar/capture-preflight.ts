@@ -11,6 +11,7 @@ import {calculateRadarCaptureCapacity,loadRadarCapturePageAccounting,type RadarC
 import {inspectExpiredRadarCaptureContinuation} from './capture-continuation.js'
 import {loadRadarOperationalLimits,assertRadarOperationalLimit,validateRadarOperationalConfiguration,type RadarOperationalPolicy} from './operational-limits.js'
 import {inspectRadarContinuationState,type RadarContinuationState} from './continuation-state.js'
+import {loadRadarAdaptivePreflight} from './adaptive-preflight.js'
 export type PreflightInput={organizationId:string;campaignId:string;configurationRevision:number;requestedCount:number;operationId?:string}
 export type PreflightDependencies={availability?:AvailabilityLoader;workerReady?:()=>Promise<boolean>}
 export type RadarCapturePreflight={stateId:string;allowed:boolean;requiresLimitsApproval:boolean;remaining:number;limits:RadarCaptureLimits;policy:RadarOperationalPolicy;campaignLimits:RadarCaptureLimits;continuations:RadarContinuationState[];attemptedQueries:number;successfulPagesByScope:Record<string,number>;optimisticAdditionalCapacity:number;minimumAdditionalQueries:number;blockers:Array<{code:string;message:string}>;warnings:Array<{code:string;message:string}>;researchCapacity?:{remainingQueries:number;plannedMaximumQueries:number;estimatedMaximumCostBrl:number};checks:Array<{key:string;status:'ok'|'blocked'|'not_applicable'|'not_checked';code?:string}>;expiredContinuation?:{receiptId:string;scopeLabel:string}}
@@ -28,6 +29,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  if(!op)assertRadarOperationalLimit(input.requestedCount,policy.limits.maxNewCompaniesPerLot)
  const snapshot=op?.configuration_snapshot??campaign,config=resolveRadarSearchConfiguration(snapshot.search_configuration)
  if(!op)validateRadarOperationalConfiguration(config,policy.limits,campaign.daily_limit)
+ if(op?.pipeline_version===2||!op&&config.discovery.enabled)return loadRadarAdaptivePreflight(db,user,input,campaign,op,policy,deps)
  const {pageSize,maxPagesPerScope,maxQueriesPerBatch}=config.batch,limits={pageSize,maxPagesPerScope,maxQueriesPerBatch}
  const items=op?(await db.query('SELECT COUNT(*)::int AS n FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows[0].n:0
  const remaining=Math.max(0,input.requestedCount-items)
@@ -71,7 +73,7 @@ export async function loadRadarCapturePreflight(db:RadarQueryable,user:AuthUser,
  const researchCapacity=knownCapacity?{remainingQueries:estimates.reduce((sum,item)=>sum+(item.remainingQueries??0),0),plannedMaximumQueries,
   estimatedMaximumCostBrl:Number((availability.maximumCostPerCandidate!==undefined?availability.maximumCostPerCandidate*input.requestedCount:plannedMaximumQueries*Math.max(0,...estimates.map(item=>item.costPerQuery))).toFixed(6))}:undefined
  const spent=researchCapacity&&campaign.budget_limit!==null&&campaign.budget_limit!==undefined
-  ?Number((await db.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[input.organizationId,input.campaignId])).rows[0]?.cost??0):0
+  ?Number((await db.query("SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND source_type<>'perplexity_agent' AND usage_date=CURRENT_DATE",[input.organizationId,input.campaignId])).rows[0]?.cost??0):0
  const budgetCapacity=campaign.budget_limit===null||campaign.budget_limit===undefined?undefined:Math.max(0,Number(campaign.budget_limit)-spent)
  const warnings:RadarCapturePreflight['warnings']=researchCapacity&&(researchCapacity.remainingQueries<plannedMaximumQueries||budgetCapacity!==undefined&&researchCapacity.estimatedMaximumCostBrl>budgetCapacity)
   ?[{code:'radar_capture_enrichment_capacity_low',message:'A capacidade diária de aprofundamento pode ser menor que este lote. Ajuste as quotas das fontes no Admin ou reduza o lote. Etapas salvas continuam recuperáveis; nenhum limite será aumentado automaticamente.'}]:[]

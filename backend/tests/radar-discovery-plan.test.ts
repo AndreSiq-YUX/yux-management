@@ -51,3 +51,7 @@ it('finishes researching admitted prospects before buying replacements and never
  expect(api.planRadarAdaptiveDiscoveryTurn({plan:complete,requestedCount:10,items:[],pages})).toMatchObject({stop:'consulted_sources_exhausted',marketExhausted:false})
  expect(api.planRadarAdaptiveDiscoveryTurn({plan:complete,requestedCount:10,items:[],pages:pages.map((page:any)=>({...page,exhaustion:'unknown'}))})).toMatchObject({stop:'coverage_incomplete',marketExhausted:false})
 })
+it('keeps paid surplus for the next lot once the qualified target is reached',()=>{
+ const plan=api.buildRadarAdaptiveDiscoveryPlan(base)
+ expect(api.planRadarAdaptiveDiscoveryTurn({plan,requestedCount:1,items:[{isNew:true,qualification:'confirmed',state:'completed'}],pages:[{id:'surplus',scopeKey:plan.scopes[0].key,status:'received',exhaustion:'more'}]})).toMatchObject({stop:'target_reached'})
+})

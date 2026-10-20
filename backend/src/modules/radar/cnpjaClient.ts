@@ -26,6 +26,8 @@ export type CnpjaAdvancedSearchInput = {
   openingTo?: string
   limit?: number
   fetchImpl?: typeof fetch
+  onResponse?:(body:unknown)=>Promise<void>
+  preserveAllResults?:boolean
 }
 
 export type CnpjaOfficeLookupInput = {
@@ -104,6 +106,8 @@ export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): 
   })
   const body = await response.json().catch(() => null)
 
+  if(response.ok)await input.onResponse?.(body)
+
   if (!response.ok) {
     throw new CnpjaSearchHttpError(extractCnpjaError(body, [input.apiKey, input.token], response.status) || `CNPJa retornou HTTP ${response.status}.`, response.status)
   }
@@ -113,10 +117,15 @@ export async function searchCnpjaAdvancedPage(input: CnpjaAdvancedSearchInput): 
     .filter(candidate => candidate.taxId || candidate.tradeName || candidate.legalName)
     // A continuation inherits its original page size. Admission stores any
     // excess in overflow; truncating here would silently lose paid-for records.
-    .slice(0, input.token ? undefined : limit)
+    .slice(0, input.token||input.preserveAllResults ? undefined : limit)
   const record = isRecord(body) ? body : {}
   const next = stringValue(record.next) || stringValue(record.nextToken)
   return { candidates, nextToken: next && /^[\w-]{1,256}$/.test(next) ? next : undefined }
+}
+export function normalizeSavedCnpjaSearchPage(body:unknown){
+ const candidates=extractCnpjaItems(body).map(normalizeCnpjaCandidate).filter(candidate=>candidate.taxId||candidate.tradeName||candidate.legalName)
+ const record=isRecord(body)?body:{},next=stringValue(record.next)||stringValue(record.nextToken)
+ return{candidates,nextToken:next&&/^[\w-]{1,256}$/.test(next)?next:undefined}
 }
 
 export async function lookupCnpjaOffice(input: CnpjaOfficeLookupInput) {

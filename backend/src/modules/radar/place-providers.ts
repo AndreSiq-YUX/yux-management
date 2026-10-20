@@ -44,6 +44,8 @@ export type RadarPlaceSearchInput = {
   state: string
   limit: number
   fetchImpl?: typeof fetch
+  onResponse?:(body:unknown)=>Promise<void>
+  preserveAllResults?:boolean
 }
 
 export async function searchRadarPlaces(input: RadarPlaceSearchInput): Promise<RadarPlacePreview[]> {
@@ -61,11 +63,15 @@ export async function searchRadarPlaces(input: RadarPlaceSearchInput): Promise<R
     throw new RadarPlaceProviderError(response.status, invalidFields)
   }
   const payload: unknown = await response.json()
+  await input.onResponse?.(payload)
+  return normalizeSavedRadarPlaces(input.provider,payload,input.preserveAllResults?undefined:input.limit)
+}
+export function normalizeSavedRadarPlaces(provider:RadarPlaceProvider,payload:unknown,limit?:number):RadarPlacePreview[]{
   const record = asRecord(payload)
-  const items = input.provider === 'serper_places' ? record?.places : record?.results
+  const items = provider === 'serper_places' ? record?.places : record?.results
   if (!Array.isArray(items)) return []
   const observedAt = new Date().toISOString()
-  return items.slice(0, input.limit).map(item => normalizePlace(input.provider, item, observedAt))
+  return items.slice(0, limit).map(item => normalizePlace(provider, item, observedAt))
     .filter((item): item is RadarPlacePreview => item !== null)
 }
 

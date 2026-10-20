@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_serial
 from .queue import AgentEventQueue
 from .knowledge_intelligence import KnowledgeIntelligenceService
 from .strategy_curation import StrategyCurationService
-from .providers import ProviderRequestError
+from .providers import ProviderRequestError,ProviderAuthorizationError
 from .runtime_factory import build_mission_supervisor, build_strategy_workflow_engine, build_routed_client
 from .llm_routing import effective_legacy_routes
 from .radar_qualification import qualify_radar_business, validate_radar_qualification_response
@@ -23,6 +23,7 @@ from .radar_presence import resolve_radar_presence, validate_radar_presence_resp
 from .radar_discovery_extraction import extract_radar_businesses, validate_radar_discovery_extraction_response, public_discovery_url
 from .radar_receipts import execute_radar_receipt, revalidate_radar_receipt
 from .radar_decisions import decide_radar_action, validate_saved_decision, TASKS as DECISION_TASKS
+from .perplexity_research import run_radar_deep_research,normalize_research_response,REMOTE_FINANCIAL_CEILING_SUPPORTED
 from .runtime_store import AgentRuntimeStore, InMemoryAgentRuntimeStore, PostgresAgentRuntimeStore, CreditReservationError
 from .mission import MissionPlanRequest, plan_mission
 from .mission_supervisor import MissionSupervisor, MissionSupervisorError
@@ -131,7 +132,7 @@ class RadarRevalidationRequest(BaseModel):
     organization_id: str
     client_id: str | None = None
     contract_id: str | None = None
-    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate']
+    action: Literal['radar_presence_resolution', 'radar_business_qualification','radar_discovery_extraction','radar_initial_triage','radar_next_action','radar_quality_gate','radar_deep_research']
     request_id: str = Field(min_length=1, max_length=200)
     input_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
 
@@ -159,6 +160,16 @@ class RadarDecisionRequest(RadarAnalysisRequest):
     criteria: dict[str,Any]
     evidence: list[RadarDecisionEvidence]=Field(max_length=30)
     options: list[dict[str,str]]=Field(default_factory=list,max_length=8)
+    route_snapshot: dict[str,Any]
+
+class RadarDeepResearchRequest(RadarAnalysisRequest):
+    model_config=ConfigDict(extra='forbid')
+    organization_id: str
+    client_id: str | None=None
+    contract_id: str | None=None
+    request_id: str=Field(min_length=1,max_length=200)
+    enabled: bool=False
+    context: dict[str,Any]
     route_snapshot: dict[str,Any]
 
 class IngestEventRequest(BaseModel):
@@ -251,6 +262,7 @@ def create_app(
     mission_supervisor: MissionSupervisor | None = None,
     mission_conversation_workflow: MissionConversationWorkflow | None = None,
     decision_transport=None,
+    research_transport=None,
 ) -> FastAPI:
     if not _runtime_token():
         raise RuntimeError("YUX_AGENT_RUNTIME_TOKEN is required")
@@ -369,6 +381,21 @@ def create_app(
                                                  request_id=request.request_id[:200], code=code)))
             raise HTTPException(status_code=402, detail=code) from error
 
+    @app.post('/radar/deep-research', dependencies=[Depends(require_runtime_token)])
+    def radar_deep_research(request: RadarDeepResearchRequest) -> dict[str,Any]:
+        validate_tenant(request.organization_id,request.client_id,request.contract_id,profile_key='radar_deep_research',audience='internal_operator')
+        try:
+            return execute_radar_receipt(runtime_store,action='radar_deep_research',request=request,validate_effect=False,
+                debit=lambda:reserve_radar_credits(request,'radar_deep_research'),
+                compute=lambda before:run_radar_deep_research(runtime_store,data=request.model_dump(),before_call=before,transport=research_transport))
+        except ProviderAuthorizationError as cause:
+            code=str(cause)
+            raise HTTPException(status_code=409,detail=code if code.startswith(('research_','llm_','radar_')) and code.replace('_','').isalnum() else 'radar_deep_research_not_authorized') from None
+        except ProviderRequestError:
+            raise HTTPException(status_code=502,detail='radar_deep_research_unavailable') from None
+        except ValueError:
+            raise HTTPException(status_code=422,detail='radar_deep_research_response_invalid') from None
+
     @app.post('/radar/decide', dependencies=[Depends(require_runtime_token)])
     def radar_decide(request: RadarDecisionRequest) -> dict[str,Any]:
         validate_tenant(request.organization_id,request.client_id,request.contract_id,profile_key=request.task,audience='internal_operator')
@@ -393,6 +420,8 @@ def create_app(
                 raise HTTPException(status_code=403, detail='radar_analysis_tenant_changed')
             if request.action in DECISION_TASKS:
                 return validate_saved_decision(response,saved)
+            if request.action=='radar_deep_research':
+                return normalize_research_response(response.get('upstream_response'))
             if request.action == 'radar_presence_resolution':
                 return validate_radar_presence_response(response, evidence=saved['evidence'])
             if request.action == 'radar_discovery_extraction':

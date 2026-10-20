@@ -7,6 +7,7 @@ export type RadarResearchContractV1 =
   | BusinessMentionV1
   | DecisionContextV1
   | DecisionResultV1
+  | ResearchActionV1
 export type EffectReceiptV1 = {
   [k: string]: unknown
 } & {
@@ -1537,4 +1538,10 @@ export interface DecisionContextV1 {
         },
       ]
   humanReviewed: boolean
+}
+export interface ResearchActionV1 {
+  schemaVersion: 1
+  id: string
+  kind: 'read' | 'web' | 'local' | 'registry' | 'extract' | 'resolve' | 'deep_research' | 'qualify'
+  inputHash: string
 }

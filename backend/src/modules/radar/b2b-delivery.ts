@@ -7,7 +7,11 @@ export type B2bProspectCsvRow = Partial<Record<RadarExportField, string>> & { na
 export function assertB2bDeliveryRights(
   cnpjaConfig: Record<string, unknown>, braveConfig: LicensedBraveConfig | undefined, hasBraveFacts: boolean,
   serperConfig?:Record<string,unknown>,hasSerperFacts=false,
+  perplexityConfig?:Record<string,unknown>,hasPerplexityFacts=false,
+  hasSerperPlacesFacts=false,
 ) {
+  if(hasSerperPlacesFacts&&(serperConfig?.placesRetentionLicensed!==true||serperConfig.clientDeliveryLicensed!==true))throw Object.assign(new Error('radar_serper_places_client_delivery_not_approved'),{statusCode:409})
+  if(hasPerplexityFacts&&(perplexityConfig?.retentionLicensed!==true||perplexityConfig.clientDeliveryLicensed!==true))throw Object.assign(new Error('radar_perplexity_client_delivery_not_approved'),{statusCode:409})
   if(hasSerperFacts&&(serperConfig?.webSearchLicensed!==true||serperConfig.clientDeliveryLicensed!==true))throw Object.assign(new Error('radar_serper_client_delivery_not_approved'),{statusCode:409})
   if (cnpjaConfig.clientDeliveryLicensed !== true) {
     throw Object.assign(new Error('radar_cnpja_client_delivery_not_approved'), { statusCode: 409 })

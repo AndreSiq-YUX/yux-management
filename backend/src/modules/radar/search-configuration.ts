@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {RADAR_SEARCH_SOURCES} from './search-capacity.js'
+import {radarCampaignDiscoverySchema} from './discovery-policy.js'
 
 export const RADAR_BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'] as const
 export const radarStateSchema = z.enum(RADAR_BRAZIL_STATES)
@@ -34,7 +35,7 @@ export const radarResearchPolicySchema = z.object({
         ctx.addIssue({code:'custom',message:'duplicate_completion_criterion'})
       if(value.enabled&&value.minimumUsefulContacts>0&&!value.contactTypes.length)ctx.addIssue({code:'custom',message:'completion_contact_type_required'})
     }).default(()=>({enabled:false,requireIdentity:true,requireSegment:false,requireWebsite:false,contactTypes:['email' as const,'phone' as const,'whatsapp' as const,'contact_form' as const],contactPurposes:[],minimumUsefulContacts:1})),
-  webSearchProviders:z.array(z.enum(['brave_web_search','serper_web_search'])).min(1).max(2).refine(value=>new Set(value).size===value.length,'duplicate_search_provider').default(['brave_web_search']),
+  webSearchProviders:z.array(z.enum(['brave_web_search','serper_web_search','perplexity_search_fast','perplexity_search_web'])).min(1).max(4).refine(value=>new Set(value).size===value.length,'duplicate_search_provider').default(['brave_web_search']),
   maxSearchQueriesPerCandidate: z.number().int().positive().safe().default(3),
   maxSearchQueriesBySource:z.partialRecord(z.enum(RADAR_SEARCH_SOURCES),z.number().int().nonnegative().safe()).default({}),
   maxSearchQueriesTotalPerCandidate:z.number().int().nonnegative().safe().nullable().default(null),
@@ -44,12 +45,14 @@ export const radarResearchPolicySchema = z.object({
   presenceResolutionEnabled:z.boolean().default(false),
   inspectLinkedSocialProfiles:z.boolean().default(false),
   profileEnabled:z.boolean().default(false),
+  deepResearchEnabled:z.boolean().default(false),
   contactPurpose:z.enum(['general','suppliers','sales','finance','recruitment']).default('general'),
   sizeAssessment:radarSizePolicySchema.default(()=>radarSizePolicySchema.parse({})),
 }).strict()
 export type RadarResearchPolicy = z.infer<typeof radarResearchPolicySchema>
 
 export const radarSearchConfigurationSchema = z.object({
+  discovery:radarCampaignDiscoverySchema.default(()=>radarCampaignDiscoverySchema.parse({})),
   crmDestination:z.object({crmInstanceId:z.string().uuid(),pipelineId:z.string().uuid(),stageId:z.string().uuid()}).strict().optional(),
   research: radarResearchPolicySchema.default(() => radarResearchPolicySchema.parse({})),
   cities: z.array(z.object({ city: z.string().trim().min(1).max(100), state: radarStateSchema }).strict()).max(200).default([]),

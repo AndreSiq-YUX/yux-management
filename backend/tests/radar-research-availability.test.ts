@@ -3,6 +3,13 @@ import { evaluateRadarResearchAvailability } from '../src/modules/radar/research
 import { resolveRadarSearchConfiguration } from '../src/modules/radar/search-configuration.js'
 
 const policy = resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true}}).research
+it('permits independently licensed Perplexity search without inheriting Brave permissions',()=>{
+ const configured=resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,webSearchProviders:['perplexity_search_fast']}}).research
+ expect(configured.webSearchProviders).toEqual(['perplexity_search_fast'])
+ const input={policy:configured,canManage:true,sources:[{sourceType:'perplexity_search_fast',enabled:true,defaultCostPerUnit:.006}],providers:{perplexity:{status:'active',hasSecret:true,publicConfig:{retentionLicensed:true,webSearchLicensed:true}}}}
+ expect(evaluateRadarResearchAvailability(input).availableSearchSources).toEqual(['perplexity_search_fast'])
+ expect(evaluateRadarResearchAvailability({...input,providers:{perplexity:{...input.providers.perplexity,publicConfig:{}}}}).allowed).toBe(false)
+})
 it('evaluates Serper credentials and retention separately and permits only explicitly selected available fallbacks',()=>{
   const configured=resolveRadarSearchConfiguration({research:{enabled:true,webSearchEnabled:true,webSearchProviders:['brave_web_search','serper_web_search']}}).research
   const result=evaluateRadarResearchAvailability({policy:configured,canManage:true,sources:[{sourceType:'brave_web_search',enabled:false,defaultCostPerUnit:.01},{sourceType:'serper_web_search',enabled:true,defaultCostPerUnit:.02}],

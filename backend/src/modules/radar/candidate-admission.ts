@@ -45,23 +45,23 @@ async function savedBusinesses(db:pg.PoolClient,organizationId:string,campaignId
  })
 }
 /** Internal transactional admission only. The planner owns authorizations/transports. */
-export async function admitRadarBusinessMention(pool:pg.Pool,input:Input):Promise<Admission>{
+export async function admitRadarBusinessMention(pool:pg.Pool,input:Input,dependencies:{transaction?:pg.PoolClient}={}):Promise<Admission>{
  if(input.canPersist!==true)throw Error('radar_business_persistence_not_authorized')
  const context=getDatabaseRequestContext()
  if(context?.serviceRole==='worker'&&!context.organizationIds.includes(input.organizationId))throw Error('radar_campaign_not_found')
  if(context&&context.serviceRole!=='worker'&&context.role!=='yux_admin')throw Object.assign(Error('radar_admin_required'),{statusCode:403})
  inputSchema.parse(input)
  if(!validateRadarResearchContract(input.mention)||!('needsVerification' in input.mention)||Buffer.byteLength(JSON.stringify(input))>64000)throw Error('radar_business_mention_invalid')
- const db=await pool.connect()
+ const db=dependencies.transaction??await pool.connect()
  try{
-  await db.query('BEGIN')
+  if(!dependencies.transaction)await db.query('BEGIN')
   // Same lock order as capture admission. Never advance a cursor in this helper.
   const campaign=(await db.query(`SELECT configuration_revision FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2
    AND(current_user<>'yux_worker' OR organization_id=ANY(COALESCE(NULLIF(current_setting('app.current_orgs',true),''),'{}')::uuid[])) FOR UPDATE`,[input.campaignId,input.organizationId])).rows[0]
   if(!campaign)throw Error('radar_campaign_not_found')
   if(campaign.configuration_revision!==input.revision)throw Error('radar_campaign_configuration_changed')
   const hash=inputHash(input),previous=(await db.query('SELECT id,candidate_id,resolution,state,input_hash FROM public.radar_business_observations WHERE organization_id=$1 AND campaign_id=$2 AND observation_key=$3',[input.organizationId,input.campaignId,input.observationKey])).rows[0]
-  if(previous){if(previous.input_hash!==hash)throw Error('radar_business_observation_conflict');await db.query('COMMIT');return result(previous,true)}
+  if(previous){if(previous.input_hash!==hash)throw Error('radar_business_observation_conflict');if(!dependencies.transaction)await db.query('COMMIT');return result(previous,true)}
   const resolution=resolveRadarBusinessEntity({...input,existingCandidates:await savedBusinesses(db,input.organizationId,input.campaignId)})
   const outside=input.registryPolicy.triage==='outside_profile'
   const observationId=randomUUID()
@@ -88,9 +88,9 @@ export async function admitRadarBusinessMention(pool:pg.Pool,input:Input):Promis
    }
   }
   await db.query(`INSERT INTO public.radar_business_identity_events(organization_id,campaign_id,observation_id,kind,candidate_id,reason) VALUES($1,$2,$3,$4,$5,$6)`,[input.organizationId,input.campaignId,observationId,outside?'exclude':resolution.status==='matched'?'link':resolution.status==='new_provisional'?'create':'review',candidateId??null,resolution.signals.join(',')])
-  await db.query('COMMIT')
+  if(!dependencies.transaction)await db.query('COMMIT')
   return result(row,false)
- }catch(cause){await db.query('ROLLBACK');throw cause}finally{db.release()}
+ }catch(cause){if(!dependencies.transaction)await db.query('ROLLBACK');throw cause}finally{if(!dependencies.transaction)db.release()}
 }
 /** Undo association, not deletion/automatic reassignment or a new provider call. */
 export async function unlinkRadarBusinessObservation(pool:pg.Pool,user:AuthUser,input:{organizationId:string;observationId:string;reason:string}){

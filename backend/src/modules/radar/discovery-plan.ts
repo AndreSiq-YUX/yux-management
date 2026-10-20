@@ -26,6 +26,7 @@ export function buildRadarAdaptiveDiscoveryPlan(raw:z.input<typeof inputSchema>)
  if(input.cities.some(location=>!states.includes(location.state)))throw Error('radar_discovery_city_outside_requested_states')
  const uniqueTerms=[...new Map([input.segment,...input.terms].map(term=>[normalizeRadarText(term),term])).values()]
  for(const key of input.sourceOrder){
+  const sourceTerms=key==='osm_extract'||key==='cnpja_advanced_search'?[input.segment]:uniqueTerms
   const capability=input.sources.find(item=>item.key===key)
   const reason=!capability?.enabled?'disabled':!capability.available?'unavailable':!capability.canPersist?'persistence_not_authorized':!capability.canDeliver?'delivery_not_authorized':undefined
   if(reason){omittedSources.push({source:key,reason});continue}
@@ -42,8 +43,8 @@ export function buildRadarAdaptiveDiscoveryPlan(raw:z.input<typeof inputSchema>)
    }
    const uniqueLocations=[...new Map(locations.map(location=>[normalizeRadarText(location.city??''),location])).values()]
    for(const location of uniqueLocations){
-    if(ordinal+uniqueTerms.length<=input.window.offset||scopes.length>=input.window.size){ordinal+=uniqueTerms.length;continue}
-    for(const term of uniqueTerms){
+    if(ordinal+sourceTerms.length<=input.window.offset||scopes.length>=input.window.size){ordinal+=sourceTerms.length;continue}
+    for(const term of sourceTerms){
     const current=ordinal++;if(current<input.window.offset||scopes.length>=input.window.size)continue
     const tuple=[key,state,normalizeRadarText(location.city??''),normalizeRadarText(term)],identity=JSON.stringify(tuple)
     const query=[term,location.city,state,'Brasil',...input.excludedTerms.map(value=>`-"${value.replace(/["\\]/g,' ')}"`)].filter(Boolean).join(' ')
@@ -74,13 +75,13 @@ export type RadarDiscoveryPageState={id:string;scopeKey:string;status:'reserved'
 /** One choice per turn; executor must independently reserve rights/capacity. */
 export function planRadarAdaptiveDiscoveryTurn(input:{plan:RadarAdaptiveDiscoveryPlan;requestedCount:number;items:RadarAdaptiveDiscoveryItem[];pages:RadarDiscoveryPageState[]}){
  z.number().int().positive().safe().parse(input.requestedCount)
- const saved=input.pages.find(page=>page.status==='received')
- if(saved)return{action:'admit_saved_page' as const,pageId:saved.id}
  const counts=radarAdaptiveDiscoveryCounts(input.items)
  // Full-stage processing is not skipped just because the desired count is met.
  if(counts.pending)return{action:'research_pending' as const}
  if(input.items.some(item=>item.isNew&&item.qualification!=='not_target'&&item.state==='waiting'))return{stop:'awaiting_research_attention' as const,marketExhausted:false as const}
  if(counts.qualifiedNew>=input.requestedCount)return{stop:'target_reached' as const,marketExhausted:false as const}
+ const saved=input.pages.find(page=>page.status==='received')
+ if(saved)return{action:'admit_saved_page' as const,pageId:saved.id}
  if(input.pages.some(page=>page.status==='uncertain'))return{stop:'awaiting_reconciliation' as const,marketExhausted:false as const}
  if(input.pages.some(page=>page.status==='reserved'))return{stop:'awaiting_source_response' as const,marketExhausted:false as const}
  const eligible=input.plan.scopes.map((scope,order)=>({scope,order,pages:input.pages.filter(page=>page.scopeKey===scope.key)})).filter(item=>!item.pages.length||item.pages.at(-1)?.status==='admitted'&&item.pages.at(-1)?.exhaustion==='more')

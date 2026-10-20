@@ -1,5 +1,6 @@
 import { radarSizeMetricLabels, type RadarSizeMetric } from './radarSearchConfiguration'
 const explanations:Record<string,string>={
+  radar_discovery_qualification_criteria_required:'Esta pesquisa conta empresas aderentes, mas a campanha ainda não definiu como confirmar a aderência. Configure critérios positivos de inclusão ou habilite a análise comercial antes de pesquisar novas empresas. Nenhuma consulta foi comprada.',
   radar_capture_source_exhausted:'Não há novas páginas disponíveis nas regiões e nos critérios atuais. Aumentar o limite de páginas não reabre uma fonte esgotada. Revise o público ou as regiões em Editar configuração para uma nova pesquisa; os resultados anteriores foram preservados.',
   radar_operational_limit_exceeded:'Um valor ultrapassa o teto operacional do Radar. O Admin YUX pode ajustar os tetos em Admin → Integrações → Limites operacionais do Radar; depois revise os limites da campanha e confirme a retomada do lote.',
   radar_capture_request_conflict:'Já existe um lote com outra quantidade ou configuração. Atualize o acompanhamento para retomar o lote correto; nenhum pedido novo foi iniciado.',

@@ -7,6 +7,7 @@ import {useRadarOperationalPolicy} from '@/lib/radar/useRadarOperationalPolicy'
 type AdminSource = Awaited<ReturnType<typeof radarService.getAdminDataSources>>[number]
 const providerKeys: Partial<Record<AdminSource['sourceType'], string>> = {
   cnpja_advanced_search: 'cnpja', cnpja_office_lookup: 'cnpja', serper_places: 'serper',serper_web_search:'serper', brave_place_search: 'brave_place', brave_web_search: 'brave_place',
+  perplexity_search_fast:'perplexity',perplexity_search_web:'perplexity',
 }
 const buttonClass = 'rounded-md border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -64,6 +65,7 @@ function SourceControl({ source, provider,maximum, onUpdated }: {
   const validLimit = !!maximum&&limit.trim() !== '' && Number.isSafeInteger(limitValue) && limitValue >= 1 && limitValue <= maximum
   const providerReady = (!source.requiresSecret || (provider?.status === 'active' && Boolean(provider.secretReference)))
     && (!['brave_web_search','serper_web_search'].includes(source.sourceType) || provider?.publicConfig.webSearchLicensed === true)
+    && (!source.sourceType.startsWith('perplexity_') || provider?.publicConfig.retentionLicensed===true&&provider.publicConfig.webSearchLicensed===true)
   const activationBlocked = getRadarSourceBlockedReason({ ...source, enabled: true })
   const hasUnsavedChanges = costValue !== source.defaultCostPerUnit || limitValue !== source.rateLimitPerDay
   const scope = source.organizationId ? source.organizationName || source.organizationId : 'Todas as organizações com Radar liberado'

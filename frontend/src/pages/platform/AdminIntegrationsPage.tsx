@@ -2,12 +2,14 @@ import { lazy,Suspense,useEffect, useState } from 'react'
 import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderConnectionEditor'
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import { RadarSourceManagementPanel } from '@/components/platform/admin/RadarSourceManagementPanel'
+import {RadarDiscoveryPolicyPanel} from '@/components/platform/admin/RadarDiscoveryPolicyPanel'
 import { RadarOperationalLimitsPanel } from '@/components/platform/admin/RadarOperationalLimitsPanel'
 import {RadarResearchOperationsPanel} from '@/components/platform/admin/RadarResearchOperationsPanel'
 import {RadarStalledResearchPanel} from '@/components/platform/admin/RadarStalledResearchPanel'
 import {useAuthStore} from '@/stores/authStore'
 import {
   cnpjaProviderDefaults,
+  perplexityProviderDefaults,
   serperPlacesProviderDefaults,
   bravePlaceProviderDefaults,
   jinaAiProviderDefaults,
@@ -85,7 +87,7 @@ export function AdminIntegrationsPage() {
       )}
 
       {!loading && !error && (
-        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarStalledResearchPanel isSystemAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} /></>
+        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarStalledResearchPanel isSystemAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} />{isAdmin&&<RadarDiscoveryPolicyPanel/>}</>
       )}
 
       {!loading && !error && (
@@ -154,6 +156,12 @@ export function AdminIntegrationsPage() {
             credentialLabel="API key Serper"
             credentialHelp="A chave fica criptografada no backend; os resultados não são persistidos."
           />
+          <ProviderConnectionEditor title="Perplexity — Search e investigação"
+            description="Pesquisa web e investigação seletiva. Configure a chave e os direitos aqui; preços e ativação de Search ficam nas Fontes do Radar, e o modelo de investigação em Modelos de IA."
+            provider={providers.find(provider=>provider.providerKey==='perplexity')} defaults={perplexityProviderDefaults}
+            onSave={async input=>{await adminPlatformService.upsertProviderConnection(input);await loadProviders()}}
+            onSaveCredential={(providerId,apiKey)=>adminPlatformService.saveProviderCredential(providerId,apiKey)}
+            credentialLabel="API key Perplexity" />
           <ProviderConnectionEditor
             title="Brave Place Search"
             description="Busca local no Brasil. Persistência exige licença confirmada. Ativação, custo e limite da fonte ficam no painel Fontes do Radar Comercial nesta página. O teste de conexão consome uma consulta."

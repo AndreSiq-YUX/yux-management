@@ -1,5 +1,8 @@
 import type { PlatformProviderConnectionInput } from '@/services/adminPlatformService'
 
+export const perplexityProviderDefaults:PlatformProviderConnectionInput={providerType:'llm',providerKey:'perplexity',displayName:'Perplexity — Search e investigação',environment:'production',status:'not_configured',secretReference:'perplexity:api_key',isDefault:true,
+ publicConfig:{retentionLicensed:false,webSearchLicensed:false,clientDeliveryLicensed:false,agentEnabled:false,searchMaxTokens:12000,searchMaxTokensPerPage:2000}}
+
 export const openAiDirectFallbackDefaults: PlatformProviderConnectionInput = {
   providerType: 'llm',
   providerKey: 'openai_direct',

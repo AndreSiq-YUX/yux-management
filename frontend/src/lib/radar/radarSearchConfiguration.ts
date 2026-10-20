@@ -27,15 +27,16 @@ export function validateRadarSizePolicy(value:RadarSizePolicy) {
   }
 }
 export type RadarSearchConfiguration = {
+  discovery?:{enabled:boolean;sourceOrder:Array<'osm_extract'|'serper_places'|'brave_place_search'|'serper_web_search'|'brave_web_search'|'cnpja_advanced_search'|'perplexity_search_fast'|'perplexity_search_web'>;terms:string[]}
   crmDestination?:{crmInstanceId:string;pipelineId:string;stageId:string}
   research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
-    maxSearchQueriesBySource?:Partial<Record<'brave_place_search'|'brave_web_search'|'serper_web_search',number>>;
+    maxSearchQueriesBySource?:Partial<Record<'brave_place_search'|'brave_web_search'|'serper_web_search'|'perplexity_search_fast'|'perplexity_search_web',number>>;
     maxSearchQueriesTotalPerCandidate?:number|null;
-    webSearchProviders?:Array<'brave_web_search'|'serper_web_search'>;
+    webSearchProviders?:Array<'brave_web_search'|'serper_web_search'|'perplexity_search_fast'|'perplexity_search_web'>;
     localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled';
     completion?:RadarCompletionPolicy;
     maxPagesPerCandidate: number; freshnessDays: number; semanticQualificationEnabled: boolean;presenceResolutionEnabled?:boolean;inspectLinkedSocialProfiles?:boolean;
-    profileEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }
+    profileEnabled?:boolean;deepResearchEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }
   cities: Array<{ city: string; state: string }>
   activityScope: 'main' | 'main_or_secondary'
   excludedNameTerms: string[]

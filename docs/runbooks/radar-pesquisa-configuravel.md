@@ -2,6 +2,42 @@
 
 O Radar não impõe setor, CNAE, produto ou região. Cozinhas industriais são um caso configurável, não um modo fixo do executor. O módulo pode ser contratado por cliente; pesquisas pagas são iniciadas pelo Admin YUX, com contato manual e entrega por CSV ou encaminhamento revisado ao CRM. As seções datadas abaixo registram a evolução e suas limitações na data da verificação.
 
+## Integração de pesquisa adaptativa e Perplexity — 20/10/2026
+
+Esta entrega acrescenta Search e Agent, sem ativá-los nem cadastrar modelos pagos automaticamente. Código publicado, serviços implantados, integração configurada e piloto real aprovado são quatro situações diferentes. Os testes de desenvolvimento usam transportes sintéticos. Não afirmar qualidade medida de Jev/Luna/Perplexity com base nesses testes.
+
+### Configuração pelo Admin global YUX
+
+1. Em **Admin → Integrações**, configure a conexão própria **Perplexity — Search e investigação**. Salve a chave no campo protegido; não a cole em JSON, campanha ou chat. Confirme separadamente armazenamento, entrega a clientes e uso de investigação Agent, conforme os direitos do plano. Não há referência contratual textual obrigatória. O teste de configuração não faz uma pesquisa paga nem comprova saldo/aceitação de modelo no provedor.
+2. Nas fontes do Radar, habilite apenas os modos Search desejados, com preço em **reais por requisição** e quota diária aprovada. Search rápida e padrão são fontes distintas. Uma requisição pode conter até cinco consultas relacionadas, mas o custo é por requisição; resposta 200 vazia é faturável. Falha HTTP comprovadamente não faturável devolve a reserva monetária, sem apagar a tentativa. Transporte incerto mantém a pendência, não autoriza replay.
+3. Em **Admin → IA / Modelos / Custos**, configure **Radar — investigação aprofundada**, capacidade `research`, provedor Perplexity, ID exato do modelo principal e reservas em ordem. Cada requisição leva um único modelo; não há fallback automático do provedor nem herança de chat. A API usada é `POST /v1/agent`. O controle documentado é `max_steps`, não `max_tool_calls`.
+4. Marque o aceite **“orçamento estimado, sem teto financeiro garantido pelo provedor”** e informe estimativa por tentativa, orçamento por investigação e orçamento do Agent por campanha. Só então habilite a rota. Configure também cotação, referência e margem na política operacional do Radar. O orçamento do Agent não é o orçamento de buscas da campanha. O acompanhamento preserva USD original e conversão BRL de cada reserva; mudar o câmbio não zera o gasto. Tentativas incertas continuam reservadas. Uma chamada iniciada pode ultrapassar a estimativa; depois disso novas chamadas são impedidas pelo orçamento, não a chamada em andamento.
+5. Use **Conferir configuração (sem consumo)**. A mensagem positiva confirma rota, chave própria, permissões e estimativa em BRL; o teste operacional só acontece em pesquisa real expressamente autorizada. O Agent não faz login, não envia formulário nem mensagem.
+6. Configure as rotas de identificação de presença, qualificação comercial e, ao descobrir por páginas/listas, **extração de empresas**. Configure Decisions principal/fallback conforme a seção abaixo. Sem calibração correspondente a modelo/versão/tarefa/contexto, a decisão fica em observação; isso não impede coleta de fatos e qualificação pelas rotas existentes.
+7. Na configuração técnica da campanha, escolha as fontes e sua ordem, termos, regiões, critérios de aderência e contatos desejados; habilite a descoberta adaptativa para **novos lotes** e, se desejado, a investigação seletiva. Nenhum setor ou cidade é predefinido. O cliente continua vendo quantidade, ação contextual e resultados, nunca fontes/modelos/licenças/custos internos.
+
+### Retomada, contagem e cobertura
+
+- Lotes antigos conservam versão 1 e sua composição original. Novos lotes adaptativos usam versão 2 e contam **aderentes novas**, separadamente de prontidão para contato; duplicadas e empresas fora do perfil não completam a meta. Não migrar um lote antigo silenciosamente para buscar substitutas.
+- Cada etapa externa do aprofundamento v2 salva seu avanço e cede o processamento; o próximo despacho tem identidade própria. Fechar a página não elimina o trabalho. Atualizar uma empresa reconcilia o resumo do lote.
+- Respostas recebidas antes de uma falha do parser são normalizadas gratuitamente. A recuperação/admissão de uma página já recebida não exige nova quota de busca. Licenças e permissões de publicação continuam obrigatórias. Chamadas realmente incertas exigem conciliação ou nova autorização específica; retomar não apaga seus recibos.
+- Um teto por região não encerra as demais regiões da janela planejada. Fonte sem capacidade não consome a quota de outra fonte. Compra adicional continua respeitando a autorização financeira vigente; “continuidade” não significa consumo ilimitado.
+- O catálogo municipal deriva de snapshots territoriais locais validados e cacheados. Sem cobertura suficiente, Places/OSM registram lacuna; não alegam ter exaurido o estado. Não há catálogo nacional IBGE importado por esta entrega. Estados inteiros continuam elegíveis às fontes que aceitam busca estadual.
+- O caminho OSM adaptativo usa segmento→tags configurável, idade e página editáveis e paginação por snapshot/tipo/ID. Apenas índices com cobertura correspondente ao mapeamento podem ser usados. O comando técnico legado OSM permanece compatível; sua fatia histórica não é a cobertura do novo planejador. Material com atribuição incompatível não é liberado por ocultar a fonte: exportação/CRM ficam bloqueados até solução autorizada.
+- Menções de diretórios são provisórias. Contato do editor/governo/lista não é contato da empresa. Casamento por nome isolado, telefone, e-mail ou domínio de grupo não une estabelecimentos. Identidade ambígua fica para revisão, nunca vira aderente confirmada por conveniência.
+
+### Custos, qualidade e piloto
+
+O diagnóstico administrativo inclui contribuição exclusiva/compartilhada por fonte, novas aderentes, custo conhecido por aderente, IA em BRL com câmbio e tempo decorrido de recibos (inclui espera/recuperação). Custos de extração de listas também entram na IA. Agent não é contado novamente como busca. Subtotal incompleto é identificado como incompleto, não como custo final zero.
+
+O benchmark offline compara fontes sobre a mesma região/coorte, incluindo extração, cadastro, decisão e investigação. Os 100 espaços de coleta continuam sem rótulos humanos reais: o gate de qualidade de modelos permanece **não avaliado** até coleta, revisão independente e piloto autorizado. Não há ganho percentual ou descarte seguro real comprovado por fixtures. O piloto deverá registrar modelos, fontes/licenças, quantidade e orçamento; não usar o sucesso da checagem sem consumo como aprovação de pesquisa paga.
+
+### Publicação e recuperação
+
+Aplicar migrações aditivas até `0227` pelo migrador padrão e implantar backend, worker, frontend e runtime no mesmo commit. Migrações não ativam fontes/modelos nem reexecutam o lote antigo. Antes de rollback, pausar campanhas v2 e drenar/parar seus despachos; usar binário compatível com v2. Nunca entregar recibos/continuações v2 a um executor v1, apagar páginas pagas ou refazer consultas para “limpar” estado.
+
+Em 20/10 o usuário autorizou expressamente publicação em `main` sem exigir backup, ciente do risco informado. Essa exceção não comprova existência de backup e não altera a política permanente para futuras implantações. A publicação em `main` aciona autodeploy no Dokploy; acompanhar resultado e versão realmente servida antes de chamar a entrega de implantada.
+
 ## IAs de decisão via OpenRouter — configuração de 19/10/2026
 
 A integração usa o protocolo nativo **POST `https://openrouter.ai/api/alpha/decisions`**, não chat nem `/api/v1/systemone`. O mesmo cadastro administrativo de modelos gerencia principal, reservas ordenadas e escopos. Não existe modelo pago padrão instalado ou ativado por migração. A chave é a da integração OpenRouter já existente; não há outra chave “Decisions”. [Contrato oficial da API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).

@@ -3,6 +3,7 @@ import {classifyRadarSource,isRadarInstitutionalSource,hasRadarOwnershipSignal} 
 import {validateRadarPresenceResolution,type RadarPresenceEvidence,type RadarPresenceResolution} from './presence-resolution.js'
 import { createHash, randomUUID } from 'node:crypto'
 import {resolveRadarSearchCapacity,hasRadarSearchCapacity,type RadarSearchCapacity,type RadarSearchSource,type RadarWebSearchSource} from './search-capacity.js'
+import {sanitizeRadarEffectBody} from './effect-receipts.js'
 import type { AppEnv } from '../../config/env.js'
 import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
@@ -14,7 +15,7 @@ import { discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarRefer
 import { collectRadarSiteEvidence, radarHtmlLinks, isRetryableRadarPage, RADAR_READER_VERSION, type RadarSiteEvidence } from './site-evidence.js'
 import { extractRadarContacts,isRadarContactSource, type RadarContactEvidence } from './contact-evidence.js'
 import { assessRadarBusinessActivity } from './business-activity.js'
-import { searchRadarWeb, type RadarWebHit } from './web-search.js'
+import { searchRadarWeb,normalizeSavedRadarWeb, type RadarWebHit,type RadarWebSearchProvider } from './web-search.js'
 import { searchRadarPlaces } from './place-providers.js'
 import { loadPlatformProviderSecret } from '../platform/adminRepository.js'
 import { assertLicensedBraveRetention } from './licensed-brave.js'
@@ -41,6 +42,9 @@ import {consolidateRadarContacts} from './contact-consolidation.js'
 import {evaluateRadarResearchQuality,usefulRadarDeliveryContacts,type RadarResearchQuality} from './research-quality.js'
 import {decideRadarAction,radarDecisionHash} from './decision-service.js'
 import type {DecisionContextV1} from './decision-contracts.js'
+import {planRadarAdaptiveResearch,RadarAdaptiveTurnYield,rethrowRadarAdaptiveYield} from './adaptive-research.js'
+import {researchRadarGaps} from './deep-research.js'
+import {inspectRadarBusinessSite} from './b2b-site-inspection.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   claims?:Array<{reason:string;evidenceId:string;excerpt:string}>;
@@ -58,6 +62,7 @@ function validatedQualificationProfile(result:RadarQualification,pages:RadarSite
  return result
 }
 export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: RadarSiteEvidence[]; contacts: RadarContactEvidence[];
+  deepResearchCompleted?:boolean;deepResearchStop?:string;
   decisionExcluded?:boolean;decisionReview?:boolean;
   historicalDerivedConclusions?:{presenceResolution?:RadarPresenceResolution;qualification?:RadarQualification;profile?:RadarCompanyProfile;sizeAssessment?:ReturnType<typeof assessRadarCompanySize>};
   quality?:RadarResearchQuality;targetedQueries?:string[];
@@ -69,8 +74,9 @@ export type RadarResearchDossier = { discovery: RadarPresenceDiscovery; pages: R
   analysisEvidence?:{presence?:RadarEvidenceVersion;semantic?:RadarEvidenceVersion};
   documents?:Array<{url:string;sourceUrl:string;observedAt:string;status:'not_read'}>;
   sizeAssessment?:ReturnType<typeof assessRadarCompanySize>; limitations: string[] }
-type Output = Partial<RadarResearchDossier> & { historicalRevision?:number;analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
+type Output = Partial<RadarResearchDossier> & { deepResearchCompleted?:boolean;deepResearchStop?:string;historicalRevision?:number;analysisOnly?:boolean;discoveryHits?: RadarWebHit[]; discoveryQueries?: number; readingComplete?: boolean; readerVersion?:number; qualificationEvidenceHash?:string;discoveryLocked?:boolean }
 type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query: string,source?:RadarWebSearchSource) => Promise<RadarWebHit[]>;
+  deepResearch?:(gaps:string[],pages:RadarSiteEvidence[])=>Promise<RadarWebHit[]>;
   decisionMemo?:Map<DecisionContextV1['task'],{action:string}>;
   decide?:(task:DecisionContextV1['task'],pages:RadarSiteEvidence[],options:DecisionContextV1['options'])=>Promise<{action:string}>;
   searchCapacity?:()=>RadarSearchCapacity;searchAttempted?:(source:RadarSearchSource,query:string)=>boolean;
@@ -288,7 +294,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         output.presenceResolution=presenceResolution;output.presenceEvidenceHash=presenceEvidenceHash
         output.analysisEvidence={...output.analysisEvidence,presence:persistedRadarEvidenceVersion(presenceContext)}
         await checkpoint('identity')
-      }catch(cause){limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
+      }catch(cause){rethrowRadarAdaptiveYield(cause);limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
     }else limits.push(presenceEvidence.some(item=>item.kind==='institutional_candidate')?'radar_presence_service_unavailable':'radar_presence_waiting_public_read')
   }
   const selectedWebsite=directlyAssociated?.url??presenceResolution?.websiteUrl
@@ -387,8 +393,23 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         }
         output.pages=pages;output.discoveryLocked=true;output.readingComplete=true
         return runRadarResearchPipeline(identity,configuration,output,{...dependencies,decisionMemo})
-      }catch(cause){limits.push(`Pesquisa complementar: ${safeResearchError(cause)}.`)}
+      }catch(cause){rethrowRadarAdaptiveYield(cause);limits.push(`Pesquisa complementar: ${safeResearchError(cause)}.`)}
     }
+  }
+  if(configuration.research.deepResearchEnabled&&dependencies.deepResearch&&!output.deepResearchCompleted&&!output.analysisOnly){
+    const gaps=[...(!associated?['identity']:[]),...(usefulRadarDeliveryContacts({contacts:uniqueContacts},configuration.research).length<(configuration.research.completion.enabled?configuration.research.completion.minimumUsefulContacts:1)?['contact']:[])]
+    const plan=planRadarAdaptiveResearch({missing:gaps,outsideProfile:false,contentHash:radarEvidenceContentHash({identity,criteria:{},purpose:'adaptive',evidence:pages}),availableActions:[{id:'deep_research',kind:'deep_research',inputHash:radarDecisionHash(gaps)}],effects:[]})
+    if(plan.next){
+      try{
+        const hits=await dependencies.deepResearch(gaps,pages)
+        output.deepResearchCompleted=true
+        output.discoveryHits=[...(output.discoveryHits??[]),...hits]
+        output.discovery={...discovery,hits:[...discovery.hits,...hits],suggestions:[...discovery.suggestions,...hits]}
+        output.discoveryLocked=false;output.readingComplete=false
+        await checkpoint('discovery')
+        return runRadarResearchPipeline(identity,configuration,output,{...dependencies,decisionMemo})
+      }catch(cause){rethrowRadarAdaptiveYield(cause);output.deepResearchStop=safeResearchError(cause);limits.push(`Pesquisa complementar: ${output.deepResearchStop}.`)}
+    }else output.deepResearchStop=plan.stop
   }
   output.contacts=uniqueContacts
   await checkpoint('consolidation')
@@ -435,7 +456,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         output.qualification = qualification;output.qualificationEvidenceHash=evidenceHash
         output.analysisEvidence={...output.analysisEvidence,semantic:persistedRadarEvidenceVersion(semanticContext)}
       }
-      catch (cause) { qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
+      catch (cause) { rethrowRadarAdaptiveYield(cause);qualification=undefined;output.qualification=undefined;output.qualificationEvidenceHash=undefined;
         limits.push(`Qualificação semântica pendente (${safeResearchError(cause)}). Os fatos foram preservados.`) }
     } else limits.push('radar_qualification_service_unavailable')
   }
@@ -454,6 +475,7 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     }catch{return []}
   }))].map(item=>[item.url,item])).values()].slice(0,20)
   const dossier = { methodVersion:RADAR_RESEARCH_METHOD_VERSION,associationVersion:RADAR_ASSOCIATION_VERSION,
+    deepResearchCompleted:output.deepResearchCompleted,deepResearchStop:output.deepResearchStop,
     historicalEvidence:output.historicalEvidence,targetedQueries:output.targetedQueries,analysisEvidence:output.analysisEvidence,
     discovery:{...discovery,websiteUrl:associatedOrigin??(discovery.websiteUrl&&isRadarInstitutionalSource(discovery.websiteUrl,{text:pages.find(page=>canonicalRadarReadUrl(page.url)===canonicalRadarReadUrl(discovery.websiteUrl!))?.text})?discovery.websiteUrl:undefined),association:associatedOrigin?'confirmed' as const:discovery.websiteUrl?'review' as const:discovery.association}, pages, contacts: uniqueContacts, registryPhone: identity.phone, siteAssociation:associated?'confirmed' as const:'review' as const, activity, qualification,
     qualificationEvidenceHash:qualification?evidenceHash:undefined,presenceResolution,presenceEvidenceHash:presenceResolution?presenceEvidenceHash:undefined,profile,sizeAssessment,documents,limitations: limits }
@@ -470,11 +492,12 @@ type ResearchContext = pg.QueryResultRow & { id: string; organization_id: string
 type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; campaign_id:string; candidate_id:string; requested_by:string;
   operation?:'complete'|'resume'|'refresh'|'reanalyze';request_id?:string;
   configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;costEstimate?:RadarCostEstimate;costPolicy?:RadarCostPolicy;budgetRequestId?:string;
+    responseBody?:unknown;billingOutcome?:string;queryCount?:number;billableRequestCount?:number;usageDate?:string;query?:string;
     rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
   created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
 function cachedReadAvailability<T extends {allowed:boolean;reasons:Array<{code:string}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number}>(availability:T,run:ResearchRun|undefined,revision:number,freshnessDays:number):T {
-  const recoverable=run&&run.configuration_revision===revision&&['partial','blocked','failed','succeeded'].includes(run.status)&&run.output.discovery
+  const recoverable=run&&run.configuration_revision===revision&&(['partial','blocked','failed','succeeded'].includes(run.status)||run.status==='running'&&!!run.lease_until&&new Date(run.lease_until).getTime()<Date.now())&&(run.output.discovery||run.output.discoveryHits?.length||Object.values(run.calls).some(call=>call.status==='completed'&&Array.isArray(call.result)||!!call.responseBody))
     &&Date.now()-Date.parse(run.completed_at||run.created_at)<freshnessDays*86400000
   if(!availability.allowed&&recoverable&&availability.reasons.every(item=>['source_limit_exceeded','source_budget_exceeded'].includes(item.code)))
     return {...availability,allowed:true,reasons:[],maximumCostPerCandidate:0,maxQueriesPerCandidate:0}
@@ -609,10 +632,18 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     AND organization_id=$3 AND (lease_until IS NULL OR lease_until < NOW()) RETURNING *`,[input.runId,lease,input.organizationId])
   const run = acquired.rows[0]
   if (!run) return { status:'already_running_or_completed' }
+  let adaptiveTurn=false,effectCompleted=false
+  const beforeEffect=()=>{if(adaptiveTurn&&effectCompleted)throw new RadarAdaptiveTurnYield()}
+  const runtime:typeof invokeAgentRuntime=async<T>(runtimeEnv:AppEnv,path:string,body:Record<string,unknown>,options?:{timeoutMs?:number}):Promise<T>=>{
+    if(path!=='/radar/revalidate')beforeEffect()
+    try{const result=await(dependencies.runtime??invokeAgentRuntime)<T>(runtimeEnv,path,body,options);if(path!=='/radar/revalidate')effectCompleted=true;return result}
+    catch(cause){if(path!=='/radar/revalidate'&&!/agent_runtime_402:(radar_ai_wallet_missing|radar_ai_credits_insufficient)/.test(cause instanceof Error?cause.message:''))effectCompleted=true;throw cause}
+  }
   const checkpoint = async (stage:string, output:Output) => {
     signal?.throwIfAborted()
     await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET stage=$3,output=$4::jsonb,lease_until=NOW()+INTERVAL '6 minutes',updated_at=NOW()
       WHERE id=$1 AND lease_id=$2 AND lease_until>NOW() RETURNING id`,[run.id,lease,stage,JSON.stringify(output)]))
+    if(adaptiveTurn&&effectCompleted)throw new RadarAdaptiveTurnYield()
   }
   try {
     const userResult = await pool.query<{id:string;role:string}>(`SELECT id,role FROM public.app_users WHERE id=$1 AND is_active=TRUE`,[run.requested_by])
@@ -623,6 +654,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     if (context.configuration_revision !== run.configuration_revision) throw error('radar_campaign_configuration_changed')
     if (context.status !== 'pending_review' || ['paused','archived','completed'].includes(context.campaign_status)) throw error('radar_campaign_or_candidate_inactive')
     const configuration = resolveRadarSearchConfiguration(context.search_configuration)
+    adaptiveTurn=configuration.discovery.enabled&&(await pool.query(`SELECT EXISTS(SELECT 1 FROM public.radar_capture_items WHERE run_id=$1 AND organization_id=$2 UNION ALL SELECT 1 FROM public.radar_research_request_items WHERE run_id=$1 AND organization_id=$2) AS bound`,[run.id,run.organization_id])).rows[0]?.bound===true
     if (!configuration.research.enabled) throw error('campaign_research_disabled')
     const payload = context.normalized_payload
     const intentBudget=await loadRadarResearchIntentBudget(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision})
@@ -649,6 +681,27 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       const approval=(await queryable.query('SELECT approved_at FROM public.radar_b2b_reviews WHERE candidate_id=$1 AND organization_id=$2',[run.candidate_id,run.organization_id])).rows[0]
       if(approval?.approved_at)throw error('radar_research_approved_candidate_requires_review')
     }
+    const collect:typeof collectRadarSiteEvidence=async(url,policy,options={})=>{
+      if(!adaptiveTurn)return(dependencies.collect??collectRadarSiteEvidence)(url,policy,options)
+      const initial=options.initialPages??[],tls=await options.tlsOptions?.(new URL(url).hostname)
+      const key=`read_${radarDecisionHash({url,policy,epoch:intentBudget?.requestId??run.request_id??run.id,reader:RADAR_READER_VERSION,tls:tls?.tlsException?.id,initial:radarEvidenceContentHash({identity:{},criteria:{},purpose:'read',evidence:initial})})}`
+      const cached=run.calls[key]
+      if(cached?.status==='completed'&&Array.isArray(cached.result))return uniqueRadarPages([...initial,...cached.result as RadarSiteEvidence[]])
+      beforeEffect();await assertEffectAuthorization()
+      const storeRead=async(pages:RadarSiteEvidence[])=>{
+        const delta=pages.filter(page=>!initial.some(previous=>previous.url===page.url&&previous.text===page.text&&previous.limitation===page.limitation&&previous.html===page.html))
+        if(!delta.length)return
+        run.calls[key]={source:'public_read',status:'completed',result:delta}
+        const saved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 AND lease_until>NOW() RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
+        if(!saved.rows.length)throw error('radar_research_lease_lost')
+        effectCompleted=true
+      }
+      const result=await(dependencies.collect??collectRadarSiteEvidence)(url,policy,{...options,checkpoint:async pages=>{await storeRead(pages);await options.checkpoint?.(pages);if(effectCompleted)throw new RadarAdaptiveTurnYield()}})
+      // Injected transports may return a single page without invoking a crawl
+      // checkpoint. Persist that effect before the pipeline's next checkpoint.
+      await storeRead(result)
+      return result
+    }
     const paid = async <T>(sourceKey:string,queryKey:string,request:(apiKey:string)=>Promise<T>):Promise<T> => {
       if(run.operation==='reanalyze')throw error('radar_reanalysis_does_not_search')
       signal?.throwIfAborted()
@@ -656,6 +709,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       const previous = run.calls[key]
       if (previous?.status === 'completed') return previous.result as T
       if (previous) throw error(previous.error || 'radar_research_previous_request_uncertain')
+      beforeEffect()
       const reservation = await pool.connect()
       let apiKey:string
       try {
@@ -674,39 +728,64 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const governance = await evaluateRadarSourceGovernance(reservation,run.organization_id,run.campaign_id,source,1,1,true)
         if (!governance.allowed) throw error(governance.issues[0].code)
         if (!hasRadarSearchCapacity(searchCapacity(),sourceKey)) throw error('candidate_search_limit_reached')
-        const spent = await reservation.query('SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND usage_date=CURRENT_DATE',[run.organization_id,run.campaign_id])
+        const spent = await reservation.query("SELECT COALESCE(SUM(estimated_cost),0) AS cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND source_type<>'perplexity_agent' AND usage_date=CURRENT_DATE",[run.organization_id,run.campaign_id])
         const budget = currentCampaign.rows[0]?.budget_limit
         if (budget !== null && budget !== undefined && compareRadarDecimal(addRadarDecimal(String(spent.rows[0]?.cost??0),String(source.defaultCostPerUnit)),String(budget))>0) throw error('source_budget_exceeded')
         const approvedUnit=intentBudget?.sourceUnitPricesBrl[sourceKey as keyof typeof intentBudget.sourceUnitPricesBrl]
         if(intentBudget&&(!approvedUnit||compareRadarDecimal(String(source.defaultCostPerUnit),approvedUnit)>0))throw error('radar_intent_source_price_changed')
         const provider = await reservation.query<{id:string;status:string;public_config:Record<string,unknown>}>(`SELECT id,status,public_config FROM public.platform_provider_connections WHERE provider_key=$1
-          AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`,[sourceKey==='serper_web_search'?'serper':'brave_place'])
+          AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`,[sourceKey.startsWith('perplexity_')?'perplexity':sourceKey==='serper_web_search'?'serper':'brave_place'])
         const connection = provider.rows[0]
         if (connection?.status !== 'active') throw error('provider_inactive')
-        if(sourceKey!=='serper_web_search')assertLicensedBraveRetention(connection.public_config)
-        if (['brave_web_search','serper_web_search'].includes(sourceKey) && connection.public_config.webSearchLicensed !== true) throw error('web_license_required')
+        const internal=(await reservation.query("SELECT kind='yux' AND is_internal_growth_workspace AS internal FROM public.organizations WHERE id=$1",[run.organization_id])).rows[0]?.internal===true
+        if(!internal&&connection.public_config.clientDeliveryLicensed!==true)throw error('delivery_license_required')
+        if(sourceKey.startsWith('perplexity_')&&connection.public_config.retentionLicensed!==true)throw error('retention_license_required')
+        if(sourceKey.startsWith('brave_'))assertLicensedBraveRetention(connection.public_config)
+        if (sourceKey!=='brave_place_search' && connection.public_config.webSearchLicensed !== true) throw error('web_license_required')
         const material = env.PROVIDER_SECRET_ENCRYPTION_KEY_B64 ? `provider-key:${env.PROVIDER_SECRET_ENCRYPTION_KEY_B64}` : env.SESSION_SECRET
         const secret = await (dependencies.loadSecret ?? loadPlatformProviderSecret)(reservation as unknown as pg.Pool,connection.id,'api_key',material)
         if (!secret) throw error('provider_secret_missing')
         apiKey = secret
         await recordRadarSourceUsage(reservation,run.organization_id,run.campaign_id,source,1,source.defaultCostPerUnit)
-        run.calls[key] = {status:'reserved',source:sourceKey,costEstimate:estimateRadarCostBrl({amount:String(source.defaultCostPerUnit),currency:'BRL',rateSnapshot:frozenRadarCostPolicy(intentBudget,operationalPolicy.costPolicy)}),...(intentBudget?{budgetRequestId:intentBudget.requestId}:{})}
+        run.calls[key] = {status:'reserved',source:sourceKey,query:queryKey,usageDate:(await reservation.query('SELECT CURRENT_DATE::text AS usage_date')).rows[0]?.usage_date,costEstimate:estimateRadarCostBrl({amount:String(source.defaultCostPerUnit),currency:'BRL',rateSnapshot:frozenRadarCostPolicy(intentBudget,operationalPolicy.costPolicy)}),...(intentBudget?{budgetRequestId:intentBudget.requestId}:{})}
         const reserved=await reservation.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 AND status='running' AND lease_until>NOW() RETURNING id`,[run.id,lease,JSON.stringify(run.calls)])
         if(!reserved.rows[0])throw error('radar_research_lease_lost')
         await reservation.query('COMMIT')
       } catch (cause) { await reservation.query('ROLLBACK');delete run.calls[key];throw cause } finally { reservation.release() }
       // No automatic replay after a crash/ambiguous response. Reserved units still count against the cap.
-      try { const result = await request(apiKey); run.calls[key] = {...run.calls[key],status:'completed',result}; return result }
-      catch (cause) { run.calls[key] = {...run.calls[key],status:'failed',error:cause instanceof Error ? cause.message:'provider_request_failed'}; throw cause }
+      try { const result = await request(apiKey); effectCompleted=true;run.calls[key] = {...run.calls[key],status:'completed',result}; return result }
+      catch (cause) {
+        effectCompleted=true
+        const previous=run.calls[key],notBilled=sourceKey.startsWith('perplexity_')&&(cause as {billingOutcome?:string})?.billingOutcome==='not_billed'
+        run.calls[key] = {...previous,status:'failed',error:cause instanceof Error ? cause.message:'provider_request_failed',...(sourceKey.startsWith('perplexity_')?{billingOutcome:notBilled?'not_billed':(cause as {billingOutcome?:string}).billingOutcome??'uncertain'}:{}),...(notBilled?{billableRequestCount:0,costEstimate:estimateRadarCostBrl({amount:'0',currency:'BRL',rateSnapshot:previous.costPolicy??previous.costEstimate?.rateSnapshot??null})}:{})}
+        if(notBilled&&previous.usageDate){
+          const refund=await pool.connect()
+          try{
+            await refund.query('BEGIN')
+            await refund.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[run.campaign_id,run.organization_id])
+            const recorded=await refund.query(`UPDATE public.radar_candidate_research_runs SET calls=jsonb_set(calls,ARRAY[$3],$4::jsonb) WHERE id=$1 AND lease_id=$2 AND lease_until>NOW() AND calls->$3->>'status'='reserved' RETURNING id`,[run.id,lease,key,JSON.stringify(run.calls[key])])
+            if(recorded.rows.length)await refund.query(`UPDATE public.radar_source_usage_counters SET estimated_cost=GREATEST(0,estimated_cost-$5::numeric),updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2 AND source_type=$3 AND usage_date=$4::date`,[run.organization_id,run.campaign_id,sourceKey,previous.usageDate,previous.costEstimate?.amountBrl??'0'])
+            await refund.query('COMMIT')
+          }catch(failure){await refund.query('ROLLBACK');throw failure}finally{refund.release()}
+        }
+        throw cause
+      }
       finally { const updated=await pool.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb,updated_at=NOW() WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,JSON.stringify(run.calls)]);if(!updated.rows[0])throw error('radar_research_lease_lost') }
     }
+    // A received reply belongs to the original reservation. Normalize it for
+    // free after a parser/checkpoint failure; never purchase the query again.
+    for(const call of Object.values(run.calls)){
+      if(call.status==='completed'||!call.responseBody||!call.query||!['perplexity_search_fast','perplexity_search_web'].includes(call.source))continue
+      try{call.result=await normalizeSavedRadarWeb({provider:call.source as RadarWebSearchProvider,query:call.query,limit:20},call.responseBody);call.status='completed'}
+      catch{continue} // Preserve unreadable raw material and its uncertain hold.
+    }
     // Recover a completed provider response even if the process stopped before the discovery checkpoint.
-    const cachedHits=Object.values(run.calls).flatMap(call=>call.status==='completed' && ['brave_web_search','serper_web_search'].includes(call.source) && Array.isArray(call.result)?call.result as RadarWebHit[]:[])
+    const cachedHits=Object.values(run.calls).flatMap(call=>call.status==='completed' && ['brave_web_search','serper_web_search','perplexity_search_fast','perplexity_search_web'].includes(call.source) && Array.isArray(call.result)?call.result as RadarWebHit[]:[])
     const cachedLocal=Object.values(run.calls).flatMap(call=>call.status==='completed'&&call.source==='brave_place_search'&&Array.isArray(call.result)
       ? (call.result as Awaited<ReturnType<typeof searchRadarPlaces>>).flatMap(place=>place.sourceUrl?[{url:place.websiteUrl||place.sourceUrl,title:place.name,
         snippets:[place.address,place.phone,place.email].filter((value):value is string=>!!value),observedAt:place.observedAt}]:[]):[])
     const invokeAnalysis=async<T>(key:'presence'|'semantic',path:string,body:Record<string,unknown>):Promise<T>=>{
-      try{return await(dependencies.runtime??invokeAgentRuntime)<T>(env,path,body)}
+      try{return await runtime<T>(env,path,body)}
       catch(cause){
         const message=cause instanceof Error?cause.message:''
         // Explicit wallet denial and typed request-validation rejection prove that
@@ -765,9 +844,10 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const result=await decideRadarAction(pool,decisionRequester,{schemaVersion:1,organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,configurationRevision:run.configuration_revision,task,
           identity:decisionIdentity,criteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus,includeTerms:configuration.qualification.includeAnyTerms,includeAllTerms:configuration.qualification.includeAllTerms,excludeTerms:configuration.qualification.excludeTerms,desiredCnaes:context.target_cnaes,cnaeRule:configuration.qualification.requireCnaeMatch?'required':'advisory',requiredContacts:configuration.research.completion.contactTypes,minimumUsefulContacts:String(configuration.research.completion.minimumUsefulContacts),contactPurpose:configuration.research.contactPurpose},
           evidence:pages.filter(page=>!!page.text&&!page.limitation).slice(0,30).map(page=>({id:`ev_${radarDecisionHash({url:page.url,text:page.text}).slice(0,24)}`,sourceUrl:page.url,text:page.text,role:'activity',primary:isRadarInstitutionalSource(page.url,{text:page.text}),contradictory:cnpjConflict(identity,page.text),scope:!cnpjConflict(identity,page.text)&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'?'establishment':'unresolved'})),options,humanReviewed:payload.manualDecisionOverride===true||payload.braveMatchStatus==='manual_matched'},
-          {env,runId:run.id,leaseId:lease,runtime:dependencies.runtime,authorize:assertEffectAuthorization})
+          {env,runId:run.id,leaseId:lease,runtime,authorize:assertEffectAuthorization,beforeEffect})
         return{action:result.action}
       }catch(cause){
+        rethrowRadarAdaptiveYield(cause)
         signal?.throwIfAborted()
         // Optional decisions must not stop facts collection. Uncertain effects
         // remain in their receipts/calls and are never silently repurchased.
@@ -781,9 +861,21 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const dossier = await runRadarResearchPipeline(identity,configuration,{...run.output,
       ...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true,readingComplete:true}:{}),
       discoveryHits:[...(run.output.discoveryHits??run.output.discovery?.hits??[]),...cachedHits,...cachedLocal],
-      discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length},{
-      signal,checkpoint,decide,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : dependencies.collect,
-      queriesUsed:()=>Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search'].includes(call.source)).length,
+      discoveryQueries:Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search','perplexity_search_fast','perplexity_search_web'].includes(call.source)).length},{
+      signal,checkpoint,decide,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : collect,
+      collectSocial:adaptiveTurn?(input,options={})=>collectRadarPublicSocialEvidence(input,{...options,inspect:async url=>{beforeEffect();await assertEffectAuthorization();try{return await inspectRadarBusinessSite(url)}finally{effectCompleted=true}},checkpoint:async page=>{await options.checkpoint?.(page);if(effectCompleted)throw new RadarAdaptiveTurnYield()}}):undefined,
+      deepResearch:configuration.research.deepResearchEnabled?async(gaps,pages)=>{
+        const {websiteUrl:_website,phone:_phone,...subject}=identity
+        const evidence=pages.filter(page=>!page.limitation&&page.text).slice(0,4).map(page=>({url:page.url,text:page.text.slice(0,1500)}))
+        try{
+          const result=await researchRadarGaps(pool,user,{organizationId:run.organization_id,candidateId:run.candidate_id,revision:run.configuration_revision,gaps,context:{identity:subject,criteria:{segment:context.target_segment,offer:context.offer_type,contactPurpose:configuration.research.contactPurpose},evidence,urls:evidence.map(page=>page.url)}},{env,runId:run.id,leaseId:lease,runtime,authorize:assertEffectAuthorization,beforeEffect})
+          return result.evidence.map(item=>({url:item.sourceUrl,title:identity.name,snippets:[item.text],observedAt:item.observedAt,evidenceKind:'search_excerpt' as const}))
+        }finally{
+          const saved=(await pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE id=$1 AND lease_id=$2',[run.id,lease])).rows[0]?.calls
+          if(saved)run.calls=saved
+        }
+      }:undefined,
+      queriesUsed:()=>Object.values(run.calls).filter(call=>['brave_web_search','serper_web_search','brave_place_search','perplexity_search_fast','perplexity_search_web'].includes(call.source)).length,
       searchCapacity,searchAttempted,
       tlsOptions:hostname=>getRadarTlsReadOptions(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision},hostname),
       local:configuration.sources.enrichWithBrave && configuration.research.localSearchOrder!=='disabled' && identity.city && identity.state ? async () => {
@@ -794,7 +886,13 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       web: async (query,selectedSource) => {
         const source=selectedSource??configuration.research.webSearchProviders.find(source=>hasRadarSearchCapacity(searchCapacity(),source))
         if(!source||!configuration.research.webSearchProviders.includes(source))throw error('candidate_search_limit_reached')
-        return paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5}))
+        return paid(source,query,key=>(dependencies.web??searchRadarWeb)({provider:source,apiKey:key,query,limit:5,
+          ...(source.startsWith('perplexity_')?{onResponse:async(body:unknown)=>{
+            const callKey=createHash('sha256').update(`${source}:${query}`).digest('hex')
+            run.calls[callKey]={...run.calls[callKey],responseBody:sanitizeRadarEffectBody(body),billingOutcome:'billed',queryCount:1,billableRequestCount:1}
+            const stored=await pool.query(`UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 AND lease_until>NOW() RETURNING id`,[run.id,lease,JSON.stringify(run.calls)])
+            if(!stored.rows[0])throw error('radar_research_lease_lost')
+          }}:{})}))
       },
       resolvePresence:async(evidence,evidenceHash,version)=>{
         const bindings=run.calls.presence&&radarEvidenceBindingMatch(run.calls.presence,version)
@@ -819,6 +917,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
           [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_presence_explicit_route_required')
+        beforeEffect()
         await assertEffectAuthorization()
         const requestEvidence=canonicalRadarAnalysisEvidence(evidence)
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
@@ -863,6 +962,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           AND (client_id IS NULL OR client_id=$2) AND (contract_id IS NULL OR contract_id=$3) AND agent_id IS NULL LIMIT 1`,
         [run.organization_id,tenant.rows[0]?.client_id??null,tenant.rows[0]?.contract_id??null])
         if(!route.rows[0])throw error('radar_qualification_explicit_route_required')
+        beforeEffect()
         await assertEffectAuthorization()
         const requestEvidence=canonicalRadarAnalysisEvidence(pages.map(page=>({...page,text:page.text.slice(0,12000)})))
         run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previousSemantic?.rejections,
@@ -888,6 +988,17 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     await persistDossier(pool,run,lease,context,dossier)
     return {runId:run.id,status:dossier.limitations.length ? 'partial':'succeeded'}
   } catch (cause) {
+    if(cause instanceof RadarAdaptiveTurnYield){
+      await updateResearchProgress(pool,run,async client=>{
+        const updated=await client.query(`UPDATE public.radar_candidate_research_runs SET status='queued',error_code=NULL,lease_id=NULL,lease_until=NULL,updated_at=NOW() WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease])
+        if(updated.rows.length){
+          await client.query('UPDATE public.radar_capture_items SET dispatch_generation=dispatch_generation+1 WHERE run_id=$1 AND organization_id=$2',[run.id,run.organization_id])
+          await client.query('UPDATE public.radar_research_request_items SET dispatch_generation=dispatch_generation+1 WHERE run_id=$1 AND organization_id=$2',[run.id,run.organization_id])
+        }
+        return updated
+      })
+      return{runId:run.id,status:'queued',yielded:true}
+    }
     const code = cause instanceof Error ? cause.message : 'research_failed'
     await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET status='blocked',error_code=$3,lease_id=NULL,lease_until=NULL,updated_at=NOW()
       WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,code]),false)
@@ -942,9 +1053,9 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     const dependencies=radarResearchDependencyVersions({identity,criteria:configuration.qualification,evidence:dossier.pages,contacts:known})
     const payload = mergeRadarCompanyResearch(candidate.rows[0].normalized_payload,{researchRunId:run.id,researchRevision:run.configuration_revision,researchDependencyVersions:dependencies,
       publicPresence:projectRadarPublicPresence({configurationRevision:run.configuration_revision,identity,...dossier}),
-      researchComplete:dossier.limitations.length===0,researchUsesBrave:run.operation==='reanalyze'
-        ?context.normalized_payload.researchUsesBrave===true:Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
-      researchUsesSerper:run.operation==='reanalyze'?context.normalized_payload.researchUsesSerper===true:Object.values(run.calls).some(call=>call.source==='serper_web_search'),
+      researchComplete:dossier.limitations.length===0,researchUsesBrave:context.normalized_payload.researchUsesBrave===true||Object.values(run.calls).some(call=>call.source==='brave_web_search'||call.source==='brave_place_search'),publicContacts:known,
+      researchUsesSerper:context.normalized_payload.researchUsesSerper===true||Object.values(run.calls).some(call=>call.source.startsWith('serper_')),
+      researchUsesPerplexity:context.normalized_payload.researchUsesPerplexity===true||Object.values(run.calls).some(call=>call.source.startsWith('perplexity_')),
       companyProfile:dossier.profile,sizeAssessment:dossier.sizeAssessment,presenceResolution:dossier.presenceResolution,researchMethodVersion:RADAR_RESEARCH_METHOD_VERSION,
       researchQuality:quality,researchIdentityName:identity.name,
       ...(dossier.decisionExcluded&&context.normalized_payload.manualDecisionOverride!==true?{decisionExclusion:{active:true,revision:run.configuration_revision,reason:'outside_profile',runId:run.id}}:context.normalized_payload.decisionExclusion?{decisionExclusion:{...(context.normalized_payload.decisionExclusion as Record<string,unknown>),active:false}}:{}),

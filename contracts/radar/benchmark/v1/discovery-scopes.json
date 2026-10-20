@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "queryPlanVersion": "1.0.0-draft",
+  "queryPlanVersion": "1.1.0-draft",
   "executionStatus": "not_evaluated",
   "country": "BR",
   "sources": [
@@ -10,7 +10,9 @@
     "serper_web_search",
     "brave_web_search",
     "cnpja_advanced_search",
-    "perplexity_search"
+    "perplexity_search_fast",
+    "perplexity_search_web",
+    "perplexity_agent"
   ],
   "scopes": [],
   "requirements": [
@@ -18,6 +20,7 @@
     "OSM exige snapshot municipal e segmento suportado; indisponibilidade não é ausência de empresas.",
     "Places depende de direitos de retenção e entrega; fontes sem licença não serão executadas.",
     "Congelar período, consultas, cotações e orçamento antes de executar.",
+    "Agent seletivo usa orçamento estimado aceito, recibo por tentativa e custo real quando conhecido; incerteza nunca é custo zero.",
     "Sem chamadas externas automáticas; resultados ausentes permanecem not_evaluated."
   ]
 }

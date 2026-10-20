@@ -6,6 +6,7 @@ import {runRadarCnpjaAdvancedSearch,assertRadarRegionalBatchAccess} from './repo
 import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './search-configuration.js'
 import {admitRadarCapturePage,assertCaptureAvailability,captureError,getRadarCaptureOperation,type AvailabilityLoader} from './capture-operation.js'
 import {loadRadarCapturePageAccounting} from './capture-capacity.js'
+import {advanceRadarAdaptiveCapture} from './adaptive-capture.js'
 
 export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,availability?:AvailabilityLoader,checkAvailability=true){
  const op=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
@@ -15,7 +16,9 @@ export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,o
  const user={id:row.id,email:row.email,name:row.display_name,role:row.role} as AuthUser
  const revision=await assertRadarRegionalBatchAccess(pool,user,organizationId,op.campaign_id)
  if(revision!==op.configuration_revision)throw captureError('radar_campaign_configuration_changed')
- if(checkAvailability)await assertCaptureAvailability(pool,user,organizationId,op.campaign_id,availability)
+ // v2 authorizes each actual source/effect independently. A global search
+ // quota must not prevent normalizing/admitting an already received page.
+ if(checkAvailability&&op.pipeline_version!==2)await assertCaptureAvailability(pool,user,organizationId,op.campaign_id,availability)
  return{op,user}
 }
 export async function blockRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,cause:unknown){
@@ -23,11 +26,12 @@ export async function blockRadarCapture(pool:pg.Pool,organizationId:string,opera
  const code=/^[a-z][a-z0-9_]{2,100}$/.test(raw)?raw:'radar_capture_unavailable'
  await pool.query("UPDATE public.radar_capture_operations SET status='blocked',blockers=$3,updated_at=NOW() WHERE id=$1 AND organization_id=$2",[operationId,organizationId,JSON.stringify([code])])
 }
-export async function advanceRadarCaptureDiscovery(pool:pg.Pool,env:AppEnv,input:{organizationId:string;operationId:string},dependencies:Parameters<typeof runRadarCnpjaAdvancedSearch>[3]&{availability?:AvailabilityLoader}={}){
+export async function advanceRadarCaptureDiscovery(pool:pg.Pool,env:AppEnv,input:{organizationId:string;operationId:string},dependencies:Parameters<typeof runRadarCnpjaAdvancedSearch>[3]&{availability?:AvailabilityLoader}&NonNullable<Parameters<typeof advanceRadarAdaptiveCapture>[4]>={}){
  let authorized:Awaited<ReturnType<typeof authorizeRadarCapture>>
  try{authorized=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability)}catch(cause){await blockRadarCapture(pool,input.organizationId,input.operationId,cause);throw cause}
  const {op,user}=authorized,configuration=resolveRadarSearchConfiguration(op.configuration_snapshot.search_configuration)
  if(op.discovery_stopped||op.status==='blocked')return getRadarCaptureOperation(pool,user,input.organizationId,op.id)
+ if(op.pipeline_version===2){try{await advanceRadarAdaptiveCapture(pool,env,op,user,dependencies)}catch(cause){await blockRadarCapture(pool,input.organizationId,op.id,cause)}return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
  if(op.discovery_pending){await blockRadarCapture(pool,input.organizationId,op.id,captureError('radar_capture_discovery_uncertain'));return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
  const scopes=buildRadarDiscoveryScopes({targetStates:op.configuration_snapshot.target_states,configurationRevision:op.configuration_revision,searchConfiguration:configuration})
  const client=await pool.connect()

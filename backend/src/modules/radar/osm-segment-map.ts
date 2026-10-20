@@ -1,6 +1,6 @@
 export const RADAR_OSM_SEGMENT_MAP_VERSION = '1.0.0'
 
-export type RadarOsmSegmentKey = 'medical_clinics'
+export type RadarOsmSegmentKey = string
 
 function normalizeText(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()

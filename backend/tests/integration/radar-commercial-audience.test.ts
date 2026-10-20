@@ -68,6 +68,7 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
   const hadPermission=(await pool.query("SELECT 1 FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")).rows.length>0
   await pool.query("INSERT INTO public.role_permissions(role_key,permission_key) VALUES('client_admin','radar:manage') ON CONFLICT DO NOTHING")
   await activateCaptureSearch(pool)
+  await pool.query(`UPDATE public.platform_provider_connections SET public_config=public_config||'{"clientDeliveryLicensed":true}'::jsonb WHERE provider_key='brave_place'`)
   const candidate=(await pool.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{"cnpj":"12345678000190","tradeName":"Empresa Alfa","city":"Curitiba","state":"PR"}') RETURNING id`,[fixtureIds.organizationA,campaignId,randomUUID()])).rows[0]
   try{
    await pool.query(`UPDATE public.radar_campaigns SET search_configuration=jsonb_set(jsonb_set(jsonb_set(search_configuration,'{research,enabled}','true'),'{research,webSearchEnabled}','true'),'{sources,enrichWithBrave}','false') WHERE id=$1`,[campaignId])
@@ -112,7 +113,7 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
   else expect(response.body).not.toMatch(/remainingQueries|researchCapacity|plannedMaximumQueries|brave|serper|policy/i)
  })
  it.each(['yux_operator','client_admin_A','client_member_A'])('withholds catalog and operational diagnostics from %s',async user=>{
-  for(const path of ['/admin/stalled-research',`/data-sources?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/research-availability?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/runs`]){
+  for(const path of ['/admin/stalled-research','/admin/discovery-policy',`/data-sources?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/research-availability?organizationId=${fixtureIds.organizationA}`,`/campaigns/${campaignId}/runs`]){
    const response=await get(path,user);expect(response.statusCode).toBe(403);expect(response.body).not.toMatch(/brave|cnpja|serper|model|cost|provider/i)
   }
  })

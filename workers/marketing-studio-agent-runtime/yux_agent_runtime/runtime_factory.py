@@ -52,8 +52,8 @@ def _provider_api_key(store: AgentRuntimeStore, provider_key: str) -> tuple[str 
             raise ProviderAvailabilityError("provider_credentials_invalid") from error
     if envelope:
         raise ProviderAvailabilityError("provider_credentials_invalid")
-    environment_key = "OPENROUTER_API_KEY" if provider_key == "openrouter" else "OPENAI_API_KEY"
-    return os.getenv(environment_key), public_config
+    environment_key = {'openrouter':'OPENROUTER_API_KEY','openai_direct':'OPENAI_API_KEY'}.get(provider_key)
+    return os.getenv(environment_key) if environment_key else None, public_config
 
 
 class _LazyProviderClient:

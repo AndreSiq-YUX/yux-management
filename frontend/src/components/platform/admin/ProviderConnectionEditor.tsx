@@ -94,6 +94,8 @@ export function ProviderConnectionEditor({
   const [retentionLicensed, setRetentionLicensed] = useState(provider?.publicConfig?.retentionLicensed === true)
   const [webSearchLicensed, setWebSearchLicensed] = useState(provider?.publicConfig?.webSearchLicensed === true)
   const [clientDeliveryLicensed, setClientDeliveryLicensed] = useState(provider?.publicConfig?.clientDeliveryLicensed === true)
+  const [agentResearchLicensed,setAgentResearchLicensed]=useState(provider?.publicConfig?.agentResearchLicensed===true)
+  const [placesRetentionLicensed,setPlacesRetentionLicensed]=useState(provider?.publicConfig?.placesRetentionLicensed===true)
   const [saving, setSaving] = useState(false)
   const [savingCredential, setSavingCredential] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -102,7 +104,7 @@ export function ProviderConnectionEditor({
   const [credentialSaved, setCredentialSaved] = useState(false)
   const [testResult, setTestResult] = useState<ProviderConnectionTestResult | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const isLockedProviderKey = ['smtp2go', 'cnpja', 'serper', 'brave_place', 'openrouter', 'openai_direct'].includes(defaults.providerKey)
+  const isLockedProviderKey = ['smtp2go', 'cnpja', 'serper', 'brave_place', 'openrouter', 'openai_direct','perplexity'].includes(defaults.providerKey)
   const providerKeyValue = isLockedProviderKey ? defaults.providerKey : providerKey
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -129,6 +131,13 @@ export function ProviderConnectionEditor({
         parsedConfig.webSearchLicensed=webSearchLicensed
         parsedConfig.clientDeliveryLicensed=webSearchLicensed&&clientDeliveryLicensed
       }
+      if(providerKeyValue==='perplexity'){
+        parsedConfig.retentionLicensed=retentionLicensed
+        parsedConfig.webSearchLicensed=retentionLicensed
+        parsedConfig.clientDeliveryLicensed=retentionLicensed&&clientDeliveryLicensed
+        if(agentResearchLicensed||'agentResearchLicensed' in parsedConfig)parsedConfig.agentResearchLicensed=retentionLicensed&&agentResearchLicensed
+      }
+      if(providerKeyValue==='serper'&&(placesRetentionLicensed||'placesRetentionLicensed' in parsedConfig))parsedConfig.placesRetentionLicensed=placesRetentionLicensed
       if (!isLockedProviderKey && /^api[-_]/i.test(providerKey.trim())) {
         throw new Error('provider_key_looks_like_api_key')
       }
@@ -326,7 +335,14 @@ export function ProviderConnectionEditor({
         <label className="flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed}
           onChange={event => setClientDeliveryLicensed(event.target.checked)} /> Confirmo permissão de entrega a cliente</label>
       </div>}
+      {providerKeyValue==='perplexity'&&<fieldset className="mt-4 rounded-md border p-3 text-sm"><legend className="px-1 font-medium">Perplexity — direitos de uso</legend>
+        <p className="text-muted-foreground">Search e investigação usam esta chave própria, não a do OpenRouter. Salvar não ativa fontes nem executa chamadas pagas. Confirme os direitos do plano e do conteúdo; não é necessário informar referência textual.</p>
+        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={retentionLicensed} onChange={event=>setRetentionLicensed(event.target.checked)}/>Confirmo armazenamento dos resultados Perplexity</label>
+        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed} disabled={!retentionLicensed} onChange={event=>setClientDeliveryLicensed(event.target.checked)}/>Confirmo entrega dos resultados Perplexity a clientes</label>
+        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={agentResearchLicensed} disabled={!retentionLicensed} onChange={event=>setAgentResearchLicensed(event.target.checked)}/>O plano e a chave permitem investigação com Perplexity Agent</label>
+      </fieldset>}
       {providerKeyValue==='serper'&&<fieldset className="mt-4 rounded-md border p-3 text-sm"><legend className="px-1 font-medium">Google via Serper — pesquisa web</legend>
+        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={placesRetentionLicensed} onChange={event=>setPlacesRetentionLicensed(event.target.checked)}/>O plano permite armazenar resultados de Places</label>
         <p className="text-muted-foreground">Confirme as permissões do seu plano para pesquisa orgânica. Esta confirmação não muda a política transitória de Places nem exige reenviar a chave.</p>
         <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={webSearchLicensed} onChange={event=>setWebSearchLicensed(event.target.checked)}/>Confirmo uso da pesquisa web com armazenamento dos resultados</label>
         <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={clientDeliveryLicensed} disabled={!webSearchLicensed} onChange={event=>setClientDeliveryLicensed(event.target.checked)}/>Confirmo permissão de entrega dos resultados web a clientes</label>

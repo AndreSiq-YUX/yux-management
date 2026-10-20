@@ -9,6 +9,9 @@ import { testRadarPlaceProvider } from '../radar/place-providers.js'
 import { getAdminLlmUseCases, isEmbeddingUseCase, LLM_PROVIDERS } from './llm-routing.js'
 import { invokeAgentRuntime } from '../../lib/agent-runtime-client.js'
 import {decisionConfigSchema} from '../radar/decision-contracts.js'
+import {radarDeepResearchConfigSchema,radarDeepResearchBudget} from '../radar/deep-research.js'
+import {loadRadarOperationalLimits} from '../radar/operational-limits.js'
+import {estimateRadarCostBrl} from '../radar/cost-conversion.js'
 import {getRadarDecisionRouteStatus,testRadarDecisionRoute} from '../radar/decision-admin.js'
 import {approveRadarDecisionCalibration,listRadarDecisionCalibrations} from '../radar/decision-calibration.js'
 import {
@@ -159,6 +162,7 @@ const llmRouteSchema = z.object({
   kind:z.enum(['chat','embedding','decision','research']).optional(),
   protocol:z.string().min(1).max(100).optional(),
   decisionConfig:decisionConfigSchema.optional(),
+  researchConfig:radarDeepResearchConfigSchema.optional(),
   id: z.string().uuid().optional(),
   agentType: z.string().trim().min(1).max(200).nullable(),
   organizationId: z.string().uuid().nullable().optional(),
@@ -415,6 +419,15 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     const route = await getAdminLlmRouteById(app.pg, params.data.routeId)
     if (!route) return reply.code(404).send({ error: 'llm_route_not_found' })
     if(route.kind==='decision')return testRadarDecisionRoute(app.pg,app.config,user,route,request.body)
+    if(route.kind==='research'){
+      const policy=await loadRadarOperationalLimits(app.pg)
+      const budget=radarDeepResearchBudget(route.researchConfig,policy.limits.maxFallbackAttemptsPerEffect)
+      const price=estimateRadarCostBrl({amount:budget.amountUsd,currency:'USD',rateSnapshot:policy.costPolicy})
+      const provider=await getProviderConnectionByKey(app.pg,'perplexity')
+      const apiKey=provider?await loadPlatformProviderSecret(app.pg,provider.id,'api_key',providerSecretKeyMaterial(app.config)):null
+      const ok=route.status==='active'&&provider?.status==='active'&&!!apiKey&&provider.publicConfig.retentionLicensed===true&&provider.publicConfig.agentResearchLicensed===true&&price.amountBrl!==null
+      return{ok,paid:false,message:ok?`Configuração conferida sem chamada paga. Reserva estimada de até R$ ${price.amountBrl}; o custo real de uma chamada pode superar a estimativa. Teste operacional em uma pesquisa autorizada.`:'Confira rota ativa, chave própria, permissões do Agent e cotação em reais. Nenhuma chamada paga foi executada.',model:route.modelName,provider:'perplexity',checkedAt:new Date().toISOString()}
+    }
     if(route.kind!=='chat'&&route.kind!=='embedding')return reply.code(409).send({error:'llm_route_classification_required'})
     const provider = await getProviderConnectionByKey(app.pg, route.provider)
     if (!provider) return reply.code(409).send({ error: 'llm_provider_not_configured' })
@@ -841,7 +854,7 @@ type Smtp2GoTestResult = {
 }
 
 function isCredentialManagedProvider(providerKey: string) {
-  return ['smtp2go', 'cnpja', 'serper', 'brave_place', 'openrouter', 'openai_direct'].includes(providerKey)
+  return ['smtp2go', 'cnpja', 'serper', 'brave_place', 'openrouter', 'openai_direct','perplexity'].includes(providerKey)
 }
 
 async function testProviderConnection(
@@ -853,6 +866,7 @@ async function testProviderConnection(
   if (providerKey === 'cnpja') return testCnpjaProvider(apiKey, publicConfig as Parameters<typeof testCnpjaProvider>[1])
   if (providerKey === 'serper') return testRadarPlaceProvider('serper_places', apiKey)
   if (providerKey === 'brave_place') return testRadarPlaceProvider('brave_place_search', apiKey)
+  if(providerKey==='perplexity')return{ok:false,message:apiKey?'Credencial cadastrada. A validação operacional exige uma pesquisa paga explicitamente autorizada no Radar; nenhuma chamada foi executada.':'Cadastre a API key Perplexity.'}
   if (providerKey === 'openrouter' || providerKey === 'openai_direct') {
     return testLlmProvider(providerKey, apiKey, publicConfig)
   }

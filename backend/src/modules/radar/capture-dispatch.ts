@@ -19,6 +19,9 @@ import {radarCaptureRefreshAuthorized} from './capture-analysis-authorization.js
 import {reconcileRadarCaptureSummary,reconcileRadarCaptureItems} from './capture-reconciliation.js'
 import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy} from './research-budget.js'
 import {normalizeRadarCounters} from './numeric-counters.js'
+import {loadRadarAdaptiveItems} from './adaptive-capture.js'
+import {radarAdaptiveDiscoveryCounts} from './discovery-plan.js'
+import {authorizeRadarAdaptiveContinuations} from './adaptive-continuation.js'
 
 export const classifyRadarCaptureResearch=(run:Parameters<typeof assessRadarCaptureResearch>[0])=>assessRadarCaptureResearch(run).status
 type CaptureQueue=Pick<RegisteredJobQueue,'add'>
@@ -135,7 +138,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   if(current.lease_active&&!current.discovery_pending)throw captureError('radar_capture_in_progress')
   if(current.discovery_pending&&!await recoverRejectedRadarCaptureDiscovery(client,current))throw captureError('radar_capture_discovery_uncertain')
   current.discovery_pending=false
-  const admitted=Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
+  const admitted=current.pipeline_version===2?radarAdaptiveDiscoveryCounts(await loadRadarAdaptiveItems(client,op.id,input.organizationId)).qualifiedNew:Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
   const limitPause=isRadarCaptureLimitPause(current,admitted)
   if(current.status!=='blocked'&&!limitPause&&(input.limitsAuthorization||input.restartExpiredContinuation||input.continuationAuthorizations?.length)){
    throw captureError(input.limitsAuthorization?'radar_capture_limits_confirmation_stale':'radar_capture_continuation_confirmation_stale')
@@ -150,9 +153,10 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
    if(!preflight.allowed)throw captureError(preflight.blockers[0]?.code??'radar_capture_research_unavailable')
    if(preflight.requiresLimitsApproval&&!input.limitsAuthorization)throw captureError('radar_capture_limits_confirmation_required')
    if(input.limitsAuthorization)await authorizeRadarCaptureLimits(client,user,current,{...input.limitsAuthorization,requestId:input.requestId},dependencies)
-   if(!input.continuationAuthorizations?.length)await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId,continuationStateId:input.continuationStateId})
+   if(current.pipeline_version!==2&&!input.continuationAuthorizations?.length)await recoverExpiredRadarCaptureContinuation(client,current,{confirmed:input.restartExpiredContinuation===true,requestId:input.requestId,approvedBy:user.id,continuationReceiptId:input.continuationReceiptId,continuationStateId:input.continuationStateId})
    const continuationScopes=scopes.filter(scope=>preflight.continuations.some(s=>s.scopeKey===scope.key)).map(scope=>({...scope,organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision}))
-   await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
+   if(current.pipeline_version===2)await authorizeRadarAdaptiveContinuations(client,{organizationId:input.organizationId,campaignId:op.campaign_id,configurationRevision:input.configurationRevision},policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
+   else await authorizeRadarContinuations(client,continuationScopes,policy,{authorizations:input.continuationAuthorizations,requestId:input.requestId,approvedBy:user.id})
    const items=(await client.query("SELECT * FROM public.radar_capture_items WHERE operation_id=$1 AND (status='blocked' OR ($2 AND status='insufficient' AND run_id IS NOT NULL))",[op.id,current.discovery_stopped&&!limitPause])).rows
    if(!limitPause&&items.length){
     const runs=(await client.query('SELECT id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND id=ANY($2::uuid[])',[input.organizationId,items.map(item=>item.run_id).filter(Boolean)])).rows

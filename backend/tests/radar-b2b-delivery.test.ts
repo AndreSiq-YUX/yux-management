@@ -38,6 +38,12 @@ describe('B2B prospect delivery', () => {
     expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{},true)).toThrow('radar_serper_client_delivery_not_approved')
     expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{webSearchLicensed:true,clientDeliveryLicensed:true},true)).not.toThrow()
   })
+  it('checks Search, Agent and Places origin permissions independently of discovery admission',()=>{
+    expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,undefined,false,{},true)).toThrow('radar_perplexity_client_delivery_not_approved')
+    expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,undefined,false,{retentionLicensed:true,clientDeliveryLicensed:true},true)).not.toThrow()
+    expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{clientDeliveryLicensed:true},false,undefined,false,true)).toThrow('radar_serper_places_client_delivery_not_approved')
+    expect(()=>assertB2bDeliveryRights({clientDeliveryLicensed:true},undefined,false,{placesRetentionLicensed:true,clientDeliveryLicensed:true},false,undefined,false,true)).not.toThrow()
+  })
   it('exports sourced profile and supplier contacts without turning unknown size into zero',()=>{
     const fields=radarCompanyExportFields({companyProfile:{summary:{value:'Soluções B2B',sourceUrl:'https://alfa.example'},services:[],customerSegments:[],operatingRegions:[]},
       sizeAssessment:{score:null,evidenceCoverage:0,contributions:[]}},[{kind:'email',value:'compras@alfa.example',purpose:'suppliers',sourceUrl:'https://alfa.example',observedAt:'2026-10-12',association:'confirmed'}])

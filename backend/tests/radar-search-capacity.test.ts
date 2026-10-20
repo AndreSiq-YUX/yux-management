@@ -8,7 +8,7 @@ it('counts uncertain search attempts conservatively without consuming other sour
     a:{source:'serper_web_search',status:'reserved'},b:{source:'serper_web_search',status:'completed'},
     c:{source:'brave_web_search',status:'rejected_before_provider'},d:{source:'radar_presence_resolution',status:'reserved'},
   }})
-  expect(capacity).toEqual({bySource:{serper_web_search:{used:2,remaining:0},brave_web_search:{used:0,remaining:2},brave_place_search:{used:0,remaining:2}},totalRemaining:null})
+  expect(capacity).toMatchObject({bySource:{serper_web_search:{used:2,remaining:0},brave_web_search:{used:0,remaining:2},brave_place_search:{used:0,remaining:2}},totalRemaining:null})
 })
 it('increasing an existing intent from three to five leaves only two new calls after three consumed',()=>{
  const calls=Object.fromEntries(Array.from({length:8},(_,i)=>[`call-${i}`,{source:'brave_web_search',status:'completed'}]))

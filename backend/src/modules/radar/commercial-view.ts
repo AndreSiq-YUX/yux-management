@@ -9,7 +9,7 @@ const text=z.string().optional().catch(undefined)
 const number=z.number().finite().optional().catch(undefined)
 const bool=z.boolean().optional().catch(undefined)
 // Applied only to generated narratives/operational notes, never company identity or user campaign copy.
-const internalNarrative=/\b(?:openrouter|openai|serper|cnpj[aá]|jina|brave|gemini|qwen|playwright|bullmq|redis|tokens?|embeddings?)(?:\b|_)|radar_[a-z_]+|api[_ -]?key|provider[_ -]|stacktrace|robots_unavailable/i
+const internalNarrative=/\b(?:openrouter|openai|perplexity|serper|cnpj[aá]|jina|brave|gemini|qwen|playwright|bullmq|redis|tokens?|embeddings?)(?:\b|_)|radar_[a-z_]+|api[_ -]?key|provider[_ -]|stacktrace|robots_unavailable/i
 export const radarCommercialText=(value:unknown)=>typeof value==='string'&&!internalNarrative.test(value)?value:undefined
 // Business identity/contact/evidence is not an operational provider disclosure.
 export function radarCommercialCompanyText(value:unknown,identities:string[]=[]){
@@ -25,7 +25,7 @@ const narratives=z.array(narrative).optional().catch(undefined).transform(items=
 export function radarCommercialUrl(value:unknown){
  if(typeof value!=='string')return
  try{const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return
-  if(/(^|\.)(?:brave\.com|serper\.dev|jina\.ai|openrouter\.ai|cnpja\.com|cnpja\.ws|openai\.com)$/.test(url.hostname))return
+  if(/(^|\.)(?:brave\.com|serper\.dev|jina\.ai|openrouter\.ai|perplexity\.ai|cnpja\.com|cnpja\.ws|openai\.com)$/.test(url.hostname))return
   if([...url.searchParams.keys()].some(key=>/^(?:api[_-]?key|token|secret|key|signature|authorization)$/i.test(key)))return
   return value
  }catch{return}
@@ -62,7 +62,7 @@ export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFact
  const identities=[data.legalName,data.tradeName].filter((value):value is string=>typeof value==='string')
  const prior=object(data.previousResearch)
  return radarCommercialFactsSchemaForCompany(identities).parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
-  outsideProfile:object(data.decisionExclusion).active===true,outsideProfileRevision:object(data.decisionExclusion).revision,
+  outsideProfile:object(data.decisionExclusion).active===true||data.targetStatus==='not_target',outsideProfileRevision:object(data.decisionExclusion).active===true?object(data.decisionExclusion).revision:data.researchRevision,
   siteObservedAt:website.observedAt??data.siteCheckedAt,refreshIncomplete:data.researchRefreshIncomplete,previousResearch:prior.belongsToCurrentIdentity===true?{websiteUrl:prior.websiteUrl,observedAt:prior.siteCheckedAt,contacts:prior.publicContacts,profile:prior.companyProfile}:undefined,
   contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
@@ -73,8 +73,8 @@ export type RadarCommercialCampaign=z.infer<typeof campaignSchema>
 const candidateSchema=z.object({...base,title:text,configurationRevision:number,approvedAt:text,crmLeadId:text,importedOpportunityId:text,importedCompanyRecordId:text,
  targetStatus:text,productFit:text,pendingMessage:text,facts:factsSchema}).strip()
 export type RadarCommercialCandidate=z.infer<typeof candidateSchema>
-const countShape={requested:number,admitted:number,researching:number,completed:number,insufficient:number,blocked:number}
-const captureSchema=z.object({...base,configurationRevision:number,counts:z.object(countShape).strip(),pendingMessage:text}).strip()
+const countShape={requested:number,admitted:number,researching:number,completed:number,insufficient:number,blocked:number,qualified:number,outsideProfile:number}
+const captureSchema=z.object({...base,configurationRevision:number,countingMode:z.enum(['admitted','qualified']).optional(),counts:z.object(countShape).strip(),pendingMessage:text}).strip()
 export type RadarCommercialCapture=z.infer<typeof captureSchema>
 const assessmentSchema=z.object({targetStatus:text,productFit:text,reasons:narratives}).strip()
 const researchSchema=z.object({configurationRevision:number,status:text,updatedAt:text,pendingMessage:text,facts:factsSchema,feedback:radarCommercialStatusSchema.optional().catch(undefined),assessment:assessmentSchema.optional().catch(undefined)}).strip()

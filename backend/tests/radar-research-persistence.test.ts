@@ -56,6 +56,8 @@ class ResearchPool {
     if(sql.includes('UPDATE public.radar_candidate_records')){if(params[3]&&JSON.stringify(this.payload)!==String(params[3]))return{rows:[]};this.payload=JSON.parse(String(params[2]));return{rows:[{id:'candidate'}]}}
     if(sql.includes('INSERT INTO public.radar_b2b_'))return{rows:[]}
     if(sql.includes('FROM public.radar_site_tls_exceptions'))return{rows:[]}
+    if(sql.includes("SELECT kind='yux' AND is_internal_growth_workspace AS internal"))return{rows:[{internal:true}]}
+    if(sql.includes('SELECT CURRENT_DATE::text AS usage_date'))return{rows:[{usage_date:'2026-10-20'}]}
     throw new Error(`Unexpected fixture query: ${sql}`)
   }
 }

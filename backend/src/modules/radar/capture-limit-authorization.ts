@@ -18,9 +18,11 @@ export async function authorizeRadarCaptureLimits(client:pg.PoolClient,user:Auth
  assertRadarOperationalLimit(limits.pageSize,state.policy.limits.maxDiscoveryPageSize)
  assertRadarOperationalLimit(limits.maxPagesPerScope,state.policy.limits.maxPagesPerScope)
  assertRadarOperationalLimit(limits.maxQueriesPerBatch,state.policy.limits.maxDiscoveryQueriesPerLot)
+ const adaptive=state.operation?.pipeline_version===2
  const capacity=calculateRadarCaptureCapacity({limits,remaining:p.remaining,attemptedQueries:p.attemptedQueries,scopes:state.scopes,successfulPagesByScope:p.successfulPagesByScope,usableOverflowCount:state.overflowCount})
- if(capacity.optimisticAdditionalCapacity<p.remaining)throw captureError('radar_capture_capacity_insufficient')
- if(capacity.minimumAdditionalQueries>0){
+ if(!adaptive&&capacity.optimisticAdditionalCapacity<p.remaining)throw captureError('radar_capture_capacity_insufficient')
+ if(adaptive&&limits.maxQueriesPerBatch<=p.attemptedQueries)throw captureError('radar_capture_capacity_insufficient')
+ if(!adaptive&&capacity.minimumAdditionalQueries>0){
   const source=await findRadarDataSource(client as unknown as pg.Pool,op.organization_id,'cnpja_advanced_search')
   const transportPageSize=Math.max(limits.pageSize,...state.scopes.map(scope=>scope.inheritedPageSize??0))
   const governance=await evaluateRadarSourceGovernance(client,op.organization_id,op.campaign_id,source,capacity.minimumAdditionalQueries,capacity.minimumAdditionalQueries*Math.ceil(transportPageSize/10))

@@ -62,6 +62,7 @@ import {getRadarCapturePreflight} from './capture-preflight.js'
 const continuationAuthorizationsSchema=z.array(z.object({scopeKey:z.string().min(1).max(256),expectedStateId:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional()
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
+import {loadRadarDiscoveryPolicy,saveRadarDiscoveryPolicy} from './discovery-policy.js'
 import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,radarAdministrativeScopeSchema,radarAdministrativeRevalidationSchema} from './administrative-research.js'
 import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
@@ -257,6 +258,16 @@ export async function registerRadarRoutes(app: FastifyInstance) {
   app.get('/admin/operational-limits',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     return getRadarOperationalLimits(app.pg,user)
+  })
+  app.get('/admin/discovery-policy',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    return loadRadarDiscoveryPolicy(app.pg)
+  })
+  app.put('/admin/discovery-policy',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    return saveRadarDiscoveryPolicy(app.pg,user,request.body)
   })
   app.put('/admin/operational-limits',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

@@ -115,6 +115,7 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
     leaseId: string;
     runtime?: typeof invokeAgentRuntime;
     authorize: () => Promise<void>;
+    beforeEffect?:()=>void;
 }): Promise<RadarDecisionOutcome> {
     const input = decisionContextSchema.parse(value);
     await requireRadarScope(pool, user, { organizationId: input.organizationId, campaignId: input.campaignId, candidateId: input.candidateId }, true);
@@ -185,6 +186,7 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
                 source?: string;
             }).source === 'openrouter_decision').length >= policy.limits.maxDecisionCallsPerCompany)
                 return { action: 'continue', effectiveMode: 'observe', reasonCode: 'decision_limit_reached', evidenceIds: [] };
+            dependencies.beforeEffect?.();
             call = { status: 'reserved', source: 'openrouter_decision', requestId: `${dependencies.runId}:${input.task}:${contentHash}`, contextHash, route: { ...route, authorizedAttempts: Math.min(route.config.maxAttempts, policy.limits.maxFallbackAttemptsPerEffect + 1) }, context: input, costPolicy: policy.costPolicy, costEstimate: price };
             await db.query(`UPDATE public.radar_candidate_research_runs SET calls=jsonb_set(calls,ARRAY[$2],$3::jsonb) WHERE id=$1`, [dependencies.runId, key, JSON.stringify(call)]);
         }
@@ -222,6 +224,7 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
         if (!result) {
             if (call.status !== 'reserved' && call.status !== 'rejected_before_provider' && receipt?.status !== 'rejected_before_provider')
                 throw failure('radar_decision_previous_request_uncertain');
+            dependencies.beforeEffect?.();
             await dependencies.authorize();
             try {
                 result = await invokeRadarDecision(dependencies.env, input, call.route, tenant, call.requestId, dependencies.runtime, false, call.retryAuthorization);

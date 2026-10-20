@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test'
+import path from 'node:path'
 // Fresh fixture: backend/tests/journeys/start-radar-quality-server.ts.
 // Opt-in, synthetic data, loopback only; never use production.
 const campaignId=process.env.YUX_RADAR_QUALITY_QA_CAMPAIGN_ID
@@ -12,7 +13,7 @@ for(const viewport of [{width:1280,height:900},{width:430,height:920}])test(`qua
   page.on('pageerror',error=>errors.push(error.message))
   page.on('request',request=>{if(request.method()==='POST'&&/enrich-brave|\/research$|search-web|send-message/.test(new URL(request.url()).pathname))paidRequests.push(request.url())})
   await page.goto('/auth/login')
-  await page.getByLabel('Email',{exact:true}).fill('yux-admin@integration.test')
+  await page.getByRole('textbox',{name:'E-mail',exact:true}).fill('yux-admin@integration.test')
   await page.getByLabel('Senha',{exact:true}).fill('integration-password')
   await page.getByRole('button',{name:'Entrar',exact:true}).click()
   await expect(page).not.toHaveURL(/\/auth\/login/)
@@ -36,4 +37,21 @@ for(const viewport of [{width:1280,height:900},{width:430,height:920}])test(`qua
   await page.getByRole('button',{name:'Fechar detalhes',exact:true}).click()
   await expect(summary.getByRole('button',{name:'Ver detalhes completos'})).toBeFocused()
   expect(paidRequests).toEqual([]);expect(errors).toEqual([])
+  if(process.env.YUX_RADAR_QA_ARTIFACTS)await page.screenshot({path:path.join(process.env.YUX_RADAR_QA_ARTIFACTS,`quality-admin-${viewport.width}.png`)})
+})
+for(const role of ['client_admin','client_member','yux_operator'])for(const width of [1280,430])test(`commercial Radar hides mechanisms and keeps inline facts (${role}, ${width}px)`,async({page})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));await page.setViewportSize({width,height:920})
+ const email=role==='client_admin'?'admin-a@integration.test':role==='client_member'?'member-a@integration.test':'yux-operator@integration.test'
+ await page.goto('/auth/login');await page.getByRole('textbox',{name:'E-mail',exact:true}).fill(email);await page.getByLabel('Senha',{exact:true}).fill('integration-password');await page.getByRole('button',{name:'Entrar',exact:true}).click();await expect(page).not.toHaveURL(/\/auth\/login/)
+ await page.goto(role==='yux_operator'?`/client-workspaces/10000000-0000-4000-8000-000000000001/comercial/radar/${campaignId}`:`/portal/comercial/radar/${campaignId}`)
+ await expect(page).toHaveTitle(/YUX/)
+ await page.getByRole('button',{name:'Ver detalhes',exact:true}).first().click()
+ const inline=page.getByRole('region',{name:/Resumo de Empresa/})
+ await expect(inline).toBeVisible();await inline.scrollIntoViewIfNeeded()
+ const bounds=await inline.boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(0);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width+1)
+ expect(await page.locator('body').evaluate(element=>element.scrollWidth)).toBeLessThanOrEqual(width+1)
+ expect(await page.locator('body').innerText()).not.toMatch(/Perplexity|OpenRouter|Brave|Serper|CNPJá|licen[çc]a|tokens|custo de IA|diagnóstico operacional/i)
+ await expect(page.locator('vite-error-overlay')).toHaveCount(0)
+ expect(errors).toEqual([])
+ if(process.env.YUX_RADAR_QA_ARTIFACTS)await page.screenshot({path:path.join(process.env.YUX_RADAR_QA_ARTIFACTS,`quality-${role}-${width}.png`)})
 })

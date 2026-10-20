@@ -763,7 +763,7 @@ describe('radar routes', () => {
     ])
     const query = pool.queries.find(item => item.sql.includes('FROM public.radar_data_sources source'))
     expect(query?.sql).toContain('LEFT JOIN public.organizations')
-    expect(query?.params[0]).toEqual(['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search', 'osm_extract'])
+    expect(query?.params[0]).toEqual(['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search', 'osm_extract','perplexity_search_fast','perplexity_search_web'])
     expect(pool.queries.some(item => item.sql.includes('UPDATE public.radar_data_sources'))).toBe(false)
     expect(pool.queries.some(item => item.sql.includes('FROM public.platform_provider_connections'))).toBe(false)
   })

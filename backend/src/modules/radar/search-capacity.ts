@@ -1,4 +1,4 @@
-export const RADAR_SEARCH_SOURCES=['brave_place_search','brave_web_search','serper_web_search'] as const
+export const RADAR_SEARCH_SOURCES=['brave_place_search','brave_web_search','serper_web_search','perplexity_search_fast','perplexity_search_web'] as const
 export type RadarSearchSource=typeof RADAR_SEARCH_SOURCES[number]
 export type RadarWebSearchSource=Exclude<RadarSearchSource,'brave_place_search'>
 export type RadarSearchLimits={maxSearchQueriesPerCandidate:number;maxSearchQueriesBySource?:Partial<Record<RadarSearchSource,number>>;maxSearchQueriesTotalPerCandidate?:number|null}

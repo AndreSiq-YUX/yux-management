@@ -238,7 +238,7 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
     const configuration = resolveRadarSearchConfiguration(input.searchConfiguration)
     validateRadarOperationalConfiguration(configuration,(await loadRadarOperationalLimits(client)).limits,input.dailyLimit)
     const criteria = (config: RadarSearchConfiguration) => {
-      const { batch: _batch, exportFields: _fields, crmDestination:_destination,sources:_sources,research,braveQueryTemplate:_template, ...searchCriteria } = config
+      const { batch: _batch, exportFields: _fields, crmDestination:_destination,sources:_sources,discovery:_discovery,research,braveQueryTemplate:_template, ...searchCriteria } = config
       return {...searchCriteria,research:{contactPurpose:research.contactPurpose,completion:research.completion,
         presenceResolutionEnabled:research.presenceResolutionEnabled,semanticQualificationEnabled:research.semanticQualificationEnabled,
         profileEnabled:research.profileEnabled,sizeAssessment:research.sizeAssessment}}
@@ -310,7 +310,7 @@ export async function listRadarAdminDataSources(pool: pg.Pool, user: AuthUser) {
      LEFT JOIN public.organizations organization ON organization.id = source.organization_id
      WHERE source.source_type = ANY($1::text[])
      ORDER BY source.organization_id NULLS FIRST, source.display_name ASC`,
-    [['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search', 'osm_extract']],
+    [['cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search', 'osm_extract','perplexity_search_fast','perplexity_search_web']],
   )
   return result.rows.map(row => ({ ...mapDataSource(row), organizationName: row.organization_name ?? undefined }))
 }
@@ -326,12 +326,12 @@ export async function updateRadarDataSource(
   const protectedSource = await pool.query<{ source_type: string; default_cost_per_unit: string | number }>(
     `SELECT source_type, default_cost_per_unit FROM public.radar_data_sources WHERE id = $1 LIMIT 1`, [sourceId],
   )
-  if (['osm_extract', 'cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search'].includes(protectedSource.rows[0]?.source_type ?? '')) {
+  if (['osm_extract', 'cnpja_advanced_search', 'cnpja_office_lookup', 'serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search','perplexity_search_fast','perplexity_search_web'].includes(protectedSource.rows[0]?.source_type ?? '')) {
     if (user.role !== 'yux_admin') throw Object.assign(new Error('radar_source_admin_required'), { statusCode: 403 })
     if (protectedSource.rows[0]?.source_type === 'osm_extract' && patch.defaultCostPerUnit !== undefined && patch.defaultCostPerUnit !== 0)
       throw Object.assign(new Error('radar_osm_must_remain_free'), { statusCode: 400 })
   }
-  if (patch.enabled === true && ['serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search'].includes(protectedSource.rows[0]?.source_type ?? '')
+  if (patch.enabled === true && ['serper_places', 'serper_web_search', 'brave_place_search', 'brave_web_search','perplexity_search_fast','perplexity_search_web'].includes(protectedSource.rows[0]?.source_type ?? '')
       && Number(patch.defaultCostPerUnit ?? protectedSource.rows[0]?.default_cost_per_unit ?? 0) <= 0) {
     throw Object.assign(new Error('radar_source_cost_approval_required'), { statusCode: 400 })
   }
@@ -1977,14 +1977,15 @@ export async function exportRadarB2bProspectsCsv(pool: pg.Pool, user: AuthUser,
   const prospects = await listRadarB2bProspects(pool, user, organizationId, campaignId)
   const approved = prospects.filter(item => item.approvedAt && item.targetStatus === 'confirmed'
     && (item.verificationMethod === 'manual' || item.normalizedPayload.websiteStatus === 'verified_present'))
+  if(approved.some(item=>item.sourceType==='osm_extract'||item.normalizedPayload.discoverySourceType==='osm_extract'))throw Object.assign(new Error('radar_delivery_attribution_required'),{statusCode:409})
   const config = await pool.query<{ provider_key: string; public_config: Record<string, unknown> }>(
     `SELECT provider_key, public_config FROM public.platform_provider_connections
-     WHERE provider_key IN ('cnpja','brave_place','serper') AND environment = 'production' AND is_default = TRUE`,
+     WHERE provider_key IN ('cnpja','brave_place','serper','perplexity') AND environment = 'production' AND is_default = TRUE`,
   )
   const cnpja = config.rows.find(row => row.provider_key === 'cnpja')?.public_config ?? {}
   const brave = config.rows.find(row => row.provider_key === 'brave_place')?.public_config
   const hasBraveFacts = approved.some(item => typeof item.normalizedPayload.braveSourceUrl === 'string' || item.normalizedPayload.researchUsesBrave === true)
-  assertB2bDeliveryRights(cnpja, brave, hasBraveFacts,config.rows.find(row=>row.provider_key==='serper')?.public_config,approved.some(item=>item.normalizedPayload.researchUsesSerper===true))
+  assertB2bDeliveryRights(approved.some(item=>item.sourceType.startsWith('cnpja'))?cnpja:{clientDeliveryLicensed:true}, brave, hasBraveFacts,config.rows.find(row=>row.provider_key==='serper')?.public_config,approved.some(item=>item.normalizedPayload.researchUsesSerper===true),config.rows.find(row=>row.provider_key==='perplexity')?.public_config,approved.some(item=>item.normalizedPayload.researchUsesPerplexity===true),approved.some(item=>item.normalizedPayload.researchUsesSerperPlaces===true))
   const campaign = await pool.query<RadarCampaignRow>(
     `SELECT * FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2 LIMIT 1`, [campaignId, organizationId],
   )
@@ -2975,7 +2976,7 @@ export async function evaluateRadarSourceGovernance(
   )
   const usedUnits = Number(usage.rows[0]?.units ?? 0)
   // Money is campaign-wide and cumulative; a new source/day does not reset it.
-  const campaignCost=await queryable.query<{estimated_cost:string|number}>(`SELECT COALESCE(SUM(estimated_cost),0) AS estimated_cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2`,[organizationId,campaignId])
+  const campaignCost=await queryable.query<{estimated_cost:string|number}>(`SELECT COALESCE(SUM(estimated_cost),0) AS estimated_cost FROM public.radar_source_usage_counters WHERE organization_id=$1 AND campaign_id=$2 AND source_type<>'perplexity_agent'`,[organizationId,campaignId])
   const costAmount=String(campaignCost.rows[0]?.estimated_cost??0),usedCost=Number(costAmount)
   const organizationUsage = await queryable.query<{ units: string | number }>(
     `SELECT COALESCE(SUM(units), 0) AS units

@@ -32,6 +32,8 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  getDiscoveryPolicy(){return apiRequest<{version:number;configuration:{windowSize:number;osm:{maxSnapshotAgeDays:number;pageSize:number;mappings:Array<{key:string;terms:string[];anyTags:Array<{key:string;values:string[]}>}>}}}>('/radar/admin/discovery-policy')},
+  saveDiscoveryPolicy(input:{expectedVersion:number;configuration:unknown}){return apiRequest<Awaited<ReturnType<typeof radarService.getDiscoveryPolicy>>>('/radar/admin/discovery-policy',{method:'PUT',body:input})},
   getOperationalPolicy(){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits')},
   updateOperationalPolicy(input:{expectedVersion:number;limits:RadarOperationalLimits;costPolicy?:RadarCostPolicy}){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits',{method:'PUT',body:input})},
   getCommercialCampaigns(organizationId:string){return apiRequest<RadarCommercialCampaign[]>(`/radar/campaigns${buildQuery({organizationId})}`)},

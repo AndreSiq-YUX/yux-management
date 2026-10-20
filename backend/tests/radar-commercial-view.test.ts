@@ -31,6 +31,11 @@ describe('Radar commercial data boundary',()=>{
  it('does not expose provider source codes inside legacy narratives',()=>{
   expect(project('candidates',[{normalizedPayload:{triageReasons:['brave_web_search indisponível','serper_search aguardando','cnpja_advanced_search pendente','Atende indústrias']}}])).toMatchObject([{facts:{reasons:['Atende indústrias']}}])
  })
+ it('hides new research mechanisms while preserving legitimate identity and reversible exclusions',()=>{
+  expect(project('candidates',[{normalizedPayload:{triageReasons:['Perplexity indisponível','Atende indústrias'],targetStatus:'not_target',researchRevision:7}}])).toMatchObject([{facts:{reasons:['Atende indústrias'],outsideProfile:true,outsideProfileRevision:7}}])
+  expect(api.radarCommercialUrl?.('https://api.perplexity.ai/search')).toBeUndefined()
+  expect(project('candidates',[{title:'Perplexity Comércio',normalizedPayload:{tradeName:'Perplexity Comércio',companyProfile:{summary:{value:'Perplexity Comércio atende indústrias',sourceUrl:'https://comercio.example/'}}}}])).toMatchObject([{facts:{profile:{summary:{value:'Perplexity Comércio atende indústrias'}}}}])
+ })
  it.each([['yux_admin',true],['yux_operator',false],['client_admin',false],['client_member',false]])('only system admin sees internals: %s',(role,want)=>{
   expect(api.canViewRadarInternals?.({role})).toBe(want)
  })

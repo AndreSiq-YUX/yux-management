@@ -211,4 +211,10 @@ class DecisionResultV1(_Contract):
         return self
 
 
-radar_contract = TypeAdapter(ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1 | DecisionContextV1 | DecisionResultV1)
+class ResearchActionV1(_Contract):
+    id: str=Field(min_length=1,max_length=160)
+    kind: Literal['read','web','local','registry','extract','resolve','deep_research','qualify']
+    inputHash: str=Field(min_length=1,max_length=160)
+
+
+radar_contract = TypeAdapter(ResearchEvidenceV1 | EffectReceiptV1 | CommercialResearchStatusV1 | BusinessMentionV1 | DecisionContextV1 | DecisionResultV1 | ResearchActionV1)

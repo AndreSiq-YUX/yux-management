@@ -1,5 +1,9 @@
 import {expect,it} from 'vitest'
-import {summarizeRadarResearchMetrics,getRadarResearchMetrics} from '../src/modules/radar/research-metrics.js'
+import {summarizeRadarResearchMetrics,getRadarResearchMetrics,summarizeRadarDiscoveryMetrics} from '../src/modules/radar/research-metrics.js'
+it('measures unique qualified discoveries, shared contribution and known BRL cost without inventing unknown AI spend',()=>{
+ const result=summarizeRadarDiscoveryMetrics([{source:'maps',candidateId:'a',qualified:true,isNew:true},{source:'web',candidateId:'a',qualified:true,isNew:true},{source:'web',candidateId:'b',qualified:true,isNew:true},{source:'web',candidateId:'b',qualified:true,isNew:true},{source:'maps',candidateId:'c',qualified:false,isNew:true}],2,1)
+ expect(result).toMatchObject({examined:3,qualifiedNew:2,costPerQualifiedKnownBrl:1,costComplete:false,sources:[{source:'maps',qualified:1,exclusive:0,shared:1},{source:'web',qualified:2,exclusive:1,shared:1}]})
+})
 it('excludes proven pre-provider rejection receipts from unknown provider cost counts',async()=>{
   const pool={query:async(sql:string)=>({rows:sql.includes('FROM public.radar_campaigns')?[{configuration_revision:1,search_configuration:{}}]:sql.includes('FROM public.radar_analysis_receipts')?[{request_id:'run:presence:hash',status:'rejected_before_provider',usage:null}]:[]})}
   expect(await getRadarResearchMetrics(pool as never,{role:'yux_admin'} as never,{organizationId:'org',campaignId:'campaign',from:'2026-10-15',to:'2026-10-15'})).toMatchObject({aiAnalyses:0,aiCostUnknown:0,aiReportedUsd:null})

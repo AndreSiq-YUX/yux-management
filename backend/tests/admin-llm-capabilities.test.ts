@@ -2,6 +2,13 @@ import {expect,it,vi} from 'vitest'
 import type pg from 'pg'
 import {upsertAdminLlmRoute} from '../src/modules/platform/adminRepository.js'
 const path='../src/modules/platform/llm-routing.js',api=await import(path) as Record<string,any>
+it('accepts Perplexity only for research and rejects cross-protocol fallbacks',()=>{
+ const input={agentType:'radar_deep_research',kind:'research',protocol:'perplexity-agent-v1',provider:'perplexity',modelName:'fixture/research',fallbackRoutes:[{provider:'perplexity',modelName:'fixture/backup'}]}
+ expect(api.validateLlmRouteCapability(input,api.TECHNICAL_LLM_USE_CASES)).toMatchObject({kind:'research',protocol:'perplexity-agent-v1'})
+ expect(()=>api.validateLlmRouteCapability({...input,provider:'openrouter'},api.TECHNICAL_LLM_USE_CASES)).toThrow('llm_route_capability_incompatible')
+ expect(()=>api.validateLlmRouteCapability({...input,fallbackRoutes:[{provider:'openrouter',modelName:'fixture/chat'}]},api.TECHNICAL_LLM_USE_CASES)).toThrow('llm_route_capability_incompatible')
+ expect(()=>api.validateLlmRouteCapability({...input,agentType:'global_llm',kind:'chat',protocol:'openai-compatible-v1'},api.TECHNICAL_LLM_USE_CASES)).toThrow('llm_route_capability_incompatible')
+})
 it('resolves registered capabilities instead of guessing by embedding names and rejects misspelled technical cases',()=>{
  expect(api.resolveUseCaseDefinition).toBeTypeOf('function')
  const definitions=[{key:'custom_vector',title:'Vetor',description:'',kind:'embedding',group:'Teste'}]

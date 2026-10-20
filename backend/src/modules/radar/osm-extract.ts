@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 import type pg from 'pg'
 import { createOSMStream } from 'osm-pbf-parser-node'
 import { matchRadarOsmSegment, RADAR_OSM_SEGMENT_MAP_VERSION, type RadarOsmSegmentKey } from './osm-segment-map.js'
+import {loadRadarDiscoveryPolicy,matchConfiguredRadarOsmTags,type RadarOsmMapping} from './discovery-policy.js'
 
 type Position = [longitude: number, latitude: number]
 type Ring = Position[]
@@ -154,7 +155,7 @@ function websiteTag(tags: Record<string, string>) {
   }
 }
 
-function makePlace(entity: OsmEntity, latitude: number, longitude: number, segmentKey: RadarOsmSegmentKey): RadarOsmPlace | null {
+function makePlace(entity: OsmEntity, latitude: number, longitude: number, segmentKey: RadarOsmSegmentKey,mapping?:RadarOsmMapping): RadarOsmPlace | null {
   const name = entity.tags && boundedTag(entity.tags, 'name', 240)
   if (!name || !entity.id || (entity.type !== 'node' && entity.type !== 'way')) return null
   const tags = entity.tags ?? {}
@@ -174,7 +175,7 @@ function makePlace(entity: OsmEntity, latitude: number, longitude: number, segme
     tags: Object.fromEntries(Object.entries(tags).filter(([key]) => [
       'amenity','healthcare','name','website','contact:website','phone','contact:phone',
       'email','contact:email','addr:street','addr:housenumber',
-    ].includes(key))),
+    ].includes(key)||mapping?.anyTags.some(tag=>tag.key===key))),
   }
 }
 
@@ -183,6 +184,7 @@ export async function collectRadarOsmPlaces(
   secondPass: AsyncIterable<OsmEntity>,
   boundary: RadarOsmBoundary,
   segmentKey: RadarOsmSegmentKey = 'medical_clinics',
+  mapping?:RadarOsmMapping,
 ): Promise<{ places: RadarOsmPlace[]; skippedRelations: number; skippedWays: number }> {
   const places: RadarOsmPlace[] = []
   const ways: OsmEntity[] = []
@@ -190,12 +192,12 @@ export async function collectRadarOsmPlaces(
   let skippedRelations = 0
   let skippedWays = 0
   for await (const entity of firstPass) {
-    if (!entity.tags || !matchRadarOsmSegment(entity.tags, segmentKey)) continue
+    if (!entity.tags || !(mapping?matchConfiguredRadarOsmTags(entity.tags,mapping):matchRadarOsmSegment(entity.tags, segmentKey))) continue
     if (entity.type === 'relation') { skippedRelations++; continue }
     if (entity.type === 'node') {
       if (typeof entity.lon === 'number' && typeof entity.lat === 'number'
         && pointInRadarOsmBoundary(entity.lon, entity.lat, boundary)) {
-        const place = makePlace(entity, entity.lat, entity.lon, segmentKey)
+        const place = makePlace(entity, entity.lat, entity.lon, segmentKey,mapping)
         if (place) places.push(place)
       }
     } else if (entity.type === 'way' && Array.isArray(entity.refs) && entity.refs.length >= 3) {
@@ -220,7 +222,7 @@ export async function collectRadarOsmPlaces(
     const longitude = coordinates.reduce((sum, position) => sum + position![0], 0) / coordinates.length
     const latitude = coordinates.reduce((sum, position) => sum + position![1], 0) / coordinates.length
     if (!pointInRadarOsmBoundary(longitude, latitude, boundary)) continue
-    const place = makePlace(way, latitude, longitude, segmentKey)
+    const place = makePlace(way, latitude, longitude, segmentKey,mapping)
     if (place) places.push(place)
   }
   return { places, skippedRelations, skippedWays }
@@ -244,6 +246,8 @@ export type RadarOsmExtractInput = {
   boundarySource: string
   extractedAt?: string
   segmentKey?: RadarOsmSegmentKey
+  mapping?:RadarOsmMapping
+  maxSnapshotAgeDays?:number
 }
 
 export async function previewRadarOsmExtract(input: RadarOsmExtractInput) {
@@ -255,7 +259,7 @@ export async function previewRadarOsmExtract(input: RadarOsmExtractInput) {
   if (!Number.isInteger(headerTimestamp)) throw new Error('radar_osm_extract_timestamp_missing')
   const extractedAt = new Date(headerTimestamp! * 1000)
   if (!Number.isFinite(extractedAt.getTime()) || extractedAt.getTime() > Date.now()
-    || Date.now() - extractedAt.getTime() > 90 * 86400_000) throw new Error('radar_osm_extract_date_invalid_or_old')
+    || Date.now() - extractedAt.getTime() > (input.maxSnapshotAgeDays??90) * 86400_000) throw new Error('radar_osm_extract_date_invalid_or_old')
   if (input.extractedAt && Math.abs(new Date(input.extractedAt).getTime() - extractedAt.getTime()) > 60_000)
     throw new Error('radar_osm_extract_date_mismatch')
   const boundary = parseRadarOsmBoundary(JSON.parse(await readFile(input.boundaryPath, 'utf8')) as unknown, {
@@ -272,6 +276,7 @@ export async function previewRadarOsmExtract(input: RadarOsmExtractInput) {
     createOSMStream(input.path, { withTags: false }) as AsyncIterable<OsmEntity>,
     boundary,
     input.segmentKey,
+    input.mapping,
   )
   if (places.length === 0) throw new Error('radar_osm_no_matching_places')
   const sourceSha256 = await sha256File(input.path)
@@ -279,6 +284,10 @@ export async function previewRadarOsmExtract(input: RadarOsmExtractInput) {
 }
 
 export async function importRadarOsmExtract(pool: pg.Pool, input: RadarOsmExtractInput): Promise<{ imported: number; skipped: number; snapshotId: string }> {
+  const policy=await loadRadarDiscoveryPolicy(pool)
+  const mapping=policy.configuration.osm.mappings.find(mapping=>mapping.key===input.segmentKey)
+  if(input.segmentKey&&input.segmentKey!=='medical_clinics'&&!mapping)throw Error('radar_osm_segment_mapping_missing')
+  input={...input,mapping,maxSnapshotAgeDays:policy.configuration.osm.maxSnapshotAgeDays}
   const { boundary, places, skippedRelations, skippedWays, sourceSha256, extractedAt } = await previewRadarOsmExtract(input)
   const client = await pool.connect()
   try {
@@ -308,8 +317,8 @@ export async function importRadarOsmExtract(pool: pg.Pool, input: RadarOsmExtrac
       [boundary.municipalityCode],
     )
     await client.query(
-      `UPDATE public.radar_osm_snapshots SET status = 'active', place_count = $2 WHERE id = $1`,
-      [snapshotId, places.length],
+      `UPDATE public.radar_osm_snapshots SET status = 'active', place_count = $2,segment_coverage=$3::jsonb WHERE id = $1`,
+      [snapshotId, places.length,JSON.stringify({[input.segmentKey??'medical_clinics']:mapping?{mapping,policyVersion:policy.version}:{version:'legacy-1.0.0'}})],
     )
     await client.query('COMMIT')
     return { imported: places.length, skipped: skippedRelations + skippedWays, snapshotId }

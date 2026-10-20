@@ -4,6 +4,7 @@ import {classifyRadarSource,isRadarInstitutionalSource} from './source-identity.
 import {radarResearchQueries} from './research-planner.js'
 import {hasRadarSearchCapacity,type RadarSearchCapacity,type RadarSearchSource,type RadarWebSearchSource} from './search-capacity.js'
 import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
+import {rethrowRadarAdaptiveYield} from './adaptive-research.js'
 export type RadarBusinessIdentity = { name: string; legalName?: string; cnpj?: string; city?: string; state?: string; address?: string; phone?: string; websiteUrl?: string }
 export type RadarPresenceDiscovery = { association: 'confirmed' | 'review' | 'not_found_in_consulted_sources' | 'blocked';
   websiteUrl?: string; hits: RadarWebHit[]; suggestions: RadarWebHit[]; limitations: string[]; queries: number }
@@ -65,7 +66,7 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
       if(!dependencies.local||!canSearch('brave_place_search',identity.name))return
       attempted.add(`brave_place_search:${identity.name}`)
       queries++
-      try{hits.push(...await dependencies.local())}catch(cause){limitations.push(cause instanceof Error?cause.message:'local_search_failed')}
+      try{hits.push(...await dependencies.local())}catch(cause){rethrowRadarAdaptiveYield(cause);limitations.push(cause instanceof Error?cause.message:'local_search_failed')}
       queries=dependencies.queriesUsed?.()??queries
       await dependencies.checkpoint?.(hits,queries)
     }
@@ -75,7 +76,7 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
         if(confirmed().length||plausible)break
         if(!canSearch(source,query))continue
         attempted.add(`${source}:${query}`);queries++
-        try{hits.push(...await dependencies.search(query,source))}catch(cause){limitations.push(cause instanceof Error?cause.message:'web_search_failed')}
+        try{hits.push(...await dependencies.search(query,source))}catch(cause){rethrowRadarAdaptiveYield(cause);limitations.push(cause instanceof Error?cause.message:'web_search_failed')}
         queries=dependencies.queriesUsed?.()??queries
         await dependencies.checkpoint?.(hits,queries)
         plausible=await dependencies.inspectCandidates?.(hits)??false
@@ -87,21 +88,21 @@ export async function discoverRadarBusinessPresence(identity: RadarBusinessIdent
   // One local query plus complementary web queries share a single cap, including previously reserved attempts.
   if (dependencies.local && order==='before_web' && queries === 0) {
     queries++
-    try { hits.push(...await dependencies.local()) } catch (error) { limitations.push(error instanceof Error ? error.message : 'local_search_failed') }
+    try { hits.push(...await dependencies.local()) } catch (error) { rethrowRadarAdaptiveYield(error);limitations.push(error instanceof Error ? error.message : 'local_search_failed') }
     queries=dependencies.queriesUsed?.()??queries
     await dependencies.checkpoint?.(hits, queries)
   }
   for (let index = Math.max(0,queries-(dependencies.local&&order==='before_web'?1:0)); policy.webSearchEnabled && queries < webBudget && index < queriesText.length; index++) {
     if (confirmed().length) break
     queries++
-    try { hits.push(...await dependencies.search(queriesText[index])) } catch (error) { limitations.push(error instanceof Error ? error.message : 'web_search_failed'); break }
+    try { hits.push(...await dependencies.search(queriesText[index])) } catch (error) { rethrowRadarAdaptiveYield(error);limitations.push(error instanceof Error ? error.message : 'web_search_failed'); break }
     queries=dependencies.queriesUsed?.()??queries
     await dependencies.checkpoint?.(hits, queries)
     if(await dependencies.inspectCandidates?.(hits)){plausible=true;break}
   }
   if(dependencies.local&&order==='after_web_if_needed'&&!plausible&&!confirmed().length&&queries<policy.maxSearchQueriesPerCandidate){
     queries++
-    try{hits.push(...await dependencies.local())}catch(error){limitations.push(error instanceof Error?error.message:'local_search_failed')}
+    try{hits.push(...await dependencies.local())}catch(error){rethrowRadarAdaptiveYield(error);limitations.push(error instanceof Error?error.message:'local_search_failed')}
     queries=dependencies.queriesUsed?.()??queries
     await dependencies.checkpoint?.(hits,queries)
   }

@@ -15,7 +15,7 @@ export function radarReanalysisAvailability(reasons:ResearchBlocker[]) {
   return {allowed:blocking.length===0,reasons:blocking}
 }
 export function evaluateRadarResearchAvailability(input: { policy: RadarResearchPolicy; canManage: boolean;
-  sources: Source[]; provider?: Provider; providers?:Record<string,Provider|undefined>; sourceIssues?:Record<string,ResearchBlocker[]>;localEnabled?: boolean; campaignActive?: boolean }) {
+  sources: Source[]; provider?: Provider; providers?:Record<string,Provider|undefined>; sourceIssues?:Record<string,ResearchBlocker[]>;localEnabled?: boolean; campaignActive?: boolean;internalWorkspace?:boolean }) {
   const reasons:ResearchBlocker[]=[],warnings:ResearchBlocker[]=[]
   const issue=(code:string,message:string,sourceType?:string,resolution='Admin → Integrações → Fontes do Radar')=>({code,message,sourceType,resolution})
   if(!input.canManage)reasons.push(issue('research_admin_required','Sem permissão para iniciar esta pesquisa.'))
@@ -25,17 +25,19 @@ export function evaluateRadarResearchAvailability(input: { policy: RadarResearch
   if(!wanted.length)reasons.push(issue('search_not_selected','Selecione uma busca para descobrir a presença pública.'))
   const availableSearchSources:string[]=[],blocked:ResearchBlocker[]=[]
   const estimates=wanted.map(sourceType=>{
-    const source=input.sources.find(item=>item.sourceType===sourceType),serper=sourceType==='serper_web_search'
-    const provider=serper?input.providers?.serper:input.providers?.brave_place??input.provider
+    const source=input.sources.find(item=>item.sourceType===sourceType),serper=sourceType==='serper_web_search',perplexity=sourceType.startsWith('perplexity_')
+    const provider=perplexity?input.providers?.perplexity:serper?input.providers?.serper:input.providers?.brave_place??input.provider
     const issues:ResearchBlocker[]=[...(input.sourceIssues?.[sourceType]??[])]
     const add=(code:string,message:string)=>issues.push(issue(code,message,sourceType))
     if(!source?.enabled)add('source_disabled',`Fonte ${sourceType} desativada no catálogo.`)
     if(!source||source.defaultCostPerUnit<=0)add('source_cost_required',`Custo aprovado não definido para ${sourceType}.`)
     if(source?.remaining!==undefined&&source.remaining<1)add('source_limit_exceeded',`Quota diária esgotada para ${sourceType}.`)
     if(radarSearchSourceLimit(input.policy,sourceType)===0||input.policy.maxSearchQueriesTotalPerCandidate===0)add('candidate_search_limit_reached',`Busca sem capacidade autorizada para ${sourceType}.`)
-    if(provider?.status!=='active')add('provider_inactive',`Conexão ${serper?'Serper':'Brave'} não ativa.`)
-    if(!provider?.hasSecret)add('provider_secret_missing',`Chave ${serper?'Serper':'Brave'} não cadastrada.`)
-    if(!serper&&(provider?.publicConfig.retentionLicensed!==true||provider.publicConfig.credentialPurpose!=='licensed_retention'))add('retention_license_required','Retenção dos resultados Brave não confirmada.')
+    if(provider?.status!=='active')add('provider_inactive',`Conexão ${perplexity?'Perplexity':serper?'Serper':'Brave'} não ativa.`)
+    if(!provider?.hasSecret)add('provider_secret_missing',`Chave ${perplexity?'Perplexity':serper?'Serper':'Brave'} não cadastrada.`)
+    if(input.internalWorkspace===false&&provider?.publicConfig.clientDeliveryLicensed!==true)add('delivery_license_required','Entrega dos resultados ao cliente não confirmada.')
+    if(perplexity&&provider?.publicConfig.retentionLicensed!==true)add('retention_license_required','Armazenamento dos resultados Perplexity não confirmado.')
+    if(!serper&&!perplexity&&(provider?.publicConfig.retentionLicensed!==true||provider.publicConfig.credentialPurpose!=='licensed_retention'))add('retention_license_required','Retenção dos resultados Brave não confirmada.')
     if(sourceType!=='brave_place_search'&&provider?.publicConfig.webSearchLicensed!==true)add('web_license_required','Confirme que a chave e o plano permitem busca web com armazenamento.')
     if(!issues.length)availableSearchSources.push(sourceType)
     else blocked.push(...issues)
@@ -57,8 +59,9 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     'SELECT search_configuration, status FROM public.radar_campaigns WHERE id = $1 AND organization_id = $2', [campaignId, organizationId])
   if (!campaign.rows[0]) throw Object.assign(new Error('radar_campaign_not_found'), { statusCode: 404 })
   const configuration = resolveRadarSearchConfiguration(campaign.rows[0].search_configuration)
+  const internal=(await pool.query("SELECT kind='yux' AND is_internal_growth_workspace AS internal FROM public.organizations WHERE id=$1",[organizationId])).rows[0]?.internal===true
   const providers:Record<string,Provider|undefined>={}
-  for(const key of ['brave_place','serper']){
+  for(const key of ['brave_place','serper','perplexity']){
     const provider=await pool.query<{status:string;has_secret:boolean;public_config:Record<string,unknown>}>(`SELECT status,public_config,
       EXISTS(SELECT 1 FROM public.platform_provider_secrets secret WHERE secret.provider_connection_id=platform_provider_connections.id AND secret.secret_kind='api_key') AS has_secret
       FROM public.platform_provider_connections WHERE provider_key = '${key}' AND environment='production' ORDER BY is_default DESC,updated_at DESC LIMIT 1`)
@@ -71,7 +74,7 @@ export async function getRadarResearchAvailability(pool: pg.Pool, user: AuthUser
     return{key,source,governance}
   }))
   const result=evaluateRadarResearchAvailability({policy:configuration.research,
-    canManage,
+    canManage,internalWorkspace:internal,
     campaignActive:!['paused','archived','completed'].includes(campaign.rows[0].status),
     localEnabled:configuration.sources.enrichWithBrave,providers,sources:sources.flatMap(item=>item.source?[{...item.source,remaining:item.governance.remainingQueries??0}]:[]),
     sourceIssues:Object.fromEntries(sources.map(item=>[item.key,item.governance.issues.filter(issue=>issue.code!=='source_disabled').map(issue=>({...issue,resolution:'Admin → Integrações → Limites e orçamento'}))]))})
