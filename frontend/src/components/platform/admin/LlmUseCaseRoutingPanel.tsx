@@ -46,8 +46,8 @@ export function LlmUseCaseRoutingPanel({ providers, routes, useCases, legacyStat
   return <section className="space-y-3">
     <div>
       <h2 className="text-lg font-semibold text-gray-900">Roteamento central de modelos</h2>
-      <p className="text-sm text-gray-600">Todas as funções, perfis e provedores em um só lugar. Ordem: principal → fallbacks da função → fallback global.</p>
-      <p className="mt-1 text-xs text-gray-500">As configurações legadas do ambiente são exibidas quando o runtime está acessível. Salvar uma rota passa o controle ao Admin. Sem rota explícita, a função herda o global ou o legado ainda vigente.</p>
+      <p className="text-sm text-gray-600">Principal e reservas em ordem, respeitando a capacidade de cada função. Chat e embeddings podem herdar sua rota global; decisões herdam somente a decisão geral compatível; investigação exige rota e reservas próprias.</p>
+      <p className="mt-1 text-xs text-gray-500">As configurações legadas do ambiente são exibidas quando o runtime está acessível. Salvar uma rota passa o controle ao Admin. Legado de texto não substitui decisões ou investigação.</p>
     </div>
     {legacyStatus === 'unavailable' && <p role="status" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Não foi possível consultar as configurações legadas do runtime. As rotas salvas continuam disponíveis; campos sem rota não confirmam qual modelo legado está ativo. Salve uma configuração explícita ou restabeleça o runtime para conferir.</p>}
     <div className="grid gap-4 xl:grid-cols-[minmax(250px,340px)_1fr]">
@@ -216,7 +216,7 @@ function LlmRouteEditor({ useCase, providers, route, onSave, onTest,onDecisionSt
           <button type="button" aria-label={`Remover fallback ${index + 1}`} onClick={() => setForm({ ...form, fallbackRoutes: fallbacks.filter((_, position) => position !== index) })} className="rounded border p-2"><Trash2 className="h-4 w-4" /></button>
         </div>
       </div>)}
-      {!fallbacks.length && <p className="text-sm text-gray-500">Nenhum fallback próprio. Após a falha do principal, será utilizada a reserva global compatível, se configurada.</p>}
+      {!fallbacks.length && <p className="text-sm text-gray-500">{useCase.kind==='research'?'Sem reserva própria: a investigação encerra após a falha do principal, sem herança global.':'Nenhum fallback próprio. Após a falha do principal, será utilizada a reserva global compatível, se configurada.'}</p>}
       <button type="button" disabled={fallbacks.length >= 10} onClick={() => setForm({ ...form, fallbackRoutes: [...fallbacks, { provider: form.provider, modelName: '' }] })} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50"><Plus className="h-4 w-4" />Adicionar fallback</button>
     </fieldset>
     <p className="mt-3 text-xs text-gray-500">{decision?'A operação comercial exige rota ativa e decisões habilitadas. Salvar não faz chamada; o teste exige confirmação separada.':'Salvar uma rota ativa autoriza o sistema a usar os modelos informados.'} Rotas pausadas não autorizam chamadas. Chaves de API permanecem no servidor.</p>

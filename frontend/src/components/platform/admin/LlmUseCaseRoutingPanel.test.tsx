@@ -72,6 +72,14 @@ describe('central model editor', () => {
     expect(container.textContent).toContain('campos sem rota não confirmam qual modelo legado está ativo')
     expect(onTest).not.toHaveBeenCalled()
   })
+  it('does not promise a global fallback for an Agent route without explicit reserves',async()=>{
+    const definitions=[...useCases,{key:'radar_deep_research',title:'Radar — investigação aprofundada',description:'Investigação',kind:'research' as const,group:'Radar'}]
+    await act(async()=>root.render(<LlmUseCaseRoutingPanel providers={[]} routes={[base]} useCases={definitions} onSave={onSave} onTest={onTest}/>))
+    await act(async()=>button('Radar — investigação aprofundada').click())
+    expect(container.textContent).toContain('Sem reserva própria: a investigação encerra após a falha do principal, sem herança global.')
+    expect(container.textContent).not.toContain('será utilizada a reserva global compatível')
+    expect(onSave).not.toHaveBeenCalled();expect(onTest).not.toHaveBeenCalled()
+  })
   it('separates decisions from chat, preserves the manual model/fallback and requires a BRL quote before an explicit test',async()=>{
     const definitions=[...useCases,{key:'radar_initial_triage',title:'Radar — Triagem',description:'Decisão objetiva',kind:'decision' as const,group:'Radar'}]
     const decision={...base,id:'decision-route',agentType:'radar_initial_triage',kind:'decision' as const,protocol:'openrouter-decisions-alpha-v1',modelName:'fixture/jev',fallbackModelName:null,fallbackRoutes:[{provider:'openrouter',modelName:'fixture/luna'}],decisionConfig:{enabled:false,mode:'observe',maxAttempts:2,modelPolicies:{}}}
