@@ -101,6 +101,7 @@ class OpenRouterClient:
         fallback_models: list[str] | None = None,
         session_id: str | None = None,
         response_format: dict[str, Any] | None = None,
+        reasoning: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise ProviderAvailabilityError(f"missing_{self.provider_name}_api_key")
@@ -115,6 +116,8 @@ class OpenRouterClient:
         }
         if self.provider_name == "openrouter":
             payload["provider"] = {"data_collection": "deny"}
+            if reasoning is not None:
+                payload["reasoning"] = reasoning
         if fallback_models and self.provider_name == "openrouter":
             payload["models"] = [model, *fallback_models]
         if session_id:
@@ -145,17 +148,24 @@ class OpenRouterClient:
         usage = response.get("usage") or {}
         if not isinstance(usage, dict):
             usage = {}
+        output_tokens = int(usage.get("completion_tokens") or 0)
+        details = usage.get("completion_tokens_details")
+        count = details.get("reasoning_tokens") if isinstance(details, dict) else None
+        reasoning_tokens = min(output_tokens, max(0, count)) if isinstance(count, int) and not isinstance(count, bool) else 0
         return {
             "provider": self.provider_name,
             "model": response.get("model") or model,
             "content": message.get("content") or "",
             "finish_reason": choice.get("finish_reason"),
             "input_tokens": int(usage.get("prompt_tokens") or 0),
-            "output_tokens": int(usage.get("completion_tokens") or 0),
+            "output_tokens": output_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "visible_output_tokens": max(0, output_tokens - reasoning_tokens),
             "total_tokens": int(usage.get("total_tokens") or 0),
             "cost_usd": float(usage["cost"]) if isinstance(usage.get("cost"), (int, float)) else None,
             "raw_response_id": response.get("id"),
-            "request_parameters": {"temperature": temperature, "max_tokens": max_tokens},
+            "request_parameters": {"temperature": temperature, "max_tokens": max_tokens,
+                                   **({"reasoning": reasoning} if self.provider_name == "openrouter" and reasoning is not None else {})},
             "prompt_hash": sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
         }
 

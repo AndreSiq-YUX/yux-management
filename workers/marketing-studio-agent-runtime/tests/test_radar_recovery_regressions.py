@@ -6,6 +6,7 @@ from yux_agent_runtime.radar_presence import resolve_radar_presence, validate_ra
 from yux_agent_runtime.radar_receipts import execute_radar_receipt, radar_effect_recorder
 from yux_agent_runtime.runtime_store import InMemoryAgentRuntimeStore
 from yux_agent_runtime.providers import ProviderAuthorizationError
+from yux_agent_runtime.providers import OpenRouterClient
 
 EVIDENCE=[dict(id='page-0',source_url='https://empresa.example/',kind='institutional_candidate',text='Empresa Alfa fornece refeições coletivas para empresas.')]
 PRESENCE=dict(candidateId='page-0',scope='establishment',reason='A fonte identifica a Empresa Alfa.',claims=[dict(evidenceId='page-0',excerpt=EVIDENCE[0]['text'])])
@@ -54,3 +55,36 @@ def test_recorded_proof_of_no_provider_attempt_does_not_leave_the_parent_receipt
         execute_radar_receipt(store,action='radar_presence_resolution',request=request,compute=compute,debit=lambda:None)
     assert store.list('radar_analysis_receipts')[0]['status']=='rejected_before_provider'
     assert store.list('radar_effect_receipts')[0]['transport_outcome']=='not_started'
+
+@pytest.mark.parametrize('action',['radar_presence_resolution','radar_business_qualification'])
+def test_short_radar_analysis_controls_thinking_and_requests_json_without_increasing_total_budget(action):
+    captured=[]
+    class Client:
+        def chat_completion(self,**kwargs):
+            captured.append(kwargs)
+            return dict(content=json.dumps(PRESENCE if action=='radar_presence_resolution' else QUALIFICATION))
+    store=InMemoryAgentRuntimeStore({'model_routing_rules':[dict(agent_type=action,provider='openrouter',model_name='fixture',status='active',max_output_tokens=2200)]})
+    if action=='radar_presence_resolution':
+        resolve_radar_presence(store,enabled=True,context={},identity={},evidence=EVIDENCE,llm_client=Client())
+    else:
+        qualify_radar_business(store,enabled=True,context={},criteria={},evidence=EVIDENCE,llm_client=Client())
+    assert captured[0]['reasoning']=={'effort':'low'}
+    assert captured[0]['response_format']=={'type':'json_object'}
+    assert captured[0]['max_tokens']==2200
+
+def test_native_openrouter_forwards_explicit_reasoning_only_for_its_own_protocol():
+    calls=[]
+    def transport(url,headers,payload,method):
+        calls.append(payload)
+        return {'choices':[{'message':{'content':'{}'},'finish_reason':'stop'}],'usage':{'completion_tokens':500,'completion_tokens_details':{'reasoning_tokens':100}}}
+    router=OpenRouterClient(api_key='fixture',transport=transport)
+    response=router.chat_completion(model='fixture',messages=[],max_tokens=2200,reasoning={'effort':'low'})
+    assert calls[-1]['reasoning']=={'effort':'low'}
+    assert response['reasoning_tokens']==100
+    assert response['visible_output_tokens']==400
+    assert response['request_parameters']['reasoning']=={'effort':'low'}
+    router.chat_completion(model='fixture',messages=[])
+    assert 'reasoning' not in calls[-1]
+    direct=OpenRouterClient(api_key='fixture',provider_name='openai',transport=transport)
+    direct.chat_completion(model='fixture',messages=[],reasoning={'effort':'low'})
+    assert 'reasoning' not in calls[-1]
