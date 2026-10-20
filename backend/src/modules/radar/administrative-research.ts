@@ -6,9 +6,13 @@ import {invokeAgentRuntime} from '../../lib/agent-runtime-client.js'
 import {requireRadarScope} from './access.js'
 import {loadRadarOperationalLimits,assertRadarOperationalLimit} from './operational-limits.js'
 import {radarReportedCostAmount} from './cost-conversion.js'
+import {createHash} from 'node:crypto'
+import {authorizeRadarAnalysisRetries} from './analysis-retry-authorizations.js'
+import {queueRadarResearchRequest} from './research-requests.js'
 
 export const radarAdministrativeScopeSchema=z.object({organizationId:z.uuid(),campaignId:z.uuid()}).strict()
 export const radarAdministrativeRevalidationSchema=radarAdministrativeScopeSchema.extend({receiptIds:z.array(z.uuid()).min(1)}).strict()
+export const radarAdministrativeResumeSchema=radarAdministrativeRevalidationSchema.extend({configurationRevision:z.number().int().positive(),requestId:z.uuid(),expiresAt:z.iso.datetime(),acknowledgePreviousChargeMayExist:z.literal(true)}).strict()
 type Scope=z.infer<typeof radarAdministrativeScopeSchema>
 const failure=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode})
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'?value as Record<string,unknown>:{}
@@ -18,7 +22,7 @@ async function authorize(pool:pg.Pool,user:AuthUser,input:Scope){
  if(!actor)throw failure('radar_source_admin_required',403)
  await requireRadarScope(pool,user,input,false)
 }
-async function analyses(pool:pg.Pool,input:Scope,ids?:string[]){
+async function analyses(pool:Pick<pg.Pool,'query'>,input:Scope,ids?:string[]){
  // Select metadata only. Raw reply, saved input and ownership tokens stay in SQL.
  return(await pool.query(`SELECT receipt.id,receipt.action,receipt.request_id,receipt.status,receipt.input_hash,
   receipt.lease_until>NOW() AS lease_active,receipt.created_at,
@@ -41,16 +45,53 @@ async function analyses(pool:pg.Pool,input:Scope,ids?:string[]){
    AND (($3::uuid[] IS NULL AND receipt.status<>'completed') OR receipt.id=ANY($3::uuid[]))
   ORDER BY receipt.created_at DESC,receipt.id DESC`,[input.organizationId,input.campaignId,ids??null])).rows
 }
+function recoveryId(value:string){
+ const bytes=createHash('sha256').update(value).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|80;bytes[8]=(bytes[8]&63)|128
+ const hex=bytes.toString('hex');return`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
+}
+export async function resumeRadarAdministrativeResearch(pool:pg.Pool,user:AuthUser,value:z.infer<typeof radarAdministrativeResumeSchema>){
+ if(user.role!=='yux_admin')throw failure('radar_source_admin_required',403)
+ const input=radarAdministrativeResumeSchema.parse(value);await authorize(pool,user,input)
+ const ids=[...new Set(input.receiptIds)],rows=await analyses(pool,input,ids)
+ if(rows.length!==ids.length)throw failure('radar_analysis_recovery_scope_invalid',403)
+ const limits=await loadRadarOperationalLimits(pool)
+ assertRadarOperationalLimit(new Set(rows.map(row=>row.candidate_id)).size,limits.limits.maxNewCompaniesPerLot)
+ const items:Array<{receiptId:string;candidateId:string;state:'queued'|'already_completed'|'waiting';requestId?:string;reason?:string}>=[]
+ for(const receiptId of ids){
+  const row=rows.find(item=>item.id===receiptId)!,client=await pool.connect()
+  try{
+   await client.query('BEGIN')
+   const current=(await analyses(client,input,[receiptId]))[0]
+   if(!current||!current.current_scope)throw failure('radar_analysis_retry_scope_superseded')
+   if(current.status==='completed'){
+    items.push({receiptId,candidateId:row.candidate_id,state:'already_completed'});await client.query('COMMIT');continue
+   }
+   const grant=await authorizeRadarAnalysisRetries(pool,user,{organizationId:input.organizationId,campaignId:input.campaignId,configurationRevision:input.configurationRevision,
+    requestId:recoveryId(`${input.requestId}:${receiptId}:approval`),expiresAt:input.expiresAt,acknowledgePreviousChargeMayExist:true,items:[{candidateId:row.candidate_id,previousReceiptId:receiptId}]},{client,reuseActive:true})
+   const campaign=(await client.query('SELECT commercial_criteria_revision FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[input.campaignId,input.organizationId])).rows[0]
+   const requestId=recoveryId(`${input.organizationId}:${input.campaignId}:${receiptId}:${grant.analysisAuthorizationId}:resume`)
+   await queueRadarResearchRequest(pool,user,{organizationId:input.organizationId,campaignId:input.campaignId,candidateIds:[row.candidate_id],requestId,criteriaRevision:Number(campaign.commercial_criteria_revision),intent:'resume',analysisAuthorizationId:grant.analysisAuthorizationId},{client})
+   await client.query('COMMIT');items.push({receiptId,candidateId:row.candidate_id,state:'queued',requestId})
+  }catch(cause){
+   await client.query('ROLLBACK')
+   const code=cause instanceof Error?cause.message:''
+   items.push({receiptId,candidateId:row.candidate_id,state:'waiting',reason:/^radar_[a-z0-9_]{1,140}$/.test(code)?code:'radar_research_request_registration_failed'})
+  }finally{client.release()}
+ }
+ return{items}
+}
 export async function getRadarAdministrativeResearch(pool:pg.Pool,user:AuthUser,value:Scope){
  if(user.role!=='yux_admin')throw failure('radar_source_admin_required',403)
  const input=radarAdministrativeScopeSchema.parse(value);await authorize(pool,user,input)
  const campaign=(await pool.query('SELECT configuration_revision,commercial_criteria_revision FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[input.campaignId,input.organizationId])).rows[0]
  const rows=await analyses(pool,input)
  const requests=(await pool.query(`SELECT request.request_id,request.status,request.criteria_revision,request.configuration_revision,request.budget_revision,request.created_at,
-  COUNT(item.id) AS item_count,COUNT(item.id) FILTER(WHERE item.state='waiting') AS waiting_count
+  COUNT(item.id) AS item_count,COUNT(item.id) FILTER(WHERE item.state='waiting') AS waiting_count,
+  COUNT(item.id) FILTER(WHERE item.state='accepted') AS queued_count,COUNT(item.id) FILTER(WHERE item.state='running') AS running_count,
+  COUNT(item.id) FILTER(WHERE item.state IN('completed','unchanged')) AS completed_count
   FROM public.radar_research_requests request JOIN public.radar_research_request_items item ON item.research_request_id=request.id AND item.organization_id=request.organization_id
   WHERE request.organization_id=$1 AND request.campaign_id=$2 GROUP BY request.id ORDER BY request.created_at DESC,request.id DESC`,[input.organizationId,input.campaignId])).rows
- return{configurationRevision:campaign.configuration_revision,criteriaRevision:campaign.commercial_criteria_revision,requests:requests.map(row=>({requestId:row.request_id,state:row.status,criteriaRevision:row.criteria_revision,configurationRevision:row.configuration_revision,budgetRevision:row.budget_revision,createdAt:row.created_at,items:Number(row.item_count),waiting:Number(row.waiting_count)})),
+ return{configurationRevision:campaign.configuration_revision,criteriaRevision:campaign.commercial_criteria_revision,requests:requests.map(row=>({requestId:row.request_id,state:row.status,criteriaRevision:row.criteria_revision,configurationRevision:row.configuration_revision,budgetRevision:row.budget_revision,createdAt:row.created_at,items:Number(row.item_count),waiting:Number(row.waiting_count),queued:Number(row.queued_count),running:Number(row.running_count),completed:Number(row.completed_count)})),
   analyses:rows.map(row=>{
    const call=object(row.current_call),estimate=object(call.costEstimate),usage=object(row.usage)
    const inferred=`${row.request_id.split(':')[0]}${row.action==='radar_presence_resolution'?':presence':''}:${call.evidenceHash}`

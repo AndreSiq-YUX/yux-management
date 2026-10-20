@@ -63,7 +63,7 @@ const continuationAuthorizationsSchema=z.array(z.object({scopeKey:z.string().min
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
 import {loadRadarDiscoveryPolicy,saveRadarDiscoveryPolicy} from './discovery-policy.js'
-import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,radarAdministrativeScopeSchema,radarAdministrativeRevalidationSchema} from './administrative-research.js'
+import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,resumeRadarAdministrativeResearch,radarAdministrativeResumeSchema,radarAdministrativeScopeSchema,radarAdministrativeRevalidationSchema} from './administrative-research.js'
 import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {canViewRadarInternals,projectRadarCommercialResponse,radarCommercialSurface} from './commercial-view.js'
@@ -254,6 +254,15 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const input=radarAdministrativeRevalidationSchema.safeParse(request.body)
     if(!input.success)return reply.code(400).send({error:'invalid_radar_revalidation_payload'})
     return revalidateRadarAdministrativeResearch(app.pg,user,app.config,input.data)
+  })
+  app.post('/admin/research-operations/resume',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    const input=radarAdministrativeResumeSchema.safeParse(request.body)
+    if(!input.success)return reply.code(400).send({error:'invalid_radar_research_resume_payload'})
+    const result=await resumeRadarAdministrativeResearch(app.pg,user,input.data)
+    for(const item of result.items)if(item.requestId)await enqueueRadarResearchRequest(app.pg,app.jobQueue,input.data.organizationId,item.requestId)
+    return reply.code(202).send(result)
   })
   app.get('/admin/operational-limits',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

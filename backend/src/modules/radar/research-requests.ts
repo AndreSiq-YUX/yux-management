@@ -46,18 +46,18 @@ export async function enqueueRadarResearchRequest(pool:pg.Pool,queue:Pick<Regist
  if(!row)return false
  try{await queue.add('radar.advanceResearchRequest',{organizationId,researchRequestId:row.id},{jobId:`radar-request-start-${row.id}`});return true}catch{return false}
 }
-export async function queueRadarResearchRequest(pool:pg.Pool,user:AuthUser,value:RadarResearchRequestInput){
+export async function queueRadarResearchRequest(pool:pg.Pool,user:AuthUser,value:RadarResearchRequestInput,options:{client?:pg.PoolClient}={}){
  const input=radarResearchRequestSchema.parse(value),candidateIds=[...new Set(input.candidateIds)].sort()
  if((input.allowSemanticRefresh||input.analysisAuthorizationId)&&user.role!=='yux_admin')throw failure('research_admin_required',403)
  await requireRadarScope(pool,user,{organizationId:input.organizationId,campaignId:input.campaignId},true)
- const intentHash=hash({...input,candidateIds}),client=await pool.connect()
+ const intentHash=hash({...input,candidateIds}),client=options.client??await pool.connect(),ownsTransaction=!options.client
  try{
-  await client.query('BEGIN')
+  if(ownsTransaction)await client.query('BEGIN')
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`radar-research-request:${input.organizationId}:${input.requestId}`])
   const campaign=(await client.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.campaignId,input.organizationId])).rows[0]
   if(!campaign||campaign.commercial_criteria_revision!==input.criteriaRevision)throw failure('radar_campaign_configuration_changed')
   const prior=(await client.query<RequestRow>('SELECT * FROM public.radar_research_requests WHERE organization_id=$1 AND request_id=$2',[input.organizationId,input.requestId])).rows[0]
-  if(prior){if(prior.intent_hash!==intentHash)throw failure('radar_research_request_conflict');const result=await requestWithItems(client,prior);await client.query('COMMIT');return projectRadarResearchRequest(result)}
+  if(prior){if(prior.intent_hash!==intentHash)throw failure('radar_research_request_conflict');const result=await requestWithItems(client,prior);if(ownsTransaction)await client.query('COMMIT');return projectRadarResearchRequest(result)}
   const limits=await loadRadarOperationalLimits(client)
   if(candidateIds.length>limits.limits.maxNewCompaniesPerLot)throw failure('radar_operational_limit_exceeded')
   const candidates=(await client.query('SELECT id FROM public.radar_candidate_records WHERE id=ANY($1::uuid[]) AND organization_id=$2 AND campaign_id=$3',[candidateIds,input.organizationId,input.campaignId])).rows
@@ -78,8 +78,8 @@ export async function queueRadarResearchRequest(pool:pg.Pool,user:AuthUser,value
   }
   await client.query('INSERT INTO public.radar_capture_outbox(organization_id,campaign_id,research_request_id) VALUES($1,$2,$3)',[input.organizationId,input.campaignId,row.id])
   const result=await requestWithItems(client,row)
-  await client.query('COMMIT');return projectRadarResearchRequest(result)
- }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+  if(ownsTransaction)await client.query('COMMIT');return projectRadarResearchRequest(result)
+ }catch(cause){if(ownsTransaction)await client.query('ROLLBACK');throw cause}finally{if(ownsTransaction)client.release()}
 }
 type RequestQueue=Pick<RegisteredJobQueue,'add'>
 export const radarResearchBudgetAuthorizationSchema=z.object({organizationId:z.uuid(),requestId:z.uuid(),expectedBudgetRevision:z.number().int().positive(),authorizationId:z.uuid()}).strict()

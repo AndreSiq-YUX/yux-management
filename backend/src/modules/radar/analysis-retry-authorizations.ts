@@ -48,31 +48,34 @@ export async function radarAnalysisRetryPolicy(db:Pick<pg.PoolClient,'query'>,or
  const snapshot={campaignOperationalVersion,operationalPolicy:{version:policy.version,limits:policy.limits},research,routes}
  return{snapshot,hash:hash(snapshot),policy}
 }
-export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,value:RadarAnalysisRetryAuthorizationInput){
+export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,value:RadarAnalysisRetryAuthorizationInput,options:{client?:pg.PoolClient;reuseActive?:boolean}={}){
  if(user.role!=='yux_admin')throw fail('radar_forbidden',403)
  const input=radarAnalysisRetryAuthorizationSchema.parse(value),items=[...input.items].sort((a,b)=>a.candidateId.localeCompare(b.candidateId)||a.previousReceiptId.localeCompare(b.previousReceiptId))
  if(new Set(items.map(item=>`${item.candidateId}:${item.previousReceiptId}`)).size!==items.length)throw fail('radar_analysis_retry_duplicate_item',400)
  const batchHash=hash({organizationId:input.organizationId,campaignId:input.campaignId,revision:input.configurationRevision,expiresAt:input.expiresAt,items})
- const client=await pool.connect()
+ const client=options.client??await pool.connect(),ownsTransaction=!options.client
  try{
-  await client.query('BEGIN')
+  if(ownsTransaction)await client.query('BEGIN')
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`radar-analysis-retry:${input.organizationId}:${input.requestId}`])
   const actor=(await client.query("SELECT id FROM public.app_users WHERE id=$1 AND role='yux_admin' AND is_active=TRUE",[user.id])).rows[0]
   if(!actor)throw fail('radar_forbidden',403)
   const campaign=(await client.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[input.campaignId,input.organizationId])).rows[0]
   if(!campaign||campaign.configuration_revision!==input.configurationRevision)throw fail('radar_campaign_configuration_changed')
   const existing=(await client.query('SELECT * FROM public.radar_analysis_retry_authorizations WHERE organization_id=$1 AND request_id=$2 ORDER BY candidate_id,previous_analysis_receipt_id',[input.organizationId,input.requestId])).rows
-  const project=(rows:pg.QueryResultRow[])=>({analysisAuthorizationId:input.requestId,expiresAt:new Date(rows[0].expires_at).toISOString(),items:rows.map(row=>({candidateId:row.candidate_id,previousReceiptId:row.previous_analysis_receipt_id,authorizationId:row.id}))})
+  const project=(rows:pg.QueryResultRow[])=>({analysisAuthorizationId:String(rows[0].request_id),expiresAt:new Date(rows[0].expires_at).toISOString(),items:rows.map(row=>({candidateId:row.candidate_id,previousReceiptId:row.previous_analysis_receipt_id,authorizationId:row.id}))})
   if(existing.length){
    if(existing.length!==items.length||existing.some(row=>row.batch_hash!==batchHash))throw fail('radar_analysis_retry_request_conflict')
-   await client.query('COMMIT');return project(existing)
+   if(ownsTransaction)await client.query('COMMIT');return project(existing)
   }
   const now=new Date((await client.query('SELECT NOW() AS now')).rows[0].now).getTime()
   if(Date.parse(input.expiresAt)<=now)throw fail('radar_analysis_retry_authorization_expired')
   const candidates=(await client.query(`SELECT candidate.id,review.approved_at FROM public.radar_candidate_records candidate LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id=candidate.id AND review.organization_id=candidate.organization_id
     WHERE candidate.organization_id=$1 AND candidate.campaign_id=$2 AND candidate.id=ANY($3::uuid[]) AND candidate.status='pending_review'`,[input.organizationId,input.campaignId,[...new Set(items.map(item=>item.candidateId))]])).rows
   if(candidates.length!==new Set(items.map(item=>item.candidateId)).size||candidates.some(row=>row.approved_at))throw fail('radar_analysis_retry_scope_invalid',403)
-  const receipts=(await client.query('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=$1 AND id=ANY($2::uuid[]) ORDER BY id FOR UPDATE',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows
+  // API is intentionally read-only on protected receipts. Campaign locking
+  // serializes approvals; the runtime locks/rechecks the prior receipt again
+  // when consuming a grant, including completion/lease changes after this read.
+  const receipts=(await client.query('SELECT * FROM public.radar_analysis_receipts WHERE organization_id=$1 AND id=ANY($2::uuid[]) ORDER BY id',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows
   const runs=(await client.query('SELECT id,candidate_id,calls FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND campaign_id=$2 AND candidate_id=ANY($3::uuid[])',[input.organizationId,input.campaignId,items.map(item=>item.candidateId)])).rows
   const bound=items.map(item=>{
    const receipt=receipts.find(row=>row.id===item.previousReceiptId),key=receipt?.action==='radar_presence_resolution'?'presence':'semantic'
@@ -82,16 +85,22 @@ export async function authorizeRadarAnalysisRetries(pool:pg.Pool,user:AuthUser,v
    if(receipt.status==='reserved'&&receipt.lease_until&&new Date(receipt.lease_until).getTime()>now)throw fail('radar_analysis_still_running')
    return{...item,action:receipt.action}
   })
-  const active=(await client.query('SELECT id FROM public.radar_analysis_retry_authorizations WHERE organization_id=$1 AND previous_analysis_receipt_id=ANY($2::uuid[]) AND consumed_at IS NULL AND expires_at>NOW() LIMIT 1',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows[0]
-  if(active)throw fail('radar_analysis_retry_already_authorized')
+  const active=(await client.query('SELECT * FROM public.radar_analysis_retry_authorizations WHERE organization_id=$1 AND previous_analysis_receipt_id=ANY($2::uuid[]) AND consumed_at IS NULL AND expires_at>NOW() ORDER BY approved_at DESC',[input.organizationId,items.map(item=>item.previousReceiptId)])).rows
   const policy=await radarAnalysisRetryPolicy(client,input.organizationId,campaign.search_configuration,bound.map(item=>item.action),Number(campaign.operational_policy_version??1))
   if(new Set(items.map(item=>item.candidateId)).size>policy.policy.limits.maxNewCompaniesPerLot)throw fail('radar_operational_limit_exceeded')
   if(bound.some(item=>!policy.snapshot.routes.some(route=>route.action===item.action||['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(item.action)&&route.action==='radar_decision_default')))throw fail('radar_analysis_retry_route_missing')
   const research=policy.snapshot.research
   if(bound.some(item=>item.action==='radar_deep_research'?!research.deepResearchEnabled:['radar_initial_triage','radar_next_action','radar_quality_gate'].includes(item.action)?!research.enabled:item.action==='radar_presence_resolution'?!research.presenceResolutionEnabled:!(research.semanticQualificationEnabled||research.profileEnabled||research.sizeAssessment.enabled)))throw fail('radar_analysis_retry_stage_disabled')
+  if(active.length){
+   const reusable=items.length===1&&active.find(row=>row.policy_hash===policy.hash&&row.configuration_revision===input.configurationRevision&&row.candidate_id===items[0].candidateId)
+   if(options.reuseActive&&reusable){if(ownsTransaction)await client.query('COMMIT');return project([reusable])}
+   // A fresh explicit acknowledgement may approve the new policy. Old grants
+   // remain immutable and cannot be consumed against a different policy hash.
+   if(!options.reuseActive||active.some(row=>row.policy_hash===policy.hash))throw fail('radar_analysis_retry_already_authorized')
+  }
   const rows=[]
   for(const item of bound)rows.push((await client.query(`INSERT INTO public.radar_analysis_retry_authorizations(organization_id,campaign_id,candidate_id,request_id,batch_hash,configuration_revision,previous_analysis_receipt_id,action,approved_by,expires_at,acknowledged_previous_charge,policy_snapshot,policy_hash)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12) RETURNING *`,[input.organizationId,input.campaignId,item.candidateId,input.requestId,batchHash,input.configurationRevision,item.previousReceiptId,item.action,user.id,input.expiresAt,JSON.stringify(policy.snapshot),policy.hash])).rows[0])
-  await client.query('COMMIT');return project(rows)
- }catch(cause){await client.query('ROLLBACK');throw cause}finally{client.release()}
+  if(ownsTransaction)await client.query('COMMIT');return project(rows)
+ }catch(cause){if(ownsTransaction)await client.query('ROLLBACK');throw cause}finally{if(ownsTransaction)client.release()}
 }

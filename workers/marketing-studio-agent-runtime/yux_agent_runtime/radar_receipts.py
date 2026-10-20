@@ -149,9 +149,9 @@ def execute_radar_receipt(store, *, action, request, compute, debit, validate_ef
             if validate_effect:
                 recorder.valid()
         except Exception as cause:
-            recorder.failed(cause, provider_started=provider_started)
+            outcome = recorder.failed(cause, provider_started=provider_started)
             store.finish_radar_receipt(**key, owner_token=owner_token,
-                                      status='uncertain' if provider_started else 'rejected_before_provider', result=None, usage=None)
+                                      status='rejected_before_provider' if not provider_started or outcome=='not_started' else 'uncertain', result=None, usage=None)
             raise
     finally:
         _active_recorder.reset(token)
