@@ -39,4 +39,6 @@ Os conjuntos se sobrepõem; não somar esses números como testes independentes.
 
 ## Operação após deploy
 
+O primeiro deploy de `2d68352` falhou na compilação, antes de substituir os serviços: um teste importava estaticamente a fixture JSON pelo diretório pai do repositório, inexistente no layout Docker. O teste `docker-contract-build.test.ts` reproduziu o mesmo erro TypeScript; a fixture passou a ser lida em execução nos layouts de repositório/Docker, sem mudar código produtivo nem relaxar a compilação. A correção recebe novo commit e novo deploy; a primeira tentativa não deve ser registrada como implantação bem-sucedida.
+
 Seguir [o runbook de configuração](../runbooks/radar-pesquisa-configuravel.md). Publicação, deploy, configuração e piloto são estados distintos. Conferir o novo commit no Dokploy e os controles realmente servidos antes de informar implantação concluída. O manifesto geral de remediação continua bloqueado para gates operacionais mais amplos; este relatório não os aprova por simulação.

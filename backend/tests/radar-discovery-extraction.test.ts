@@ -1,5 +1,8 @@
 import {expect,it,vi} from 'vitest'
-import fixture from '../../contracts/radar/discovery/v1/cases.json' with {type:'json'}
+import {existsSync,readFileSync} from 'node:fs'
+const fixturePath=[new URL('../../contracts/radar/discovery/v1/cases.json',import.meta.url),new URL('../contracts/radar/discovery/v1/cases.json',import.meta.url)].find(path=>existsSync(path))
+if(!fixturePath)throw Error('radar_discovery_fixture_missing')
+const fixture=JSON.parse(readFileSync(fixturePath,'utf8'))
 const modulePath='../src/modules/radar/discovery-extraction.js',api=await import(modulePath).catch(()=>({})) as Record<string,any>
 it('extracts multiple evidenced names without inheriting contacts of a directory or marking its own URL official',()=>{
  expect(api.validateRadarBusinessMentions).toBeTypeOf('function')
