@@ -29,6 +29,7 @@ export type RadarFunnelResearchState = {
     limitations?: string[];
     blockedGate?: 'g0' | 'g1' | 'g5';
     enrichmentUrls?: string[];
+    identityReviewedPages?: string[];
 };
 export type RadarFunnelDiscoveryOutput = {
     funnel?: RadarFunnelResearchState; pages?: RadarSiteEvidence[]; discovery?: RadarPresenceDiscovery;
@@ -56,6 +57,9 @@ type Dependencies = {
     deadlineAt?: number;
 };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
+// Content, not observation time: an inconclusive mention cannot repeatedly stop
+// discovery. A new page/text remains eligible for identity verification.
+export const radarFunnelIdentityPageKey = (page: RadarSiteEvidence) => hash(JSON.stringify([canonicalRadarReadUrl(page.url) ?? page.url, page.text]));
 const uniquePages = (pages: RadarSiteEvidence[]) => [...new Map(pages.map(page => [canonicalRadarReadUrl(page.url) ?? page.url, page])).values()];
 const uniqueHits = (hits: RadarWebHit[]) => [...new Map(hits.map(hit => [canonicalRadarReadUrl(hit.url) ?? hit.url, hit])).values()];
 export function radarFunnelResearchQueries(identity: RadarBusinessIdentity, domain?: string) {
@@ -148,7 +152,7 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
         }
         if(!state.pendingAction&&directlyOwned&&!readOptions.length){state.stopReason='identity_found';break;}
         const options: Action[] = readOptions.slice(0, 4);
-        const institutionalRead = pages.some(page => !!page.text && !page.limitation && isRadarInstitutionalSource(page.url, { text: page.text }) && [identity.name, identity.legalName].some(name => !!name && page.text.toLowerCase().includes(name.toLowerCase())));
+        const institutionalRead = pages.some(page => !state.identityReviewedPages?.includes(radarFunnelIdentityPageKey(page)) && !!page.text && !page.limitation && isRadarInstitutionalSource(page.url, { text: page.text }) && [identity.name, identity.legalName].some(name => !!name && page.text.toLowerCase().includes(name.toLowerCase())));
         const candidatePending = readOptions.length > 0 || institutionalRead;
         const agentEligible = !!deps.deepResearch && isRadarFunnelAgentEligible(configuration, state) && !candidatePending &&
             (configuration.funnel.agentPolicy.timing === 'immediately_when_no_site_candidate' || state.cheapSearches > 0);

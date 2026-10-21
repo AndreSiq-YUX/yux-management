@@ -46,7 +46,7 @@ import type {DecisionContextV1} from './decision-contracts.js'
 import {planRadarAdaptiveResearch,RadarAdaptiveTurnYield,rethrowRadarAdaptiveYield} from './adaptive-research.js'
 import {researchRadarGaps} from './deep-research.js'
 import {inspectRadarBusinessSite} from './b2b-site-inspection.js'
-import {runRadarFunnelDiscovery,isRadarFunnelAgentEligible,type RadarFunnelResearchState,type RadarFunnelDecision} from './funnel-discovery.js'
+import {runRadarFunnelDiscovery,isRadarFunnelAgentEligible,radarFunnelIdentityPageKey,type RadarFunnelResearchState,type RadarFunnelDecision} from './funnel-discovery.js'
 import {evaluateRadarRegistryRules,type RadarRegistryGateResult} from './registry-gate.js'
 import type {RadarEmailDomainPolicy} from './email-domain.js'
 import type {RadarFunnelOverride} from './funnel-gates.js'
@@ -348,6 +348,17 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
         await checkpoint('identity')
       }catch(cause){rethrowRadarAdaptiveYield(cause);limits.push(`Identificação do site pendente (${safeResearchError(cause)}). As evidências foram preservadas.`)}
     }else limits.push(presenceEvidence.some(item=>item.kind==='institutional_candidate')?'radar_presence_service_unavailable':'radar_presence_waiting_public_read')
+  }
+  if(funnel&&!directlyAssociated&&presenceResolution?.scope==='unresolved'&&!output.funnel?.agentAttempted&&!output.funnel?.agentCompleted){
+    const reviewed=new Set(output.funnel?.identityReviewedPages??[])
+    const checked=pages.filter(page=>!page.limitation&&isRadarInstitutionalSource(page.url,{text:page.text})).map(radarFunnelIdentityPageKey)
+    if(checked.some(key=>!reviewed.has(key))){
+      output.funnel!.identityReviewedPages=[...new Set([...reviewed,...checked])]
+      // Only an actual, validated no-match permits looking elsewhere. The paid
+      // adapters still own quotas, exact-query receipts and presence refresh caps.
+      await checkpoint('discovery')
+      return runRadarResearchPipeline(identity,configuration,output,{...dependencies,decisionMemo})
+    }
   }
   const selectedWebsite=directlyAssociated?.url??presenceResolution?.websiteUrl
   if(!funnel&&(deferAmbiguousDepth||configuration.research.presenceResolutionEnabled&&!saved.readingComplete||readerUpgrade)&&selectedWebsite&&!output.analysisOnly){

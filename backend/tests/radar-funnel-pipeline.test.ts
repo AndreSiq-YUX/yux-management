@@ -5,6 +5,23 @@ const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city: 'Curitiba
 const url = 'https://alfa.example/';
 const page = { url, text: 'Empresa Alfa CNPJ 12.345.678/0001-90. Atendimento empresarial. contato@alfa.example', observedAt: '2026-10-21' };
 const config = (patch = {}) => resolveRadarSearchConfiguration({ funnel: { enabled: true, g0: { mode: 'enforce' }, g1: { mode: 'enforce' }, g5: { mode: 'enforce' } }, research: { enabled: true, webSearchEnabled: true, semanticQualificationEnabled: true }, ...patch });
+it.each(['found','exhausted','uncertain'] as const)('continues cheap searches only after a real unresolved identity (%s), and resumes without repurchasing',async mode=>{
+ const wrong={url:'https://candidate.example/',text:'Empresa Alfa é mencionada nesta página. Informações institucionais gerais.',observedAt:page.observedAt};
+ const web=vi.fn(async()=>[{url:web.mock.calls.length===1||mode!=='found'?wrong.url:url,title:identity.name,snippets:[],observedAt:page.observedAt}]);
+ const collect=vi.fn(async(readUrl:string)=>[readUrl===url?page:wrong]);
+ const resolvePresence=vi.fn(async()=>{if(mode==='uncertain')throw Error('radar_previous_request_uncertain');return{candidateId:null,scope:'unresolved',reason:'A menção não comprova identidade.',claims:[]}});
+ const configuration=config({funnel:{enabled:true,g1:{mode:'off'},g5:{mode:'off'},agentPolicy:{mode:'off'}},research:{enabled:true,webSearchEnabled:true,webSearchProviders:['serper_web_search'],maxSearchQueriesPerCandidate:3,maxPagesPerCandidate:4,presenceResolutionEnabled:true,semanticQualificationEnabled:false}});
+ const deps={web,collect,resolvePresence,checkpoint:async()=>{}};
+ const result=await runRadarResearchPipeline(identity,configuration,{},deps);
+ expect(web).toHaveBeenCalledTimes(mode==='found'?2:mode==='exhausted'?3:1);
+ expect(resolvePresence).toHaveBeenCalledTimes(1);
+ if(mode==='found'){
+  expect(web.mock.calls[1]).toEqual(['"12.345.678/0001-90"','serper_web_search']);
+  expect(result.siteAssociation).toBe('confirmed');expect(result.discovery.websiteUrl).toBe(url);
+ }else expect(result.siteAssociation).not.toBe('confirmed');
+ await runRadarResearchPipeline(identity,configuration,result,deps);
+ expect(web).toHaveBeenCalledTimes(mode==='found'?2:mode==='exhausted'?3:1);
+});
 it.each([false,true])('reads a contact URL returned by the single Agent, including saved receipt recovery=%s',async recovered=>{
  const homepage={...page,text:'Empresa Alfa CNPJ 12.345.678/0001-90. Atendimento empresarial.'}
  const contactUrl='https://alfa.example/portal-2026'
