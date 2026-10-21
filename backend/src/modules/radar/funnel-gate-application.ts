@@ -80,7 +80,7 @@ export async function applyRadarFunnelGateDecision(pool: pg.Pool, input: RunScop
         await recordRadarFunnelEvent(db, { ...input, gate: input.gate, mode: action.effectiveMode as 'off' | 'shadow' | 'enforce', outcome: action.overridden?'human_override':result?.choice ?? 'unavailable', reasonCode: action.reasonCode, wouldBlock: action.wouldBlock,
             evidenceIds: action.evidenceIds, decisionRequestId: input.requestId, eventKey: `${input.runId}:${input.requestId ?? 'none'}:${radarDecisionHash({ action, policy: config.funnel[input.gate] })}`,
             ...(cost.amountBrl !== null ? { costEstimateBrl: Number(cost.amountBrl) } : {}) });
-        return { ...action, choice: result?.choice };
+        return { ...action, choice: result?.choice, requestId: input.requestId };
     });
 }
 export async function applyRadarFunnelNextAction(pool: pg.Pool, input: RunScope & { result?: DecisionResultV1; requestId?: string; step: number; options: DecisionContextV1['options'] }, deps: Dependencies) {

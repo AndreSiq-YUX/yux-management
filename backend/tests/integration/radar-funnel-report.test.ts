@@ -17,6 +17,31 @@ describe.skipIf(!connectionString)('funnel report and scoped reopen',()=>{
    const report=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id,operationId:op.operationId});
    expect(report.companies[0]).toMatchObject({gate:'g0',outcome:'out_of_profile',reason:'blocked_name_term',currentReview:{gate:null},path:[expect.objectContaining({gate:'g0'})]});
    expect(report.totals.outside).toBe(1);
+   expect(report.summary.blocksByReason).toEqual([{stage:'g0',reason:'blocked_name_term',count:1}]);
+  }finally{await f.close()}
+ });
+ it('summarizes latest gate choices and raw probabilities from the exact request, never inventing calibration',async()=>{
+  const f=await captureFixture();try{
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Gama',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];
+   const decision=(choice:string,probabilities:Record<string,number>)=>({schemaVersion:1,task:'radar_initial_triage',status:'decided',choice,reasonCode:'more_evidence_needed',evidenceIds:[],probabilities,requestedModel:'fixture/model',resolvedModel:'fixture/model-v1',adapterVersion:'openrouter-decisions-alpha-v1',contextVersion:'radar-decision-context-v2',questionVersion:'radar-decisions-questions-v2',criteriaRubricVersion:'radar-decisions-rubric-v2',attempts:[],usage:{inputTokens:10,outputTokens:1,costUsd:0}});
+   const calls={old:{source:'openrouter_decision',requestId:'old',result:decision('outside_profile',{outside_profile:.99,compatible:.01})},current:{source:'openrouter_decision',requestId:'current',result:decision('compatible',{outside_profile:.2,compatible:.8})}};
+   const run=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,stage,funnel_outcome,output,calls,error_code) VALUES($1,$2,$3,$4,1,'blocked','qualification','technical_failure','{}',$5,'radar_previous_request_uncertain') RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,JSON.stringify(calls)])).rows[0];
+   for(const [requestId,choice] of [['old','outside_profile'],['current','compatible']])await recordRadarFunnelEvent(f.pool,{organizationId,campaignId:f.campaign.id,candidateId:candidate.id,runId:run.id,configurationRevision:1,gate:'g1',mode:'shadow',outcome:choice,decisionRequestId:requestId,eventKey:requestId});
+   await recordRadarFunnelEvent(f.pool,{organizationId,campaignId:f.campaign.id,candidateId:candidate.id,runId:run.id,configurationRevision:1,gate:'g5',mode:'shadow',outcome:'outside_profile',decisionRequestId:'missing',eventKey:'missing'});
+   const report=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id});
+   expect(report.companies[0].path).toEqual(expect.arrayContaining([
+    expect.objectContaining({requestId:'current',selectedProbability:.8,outsideProbability:.2,wouldBlock:null,threshold:null}),
+    expect.objectContaining({requestId:'missing',selectedProbability:null,outsideProbability:null,wouldBlock:null}),
+   ]));
+   expect(report.summary.classifications).toEqual([{gate:'g1',classification:'compatible',count:1},{gate:'g5',classification:'outside_profile',count:1}]);
+   expect(report.summary.counterfactual).toEqual({evaluable:0,notEvaluable:2,wouldBlock:0});
+   expect(report.summary.blocksByReason).toEqual([{stage:'qualification',reason:'radar_previous_request_uncertain',count:1}]);
+   // New snapshots record the threshold with the request; older events cannot
+   // borrow this later threshold, even in the same run.
+   await f.pool.query('UPDATE radar_candidate_research_runs SET output=$2 WHERE id=$1',[run.id,JSON.stringify({funnel:{initial:{requestId:'current',threshold:.95}}})]);
+   const calibrated=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id});
+   expect(calibrated.companies[0].path.find(step=>step.requestId==='old')?.wouldBlock).toBeNull();
+   expect(calibrated.summary.counterfactual).toEqual({evaluable:1,notEvaluable:1,wouldBlock:0});
   }finally{await f.close()}
  });
  it('keeps a lot path and exclusion tied to its own run after a later round changes the company',async()=>{

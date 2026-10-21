@@ -12,7 +12,7 @@ import { classifyRadarEmailDomain, type RadarEmailDomainPolicy, type RadarEmailD
 import { rethrowRadarAdaptiveYield } from './adaptive-research.js';
 
 type Action = { id: string; description: string; kind: 'read' | 'search' | 'local' | 'agent' | 'stop'; url?: string; query?: string; source?: RadarWebSearchSource; cost: number };
-export type RadarFunnelDecision = { action: string; effectiveMode?: string; choice?: string | null; reasonCode?: string; matchedTargetKey?: string };
+export type RadarFunnelDecision = { action: string; effectiveMode?: string; choice?: string | null; reasonCode?: string; matchedTargetKey?: string; requestId?: string; threshold?: number | null };
 export type RadarFunnelResearchState = {
     initial?: RadarFunnelDecision;
     fit?: RadarFunnelDecision;
