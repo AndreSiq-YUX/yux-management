@@ -23,7 +23,7 @@ it('envia um teste confirmado pela fila normal uma única vez e preserva a solic
     await rig.sql(`UPDATE public.channel_connections SET protected_metadata_references = $2::jsonb WHERE id=$1`,
       [connectionId, JSON.stringify({ accessTokenReference: secret.reference })])
     await rig.sql(`INSERT INTO public.omnichannel_contacts (id, organization_id, display_name, phone)
-      VALUES ($1,$2,'Contato de homologação',$3)`, [contactId, rig.ids.organizationA, `+${recipient}`])
+      VALUES ($1,$2,'Contato de homologação',$3)`, [contactId, rig.ids.organizationA, '+551199990000'])
     await rig.sql(`INSERT INTO public.conversations (id,organization_id,contact_id,connection_id,channel,status,response_mode)
       VALUES ($1,$2,$3,$4,'whatsapp','open','manual')`, [conversationId, rig.ids.organizationA, contactId, connectionId])
     await rig.sql(`INSERT INTO public.messages (conversation_id,connection_id,direction,author_type,content_type,body,delivery_status)
@@ -53,7 +53,7 @@ it('envia um teste confirmado pela fila normal uma única vez e preserva a solic
     await rig.workerTick()
     expect((await rig.providerCalls()).filter(call => call.intentId === requestId)).toEqual([{
       intentId: requestId,
-      payload: { messaging_product: 'whatsapp', recipient_type: 'individual', to: `+${recipient}`, type: 'text', text: { preview_url: false, body: 'Teste de integração YUX' } },
+      payload: { messaging_product: 'whatsapp', recipient_type: 'individual', to: '5511999990000', type: 'text', text: { preview_url: false, body: 'Teste de integração YUX' } },
     }])
     const sent = (await rig.sql(`SELECT delivery_status, external_message_id FROM public.messages WHERE id=$1`, [requestId])).rows[0]
     expect(sent).toEqual({ delivery_status: 'sent', external_message_id: `provider-${requestId}` })

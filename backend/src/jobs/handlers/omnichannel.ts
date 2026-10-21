@@ -6,6 +6,7 @@ import { decodeProviderSecretEncryptionKey, loadProviderSecretFromPool } from '.
 import { normalizeWhatsAppInbound, sendWhatsAppTemplateMessage, sendWhatsAppTextMessage, verifyWhatsAppTemplateApproval } from '../../lib/edge-compat/whatsappProvider.js'
 import { evaluateBrandGuardrails, resolveOmnichannelAssistantContext } from '../../modules/omnichannel/assistant-context.js'
 import { evaluateWhatsAppDispatchPolicy } from '../../modules/omnichannel/whatsapp-dispatch-policy.js'
+import { resolveWhatsAppTestRecipient } from '../../modules/omnichannel/whatsapp-recipient.js'
 
 type Row = Record<string, unknown>
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
@@ -508,6 +509,9 @@ export async function handleOutboundMessage(
   if ((row.content_type !== 'template' && !row.body?.trim()) || !row.phone || !row.phone_number_id) {
     throw new Error('outbound_message_provider_context_required')
   }
+  const providerRecipient = row.metadata?.source === 'channel_test'
+    ? resolveWhatsAppTestRecipient(row.metadata.testRecipient, row.phone)
+    : row.phone
 
   const crmSequenceMessage = row.metadata?.source === 'crm_sequence'
     || typeof row.metadata?.prospectingPlanId === 'string'
@@ -606,7 +610,7 @@ export async function handleOutboundMessage(
     }
     const response = row.content_type === 'template'
       ? await sendWhatsAppTemplateMessage({
-          to: row.phone,
+          to: providerRecipient,
           templateName: String(row.metadata.templateName || ''),
           languageCode: typeof row.metadata.languageCode === 'string' ? row.metadata.languageCode : undefined,
           components: Array.isArray(row.metadata.components) ? row.metadata.components as Row[] : undefined,
@@ -617,7 +621,7 @@ export async function handleOutboundMessage(
           intentId: messageId,
         })
       : await sendWhatsAppTextMessage({
-          to: row.phone,
+          to: providerRecipient,
           body: row.body || '',
           phoneNumberId: row.phone_number_id,
           accessToken: accessToken.value,

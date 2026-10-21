@@ -46,6 +46,28 @@ class FakePool {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('WhatsApp outbound connection isolation', () => {
+  it('uses the explicitly confirmed test phone when Meta returns its Brazilian legacy mobile identity', async () => {
+    const keyB64 = Buffer.alloc(32, 9).toString('base64')
+    const secret = await encryptProviderSecretValue('access-token', decodeProviderSecretEncryptionKey(keyB64))
+    const pool = new FakePool(message({ phone: '+551199990000', metadata: { source: 'channel_test', testRecipient: '5511999990000' } }), { secret: { reference: 'secret-reference', ...secret } })
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ messages: [{ id: 'provider-test' }] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchFn)
+    await handleOutboundMessage(pool as never, { messageId: 'message-1' }, { providerSecretEncryptionKey: keyB64 })
+    const payload = JSON.parse((fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+    expect(payload.to).toBe('5511999990000')
+  })
+
+  it.each([
+    { phone: '+551199990000', recipient: '5531999990000' },
+    { phone: '+551132340000', recipient: '5511932340000' },
+    { phone: '+14155550000', recipient: '141595550000' },
+  ])('rejects a test destination that is not the same verified mobile identity: $recipient', async ({ phone, recipient }) => {
+    const pool = new FakePool(message({ phone, metadata: { source: 'channel_test', testRecipient: recipient } }))
+    await expect(handleOutboundMessage(pool as never, { messageId: 'message-1' }))
+      .rejects.toThrow('whatsapp_test_recipient_mismatch')
+    expect(pool.queries.some(sql => sql.includes('INSERT INTO public.outbound_message_runs'))).toBe(false)
+  })
+
   it('rejects a message whose connection differs from its conversation before creating a send run', async () => {
     const pool = new FakePool(message({ message_connection_id: 'connection-org-b' }))
 

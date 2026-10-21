@@ -2,6 +2,7 @@ import type pg from 'pg'
 import { z } from 'zod'
 import { ApiError } from '../../http/errors.js'
 import { recordDomainEvent } from '../events/repository.js'
+import { whatsAppRecipientIdentities } from './whatsapp-recipient.js'
 
 export const whatsAppTestSendSchema = z.object({
   connectionId: z.string().uuid(),
@@ -40,11 +41,11 @@ export async function prepareWhatsAppTestSend(pool: pg.Pool, organizationId: str
     const conversations = await client.query<{ id: string }>(`SELECT c.id FROM public.conversations c
       JOIN public.omnichannel_contacts contact ON contact.id=c.contact_id AND contact.organization_id=c.organization_id
       WHERE c.organization_id=$1 AND c.connection_id=$2 AND c.channel='whatsapp' AND c.status NOT IN ('resolved','archived')
-        AND regexp_replace(contact.phone,'[^0-9]','','g')=$3
+        AND regexp_replace(contact.phone,'[^0-9]','','g')=ANY($3::text[])
         AND EXISTS (SELECT 1 FROM public.messages inbound WHERE inbound.conversation_id=c.id
           AND inbound.connection_id=c.connection_id AND inbound.direction='inbound'
           AND inbound.created_at>=NOW()-INTERVAL '24 hours' AND inbound.created_at<=NOW())
-      ORDER BY c.updated_at DESC LIMIT 1 FOR SHARE OF c`, [organizationId, input.connectionId, input.recipient])
+      ORDER BY c.updated_at DESC LIMIT 1 FOR SHARE OF c`, [organizationId, input.connectionId, whatsAppRecipientIdentities(input.recipient)])
     const conversationId = conversations.rows[0]?.id
     if (!conversationId) throw new ApiError(409, 'whatsapp_test_recent_conversation_required')
 
