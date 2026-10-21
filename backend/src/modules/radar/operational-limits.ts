@@ -10,10 +10,10 @@ export const radarOperationalLimitsSchema=z.object({
  maxNewCompaniesPerLot:integer,maxPagesPerScope:integer,maxDiscoveryQueriesPerLot:integer,maxDiscoveryPageSize:integer,
  maxVerificationBatch:integer,maxSearchQueriesPerCompany:integer,maxPublicPagesPerCompany:integer,
  maxCampaignDailyQueries:integer,maxSourceDailyQueries:integer,maxResearchFreshnessDays:integer,maxContinuationIdleMinutes:integer,
- maxDecisionCallsPerCompany:integer.default(3),maxDeepSearchesPerCompany:integer.default(1),maxFallbackAttemptsPerEffect:z.number().int().nonnegative().safe().default(1),stalledAfterMinutes:integer.default(10),
+ maxDecisionCallsPerCompany:integer.default(6),maxPresenceResolutionsPerCompany:integer.default(2),maxDeepSearchesPerCompany:integer.default(1),maxFallbackAttemptsPerEffect:z.number().int().nonnegative().safe().default(1),stalledAfterMinutes:integer.default(10),
 }).strict()
 export type RadarOperationalLimits=z.infer<typeof radarOperationalLimitsSchema>
-export const defaultRadarOperationalLimits:RadarOperationalLimits={maxNewCompaniesPerLot:1000,maxPagesPerScope:10,maxDiscoveryQueriesPerLot:100,maxDiscoveryPageSize:10,maxVerificationBatch:25,maxSearchQueriesPerCompany:5,maxPublicPagesPerCompany:10,maxCampaignDailyQueries:1000,maxSourceDailyQueries:1000,maxResearchFreshnessDays:30,maxContinuationIdleMinutes:60,maxDecisionCallsPerCompany:3,maxDeepSearchesPerCompany:1,maxFallbackAttemptsPerEffect:1,stalledAfterMinutes:10}
+export const defaultRadarOperationalLimits:RadarOperationalLimits={maxNewCompaniesPerLot:1000,maxPagesPerScope:10,maxDiscoveryQueriesPerLot:100,maxDiscoveryPageSize:10,maxVerificationBatch:25,maxSearchQueriesPerCompany:5,maxPublicPagesPerCompany:10,maxCampaignDailyQueries:1000,maxSourceDailyQueries:1000,maxResearchFreshnessDays:30,maxContinuationIdleMinutes:60,maxDecisionCallsPerCompany:6,maxPresenceResolutionsPerCompany:2,maxDeepSearchesPerCompany:1,maxFallbackAttemptsPerEffect:1,stalledAfterMinutes:10}
 type Db=Pick<pg.Pool,'query'>
 export type RadarOperationalPolicy={version:number;limits:RadarOperationalLimits;costPolicy:RadarCostPolicy;updatedAt:string|null;updatedBy:string|null}
 const failure=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})

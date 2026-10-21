@@ -1,6 +1,6 @@
 """Incremental Radar v1 contracts, checked by shared fixtures."""
 from __future__ import annotations
-from typing import Any, Literal
+from typing import Any, Literal, Annotated
 from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, field_validator, model_validator
 
@@ -152,6 +152,15 @@ class _DecisionOption(BaseModel):
     description: str=Field(min_length=1,max_length=1000)
 
 
+class _DecisionTarget(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    key: str=Field(pattern=r'^[a-z][a-z0-9_]{0,59}$')
+    label: str=Field(min_length=1,max_length=120)
+    definition: str=Field(min_length=1,max_length=1200)
+    priority: Literal['primary','secondary']
+    cnaes: list[Annotated[str,Field(pattern=r'^(?:\d{2,7}|\d{4}-\d/\d{2})$')]]=Field(default_factory=list,max_length=50)
+
+
 class DecisionContextV1(_Contract):
     organizationId: UUID
     campaignId: UUID
@@ -170,6 +179,17 @@ class DecisionContextV1(_Contract):
     def known_fields(self):
         if set(self.identity)-{'name','legalName','cnpj','city','state','address'} or 'name' not in self.identity or set(self.criteria)-{'targets','outOfScopeExamples','registryFlags','segment','offer','products','includeTerms','includeAllTerms','excludeTerms','requiredContacts','minimumUsefulContacts','contactPurpose','desiredCnaes','cnaeRule'}:
             raise ValueError('radar_decision_context_invalid')
+        if 'targets' in self.criteria:
+            targets=TypeAdapter(list[_DecisionTarget]).validate_python(self.criteria['targets'])
+            if len(targets)>10 or len({target.key for target in targets})!=len(targets):
+                raise ValueError('radar_decision_targets_invalid')
+        for key,maximum,count in [('outOfScopeExamples',300,50),('registryFlags',80,20)]:
+            if key in self.criteria:
+                values=self.criteria[key]
+                if not isinstance(values,list) or len(values)>count or any(not isinstance(value,str) or len(value)>maximum for value in values):
+                    raise ValueError('radar_decision_criteria_invalid')
+        # Validation deliberately does not replace criteria with a model dump:
+        # absent/default fields must not change hashes of already-paid v1 receipts.
         return self
 
 

@@ -27,6 +27,7 @@ export function validateRadarSizePolicy(value:RadarSizePolicy) {
   }
 }
 export type RadarSearchConfiguration = {
+  funnel?:import('@/types/radarFunnel').RadarFunnelPolicy
   discovery?:{enabled:boolean;sourceOrder:Array<'osm_extract'|'serper_places'|'brave_place_search'|'serper_web_search'|'brave_web_search'|'cnpja_advanced_search'|'perplexity_search_fast'|'perplexity_search_web'>;terms:string[]}
   crmDestination?:{crmInstanceId:string;pipelineId:string;stageId:string}
   research?: { enabled: boolean; webSearchEnabled: boolean; maxSearchQueriesPerCandidate: number;
@@ -35,7 +36,7 @@ export type RadarSearchConfiguration = {
     webSearchProviders?:Array<'brave_web_search'|'serper_web_search'|'perplexity_search_fast'|'perplexity_search_web'>;
     localSearchOrder?:'before_web'|'after_web_if_needed'|'disabled';
     completion?:RadarCompletionPolicy;
-    maxPagesPerCandidate: number; freshnessDays: number; semanticQualificationEnabled: boolean;presenceResolutionEnabled?:boolean;inspectLinkedSocialProfiles?:boolean;
+    maxPagesPerCandidate: number;qualificationEvidenceMaxPages?:number;qualificationEvidenceMaxChars?:number; freshnessDays: number; semanticQualificationEnabled: boolean;presenceResolutionEnabled?:boolean;inspectLinkedSocialProfiles?:boolean;
     profileEnabled?:boolean;deepResearchEnabled?:boolean;contactPurpose?:'general'|'suppliers'|'sales'|'finance'|'recruitment';sizeAssessment?:RadarSizePolicy }
   cities: Array<{ city: string; state: string }>
   activityScope: 'main' | 'main_or_secondary'
@@ -46,15 +47,16 @@ export type RadarSearchConfiguration = {
   braveQueryTemplate: string
   sources: { enrichWithBrave: boolean; inspectWebsite: boolean }
   qualification: {
+    targets?:Array<{key:string;label:string;definition:string;priority:'primary'|'secondary';cnaes:string[]}>;outOfScopeExamples?:string[];registry?:{mainActivityRule:'any'|'target_main_required'|'target_secondary_needs_review';blockedMainCnaes:string[];blockedNameTerms:string[]}
     includeAnyTerms: string[]; includeAllTerms: string[]; excludeTerms: string[]
     requireCnaeMatch: boolean; missingWebsite: 'review' | 'insufficient'
     productTerms: string[]; productMatch: 'any' | 'all'
   }
-  batch: { pageSize: number; maxPagesPerScope: number; maxQueriesPerBatch: number; verificationLimit: number }
+  batch: { pageSize: number; maxPagesPerScope: number; maxQueriesPerBatch: number; verificationLimit: number;minPassRatio?:number;maxReplenishmentPages?:number;replenishmentBasis?:'initial_triage'|'final_fit' }
   exportFields: RadarExportField[]
 }
 export function defaultRadarSearchConfiguration(): RadarSearchConfiguration {
-  return { research: { enabled: false, webSearchEnabled: false,webSearchProviders:['brave_web_search'],localSearchOrder:'before_web',completion:defaultRadarCompletionPolicy(), maxSearchQueriesPerCandidate: 3,
+  return { research: { enabled: false, webSearchEnabled: false,webSearchProviders:['brave_web_search'],localSearchOrder:'after_web_if_needed',completion:defaultRadarCompletionPolicy(), maxSearchQueriesPerCandidate: 3,
     maxPagesPerCandidate: 4, freshnessDays: 7, semanticQualificationEnabled: false,presenceResolutionEnabled:false,inspectLinkedSocialProfiles:false,profileEnabled:false,contactPurpose:'general',sizeAssessment:defaultRadarSizePolicy() },
     cities: [], activityScope: 'main_or_secondary', excludedNameTerms: [], registrationStatusIds: [2],
     braveQueryTemplate: '{name}', sources: { enrichWithBrave: true, inspectWebsite: true },

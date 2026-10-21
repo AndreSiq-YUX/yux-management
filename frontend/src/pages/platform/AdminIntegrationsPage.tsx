@@ -3,6 +3,8 @@ import { ProviderConnectionEditor } from '@/components/platform/admin/ProviderCo
 import { ProviderConnectionPanel } from '@/components/platform/admin/ProviderConnectionPanel'
 import { RadarSourceManagementPanel } from '@/components/platform/admin/RadarSourceManagementPanel'
 import {RadarDiscoveryPolicyPanel} from '@/components/platform/admin/RadarDiscoveryPolicyPanel'
+import {RadarFunnelGlobalPolicyPanel} from '@/components/platform/admin/RadarFunnelGlobalPolicyPanel'
+import {RadarCampaignFunnelPanel} from '@/components/platform/admin/RadarCampaignFunnelPanel'
 import { RadarOperationalLimitsPanel } from '@/components/platform/admin/RadarOperationalLimitsPanel'
 import {RadarResearchOperationsPanel} from '@/components/platform/admin/RadarResearchOperationsPanel'
 import {RadarStalledResearchPanel} from '@/components/platform/admin/RadarStalledResearchPanel'
@@ -76,7 +78,7 @@ export function AdminIntegrationsPage() {
         Esta area salva configuracoes operacionais e identificadores internos. Provedores como SMTP2GO devem ser
         conectados pelo fluxo seguro do Admin, com credenciais criptografadas no backend da VPS.
       </div>
-      {radarScope&&<section id="radar-operations" className="scroll-mt-24 space-y-5"><RadarResearchOperationsPanel isSystemAdmin={isAdmin} organizationId={radarScope.organizationId} campaignId={radarScope.campaignId}/><Suspense fallback={<p role="status">Carregando operações do Radar…</p>}><RadarOperationalWorkspace key={`${radarScope.organizationId}:${radarScope.campaignId}`} technicalOnly adminOrganizationId={radarScope.organizationId} campaignId={radarScope.campaignId} screen="results"/></Suspense></section>}
+      {radarScope&&<section id="radar-operations" className="scroll-mt-24 space-y-5"><RadarCampaignFunnelPanel key={`funnel:${radarScope.organizationId}:${radarScope.campaignId}`} isSystemAdmin={isAdmin} organizationId={radarScope.organizationId} campaignId={radarScope.campaignId}/><RadarResearchOperationsPanel isSystemAdmin={isAdmin} organizationId={radarScope.organizationId} campaignId={radarScope.campaignId}/><Suspense fallback={<p role="status">Carregando operações do Radar…</p>}><RadarOperationalWorkspace key={`${radarScope.organizationId}:${radarScope.campaignId}`} technicalOnly adminOrganizationId={radarScope.organizationId} campaignId={radarScope.campaignId} screen="results"/></Suspense></section>}
 
       {loading && <p className="text-sm text-gray-600">Carregando integracoes globais...</p>}
 
@@ -87,7 +89,7 @@ export function AdminIntegrationsPage() {
       )}
 
       {!loading && !error && (
-        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarStalledResearchPanel isSystemAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} />{isAdmin&&<RadarDiscoveryPolicyPanel/>}</>
+        <><RadarOperationalLimitsPanel isAdmin={isAdmin}/><RadarStalledResearchPanel isSystemAdmin={isAdmin}/><RadarSourceManagementPanel providers={providers} />{isAdmin&&<><RadarFunnelGlobalPolicyPanel isSystemAdmin={isAdmin}/><RadarDiscoveryPolicyPanel/></>}</>
       )}
 
       {!loading && !error && (

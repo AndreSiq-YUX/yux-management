@@ -53,13 +53,13 @@ export async function markRadarFunnelInitialGate(pool: pg.Pool, scope: RunScope,
 }
 export async function applyRadarFunnelGateDecision(pool: pg.Pool, input: RunScope & {
     gate: RadarAiGate; result?: DecisionResultV1; routeFingerprint?: string; requestId?: string;
-    evidence: DecisionContextV1['evidence']; associatedWebsite?: string;
+    evidence: DecisionContextV1['evidence']; associatedWebsite?: string;failureCode?:string;
 }, deps: Dependencies) {
     return guarded(pool, input, deps, async (db, campaign, payload) => {
         const config = resolveRadarSearchConfiguration(campaign.search_configuration), result = input.result;
         let requestedMode = config.funnel.enabled ? config.funnel[input.gate].mode : 'off' as const;
         try { assertRadarFunnelFloors(config.funnel, (await loadRadarFunnelFloors(db)).configuration); } catch { if (requestedMode === 'enforce') requestedMode = 'shadow'; }
-        let action = { action: 'continue', effectiveMode: requestedMode === 'off' ? 'off' : 'shadow', reasonCode: 'decision_unavailable', evidenceIds: [] as string[], wouldBlock: false };
+        let action = { action: 'continue', effectiveMode: requestedMode === 'off' ? 'off' : 'shadow', reasonCode: input.failureCode??'decision_unavailable', evidenceIds: [] as string[], wouldBlock: false,overridden:false };
         if (result && input.routeFingerprint && result.contextVersion === RADAR_FUNNEL_VERSIONS.contextVersion && result.questionVersion === RADAR_FUNNEL_VERSIONS.questionVersion && result.criteriaRubricVersion === RADAR_FUNNEL_VERSIONS.rubricVersion) {
             const task = input.gate === 'g1' ? 'radar_initial_triage' : 'radar_fit_gate';
             let currentRoute;
@@ -68,7 +68,7 @@ export async function applyRadarFunnelGateDecision(pool: pg.Pool, input: RunScop
                 const tenant = (await db.query(`SELECT organization.client_id,contract.id AS contract_id FROM public.organizations organization LEFT JOIN LATERAL(SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE WHERE organization.id=$1`, [input.organizationId])).rows[0];
                 currentRoute = await loadRadarDecisionRoute(db, task, { organizationId: input.organizationId, clientId: tenant?.client_id ?? null, contractId: tenant?.contract_id ?? null }).catch(() => null);
             }
-            const binding = radarGateBindingFromResult({ campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: radarFunnelTargetsHash(config, campaign.target_cnaes), routeFingerprint: input.routeFingerprint, result });
+            const binding = radarGateBindingFromResult({ campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: radarFunnelTargetsHash(config, campaign.target_cnaes),criteriaHash:radarDecisionHash(config.funnel[input.gate].criteria), routeFingerprint: input.routeFingerprint, result });
             const calibrations = await loadRadarCampaignGateCalibrations(db, { ...input, gate: input.gate });
             const calibration = calibrations.find(item => matchesRadarGateCalibration(binding, item, input.gate));
             const routeCurrent = currentRoute?.config.enabled && currentRoute.fingerprint === input.routeFingerprint;
@@ -77,10 +77,10 @@ export async function applyRadarFunnelGateDecision(pool: pg.Pool, input: RunScop
         } else if (result) action.reasonCode = 'decision_version_superseded';
         const policy = await loadRadarOperationalLimits(db);
         const cost = estimateRadarCostBrl({ amount: radarReportedCostAmount(result?.usage.costUsd), currency: 'USD', rateSnapshot: policy.costPolicy });
-        await recordRadarFunnelEvent(db, { ...input, gate: input.gate, mode: action.effectiveMode as 'off' | 'shadow' | 'enforce', outcome: result?.choice ?? 'unavailable', reasonCode: action.reasonCode, wouldBlock: action.wouldBlock,
+        await recordRadarFunnelEvent(db, { ...input, gate: input.gate, mode: action.effectiveMode as 'off' | 'shadow' | 'enforce', outcome: action.overridden?'human_override':result?.choice ?? 'unavailable', reasonCode: action.reasonCode, wouldBlock: action.wouldBlock,
             evidenceIds: action.evidenceIds, decisionRequestId: input.requestId, eventKey: `${input.runId}:${input.requestId ?? 'none'}:${radarDecisionHash({ action, policy: config.funnel[input.gate] })}`,
             ...(cost.amountBrl !== null ? { costEstimateBrl: Number(cost.amountBrl) } : {}) });
-        return { ...action, choice: result?.choice, matchedTargetKey: result?.matchedTargetKey };
+        return { ...action, choice: result?.choice };
     });
 }
 export async function applyRadarFunnelNextAction(pool: pg.Pool, input: RunScope & { result?: DecisionResultV1; requestId?: string; step: number; options: DecisionContextV1['options'] }, deps: Dependencies) {

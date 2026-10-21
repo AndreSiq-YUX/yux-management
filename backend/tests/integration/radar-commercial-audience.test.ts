@@ -29,6 +29,31 @@ describe.skipIf(!connectionString)('Radar commercial HTTP audience with isolated
  })
  afterAll(async()=>{await app?.close();await apiPool?.end();if(campaignId)await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[campaignId]);await pool.end()})
  const get=(path:string,user:string)=>app.inject({method:'GET',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!}})
+ it('keeps every new funnel and calibration endpoint exclusively in the system admin audience',async()=>{
+  const query=`organizationId=${fixtureIds.organizationA}&campaignId=${campaignId}`;
+  expect((await get(`/admin/campaign-funnel?${query}`,'yux_admin')).statusCode).toBe(200);
+  for(const user of ['yux_operator','client_admin_A','client_member_A']){
+   for(const path of [`/admin/campaign-funnel?${query}`,`/admin/campaign-funnel/report?${query}`,`/admin/campaign-gates/calibrations?${query}`,'/admin/funnel-floors','/admin/email-domain-policy']){
+    const response=await get(path,user);expect(response.statusCode).toBe(403);expect(response.body).not.toMatch(/provider|model|fingerprint|threshold|calibration|Serper|Brave|Perplexity/);
+   }
+   for(const path of ['/admin/campaign-gates/evaluate','/admin/campaign-gates/approve','/admin/campaign-funnel/close-legacy','/admin/campaign-funnel/audit']){
+    expect((await app.inject({method:'POST',url:`/api/radar${path}`,headers:{cookie:cookies.get(user)!},payload:{}})).statusCode).toBe(403);
+   }
+  }
+ })
+ it('lets an entitled client edit only business criteria through HTTP and rejects another tenant',async()=>{
+  const had=(await pool.query("SELECT 1 FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")).rows.length>0;
+  const created=await createRadarCampaign(pool,fixtureUsers.yux_admin as AuthUser,{organizationId:fixtureIds.organizationA,name:'Critérios públicos',targetSegment:'Empresas',targetStates:['SP'],campaignType:'regional_b2b',offerType:'Oferta'});
+  try{
+   await pool.query("INSERT INTO public.role_permissions(role_key,permission_key) VALUES('client_admin','radar:manage') ON CONFLICT DO NOTHING");
+   const input={organizationId:fixtureIds.organizationA,configurationRevision:1,targetCnaes:['5620101'],targets:[{key:'target',label:'Refeições empresariais',definition:'Produção de refeições em escala para empresas',priority:'primary',cnaes:[]}],outOfScopeExamples:['Varejo'],excludedNameTerms:[],registry:{mainActivityRule:'target_secondary_needs_review',blockedMainCnaes:['20'],blockedNameTerms:[]},contactPurpose:'suppliers',minPassRatio:.75};
+   expect((await app.inject({method:'PATCH',url:`/api/radar/campaigns/${created.id}/criteria`,headers:{cookie:cookies.get('client_admin_B')!},payload:input})).statusCode).toBe(403);
+   const response=await app.inject({method:'PATCH',url:`/api/radar/campaigns/${created.id}/criteria`,headers:{cookie:cookies.get('client_admin_A')!},payload:input});
+   expect(response.statusCode).toBe(200);expect(response.json()).toMatchObject({criteriaChanged:true,campaign:{configurationRevision:2,criteria:{targets:[{key:'target'}],contactPurpose:'suppliers',minPassRatio:.75}}});
+   expect(response.body).not.toMatch(/provider|model|funnel|policy|cost|Serper|Brave|Perplexity/);
+   expect((await app.inject({method:'PATCH',url:`/api/radar/campaigns/${created.id}/criteria`,headers:{cookie:cookies.get('client_admin_A')!},payload:{...input,configurationRevision:2,funnel:{enabled:true}}})).statusCode).toBe(400);
+  }finally{await pool.query('DELETE FROM public.radar_campaigns WHERE id=$1',[created.id]);if(!had)await pool.query("DELETE FROM public.role_permissions WHERE role_key='client_admin' AND permission_key='radar:manage'")}
+ })
  it('restores the latest durable research after reload for all permitted readers without mutating or purchasing anything',async()=>{
   const requestId=randomUUID()
   const start=await app.inject({method:'POST',url:`/api/radar/campaigns/${campaignId}/research-requests`,headers:{cookie:cookies.get('yux_admin')!},payload:{organizationId:fixtureIds.organizationA,criteriaRevision:1,requestId,candidateIds:[candidateId],intent:'resume'}})

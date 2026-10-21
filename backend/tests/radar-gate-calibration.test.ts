@@ -29,3 +29,13 @@ it('refuses missing responses, contradictory group labels, and recalibration fro
     expect(evaluation.approvable).toBe(false);
     expect(evaluation.reasons).toContain('incomplete_evaluation');
 });
+it('cannot claim useful block recall when no negative has evidence eligible for an actual exclusion',()=>{
+ const dataset=api.partitionRadarGateDataset(samples,'seed',.34).map((sample:any)=>({...sample,probabilityOutside:sample.label==='outside'?.99:.1,eligibleOutside:false}));
+ const evaluation=api.evaluateRadarGateCalibration(dataset,{});expect(evaluation.approvable).toBe(false);expect(evaluation.holdout.blockRecall).toBe(0);
+});
+it('keeps a prior group partition even when a later evaluation adds companies or uses another seed',()=>{
+ const initial=api.partitionRadarGateDataset(samples,'seed',.34);
+ const fixed=new Map(initial.map((sample:any)=>[sample.groupKey,sample.partition]));
+ const changed=api.partitionRadarGateDataset([...samples,{candidateId:'new',groupKey:'new',label:'primary',reviewedBy:'human'}],'another-seed',.34,fixed);
+ for(const sample of initial)expect(changed.find((item:any)=>item.candidateId===sample.candidateId).partition).toBe(sample.partition);
+});

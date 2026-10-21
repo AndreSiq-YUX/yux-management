@@ -22,6 +22,7 @@ import {normalizeRadarCounters} from './numeric-counters.js'
 import {loadRadarAdaptiveItems} from './adaptive-capture.js'
 import {radarAdaptiveDiscoveryCounts} from './discovery-plan.js'
 import {authorizeRadarAdaptiveContinuations} from './adaptive-continuation.js'
+import {refreshRadarFunnelWaitingLot} from './funnel-replenishment.js'
 
 export const classifyRadarCaptureResearch=(run:Parameters<typeof assessRadarCaptureResearch>[0])=>assessRadarCaptureResearch(run).status
 type CaptureQueue=Pick<RegisteredJobQueue,'add'>
@@ -30,6 +31,7 @@ export async function dispatchRadarCaptureOperation(pool:pg.Pool,env:AppEnv,inpu
  let authorized:Awaited<ReturnType<typeof authorizeRadarCapture>>
  try{authorized=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability,false)}catch(cause){await blockRadarCapture(pool,input.organizationId,input.operationId,cause);await pool.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[input.operationId,input.organizationId]);return}
  const {op,user}=authorized
+ await refreshRadarFunnelWaitingLot(pool,op)
  if(['completed','partial'].includes(op.status)){await pool.query('DELETE FROM public.radar_capture_outbox WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId]);return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
  const lease=randomUUID()
  const acquired=await pool.query(`UPDATE public.radar_capture_operations SET lease_id=$3,lease_until=NOW()+INTERVAL '6 minutes',status=CASE WHEN status='blocked' THEN status WHEN discovery_stopped THEN 'researching' ELSE 'discovering' END
@@ -133,6 +135,7 @@ export async function resumeRadarCaptureOperation(pool:pg.Pool,user:AuthUser,inp
   if(campaign?.configuration_revision!==input.configurationRevision)throw captureError('radar_campaign_configuration_changed')
   const current=normalizeRadarCounters((await client.query('SELECT *,lease_until>NOW() AS lease_active FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE',[op.id,input.organizationId])).rows[0])
   if(!current)throw captureError('radar_capture_not_found',404)
+  if(current.historical_closed_at)throw captureError('radar_historical_lot_requires_new_round')
   if(current.resume_request_id===input.requestId){await client.query('COMMIT');return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
   await client.query('SELECT version FROM public.radar_operational_limits WHERE singleton=TRUE FOR SHARE')
   if(current.lease_active&&!current.discovery_pending)throw captureError('radar_capture_in_progress')

@@ -44,10 +44,10 @@ export function buildRadarFunnelEvidence(input: {
     })];
 }
 export function radarGateBindingFromResult(input: {
-    campaignId: string; configurationRevision: number; targetsHash: string; routeFingerprint: string; result: DecisionResultV1;
+    campaignId: string; configurationRevision: number; targetsHash: string; criteriaHash?:string; routeFingerprint: string; result: DecisionResultV1;
 }): RadarGateBinding {
     const result = input.result;
-    return { campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: input.targetsHash, routeFingerprint: input.routeFingerprint,
+    return { campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: input.targetsHash, criteriaHash:input.criteriaHash??'', routeFingerprint: input.routeFingerprint,
         provider: result.provider ?? '', upstreamProvider: result.upstreamProvider ?? '', requestedModel: result.requestedModel ?? '', resolvedModelSnapshot: result.resolvedModel ?? '',
         adapterVersion: result.adapterVersion ?? '', contextVersion: result.contextVersion ?? '', questionVersion: result.questionVersion ?? '', rubricVersion: result.criteriaRubricVersion ?? '' };
 }

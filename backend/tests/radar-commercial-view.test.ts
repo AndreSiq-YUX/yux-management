@@ -4,6 +4,11 @@ const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
 describe('Radar commercial data boundary',()=>{
+ it('returns editable business targets and filters without nested gate, provider or budget metadata',()=>{
+  const criteria={targets:[{key:'target',label:'Perfil comercial',definition:'Produção para empresas',priority:'primary',cnaes:['5620101'],...internal}],outOfScopeExamples:['Varejo'],registry:{mainActivityRule:'any',blockedMainCnaes:['20'],blockedNameTerms:[],...internal}};
+  expect(project('campaigns',[{searchConfiguration:{qualification:criteria,research:{contactPurpose:'suppliers',...internal},batch:{minPassRatio:.75,...internal},funnel:internal}}])).toMatchObject([{criteria:{targets:[{key:'target',priority:'primary'}],contactPurpose:'suppliers',minPassRatio:.75}}]);
+  expect(JSON.stringify(project('campaigns',[{searchConfiguration:{qualification:criteria}}]))).not.toMatch(/secret-model|provider|costUsd|futureInternalField/);
+ })
  it('allows only commercial terminal counters and strips nested funnel implementation details',()=>{
   const counts={requested:3,admitted:3,completed:1,completedWithGaps:1,outsideProfile:1,technicalFailures:0,model:'internal',costUsd:2,gate:'g5'}
   expect(project('capture',{counts,funnelEvents:[internal],items:[internal]})).toEqual({counts:{requested:3,admitted:3,completed:1,completedWithGaps:1,outsideProfile:1,technicalFailures:0}})

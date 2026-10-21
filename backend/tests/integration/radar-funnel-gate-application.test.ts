@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { captureFixture, connectionString, admin, organizationId } from '../support/radar-capture-fixture.js';
 import { resolveRadarSearchConfiguration } from '../../src/modules/radar/search-configuration.js';
 import { radarFunnelTargetsHash, radarGateBindingFromResult } from '../../src/modules/radar/funnel-context.js';
+import {radarDecisionHash} from '../../src/modules/radar/decision-service.js';
 const api = await import('../../src/modules/radar/funnel-gate-application.js').catch(() => ({})) as Record<string, any>;
 describe.skipIf(!connectionString)('live gate application authorization', () => {
     it('rechecks campaign-only calibration under the company lease and never uses the global calibration', async () => {
@@ -19,7 +20,7 @@ describe.skipIf(!connectionString)('live gate application authorization', () => 
             const deps = { authorize: async () => {}, currentRoute: async () => ({ fingerprint, config: { enabled: true } }) };
             expect(await api.applyRadarFunnelGateDecision(f.pool, input, deps)).toMatchObject({ action: 'continue', effectiveMode: 'shadow' });
             await api.markRadarFunnelInitialGate(f.pool,input,false,deps);
-            const binding = radarGateBindingFromResult({ campaignId: f.campaign.id, configurationRevision: 1, targetsHash: radarFunnelTargetsHash(config, []), routeFingerprint: fingerprint, result: result as never });
+            const binding = radarGateBindingFromResult({ campaignId: f.campaign.id, configurationRevision: 1, targetsHash: radarFunnelTargetsHash(config, []),criteriaHash:radarDecisionHash(config.funnel.g1.criteria), routeFingerprint: fingerprint, result: result as never });
             await f.pool.query(`INSERT INTO public.radar_campaign_gate_calibrations(organization_id,campaign_id,configuration_revision,gate,binding,dataset,criteria,seed,dataset_hash,threshold,status,created_by,approved_by,approved_at) VALUES($1,$2,1,'g1',$3,'[]','{}',$4,'fixture',.9,'approved',$5,$5,NOW())`, [organizationId, f.campaign.id, JSON.stringify(binding), randomUUID(), admin.id]);
             expect(await api.applyRadarFunnelGateDecision(f.pool, input, deps)).toMatchObject({ action: 'exclude', effectiveMode: 'enforce' });
             // Only final dossier publication may mutate the commercial

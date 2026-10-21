@@ -45,7 +45,10 @@ type Dependencies = {
     sourceCostsBrl?: Partial<Record<RadarSearchSource, number>>;
     searchCapacity?: () => RadarSearchCapacity;
     searchAttempted?: (source: RadarSearchSource, query: string) => boolean;
+    queriesUsed?:()=>number;
     maxDecisionCalls?: number;
+    recoverAgent?: boolean;
+    agentCostBrl?: string;
     registryPayload?: Record<string, unknown>;
     emailPolicy?: RadarEmailDomainPolicy;
     signal?: AbortSignal;
@@ -80,6 +83,7 @@ export function isRadarFunnelAgentEligible(configuration: RadarSearchConfigurati
 export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, configuration: RadarSearchConfiguration, output: RadarFunnelDiscoveryOutput, deps: Dependencies) {
     const state = output.funnel ??= {};
     state.step ??= 0; state.decisionCalls ??= 0; state.executedActions ??= []; state.cheapSearches ??= 0; state.limitations ??= [];
+    state.cheapSearches=Math.max(state.cheapSearches,deps.queriesUsed?.()??0);
     let pages = uniquePages(output.pages ?? []);
     let hits = uniqueHits([...(output.discoveryHits ?? []), ...(output.discovery?.hits ?? []), ...(output.discovery?.suggestions ?? [])]);
     const owns = (page: RadarSiteEvidence) => !page.limitation && isRadarInstitutionalSource(page.url, { text: page.text, html: page.html }) && matchRadarBusinessIdentity(identity, page.text) === 'confirmed' && hasRadarOwnershipSignal(page.url, identity, page);
@@ -92,6 +96,17 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
         });
         pages = uniquePages([...pages, ...collected]); flush();
     };
+    if(deps.recoverAgent&&!state.agentCompleted&&deps.deepResearch){
+        try{
+            hits=uniqueHits([...hits,...await deps.deepResearch(['identity','website','contact','whatsapp','official_socials'],pages)]);
+            state.agentAttempted=true;state.agentCompleted=true;output.deepResearchCompleted=true;
+            state.pendingAction=undefined;
+        }catch(cause){
+            rethrowRadarAdaptiveYield(cause);deps.signal?.throwIfAborted();state.agentAttempted=true;
+            output.deepResearchStop='radar_research_call_uncertain';
+        }
+        flush();await deps.checkpoint();
+    }
     if (!state.emailProbeComplete) {
         const payload = deps.registryPayload ?? {};
         state.emailSignal = deps.emailPolicy ? classifyRadarEmailDomain(payload.emailRaw, deps.emailPolicy) : payload.emailDomainSignal as RadarEmailDomainSignal | undefined;
@@ -131,7 +146,7 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
         const candidatePending = readOptions.length > 0 || institutionalRead;
         const agentEligible = !!deps.deepResearch && isRadarFunnelAgentEligible(configuration, state) && !candidatePending &&
             (configuration.funnel.agentPolicy.timing === 'immediately_when_no_site_candidate' || state.cheapSearches > 0);
-        if (agentEligible) options.push({ id: 'agent_research', kind: 'agent', cost: Number.MAX_VALUE, description: 'Uma investigação completa para todas as lacunas; orçamento estimado já autorizado e monitorado. Sem nova busca paga após esta chamada.' });
+        if (agentEligible) options.push({ id: 'agent_research', kind: 'agent', cost: Number.MAX_VALUE, description: `Uma investigação completa para todas as lacunas; custo estimado R$ ${deps.agentCostBrl??'conforme orçamento autorizado'}, monitorado e sem teto remoto garantido. Sem nova busca paga após esta chamada.` });
         if (!institutionalRead && !readOptions.length && configuration.research.webSearchEnabled) {
             for (const source of configuration.research.webSearchProviders) {
                 const query = queries.find(query => canSearch(source, query));

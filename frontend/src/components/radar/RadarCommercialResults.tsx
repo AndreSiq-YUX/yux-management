@@ -4,6 +4,7 @@ import {Input} from '@/components/ui/input'
 import {Progress} from '@/components/ui/progress'
 import {RadarResearchMetrics} from './RadarResearchMetrics'
 import {RadarResearchOutcome} from './RadarResearchOutcome'
+import {RadarCampaignCriteriaEditor} from './RadarCampaignCriteriaEditor'
 import type {RadarScreen} from './RadarCampaignPage'
 import type {RadarCommercialCampaign,RadarCommercialCandidate,RadarCommercialCapture,RadarCommercialFacts,RadarCommercialResearch,CommercialHistory,CommercialOpportunity,CommercialClaim} from '@/types/radarCommercial'
 
@@ -55,29 +56,31 @@ export function RadarCommercialCompanyDetails({facts,assessment,feedback}:{facts
  </div>
 }
 type Props={campaign:RadarCommercialCampaign;candidates:RadarCommercialCandidate[];operation:RadarCommercialCapture|null;screen:RadarScreen;history?:CommercialHistory[];opportunities?:CommercialOpportunity[];researchActions?:ReactNode;
+ onCriteriaUpdated?:()=>void;
  onNavigate:(path:string)=>void;onOpenDetails:(id:string)=>void;onSelect?:(ids:string[])=>void;selectedIds?:string[];onSendCrm?:()=>void;canReview?:boolean;busy?:boolean;
  onOpportunityAction?:(id:string,action:'analyze'|'approve'|'reject'|'optOut'|'convert')=>void;
  onCandidateAction?:(id:string,action:'import'|'discard'|'restore-profile',input:{analyzeAfterImport:boolean})=>void}
-export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],researchActions,onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,onCandidateAction,busy=false}:Props){
+export function RadarCommercialResults({campaign,candidates,operation,screen,history=[],opportunities=[],researchActions,onNavigate,onOpenDetails,onSelect,selectedIds=[],onSendCrm,onOpportunityAction,onCandidateAction,busy=false,canReview=false,onCriteriaUpdated}:Props){
  const [query,setQuery]=useState(''),[page,setPage]=useState(0),[expanded,setExpanded]=useState<string|null>(null)
  const [analyzeAfterImport,setAnalyzeAfterImport]=useState(false)
  const [showOutside,setShowOutside]=useState(false)
  const isOutside=(item:RadarCommercialCandidate)=>item.facts.outsideProfile===true&&item.facts.outsideProfileRevision===campaign.configurationRevision
  const filtered=candidates.filter(item=>(showOutside||!isOutside(item))&&`${item.title} ${item.facts.cnpj} ${item.facts.city} ${item.facts.state}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))
  const pageCount=Math.max(1,Math.ceil(filtered.length/25)),currentPage=Math.min(page,pageCount-1),visible=filtered.slice(currentPage*25,(currentPage+1)*25)
- const c=operation?.counts,finished=c?.completed??0
+ const c=operation?.counts,canonical=c?.completedWithGaps!==undefined,finished=(c?.completed??0)+(canonical?(c?.completedWithGaps??0)+(c?.outsideProfile??0):0),total=canonical?Math.max(c?.requested??0,c?.admitted??0):c?.requested??0
  return <div className="flex min-w-0 flex-col gap-5">
   <header className="flex flex-col gap-4 rounded-md border bg-background p-4"><Button size="sm" variant="ghost" className="self-start" onClick={()=>onNavigate('')}>Voltar às campanhas</Button>
    <div><h2 className="text-xl font-semibold">{campaign.name}</h2><p className="text-sm text-muted-foreground">{campaign.targetSegment} · {campaign.offerType}</p></div>
    <nav aria-label="Navegação da campanha" className="flex flex-wrap gap-2">{([['results','Resultados',''],['configuration','Critérios da campanha','/configuracoes'],['history','Histórico','/historico']] as const).map(([key,label,suffix])=><Button key={key} variant={screen===key?'default':'outline'} onClick={()=>campaign.id&&onNavigate(`${campaign.id}${suffix}`)}>{label}</Button>)}</nav>
    {screen==='results'&&campaign.id&&campaign.organizationId&&<RadarResearchMetrics campaignId={campaign.id} organizationId={campaign.organizationId} showCosts={false}/>}
   </header>
-  {screen==='configuration'?<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold">Critérios da campanha</h3><p>Público: {campaign.targetSegment}</p><p>Oferta: {campaign.offerType}</p><p>Regiões: {campaign.criteria.cities?.length?campaign.criteria.cities.map(item=>`${item.city}/${item.state}`).join(', '):campaign.targetStates?.join(', ')||[campaign.targetCity,campaign.targetState].filter(Boolean).join('/')}</p>
+  {screen==='configuration'?<><section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold">Critérios da campanha</h3><p>Público: {campaign.targetSegment}</p><p>Oferta: {campaign.offerType}</p><p>Regiões: {campaign.criteria.cities?.length?campaign.criteria.cities.map(item=>`${item.city}/${item.state}`).join(', '):campaign.targetStates?.join(', ')||[campaign.targetCity,campaign.targetState].filter(Boolean).join('/')}</p>
    <p>CNAEs: {campaign.targetCnaes?.join(', ')||'Sem filtro'}</p><p>Produtos e serviços: {campaign.productFocus?.join(', ')||'Não informados'}</p>
    {([['includeAnyTerms','Termos desejados'],['includeAllTerms','Termos obrigatórios'],['excludeTerms','Exclusões'],['productTerms','Critérios da oferta']] as const).map(([key,label])=>campaign.criteria[key]?.length?<p key={key}>{label}: {campaign.criteria[key]!.join(', ')}</p>:null)}
-  </section>:screen==='history'?<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold">Histórico da pesquisa</h3>{history.length?history.map((item,i)=><p key={item.id??i}>{item.companyName} · {item.actionLabel} · {status(item.status)} · {date(item.updatedAt)}</p>):<p>Ainda não há pesquisas registradas.</p>}</section>:<>
-   {operation&&<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold" role="status">{status(operation.status)}</h3><Progress value={c?.requested?Math.min(100,finished/c.requested*100):0} aria-valuenow={c?.requested?Math.min(100,finished/c.requested*100):0} aria-label="Empresas com dados necessários concluídos"/>
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Solicitadas',c?.requested],['Novas encontradas',c?.admitted],...(operation.countingMode==='qualified'?[['Aderentes novas',c?.qualified],['Fora do perfil',c?.outsideProfile]]:[]),['Em pesquisa',c?.researching],['Concluídas',c?.completed],['Dados insuficientes',c?.insufficient],['Aguardando a equipe',c?.blocked]].map(([label,value])=><div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="text-lg font-semibold">{value??0}</dd></div>)}</dl>
+   {campaign.criteria.targets?.map((target,index)=><p key={target.key??index}>{target.label}: {target.definition}</p>)}
+  </section>{canReview&&<RadarCampaignCriteriaEditor key={campaign.id} campaign={campaign} canEdit={canReview} onSaved={()=>onCriteriaUpdated?.()}/>}</>:screen==='history'?<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold">Histórico da pesquisa</h3>{history.length?history.map((item,i)=><p key={item.id??i}>{item.companyName} · {item.actionLabel} · {status(item.status)} · {date(item.updatedAt)}</p>):<p>Ainda não há pesquisas registradas.</p>}</section>:<>
+   {operation&&<section className="flex flex-col gap-3 rounded-md border bg-background p-4"><h3 className="font-semibold" role="status">{status(operation.status)}</h3><Progress value={total?Math.min(100,finished/total*100):0} aria-valuenow={total?Math.min(100,finished/total*100):0} aria-label={canonical?'Empresas pesquisadas':'Empresas com dados necessários concluídos'}/>
+    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Solicitadas',c?.requested],['Empresas encontradas',c?.admitted],...(canonical?[['Passaram pela triagem inicial',c?.passedInitialTriage],['Aderentes confirmadas',c?.confirmedFit],['Fora do perfil',c?.outsideProfile]]:operation.countingMode==='qualified'?[['Aderentes novas',c?.qualified],['Fora do perfil',c?.outsideProfile]]:[]),['Em pesquisa',c?.researching],['Concluídas',c?.completed],[canonical?'Concluídas com lacunas':'Dados insuficientes',canonical?c?.completedWithGaps:c?.insufficient],['Aguardando a equipe',canonical?c?.technicalFailures:c?.blocked]].map(([label,value])=><div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="text-lg font-semibold">{value??0}</dd></div>)}</dl>
     {operation.pendingMessage&&<p>{operation.pendingMessage}</p>}{operation.status==='partial'&&<p>Algumas empresas terminaram sem todos os dados necessários. Confira os resultados antes de agir.</p>}
    </section>}
    <section className="min-w-0 rounded-md border bg-background p-4"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Empresas encontradas</h3><Input aria-label="Filtrar empresas" placeholder="Nome, CNPJ ou cidade" className="sm:max-w-sm" value={query} onChange={event=>{setQuery(event.target.value);setPage(0);setExpanded(null)}}/></div>
@@ -97,7 +100,7 @@ export function RadarCommercialResults({campaign,candidates,operation,screen,his
       </Fragment>})}
     </tbody></table></div>
     {candidates.some(isOutside)&&<label className="mt-3 flex gap-2 text-sm"><input type="checkbox" checked={showOutside} onChange={event=>{setShowOutside(event.target.checked);setPage(0)}}/>Incluir empresas fora do público</label>}
-    {showOutside&&onCandidateAction&&candidates.filter(isOutside).map(item=><div key={item.id} className="mt-2 flex flex-wrap items-center gap-2 text-sm"><span>{item.title} · Fora do público</span><Button size="sm" variant="outline" disabled={busy} onClick={()=>onCandidateAction(item.id!,'restore-profile',{analyzeAfterImport:false})}>Reincluir para revisão</Button></div>)}
+    {showOutside&&onCandidateAction&&candidates.filter(isOutside).map(item=><div key={item.id} className="mt-2 flex flex-wrap items-center gap-2 text-sm"><span>{item.title} · Fora do público</span><Button size="sm" variant="outline" disabled={busy||item.facts.reviewRequested} onClick={()=>onCandidateAction(item.id!,'restore-profile',{analyzeAfterImport:false})}>{item.facts.reviewRequested?'Revisão solicitada à equipe responsável':item.facts.requiresScopedReview?'Solicitar revisão':'Reincluir para revisão'}</Button></div>)}
     {!filtered.length&&<p className="mt-3 text-sm text-muted-foreground">Nenhuma empresa encontrada para este filtro.</p>}
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><Button size="sm" variant="outline" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Anterior</Button><p className="text-sm">Página {currentPage+1} de {pageCount} · {filtered.length} empresas</p><Button size="sm" variant="outline" disabled={currentPage+1>=pageCount} onClick={()=>setPage(currentPage+1)}>Próxima</Button></div>
    </section>

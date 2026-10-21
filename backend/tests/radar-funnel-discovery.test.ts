@@ -65,3 +65,8 @@ it('limits a calibrated weak fit to its short budget and never offers the Agent'
     expect(deps.web).toHaveBeenCalledTimes(1);
     expect(deps.deepResearch).not.toHaveBeenCalled();
 });
+it('recovers the cheap-attempt count from durable calls before deciding whether to escalate',async()=>{
+ const agent=vi.fn(async()=>[]),deps=base({queriesUsed:()=>1,searchAttempted:()=>true,deepResearch:agent});
+ await api.runRadarFunnelDiscovery(identity,config(),{},deps);
+ expect(deps.web).not.toHaveBeenCalled();expect(agent).toHaveBeenCalledTimes(1);
+});

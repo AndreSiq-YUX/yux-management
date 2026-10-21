@@ -2,11 +2,14 @@ import type pg from 'pg'
 import type {RadarSearchConfiguration} from './search-configuration.js'
 import {evaluateRadarRegistryRules} from './registry-gate.js'
 import {recordRadarFunnelEvent} from './funnel-events.js'
+import {radarScopedFunnelOverrides} from './funnel-gate-application.js'
 export async function applyRadarRegistryAdmission(db:Pick<pg.Pool,'query'>,input:{organizationId:string;campaignId:string;candidateId:string;operationId:string;revision:number;configuration:RadarSearchConfiguration;targetCnaes:string[];payload:unknown}){
  const config=input.configuration
  if(!config.funnel.enabled)return{blocked:false,initialStatus:null}
  const result=evaluateRadarRegistryRules({payload:input.payload,targetCnaes:input.targetCnaes,configuration:config})
- const blocked=config.funnel.g0.mode==='enforce'&&result.outcome==='block'
+ const stored=(await db.query('SELECT normalized_payload FROM public.radar_candidate_records WHERE id=$1 AND organization_id=$2 AND campaign_id=$3 FOR UPDATE',[input.candidateId,input.organizationId,input.campaignId])).rows[0]?.normalized_payload??{}
+ const overridden=radarScopedFunnelOverrides(stored).some(item=>item.gate==='g0'&&item.configurationRevision===input.revision)
+ const blocked=config.funnel.g0.mode==='enforce'&&result.outcome==='block'&&!overridden
  const initialStatus=blocked?'block':config.funnel.g1.mode==='enforce'?'pending':'pass'
  const funnel={initialStatus,registry:result}
  await db.query(`UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$3::jsonb WHERE id=$1 AND organization_id=$2`,[input.candidateId,input.organizationId,JSON.stringify({funnel,...(blocked?{targetStatus:'not_target',productFit:'low',triageReasons:[result.reasonPt],decisionExclusion:{active:true,revision:input.revision,reason:'outside_profile',gate:'g0'}}:{})})])

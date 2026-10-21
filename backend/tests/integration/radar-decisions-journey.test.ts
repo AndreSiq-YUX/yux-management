@@ -44,17 +44,18 @@ describe.skipIf(!connectionString)('real backend → HTTP runtime → per-attemp
         throw Error(`fixture_runtime_not_ready ${errors}`);
     }, 20000);
     afterAll(() => child?.kill());
-    it('the actual company worker collects facts and executes all three decision stages without replacing chat qualification', async () => {
+    for(const funnel of [false,true])it(`the actual company worker collects facts with all three decision stages (${funnel?'opt-in funnel':'legacy'})`, async () => {
         const f = await captureFixture(), policy = await getRadarOperationalLimits(f.pool, admin);
         let routeId: string | undefined;
         try {
-            await updateRadarOperationalLimits(f.pool, admin, { expectedVersion: policy.version, limits: { ...policy.limits, maxDecisionCallsPerCompany: 3 }, costPolicy: { usdToBrl: '5', rateAsOf: '2026-10-19T12:00:00Z', rateSource: 'manual', marginPercent: '0' } });
+            await updateRadarOperationalLimits(f.pool, admin, { expectedVersion: policy.version, limits: { ...policy.limits, maxDecisionCallsPerCompany: funnel?6:3 }, costPolicy: { usdToBrl: '5', rateAsOf: '2026-10-19T12:00:00Z', rateSource: 'manual', marginPercent: '0' } });
             routeId = (await upsertAdminLlmRoute(f.pool, { agentType: 'radar_decision_default', organizationId, provider: 'openrouter', kind: 'decision', modelName: 'fixture/primary', decisionConfig: { enabled: true, mode: 'observe', maxAttempts: 1, modelPolicies: { 'fixture/primary': { estimatedUsdPerAttempt: .001 } } } })).id;
             await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{research}',(search_configuration->'research')||$2::jsonb) WHERE id=$1`, [f.campaign.id, JSON.stringify({ presenceResolutionEnabled: false, semanticQualificationEnabled: false, profileEnabled: false, sizeAssessment: { enabled: false } })]);
+            if(funnel)await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{funnel}','{"enabled":true,"g3":{"mode":"effective"}}') WHERE id=$1`,[f.campaign.id]);
             const candidate = (await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,$4) RETURNING id`, [organizationId, f.campaign.id, randomUUID(), JSON.stringify({ cnpj: '12345678000190', websiteUrl: 'https://alfa.example/', tradeName: 'Empresa Alfa', city: 'Curitiba', state: 'PR' })])).rows[0];
             const run = await startRadarCandidateResearch(f.pool, admin, { organizationId, candidateId: candidate.id, configurationRevision: 1 });
             const page = { url: 'https://alfa.example/', text: 'Empresa Alfa CNPJ 12.345.678/0001-90. Contato compras@alfa.example.', observedAt: new Date().toISOString() };
-            await executeRadarCandidateResearch(f.pool, env, { organizationId, runId: run.runId }, undefined, { loadSecret: async () => 'fixture-not-real', web: async () => [], collect: async () => [page] });
+            await executeRadarCandidateResearch(f.pool, env, { organizationId, runId: run.runId }, undefined, { loadSecret: async () => 'fixture-not-real', web: async () => funnel?[{url:page.url,title:'Empresa Alfa',snippets:[],observedAt:page.observedAt},{url:'https://outra.example/',title:'Outra hipótese',snippets:[],observedAt:page.observedAt}]:[], collect: async () => [page] });
             const saved = (await f.pool.query('SELECT status,calls,output FROM radar_candidate_research_runs WHERE id=$1', [run.runId])).rows[0];
             expect(saved.status).not.toBe('failed');
             const decisions = Object.values(saved.calls).filter((call: any) => call.source === 'openrouter_decision');
@@ -62,7 +63,8 @@ describe.skipIf(!connectionString)('real backend → HTTP runtime → per-attemp
             expect(decisions.every((call: any) => call.status === 'completed')).toBe(true);
             expect(saved.output.contacts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'email', value: 'compras@alfa.example' })]));
             const receipts = (await f.pool.query('SELECT action,status FROM radar_analysis_receipts WHERE request_id LIKE $1', [`${run.runId}:%`])).rows;
-            expect(receipts.map(row => row.action).sort()).toEqual(['radar_initial_triage', 'radar_next_action', 'radar_quality_gate']);
+            expect(receipts.map(row => row.action).sort()).toEqual(funnel?['radar_fit_gate','radar_initial_triage','radar_next_action']:['radar_initial_triage', 'radar_next_action', 'radar_quality_gate']);
+            if(funnel)expect((await f.pool.query('SELECT gate FROM radar_funnel_events WHERE run_id=$1 ORDER BY created_at',[run.runId])).rows.map(row=>row.gate)).toEqual(expect.arrayContaining(['g0','g1','g3','g5']));
             expect(receipts.every(row => row.status === 'completed')).toBe(true);
             // A second delivery of the same worker does not buy another decision.
             await executeRadarCandidateResearch(f.pool, env, { organizationId, runId: run.runId });

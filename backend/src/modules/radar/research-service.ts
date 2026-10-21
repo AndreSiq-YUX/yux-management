@@ -9,6 +9,7 @@ import type { AuthUser } from '../../auth/routes.js'
 import { requireRadarScope } from './access.js'
 import { findRadarDataSource, evaluateRadarSourceGovernance, recordRadarSourceUsage, isRadarEnabledOrganization } from './repository.js'
 import { getRadarResearchAvailability } from './research-availability.js'
+import {seedRadarFunnelRound} from './funnel-round-seed.js'
 import { normalizeRadarText,resolveRadarSearchConfiguration, type RadarSearchConfiguration } from './search-configuration.js'
 import {extractRadarCnpjIdentifiers,normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 import { discoverRadarBusinessPresence, matchRadarBusinessIdentity, isRadarReferenceUrl, type RadarBusinessIdentity, type RadarPresenceDiscovery } from './site-discovery.js'
@@ -53,6 +54,8 @@ import {radarPurposeEnrichmentUrls,selectRadarQualificationEvidence} from './fun
 import {buildRadarFunnelEvidence,radarFunnelDecisionCriteria} from './funnel-context.js'
 import {applyRadarFunnelRegistryGate,applyRadarFunnelGateDecision,applyRadarFunnelNextAction,markRadarFunnelInitialGate,radarScopedFunnelOverrides} from './funnel-gate-application.js'
 import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
+import {planRadarPresenceRefresh} from './presence-refresh.js'
+import {loadRadarFunnelAgentReadiness} from './funnel-agent-readiness.js'
 
 export type RadarQualification = { targetStatus: 'confirmed'|'review'|'not_target'|'insufficient'; productFit:'high'|'possible'|'low'|'unknown';
   claims?:Array<{reason:string;evidenceId:string;excerpt:string}>;
@@ -93,6 +96,7 @@ type PipelineDependencies = { local?: () => Promise<RadarWebHit[]>; web: (query:
   onRegistryGate?:(result:RadarRegistryGateResult,blocked:boolean)=>Promise<boolean>;
   onInitialGate?:(blocked:boolean)=>Promise<void>;
   sourceCostsBrl?:Partial<Record<RadarSearchSource,number>>;maxDecisionCalls?:number;
+  recoverAgent?:boolean;agentCostBrl?:string;
   searchCapacity?:()=>RadarSearchCapacity;searchAttempted?:(source:RadarSearchSource,query:string)=>boolean;
   resolvePresence?:(evidence:RadarPresenceEvidence[],evidenceHash:string,version:RadarEvidenceVersion)=>Promise<unknown>;
   collect?: typeof collectRadarSiteEvidence; qualify?: (pages: RadarSiteEvidence[],evidenceHash:string,version:RadarEvidenceVersion) => Promise<RadarQualification>;
@@ -240,7 +244,8 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     await runRadarFunnelDiscovery(identity,configuration,output,{
       web:dependencies.web,local:dependencies.local,collect:dependencies.collect,deepResearch:dependencies.deepResearch,
       registryPayload:dependencies.registryPayload,emailPolicy:dependencies.emailPolicy,sourceCostsBrl:dependencies.sourceCostsBrl,
-      searchCapacity:dependencies.searchCapacity,searchAttempted:dependencies.searchAttempted,maxDecisionCalls:dependencies.maxDecisionCalls,
+      searchCapacity:dependencies.searchCapacity,searchAttempted:dependencies.searchAttempted,queriesUsed:dependencies.queriesUsed,maxDecisionCalls:dependencies.maxDecisionCalls,
+      recoverAgent:dependencies.recoverAgent,agentCostBrl:dependencies.agentCostBrl,
       signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,
       choose:dependencies.decide?(material,options,step)=>dependencies.decide!('radar_next_action',material,options,{step}):undefined,
       checkpoint:()=>checkpoint('discovery'),
@@ -384,7 +389,10 @@ export async function runRadarResearchPipeline(identity: RadarBusinessIdentity, 
     const short=output.funnel!.initial?.action==='short_investigation'&&output.funnel!.initial.effectiveMode==='enforce'||fit?.action==='short_investigation'&&fit.effectiveMode==='enforce'
     if(!short&&associatedOrigin){
       output.funnel!.enrichmentUrls??=[]
-      for(const url of radarPurposeEnrichmentUrls(associatedOrigin,pages,configuration.research.contactPurpose)){
+      const targetKey=(fit?.effectiveMode==='enforce'?fit.matchedTargetKey:undefined)??(output.funnel!.initial?.effectiveMode==='enforce'?output.funnel!.initial.matchedTargetKey:undefined)
+      const target=configuration.qualification.targets.find(item=>item.key===targetKey)
+      const depth=target?configuration.funnel.depthByPriority[target.priority]:'full'
+      for(const url of radarPurposeEnrichmentUrls(associatedOrigin,pages,configuration.research.contactPurpose,depth)){
         if(output.funnel!.enrichmentUrls.includes(url))continue
         if(pages.filter(page=>!page.limitation).length>=configuration.research.maxPagesPerCandidate||pages.length>=configuration.research.maxPagesPerCandidate*2)break
         const collected=await(dependencies.collect??collectRadarSiteEvidence)(url,{maxPagesPerCandidate:1,maxAttemptsPerCandidate:1},{signal:dependencies.signal,tlsOptions:dependencies.tlsOptions,deadlineAt:readingDeadline,checkpoint:async value=>{output.pages=uniqueRadarPages([...pages,...value]);await checkpoint('reading')}})
@@ -561,7 +569,7 @@ type ResearchRun = pg.QueryResultRow & { id:string; organization_id:string; camp
   configuration_revision:number; status:string; stage:string; output:Output; calls:Record<string, { status:string; source:string; result?:unknown; error?:string; evidenceHash?:string;evidenceVersion?:RadarEvidenceVersion;requestBindings?:RadarEvidenceBindings;effectReceiptId?:string;refreshAuthorized?:boolean;previous?:unknown;retryProvenByReceipt?:boolean;requestId?:string;retryAuthorization?:RadarAnalysisRetryBinding;costEstimate?:RadarCostEstimate;costPolicy?:RadarCostPolicy;budgetRequestId?:string;
     responseBody?:unknown;billingOutcome?:string;queryCount?:number;billableRequestCount?:number;usageDate?:string;query?:string;
     rejections?:Array<{error:string;evidenceHash?:string;observedAt:string}> }>;
-  created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string }
+  created_at:string; updated_at:string; completed_at?:string; error_code?:string; lease_id?:string; lease_until?:string;historical_closed_at?:string|null }
 const error = (code: string, statusCode = 409) => Object.assign(new Error(code), { statusCode })
 function cachedReadAvailability<T extends {allowed:boolean;reasons:Array<{code:string}>;maximumCostPerCandidate:number;maxQueriesPerCandidate:number}>(availability:T,run:ResearchRun|undefined,revision:number,freshnessDays:number):T {
   const recoverable=run&&run.configuration_revision===revision&&(['partial','blocked','failed','succeeded'].includes(run.status)||run.status==='running'&&!!run.lease_until&&new Date(run.lease_until).getTime()<Date.now())&&(run.output.discovery||run.output.discoveryHits?.length||Object.values(run.calls).some(call=>call.status==='completed'&&Array.isArray(call.result)||!!call.responseBody))
@@ -648,10 +656,11 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     if(['refresh','reanalyze'].includes(operation)&&!input.requestId)throw error('radar_research_request_id_required',400)
     if(input.requestId){
       const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
+      if(duplicate.rows[0]?.historical_closed_at)throw error('radar_historical_research_requires_new_round')
       if(duplicate.rows[0]&&(operation!=='resume'||['queued','running'].includes(duplicate.rows[0].status)||assessRadarCaptureResearch(duplicate.rows[0]).status==='completed')){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:duplicate.rows[0].id});await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
     }
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
-      WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation])
+      WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze' OR ($5::boolean AND historical_closed_at IS NOT NULL)) ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation,configuration.funnel.enabled])
     let run = previous.rows[0]
     const activeRun=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND status IN ('queued','running') AND configuration_revision=$3 ORDER BY created_at DESC LIMIT 1`,[input.candidateId,input.organizationId,input.configurationRevision])
     if(activeRun.rows[0]){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:activeRun.rows[0].id});await client.query('COMMIT');return{runId:activeRun.rows[0].id,status:activeRun.rows[0].status,reused:true}}
@@ -664,7 +673,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
       await client.query('UPDATE public.radar_candidate_research_runs SET output = $3::jsonb WHERE id=$1 AND organization_id=$2',
         [run.id,input.organizationId,JSON.stringify(run.output)])
     }
-    const fresh = !['refresh','reanalyze'].includes(operation)&&run&&run.configuration_revision===input.configurationRevision
+    const fresh = !['refresh','reanalyze'].includes(operation)&&run&&!run.historical_closed_at&&run.configuration_revision===input.configurationRevision
       &&(['queued','running'].includes(run.status) || operation==='resume'||Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
     if (fresh) {
       if (!['queued','running'].includes(run.status)&&assessRadarCaptureResearch(run).status!=='completed') {
@@ -678,11 +687,12 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
           requested_by=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,[run.id,user.id]); run = updated.rows[0]
       }
     } else {
+      const seed=configuration.funnel.enabled&&run&&operation!=='reanalyze'?seedRadarFunnelRound(run,configuration.research.freshnessDays):undefined
       const inherited:Output=operation==='reanalyze'&&run?{...run.output,pages:run.output.pages?.filter(page=>!!page.text&&!page.limitation),readingComplete:true,
-        discoveryLocked:true,analysisOnly:true,qualification:undefined,qualificationEvidenceHash:undefined,profile:undefined,sizeAssessment:undefined}:{}
+        discoveryLocked:true,analysisOnly:true,qualification:undefined,qualificationEvidenceHash:undefined,profile:undefined,sizeAssessment:undefined}:seed?.output??{}
       const inserted = await client.query<ResearchRun>(`INSERT INTO public.radar_candidate_research_runs
-        (organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,operation,output) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING *`,
-      [input.organizationId,context.campaign_id,input.candidateId,user.id,input.configurationRevision,input.requestId??null,operation,JSON.stringify(inherited)]); run = inserted.rows[0]
+        (organization_id,campaign_id,candidate_id,requested_by,configuration_revision,request_id,operation,output,calls) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb) RETURNING *`,
+      [input.organizationId,context.campaign_id,input.candidateId,user.id,input.configurationRevision,input.requestId??null,operation,JSON.stringify(inherited),JSON.stringify(seed?.calls??{})]); run = inserted.rows[0]
     }
     await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:run.id})
     await client.query('COMMIT')
@@ -728,6 +738,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
     const funnelEmailPolicy=configuration.funnel.enabled?(await loadRadarEmailDomainPolicy(pool)).configuration:undefined
     const funnelReadiness=configuration.funnel.enabled?await getRadarResearchAvailability(pool,user,run.organization_id,run.campaign_id):undefined
     const sourceCostsBrl=funnelReadiness?Object.fromEntries(funnelReadiness.estimates.filter(item=>item.available).map(item=>[item.sourceType,item.costPerQuery])):undefined
+    const funnelAgentReadiness=configuration.funnel.enabled&&configuration.research.deepResearchEnabled?await loadRadarFunnelAgentReadiness(pool,{organizationId:run.organization_id,campaignId:run.campaign_id,runId:run.id}):undefined
     const intentBudget=await loadRadarResearchIntentBudget(pool,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision})
     const str = (key:string) => typeof payload[key] === 'string' ? payload[key] as string : undefined
     const identity:RadarBusinessIdentity = {name:str('tradeName') || context.title,legalName:str('legalName'),cnpj:str('cnpj'),
@@ -936,6 +947,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         // Optional decisions must not stop facts collection. Uncertain effects
         // remain in their receipts/calls and are never silently repurchased.
         if(cause instanceof Error&&['radar_research_lease_lost','radar_campaign_configuration_changed','radar_research_projection_changed','radar_campaign_or_candidate_inactive','radar_research_approved_candidate_requires_review'].includes(cause.message)||(cause as {statusCode?:number})?.statusCode===403)throw cause
+        if(configuration.funnel.enabled&&(task==='radar_initial_triage'||task==='radar_fit_gate'))return applyRadarFunnelGateDecision(pool,{...funnelScope,gate:task==='radar_initial_triage'?'g1':'g5',failureCode:cause instanceof Error&&/^[a-z][a-z0-9_]{0,120}$/.test(cause.message)?cause.message:'decision_unavailable',evidence:[],associatedWebsite:meta?.associatedWebsite},{authorize:assertEffectAuthorization})
         return{action:'continue'}
       }finally{
         const savedCalls=(await pool.query('SELECT calls FROM public.radar_candidate_research_runs WHERE id=$1 AND lease_id=$2',[run.id,lease])).rows[0]?.calls
@@ -949,10 +961,11 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       signal,checkpoint,decide,analysisCriteria:{segment:context.target_segment,offer:context.offer_type,products:context.product_focus},registrySizeFacts:registryRadarSizeFacts(payload),collect:run.operation==='reanalyze'||!configuration.sources.inspectWebsite ? async () => [] : collect,
       registryPayload:payload,targetCnaes:context.target_cnaes,emailPolicy:funnelEmailPolicy,configurationRevision:run.configuration_revision,funnelOverrides:radarScopedFunnelOverrides(payload),
       sourceCostsBrl,maxDecisionCalls:funnelPolicy?.limits.maxDecisionCallsPerCompany,
+      recoverAgent:funnelAgentReadiness?.recoverOnly,agentCostBrl:funnelAgentReadiness?.price?.amountBrl??undefined,
       onRegistryGate:configuration.funnel.enabled?()=>applyRadarFunnelRegistryGate(pool,funnelScope,{authorize:assertEffectAuthorization}):undefined,
       onInitialGate:configuration.funnel.enabled?blocked=>markRadarFunnelInitialGate(pool,funnelScope,blocked,{authorize:assertEffectAuthorization}):undefined,
       collectSocial:adaptiveTurn?(input,options={})=>collectRadarPublicSocialEvidence(input,{...options,inspect:async url=>{beforeEffect();await assertEffectAuthorization();try{return await inspectRadarBusinessSite(url)}finally{effectCompleted=true}},checkpoint:async page=>{await options.checkpoint?.(page);if(effectCompleted)throw new RadarAdaptiveTurnYield()}}):undefined,
-      deepResearch:configuration.research.deepResearchEnabled?async(gaps,pages)=>{
+      deepResearch:configuration.research.deepResearchEnabled&&(!configuration.funnel.enabled||funnelAgentReadiness?.allowed)?async(gaps,pages)=>{
         const {websiteUrl:_website,phone:_phone,...subject}=identity
         const evidence=pages.filter(page=>!page.limitation&&page.text).slice(0,4).map(page=>({url:page.url,text:page.text.slice(0,1500)}))
         try{
@@ -996,7 +1009,9 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const baseRequestId=`${run.id}:presence:${evidenceHash}`
         const retry=previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous)?await resolveRadarAnalysisRetry(pool,{organizationId:run.organization_id,campaignId:run.campaign_id,candidateId:run.candidate_id,runId:run.id,configurationRevision:run.configuration_revision,action:'radar_presence_resolution',previousRequestId:previous.requestId??`${run.id}:presence:${previous.evidenceHash}`,searchConfiguration:context.search_configuration}):previous&&canRetryPreProviderRejection(previous)?previous.retryAuthorization:undefined
         if(previous&&previous.status!=='completed'&&!canRetryPreProviderRejection(previous)&&!retry)throw error(previous.status.startsWith('received_')?previous.error??'radar_analysis_response_invalid':'radar_presence_previous_request_uncertain')
-        if(previous?.status==='completed'&&!previous.refreshAuthorized)throw error(!previous.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':'radar_presence_refresh_authorization_required')
+        const automaticRefresh=planRadarPresenceRefresh({enabled:configuration.funnel.enabled,previous,evidenceHash,maximum:funnelPolicy?.limits.maxPresenceResolutionsPerCompany??2})
+        if(previous?.status==='completed'&&configuration.funnel.enabled&&automaticRefresh.count>=(funnelPolicy?.limits.maxPresenceResolutionsPerCompany??2))throw error('radar_presence_resolution_limit_reached')
+        if(previous?.status==='completed'&&!previous.refreshAuthorized&&!automaticRefresh.allowed)throw error(!previous.evidenceVersion&&!version.legacy?'radar_analysis_legacy_material_missing':automaticRefresh.reason)
         const tenant=await pool.query(`SELECT organization.client_id, contract.id AS contract_id FROM public.organizations organization
           LEFT JOIN LATERAL (SELECT id FROM public.contracts WHERE client_id=organization.client_id AND status='active' ORDER BY starts_at DESC,id DESC LIMIT 1) contract ON TRUE
           WHERE organization.id=$1`,[run.organization_id])
@@ -1010,7 +1025,8 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         const requestEvidence=canonicalRadarAnalysisEvidence(evidence)
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
         const costPolicy=frozenRadarCostPolicy(intentBudget,(await loadRadarOperationalLimits(pool)).costPolicy)
-        run.calls.presence={status:'reserved',source:'radar_presence_resolution',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previous?.rejections,...(retry?{requestId,retryAuthorization:retry,previous:{requestId:previous?.requestId,evidenceHash:previous?.evidenceHash,status:previous?.status}}:{})}
+        run.calls.presence={status:'reserved',source:'radar_presence_resolution',requestId,evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previous?.rejections,...(retry?{retryAuthorization:retry,previous:{requestId:previous?.requestId,evidenceHash:previous?.evidenceHash,status:previous?.status}}:{})}
+        if(configuration.funnel.enabled&&previous?.status==='completed')run.calls.presence.previous=automaticRefresh.history
         run.calls.presence.costPolicy=costPolicy
         const reserved=await pool.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND lease_id=$2 RETURNING id',[run.id,lease,JSON.stringify(run.calls)])
         if(!reserved.rows[0])throw error('radar_research_lease_lost')
@@ -1056,6 +1072,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
         run.calls.semantic={status:'reserved',source:'radar_business_qualification',evidenceHash,evidenceVersion:persistedRadarEvidenceVersion(version),requestBindings:radarEvidenceBindings(requestEvidence),rejections:previousSemantic?.rejections,
           previous:previousSemantic?.status==='completed'?{evidenceHash:previousSemantic.evidenceHash,result:previousSemantic.result}:previousSemantic?.previous}
         const requestId=retry?`${baseRequestId}:retry:${retry.authorization_id}`:baseRequestId
+        run.calls.semantic.requestId=requestId
         const costPolicy=frozenRadarCostPolicy(intentBudget,(await loadRadarOperationalLimits(pool)).costPolicy)
         run.calls.semantic.costPolicy=costPolicy
         if(retry)Object.assign(run.calls.semantic,{requestId,retryAuthorization:retry,previous:{requestId:previousSemantic?.requestId,evidenceHash:previousSemantic?.evidenceHash,status:previousSemantic?.status}})

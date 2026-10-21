@@ -18,7 +18,7 @@ export function selectRadarQualificationEvidence(pages: RadarSiteEvidence[], lim
         .map(page => [page.url, page])).values()].sort((a, b) => pageRank(a.url) - pageRank(b.url))
         .slice(0, limits.maxPages).map(page => ({ ...page, text: page.text.slice(0, limits.maxChars) }));
 }
-export function radarPurposeEnrichmentUrls(website: string, pages: RadarSiteEvidence[], purpose: RadarResearchPolicy['contactPurpose']) {
+export function radarPurposeEnrichmentUrls(website: string, pages: RadarSiteEvidence[], purpose: RadarResearchPolicy['contactPurpose'], depth: 'standard'|'full' = 'full') {
     const origin = new URL(website).origin;
     const linked = pages.filter(page => new URL(page.url).origin === origin).flatMap(page => radarHtmlLinks(page.html ?? '').flatMap(link => {
         try {
@@ -27,7 +27,7 @@ export function radarPurposeEnrichmentUrls(website: string, pages: RadarSiteEvid
             return target.origin === origin && !target.search && !recruitment.test(target.pathname) && /contat|contact|fornecedor|compras|suprimento|supplier|orcamento|sobre|about|servic|solu[cç]|client|empresa|institucional/i.test(target.pathname) ? [target.toString()] : [];
         } catch { return []; }
     }));
-    const paths = purpose === 'suppliers' ? ['/fornecedores/', '/compras/', '/seja-fornecedor/', '/suprimentos/', '/contato/'] : ['/contato/', '/orcamento/'];
+    const paths = depth === 'standard' ? [] : purpose === 'suppliers' ? ['/fornecedores/', '/compras/', '/seja-fornecedor/', '/suprimentos/', '/contato/'] : ['/contato/', '/orcamento/'];
     const rank = (url: string) => purpose === 'suppliers' && /fornecedor|compras|suprimento|supplier/i.test(new URL(url).pathname) ? 0 : /contat|contact|orcamento/i.test(new URL(url).pathname) ? 1 : 2;
     const read = new Set(pages.map(page => page.url));
     // Real linked pages always precede guessed paths of the same purpose.

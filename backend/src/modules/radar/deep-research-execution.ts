@@ -9,6 +9,7 @@ import {estimateRadarCostBrl,compareRadarDecimal,addRadarDecimal,multiplyRadarDe
 import {radarDecisionHash} from './decision-service.js'
 import {loadRadarDeepResearchRoute,radarDeepResearchBudget} from './deep-research.js'
 import {resolveRadarAnalysisRetry,type RadarAnalysisRetryBinding} from './analysis-retry-authorizations.js'
+import {resolveRadarSearchConfiguration} from './search-configuration.js'
 
 const failure=(code:string,statusCode=409)=>Object.assign(Error(code),{statusCode})
 type ResearchCall={source:'perplexity_agent';status:string;requestId:string;contextHash:string;context:Record<string,unknown>;route:Record<string,unknown>;tenant:{client_id:string|null;contract_id:string|null};reservedUsd:string;reservedBrl:string;usageDate:string;costPolicy:RadarCostPolicy;result?:Record<string,unknown>;actualBrl?:string;actualUsd?:string;budgetExceeded?:boolean;retryAuthorization?:RadarAnalysisRetryBinding;previous?:ResearchCall[]}
@@ -16,7 +17,8 @@ export function radarAgentCampaignSpentUsd(rows:Array<{calls:Record<string,Resea
  const unique=new Map<string,ResearchCall>()
  for(const row of rows)for(const call of Object.values(row.calls??{}))if(call.source==='perplexity_agent')for(const attempt of [call,...(call.previous??[])]){
   if(typeof attempt.requestId!=='string'||!attempt.requestId)throw failure('radar_deep_research_legacy_budget_requires_review')
-  unique.set(attempt.requestId,attempt)
+  const prior=unique.get(attempt.requestId)
+  if(!prior||radarReportedCostAmount(prior.actualUsd)===null&&radarReportedCostAmount(attempt.actualUsd)!==null)unique.set(attempt.requestId,attempt)
  }
  let spent='0'
  for(const call of unique.values()){
@@ -43,7 +45,8 @@ export async function researchRadarGaps(pool:pg.Pool,user:AuthUser,input:{organi
   if(!run||run.campaign_id!==campaignId||run.configuration_revision!==input.revision||campaign.configuration_revision!==input.revision)throw failure('radar_campaign_configuration_changed')
   if(run.status!=='running'||run.lease_id!==dependencies.leaseId||!run.lease_active)throw failure('radar_research_lease_lost')
   call=run.calls?.[key]
-  if(!call){const bound=(Object.entries(run.calls??{}) as Array<[string,ResearchCall]>).find(([,entry])=>entry.source==='perplexity_agent'&&(entry.contextHash===contextHash||entry.status!=='completed'));if(bound){key=bound[0];call=bound[1]}}
+  const singleRound=resolveRadarSearchConfiguration(campaign.search_configuration).funnel.enabled
+  if(!call){const bound=(Object.entries(run.calls??{}) as Array<[string,ResearchCall]>).find(([,entry])=>entry.source==='perplexity_agent'&&(singleRound||entry.contextHash===contextHash||entry.status!=='completed'));if(bound){key=bound[0];call=bound[1]}}
   let retry:RadarAnalysisRetryBinding|undefined,previous:ResearchCall|undefined
   if(call&&call.status!=='completed'){
    const receipt=(await db.query("SELECT status FROM public.radar_analysis_receipts WHERE organization_id=$1 AND action='radar_deep_research' AND request_id=$2",[input.organizationId,call.requestId])).rows[0]
@@ -111,8 +114,11 @@ export async function researchRadarGaps(pool:pg.Pool,user:AuthUser,input:{organi
   try{
    await write.query('BEGIN')
    await write.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[campaignId!,input.organizationId])
+   // A historical uncertain effect may have been carried into another round.
+   // Both can recover its receipt, but the original reservation settles once.
+   const settled=(await write.query(`WITH entries AS(SELECT entry.value FROM public.radar_candidate_research_runs run CROSS JOIN LATERAL jsonb_each(run.calls) entry WHERE run.organization_id=$1 AND run.campaign_id=$2 AND entry.value->>'source'='perplexity_agent'), versions AS(SELECT value FROM entries UNION ALL SELECT history.value FROM entries CROSS JOIN LATERAL jsonb_array_elements(COALESCE(entries.value->'previous','[]')) history) SELECT EXISTS(SELECT 1 FROM versions WHERE value->>'requestId'=$3 AND value?'actualBrl') AS done`,[input.organizationId,campaignId!,call.requestId])).rows[0]?.done===true
    const changed=await write.query(`UPDATE public.radar_candidate_research_runs SET calls=jsonb_set(calls,ARRAY[$3],$4::jsonb),updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND lease_id=$5 AND status='running' AND lease_until>NOW() AND calls->$3->>'status'<>'completed' RETURNING id`,[dependencies.runId,input.organizationId,key,JSON.stringify({...call,status:'completed',result,...(actualBrl!==null?{actualBrl,actualUsd}:{}),budgetExceeded:budget?.exceeded===true}),dependencies.leaseId])
-   if(changed.rows.length&&actualBrl!==null&&call.actualBrl===undefined)await write.query(`UPDATE public.radar_source_usage_counters SET estimated_cost=GREATEST(0,estimated_cost-$4::numeric+$5::numeric),updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2 AND source_type='perplexity_agent' AND usage_date=$3::date`,[input.organizationId,campaignId!,call.usageDate,call.reservedBrl,actualBrl])
+   if(changed.rows.length&&actualBrl!==null&&!settled&&call.actualBrl===undefined)await write.query(`UPDATE public.radar_source_usage_counters SET estimated_cost=GREATEST(0,estimated_cost-$4::numeric+$5::numeric),updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2 AND source_type='perplexity_agent' AND usage_date=$3::date`,[input.organizationId,campaignId!,call.usageDate,call.reservedBrl,actualBrl])
    if(!changed.rows.length){const saved=(await write.query('SELECT calls->$2 AS call FROM public.radar_candidate_research_runs WHERE id=$1',[dependencies.runId,key])).rows[0]?.call;if(saved?.status!=='completed')throw failure('radar_research_lease_lost')}
    await write.query('COMMIT')
   }catch(cause){await write.query('ROLLBACK');throw cause}finally{write.release()}

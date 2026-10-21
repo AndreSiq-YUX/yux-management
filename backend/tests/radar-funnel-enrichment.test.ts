@@ -13,3 +13,7 @@ it('prioritizes the requested contact purpose and never chooses recruitment link
     expect(urls[0]).toBe('https://alfa.example/fornecedor/');
     expect(urls.every((url: string) => !/trabalhe|recrut|vaga/i.test(url))).toBe(true);
 });
+it('standard depth follows real links without speculative extra paths',()=>{
+ const input=[page('','<a href="/compras/">Compras</a>')]
+ expect(api.radarPurposeEnrichmentUrls('https://alfa.example/',input,'suppliers','standard')).toEqual(['https://alfa.example/compras/'])
+})

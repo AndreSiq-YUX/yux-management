@@ -7,6 +7,26 @@ import {dispatchRadarCaptureOperation} from '../../src/modules/radar/capture-dis
 import {startRadarCandidateResearch} from '../../src/modules/radar/research-service.js'
 
 describe.skipIf(!connectionString)('configured registry admission gate',()=>{
+ it('waits for final fit, then drains paid overflow before enforcing the extra-page cap',async()=>{
+  const f=await captureFixture();try{
+   const current=(await f.pool.query('SELECT search_configuration FROM radar_campaigns WHERE id=$1',[f.campaign.id])).rows[0].search_configuration;
+   await f.pool.query('UPDATE radar_campaigns SET search_configuration=$2 WHERE id=$1',[f.campaign.id,JSON.stringify({...current,funnel:{enabled:true,g0:{mode:'off'},g1:{mode:'off'}},batch:{...current.batch,minPassRatio:1,replenishmentBasis:'final_fit',maxReplenishmentPages:0}})]);
+   const operation=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:2},{availability:available});
+   const searchPage=vi.fn(async()=>({candidates:[company(),company(),company()]}));
+   const advance=()=>advanceRadarCaptureDiscovery(f.pool,{} as never,{organizationId,operationId:operation.operationId},{availability:available,searchPage,loadSecret:async()=>'fixture'});
+   await advance();await advance();
+   let saved=await getRadarCaptureOperation(f.pool,admin,organizationId,operation.operationId);
+   expect(saved.counts.admitted).toBe(2);
+   await f.pool.query(`UPDATE radar_capture_items SET funnel_outcome='completed_with_gaps',status='insufficient' WHERE operation_id=$1`,[operation.operationId]);
+   const first=saved.items[0].candidateId;
+   await f.pool.query(`INSERT INTO radar_b2b_reviews(organization_id,campaign_id,candidate_id,configuration_revision,target_status,product_fit,verification_method) VALUES($1,$2,$3,1,'confirmed','high','manual')`,[organizationId,f.campaign.id,first]);
+   await advance();saved=await getRadarCaptureOperation(f.pool,admin,organizationId,operation.operationId);
+   expect(saved.counts.admitted).toBe(3);expect(searchPage).toHaveBeenCalledTimes(1);
+   await f.pool.query(`UPDATE radar_capture_items SET funnel_outcome='completed_with_gaps',status='insufficient' WHERE operation_id=$1`,[operation.operationId]);
+   await advance();saved=await getRadarCaptureOperation(f.pool,admin,organizationId,operation.operationId);
+   expect(saved.discoveryReason).toBe('replenishment_shortfall');expect(searchPage).toHaveBeenCalledTimes(1);
+  }finally{await f.close()}
+ },30000)
  it('uses already paid overflow for replenishment even when no extra discovery pages are authorized',async()=>{
   const f=await captureFixture()
   try{

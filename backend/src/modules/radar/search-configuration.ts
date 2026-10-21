@@ -30,7 +30,7 @@ export const radarSizePolicySchema = z.object({enabled:z.boolean().default(false
 
 export const radarResearchPolicySchema = z.object({
   enabled: z.boolean().default(false), webSearchEnabled: z.boolean().default(false),
-  localSearchOrder:z.enum(['before_web','after_web_if_needed','disabled']).default('before_web'),
+  localSearchOrder:z.enum(['before_web','after_web_if_needed','disabled']).default('after_web_if_needed'),
   completion:z.object({enabled:z.boolean().default(false),requireIdentity:z.boolean().default(true),requireSegment:z.boolean().default(false),requireWebsite:z.boolean().default(false),
     contactTypes:z.array(z.enum(['email','phone','whatsapp','contact_form'])).max(4).default(['email','phone','whatsapp','contact_form']),
     contactPurposes:z.array(z.enum(['general','suppliers','sales','finance','recruitment'])).max(5).default([]),

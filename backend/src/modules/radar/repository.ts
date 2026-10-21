@@ -1,4 +1,5 @@
 import type pg from 'pg'
+import {validateRadarFunnelActivation} from './funnel-controls.js'
 import { randomUUID } from 'node:crypto'
 import {normalizeRadarCnpjIdentifier} from './cnpj-identifier.js'
 import {admitRadarCapturePage,captureError} from './capture-operation.js'
@@ -189,7 +190,10 @@ export async function createRadarCampaign(pool: pg.Pool, user: AuthUser, input: 
     throw Object.assign(new Error('radar_source_internal_admin_only'), { statusCode: 403 })
   }
   const policy=await loadRadarOperationalLimits(pool)
-  validateRadarOperationalConfiguration(resolveRadarSearchConfiguration(input.searchConfiguration),policy.limits,input.dailyLimit)
+  const configuration=resolveRadarSearchConfiguration(input.searchConfiguration)
+  validateRadarOperationalConfiguration(configuration,policy.limits,input.dailyLimit)
+  // A newly created campaign has no human-reviewed calibration to authorize exclusion.
+  if(configuration.funnel.enabled&&(configuration.funnel.g1.mode==='enforce'||configuration.funnel.g5.mode==='enforce'))throw Object.assign(Error('radar_campaign_calibration_required'),{statusCode:409})
   const result = await pool.query<RadarCampaignRow>(
     `INSERT INTO public.radar_campaigns (
        organization_id, name, campaign_type, target_segment, target_city, target_state,
@@ -249,6 +253,7 @@ export async function updateRadarCampaign(pool: pg.Pool, user: AuthUser, campaig
       input.targetSegment.trim(), input.targetStates ?? [], input.targetKeywords ?? [],
       input.targetCnaes ?? [], input.productFocus ?? [], input.offerType.trim(), criteria(configuration)])
     const changed = oldSearch !== newSearch
+    await validateRadarFunnelActivation(client,{...row,target_cnaes:input.targetCnaes??[],configuration_revision:(row.configuration_revision??1)+(changed?1:0)},configuration)
     const result = await client.query<RadarCampaignRow>(
       `UPDATE public.radar_campaigns SET name = $3, target_segment = $4, target_city = $5, target_state = $6,
          target_states = $7, target_keywords = $8, target_cnaes = $9, product_focus = $10, offer_type = $11,

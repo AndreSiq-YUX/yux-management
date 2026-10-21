@@ -44,7 +44,7 @@ const size=z.object({score:number,evidenceCoverage:number,direction:text,contrib
 const quality=z.object({identity:text,contactability:text,fit:text,readyForReview:bool,missing:texts,potential:z.object({score:number,coverage:number}).strip().optional().catch(undefined)}).strip()
 const previousFacts=z.object({websiteUrl:url,observedAt:text,contacts,profile:profile.optional().catch(undefined)}).strip()
 const factsSchema=z.object({cnpj:text,legalName:text,tradeName:text,city:text,state:text,address:text,cnaes:texts,cnaeMain:text,registrationStatus:text,openingDate:text,
- refreshIncomplete:bool,siteObservedAt:text,previousResearch:previousFacts.optional().catch(undefined),outsideProfile:bool,outsideProfileRevision:number,
+ refreshIncomplete:bool,siteObservedAt:text,previousResearch:previousFacts.optional().catch(undefined),outsideProfile:bool,outsideProfileRevision:number,requiresScopedReview:bool,reviewRequested:bool,
  websiteUrl:url,websiteStatus:text,registryPhone:text,contacts,profile:profile.optional().catch(undefined),activity:activity.optional().catch(undefined),sizeAssessment:size.optional().catch(undefined),
  documents:z.array(z.object({url,sourceUrl:url}).strip()).optional().catch(undefined),
  targetStatus:text,productFit:text,quality:quality.optional().catch(undefined),reasons:narratives}).strip()
@@ -63,17 +63,21 @@ export function projectRadarCommercialFacts(payload:unknown):RadarCommercialFact
  const prior=object(data.previousResearch)
  return radarCommercialFactsSchemaForCompany(identities).parse({...data,websiteUrl:website.url??data.siteFinalUrl??data.websiteUrl,registryPhone:data.phoneRaw,
   outsideProfile:object(data.decisionExclusion).active===true||data.targetStatus==='not_target',outsideProfileRevision:object(data.decisionExclusion).active===true?object(data.decisionExclusion).revision:data.researchRevision,
+  requiresScopedReview:['g0','g1','g5'].includes(String(object(data.decisionExclusion).gate)),reviewRequested:!!object(data.funnelReviewRequest).by&&!object(data.funnelReviewRequest).handledAt,
   siteObservedAt:website.observedAt??data.siteCheckedAt,refreshIncomplete:data.researchRefreshIncomplete,previousResearch:prior.belongsToCurrentIdentity===true?{websiteUrl:prior.websiteUrl,observedAt:prior.siteCheckedAt,contacts:prior.publicContacts,profile:prior.companyProfile}:undefined,
   contacts:data.publicContacts??presence.contacts,profile:data.companyProfile,activity:data.activityAssessment??data.activity,quality:data.researchQuality,reasons:data.triageReasons})
 }
 const base={id:text,organizationId:text,campaignId:text,status:text,createdAt:text,updatedAt:text}
 const campaignSchema=z.object({...base,name:text,campaignType:text,targetSegment:text,targetCity:text,targetState:text,targetStates:texts,targetKeywords:texts,targetCnaes:texts,productFocus:texts,offerType:text,configurationRevision:number,commercialCriteriaRevision:number,
- criteria:z.object({cities:z.array(z.object({city:text,state:text}).strip()).optional().catch(undefined),includeAnyTerms:texts,includeAllTerms:texts,excludeTerms:texts,productTerms:texts,productMatch:text,openingFrom:text,openingTo:text}).strip()}).strip()
+ criteria:z.object({cities:z.array(z.object({city:text,state:text}).strip()).optional().catch(undefined),includeAnyTerms:texts,includeAllTerms:texts,excludeTerms:texts,productTerms:texts,productMatch:text,openingFrom:text,openingTo:text,
+ targets:z.array(z.object({key:text,label:text,definition:text,priority:z.enum(['primary','secondary']).optional(),cnaes:texts}).strip()).optional().catch(undefined),outOfScopeExamples:texts,
+ registry:z.object({mainActivityRule:text,blockedMainCnaes:texts,blockedNameTerms:texts}).strip().optional().catch(undefined),excludedNameTerms:texts,contactPurpose:text,minPassRatio:number,
+ }).strip()}).strip()
 export type RadarCommercialCampaign=z.infer<typeof campaignSchema>
 const candidateSchema=z.object({...base,title:text,configurationRevision:number,approvedAt:text,crmLeadId:text,importedOpportunityId:text,importedCompanyRecordId:text,
  targetStatus:text,productFit:text,pendingMessage:text,facts:factsSchema}).strip()
 export type RadarCommercialCandidate=z.infer<typeof candidateSchema>
-const countShape={requested:number,admitted:number,researching:number,completed:number,insufficient:number,blocked:number,qualified:number,outsideProfile:number,completedWithGaps:number,technicalFailures:number}
+const countShape={requested:number,admitted:number,researching:number,completed:number,insufficient:number,blocked:number,qualified:number,outsideProfile:number,completedWithGaps:number,technicalFailures:number,passedInitialTriage:number,blockedInitial:number,blockedFit:number,confirmedFit:number,withUsefulContact:number,approvedByHuman:number}
 const captureSchema=z.object({...base,configurationRevision:number,countingMode:z.enum(['admitted','qualified']).optional(),counts:z.object(countShape).strip(),pendingMessage:text}).strip()
 export type RadarCommercialCapture=z.infer<typeof captureSchema>
 const assessmentSchema=z.object({targetStatus:text,productFit:text,reasons:narratives}).strip()
@@ -100,16 +104,17 @@ const opportunity=(value:unknown)=>{const row=object(value),message=object(row.l
  return opportunitySchema.parse({...row,canConvertToLead:row.status==='approved'&&!row.convertedLeadId&&message.status==='approved'&&policy.canSendAutomatically===false&&policy.canConvertToLead===true,...(object(row.company).sourceType==='osm_extract'?{company:undefined}: {})})}
 const historySchema=z.object({id:text,candidateId:text,companyName:text,configurationRevision:number,status:text,updatedAt:text,actionLabel:text}).strip()
 const feedbackSchema=z.object({id:text,candidateId:text,configurationRevision:number,kind:text,note:narrative,createdAt:text,contact:z.object({kind:text,value:text}).strip().optional().catch(undefined)}).strip()
-export type RadarCommercialSurface='restore'|'campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'|'latestResearchRequest'
+export type RadarCommercialSurface='restore'|'campaigns'|'candidates'|'opportunities'|'duplicates'|'research'|'capture'|'researchHistory'|'feedback'|'metrics'|'researchMetrics'|'crmDelivery'|'import'|'review'|'lead'|'destinations'|'progress'|'researchRequest'|'latestResearchRequest'|'cnaeCatalog'
 export function projectRadarCommercialResponse(surface:RadarCommercialSurface,payload:unknown):unknown{
  if(payload===null)return null
  const row=object(payload)
  switch(surface){
-  case 'restore':return z.object({candidateId:z.uuid(),status:z.literal('restored')}).strip().parse(row)
+  case 'cnaeCatalog':return z.array(z.object({code:text,description:text}).strip()).parse(payload)
+  case 'restore':return z.object({candidateId:z.uuid(),status:z.enum(['restored','review_requested'])}).strip().parse(row)
   case 'latestResearchRequest':return{request:row.request?projectRadarCommercialResponse('researchRequest',row.request):null}
   case 'researchRequest':return z.object({requestId:z.uuid(),campaignId:z.uuid().optional(),state:z.enum(['accepted','running','waiting','unchanged','completed']),items:z.array(z.object({candidateId:z.uuid(),state:z.enum(['accepted','running','waiting','unchanged','completed']),message:narrative,feedback:radarCommercialStatusSchema.optional().catch(undefined)}).strip())}).strip().parse(row)
   case 'campaigns':if('campaign' in row)return{campaign:projectRadarCommercialResponse('campaigns',row.campaign),criteriaChanged:row.criteriaChanged===true}
-   return map(payload,item=>{const r=object(item),config=object(r.searchConfiguration);return campaignSchema.parse({...r,criteria:{...object(config.qualification),cities:config.cities,openingFrom:config.openingFrom,openingTo:config.openingTo}})})
+   return map(payload,item=>{const r=object(item),config=object(r.searchConfiguration);return campaignSchema.parse({...r,criteria:{...object(config.qualification),cities:config.cities,openingFrom:config.openingFrom,openingTo:config.openingTo,excludedNameTerms:config.excludedNameTerms,contactPurpose:object(config.research).contactPurpose,minPassRatio:object(config.batch).minPassRatio}})})
   case 'candidates':return map(payload,candidate)
   case 'opportunities':case 'review':return map(payload,opportunity)
   case 'metrics':case 'researchMetrics':return metricSchema.parse(row)
@@ -133,6 +138,7 @@ export function projectRadarCommercialResponse(surface:RadarCommercialSurface,pa
 
 // Explicit route matrix. New endpoints are internal until a commercial schema is chosen.
 const surfaces:Record<string,RadarCommercialSurface>={
+ 'PATCH /campaigns/:id/criteria':'campaigns','GET /cnae-catalog':'cnaeCatalog',
  'GET /campaigns':'campaigns','POST /campaigns':'campaigns','PATCH /campaigns/:id':'campaigns','POST /campaigns/:id/duplicate':'campaigns',
  'POST /campaigns/:id/research-requests':'researchRequest','GET /campaigns/:id/research-requests/:requestId':'researchRequest','POST /candidates/:id/research':'researchRequest',
  'GET /campaigns/:id/research-requests/latest':'latestResearchRequest',

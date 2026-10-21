@@ -6,10 +6,11 @@ import {getRadarOperationalLimits,updateRadarOperationalLimits} from '../../src/
 import {researchRadarGaps} from '../../src/modules/radar/deep-research.js'
 
 describe.skipIf(!connectionString)('Agent estimated budget with actual PostgreSQL and simulated transport',()=>{
- for(const mode of ['success','timeout','overrun','authorization_denied'] as const)it(`reserves before ${mode}, scopes every effect and never buys the same call twice`,async()=>{
+ for(const mode of ['success','timeout','overrun','authorization_denied','changed_gaps','historical_recovery'] as const)it(`reserves before ${mode}, scopes every effect and never buys the same call twice`,async()=>{
   const f=await captureFixture(),policy=await getRadarOperationalLimits(f.pool,admin);let routeId:string|undefined
   try{
-   await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:policy.version,limits:policy.limits,costPolicy:{usdToBrl:'5',rateAsOf:'2026-10-20T12:00:00Z',rateSource:'manual',marginPercent:'0'}})
+   await updateRadarOperationalLimits(f.pool,admin,{expectedVersion:policy.version,limits:{...policy.limits,...(mode==='changed_gaps'?{maxDeepSearchesPerCompany:2}:{})},costPolicy:{usdToBrl:'5',rateAsOf:'2026-10-20T12:00:00Z',rateSource:'manual',marginPercent:'0'}})
+   if(mode==='changed_gaps')await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{funnel}','{"enabled":true}') WHERE id=$1`,[f.campaign.id])
    const provider=(await f.pool.query(`INSERT INTO platform_provider_connections(provider_type,provider_key,display_name,status,public_config,is_default) VALUES('llm','perplexity','Fixture','active','{"retentionLicensed":true,"agentResearchLicensed":true}',TRUE) ON CONFLICT(provider_type,provider_key,environment) DO UPDATE SET status='active',public_config=EXCLUDED.public_config RETURNING id`)).rows[0]
    await storePlatformProviderSecret(f.pool,{providerConnectionId:provider.id,secretKind:'api_key',value:'synthetic-only'},`provider-key:${Buffer.alloc(32,7).toString('base64')}`)
    routeId=(await upsertAdminLlmRoute(f.pool,{agentType:'radar_deep_research',organizationId,provider:'perplexity',kind:'research',modelName:'fixture/model',researchConfig:{enabled:true,allowEstimatedBudget:true,estimatedUsdPerAttempt:.01,budgetUsdPerResearch:.02,budgetUsdPerCampaign:1,maxAttempts:1}})).id
@@ -33,7 +34,20 @@ describe.skipIf(!connectionString)('Agent estimated budget with actual PostgreSQ
    }else{
     expect((await researchRadarGaps(f.pool,admin,input,deps as any)).evidence).toHaveLength(1)
     await researchRadarGaps(f.pool,admin,input,deps as any)
+    if(mode==='changed_gaps')await researchRadarGaps(f.pool,admin,{...input,gaps:['contact','website'],context:{identity:{name:'Empresa Alfa'},evidence:[{text:'Novos dados'}]}},deps as any)
     expect(Number((await f.pool.query("SELECT estimated_cost FROM radar_source_usage_counters WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id])).rows[0].estimated_cost)).toBe(actual*5)
+    if(mode==='historical_recovery'){
+     const calls=(await f.pool.query('SELECT calls FROM radar_candidate_research_runs WHERE id=$1',[run.id])).rows[0].calls,[key,completed]=Object.entries(calls)[0] as [string,any];
+     await f.pool.query(`INSERT INTO radar_analysis_receipts(organization_id,action,request_id,input_hash,owner_token,status,result) VALUES($1,'radar_deep_research',$2,$3,$4,'completed',$5)`,[organizationId,completed.requestId,'a'.repeat(64),randomUUID(),JSON.stringify(completed.result)]);
+     const pending={...completed,status:'uncertain',requestId:'second-distinct-effect',actualBrl:undefined,actualUsd:undefined,result:undefined,previous:[completed]};
+     await f.pool.query("UPDATE radar_candidate_research_runs SET calls=$2,status='partial',historical_closed_at=NOW(),lease_id=NULL,lease_until=NULL WHERE id=$1",[run.id,JSON.stringify({[key]:pending})]);
+     await f.pool.query("UPDATE radar_source_usage_counters SET units=2,estimated_cost=.08 WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id]);
+     const recovered={...completed,status:'uncertain',actualBrl:undefined,actualUsd:undefined,result:undefined};
+     const nextLease=randomUUID(),next=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,lease_id,lease_until,calls) VALUES($1,$2,$3,$4,1,'running',$5,NOW()+INTERVAL '5 minutes',$6) RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,nextLease,JSON.stringify({[key]:recovered})])).rows[0];
+     await researchRadarGaps(f.pool,admin,input,{...deps,runId:next.id,leaseId:nextLease} as any);
+     expect(Number((await f.pool.query("SELECT estimated_cost FROM radar_source_usage_counters WHERE campaign_id=$1 AND source_type='perplexity_agent'",[f.campaign.id])).rows[0].estimated_cost)).toBe(.08);
+     await f.pool.query('DELETE FROM radar_analysis_receipts WHERE request_id=$1',[completed.requestId]);
+    }
     await expect(researchRadarGaps(f.pool,admin,{...input,candidateId:randomUUID()},deps as any)).rejects.toThrow('radar_candidate_not_found')
    }
    expect(requests).toHaveLength(mode==='authorization_denied'?0:1)

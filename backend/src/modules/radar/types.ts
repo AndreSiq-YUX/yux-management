@@ -4,7 +4,7 @@ export type RadarCaptureOperation = {
   id:string;campaignId:string;configurationRevision:number;status:'queued'|'discovering'|'researching'|'completed'|'partial'|'blocked';
   discoveryStopped:boolean;discoveryReason?:string;queries:number;blockers:string[];canContinue?:boolean;
   countingMode?:'admitted'|'qualified';
-  counts:{requested:number;admitted:number;researching:number;completed:number;insufficient:number;blocked:number;qualified?:number;outsideProfile?:number;completedWithGaps?:number;technicalFailures?:number};
+  counts:{requested:number;admitted:number;researching:number;completed:number;insufficient:number;blocked:number;qualified?:number;outsideProfile?:number;completedWithGaps?:number;technicalFailures?:number;passedInitialTriage?:number;blockedInitial?:number;blockedFit?:number;confirmedFit?:number;withUsefulContact?:number;approvedByHuman?:number};
   items:Array<{id:string;candidateId:string;runId?:string;status:string;blocker?:string;outcome?:string|null}>
 }
 

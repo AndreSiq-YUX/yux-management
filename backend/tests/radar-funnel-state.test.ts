@@ -4,6 +4,12 @@ import {summarizeRadarCaptureItems} from '../src/modules/radar/capture-reconcili
 
 const assess=(run:Record<string,unknown>)=>(states as any).assessRadarFunnelResearch(run)
 describe('terminal commercial research outcomes',()=>{
+ it('keeps optional decision receipts without pausing otherwise complete research in the new funnel',()=>{
+  const run={status:'succeeded',output:{funnel:{},siteAssociation:'confirmed',quality:{readyForReview:true}},calls:{decision:{source:'openrouter_decision',status:'uncertain'}}}
+  expect(assess(run)).toMatchObject({outcome:'completed',retryable:false})
+  expect(assess({...run,calls:{semantic:{status:'uncertain'}}})).toMatchObject({outcome:'technical_failure'})
+  expect(assess({...run,output:{}})).toMatchObject({outcome:'technical_failure'})
+ })
  it('finishes an explicit commercial exclusion without calling it a technical failure',()=>{
   expect(assess({status:'partial',output:{decisionExcluded:true}})).toEqual({outcome:'out_of_profile',retryable:false})
  })

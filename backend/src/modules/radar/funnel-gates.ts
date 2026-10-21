@@ -5,6 +5,7 @@ export type RadarGateBinding = {
     campaignId: string;
     configurationRevision: number;
     targetsHash: string;
+    criteriaHash: string;
     routeFingerprint: string;
     provider: string;
     upstreamProvider: string;
@@ -27,7 +28,7 @@ export type RadarFunnelOverride = {
     reason?: string;
     at?: string;
 };
-const bindingKeys = ['campaignId', 'configurationRevision', 'targetsHash', 'routeFingerprint', 'provider',
+const bindingKeys = ['campaignId', 'configurationRevision', 'targetsHash', 'criteriaHash', 'routeFingerprint', 'provider',
     'upstreamProvider', 'requestedModel', 'resolvedModelSnapshot', 'adapterVersion', 'contextVersion',
     'questionVersion', 'rubricVersion'] as const;
 
@@ -49,13 +50,17 @@ export function resolveRadarGateMode(input: {
         threshold,
     };
 }
+export function radarFunnelOutsideEvidenceSupported(input:{gate:RadarAiGate;result:Pick<DecisionResultV1,'choice'|'reasonCode'|'evidenceIds'>;evidence:DecisionContextV1['evidence'];hasConfirmedSite?:boolean}){
+    const validReason=input.gate==='g1'?['outside_activity','registry_activity_mismatch','registry_name_mismatch'].includes(input.result.reasonCode):input.result.reasonCode==='outside_activity';
+    return input.result.choice==='outside_profile'&&validReason&&(input.gate!=='g5'||input.hasConfirmedSite===true)&&input.evidence.some(item=>input.result.evidenceIds.includes(item.id)&&item.primary&&item.scope==='establishment'&&!item.contradictory&&(input.gate==='g1'?item.role==='registry':item.role==='activity'));
+}
 
 export function evaluateRadarFunnelGate(input: {
     gate: RadarAiGate;
     requestedMode: 'off' | 'shadow' | 'enforce';
     binding: RadarGateBinding;
     calibration?: RadarCampaignGateCalibration | null;
-    result: Pick<DecisionResultV1, 'status' | 'choice' | 'reasonCode' | 'evidenceIds' | 'probabilities'>;
+    result: Pick<DecisionResultV1, 'status' | 'choice' | 'reasonCode' | 'evidenceIds' | 'probabilities' | 'matchedTargetKey'>;
     evidence: DecisionContextV1['evidence'];
     hasConfirmedSite?: boolean;
     override?: RadarFunnelOverride | null;
@@ -70,8 +75,9 @@ export function evaluateRadarFunnelGate(input: {
     const evidenceSufficient = primary && (input.gate !== 'g5' || input.hasConfirmedSite === true);
     const probability = input.result.choice ? input.result.probabilities?.[input.result.choice] : undefined;
     const confident = input.result.status === 'decided' && threshold !== null && probability !== undefined && probability >= threshold;
-    const wouldBlock = input.result.choice === 'outside_profile' && evidenceSufficient && confident;
+    const wouldBlock = radarFunnelOutsideEvidenceSupported(input)&&confident;
     const weakFit = input.result.choice === 'weak_fit' && evidenceSufficient && confident;
     const action = !overridden && mode === 'enforce' ? wouldBlock ? 'exclude' : weakFit ? 'short_investigation' : 'continue' : 'continue';
-    return { action, effectiveMode: mode, threshold, wouldBlock, overridden, reasonCode: input.result.reasonCode, evidenceIds: cited.map(item => item.id) };
+    const matchedTargetKey = mode === 'enforce' && confident && evidenceSufficient && input.result.choice === 'compatible' ? input.result.matchedTargetKey : undefined;
+    return { action, effectiveMode: mode, threshold, wouldBlock, overridden, matchedTargetKey, reasonCode: input.result.reasonCode, evidenceIds: cited.map(item => item.id) };
 }

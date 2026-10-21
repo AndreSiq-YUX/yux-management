@@ -11,13 +11,14 @@ export type RadarGateSample = {
 export type RadarGatePartitionedSample = RadarGateSample & {
     partition: 'tune' | 'holdout';
     probabilityOutside?: number | null;
+    eligibleOutside?:boolean;
 };
 const positive = (sample: RadarGateSample) => sample.label === 'primary' || sample.label === 'secondary';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** The seed and complete membership are saved before any model is evaluated.
  * Related establishments never appear on both sides of the independent test. */
-export function partitionRadarGateDataset(samples: RadarGateSample[], seed: string, holdoutShare: number): RadarGatePartitionedSample[] {
+export function partitionRadarGateDataset(samples: RadarGateSample[], seed: string, holdoutShare: number,fixed:ReadonlyMap<string,'tune'|'holdout'>=new Map()): RadarGatePartitionedSample[] {
     if (!seed || !Number.isFinite(holdoutShare) || holdoutShare < .1 || holdoutShare > .5) throw Error('radar_calibration_split_invalid');
     const groups = new Map<string, RadarGateSample[]>();
     const ids = new Set<string>();
@@ -36,14 +37,14 @@ export function partitionRadarGateDataset(samples: RadarGateSample[], seed: stri
         const holdoutSize = Math.ceil(keys.length * holdoutShare);
         keys.forEach((key, index) => assignment.set(key, index < holdoutSize ? 'holdout' : 'tune'));
     }
-    return samples.map(sample => ({ ...sample, partition: assignment.get(sample.groupKey)! })).sort((a, b) => a.candidateId.localeCompare(b.candidateId));
+    return samples.map(sample => ({ ...sample, partition: fixed.get(sample.groupKey)??assignment.get(sample.groupKey)! })).sort((a, b) => a.candidateId.localeCompare(b.candidateId));
 }
 
 function metrics(samples: RadarGatePartitionedSample[], threshold: number) {
     const positives = samples.filter(positive);
     const negatives = samples.filter(sample => sample.label === 'outside');
-    const falseBlocks = positives.filter(sample => (sample.probabilityOutside ?? -1) >= threshold).length;
-    const correctBlocks = negatives.filter(sample => (sample.probabilityOutside ?? -1) >= threshold).length;
+    const falseBlocks = positives.filter(sample => sample.eligibleOutside!==false&&(sample.probabilityOutside ?? -1) >= threshold).length;
+    const correctBlocks = negatives.filter(sample => sample.eligibleOutside!==false&&(sample.probabilityOutside ?? -1) >= threshold).length;
     return {
         positives: positives.length, negatives: negatives.length, falseBlocks, correctBlocks,
         blockPrecision: correctBlocks + falseBlocks > 0 ? correctBlocks / (correctBlocks + falseBlocks) : 0,
@@ -65,7 +66,8 @@ export function evaluateRadarGateCalibration(dataset: RadarGatePartitionedSample
         if (typeof p !== 'number' || !Number.isFinite(p) || p < 0 || p > 1) reasons.push('incomplete_evaluation');
         const oldP = prior?.probabilityOutside;
         const probabilityOutside = oldP === undefined || oldP === null ? p : p === undefined || p === null ? null : positive(sample) ? Math.max(oldP, p) : Math.min(oldP, p);
-        grouped.set(sample.groupKey, { ...sample, probabilityOutside });
+        const eligibleOutside=prior?positive(sample)?prior.eligibleOutside!==false||sample.eligibleOutside!==false:prior.eligibleOutside!==false&&sample.eligibleOutside!==false:sample.eligibleOutside;
+        grouped.set(sample.groupKey, { ...sample, probabilityOutside,eligibleOutside });
     }
     const samples = [...grouped.values()];
     const tune = samples.filter(sample => sample.partition === 'tune');

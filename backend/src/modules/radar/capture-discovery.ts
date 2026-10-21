@@ -7,11 +7,12 @@ import {buildRadarDiscoveryScopes,resolveRadarSearchConfiguration} from './searc
 import {admitRadarCapturePage,assertCaptureAvailability,captureError,getRadarCaptureOperation,type AvailabilityLoader} from './capture-operation.js'
 import {loadRadarCapturePageAccounting} from './capture-capacity.js'
 import {advanceRadarAdaptiveCapture} from './adaptive-capture.js'
-import {loadRadarFunnelLotProgress,stopRadarFunnelAtPaidPageCap} from './funnel-replenishment.js'
+import {loadRadarFunnelLotProgress,stopRadarFunnelAtPaidPageCap,refreshRadarFunnelWaitingLot} from './funnel-replenishment.js'
 
 export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,availability?:AvailabilityLoader,checkAvailability=true){
  const op=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
  if(!op)throw captureError('radar_capture_not_found',404)
+ if(op.historical_closed_at)throw captureError('radar_historical_capture_closed')
  const row=(await pool.query("SELECT id,email,display_name,role FROM app_users WHERE id=$1 AND role='yux_admin' AND is_active=TRUE",[op.requested_by])).rows[0]
  if(!row)throw captureError('radar_batch_admin_not_active')
  const user={id:row.id,email:row.email,name:row.display_name,role:row.role} as AuthUser
@@ -25,12 +26,13 @@ export async function authorizeRadarCapture(pool:pg.Pool,organizationId:string,o
 export async function blockRadarCapture(pool:pg.Pool,organizationId:string,operationId:string,cause:unknown){
  const raw=cause instanceof Error?cause.message:'radar_capture_unavailable'
  const code=/^[a-z][a-z0-9_]{2,100}$/.test(raw)?raw:'radar_capture_unavailable'
- await pool.query("UPDATE public.radar_capture_operations SET status='blocked',blockers=$3,updated_at=NOW() WHERE id=$1 AND organization_id=$2",[operationId,organizationId,JSON.stringify([code])])
+ await pool.query("UPDATE public.radar_capture_operations SET status='blocked',blockers=$3,updated_at=NOW() WHERE id=$1 AND organization_id=$2 AND historical_closed_at IS NULL",[operationId,organizationId,JSON.stringify([code])])
 }
 export async function advanceRadarCaptureDiscovery(pool:pg.Pool,env:AppEnv,input:{organizationId:string;operationId:string},dependencies:Parameters<typeof runRadarCnpjaAdvancedSearch>[3]&{availability?:AvailabilityLoader}&NonNullable<Parameters<typeof advanceRadarAdaptiveCapture>[4]>={}){
  let authorized:Awaited<ReturnType<typeof authorizeRadarCapture>>
  try{authorized=await authorizeRadarCapture(pool,input.organizationId,input.operationId,dependencies.availability)}catch(cause){await blockRadarCapture(pool,input.organizationId,input.operationId,cause);throw cause}
  const {op,user}=authorized,configuration=resolveRadarSearchConfiguration(op.configuration_snapshot.search_configuration)
+ await refreshRadarFunnelWaitingLot(pool,op)
  if(op.discovery_stopped||op.status==='blocked')return getRadarCaptureOperation(pool,user,input.organizationId,op.id)
  if(op.pipeline_version===2){try{await advanceRadarAdaptiveCapture(pool,env,op,user,dependencies)}catch(cause){await blockRadarCapture(pool,input.organizationId,op.id,cause)}return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}
  if(op.discovery_pending){await blockRadarCapture(pool,input.organizationId,op.id,captureError('radar_capture_discovery_uncertain'));return getRadarCaptureOperation(pool,user,input.organizationId,op.id)}

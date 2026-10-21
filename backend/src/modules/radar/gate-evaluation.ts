@@ -12,7 +12,9 @@ import { radarFunnelDecisionCriteria, buildRadarFunnelEvidence, radarFunnelTarge
 import { partitionRadarGateDataset, evaluateRadarGateCalibration, type RadarGatePartitionedSample } from './gate-calibration.js';
 import { loadRadarFunnelFloors, assertRadarFunnelFloors } from './funnel-floors.js';
 import type { RadarAiGate, RadarCampaignGateCalibration } from './funnel-gates.js';
+import {radarFunnelOutsideEvidenceSupported} from './funnel-gates.js';
 import type { RadarSiteEvidence } from './site-evidence.js';
+import {multiplyRadarDecimal,addRadarDecimal,radarReportedCostAmount} from './cost-conversion.js';
 
 const scopeSchema = z.object({ organizationId: z.uuid(), campaignId: z.uuid() });
 export const radarGateCalibrationCreateSchema = scopeSchema.extend({
@@ -39,7 +41,7 @@ async function calibrationFor(db: Pick<pg.Pool, 'query'>, scope: { organizationI
 }
 function assertCurrent(row: pg.QueryResultRow) {
     const config = resolveRadarSearchConfiguration(row.search_configuration);
-    if (row.configuration_revision !== row.current_revision || row.binding.targetsHash !== radarFunnelTargetsHash(config, row.target_cnaes)) throw fail('radar_calibration_criteria_changed');
+    if (row.configuration_revision !== row.current_revision || row.binding.targetsHash !== radarFunnelTargetsHash(config, row.target_cnaes)||radarDecisionHash(config.funnel[row.gate as RadarAiGate].criteria)!==radarDecisionHash(row.criteria)) throw fail('radar_calibration_criteria_changed');
     if (row.status !== 'draft') throw fail('radar_calibration_not_draft');
     return config;
 }
@@ -53,13 +55,15 @@ export async function createRadarGateCalibration(pool: pg.Pool, user: AuthUser, 
     const db = await pool.connect();
     try {
         await db.query('BEGIN');
-        const campaign = (await db.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR SHARE', [input.campaignId, input.organizationId])).rows[0];
+        const campaign = (await db.query('SELECT * FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE', [input.campaignId, input.organizationId])).rows[0];
         if (!campaign || campaign.configuration_revision !== input.configurationRevision) throw fail('radar_campaign_configuration_changed');
         const config = resolveRadarSearchConfiguration(campaign.search_configuration);
         assertRadarFunnelFloors(config.funnel, (await loadRadarFunnelFloors(db)).configuration);
         const rows = (await db.query(`SELECT candidate.*,saved.output FROM public.radar_candidate_records candidate LEFT JOIN LATERAL(SELECT output FROM public.radar_candidate_research_runs WHERE candidate_id=candidate.id AND organization_id=candidate.organization_id ORDER BY created_at DESC,id DESC LIMIT 1) saved ON TRUE WHERE candidate.campaign_id=$1 AND candidate.organization_id=$2 AND candidate.id=ANY($3::uuid[]) ORDER BY candidate.id`, [input.campaignId, input.organizationId, input.labels.map(item => item.candidateId)])).rows;
         if (rows.length !== input.labels.length) throw fail('radar_calibration_company_scope_mismatch', 403);
-        const seed = randomUUID(), id = randomUUID();
+        const previous=(await db.query(`SELECT seed,dataset FROM public.radar_campaign_gate_calibrations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND gate=$4 ORDER BY created_at,id`,[input.organizationId,input.campaignId,input.configurationRevision,input.gate])).rows;
+        const seed = previous[0]?.seed??randomUUID(), id = randomUUID(),fixed=new Map<string,'tune'|'holdout'>();
+        for(const prior of previous)for(const sample of prior.dataset)if(!fixed.has(sample.groupKey))fixed.set(sample.groupKey,sample.partition);
         const samples = rows.map(row => {
             const cnpj = String(row.normalized_payload.cnpj ?? '').replace(/\D/g, '');
             let domain: string | undefined;
@@ -67,8 +71,8 @@ export async function createRadarGateCalibration(pool: pg.Pool, user: AuthUser, 
             return { candidateId: row.id, groupKey: cnpj.length === 14 ? `cnpj:${cnpj.slice(0, 8)}` : domain ? `domain:${domain}` : `company:${row.id}`,
                 label: input.labels.find(item => item.candidateId === row.id)!.label, reviewedBy: user.id };
         });
-        const dataset = partitionRadarGateDataset(samples, seed, config.funnel[input.gate].criteria.holdoutShare);
-        const binding = { campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: radarFunnelTargetsHash(config, campaign.target_cnaes), routeFingerprint: route.fingerprint, ...RADAR_FUNNEL_VERSIONS };
+        const dataset = partitionRadarGateDataset(samples, seed, config.funnel[input.gate].criteria.holdoutShare,fixed);
+        const binding = { campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: radarFunnelTargetsHash(config, campaign.target_cnaes),criteriaHash:radarDecisionHash(config.funnel[input.gate].criteria), routeFingerprint: route.fingerprint, ...RADAR_FUNNEL_VERSIONS };
         await db.query(`INSERT INTO public.radar_campaign_gate_calibrations(id,organization_id,campaign_id,configuration_revision,gate,binding,dataset,criteria,seed,dataset_hash,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id, input.organizationId, input.campaignId, input.configurationRevision, input.gate, JSON.stringify(binding), JSON.stringify(dataset), JSON.stringify(config.funnel[input.gate].criteria), seed, radarDecisionHash(dataset), user.id]);
         for (const row of rows) {
             const payload = row.normalized_payload, saved = row.output ?? {};
@@ -87,10 +91,17 @@ export async function createRadarGateCalibration(pool: pg.Pool, user: AuthUser, 
     } catch (cause) { await db.query('ROLLBACK'); throw cause; } finally { db.release(); }
 }
 
-async function evaluationSummary(db: Pick<pg.Pool, 'query'>, calibrationId: string) {
-    const rows = (await db.query('SELECT candidate_id AS "candidateId",status,error_code AS "errorCode",result FROM public.radar_gate_evaluation_cases WHERE calibration_id=$1 ORDER BY candidate_id', [calibrationId])).rows;
+async function evaluationSummary(db: Pick<pg.Pool, 'query'>, calibrationId: string,includeMaterial=false) {
+    const rows = (await db.query('SELECT candidate_id AS "candidateId",status,error_code AS "errorCode",result,context FROM public.radar_gate_evaluation_cases WHERE calibration_id=$1 ORDER BY candidate_id', [calibrationId])).rows;
     const completed = rows.filter(row => row.status === 'completed').length;
-    return { completed, total: rows.length, done: completed === rows.length, cases: rows };
+    return { completed, total: rows.length, done: completed === rows.length, cases: includeMaterial?rows:rows.map(({result:_result,context:_context,...row})=>row) };
+}
+function evaluatedDataset(dataset:RadarGatePartitionedSample[],cases:pg.QueryResultRow[],gate:RadarAiGate){
+    return dataset.map(sample=>{
+        const row=cases.find(item=>(item.candidateId??item.candidate_id)===sample.candidateId),parsed=decisionResultSchema.safeParse(row?.result),context=decisionContextSchema.safeParse(row?.context);
+        return{...sample,probabilityOutside:row?.status==='completed'&&parsed.success&&parsed.data.status==='decided'?parsed.data.probabilities?.outside_profile??null:null,
+            eligibleOutside:parsed.success&&context.success&&radarFunnelOutsideEvidenceSupported({gate,result:parsed.data,evidence:context.data.evidence,hasConfirmedSite:context.data.evidence.some(item=>item.role==='activity'&&item.primary&&item.scope==='establishment')})};
+    });
 }
 
 /** One explicit authorization advances one case. Durable namespace and leases
@@ -155,14 +166,10 @@ export async function approveRadarGateCalibration(pool: pg.Pool, user: AuthUser,
         if (!route?.config.enabled || route.fingerprint !== row.binding.routeFingerprint) throw fail('decision_route_changed');
         const cases = (await db.query('SELECT * FROM public.radar_gate_evaluation_cases WHERE calibration_id=$1', [row.id])).rows;
         const results = cases.map(item => item.status === 'completed' ? decisionResultSchema.safeParse(item.result) : null);
-        const snapshots = results.map(item => item?.success && item.data.status === 'decided' ? radarGateBindingFromResult({ campaignId: input.campaignId, configurationRevision: row.configuration_revision, targetsHash: row.binding.targetsHash, routeFingerprint: route.fingerprint, result: item.data }) : null);
+        const snapshots = results.map(item => item?.success && item.data.status === 'decided' ? radarGateBindingFromResult({ campaignId: input.campaignId, configurationRevision: row.configuration_revision, targetsHash: row.binding.targetsHash,criteriaHash:radarDecisionHash(row.criteria), routeFingerprint: route.fingerprint, result: item.data }) : null);
         const validSnapshots = snapshots.filter(item => item !== null);
         const homogeneous = validSnapshots.length === cases.length && new Set(validSnapshots.map(radarDecisionHash)).size === 1 && validSnapshots.every(item => item.upstreamProvider && item.resolvedModelSnapshot && item.contextVersion === RADAR_FUNNEL_VERSIONS.contextVersion);
-        const dataset: RadarGatePartitionedSample[] = row.dataset.map((sample: RadarGatePartitionedSample) => {
-            const result = cases.find(item => item.candidate_id === sample.candidateId);
-            const parsed = decisionResultSchema.safeParse(result?.result);
-            return { ...sample, probabilityOutside: result?.status === 'completed' && parsed.success && parsed.data.status === 'decided' ? parsed.data.probabilities?.outside_profile ?? null : null };
-        });
+        const dataset=evaluatedDataset(row.dataset,cases,row.gate);
         const metrics = evaluateRadarGateCalibration(dataset, row.criteria);
         if (!homogeneous || !metrics.approvable) throw Object.assign(fail('radar_calibration_not_approvable'), { details: { ...metrics, homogeneous } });
         await db.query(`UPDATE public.radar_campaign_gate_calibrations SET status='superseded',updated_at=NOW() WHERE organization_id=$1 AND campaign_id=$2 AND gate=$3 AND status='approved'`, [input.organizationId, input.campaignId, row.gate]);
@@ -179,6 +186,18 @@ export async function listRadarGateCalibrations(pool: pg.Pool, user: AuthUser, v
     requireAdmin(user);
     const input = scopeSchema.strict().parse(value);
     return (await pool.query(`SELECT id,gate,status,binding,dataset,criteria,metrics,threshold,created_at AS "createdAt",approved_at AS "approvedAt" FROM public.radar_campaign_gate_calibrations WHERE organization_id=$1 AND campaign_id=$2 ORDER BY created_at DESC LIMIT 100`, [input.organizationId, input.campaignId])).rows;
+}
+export async function getRadarGateCalibrationReport(pool:pg.Pool,user:AuthUser,value:unknown){
+    requireAdmin(user);
+    const input=scopeSchema.extend({calibrationId:z.uuid()}).strict().parse(value);
+    const calibration=await calibrationFor(pool,input),summary=await evaluationSummary(pool,input.calibrationId,true);
+    const first=(await pool.query('SELECT route FROM public.radar_gate_evaluation_cases WHERE calibration_id=$1 ORDER BY candidate_id LIMIT 1',[input.calibrationId])).rows[0];
+    const policy=await loadRadarOperationalLimits(pool),price=first?radarDecisionPrice(first.route,policy.limits.maxFallbackAttemptsPerEffect,policy.costPolicy):null;
+    const dataset=evaluatedDataset(calibration.dataset,summary.cases,calibration.gate);
+    let actualUsdKnownSubtotal='0',unknownCosts=0;
+    for(const row of summary.cases){const amount=radarReportedCostAmount(row.result?.usage?.costUsd);if(amount===null){if(row.status!=='pending')unknownCosts++;}else actualUsdKnownSubtotal=addRadarDecimal(actualUsdKnownSubtotal,amount);}
+    return{...summary,cases:summary.cases.map(({context:_context,result:_result,...row})=>row),calibration,metrics:evaluateRadarGateCalibration(dataset,calibration.criteria),price,policyVersion:policy.version,
+        totalEstimatedBrl:price?.amountBrl?multiplyRadarDecimal(price.amountBrl,String(summary.total-summary.completed)):null,actualUsdKnownSubtotal,unknownCosts};
 }
 export async function revokeRadarGateCalibration(pool: pg.Pool, user: AuthUser, value: unknown) {
     requireAdmin(user);

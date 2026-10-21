@@ -6,6 +6,7 @@ import type { RadarAnalysisRequest, RadarCandidateRecord, RadarCampaign, RadarDa
 import type { RadarSearchConfiguration } from '@/lib/radar/radarSearchConfiguration'
 import type {RadarCommercialCampaign,RadarCommercialCandidate,RadarCommercialCapture,RadarCommercialResearch,RadarCommercialMetrics,CommercialHistory,CommercialOpportunity,CommercialFeedback} from '@/types/radarCommercial'
 import type {RadarOperationalPolicy,RadarOperationalLimits,RadarContinuationAuthorization} from '@/types/radarResearch'
+import type {RadarEmailPolicy,RadarFunnelFloorPolicy,RadarCampaignFunnelConfiguration,RadarFunnelPolicy,RadarGateCalibrationRow,RadarGateEvaluationReport} from '@/types/radarFunnel'
 
 export type RadarCampaignInput = Pick<RadarCampaign, 'organizationId' | 'name' | 'campaignType' | 'targetSegment' | 'targetKeywords' | 'targetCnaes' | 'offerType' | 'dailyLimit'> & {
   targetCity?: string; targetState?: string; targetStates?: string[]; productFocus?: string[]; budgetLimit?: number
@@ -32,6 +33,24 @@ const buildQuery = (params: Record<string, string | undefined>) => {
 }
 
 export const radarService = {
+  searchCnaeCatalog(organizationId:string,q:string){return apiRequest<Array<{code:string;description:string}>>(`/radar/cnae-catalog${buildQuery({organizationId,q})}`)},
+  saveCommercialCriteria(campaignId:string,input:{organizationId:string;configurationRevision:number;targetCnaes:string[];targets:Array<{key:string;label:string;definition:string;priority:'primary'|'secondary';cnaes:string[]}>;outOfScopeExamples:string[];excludedNameTerms:string[];registry:{mainActivityRule:'any'|'target_main_required'|'target_secondary_needs_review';blockedMainCnaes:string[];blockedNameTerms:string[]};contactPurpose:'general'|'suppliers'|'sales'|'finance'|'recruitment';minPassRatio:number;closePendingLots:boolean}){return apiRequest<{campaign:RadarCommercialCampaign;criteriaChanged:boolean}>(`/radar/campaigns/${campaignId}/criteria`,{method:'PATCH',body:input})},
+  getEmailDomainPolicy(){return apiRequest<RadarEmailPolicy>('/radar/admin/email-domain-policy')},
+  saveEmailDomainPolicy(input:{expectedVersion:number;configuration:RadarEmailPolicy['configuration']}){return apiRequest<RadarEmailPolicy>('/radar/admin/email-domain-policy',{method:'PUT',body:input})},
+  getFunnelFloors(){return apiRequest<RadarFunnelFloorPolicy>('/radar/admin/funnel-floors')},
+  saveFunnelFloors(input:{expectedVersion:number;configuration:RadarFunnelFloorPolicy['configuration']}){return apiRequest<RadarFunnelFloorPolicy>('/radar/admin/funnel-floors',{method:'PUT',body:input})},
+  getCampaignFunnel(organizationId:string,campaignId:string){return apiRequest<RadarCampaignFunnelConfiguration>(`/radar/admin/campaign-funnel${buildQuery({organizationId,campaignId})}`)},
+  getFunnelReport(organizationId:string,campaignId:string,operationId?:string){return apiRequest<import('@/types/radarFunnel').RadarFunnelReport&{lots:Array<{id:string;requested:number;status:string;createdAt:string}>;operationId:string|null}>(`/radar/admin/campaign-funnel/report${buildQuery({organizationId,campaignId,operationId})}`)},
+  auditFunnelBlock(input:{organizationId:string;campaignId:string;eventId:string;outcome:'confirmed_outside'|'false_block'|'uncertain';reason:string}){return apiRequest('/radar/admin/campaign-funnel/audit',{method:'POST',body:input})},
+  reopenFunnelCandidate(candidateId:string,input:{organizationId:string;campaignId:string;configurationRevision:number;requestId:string;gate:'g0'|'g1'|'g5';reason:string;confirmFalseBlock:boolean}){return apiRequest(`/radar/candidates/${candidateId}/funnel/reopen`,{method:'POST',body:input})},
+  saveCampaignFunnel(input:{organizationId:string;campaignId:string;configurationRevision:number;expectedPolicyVersion:number;policy:RadarFunnelPolicy;batch?:RadarCampaignFunnelConfiguration['batch'];evidence?:RadarCampaignFunnelConfiguration['evidence']}){return apiRequest<RadarCampaignFunnelConfiguration>('/radar/admin/campaign-funnel',{method:'PUT',body:input})},
+  listGateCalibrations(organizationId:string,campaignId:string){return apiRequest<RadarGateCalibrationRow[]>(`/radar/admin/campaign-gates/calibrations${buildQuery({organizationId,campaignId})}`)},
+  createGateCalibration(input:{organizationId:string;campaignId:string;configurationRevision:number;gate:'g1'|'g5';expectedFingerprint:string;labels:Array<{candidateId:string;label:'primary'|'secondary'|'outside'|'doubt'}>}){return apiRequest<{id:string}>('/radar/admin/campaign-gates/calibrations',{method:'POST',body:input})},
+  getGateCalibrationReport(organizationId:string,campaignId:string,calibrationId:string){return apiRequest<RadarGateEvaluationReport>(`/radar/admin/campaign-gates/report${buildQuery({organizationId,campaignId,calibrationId})}`)},
+  runGateEvaluation(input:{organizationId:string;campaignId:string;calibrationId:string;confirmPaid:true;expectedFingerprint:string;expectedPolicyVersion:number;approvedUnitPriceBrl:string}){return apiRequest<{done:boolean;running?:boolean;completed:number;total:number}>('/radar/admin/campaign-gates/evaluate',{method:'POST',body:input})},
+  approveGateCalibration(input:{organizationId:string;campaignId:string;calibrationId:string;confirmApproval:true}){return apiRequest('/radar/admin/campaign-gates/approve',{method:'POST',body:input})},
+  revokeGateCalibration(input:{organizationId:string;campaignId:string;calibrationId:string;reason:string}){return apiRequest('/radar/admin/campaign-gates/revoke',{method:'POST',body:input})},
+  closeLegacyResearch(input:{organizationId:string;campaignId:string;configurationRevision:number;confirmClose:true}){return apiRequest<{closedLots:number;closedRuns:number}>('/radar/admin/campaign-funnel/close-legacy',{method:'POST',body:input})},
   getDiscoveryPolicy(){return apiRequest<{version:number;configuration:{windowSize:number;osm:{maxSnapshotAgeDays:number;pageSize:number;mappings:Array<{key:string;terms:string[];anyTags:Array<{key:string;values:string[]}>}>}}}>('/radar/admin/discovery-policy')},
   saveDiscoveryPolicy(input:{expectedVersion:number;configuration:unknown}){return apiRequest<Awaited<ReturnType<typeof radarService.getDiscoveryPolicy>>>('/radar/admin/discovery-policy',{method:'PUT',body:input})},
   getOperationalPolicy(){return apiRequest<RadarOperationalPolicy>('/radar/admin/operational-limits')},

@@ -25,7 +25,7 @@ export function buildRadarRegistryEvidence(payload: Record<string, unknown>, tar
     const material = {
         cnpj, name: text(payload.tradeName ?? payload.title, 100), legalName: text(payload.legalName, 140),
         city: text(payload.city, 60), state: text(payload.state, 8),
-        legalNature: text(payload.legalNature ?? payload.nature, 60), size: text(payload.size ?? payload.companySize, 40),
+        legalNature: text(payload.legalNature ?? payload.nature, 60), size: text(payload.registeredSize ?? payload.size ?? payload.companySize, 40),
         capital: text(payload.shareCapital ?? payload.capital, 40), opening: text(payload.openingDate ?? payload.openedAt, 20),
         emailClass: text(signal?.kind, 40), flags: flags.slice(0, 10).map(flag => radarUtf8Excerpt(flag, 40)),
         activities: ordered.map(item => ({ code: item.code.slice(0, 7), main: item.main, text: '' })),
@@ -41,5 +41,6 @@ export function buildRadarRegistryEvidence(payload: Record<string, unknown>, tar
     }
     // Very long configured flags must not crowd out the principal fact.
     while (Buffer.byteLength(JSON.stringify(material)) > 1400 && material.flags.length) material.flags.pop();
+    while (Buffer.byteLength(JSON.stringify(material)) > 1400 && material.activities.length>1) material.activities.pop();
     return { id: `registry_${cnpj}`, sourceUrl: `https://cnpja.com/office/${cnpj}`, text: JSON.stringify(material), role: 'registry', primary: true, contradictory: false, scope: 'establishment' };
 }

@@ -168,7 +168,7 @@ export function RadarCampaignConfigurationForm({ organizationId, initialCampaign
           <p className="mt-2 text-xs text-muted-foreground">A fonte precisa estar liberada em Admin → Integrações. Fallback compartilha o limite total e pode complementar resultados que não ajudam a identificar a empresa. Salvar não pesquisa.</p>
         </details>}
         <p className="mb-3 text-xs text-slate-500">Descobre presença pública e contatos sem exigir URL manual. Salvar não consulta provedores. Fontes, custos e modelo são liberados separadamente no Admin.</p>
-        <Field label="Quando complementar com busca local"><select aria-label="Quando complementar com busca local" className={selectClass} value={research.localSearchOrder??'before_web'}
+        <Field label="Quando complementar com busca local"><select aria-label="Quando complementar com busca local" className={selectClass} value={research.localSearchOrder??'after_web_if_needed'}
           onChange={event=>changeResearch({localSearchOrder:event.target.value as 'before_web'|'after_web_if_needed'|'disabled'})}>
           <option value="before_web">Antes da busca na internet (padrão atual)</option><option value="after_web_if_needed">Depois, somente se necessário</option><option value="disabled">Não usar busca local no aprofundamento</option>
         </select></Field>

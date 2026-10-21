@@ -64,6 +64,12 @@ import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
 import {loadRadarDiscoveryPolicy,saveRadarDiscoveryPolicy} from './discovery-policy.js'
 import {loadRadarEmailDomainPolicy,saveRadarEmailDomainPolicy} from './email-domain-policy.js'
+import {getRadarCampaignFunnelPolicy,saveRadarCampaignFunnelPolicy,closeRadarLegacyLots,reopenRadarFunnelCandidate} from './funnel-controls.js'
+import {getRadarFunnelReport,auditRadarFunnelBlock} from './funnel-report.js'
+import {listRadarGateCalibrations,createRadarGateCalibration,runRadarGateEvaluationCase,approveRadarGateCalibration,revokeRadarGateCalibration,getRadarGateCalibrationReport} from './gate-evaluation.js'
+import {loadRadarFunnelFloors,saveRadarFunnelFloors} from './funnel-floors.js'
+import {saveRadarCommercialCriteria,radarCommercialCriteriaSchema} from './commercial-criteria.js'
+import {searchRadarCnaeCatalog} from './cnae-catalog.js'
 import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,resumeRadarAdministrativeResearch,radarAdministrativeResumeSchema,radarAdministrativeScopeSchema,radarAdministrativeRevalidationSchema} from './administrative-research.js'
 import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
@@ -237,6 +243,45 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const surface=radarCommercialSurface(request.method,request.routeOptions.url??'')
     if(!surface||typeof payload!=='string')return JSON.stringify({})
     return JSON.stringify(projectRadarCommercialResponse(surface,JSON.parse(payload)))
+  })
+  const adminRoute=(method:'GET'|'POST'|'PUT',url:string,operation:(request:FastifyRequest,user:AuthUser)=>Promise<unknown>)=>app.route({method,url,handler:async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    try{return await operation(request,user)}catch(cause){if(cause instanceof z.ZodError)return reply.code(400).send({error:'invalid_radar_funnel_payload'});throw cause}
+  }})
+  adminRoute('GET','/admin/funnel-floors',()=>loadRadarFunnelFloors(app.pg))
+  adminRoute('PUT','/admin/funnel-floors',(request,user)=>saveRadarFunnelFloors(app.pg,user,request.body))
+  adminRoute('GET','/admin/campaign-funnel',(request,user)=>getRadarCampaignFunnelPolicy(app.pg,user,request.query))
+  adminRoute('PUT','/admin/campaign-funnel',(request,user)=>saveRadarCampaignFunnelPolicy(app.pg,user,request.body))
+  adminRoute('GET','/admin/campaign-funnel/report',(request,user)=>getRadarFunnelReport(app.pg,user,request.query))
+  adminRoute('POST','/admin/campaign-funnel/audit',(request,user)=>auditRadarFunnelBlock(app.pg,user,request.body))
+  adminRoute('POST','/admin/campaign-funnel/close-legacy',(request,user)=>closeRadarLegacyLots(app.pg,user,request.body))
+  adminRoute('GET','/admin/campaign-gates/calibrations',(request,user)=>listRadarGateCalibrations(app.pg,user,request.query))
+  adminRoute('POST','/admin/campaign-gates/calibrations',(request,user)=>createRadarGateCalibration(app.pg,user,request.body))
+  adminRoute('GET','/admin/campaign-gates/report',(request,user)=>getRadarGateCalibrationReport(app.pg,user,request.query))
+  adminRoute('POST','/admin/campaign-gates/evaluate',(request,user)=>runRadarGateEvaluationCase(app.pg,user,request.body,{env:app.config}))
+  adminRoute('POST','/admin/campaign-gates/approve',(request,user)=>approveRadarGateCalibration(app.pg,user,request.body))
+  adminRoute('POST','/admin/campaign-gates/revoke',(request,user)=>revokeRadarGateCalibration(app.pg,user,request.body))
+  adminRoute('POST','/candidates/:id/funnel/reopen',async(request,user)=>{
+    const params=z.object({id:uuid}).strict().parse(request.params)
+    const body=z.object({organizationId:uuid,campaignId:uuid,requestId:uuid,configurationRevision:z.number().int().positive(),gate:z.enum(['g0','g1','g5']),reason:z.string().trim().min(3).max(1000),confirmFalseBlock:z.boolean().default(false)}).strict().parse(request.body)
+    const result=await reopenRadarFunnelCandidate(app.pg,user,params.id,body)
+    const campaign=(await app.pg.query('SELECT commercial_criteria_revision FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2',[body.campaignId,body.organizationId])).rows[0]
+    const queued=await queueRadarResearchRequest(app.pg,user,{organizationId:body.organizationId,campaignId:body.campaignId,criteriaRevision:campaign.commercial_criteria_revision,requestId:body.requestId,intent:'resume',candidateIds:[params.id]})
+    await enqueueRadarResearchRequest(app.pg,app.jobQueue,body.organizationId,body.requestId)
+    return{...result,request:queued}
+  })
+  app.get('/cnae-catalog',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const query=z.object({organizationId:uuid,q:z.string().trim().max(120).default('')}).strict().safeParse(request.query)
+    if(!query.success)return reply.code(400).send({error:'invalid_radar_catalog_query'})
+    return searchRadarCnaeCatalog(app.pg,user,query.data)
+  })
+  app.patch('/campaigns/:id/criteria',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    const params=z.object({id:uuid}).strict().safeParse(request.params),body=radarCommercialCriteriaSchema.safeParse(request.body)
+    if(!params.success||!body.success)return reply.code(400).send({error:'invalid_radar_criteria'})
+    return saveRadarCommercialCriteria(app.pg,user,params.data.id,body.data)
   })
   app.get('/admin/stalled-research',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

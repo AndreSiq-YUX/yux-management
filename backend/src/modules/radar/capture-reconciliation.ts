@@ -2,7 +2,7 @@ import type pg from 'pg'
 import {assessRadarCaptureResearch,assessRadarFunnelResearch,type RadarFunnelOutcome} from './capture-research-state.js'
 import {syncRadarFunnelDiscovery} from './funnel-replenishment.js'
 
-type Operation={id?:string;campaign_id?:string;configuration_revision?:number;requested_count:number;discovery_stopped:boolean;discovery_reason?:string|null;blockers:string[];pipeline_version?:number;qualified_count?:number;funnel_enabled?:boolean}
+type Operation={id?:string;campaign_id?:string;configuration_revision?:number;requested_count:number;discovery_stopped:boolean;discovery_reason?:string|null;blockers:string[];pipeline_version?:number;qualified_count?:number;funnel_enabled?:boolean;historical_closed_at?:unknown}
 type Item={status:string;blocker?:string|null;target_status?:string;funnel_outcome?:RadarFunnelOutcome|null}
 export function summarizeRadarCaptureItems(op:Operation,items:Item[],discoveryBlockers?:string[]){
  items=items.map(item=>item.funnel_outcome&&item.funnel_outcome!=='technical_failure'?{...item,status:'completed',blocker:null}:item)
@@ -19,7 +19,7 @@ export function summarizeRadarCaptureItems(op:Operation,items:Item[],discoveryBl
 // No provider I/O, paid replay, discovery or permission bypass happens here.
 export async function reconcileRadarCaptureSummary(db:Pick<pg.PoolClient,'query'>,input:{organizationId:string;operationId:string;discoveryBlockers?:string[]}){
  const op=(await db.query<Operation & {id:string;campaign_id:string;configuration_revision:number}>(`SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[input.operationId,input.organizationId])).rows[0]
- if(!op)return
+ if(!op||op.historical_closed_at)return
  if(op.funnel_enabled&&!(input.discoveryBlockers??[]).length)await syncRadarFunnelDiscovery(db,op as any)
  if(op.pipeline_version===2)op.qualified_count=Number((await db.query(`SELECT COUNT(*) AS n FROM public.radar_capture_items item JOIN public.radar_b2b_reviews review ON review.candidate_id=item.candidate_id AND review.organization_id=item.organization_id AND review.configuration_revision=$3 WHERE item.operation_id=$1 AND item.organization_id=$2 AND item.is_new=TRUE AND review.target_status='confirmed'`,[op.id,input.organizationId,op.configuration_revision])).rows[0].n)
  const items=op.pipeline_version===2&&!op.funnel_enabled?(await db.query<Item>(`SELECT item.status,item.blocker,item.funnel_outcome FROM public.radar_capture_items item LEFT JOIN public.radar_b2b_reviews review ON review.candidate_id=item.candidate_id AND review.organization_id=item.organization_id AND review.configuration_revision=$3 WHERE item.operation_id=$1 AND item.organization_id=$2 AND review.target_status IS DISTINCT FROM 'not_target'`,[op.id,input.organizationId,op.configuration_revision])).rows:(await db.query<Item>('SELECT status,blocker,funnel_outcome FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows
@@ -42,13 +42,14 @@ export async function reconcileRadarCaptureItems(db:Pick<pg.PoolClient,'query'>,
   await db.query('SELECT id FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR UPDATE',[parent.campaign_id,input.organizationId])
   const operations=(await db.query<Operation & {id:string;configuration_revision:number}>(`SELECT operation.* FROM public.radar_capture_operations operation JOIN public.radar_capture_items item ON item.operation_id=operation.id AND item.organization_id=operation.organization_id WHERE item.organization_id=$1 AND item.candidate_id=$2 AND item.campaign_id=$3 ORDER BY operation.id FOR UPDATE OF operation`,[input.organizationId,input.candidateId,parent.campaign_id])).rows
   for(const op of operations){
+   if(op.historical_closed_at)continue
    const latest=(await db.query(`SELECT * FROM public.radar_candidate_research_runs WHERE organization_id=$1 AND candidate_id=$2 AND campaign_id=$3 AND configuration_revision=$4 ORDER BY created_at DESC,id DESC LIMIT 1`,[input.organizationId,input.candidateId,parent.campaign_id,op.configuration_revision])).rows[0]
    if(!latest||input.runId&&latest.id!==input.runId)continue
    const previous=(await db.query<Item>('SELECT status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2',[op.id,input.organizationId])).rows
    const childReasons=new Set(previous.flatMap(item=>item.blocker?[item.blocker]:[]))
    const discoveryBlockers=!op.discovery_stopped?op.blockers.filter(code=>!childReasons.has(code)):undefined
-   const assessment=assessRadarCaptureResearch(latest)
-   const outcome=assessRadarFunnelResearch(latest).outcome
+    const funnel=assessRadarFunnelResearch(latest),outcome=funnel.outcome
+    const assessment=op.funnel_enabled?{status:outcome==='technical_failure'?'blocked':outcome==='completed_with_gaps'?'insufficient':outcome===null?'researching':'completed',reason:funnel.reason}:assessRadarCaptureResearch(latest)
    const deliveryFailure=latest.status==='queued'&&latest.id===input.deliveryFailedRunId
    await db.query('UPDATE public.radar_capture_items SET run_id=$4,status=$5,blocker=$6,funnel_outcome=$7 WHERE operation_id=$1 AND organization_id=$2 AND candidate_id=$3',[op.id,input.organizationId,input.candidateId,latest.id,assessment.status,deliveryFailure?'radar_capture_queue_unavailable':assessment.status==='blocked'?assessment.reason??'radar_capture_item_requires_review':null,deliveryFailure?'technical_failure':outcome])
    await reconcileRadarCaptureSummary(db,{organizationId:input.organizationId,operationId:op.id,discoveryBlockers})

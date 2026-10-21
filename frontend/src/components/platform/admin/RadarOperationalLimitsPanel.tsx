@@ -15,13 +15,13 @@ const fields:Array<[keyof RadarOperationalLimits,string]>=[
  ['maxSourceDailyQueries','Consultas diárias por fonte'],['maxResearchFreshnessDays','Validade da pesquisa (dias)'],
  ['maxContinuationIdleMinutes','Pausa da continuação antes de confirmar reinício (minutos)'],
  ['stalledAfterMinutes','Atenção por pesquisa sem avanço (minutos)'],
- ['maxDecisionCallsPerCompany','Decisões por empresa (preparação, ainda não ativada)'],['maxDeepSearchesPerCompany','Pesquisas profundas por empresa (preparação, ainda não ativada)'],['maxFallbackAttemptsPerEffect','Tentativas de modelo alternativo por análise'],
+ ['maxDecisionCallsPerCompany','Decisões por rodada de pesquisa'],['maxPresenceResolutionsPerCompany','Resoluções de identidade por rodada'],['maxDeepSearchesPerCompany','Limite de pesquisas profundas (funil novo: uma por rodada)'],['maxFallbackAttemptsPerEffect','Tentativas de modelo alternativo por análise'],
 ]
 export function RadarOperationalLimitsPanel({isAdmin}:{isAdmin:boolean}){
  const id=useId(),{policy,error,reload}=useRadarOperationalPolicy(isAdmin)
  const [values,setValues]=useState<Record<string,string>>({}),[saving,setSaving]=useState(false),[message,setMessage]=useState(''),[failure,setFailure]=useState('')
  const [costValues,setCostValues]=useState({usdToBrl:'',rateAsOf:'',marginPercent:'0'})
- useEffect(()=>{if(policy){setValues(Object.fromEntries(Object.entries({maxDecisionCallsPerCompany:3,maxDeepSearchesPerCompany:1,maxFallbackAttemptsPerEffect:1,stalledAfterMinutes:10,...policy.limits}).map(([k,v])=>[k,String(v)])));setCostValues({usdToBrl:policy.costPolicy?.usdToBrl??'',rateAsOf:policy.costPolicy?.rateAsOf??'',marginPercent:policy.costPolicy?.marginPercent??'0'})}},[policy])
+ useEffect(()=>{if(policy){setValues(Object.fromEntries(Object.entries({maxDecisionCallsPerCompany:6,maxPresenceResolutionsPerCompany:2,maxDeepSearchesPerCompany:1,maxFallbackAttemptsPerEffect:1,stalledAfterMinutes:10,...policy.limits}).map(([k,v])=>[k,String(v)])));setCostValues({usdToBrl:policy.costPolicy?.usdToBrl??'',rateAsOf:policy.costPolicy?.rateAsOf??'',marginPercent:policy.costPolicy?.marginPercent??'0'})}},[policy])
  if(!isAdmin)return null
  const decimal=/^\d{1,36}(?:\.\d{1,36})?$/
  const costValid=decimal.test(costValues.marginPercent)&&(!costValues.usdToBrl&&!costValues.rateAsOf||decimal.test(costValues.usdToBrl)&&Number(costValues.usdToBrl)>0&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(costValues.rateAsOf)&&Number.isFinite(Date.parse(costValues.rateAsOf)))

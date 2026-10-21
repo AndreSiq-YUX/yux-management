@@ -17,7 +17,7 @@ it('saves the exact versioned ceiling without starting a search',async()=>{
  const input=host.querySelector<HTMLInputElement>('[name="maxPagesPerScope"]')!
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'40');input.dispatchEvent(new Event('input',{bubbles:true}))})
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
- expect(save).toHaveBeenCalledExactlyOnceWith({expectedVersion:3,limits:{...policyFixture.limits,maxPagesPerScope:40},costPolicy:{usdToBrl:null,rateAsOf:null,rateSource:'manual',marginPercent:'0'}})
+ expect(save).toHaveBeenCalledExactlyOnceWith({expectedVersion:3,limits:{...policyFixture.limits,maxPresenceResolutionsPerCompany:2,maxPagesPerScope:40},costPolicy:{usdToBrl:null,rateAsOf:null,rateSource:'manual',marginPercent:'0'}})
  expect(start).not.toHaveBeenCalled();expect(host.textContent).toContain('salvos')
 })
 it('lets only system Admin set an explicit dated USD/BRL rate alongside the same policy version',async()=>{
