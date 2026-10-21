@@ -11,7 +11,7 @@ Branch: `codex/radar-prepilot-quality-guards`, base `b1f9e4e`.
 
 ## Evidências locais
 
-- Backend: **1.383 testes passaram**, 126 opt-in ignorados; 265 arquivos passaram, 5 ignorados.
+- Backend: **1.388 testes passaram**, 126 opt-in ignorados; 265 arquivos passaram, 5 ignorados.
 - PostgreSQL isolado: **150 integrações Radar passaram**, 29 arquivos. Transporte de provedores simulado, incluindo concorrência, reserva antes do efeito, gastos históricos, limite exato e recuperação.
 - Frontend: **1.176 testes passaram**, 217 arquivos.
 - Runtime Python: **375 passaram**, 7 opt-in ignorados; aviso de depreciação preexistente do Starlette/AnyIO.
@@ -37,3 +37,18 @@ Recursos externos foram deliberadamente bloqueados. O 401 inicial de `/auth/me` 
 ## Escopo e limites da validação
 
 Nenhuma configuração ou dado de produção foi alterado nesta execução. Nenhuma chamada paga, piloto, deploy ou push foi realizado. A confirmação anterior do deploy `b1f9e4e` e das migrações 0228–0234 não equivale à publicação desta branch. Estas correções não exigem migração adicional. Benchmark/calibração e teste pago real permanecem etapas posteriores autorizáveis; não declarar precisão da IA nem orçamento numérico de produção como verificados.
+
+## Revisão independente e decisões
+
+Revisão read-only da branch completa por contexto independente (`gpt-6-astra`, high) em `805d5db`: nenhum crítico ou menor; dois achados importantes, corrigidos numa única rodada de testes RED→GREEN:
+
+- **Histórico de calibração:** um pedido pode ser recuperado e reaplicado depois de mudar a calibração. O snapshot agora inclui a identidade do evento, não somente o request; somente a aplicação exata pode emprestar seu limiar ao relatório. Caso antigo sem vínculo permanece desconhecido. Cobertura unitária e integração PostgreSQL exercitam o mesmo request antes/depois da calibração.
+- **Guarda CNAE:** passou a detectar comparações diretas, `includes`, `Set.has` e `switch` envolvendo CNAE, além dos literais em políticas nomeadas. Os quatro casos falharam antes e passaram depois.
+
+Decisões de escopo registradas:
+
+1. Estender o tipo já existente em `funnel-discovery.ts`, em vez de criar o arquivo de tipos inexistente citado no plano. Risco: apenas localização/organização do contrato, sem alteração de dados.
+2. Teto BRL compartilhado cobre buscas e Agent; presença, qualificação e decisões preservam suas carteiras e recibos próprios. Risco: essas outras IAs exigem limite de carteira para conter gasto e não estão cobertas pelo teto BRL das buscas.
+3. Não testar cobrança real ou precisão de identificação sem autorização de compra/piloto e benchmark. Risco remanescente: ajustes de custo/modelo podem ser necessários depois do teste real autorizado.
+
+Nenhum achado menor adiado. Nenhuma segunda revisão foi disparada; a rodada de correções foi verificada por testes direcionados e pelas suites gerais.

@@ -38,7 +38,7 @@ describe.skipIf(!connectionString)('funnel report and scoped reopen',()=>{
    expect(report.summary.blocksByReason).toEqual([{stage:'qualification',reason:'radar_previous_request_uncertain',count:1}]);
    // New snapshots record the threshold with the request; older events cannot
    // borrow this later threshold, even in the same run.
-   await f.pool.query('UPDATE radar_candidate_research_runs SET output=$2 WHERE id=$1',[run.id,JSON.stringify({funnel:{initial:{requestId:'current',threshold:.95}}})]);
+   await f.pool.query('UPDATE radar_candidate_research_runs SET output=$2 WHERE id=$1',[run.id,JSON.stringify({funnel:{initial:{requestId:'current',eventKey:'current',threshold:.95}}})]);
    const calibrated=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id});
    expect(calibrated.companies[0].path.find(step=>step.requestId==='old')?.wouldBlock).toBeNull();
    expect(calibrated.summary.counterfactual).toEqual({evaluable:1,notEvaluable:1,wouldBlock:0});

@@ -5,7 +5,7 @@ const choices=['compatible','weak_fit','outside_profile','plausible_needs_eviden
 
 /** Never borrow a different request's result or today's calibration for an old
  * event. Historical receipts may lack a result: unknown is not probability zero. */
-export function radarFunnelReportDecision(event:{gate:string;mode:string;decision_request_id?:string;would_block:boolean},calls:unknown,output:unknown){
+export function radarFunnelReportDecision(event:{gate:string;mode:string;event_key?:string;decision_request_id?:string;would_block:boolean},calls:unknown,output:unknown){
  const versions=Object.values(record(calls)).flatMap(value=>{const call=record(value);return[call,...(Array.isArray(call.previous)?call.previous.map(record):[])]});
  const call=versions.find(value=>event.decision_request_id&&value.requestId===event.decision_request_id&&value.source==='openrouter_decision');
  const parsed=decisionResultSchema.safeParse(call?.result);
@@ -13,7 +13,7 @@ export function radarFunnelReportDecision(event:{gate:string;mode:string;decisio
  const result=parsed.success&&parsed.data.task===task&&parsed.data.status==='decided'?parsed.data:null;
  const probabilities=result?.probabilities?Object.fromEntries(Object.entries(result.probabilities).filter(([key])=>choices.includes(key))):null;
  const funnel=record(record(output).funnel),snapshot=record(event.gate==='g1'?funnel.initial:event.gate==='g5'?funnel.fit:undefined);
- const threshold=event.decision_request_id&&snapshot.requestId===event.decision_request_id&&typeof snapshot.threshold==='number'&&Number.isFinite(snapshot.threshold)&&snapshot.threshold>=0&&snapshot.threshold<=1?snapshot.threshold:null;
+ const threshold=event.event_key&&snapshot.eventKey===event.event_key&&event.decision_request_id&&snapshot.requestId===event.decision_request_id&&typeof snapshot.threshold==='number'&&Number.isFinite(snapshot.threshold)&&snapshot.threshold>=0&&snapshot.threshold<=1?snapshot.threshold:null;
  const wouldBlock=task&&(event.mode==='enforce'||result&&threshold!==null)?event.would_block:null;
  return{probabilities,selectedProbability:result?.choice?probabilities?.[result.choice]??null:null,outsideProbability:probabilities?.outside_profile??null,threshold,wouldBlock};
 }

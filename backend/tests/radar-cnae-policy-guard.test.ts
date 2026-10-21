@@ -14,3 +14,11 @@ it('keeps all production Radar domain policy configurable instead of embedding s
  const findings=files(directory).flatMap(file=>findFixedRadarCnaes(readFileSync(file,'utf8')).map(finding=>({file,...finding})));
  expect(findings).toEqual([]);
 });
+it.each([
+ "if (candidate.mainCnae === '1234567') return 'block';",
+ "const blocked = ['1234567'].includes(candidate.mainCnae);",
+ "const blocked = new Set(['1234567']).has(candidate.cnae);",
+ "switch(candidate.mainCnae){case '1234567':return 'block'}",
+])('detects fixed CNAE comparison/membership policy: %s',source=>{
+ expect(findFixedRadarCnaes(source)).toEqual([{line:1,value:'1234567'}]);
+});
