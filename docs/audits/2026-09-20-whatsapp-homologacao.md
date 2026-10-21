@@ -108,3 +108,10 @@ Um teste só será marcado como homologado quando houver caso, horário, versão
 - Acesso seguro: HTTPS documentado `deploy.yux.com.br` falhou na validação SSL; painel acessível consultado usa HTTP. Não transferir App Secret por esse acesso. Tentativa de manutenção SSH sem autenticação disponível. Solicitar ao titular o caminho seguro já existente antes de alterar acesso/rede.
 - Backup: Dokploy mostra `No backups configured`; isso não comprova ausência de backup externo/snapshot. Confirmação solicitada ao titular antes de migrations produtivas.
 - Confirmação de senha Meta concluída pelo titular. Nenhuma chave foi copiada para documentação ou configurada no servidor. Nenhuma mensagem real enviada e nenhuma publicação efetuada.
+
+### Autorizações e acesso seguro — 21/10/2026
+
+- Titular confirmou ausência de backup/snapshot e autorizou expressamente continuar mesmo sem backup. Esta é uma exceção ao gate de backup do plano, com risco aceito de indisponibilidade/perda de dados sem restauração garantida; não equivale a backup testado nem autoriza exclusões de dados.
+- Titular autorizou habilitar HTTPS para `deploy.yux.com.br`, com e-mail de avisos de certificado fornecido na sessão. DNS A aponta para a VPS existente; Dokploy configurado com HTTPS e Let's Encrypt. Acesso original por IP preservado; nenhuma regra de firewall alterada.
+- Verificação externa às 20:24 -03: `https://deploy.yux.com.br` respondeu HTTP 200 com validação normal de certificado (sem ignorar erros TLS). Página de login abriu normalmente no navegador. Solicitado login do titular no novo domínio antes de transferir configurações sensíveis.
+- Mudança de URL do Dokploy exibe aviso sobre integração GitHub/autodeploy. Conferir recebimento de webhook e publicação manual se necessário; não assumir que o webhook mudou automaticamente.
