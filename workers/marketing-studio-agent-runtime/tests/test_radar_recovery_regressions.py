@@ -68,7 +68,7 @@ def test_short_radar_analysis_controls_thinking_and_requests_json_without_increa
         resolve_radar_presence(store,enabled=True,context={},identity={},evidence=EVIDENCE,llm_client=Client())
     else:
         qualify_radar_business(store,enabled=True,context={},criteria={},evidence=EVIDENCE,llm_client=Client())
-    assert captured[0]['reasoning']=={'effort':'low'}
+    assert captured[0]['reasoning']=={'effort':'none'}
     assert captured[0]['response_format']=={'type':'json_object'}
     assert captured[0]['max_tokens']==2200
 
@@ -78,11 +78,12 @@ def test_native_openrouter_forwards_explicit_reasoning_only_for_its_own_protocol
         calls.append(payload)
         return {'choices':[{'message':{'content':'{}'},'finish_reason':'stop'}],'usage':{'completion_tokens':500,'completion_tokens_details':{'reasoning_tokens':100}}}
     router=OpenRouterClient(api_key='fixture',transport=transport)
-    response=router.chat_completion(model='fixture',messages=[],max_tokens=2200,reasoning={'effort':'low'})
-    assert calls[-1]['reasoning']=={'effort':'low'}
+    response=router.chat_completion(model='fixture',messages=[],max_tokens=2200,reasoning={'effort':'none'})
+    assert calls[-1]['reasoning']=={'effort':'none'}
+    assert calls[-1]['max_completion_tokens']==2200
     assert response['reasoning_tokens']==100
     assert response['visible_output_tokens']==400
-    assert response['request_parameters']['reasoning']=={'effort':'low'}
+    assert response['request_parameters']['reasoning']=={'effort':'none'}
     router.chat_completion(model='fixture',messages=[])
     assert 'reasoning' not in calls[-1]
     direct=OpenRouterClient(api_key='fixture',provider_name='openai',transport=transport)

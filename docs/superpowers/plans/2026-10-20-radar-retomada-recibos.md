@@ -76,3 +76,14 @@ Pre-flight: Task1 produz resposta por recibo/pedido consumida por Task3; Task2 n
 Implementação adicional limitada a `radar_presence.py`, `radar_qualification.py` e ao parâmetro opcional do adaptador existente em `providers.py`; não muda rotas/modelos/limites no banco, não instala SDK e não altera o endpoint de decisões nem Perplexity. Requisições das duas tarefas usam `reasoning.effort=low` e `response_format=json_object`; as validações de identidade/evidência continuam obrigatórias. Normalização registra a contagem de raciocínio e de saída visível separadamente, sem expor o conteúdo do raciocínio.
 
 Fontes primárias verificadas: [OpenRouter — reasoning e max_tokens](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) e [modelo configurado e parâmetros suportados](https://openrouter.ai/anthropic/claude-haiku-5.5/providers). Raciocínio e saída visível compartilham o orçamento; ocultar o raciocínio com `exclude` não reduz o consumo e não é solução.
+
+## Task 5 — Resultado do piloto autorizado e controle explícito
+
+O piloto individual da Ondina, já no complemento e616dd7, voltou recebido/inválido e `length` com 2.200 tokens. As demais empresas **não** foram disparadas, respeitando a condição do usuário. Esforço baixo não é um teto rígido e não resolveu o caso. Consulta pública não paga ao catálogo OpenRouter confirma `anthropic/claude-haiku-5.5` com `reasoning.mandatory=false` e `supported_efforts` incluindo `none`.
+
+Correção pontual na tarefa existente, sem novo desenho de arquitetura: desligar o raciocínio interno nas duas classificações curtas que já recebem evidências, mantendo os modelos, os 2.200 tokens aprovados e JSON obrigatório. Não alterar IAs de decisão, investigação Perplexity, chat global ou configurações de outros módulos. Preservar todas as validações de identidade/fonte e os recibos.
+
+- [x] RED: em `tests/test_radar_recovery_regressions.py`, as duas tarefas enviam `reasoning={'effort':'none'}`; o transporte nativo transmite esse controle e mantém `max_completion_tokens=2200`; chamadas não relacionadas continuam sem campo reasoning. RED: duas falhas esperadas; GREEN: suíte runtime 371 aprovados, sete opcionais ignorados.
+- [x] Implementar somente a opção das duas chamadas em `radar_presence.py` e `radar_qualification.py`, sem alterar roteamento, modelos, autorização ou orçamento. Diff revisado: nenhuma outra função recebe a opção automaticamente.
+- [ ] Rodar toda a suíte runtime, revisar o diff, publicar na main já autorizada e conferir o deploy. A correção permanece no método nativo/sequencial do plano aprovado; não abrir nova rodada de planejamento para esse ajuste pontual do parâmetro.
+- [ ] Novo teste pago depende de autorização adicional explícita. Começar apenas pela Ondina; seguir às demais somente após resposta válida. Não chamar esse lote de concluído antes disso.
