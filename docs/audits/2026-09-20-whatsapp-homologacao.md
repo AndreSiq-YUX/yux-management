@@ -98,3 +98,13 @@ Um teste só será marcado como homologado quando houver caso, horário, versão
 - `origin/main` está em `67655019fe46eaeefe663d2c186c5f7c28df59b6`, com avanços Radar posteriores à branch local. Preparação isolada em worktree próprio para preservar esses avanços e não incluir alterações Project Delivery do usuário.
 - Destinatário humano confirmado para uma única mensagem de teste. Não registrar seu telefone nem credenciais neste documento. Ainda não enviado.
 - Próximos critérios: integrar candidata na base atual, verificar migrations/backup/reversão, configurar segredos no servidor, validar webhook assinado, receber mensagem real e responder pelo portal. Modo automático, transferência humana e onboarding externo continuam nas tarefas 7–9.
+
+### Candidata isolada verificada — 21/10/2026, 20:12 -03
+
+- Branch `codex/whatsapp-homologacao`: `740b862` (fundação) e `8f198b2` (onboarding/transporte), sobre main `6765501`. Nenhuma alteração Project Delivery foi transportada; avanços Radar mantidos. Manifesto recomposto: 135 migrations, última `0234_radar_funnel_block_audits.sql`.
+- Backend: type-check aprovado; suíte completa 1.430 aprovados, 126 ignorados. Primeiro run paralelo teve um timeout de 5s no teste de manifesto; reexecução completa com dois workers aprovada sem mudar código/timeout.
+- Frontend: suíte completa 1.190 aprovados; build com TypeScript e orçamento de bundle aprovado. Lint direcionado dos arquivos WhatsApp aprovado.
+- Integração candidata: 5 arquivos, 9 testes aprovados com PostgreSQL/Redis reais e provedor HTTP simulado. Banco separado `yux_test_whatsapp_candidate_20261021`; migrations aplicadas somente neste ambiente de teste.
+- Acesso seguro: HTTPS documentado `deploy.yux.com.br` falhou na validação SSL; painel acessível consultado usa HTTP. Não transferir App Secret por esse acesso. Tentativa de manutenção SSH sem autenticação disponível. Solicitar ao titular o caminho seguro já existente antes de alterar acesso/rede.
+- Backup: Dokploy mostra `No backups configured`; isso não comprova ausência de backup externo/snapshot. Confirmação solicitada ao titular antes de migrations produtivas.
+- Confirmação de senha Meta concluída pelo titular. Nenhuma chave foi copiada para documentação ou configurada no servidor. Nenhuma mensagem real enviada e nenhuma publicação efetuada.

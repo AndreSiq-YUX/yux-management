@@ -68,7 +68,7 @@ Confirmar se `0174` continua disponível no início da implementação; se ocupa
 **Responsável:** IA. **Entrega:** ambiente de teste utilizável e versão candidata identificada. **Achado:** W12.
 
 - [x] Comparar commit local com o publicado e registrar qual será a base da implementação; preservar arquivos não relacionados. Base local candidata: `8f4563543154fe539ff5d77efd3eb545159b001b`; produção consultada: `43d32126a5c98242f3ae77167910fc1ed208aa29`.
-- [ ] Preparar Postgres/Redis dedicados à suíte de integração, sem apontar testes destrutivos para produção. Conferir `backend/tests/integration/support/rig.ts`.
+- [x] Preparar Postgres/Redis dedicados à suíte de integração, sem apontar testes destrutivos para produção. Conferir `backend/tests/integration/support/rig.ts`.
 - [x] Reexecutar os testes da análise para registrar a linha de base; resultado: 66 aprovados (53 backend e 13 frontend).
 - [x] Criar o registro de homologação com campos: caso, horário, versão, organização, conexão, resultado esperado/obtido e evidência sem segredos.
 - [x] Confirmar na documentação oficial a versão suportada da Graph API e o fluxo atual de Embedded Signup antes de codificá-los; a documentação lista `v26.0`, mas o painel Meta usado na homologação gerou e validou chamadas em `v25.0`.
@@ -156,7 +156,7 @@ WHERE channel = 'whatsapp' AND is_active = TRUE AND phone_number_id IS NOT NULL;
 - [x] Introduzir `META_GRAPH_VERSION`, validada no backend e repassada ao frontend e workers; remover o uso fixo de `v20.0` no caminho WhatsApp. Não escolher versão por memória.
 - [x] Para o número de teste, se o painel não permitir sua seleção no Embedded Signup, oferecer provisionamento **restrito a administrador interno** com WABA/Phone Number ID/token de teste, usando as mesmas validações remotas e persistência. Esse acesso deve ficar limitado à organização de homologação e nunca substituir o onboarding dos clientes.
 - [x] Executar testes direcionados de funções/segredos/conexão; conferir que respostas e payloads persistidos não contêm tokens em claro.
-- [ ] Revisar diff final completo e registrar commit da entrega.
+- [x] Revisar diff final completo e registrar commit da entrega (`8f198b2` na candidata integrada; homologação externa continua pendente).
 
 **Progresso em 25/09/2026:** fluxo Embedded Signup e persistência do WhatsApp estão implementados localmente na branch `codex/whatsapp-saas-task2`, com validação remota dos ativos, troca de código no servidor, credencial temporariamente cifrada para recuperação, proteção contra repetição concorrente e `META_GRAPH_VERSION` chegando também aos workers de envio. Passaram type-check do backend/frontend, 29 testes unitários direcionados, 3 testes de integração no Postgres isolado, 13 testes do frontend e build do frontend. Revisão final e commit desta tarefa ainda pendentes; provisionamento administrativo do número de teste só será implementado se a seleção via Embedded Signup não for possível. Não houve migration fora do banco temporário nem envio/publicação em produção.
 
@@ -172,7 +172,7 @@ WHERE channel = 'whatsapp' AND is_active = TRUE AND phone_number_id IS NOT NULL;
 - [x] Implementar reconexão/desconexão por ID, estados pendentes e erros visíveis. A reconexão é vinculada no estado OAuth ao ID escolhido e a Meta precisa devolver exatamente aquele Phone Number ID; desconectar um número não retira os demais da tela nem desinscreve a WABA.
 - [x] Manter “Verificar credencial” enquanto a checagem for local e “Enviar mensagem de teste” via envio normal com rastreio; só exigir o destinatário explicitamente e não enviar até confirmação.
 - [x] Testar reconexão de A1 preservando A2 e as configurações por número; verificar a tela renderizada em largura desktop e celular.
-- [ ] Rodar testes direcionados, revisar diff e registrar commit.
+- [x] Rodar testes direcionados, revisar diff e registrar commit (`8f198b2`).
 
 **Progresso em 25/09/2026:** a tela lista conexões independentes, adiciona novos números separadamente, edita agente/equipe/fila/modo por conexão e mostra estados pendentes/erros. A reconexão selecionada é vinculada no servidor ao mesmo ID e rejeita um número diferente; teste também confirma que não duplica a conexão nem apaga configurações ao reconectar. O botão está rotulado com precisão como “Verificar credencial”: hoje a verificação é local, e a checagem remota será concluída na tarefa 6. O botão de mensagem de teste segue pendente porque a implementação atual `send-meta-channel-test` não envia mensagem. Só será habilitado depois que a tarefa 5 permitir usar o fluxo normal de saída com destinatário explícito. A visualização local com fixture de 2 números + Instagram passou em 1440px e 390px, sem overflow horizontal; nenhuma chamada à Meta foi feita.
 
@@ -210,7 +210,7 @@ it('preserva as três confirmações da mesma mensagem', () => {
 - [x] Distinguir falha conclusiva de resultado ambíguo após timeout. Bloquear repetição automática de resultado ambíguo até reconciliação; um cabeçalho interno não garante idempotência na Meta.
 - [x] Executar integração com banco/Redis reais: reentrega, recuperação após indisponibilidade, reinício do worker e falha posterior à aceitação remota simulada.
 - [x] Rodar testes direcionados, suíte completa e type-check de backend.
-- [ ] Revisar diff final completo e registrar commit.
+- [x] Revisar diff final completo e registrar commit (`8f198b2`).
 
 **Progresso em 25/09/2026:** recebimento em lote, recibos fora de ordem, concorrência por contato/número, tratamento de mídia e política comum de envio estão implementados. Foram aprovados 737 testes do backend, 596 do frontend, type-check do backend, build do frontend, lint dos arquivos WhatsApp alterados e 4 testes de integração contra Postgres 17 isolado. A integração adicional comprova que recibos ainda são aplicados após desconectar o número, enquanto novas mensagens são ignoradas; o manifesto de migrations foi atualizado e validado. A suíte de integração usou fila stub: o Redis local é 3.0.504 (BullMQ exige 5+) e Docker não está disponível, então reentrega/recuperação com Redis real e reinício de worker permanecem pendentes. O lint global ainda reporta erros fora dos arquivos WhatsApp alterados. Não houve chamada à Meta, envio real, migration em produção ou publicação. Revisão final e commit ficam pendentes até concluir a verificação com Redis compatível.
 
@@ -220,7 +220,7 @@ it('preserva as três confirmações da mesma mensagem', () => {
 
 - [x] Testar token local válido, mas revogado remotamente: diagnóstico não pode retornar conectado. Testar permissão ausente, número não acessível e WABA sem inscrição.
 - [x] Retornar verificações separadas de credencial, acesso ao número e inscrição; marcar envio/retorno real como ainda não comprovados até o teste correspondente.
-- [ ] Rodar testes de integração, type-check dos dois projetos e build do frontend candidato; corrigir falhas relacionadas antes de publicar.
+- [x] Rodar testes de integração, type-check dos dois projetos e build do frontend candidato; corrigir falhas relacionadas antes de publicar.
 - [ ] Preparar release identificada, migrations verificadas e reversão por desativação do canal/retorno da aplicação; publicar quando a execução tiver autorização correspondente.
 - [ ] Inserir configuração Meta no servidor; conferir mesma chave de segredos na API e nos workers e disponibilidade do runtime/modelo.
 - [ ] Configurar callback HTTPS `https://hub.yux.com.br/api/webhooks/meta/channel-event`, verify token e campo `messages`; confirmar inscrição da WABA.
@@ -232,6 +232,8 @@ it('preserva as três confirmações da mesma mensagem', () => {
 **Marco A aprovado:** entrada e resposta humana comprovadas no canal real. A partir daqui começa a validação do atendimento.
 
 **Atualização em 21/10/2026:** preparação local com PostgreSQL/Redis reais concluída (9 testes de integração em 5 arquivos); backend 777 testes e frontend 618 testes aprovados. Revisão independente e correções verificadas. Provisionamento interno, envio de teste pelo fluxo normal e diagnóstico remoto implementados. Interface verificada no navegador desktop/celular, com provedor simulado. Preparação da candidata sobre main atual em checkout separado; ainda sem configuração, migration ou publicação em produção e sem mensagem real pelo YUX. Os checks de commit/publicação permanecem pendentes até a candidata integrada ser verificada. Evidências e dependências no registro de homologação.
+
+**Candidata integrada verificada em 21/10/2026, 20:12 -03:** branch `codex/whatsapp-homologacao`, commits `740b862` e `8f198b2` sobre `6765501` (main); backend 1.430 aprovados/126 ignorados, frontend 1.190 aprovados, integração PostgreSQL/Redis 9 aprovados. Type-check backend e build frontend (incluindo TypeScript e orçamento de bundle) aprovados. O primeiro backend em execução paralela teve um timeout de 5s no teste de manifesto; a suíte completa reexecutada com dois workers passou sem alterar código ou timeout. Manifesto recomposto com 135 migrations, preservando todas as alterações Radar da main. Publicação permanece pendente: HTTPS administrativo não validado, manutenção SSH não autenticada, backup externo não confirmado e credenciais Meta não configuradas. Não aplicar migrations antes dessas verificações.
 
 ## Tarefa 7 — Primeiro agente, modo automático e controle humano
 
