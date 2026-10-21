@@ -2,6 +2,12 @@ export type RadarCaptureResearchStage='discovery'|'reading'|'presence'|'qualific
 export type RadarFunnelOutcome='out_of_profile'|'completed'|'completed_with_gaps'|'technical_failure'
 export type RadarCaptureResearchAssessment={status:'researching'|'completed'|'insufficient'|'blocked';reason?:string;stage?:RadarCaptureResearchStage}
 type Child={status:string;stage?:string;error_code?:string|null;lease_until?:string|Date|null;output?:Record<string,unknown>|null;calls?:Record<string,{status:string;error?:string;source?:string}>|null}
+/** Queue completion and commercial completion share the opt-in terminal contract. */
+export function assessRadarResearchProgress(run:Child):RadarCaptureResearchAssessment{
+ if(!run.output?.funnel)return assessRadarCaptureResearch(run)
+ const result=assessRadarFunnelResearch(run)
+ return{status:result.outcome===null?'researching':result.retryable?'blocked':'completed',...(result.reason?{reason:result.reason}:{})}
+}
 // Commercial outcome is independent of the durable queue/lease status. Keep
 // those legacy statuses stable so in-flight jobs and old receipts still recover.
 export function assessRadarFunnelResearch(run:Child):{outcome:RadarFunnelOutcome|null;retryable:boolean;reason?:string}{

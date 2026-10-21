@@ -364,4 +364,8 @@ Esta seção descreve o novo caminho opt-in. **Não significa que houve deploy, 
 
 ### Próximo passo real (separado da implementação)
 
+Cuidados de validação adicionados na revisão final: a amostra de G1 exclui quem seria barrado por G0; G5 só admite páginas institucionais legíveis associadas ao estabelecimento, não ao grupo. Os casos congelam essa elegibilidade e o mesmo contexto/flags do executor real. Avaliações antigas sem esse registro não podem ser aprovadas. G1 em observação não compra uma decisão quando isso consumiria a capacidade reservada ao G3 efetivo ou ao G5; a avaliação separada continua disponível mediante confirmação. Nenhum limite é elevado automaticamente.
+
+Pedidos individuais e em lote usam o mesmo encerramento do funil: lacunas públicas e exclusões são terminais; apenas falhas técnicas permanecem recuperáveis. Após o Agent, URLs adicionais do site já associado ainda podem ser lidas dentro do limite gratuito, sem nova busca paga. No relatório por lote, caminho, classificação e custos correspondem ao run associado; a revisão atual da ficha é informação separada.
+
 Pré-piloto e piloto de 50 empresas, configuração da Villeman, rótulos humanos, calibração paga, ativação dos modos e conferência de custos reais continuam pendentes de autorização e configuração. Testes com transportes simulados não demonstram a qualidade dos resultados nem a disponibilidade dos provedores em produção.

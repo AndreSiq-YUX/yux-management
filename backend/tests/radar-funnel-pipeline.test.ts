@@ -5,6 +5,17 @@ const identity = { name: 'Empresa Alfa', cnpj: '12345678000190', city: 'Curitiba
 const url = 'https://alfa.example/';
 const page = { url, text: 'Empresa Alfa CNPJ 12.345.678/0001-90. Atendimento empresarial. contato@alfa.example', observedAt: '2026-10-21' };
 const config = (patch = {}) => resolveRadarSearchConfiguration({ funnel: { enabled: true, g0: { mode: 'enforce' }, g1: { mode: 'enforce' }, g5: { mode: 'enforce' } }, research: { enabled: true, webSearchEnabled: true, semanticQualificationEnabled: true }, ...patch });
+it.each([false,true])('reads a contact URL returned by the single Agent, including saved receipt recovery=%s',async recovered=>{
+ const homepage={...page,text:'Empresa Alfa CNPJ 12.345.678/0001-90. Atendimento empresarial.'}
+ const contactUrl='https://alfa.example/portal-2026'
+ const hit={url:contactUrl,title:'Empresa Alfa contato fornecedores',snippets:['Portal de compras e fornecedores'],observedAt:page.observedAt}
+ const deepResearch=vi.fn(async()=>[hit]),web=vi.fn(async()=>[]),reads:string[]=[]
+ const output:any={pages:[homepage],readingComplete:true,discovery:{association:'confirmed',websiteUrl:url,hits:[],suggestions:[],queries:0,limitations:[]},...(recovered?{funnel:{agentAttempted:true,agentCompleted:true},deepResearchCompleted:true,discoveryHits:[hit]}:{})}
+ const result=await runRadarResearchPipeline(identity,config({funnel:{enabled:true,g1:{mode:'off'},g5:{mode:'off'},agentPolicy:{mode:'escalation'}},research:{enabled:true,webSearchEnabled:true,deepResearchEnabled:true,maxPagesPerCandidate:8,contactPurpose:'suppliers',semanticQualificationEnabled:false}}),output,{web,deepResearch,collect:async readUrl=>{reads.push(readUrl);return readUrl===contactUrl?[{url:contactUrl,text:'Empresa Alfa CNPJ 12.345.678/0001-90. Fornecedores: compras@alfa.example',observedAt:page.observedAt}]:[]},checkpoint:async()=>{}})
+ expect(reads).toContain(contactUrl)
+ expect(result.contacts).toEqual(expect.arrayContaining([expect.objectContaining({kind:'email',value:'compras@alfa.example'})]))
+ expect(deepResearch).toHaveBeenCalledTimes(recovered?0:1);expect(web).not.toHaveBeenCalled()
+})
 it('stops a configured registry exclusion before any decision, search, read or semantic call', async () => {
     const web = vi.fn(), decide = vi.fn(), collect = vi.fn(), qualify = vi.fn();
     const result = await runRadarResearchPipeline(identity, config({ excludedNameTerms: ['alfa'] }), {}, { web, decide, collect, qualify, registryPayload: { tradeName: identity.name }, checkpoint: async () => {} } as never);

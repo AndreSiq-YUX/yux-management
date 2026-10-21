@@ -5,6 +5,16 @@ const identity = { name: 'Empresa Alfa', legalName: 'Empresa Alfa LTDA', cnpj: '
 const page = { url: 'https://alfa.example/', text: 'Empresa Alfa CNPJ 12.345.678/0001-90. contato@alfa.example', observedAt: '2026-10-21' };
 const config = (patch = {}) => resolveRadarSearchConfiguration({ funnel: { enabled: true, g3: { mode: 'effective' }, agentPolicy: { mode: 'escalation' } }, sources: { enrichWithBrave: false }, research: { enabled: true, webSearchEnabled: true, webSearchProviders: ['serper_web_search', 'perplexity_search_fast'], deepResearchEnabled: true, maxSearchQueriesPerCandidate: 3, maxPagesPerCandidate: 4 }, ...patch });
 const base = <T extends Record<string, unknown>>(patch: T = {} as T) => ({ web: vi.fn(async () => []), collect: vi.fn(async () => []), checkpoint: vi.fn(async () => {}), sourceCostsBrl: { serper_web_search: .035, perplexity_search_fast: .007 }, maxDecisionCalls: 6, ...patch });
+it('allows one additional free Agent page beyond already read pages, and never follows another company origin',async()=>{
+ const portal='https://alfa.example/portal',other='https://outra.example/contact';
+ const output:any={funnel:{agentCompleted:true},pages:[page],discoveryHits:[{url:portal,title:'Compras',snippets:[]},{url:other,title:'Outra empresa',snippets:[]}]};
+ const collect=vi.fn(async(url:string,policy:any,options:any)=>{
+  expect(url).toBe(portal);expect(policy.maxPagesPerCandidate).toBeGreaterThan(options.initialPages.length);
+  return[{url,text:'Canal de compras Empresa Alfa',observedAt:page.observedAt}];
+ });
+ const deps=base({collect});await api.runRadarFunnelDiscovery(identity,config(),output,deps);
+ expect(collect).toHaveBeenCalledTimes(1);expect(deps.web).not.toHaveBeenCalled();expect(output.pages).toHaveLength(2);
+});
 it('uses a corporate email domain for free and skips paid identity searches only after direct ownership', async () => {
     const output = {};
     const deps = base({ registryPayload: { emailDomainSignal: { kind: 'corporate_candidate', domain: 'alfa.example' } }, collect: vi.fn(async () => [page]) });

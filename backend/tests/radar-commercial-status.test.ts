@@ -2,6 +2,13 @@ import {expect,it} from 'vitest'
 import {validateRadarResearchContract} from '../src/modules/radar/effect-receipts.js'
 const api=await import('../src/modules/radar/commercial-status.js').catch(()=>({})) as Record<string,any>
 const observedAt='2026-10-19T10:00:00Z'
+it.each(['gaps','excluded','optional_uncertain'])('finishes a terminal funnel %s without offering the same continuation',kind=>{
+ const output={funnel:{},readingComplete:true,siteAssociation:'review',quality:{readyForReview:false},limitations:['radar_qualification_waiting_public_read'],...(kind==='excluded'?{decisionExcluded:true,funnel:{blockedGate:'g1'},readingComplete:false}:{})}
+ const calls=kind==='optional_uncertain'?{decision:{source:'openrouter_decision',status:'uncertain'}}:{}
+ const result=api.projectRadarCommercialResearchStatus({requestedFields:['website','fit'],run:{status:'partial',output,calls}})
+ expect(result).toMatchObject({status:'incomplete',nextAction:'review_result'})
+ if(kind==='excluded')expect(result.unresolvedFields).toContainEqual({field:'fit',reason:'outside_profile'})
+})
 it('shows the most recent attempt rather than an older successful completion on a resumed run',()=>{
  expect(api.projectRadarCommercialResearchStatus({run:{status:'blocked',completed_at:'2026-10-18T10:00:00Z',updated_at:observedAt,output:{}}}).lastAttemptAt).toBe(new Date(observedAt).toISOString())
 })

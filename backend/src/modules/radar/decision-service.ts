@@ -10,6 +10,7 @@ import { loadRadarDecisionCalibrations } from './decision-calibration.js';
 import { loadRadarOperationalLimits } from './operational-limits.js';
 import { estimateRadarCostBrl, radarReportedCostAmount, addRadarDecimal, type RadarCostPolicy, type RadarCostEstimate } from './cost-conversion.js';
 import { resolveRadarAnalysisRetry, type RadarAnalysisRetryBinding } from './analysis-retry-authorizations.js';
+import { resolveRadarSearchConfiguration } from './search-configuration.js';
 type Db = Pick<pg.Pool, 'query'>;
 type ModelAttempt = {
     provider: string;
@@ -174,12 +175,22 @@ export async function decideRadarAction(pool: pg.Pool, user: AuthUser, value: De
         await db.query('BEGIN');
         transactionOpen = true;
         await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`radar-decisions:${input.organizationId}:${input.candidateId}`]);
+        const campaign=input.contextVersion==='radar-decision-context-v2'?(await db.query('SELECT search_configuration FROM public.radar_campaigns WHERE id=$1 AND organization_id=$2 FOR SHARE',[input.campaignId,input.organizationId])).rows[0]:undefined;
         const row = (await db.query(`SELECT calls,campaign_id,configuration_revision,candidate_id,organization_id,lease_id,status,lease_until>NOW() AS lease_active FROM public.radar_candidate_research_runs WHERE id=$1 FOR UPDATE`, [dependencies.runId])).rows[0];
         if (!row || row.campaign_id !== input.campaignId || row.organization_id !== input.organizationId || row.candidate_id !== input.candidateId || row.configuration_revision !== input.configurationRevision || row.lease_id !== dependencies.leaseId)
             throw failure('radar_decision_scope_changed');
         if(row.status!=='running'||row.lease_active!==true)throw failure('radar_research_lease_lost');
         call = row.calls?.[key];
         if (!call) {
+            const funnel=campaign?resolveRadarSearchConfiguration(campaign.search_configuration).funnel:undefined;
+            if(funnel?.enabled&&input.task==='radar_initial_triage'&&funnel.g1.mode==='shadow'){
+                // Observations have no extra implicit budget. G3 may need every
+                // remaining slot; G5, if effective, needs at least its own slot.
+                // Skip this optional purchase instead of changing factual flow.
+                const reserve=funnel.g3.mode==='effective'?policy.limits.maxDecisionCallsPerCompany:funnel.g5.mode==='enforce'?1:0;
+                const used=Object.values(row.calls??{}).filter(entry=>(entry as {source?:string}).source==='openrouter_decision').length;
+                if(policy.limits.maxDecisionCallsPerCompany-used<=reserve)return{action:'continue',effectiveMode:'observe',reasonCode:'decision_observation_capacity_reserved',evidenceIds:[]};
+            }
             if (price.amountBrl === null)
                 return { action: 'continue', effectiveMode: 'observe', reasonCode: 'decision_price_unconfigured', evidenceIds: [] };
             if (Object.values(row.calls ?? {} as Record<string, {

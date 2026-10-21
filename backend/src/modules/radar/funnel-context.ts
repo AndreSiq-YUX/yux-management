@@ -7,6 +7,7 @@ import { buildRadarRegistryEvidence } from './registry-evidence.js';
 import { isRadarInstitutionalSource } from './source-identity.js';
 import { extractRadarCnpjIdentifiers, normalizeRadarCnpjIdentifier } from './cnpj-identifier.js';
 import type { RadarGateBinding } from './funnel-gates.js';
+import { evaluateRadarRegistryRules } from './registry-gate.js';
 
 export const RADAR_FUNNEL_VERSIONS = {
     contextVersion: 'radar-decision-context-v2' as const,
@@ -42,6 +43,13 @@ export function buildRadarFunnelEvidence(input: {
         return { id: `ev_${radarDecisionHash({ url: page.url, text: page.text }).slice(0, 24)}`, sourceUrl: page.url, text: page.text.slice(0, 20000), role: 'activity' as const,
             primary: institutional && associated, contradictory: contradiction, scope: institutional && associated && !contradiction ? 'establishment' as const : 'unresolved' as const };
     })];
+}
+/** Production and frozen evaluations must send the same fiscal flags/material. */
+export function buildRadarFunnelDecisionMaterial(input:{configuration:RadarSearchConfiguration;campaign:Parameters<typeof radarFunnelDecisionCriteria>[1];identity:RadarBusinessIdentity;registryPayload:Record<string,unknown>;pages:RadarSiteEvidence[];associatedWebsite?:string}){
+    const targetCnaes=input.campaign.target_cnaes??[];
+    const registry=evaluateRadarRegistryRules({payload:input.registryPayload,targetCnaes,configuration:input.configuration});
+    return{criteria:{...radarFunnelDecisionCriteria(input.configuration,input.campaign),registryFlags:registry.flags},
+        evidence:buildRadarFunnelEvidence({...input,targetCnaes,flags:registry.flags}),registry};
 }
 export function radarGateBindingFromResult(input: {
     campaignId: string; configurationRevision: number; targetsHash: string; criteriaHash?:string; routeFingerprint: string; result: DecisionResultV1;

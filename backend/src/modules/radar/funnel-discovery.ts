@@ -90,7 +90,8 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
     const flush = () => { output.pages = pages; output.discoveryHits = hits; };
     const read = async (url: string, maximum: number) => {
         const prior = pages.filter(page => new URL(page.url).origin === new URL(url).origin);
-        const collected = await (deps.collect ?? collectRadarSiteEvidence)(url, { maxPagesPerCandidate: Math.min(configuration.research.maxPagesPerCandidate, maximum), maxAttemptsPerCandidate: maximum * 2 }, {
+        const remaining = configuration.research.maxPagesPerCandidate - pages.filter(page=>!page.limitation).length;
+        const collected = await (deps.collect ?? collectRadarSiteEvidence)(url, { maxPagesPerCandidate: prior.filter(page=>!page.limitation).length + Math.min(remaining, maximum), maxAttemptsPerCandidate: prior.length + maximum * 2 }, {
             signal: deps.signal, tlsOptions: deps.tlsOptions, deadlineAt: deps.deadlineAt, initialPages: prior,
             checkpoint: async value => { pages = uniquePages([...pages, ...value]); flush(); await deps.checkpoint(); },
         });
@@ -130,10 +131,14 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
     while (true) {
         deps.signal?.throwIfAborted();
         const directlyOwned = pages.find(owns);
-        if (!state.pendingAction && directlyOwned) { state.stopReason = 'identity_found'; break; }
+        if (!state.pendingAction && directlyOwned && !state.agentCompleted) { state.stopReason = 'identity_found'; break; }
         const readOptions: Action[] = [];
         if (pages.filter(page => !page.limitation).length < configuration.research.maxPagesPerCandidate && pages.length < configuration.research.maxPagesPerCandidate * 2) {
             for (const hit of hits.filter(hit => isRadarInstitutionalSource(hit.url, { title: hit.title, text: hit.snippets.join(' ') }))) {
+                // A saved Agent may have found a nonstandard contact portal.
+                // Once identity is known, read only that trusted origin, never
+                // reopen paid discovery or adopt a third-party contact.
+                if(directlyOwned&&new URL(hit.url).origin!==new URL(directlyOwned.url).origin)continue;
                 const root = new URL('/', hit.url).toString();
                 const url = !pages.some(page => canonicalRadarReadUrl(page.url) === root) ? root : canonicalRadarReadUrl(hit.url);
                 if (!url || pages.some(page => canonicalRadarReadUrl(page.url) === url)) continue;
@@ -141,6 +146,7 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
                 if (!state.executedActions.includes(id) && !readOptions.some(option => option.id === id)) readOptions.push({ id, kind: 'read', url, cost: 0, description: `Ler página pública ${url}; custo de busca R$ 0; confirmar identidade e canais.` });
             }
         }
+        if(!state.pendingAction&&directlyOwned&&!readOptions.length){state.stopReason='identity_found';break;}
         const options: Action[] = readOptions.slice(0, 4);
         const institutionalRead = pages.some(page => !!page.text && !page.limitation && isRadarInstitutionalSource(page.url, { text: page.text }) && [identity.name, identity.legalName].some(name => !!name && page.text.toLowerCase().includes(name.toLowerCase())));
         const candidatePending = readOptions.length > 0 || institutionalRead;
@@ -163,7 +169,7 @@ export async function runRadarFunnelDiscovery(identity: RadarBusinessIdentity, c
             const actionable = offered.filter(option => option.kind !== 'stop');
             if (!actionable.length) { state.stopReason = institutionalRead ? 'candidate_ready_for_identity' : 'eligible_actions_exhausted'; break; }
             let selected: Action | undefined;
-            if (actionable.length === 1) selected = actionable[0];
+            if (actionable.length === 1 || directlyOwned) selected = actionable[0];
             else if (configuration.funnel.g3.mode === 'effective' && deps.choose && state.decisionCalls < (deps.maxDecisionCalls ?? 6)) {
                 const decision = await deps.choose(pages, offered.map(({ id, description }) => ({ id, description })), state.step);
                 state.decisionCalls++;

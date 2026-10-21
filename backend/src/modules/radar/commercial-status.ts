@@ -1,5 +1,5 @@
 import type {CommercialResearchStatusV1} from '../../contracts/generated/radarResearch.js'
-import {assessRadarCaptureResearch} from './capture-research-state.js'
+import {assessRadarResearchProgress} from './capture-research-state.js'
 import {validateRadarResearchContract} from './effect-receipts.js'
 import {z} from 'zod'
 type Field=CommercialResearchStatusV1['updatedFields'][number]
@@ -28,17 +28,18 @@ function values(value:Record<string,any>,dossier:boolean):Partial<Record<Field,u
 export function projectRadarCommercialResearchStatus(input:{run?:unknown;previous?:unknown;requestedFields?:Field[]}):CommercialResearchStatusV1{
  const run=object(input.run),output=object(run.output),previous=object(input.previous)
  const requested=[...new Set(input.requestedFields??['website','identity','email','phone'] as Field[])]
- const current=values(output,true),prior=values(previous,false),assessment=assessRadarCaptureResearch({status:run.status??'blocked',...run})
+ const current=values(output,true),prior=values(previous,false),assessment=assessRadarResearchProgress({status:run.status??'blocked',...run})
  const active=['queued','running'].includes(run.status),waiting=!!input.run&&!active&&assessment.status==='blocked'
  const read=array(output.pages).some(page=>!!page.text&&!page.limitation),restricted=array(output.pages).some(page=>!!page.limitation&&!page.text)
- const outside=object(output.qualification).targetStatus==='not_target'
+ const outside=object(output.qualification).targetStatus==='not_target'||output.decisionExcluded===true
+ const terminalFunnel=!!output.funnel&&assessment.status==='completed'
  const updatedFields=active?[]:requested.filter(field=>current[field]!==undefined&&JSON.stringify(current[field])!==JSON.stringify(prior[field]))
  const unresolvedFields:CommercialResearchStatusV1['unresolvedFields']=[]
  for(const field of requested){
   let reason:CommercialResearchStatusV1['unresolvedFields'][number]['reason']|undefined
   if(field==='fit'&&outside)reason='outside_profile'
   else if(current[field]===undefined){
-   if(active||!output.readingComplete)reason='verification_pending'
+   if(active||!output.readingComplete&&!terminalFunnel)reason='verification_pending'
    else if(restricted&&!read)reason='reading_restricted'
    else if(['companyProfile','companySize','activity','identity','fit'].includes(field))reason=output.siteAssociation!=='confirmed'?'identity_unresolved':'verification_pending'
    else reason='not_found'
@@ -51,5 +52,5 @@ export function projectRadarCommercialResearchStatus(input:{run?:unknown;previou
  const timestamp=run.updated_at??run.completed_at??run.created_at
  const date=timestamp&&new Date(timestamp)
  return{schemaVersion:1,status,updatedFields,unresolvedFields,lastAttemptAt:date&&Number.isFinite(date.getTime())?date.toISOString():null,
-  nextAction:active||waiting?'wait':outside?'review_result':complete?'review_result':restricted&&!read?'review_source':'continue'}
+  nextAction:active||waiting?'wait':outside||complete||terminalFunnel?'review_result':restricted&&!read?'review_source':'continue'}
 }

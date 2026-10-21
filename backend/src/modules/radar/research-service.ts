@@ -30,7 +30,7 @@ import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from './publi
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
-import {assessRadarCaptureResearch,assessRadarFunnelResearch} from './capture-research-state.js'
+import {assessRadarResearchProgress,assessRadarFunnelResearch} from './capture-research-state.js'
 import {projectRadarCommercialResearchStatus} from './commercial-status.js'
 import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,radarAnalysisDependencies,radarDependencyBindingMatch,radarResearchDependencyVersions,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
 import {mergeRadarCompanyResearch,radarCompanyProjectionVersion,projectRadarCompanyFacts,radarPayloadIdentityHash} from './company-projection.js'
@@ -51,7 +51,7 @@ import {evaluateRadarRegistryRules,type RadarRegistryGateResult} from './registr
 import type {RadarEmailDomainPolicy} from './email-domain.js'
 import type {RadarFunnelOverride} from './funnel-gates.js'
 import {radarPurposeEnrichmentUrls,selectRadarQualificationEvidence} from './funnel-enrichment.js'
-import {buildRadarFunnelEvidence,radarFunnelDecisionCriteria} from './funnel-context.js'
+import {buildRadarFunnelDecisionMaterial} from './funnel-context.js'
 import {applyRadarFunnelRegistryGate,applyRadarFunnelGateDecision,applyRadarFunnelNextAction,markRadarFunnelInitialGate,radarScopedFunnelOverrides} from './funnel-gate-application.js'
 import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
 import {planRadarPresenceRefresh} from './presence-refresh.js'
@@ -657,7 +657,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     if(input.requestId){
       const duplicate=await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs WHERE candidate_id=$1 AND organization_id=$2 AND request_id=$3`,[input.candidateId,input.organizationId,input.requestId])
       if(duplicate.rows[0]?.historical_closed_at)throw error('radar_historical_research_requires_new_round')
-      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running'].includes(duplicate.rows[0].status)||assessRadarCaptureResearch(duplicate.rows[0]).status==='completed')){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:duplicate.rows[0].id});await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
+      if(duplicate.rows[0]&&(operation!=='resume'||['queued','running'].includes(duplicate.rows[0].status)||assessRadarResearchProgress(duplicate.rows[0]).status==='completed')){await reconcileRadarCaptureItems(client,{organizationId:input.organizationId,candidateId:input.candidateId,runId:duplicate.rows[0].id});await client.query('COMMIT');return{runId:duplicate.rows[0].id,status:duplicate.rows[0].status,reused:true}}
     }
     const previous = await client.query<ResearchRun>(`SELECT * FROM public.radar_candidate_research_runs
       WHERE candidate_id = $1 AND organization_id = $2 AND (configuration_revision = $3 OR $4='reanalyze' OR ($5::boolean AND historical_closed_at IS NOT NULL)) ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[input.candidateId,input.organizationId,input.configurationRevision,operation,configuration.funnel.enabled])
@@ -676,7 +676,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
     const fresh = !['refresh','reanalyze'].includes(operation)&&run&&!run.historical_closed_at&&run.configuration_revision===input.configurationRevision
       &&(['queued','running'].includes(run.status) || operation==='resume'||Date.now() - Date.parse(run.completed_at||run.created_at) < configuration.research.freshnessDays * 86400000)
     if (fresh) {
-      if (!['queued','running'].includes(run.status)&&assessRadarCaptureResearch(run).status!=='completed') {
+      if (!['queued','running'].includes(run.status)&&assessRadarResearchProgress(run).status!=='completed') {
         if(input.allowSemanticRefresh&&run.calls.presence?.status==='completed')run.calls.presence.refreshAuthorized=true
         if(input.allowSemanticRefresh&&(run.calls.presence?.status==='completed'||run.calls.semantic?.status==='completed')) {
           if(run.calls.semantic?.status==='completed')run.calls.semantic.refreshAuthorized=true
@@ -930,8 +930,9 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
           evidence:pages.filter(page=>!!page.text&&!page.limitation).slice(0,30).map(page=>({id:`ev_${radarDecisionHash({url:page.url,text:page.text}).slice(0,24)}`,sourceUrl:page.url,text:page.text,role:'activity',primary:isRadarInstitutionalSource(page.url,{text:page.text}),contradictory:cnpjConflict(identity,page.text),scope:!cnpjConflict(identity,page.text)&&matchRadarBusinessIdentity(identity,page.text)==='confirmed'?'establishment':'unresolved'})),options,humanReviewed:payload.manualDecisionOverride===true||payload.braveMatchStatus==='manual_matched'}
         if(configuration.funnel.enabled){
           decisionContext.contextVersion='radar-decision-context-v2'
-          decisionContext.criteria={...radarFunnelDecisionCriteria(configuration,context),registryFlags:evaluateRadarRegistryRules({payload,targetCnaes:context.target_cnaes,configuration}).flags}
-          decisionContext.evidence=buildRadarFunnelEvidence({identity,registryPayload:payload,targetCnaes:context.target_cnaes,pages:task==='radar_initial_triage'?[]:pages,associatedWebsite:meta?.associatedWebsite})
+          const material=buildRadarFunnelDecisionMaterial({configuration,campaign:context,identity:decisionIdentity,registryPayload:payload,pages:task==='radar_initial_triage'?[]:pages,associatedWebsite:meta?.associatedWebsite})
+          decisionContext.criteria=material.criteria
+          decisionContext.evidence=material.evidence
           decisionContext.humanReviewed=false
           if(task==='radar_next_action')decisionContext.step=meta?.step??0
         }

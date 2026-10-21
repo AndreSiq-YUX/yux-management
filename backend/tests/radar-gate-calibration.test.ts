@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 const api = await import('../src/modules/radar/gate-calibration.js').catch(() => ({})) as Record<string, any>;
 const samples = Array.from({ length: 60 }, (_, index) => ({ candidateId: `company-${index}`, groupKey: `root-${index}`, label: index < 36 ? 'primary' : 'outside', reviewedBy: 'human' }));
+it('does not let ineligible or unverified frozen cases satisfy approval minima',()=>{
+ const dataset=api.partitionRadarGateDataset(samples,'seed',.34).map((sample:any)=>({...sample,eligibleForGate:sample.label==='outside',probabilityOutside:sample.label==='outside'?.99:.1}));
+ const result=api.evaluateRadarGateCalibration(dataset,{});
+ expect(result.approvable).toBe(false);expect(result.reasons).toContain('ineligible_evaluation_population');
+ expect(result.holdout.positives).toBe(0);expect(result.reasons).toContain('insufficient_positive_samples');
+});
 it('freezes a deterministic stratified split and keeps related establishments together', () => {
     const input = [...samples, { ...samples[0], candidateId: 'branch-2' }];
     const first = api.partitionRadarGateDataset(input, 'seed', .34);

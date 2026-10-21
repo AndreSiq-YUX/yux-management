@@ -7,6 +7,7 @@ export type RadarGateSample = {
     groupKey: string;
     label: RadarGateLabel;
     reviewedBy: string;
+    eligibleForGate?:boolean;
 };
 export type RadarGatePartitionedSample = RadarGateSample & {
     partition: 'tune' | 'holdout';
@@ -59,6 +60,7 @@ export function evaluateRadarGateCalibration(dataset: RadarGatePartitionedSample
     // positive / best negative score conservatively within each group.
     const grouped = new Map<string, RadarGatePartitionedSample>();
     for (const sample of dataset) {
+        if(sample.eligibleForGate===false){reasons.push('ineligible_evaluation_population');continue;}
         if (sample.label === 'doubt') continue;
         const prior = grouped.get(sample.groupKey);
         if (prior && (prior.partition !== sample.partition || positive(prior) !== positive(sample))) throw Error('radar_calibration_partition_invalid');

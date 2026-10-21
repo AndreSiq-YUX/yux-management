@@ -8,7 +8,7 @@ import { decisionContextSchema, decisionResultSchema, type DecisionContextV1, ty
 import { loadRadarDecisionRoute, invokeRadarDecision, radarDecisionHash, radarDecisionPrice, type RadarDecisionRoute } from './decision-service.js';
 import { loadRadarOperationalLimits } from './operational-limits.js';
 import { resolveRadarSearchConfiguration } from './search-configuration.js';
-import { radarFunnelDecisionCriteria, buildRadarFunnelEvidence, radarFunnelTargetsHash, radarGateBindingFromResult, RADAR_FUNNEL_VERSIONS } from './funnel-context.js';
+import { buildRadarFunnelDecisionMaterial, radarFunnelTargetsHash, radarGateBindingFromResult, RADAR_FUNNEL_VERSIONS } from './funnel-context.js';
 import { partitionRadarGateDataset, evaluateRadarGateCalibration, type RadarGatePartitionedSample } from './gate-calibration.js';
 import { loadRadarFunnelFloors, assertRadarFunnelFloors } from './funnel-floors.js';
 import type { RadarAiGate, RadarCampaignGateCalibration } from './funnel-gates.js';
@@ -61,33 +61,41 @@ export async function createRadarGateCalibration(pool: pg.Pool, user: AuthUser, 
         assertRadarFunnelFloors(config.funnel, (await loadRadarFunnelFloors(db)).configuration);
         const rows = (await db.query(`SELECT candidate.*,saved.output FROM public.radar_candidate_records candidate LEFT JOIN LATERAL(SELECT output FROM public.radar_candidate_research_runs WHERE candidate_id=candidate.id AND organization_id=candidate.organization_id ORDER BY created_at DESC,id DESC LIMIT 1) saved ON TRUE WHERE candidate.campaign_id=$1 AND candidate.organization_id=$2 AND candidate.id=ANY($3::uuid[]) ORDER BY candidate.id`, [input.campaignId, input.organizationId, input.labels.map(item => item.candidateId)])).rows;
         if (rows.length !== input.labels.length) throw fail('radar_calibration_company_scope_mismatch', 403);
+        const prepared=new Map<string,DecisionContextV1>(),excluded:Array<{candidateId:string;reason:string}>=[];
+        for(const row of rows){
+            const payload=row.normalized_payload,saved=row.output??{};
+            const identity={name:String(payload.tradeName??row.title),legalName:typeof payload.legalName==='string'?payload.legalName:undefined,cnpj:typeof payload.cnpj==='string'?payload.cnpj:undefined,city:typeof payload.city==='string'?payload.city:undefined,state:typeof payload.state==='string'?payload.state:undefined,address:typeof payload.address==='string'?payload.address:undefined};
+            const material=buildRadarFunnelDecisionMaterial({configuration:config,campaign,identity,registryPayload:payload,pages:input.gate==='g5'&&Array.isArray(saved.pages)?saved.pages:[],associatedWebsite:saved.siteAssociation==='confirmed'&&saved.presenceResolution?.scope!=='group'?saved.discovery?.websiteUrl:undefined});
+            const overrides=[...(Array.isArray(payload.funnelOverrides)?payload.funnelOverrides:[]),payload.funnelOverride];
+            const g0Blocked=config.funnel.g0.mode==='enforce'&&material.registry.outcome==='block'&&!overrides.some(item=>item?.gate==='g0'&&item.configurationRevision===input.configurationRevision);
+            const g1Blocked=input.gate==='g5'&&payload.decisionExclusion?.active===true&&payload.decisionExclusion.gate==='g1'&&payload.decisionExclusion.revision===input.configurationRevision;
+            const siteEligible=input.gate!=='g5'||material.evidence.some(item=>item.role==='activity'&&item.primary&&item.scope==='establishment'&&!item.contradictory);
+            if(g0Blocked||g1Blocked||!siteEligible){excluded.push({candidateId:row.id,reason:g0Blocked?'filtered_by_g0':g1Blocked?'filtered_by_g1':'associated_establishment_evidence_required'});continue;}
+            prepared.set(row.id,decisionContextSchema.parse({schemaVersion:1,organizationId:input.organizationId,campaignId:input.campaignId,candidateId:row.id,configurationRevision:input.configurationRevision,task:taskFor(input.gate),contextVersion:RADAR_FUNNEL_VERSIONS.contextVersion,identity,criteria:material.criteria,evidence:material.evidence,options:[],humanReviewed:false}));
+        }
+        if(!prepared.size)throw Object.assign(fail('radar_calibration_no_eligible_companies'),{details:{excluded}});
         const previous=(await db.query(`SELECT seed,dataset FROM public.radar_campaign_gate_calibrations WHERE organization_id=$1 AND campaign_id=$2 AND configuration_revision=$3 AND gate=$4 ORDER BY created_at,id`,[input.organizationId,input.campaignId,input.configurationRevision,input.gate])).rows;
         const seed = previous[0]?.seed??randomUUID(), id = randomUUID(),fixed=new Map<string,'tune'|'holdout'>();
         for(const prior of previous)for(const sample of prior.dataset)if(!fixed.has(sample.groupKey))fixed.set(sample.groupKey,sample.partition);
-        const samples = rows.map(row => {
+        const eligibleRows=rows.filter(row=>prepared.has(row.id));
+        const samples = eligibleRows.map(row => {
             const cnpj = String(row.normalized_payload.cnpj ?? '').replace(/\D/g, '');
             let domain: string | undefined;
             try { if (row.output?.siteAssociation === 'confirmed') domain = new URL(row.output.discovery.websiteUrl).hostname; } catch { /* No confirmed group key. */ }
             return { candidateId: row.id, groupKey: cnpj.length === 14 ? `cnpj:${cnpj.slice(0, 8)}` : domain ? `domain:${domain}` : `company:${row.id}`,
-                label: input.labels.find(item => item.candidateId === row.id)!.label, reviewedBy: user.id };
+                label: input.labels.find(item => item.candidateId === row.id)!.label, reviewedBy: user.id,eligibleForGate:true };
         });
         const dataset = partitionRadarGateDataset(samples, seed, config.funnel[input.gate].criteria.holdoutShare,fixed);
         const binding = { campaignId: input.campaignId, configurationRevision: input.configurationRevision, targetsHash: radarFunnelTargetsHash(config, campaign.target_cnaes),criteriaHash:radarDecisionHash(config.funnel[input.gate].criteria), routeFingerprint: route.fingerprint, ...RADAR_FUNNEL_VERSIONS };
         await db.query(`INSERT INTO public.radar_campaign_gate_calibrations(id,organization_id,campaign_id,configuration_revision,gate,binding,dataset,criteria,seed,dataset_hash,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id, input.organizationId, input.campaignId, input.configurationRevision, input.gate, JSON.stringify(binding), JSON.stringify(dataset), JSON.stringify(config.funnel[input.gate].criteria), seed, radarDecisionHash(dataset), user.id]);
-        for (const row of rows) {
-            const payload = row.normalized_payload, saved = row.output ?? {};
-            const identity = { name: String(payload.tradeName ?? row.title), legalName: typeof payload.legalName === 'string' ? payload.legalName : undefined,
-                cnpj: typeof payload.cnpj === 'string' ? payload.cnpj : undefined, city: typeof payload.city === 'string' ? payload.city : undefined, state: typeof payload.state === 'string' ? payload.state : undefined, address: typeof payload.address === 'string' ? payload.address : undefined };
-            const pages: RadarSiteEvidence[] = input.gate === 'g5' && Array.isArray(saved.pages) ? saved.pages : [];
-            const context = decisionContextSchema.parse({ schemaVersion: 1, organizationId: input.organizationId, campaignId: input.campaignId, candidateId: row.id, configurationRevision: input.configurationRevision, task: taskFor(input.gate), contextVersion: RADAR_FUNNEL_VERSIONS.contextVersion,
-                identity, criteria: radarFunnelDecisionCriteria(config, campaign), evidence: buildRadarFunnelEvidence({ identity, registryPayload: payload, targetCnaes: campaign.target_cnaes ?? [], pages,
-                    associatedWebsite: saved.siteAssociation === 'confirmed' ? saved.discovery?.websiteUrl : undefined }), options: [], humanReviewed: false });
+        for (const row of eligibleRows) {
+            const context = prepared.get(row.id)!;
             await db.query(`INSERT INTO public.radar_gate_evaluation_cases(calibration_id,organization_id,campaign_id,candidate_id,request_id,context,route) VALUES($1,$2,$3,$4,$5,$6,$7)`, [id, input.organizationId, input.campaignId, row.id, `eval:${id}:${row.id}:${input.gate}`, JSON.stringify(context), JSON.stringify(route)]);
         }
         const policy = await loadRadarOperationalLimits(db);
         const price = radarDecisionPrice(route, policy.limits.maxFallbackAttemptsPerEffect, policy.costPolicy);
         await db.query('COMMIT');
-        return { id, gate: input.gate, dataset, price, policyVersion: policy.version, binding, status: 'draft' };
+        return { id, gate: input.gate, dataset, excluded, price, policyVersion: policy.version, binding, status: 'draft' };
     } catch (cause) { await db.query('ROLLBACK'); throw cause; } finally { db.release(); }
 }
 
@@ -99,7 +107,7 @@ async function evaluationSummary(db: Pick<pg.Pool, 'query'>, calibrationId: stri
 function evaluatedDataset(dataset:RadarGatePartitionedSample[],cases:pg.QueryResultRow[],gate:RadarAiGate){
     return dataset.map(sample=>{
         const row=cases.find(item=>(item.candidateId??item.candidate_id)===sample.candidateId),parsed=decisionResultSchema.safeParse(row?.result),context=decisionContextSchema.safeParse(row?.context);
-        return{...sample,probabilityOutside:row?.status==='completed'&&parsed.success&&parsed.data.status==='decided'?parsed.data.probabilities?.outside_profile??null:null,
+        return{...sample,eligibleForGate:sample.eligibleForGate===true,probabilityOutside:row?.status==='completed'&&parsed.success&&parsed.data.status==='decided'?parsed.data.probabilities?.outside_profile??null:null,
             eligibleOutside:parsed.success&&context.success&&radarFunnelOutsideEvidenceSupported({gate,result:parsed.data,evidence:context.data.evidence,hasConfirmedSite:context.data.evidence.some(item=>item.role==='activity'&&item.primary&&item.scope==='establishment')})};
     });
 }

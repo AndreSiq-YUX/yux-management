@@ -7,7 +7,7 @@ import type {RegisteredJobQueue} from '../../jobs/registry.js'
 import {requireRadarScope} from './access.js'
 import {loadRadarOperationalLimits} from './operational-limits.js'
 import {startRadarCandidateResearch} from './research-service.js'
-import {assessRadarCaptureResearch} from './capture-research-state.js'
+import {assessRadarResearchProgress} from './capture-research-state.js'
 import {createRadarResearchIntentBudget,loadRadarResearchBudgetPolicy,amendRadarResearchIntentBudget} from './research-budget.js'
 import {projectRadarCommercialResearchStatus} from './commercial-status.js'
 
@@ -174,7 +174,7 @@ export async function dispatchRadarResearchRequest(pool:pg.Pool,_env:AppEnv,inpu
       await queue.add('radar.researchCandidate',{organizationId:input.organizationId,runId:item.run_id},{jobId:`radar-research-item-${item.id}-${item.dispatch_generation}`})
       await setItem(item,'running')
      }else{
-      const assessment=assessRadarCaptureResearch(run as never)
+      const assessment=assessRadarResearchProgress(run as never)
       await setItem(item,assessment.status==='researching'?'running':assessment.status==='completed'?'completed':'waiting',assessment.reason??(assessment.status==='insufficient'?'radar_research_evidence_insufficient':undefined))
      }
     }catch(cause){const code=cause instanceof Error?cause.message:'';await setItem(item,'waiting',/^[a-z][a-z0-9_]{2,159}$/.test(code)?code:'radar_capture_queue_unavailable')}

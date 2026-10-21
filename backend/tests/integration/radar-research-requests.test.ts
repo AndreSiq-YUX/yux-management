@@ -9,6 +9,26 @@ import {authorizeRadarAnalysisRetries} from '../../src/modules/radar/analysis-re
 import {getRadarOperationalLimits,updateRadarOperationalLimits} from '../../src/modules/radar/operational-limits.js'
 const api=await import('../../src/modules/radar/research-requests.js').catch(()=>({})) as Record<string,any>
 describe.skipIf(!connectionString)('durable research request outbox',()=>{
+ it.each(['gaps','g1','g5','optional_uncertain','required_uncertain'])('settles the actual request and outbox using the funnel outcome: %s',async kind=>{
+  const f=await captureFixture();try{
+   await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{funnel}','{"enabled":true}') WHERE id=$1`,[f.campaign.id])
+   const candidateId=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa teste',$3,'{}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0].id
+   const requestId=randomUUID(),jobs:string[]=[]
+   await api.queueRadarResearchRequest(f.pool,admin,{organizationId,campaignId:f.campaign.id,candidateIds:[candidateId],requestId,criteriaRevision:1,intent:'resume'})
+   const request=(await f.pool.query('SELECT id FROM radar_research_requests WHERE request_id=$1',[requestId])).rows[0]
+   const dispatch=()=>api.dispatchRadarResearchRequest(f.pool,{} as never,{organizationId,researchRequestId:request.id},{add:async(_name:string,data:any)=>{jobs.push(data.runId)}})
+   await dispatch();expect(jobs).toHaveLength(1)
+   const excluded=kind==='g1'||kind==='g5',output={funnel:{...(excluded?{blockedGate:kind}:{})},readingComplete:!excluded,decisionExcluded:excluded,siteAssociation:'review',quality:{readyForReview:false},limitations:excluded?[]:['radar_qualification_waiting_public_read']}
+   const calls=kind.endsWith('uncertain')?{effect:{source:kind==='optional_uncertain'?'openrouter_decision':'radar_presence_resolution',status:'uncertain'}}:{}
+   await f.pool.query(`UPDATE radar_candidate_research_runs SET status='partial',output=$2,calls=$3 WHERE id=$1`,[jobs[0],JSON.stringify(output),JSON.stringify(calls)])
+   await dispatch();await dispatch()
+   const required=kind==='required_uncertain'
+   expect((await f.pool.query('SELECT status FROM radar_research_requests WHERE id=$1',[request.id])).rows[0].status).toBe(required?'waiting':'completed')
+   expect((await f.pool.query('SELECT * FROM radar_capture_outbox WHERE research_request_id=$1',[request.id])).rows).toHaveLength(required?1:0)
+   const resumed=await startRadarCandidateResearch(f.pool,admin,{organizationId,candidateId,configurationRevision:1,operation:'resume',requestId:randomUUID()})
+   expect(resumed.status).toBe(required?'queued':'partial');expect(resumed.runId).toBe(jobs[0]);expect(jobs).toHaveLength(1)
+  }finally{await f.close()}
+ })
  it('amends a waiting intent that never allocated a child without getting stuck in resume_pending',async()=>{
   const f=await captureFixture()
   try{

@@ -5,7 +5,35 @@ import {getRadarFunnelReport,auditRadarFunnelBlock} from '../../src/modules/rada
 import {recordRadarFunnelEvent} from '../../src/modules/radar/funnel-events.js';
 import {reopenRadarFunnelCandidate} from '../../src/modules/radar/funnel-controls.js';
 import {restoreRadarDecisionExclusion} from '../../src/modules/radar/decision-review.js';
+import {startRadarCaptureOperation} from '../../src/modules/radar/capture-operation.js';
+import {available} from '../support/radar-capture-fixture.js';
 describe.skipIf(!connectionString)('funnel report and scoped reopen',()=>{
+ it('binds a zero-call G0 admission to its own lot rather than later company review',async()=>{
+  const f=await captureFixture();try{
+   const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available});
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{"decisionExclusion":{"active":false},"triageReasons":["Reaberta depois"]}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];
+   await f.pool.query(`INSERT INTO radar_capture_items(organization_id,campaign_id,operation_id,candidate_id,status,funnel_outcome,initial_gate_status) VALUES($1,$2,$3,$4,'completed','out_of_profile','block')`,[organizationId,f.campaign.id,op.operationId,candidate.id]);
+   for(const lot of [op.operationId,randomUUID()])await recordRadarFunnelEvent(f.pool,{organizationId,campaignId:f.campaign.id,candidateId:candidate.id,configurationRevision:1,gate:'g0',mode:'enforce',outcome:'block',reasonCode:'blocked_name_term',eventKey:`admission:${lot}`});
+   const report=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id,operationId:op.operationId});
+   expect(report.companies[0]).toMatchObject({gate:'g0',outcome:'out_of_profile',reason:'blocked_name_term',currentReview:{gate:null},path:[expect.objectContaining({gate:'g0'})]});
+   expect(report.totals.outside).toBe(1);
+  }finally{await f.close()}
+ });
+ it('keeps a lot path and exclusion tied to its own run after a later round changes the company',async()=>{
+  const f=await captureFixture();try{
+   const op=await startRadarCaptureOperation(f.pool,admin,{organizationId,campaignId:f.campaign.id,configurationRevision:1,requestId:randomUUID(),requestedCount:1},{availability:available});
+   const candidate=(await f.pool.query(`INSERT INTO radar_candidate_records(organization_id,campaign_id,source_type,title,dedupe_key,normalized_payload) VALUES($1,$2,'manual','Empresa Alfa',$3,'{"triageReasons":["Motivo atual"]}') RETURNING id`,[organizationId,f.campaign.id,randomUUID()])).rows[0];
+   const runs:string[]=[];
+   for(const gate of ['g1','g5']){
+    const run=(await f.pool.query(`INSERT INTO radar_candidate_research_runs(organization_id,campaign_id,candidate_id,requested_by,configuration_revision,status,funnel_outcome,output) VALUES($1,$2,$3,$4,1,'partial','out_of_profile',$5) RETURNING id`,[organizationId,f.campaign.id,candidate.id,admin.id,JSON.stringify({decisionExcluded:true,funnel:{blockedGate:gate},limitations:[`reason_${gate}`]})])).rows[0];runs.push(run.id);
+    await recordRadarFunnelEvent(f.pool,{organizationId,campaignId:f.campaign.id,candidateId:candidate.id,runId:run.id,configurationRevision:1,gate:gate as 'g1'|'g5',mode:'enforce',outcome:'outside_profile',wouldBlock:true,reasonCode:`reason_${gate}`,eventKey:run.id});
+   }
+   await f.pool.query(`INSERT INTO radar_capture_items(organization_id,campaign_id,operation_id,candidate_id,run_id,status,funnel_outcome) VALUES($1,$5,$2,$3,$4,'blocked','out_of_profile')`,[organizationId,op.operationId,candidate.id,runs[0],f.campaign.id]);
+   const report=await getRadarFunnelReport(f.pool,admin,{organizationId,campaignId:f.campaign.id,operationId:op.operationId});
+   expect(report.companies[0]).toMatchObject({runId:runs[0],gate:'g1',reason:'reason_g1',path:[expect.objectContaining({gate:'g1'})]});
+   expect(report.totals.outside).toBe(1);
+  }finally{await f.close()}
+ });
  it('previews G0 for free, records review without bypass, and reopens only one gate idempotently',async()=>{
   const f=await captureFixture();try{
    await f.pool.query(`UPDATE radar_campaigns SET search_configuration=jsonb_set(search_configuration,'{funnel}','{"enabled":true,"g0":{"mode":"enforce"}}')||'{"excludedNameTerms":["fora"]}'::jsonb WHERE id=$1`,[f.campaign.id]);
