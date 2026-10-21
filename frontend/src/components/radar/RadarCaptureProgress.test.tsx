@@ -3,6 +3,16 @@ import {createRoot} from 'react-dom/client'
 import {describe,it,expect,vi} from 'vitest'
 const modulePath='./RadarCaptureProgress',api=await import(modulePath).catch(()=>({}))
 describe('truthful capture progress',()=>{
+ it('finishes processed companies without claiming that missing contacts or excluded companies were approved',async()=>{
+  const container=document.createElement('div'),root=createRoot(container)
+  try{
+   await act(async()=>root.render(<api.RadarCaptureProgress operation={{id:'op',status:'completed',configurationRevision:7,discoveryStopped:true,counts:{requested:3,admitted:3,researching:0,completed:1,insufficient:1,blocked:0,completedWithGaps:1,outsideProfile:1,technicalFailures:0},blockers:[],items:[]}} onRefresh={vi.fn()}/>))
+   expect(container.textContent).toContain('Concluídas com lacunas')
+   expect(container.textContent).toContain('Fora do perfil')
+   expect(container.textContent).not.toContain('concluída com sucesso')
+   expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('100')
+  }finally{act(()=>root.unmount())}
+ })
  it.each([true,false])('does not count blocked companies as complete and separates technical guidance: %s',async showTechnical=>{
   const container=document.createElement('div'),root=createRoot(container)
   try{

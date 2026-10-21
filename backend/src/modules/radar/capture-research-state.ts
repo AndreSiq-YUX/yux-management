@@ -1,6 +1,16 @@
 export type RadarCaptureResearchStage='discovery'|'reading'|'presence'|'qualification'|'profile'
+export type RadarFunnelOutcome='out_of_profile'|'completed'|'completed_with_gaps'|'technical_failure'
 export type RadarCaptureResearchAssessment={status:'researching'|'completed'|'insufficient'|'blocked';reason?:string;stage?:RadarCaptureResearchStage}
 type Child={status:string;stage?:string;error_code?:string|null;lease_until?:string|Date|null;output?:Record<string,unknown>|null;calls?:Record<string,{status:string;error?:string}>|null}
+// Commercial outcome is independent of the durable queue/lease status. Keep
+// those legacy statuses stable so in-flight jobs and old receipts still recover.
+export function assessRadarFunnelResearch(run:Child):{outcome:RadarFunnelOutcome|null;retryable:boolean;reason?:string}{
+ const assessment=assessRadarCaptureResearch(run)
+ if(assessment.status==='researching')return{outcome:null,retryable:false}
+ if(assessment.status==='blocked')return{outcome:'technical_failure',retryable:true,reason:assessment.reason}
+ if(run.output?.decisionExcluded===true)return{outcome:'out_of_profile',retryable:false}
+ return{outcome:assessment.status==='completed'?'completed':'completed_with_gaps',retryable:false,...(assessment.reason?{reason:assessment.reason}:{})}
+}
 const searchFailures=new Set(['source_limit_exceeded','source_budget_exceeded','provider_inactive','provider_secret_missing','source_disabled','source_cost_required','retention_license_required','web_license_required','delivery_license_required','radar_research_query_limit','candidate_search_limit_reached'])
 const analysisFailures=new Set(['radar_presence_service_unavailable','radar_qualification_service_unavailable','radar_qualification_failed','radar_presence_failed','radar_ai_wallet_missing','radar_ai_credits_insufficient','radar_llm_route_missing','radar_research_call_uncertain',
  'radar_presence_explicit_route_required','radar_presence_refresh_authorization_required','radar_presence_previous_request_uncertain',

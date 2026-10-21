@@ -4,6 +4,10 @@ const api=await import('../src/modules/radar/commercial-view.js').catch(()=>({})
 const project=(surface:string,value:unknown)=>api.projectRadarCommercialResponse?.(surface,value)
 const internal={provider:'OpenRouter',model:'secret-model',sourceType:'brave_web_search',costUsd:2,futureInternalField:'private'}
 describe('Radar commercial data boundary',()=>{
+ it('allows only commercial terminal counters and strips nested funnel implementation details',()=>{
+  const counts={requested:3,admitted:3,completed:1,completedWithGaps:1,outsideProfile:1,technicalFailures:0,model:'internal',costUsd:2,gate:'g5'}
+  expect(project('capture',{counts,funnelEvents:[internal],items:[internal]})).toEqual({counts:{requested:3,admitted:3,completed:1,completedWithGaps:1,outsideProfile:1,technicalFailures:0}})
+ })
  it('retains the commercial criteria revision required to submit an entitled research request',()=>{
   expect(project('campaigns',[{configurationRevision:7,commercialCriteriaRevision:3,searchConfiguration:{}}])).toMatchObject([{configurationRevision:7,commercialCriteriaRevision:3}])
  })

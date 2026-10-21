@@ -13,6 +13,8 @@ import {prepareRadarAdaptiveCapture,loadRadarAdaptiveItems} from './adaptive-cap
 import {radarAdaptiveDiscoveryCounts} from './discovery-plan.js'
 import {authorizeRadarAdaptiveContinuations} from './adaptive-continuation.js'
 import {resolveRadarSearchConfiguration} from './search-configuration.js'
+import {classifyRadarEmailDomain} from './email-domain.js'
+import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
 
 export const captureError=(code:string,statusCode=409)=>Object.assign(new Error(code),{statusCode})
 export const parseRadarCaptureCount=(value:unknown)=>z.number().int().positive().safe().parse(value)
@@ -61,13 +63,14 @@ export async function getRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organi
  const row=normalizeRadarCounters((await pool.query('SELECT * FROM public.radar_capture_operations WHERE id=$1 AND organization_id=$2',[operationId,organizationId])).rows[0])
  if(!row)throw captureError('radar_capture_not_found',404)
  await requireRadarScope(pool,user,{organizationId,campaignId:row.campaign_id})
- const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
+ const items=(await pool.query(`SELECT id,candidate_id AS "candidateId",run_id AS "runId",status,blocker,funnel_outcome AS outcome FROM public.radar_capture_items WHERE operation_id=$1 AND organization_id=$2 ORDER BY created_at,id`,[operationId,organizationId])).rows
  const adaptiveItems=row.pipeline_version===2?await loadRadarAdaptiveItems(pool,row.id,organizationId):null
  const outside=new Set(adaptiveItems?.filter(item=>item.qualification==='not_target').map(item=>item.candidateId)??[])
  const n=(status:string)=>items.filter(item=>item.status===status&&!outside.has(item.candidateId)).length
  const adaptive=adaptiveItems?radarAdaptiveDiscoveryCounts(adaptiveItems):null
- return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,adaptive?.qualifiedNew??items.length)||row.status==='partial'&&row.discovery_stopped&&items.some(item=>item.status==='insufficient'&&item.runId)}:{}),
-  ...(adaptive?{countingMode:'qualified' as const}:{}),counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked'),...(adaptive?{qualified:adaptive.qualifiedNew,outsideProfile:adaptive.outsideProfile}:{})}}
+ const outcomes=items.some(item=>item.outcome!=null)?{completedWithGaps:items.filter(item=>item.outcome==='completed_with_gaps').length,technicalFailures:items.filter(item=>item.outcome==='technical_failure').length,outsideProfile:items.filter(item=>item.outcome==='out_of_profile'||outside.has(item.candidateId)).length}:{}
+ return{id:row.id,campaignId:row.campaign_id,configurationRevision:row.configuration_revision,status:row.status,discoveryStopped:row.discovery_stopped,discoveryReason:row.discovery_reason,queries:row.queries,blockers:row.blockers,items,...(user.role==='yux_admin'?{canContinue:isRadarCaptureLimitPause(row,adaptive?.qualifiedNew??items.length)||row.status==='partial'&&row.discovery_stopped&&items.some(item=>!item.outcome&&item.status==='insufficient'&&item.runId)}:{}),
+  ...(adaptive?{countingMode:'qualified' as const}:{}),counts:{requested:row.requested_count,admitted:items.length,researching:n('queued')+n('researching'),completed:n('completed'),insufficient:n('insufficient'),blocked:n('blocked'),...(adaptive?{qualified:adaptive.qualifiedNew,outsideProfile:adaptive.outsideProfile}:{}),...outcomes}}
 }
 export async function getLatestRadarCaptureOperation(pool:pg.Pool,user:AuthUser,organizationId:string,campaignId:string){
  await requireRadarScope(pool,user,{organizationId,campaignId})
@@ -81,6 +84,7 @@ export async function admitRadarCapturePage(client:pg.PoolClient,input:{organiza
  if(!op||op.configuration_revision!==input.revision)throw captureError('radar_campaign_configuration_changed')
  let remaining=op.requested_count-Number((await client.query('SELECT COUNT(*) AS n FROM public.radar_capture_items WHERE operation_id=$1',[op.id])).rows[0].n)
  const ids:string[]=[]
+ const emailPolicy=(await loadRadarEmailDomainPolicy(client)).configuration
  for(const result of results){
   const title=result.tradeName||result.legalName||result.taxId||'Empresa CNPJá'
   const dedupeKey=result.taxId?`cnpj:${result.taxId}`:`cnpja:${title.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'')}:${(result.city||'').toLowerCase()}:${(result.state||'').toLowerCase()}`
@@ -92,7 +96,7 @@ export async function admitRadarCapturePage(client:pg.PoolClient,input:{organiza
    if(persistOverflow)await client.query('INSERT INTO public.radar_capture_overflow(organization_id,campaign_id,configuration_revision,scope_key,enrichment_run_id,candidate) VALUES($1,$2,$3,$4,$5,$6)',[input.organizationId,input.campaignId,input.revision,input.scopeKey,input.runId,JSON.stringify(result)])
    continue
   }
-  const normalized={tradeName:result.tradeName,legalName:result.legalName,cnpj:result.taxId,cnaeMain:result.cnaeMain,cnaes:result.cnaes,registrationStatus:result.registrationStatus,openingDate:result.openingDate,capital:result.capital,legalNature:result.legalNature,registeredSize:result.registeredSize,registryUpdatedAt:result.registryUpdatedAt,address:result.address,websiteStatus:result.websiteStatus,city:result.city,state:result.state,emailRaw:result.email,phoneRaw:result.phone,discoveryRevision:input.revision}
+  const normalized={tradeName:result.tradeName,legalName:result.legalName,cnpj:result.taxId,cnaeMain:result.cnaeMain,cnaes:result.cnaes,registryActivities:result.activities??[],emailDomainSignal:classifyRadarEmailDomain(result.email,emailPolicy),registrationStatus:result.registrationStatus,openingDate:result.openingDate,capital:result.capital,legalNature:result.legalNature,registeredSize:result.registeredSize,registryUpdatedAt:result.registryUpdatedAt,address:result.address,websiteStatus:result.websiteStatus,city:result.city,state:result.state,emailRaw:result.email,phoneRaw:result.phone,discoveryRevision:input.revision}
   const inserted=await client.query(`INSERT INTO public.radar_candidate_records(organization_id,campaign_id,enrichment_run_id,source_type,source_url,title,snippet,raw_payload,normalized_payload,dedupe_key)
    VALUES($1,$2,$3,'cnpja_advanced_search',$4,$5,$6,$7,$8,$9) ON CONFLICT(campaign_id,dedupe_key) DO NOTHING RETURNING id`,[input.organizationId,input.campaignId,input.runId,result.sourceUrl??null,title,buildCnpjaCandidateSnippet(result),JSON.stringify(result.rawPayload),JSON.stringify(normalized),dedupeKey])
   if(!inserted.rows[0])continue

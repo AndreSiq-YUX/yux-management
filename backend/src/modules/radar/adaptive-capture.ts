@@ -1,5 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto'
 import type pg from 'pg'
+import {classifyRadarEmailDomain} from './email-domain.js'
+import {loadRadarEmailDomainPolicy} from './email-domain-policy.js'
 import type {AppEnv} from '../../config/env.js'
 import type {AuthUser} from '../../auth/routes.js'
 import {buildRadarAdaptiveDiscoveryPlan,planRadarAdaptiveDiscoveryTurn,type RadarAdaptiveDiscoveryPlan,type RadarAdaptiveDiscoveryItem} from './discovery-plan.js'
@@ -193,7 +195,7 @@ async function admitAdaptivePage(pool:pg.Pool,env:AppEnv,op:pg.QueryResultRow,pa
     await db.query(`UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$3::jsonb,source_type=CASE WHEN $4='osm_extract' THEN 'osm_extract' ELSE source_type END WHERE id=$1 AND organization_id=$2`,[admission.candidateId,op.organization_id,JSON.stringify(provenance),page.source])
     if(candidate.registry){
      const row=candidate.registry
-     const fiscal={legalName:row.legalName,tradeName:row.tradeName||row.legalName,cnpj:row.taxId,cnaeMain:row.cnaeMain,cnaes:row.cnaes,registrationStatus:row.registrationStatus,openingDate:row.openingDate,capital:row.capital,legalNature:row.legalNature,registeredSize:row.registeredSize,registryUpdatedAt:row.registryUpdatedAt,address:row.address,city:row.city,state:row.state,emailRaw:row.email,phoneRaw:row.phone}
+     const fiscal={legalName:row.legalName,tradeName:row.tradeName||row.legalName,cnpj:row.taxId,cnaeMain:row.cnaeMain,cnaes:row.cnaes,registryActivities:row.activities??[],emailDomainSignal:classifyRadarEmailDomain(row.email,(await loadRadarEmailDomainPolicy(db)).configuration),registrationStatus:row.registrationStatus,openingDate:row.openingDate,capital:row.capital,legalNature:row.legalNature,registeredSize:row.registeredSize,registryUpdatedAt:row.registryUpdatedAt,address:row.address,city:row.city,state:row.state,emailRaw:row.email,phoneRaw:row.phone}
      await db.query(`UPDATE public.radar_candidate_records SET normalized_payload=normalized_payload||$3::jsonb,raw_payload=$4::jsonb,source_type='cnpja_advanced_search' WHERE id=$1 AND organization_id=$2`,[admission.candidateId,op.organization_id,JSON.stringify(fiscal),JSON.stringify(row.rawPayload)])
     }
     await db.query('INSERT INTO public.radar_capture_items(organization_id,campaign_id,operation_id,candidate_id,is_new) VALUES($1,$2,$3,$4,TRUE) ON CONFLICT DO NOTHING',[op.organization_id,op.campaign_id,op.id,admission.candidateId]);added++

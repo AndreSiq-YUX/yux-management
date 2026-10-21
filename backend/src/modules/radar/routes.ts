@@ -63,6 +63,7 @@ const continuationAuthorizationsSchema=z.array(z.object({scopeKey:z.string().min
 import {radarCaptureLimitsSchema} from './capture-limit-authorization.js'
 import {getRadarOperationalLimits,updateRadarOperationalLimits,radarOperationalLimitsSchema} from './operational-limits.js'
 import {loadRadarDiscoveryPolicy,saveRadarDiscoveryPolicy} from './discovery-policy.js'
+import {loadRadarEmailDomainPolicy,saveRadarEmailDomainPolicy} from './email-domain-policy.js'
 import {getRadarAdministrativeResearch,revalidateRadarAdministrativeResearch,resumeRadarAdministrativeResearch,radarAdministrativeResumeSchema,radarAdministrativeScopeSchema,radarAdministrativeRevalidationSchema} from './administrative-research.js'
 import {radarCostPolicySchema} from './cost-conversion.js'
 import type {AuthUser} from '../../auth/routes.js'
@@ -272,6 +273,15 @@ export async function registerRadarRoutes(app: FastifyInstance) {
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply
     if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
     return loadRadarDiscoveryPolicy(app.pg)
+  })
+  app.get('/admin/email-domain-policy',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    if(user.role!=='yux_admin')return reply.code(403).send({error:'radar_source_admin_required'})
+    return loadRadarEmailDomainPolicy(app.pg)
+  })
+  app.put('/admin/email-domain-policy',async(request,reply)=>{
+    const user=await getAuthenticatedUser(request,reply);if(!user)return reply
+    return saveRadarEmailDomainPolicy(app.pg,user,request.body)
   })
   app.put('/admin/discovery-policy',async(request,reply)=>{
     const user=await getAuthenticatedUser(request,reply);if(!user)return reply

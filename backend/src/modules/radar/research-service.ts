@@ -29,7 +29,7 @@ import {projectRadarPublicPresence,radarPublicPresenceFromDossier} from './publi
 import {collectRadarPublicSocialEvidence,isRadarPublicProfile} from './public-social-evidence.js'
 import {pendingRadarReadUrls,canonicalRadarReadUrl} from './research-checkpoint.js'
 import {reconcileRadarCaptureItems} from './capture-reconciliation.js'
-import {assessRadarCaptureResearch} from './capture-research-state.js'
+import {assessRadarCaptureResearch,assessRadarFunnelResearch} from './capture-research-state.js'
 import {projectRadarCommercialResearchStatus} from './commercial-status.js'
 import {radarEvidenceContentHash,radarEvidenceBindings,radarEvidenceBindingMatch,remapRadarEvidenceResult,persistedRadarEvidenceVersion,canonicalRadarAnalysisEvidence,radarAnalysisDependencies,radarDependencyBindingMatch,radarResearchDependencyVersions,type RadarEvidenceVersion,type RadarEvidenceBindings} from './evidence-version.js'
 import {mergeRadarCompanyResearch,radarCompanyProjectionVersion,projectRadarCompanyFacts,radarPayloadIdentityHash} from './company-projection.js'
@@ -607,7 +607,7 @@ export async function startRadarCandidateResearch(pool:pg.Pool,user:AuthUser,inp
           await client.query('UPDATE public.radar_candidate_research_runs SET calls=$3::jsonb WHERE id=$1 AND organization_id=$2',
             [run.id,input.organizationId,JSON.stringify(run.calls)])
         }
-        const updated = await client.query<ResearchRun>(`UPDATE public.radar_candidate_research_runs SET status='queued', error_code=NULL,
+        const updated = await client.query<ResearchRun>(`UPDATE public.radar_candidate_research_runs SET status='queued', error_code=NULL,funnel_outcome=NULL,
           requested_by=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,[run.id,user.id]); run = updated.rows[0]
       }
     } else {
@@ -1000,7 +1000,7 @@ export async function executeRadarCandidateResearch(pool:pg.Pool,env:AppEnv,inpu
       return{runId:run.id,status:'queued',yielded:true}
     }
     const code = cause instanceof Error ? cause.message : 'research_failed'
-    await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET status='blocked',error_code=$3,lease_id=NULL,lease_until=NULL,updated_at=NOW()
+    await updateResearchProgress(pool,run,client=>client.query(`UPDATE public.radar_candidate_research_runs SET status='blocked',error_code=$3,funnel_outcome='technical_failure',lease_id=NULL,lease_until=NULL,updated_at=NOW()
       WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,code]),false)
     return {runId:run.id,status:'blocked',error:code}
   }
@@ -1077,8 +1077,10 @@ async function persistDossier(pool:pg.Pool,run:ResearchRun,lease:string,context:
     [run.candidate_id,run.organization_id,run.campaign_id,review.targetStatus,review.productFit,review.reasons,run.configuration_revision])
     // HTML is needed for crash-safe crawl checkpoints but is not exposed in the final dossier.
     const output = {...dossier,quality,...(run.output.discoveryLocked?{discoveryLocked:true}:{}),...(run.operation==='reanalyze'?{analysisOnly:true,discoveryLocked:true}:{}),pages:dossier.pages.map(({html:_html,...page})=>page),readingComplete:!dossier.pages.some(isRetryableRadarPage),readerVersion:RADAR_READER_VERSION}
-    const updated=await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,stage='review',completed_at=NOW(),updated_at=NOW(),
-      lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,JSON.stringify(output),dossier.limitations.length?'partial':'succeeded'])
+    const finalStatus=dossier.limitations.length?'partial':'succeeded'
+    const outcome=assessRadarFunnelResearch({...run,status:finalStatus,output}).outcome
+    const updated=await client.query(`UPDATE public.radar_candidate_research_runs SET output=$3::jsonb,status=$4,funnel_outcome=$5,stage='review',completed_at=NOW(),updated_at=NOW(),
+      lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2 RETURNING id`,[run.id,lease,JSON.stringify(output),finalStatus,outcome])
     if(!updated.rows[0])throw error('radar_research_lease_lost')
     await reconcileRadarCaptureItems(client,{organizationId:run.organization_id,candidateId:run.candidate_id,runId:run.id})
     await client.query('COMMIT')

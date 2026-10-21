@@ -73,7 +73,7 @@ export type RadarCommercialCampaign=z.infer<typeof campaignSchema>
 const candidateSchema=z.object({...base,title:text,configurationRevision:number,approvedAt:text,crmLeadId:text,importedOpportunityId:text,importedCompanyRecordId:text,
  targetStatus:text,productFit:text,pendingMessage:text,facts:factsSchema}).strip()
 export type RadarCommercialCandidate=z.infer<typeof candidateSchema>
-const countShape={requested:number,admitted:number,researching:number,completed:number,insufficient:number,blocked:number,qualified:number,outsideProfile:number}
+const countShape={requested:number,admitted:number,researching:number,completed:number,insufficient:number,blocked:number,qualified:number,outsideProfile:number,completedWithGaps:number,technicalFailures:number}
 const captureSchema=z.object({...base,configurationRevision:number,countingMode:z.enum(['admitted','qualified']).optional(),counts:z.object(countShape).strip(),pendingMessage:text}).strip()
 export type RadarCommercialCapture=z.infer<typeof captureSchema>
 const assessmentSchema=z.object({targetStatus:text,productFit:text,reasons:narratives}).strip()

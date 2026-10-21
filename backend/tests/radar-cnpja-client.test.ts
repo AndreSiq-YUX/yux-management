@@ -2,6 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildCnpjaCandidateSnippet, lookupCnpjaOffice, searchCnpjaAdvanced, searchCnpjaAdvancedPage, testCnpjaProvider } from '../src/modules/radar/cnpjaClient.js'
 
 describe('radar CNPJa client', () => {
+  it('preserves principal and secondary activity descriptions for later decisions and free backfill',async()=>{
+    const records=[{taxId:'12345678000190',mainActivity:{id:5620101,text:'Fornecimento de alimentos preparados'},sideActivities:[{id:5620102,text:'Serviços de alimentação para eventos'}]}]
+    const fetchImpl=async()=>({ok:true,json:async()=>({records})}) as Response
+    const [candidate]=await searchCnpjaAdvanced({apiKey:'fixture',fetchImpl:fetchImpl as typeof fetch})
+    const activities=[{code:'5620101',text:'Fornecimento de alimentos preparados',main:true},{code:'5620102',text:'Serviços de alimentação para eventos',main:false}]
+    expect(candidate.activities).toEqual(activities)
+    expect(candidate.rawPayload.registryActivities).toEqual(activities)
+  })
   it('preserves the alphanumeric identifier in lookups and normalized discovery without silently stripping letters', async () => {
     const fetchImpl=vi.fn(async()=>({ok:true,json:async()=>({records:[{taxId:'12.ABC.345/01DE-35',company:{name:'Empresa de teste'}}]})})) as unknown as typeof fetch
     await lookupCnpjaOffice({apiKey:'fixture',taxId:'12.abc.345/01de-35',fetchImpl})

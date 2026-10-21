@@ -10,6 +10,9 @@ export const RADAR_EXPORT_FIELDS = ['name','legalName','cnpj','city','state','ad
   'evidenceUrl','checkedAt','verificationMethod','reviewNote','registryPhone','publicPhones','publicEmails','whatsappPublished','socialUrls','activityStatus','contactSources',
   'companySummary','services','customerSegments','operatingRegions','supplierEmails','sizeScore','sizeCoverage','sizeEvidence'] as const
 const terms = z.array(z.string().trim().min(1).max(160)).max(50)
+export const radarCnaePrefixSchema=z.string().trim().regex(/^(?:\d{2,7}|\d{4}-\d\/\d{2})$/,'invalid_cnae_prefix').transform(value=>value.replace(/\D/g,''))
+export const radarTargetsSchema=z.array(z.object({key:z.string().regex(/^[a-z][a-z0-9_]{0,59}$/),label:z.string().trim().min(1).max(120),definition:z.string().trim().min(1).max(1200),priority:z.enum(['primary','secondary']),cnaes:z.array(radarCnaePrefixSchema).max(50).default([])}).strict()).max(10).refine(values=>new Set(values.map(value=>value.key)).size===values.length,'duplicate_target_key')
+const radarRegistryRulesSchema=z.object({mainActivityRule:z.enum(['any','target_main_required','target_secondary_needs_review']).default('any'),blockedMainCnaes:z.array(radarCnaePrefixSchema).max(200).default([]),blockedNameTerms:terms.default([])}).strict()
 export const radarSizeMetrics = ['employees','units','annualRevenue','annualMeals','capital','yearsActive'] as const
 const sizeCriterion = z.object({
   metric:z.enum(radarSizeMetrics),weight:z.number().positive().max(1000),maxAgeDays:z.number().int().min(1).max(3650).default(365),
@@ -66,12 +69,13 @@ export const radarSearchConfigurationSchema = z.object({
   sources: z.object({ enrichWithBrave: z.boolean().default(true), inspectWebsite: z.boolean().default(true) })
     .strict().default({ enrichWithBrave: true, inspectWebsite: true }),
   qualification: z.object({
+    targets:radarTargetsSchema.default([]),outOfScopeExamples:terms.default([]),registry:radarRegistryRulesSchema.default(()=>radarRegistryRulesSchema.parse({})),
     includeAnyTerms: terms.default([]), includeAllTerms: terms.default([]), excludeTerms: terms.default([]),
     requireCnaeMatch: z.boolean().default(false),
     missingWebsite: z.enum(['review','insufficient']).default('review'),
     productTerms: terms.default([]), productMatch: z.enum(['any','all']).default('any'),
   }).strict().default({ includeAnyTerms: [], includeAllTerms: [], excludeTerms: [], requireCnaeMatch: false,
-    missingWebsite: 'review', productTerms: [], productMatch: 'any' }),
+    missingWebsite: 'review', productTerms: [], productMatch: 'any',targets:[],outOfScopeExamples:[],registry:{mainActivityRule:'any',blockedMainCnaes:[],blockedNameTerms:[]} }),
   batch: z.object({ pageSize: z.number().int().positive().safe().default(10),
     maxPagesPerScope: z.number().int().positive().safe().default(1),
     maxQueriesPerBatch: z.number().int().positive().safe().default(10),

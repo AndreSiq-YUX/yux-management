@@ -43,6 +43,7 @@ export type CnpjaCandidate = {
   tradeName?: string
   cnaeMain?: string
   cnaes: string[]
+  activities?: Array<{code:string;text?:string;main:boolean}>
   registrationStatus?: string
   address?: string
   city?: string
@@ -290,6 +291,10 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
     .map(activity => objectValue(activity))
     .map(activity => stringValue(activity?.id) || stringValue(activity?.code))
     .filter((activity): activity is string => Boolean(activity))
+  const activities=[mainActivity,...sideActivities].flatMap((value,index)=>{
+    const activity=objectValue(value),code=stringValue(activity?.id)||stringValue(activity?.code)
+    return code?[{code:code.replace(/\D/g,''),text:stringValue(activity?.text)||stringValue(activity?.description),main:index===0}]:[]
+  })
   const status = objectValue(record.status)
   const registrationStatus = stringValue(status?.text) || stringValue(record.registrationStatus)
   const addressParts = [
@@ -308,6 +313,7 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
     tradeName,
     cnaeMain,
     cnaes,
+    activities,
     registrationStatus,
     address: formattedAddress,
     city,
@@ -319,7 +325,7 @@ function normalizeCnpjaCandidate(value: unknown): CnpjaCandidate {
     websiteStatus: 'unknown',
     sourceUrl: cleanedTaxId ? `https://cnpja.com/office/${cleanedTaxId}` : undefined,
     rawPayload: {
-      taxId: cleanedTaxId, legalName, tradeName, cnaeMain, cnaes,
+      taxId: cleanedTaxId, legalName, tradeName, cnaeMain, cnaes,registryActivities:activities,
       registrationStatus, address: formattedAddress, city, state, email, phone,
       openingDate,capital,legalNature,registeredSize,registryUpdatedAt, websiteStatus: 'unknown',
     },
